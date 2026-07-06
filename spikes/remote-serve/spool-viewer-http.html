@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>spec-chat remote spool viewer</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 760px; padding: 0 1rem; }
+  button { font: inherit; padding: .4rem 1rem; cursor: pointer; }
+  textarea { width: 100%; font: inherit; min-height: 3.2em; box-sizing: border-box; }
+  .row { display: flex; gap: .6rem; margin: .8rem 0; align-items: center; }
+  .ev { border: 1px solid #ccc; border-radius: 6px; padding: .6rem .8rem; margin: .5rem 0; }
+  .ev.agent { border-color: #12897C; background: #12897C11; }
+  .ev.human { border-color: #D98E04; background: #D98E0411; }
+  .who { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+  .meta { color: #777; font-size: 12px; }
+  pre { white-space: pre-wrap; margin: .3rem 0 0; font-size: 12.5px; }
+  #status { color: #777; }
+</style>
+</head>
+<body>
+<h1>Remote spool viewer</h1>
+<p>Remote-dev transport: this page talks to <code>tools/review-serve.py</code> over an SSH-forwarded port. Same spools, same protocol — HTTP does the file I/O the browser can't do across machines.</p>
+<p id="status">polling…</p>
+<textarea id="text" placeholder="Comment on #latency-budget › enqueue …">The enqueue bar still dominates - should the spec name a follow-up owner for it?</textarea>
+<div class="row">
+  <button id="comment">Add comment</button>
+  <button id="handoff">Hand off to agent →</button>
+</div>
+<div id="events"></div>
+<script>
+const DIR = new URLSearchParams(location.search).get('dir') || 'specs/order-pipeline.spec.html.review';
+const seen = new Set();
+let n = 0;
+async function post(ev) {
+  await fetch('/api/events?dir=' + encodeURIComponent(DIR) + '&actor=human', { method: 'POST', body: JSON.stringify(ev) });
+  poll();
+}
+document.getElementById('comment').addEventListener('click', () => {
+  const text = document.getElementById('text').value.trim();
+  if (!text) return;
+  post({ id: 'w' + (++n), event: 'comment', anchorId: 'latency-budget',
+         target: { type: 'datum', key: 'enqueue' }, quote: null, text,
+         actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
+});
+document.getElementById('handoff').addEventListener('click', () => {
+  post({ id: 'wh' + (++n), event: 'handoff', anchorId: '', target: null, quote: null,
+         text: 'batch from remote viewer', actor: 'human',
+         createdAt: new Date().toISOString(), schemaVersion: 1 });
+});
+async function poll() {
+  try {
+    const events = await (await fetch('/api/events?dir=' + encodeURIComponent(DIR))).json();
+    document.getElementById('status').textContent = 'watching ' + DIR + ' - ' + events.length + ' events';
+    for (const e of events) {
+      if (seen.has(e.actor + '/' + e.name)) continue;
+      seen.add(e.actor + '/' + e.name);
+      const d = document.createElement('div');
+      d.className = 'ev ' + e.actor;
+      d.innerHTML = '<span class="who">' + e.actor + '</span> <span class="meta">' + e.name + '</span><pre></pre>';
+      d.querySelector('pre').textContent = JSON.stringify(e.body, null, 1);
+      document.getElementById('events').prepend(d);
+    }
+  } catch (err) {
+    document.getElementById('status').textContent = 'server unreachable - is the tunnel up? (' + err.message + ')';
+  }
+}
+poll();
+setInterval(poll, 1500);
+</script>
+</body>
+</html>

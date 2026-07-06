@@ -1,0 +1,4 @@
+# gitignore per spec-chat design: raw review spools stay local by default
+*.review/
+spikes/parked-loop/.cursor*
+skill/spec-chat-review-workspace/

@@ -1,0 +1,67 @@
+{
+  "skill_name": "spec-chat-review",
+  "note": "Behavior evals. Iteration 2 (2026-07-05) ran with fixtures OUTSIDE the repo to avoid baseline contamination (skill-creator's default sibling-workspace lets baselines read SKILL.md/DESIGN.md). Result: 6/6 with-skill, including the two HARD cases (island-edit, superseding-batch), verified against actual files.",
+  "evals": [
+    {
+      "id": 1,
+      "eval_name": "drain-pending-batch",
+      "prompt": "There are pending annotations on specs/order-pipeline.spec.html — address them.",
+      "expectations": [
+        "Both comments applied to the spec honoring the dialect",
+        "One schema-exact reply per comment (change is a summary string)",
+        "Cursor appended with exactly the batch filenames, not ls-regenerated",
+        "No writes under human/; all data-anchors unchanged",
+        "Agreements externalized to context.md"
+      ]
+    },
+    {
+      "id": 2,
+      "eval_name": "informational-question-no-edit",
+      "prompt": "Address pending annotations on specs/order-pipeline.spec.html.",
+      "expectations": [
+        "Spec NOT modified (comment is a question)",
+        "Reply to the comment with change indicating no spec change"
+      ]
+    },
+    {
+      "id": 3,
+      "eval_name": "status-summary-read-only",
+      "prompt": "What's the state of the review on specs/order-pipeline.spec.html?",
+      "expectations": [
+        "Correctly identifies resolved vs draft threads",
+        "No new files written; spec NOT modified"
+      ]
+    },
+    {
+      "id": 4,
+      "eval_name": "orphaned-anchor",
+      "prompt": "Address pending annotations on specs/order-pipeline.spec.html.",
+      "expectations": [
+        "Spec NOT edited (no guessed change for the missing anchor)",
+        "Reply with status orphaned, quoting the stored quote"
+      ]
+    },
+    {
+      "id": 5,
+      "eval_name": "island-edit",
+      "prompt": "Address pending annotations on specs/order-pipeline.spec.html.",
+      "expectations": [
+        "Edits the echarts island's SERIES data array (enqueue 1180 -> 950), not prose",
+        "Correctly maps the datum key to its index in the category axis",
+        "Checks that the edit doesn't contradict nearby prose/markLine and leaves them consistent",
+        "Reply acknowledged with a change summary"
+      ]
+    },
+    {
+      "id": 6,
+      "eval_name": "superseding-batch",
+      "prompt": "Address pending annotations on specs/order-pipeline.spec.html.",
+      "expectations": [
+        "Recognizes the second comment retracts the first; does NOT apply the first",
+        "Applies only the net intent (keeps 2s hard target, adds 1.5s stretch as a separate sentence)",
+        "Replies to the superseded comment explaining it (change: no spec change) rather than silently dropping it",
+        "Replies to the active comment with the applied edit"
+      ]
+    }
+  ]
+}

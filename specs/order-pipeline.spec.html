@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Order pipeline rework — spec</title>
+<script type="module" src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1">
+
+<header data-anchor="header">
+<h1>Order pipeline rework</h1>
+<nav data-anchor="breadcrumbs">specs / order-pipeline.spec.html</nav>
+</header>
+
+<section data-anchor="goals">
+<h2>Goals</h2>
+<p>Rework the order pipeline so a checkout completes in under two seconds at p95, without dropping orders during fulfillment-service restarts.</p>
+<p>Non-goal: changing the public checkout API surface.</p>
+<p>Non-goal: changing the database schema during this work.</p>
+</section>
+
+<section data-anchor="latency-budget">
+<h2>Latency budget</h2>
+<p>Current p95 per stage, measured over the last 14 days.</p>
+<p>Inventory p95 is cache-miss dominated.</p>
+<p>Bringing enqueue under the 800 ms target is follow-up work owned by the fulfillment team.</p>
+<script type="application/spec+json" data-render="chart" data-lib="echarts">
+{
+  "xAxis": { "type": "category", "data": ["cart", "schema", "inventory", "enqueue", "fulfill"] },
+  "yAxis": { "type": "value", "name": "p95 ms" },
+  "series": [
+    {
+      "type": "bar",
+      "data": [210, 95, 340, 1180, 420],
+      "markLine": {
+        "data": [ { "yAxis": 800, "name": "target" } ],
+        "label": { "formatter": "target 800 ms" }
+      }
+    }
+  ]
+}
+</script>
+<div data-render-target="chart"></div>
+</section>
+
+<section data-anchor="retry-policy">
+<h2>Retry policy</h2>
+<p>Enqueue retries three times with exponential backoff and full jitter, then dead-letters the order.</p>
+<p>Dead-lettered orders page the fulfillment on-call rotation via PagerDuty and post to #orders-dlq.</p>
+<p>Nothing is silently dropped; the <a href="../runbooks/orders-dlq.md">DLQ runbook</a> owns recovery for dead-lettered orders.</p>
+</section>
+
+</article>
+</body>
+</html>

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>spec-chat spool viewer — spike 5</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 760px; padding: 0 1rem; }
+  button { font: inherit; padding: .4rem 1rem; cursor: pointer; }
+  .ev { border: 1px solid #ccc; border-radius: 6px; padding: .6rem .8rem; margin: .5rem 0; }
+  .ev.agent { border-color: #12897C; background: #12897C11; }
+  .ev.human { border-color: #D98E04; background: #D98E0411; }
+  .who { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+  .meta { color: #777; font-size: 12px; }
+  pre { white-space: pre-wrap; margin: .3rem 0 0; font-size: 12.5px; }
+  #status { color: #777; margin-left: .8rem; }
+</style>
+</head>
+<body>
+<h1>Spool viewer</h1>
+<p>Spike 5: verifies the browser sees files the <em>agent</em> writes from outside the browser, through a persistent FSA directory handle, without re-granting. Pick a <code>*.review/</code> directory, then let the agent loop run.</p>
+<button id="pick">Open review folder</button><span id="status">no folder</span>
+<div id="events"></div>
+<script>
+let dirHandle = null;
+const seen = new Map();
+document.getElementById('pick').addEventListener('click', async () => {
+  dirHandle = await window.showDirectoryPicker();
+  document.getElementById('status').textContent = 'watching ' + dirHandle.name + ' — polling 1.5s';
+  poll();
+  setInterval(poll, 1500);
+});
+async function poll() {
+  if (!dirHandle) return;
+  for (const actor of ['human', 'agent']) {
+    let sub;
+    try { sub = await dirHandle.getDirectoryHandle(actor); } catch { continue; }
+    for await (const [name, h] of sub.entries()) {
+      if (h.kind !== 'file' || seen.has(actor + '/' + name)) continue;
+      const file = await h.getFile();           // must return a FRESH snapshot
+      const text = await file.text();
+      seen.set(actor + '/' + name, true);
+      render(actor, name, text);
+    }
+  }
+}
+function render(actor, name, text) {
+  const d = document.createElement('div');
+  d.className = 'ev ' + actor;
+  let body = text;
+  try { body = JSON.stringify(JSON.parse(text), null, 1); } catch {}
+  d.innerHTML = '<span class="who">' + actor + '</span> <span class="meta">' + name + '</span><pre></pre>';
+  d.querySelector('pre').textContent = body;
+  document.getElementById('events').prepend(d);
+}
+</script>
+</body>
+</html>
