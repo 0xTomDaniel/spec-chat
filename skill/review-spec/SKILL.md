@@ -90,9 +90,11 @@ The skill is self-contained: `assets/` carries the browser runtime (`viz/runtime
 
 1. Create `specs/` at the repo root and copy `assets/viz/` to `specs/.viz/` (runtime + vendor, committed with the repo — vendoring is deliberate: specs must render without network).
 2. Gitignore the spools: add `*.review/` to `.gitignore`.
-3. Specs reference the runtime with `<script type="module" src="./.viz/runtime.js">`.
+3. Specs reference the runtime with `<script defer src="./.viz/runtime.js">` — a classic script, never `type="module"` (browsers CORS-block module scripts on `file://`, which is the primary local transport).
 
 If the repo already has `specs/.viz/`, leave it alone — its version is the repo's contract. Copy `assets/review-serve.py` to `tools/` only if remote transport is needed and the repo lacks it.
+
+**Exception — module-loading migration**: if an existing repo's runtime is loaded with `<script type="module">` (or its `runtime.js` still contains `import.meta.url`), it predates the classic-script fix and is broken on `file://` (browsers CORS-block module scripts there — the annotation layer silently never loads). On contact, replace the vendored `.viz/runtime.js` with this skill's copy and switch every spec's tag to `<script defer src="./.viz/runtime.js">`.
 
 ## Starting a review when asked
 
