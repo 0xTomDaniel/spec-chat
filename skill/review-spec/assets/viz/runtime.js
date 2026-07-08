@@ -154,7 +154,7 @@ async function hydrateIslands() {
       }
       chart.setOption(config);
       const anchor = holderOf(s)?.dataset.anchor;
-      state.charts.set(anchor, { chart, config, el: target });
+      state.charts.set(anchor, { anchor, chart, config, el: target });
       chart.on('click', params => onChartClick(anchor, params));
       // blank canvas (no mark under cursor) anchors to the figure itself
       const holderEl = holderOf(s);
@@ -188,13 +188,55 @@ function loadScript(src) {
 }
 const holderOf = el => el && el.closest('[data-anchor]');
 
+/* ---------------- foreign charts ---------------- */
+// Spec scripts may echarts.init() their own charts (no spec+json island). Adopt them so
+// their marks get the same comment-mode targeting as island charts. Re-entrant: rescans
+// refresh configs and drop disposed instances (spec scripts can dispose+recreate).
+function adoptForeignCharts() {
+  if (!window.echarts) return;
+  for (const [k, info] of state.charts) {
+    if (info.chart.isDisposed && info.chart.isDisposed()) state.charts.delete(k);
+    else try { info.config = info.chart.getOption(); } catch {}
+  }
+  const known = new Set([...state.charts.values()].map(i => i.chart));
+  for (const canvas of document.querySelectorAll('[data-anchor] canvas')) {
+    let el = canvas.parentElement, chart = null;
+    while (el && el !== document.body && !chart) { chart = window.echarts.getInstanceByDom(el); if (!chart) el = el.parentElement; }
+    if (!chart || (chart.isDisposed && chart.isDisposed()) || known.has(chart)) continue;
+    known.add(chart);
+    const dom = chart.getDom();
+    const holder = holderOf(dom);
+    if (!holder) continue;
+    const anchor = holder.dataset.anchor;
+    const key = state.charts.has(anchor) ? anchor + '::' + (dom.id || chart.id) : anchor;
+    state.charts.set(key, { anchor, chart, config: chart.getOption(), el: dom });
+    chart.on('click', params => onChartClick(key, params));
+    chart.getZr().on('click', ev => {
+      if (ev.target || !state.commentMode) return;
+      openComposer(anchor, dom.id ? { type: 'element', key: dom.tagName.toLowerCase() + '#' + dom.id } : null, 'figure: chart');
+    });
+  }
+}
+
 /* ---------------- anchoring cascade ---------------- */
-function onChartClick(anchor, params) {
+function datumKey(params) { // grep-friendly even when name is empty (time axes, sankey edges)
+  if (params.name != null && String(params.name).trim() !== '') return String(params.name);
+  const d = params.data;
+  if (d && d.source != null && d.target != null) return d.source + '>' + d.target;
+  if (Array.isArray(params.value)) return String(params.value[0] ?? params.dataIndex);
+  return String(params.value ?? params.dataIndex ?? params.seriesIndex ?? 'unknown');
+}
+
+function onChartClick(chartKey, params) {
   if (!state.commentMode) return;
+  const info = state.charts.get(chartKey);
+  const anchor = (info && info.anchor) || chartKey;
   let target, quote;
   if (params.componentType === 'series') {
-    target = { type: 'datum', key: String(params.name) };
-    quote = 'bar: ' + params.name + ' · ' + params.value;
+    const key = datumKey(params);
+    target = { type: 'datum', key, seriesIndex: params.seriesIndex, dataIndex: params.dataIndex };
+    if (chartKey !== anchor) target.chartKey = chartKey;
+    quote = (params.seriesName || 'mark') + ': ' + key + (params.value != null ? ' · ' + (Array.isArray(params.value) ? params.value.join(', ') : params.value) : '');
   } else if (params.componentType === 'xAxis') {
     target = { type: 'axis-x', key: String(params.value) };
     quote = 'x-axis label: ' + params.value;
@@ -457,9 +499,14 @@ function setCommentMode(on) {
   state.commentMode = on;
   document.body.classList.toggle('hx-comment', on);
   document.getElementById('hx-mode').setAttribute('aria-pressed', String(on));
-  // amber hover highlight on chart marks (canvas can't take CSS outlines)
+  if (on) adoptForeignCharts(); // catch charts the spec script created since the last scan
+  // amber hover highlight on chart marks (canvas can't take CSS outlines); a single-element
+  // series array only merges onto series[0], so build one entry per series
   for (const { chart } of state.charts.values()) {
-    chart.setOption({ series: [{ emphasis: { itemStyle: on ? { borderColor: '#d98e04', borderWidth: 3 } : { borderWidth: 0 } } }] });
+    try {
+      const n = ((chart.getOption() || {}).series || []).length || 1;
+      chart.setOption({ series: Array.from({ length: n }, () => ({ emphasis: { itemStyle: on ? { borderColor: '#d98e04', borderWidth: 3 } : { borderWidth: 0 } } })) });
+    } catch {}
   }
   if (on) openPanel(true);
 }
@@ -536,14 +583,24 @@ function scrollToThread(b) {
 function pinPos(b, holder) {
   const t = b.target;
   if (!t) return { top: 4, left: holder.clientWidth - 30 };
-  const info = state.charts.get(b.anchorId);
+  const info = (t.chartKey && state.charts.get(t.chartKey)) || state.charts.get(b.anchorId)
+    || [...state.charts.values()].find(i => i.anchor === b.anchorId);
   if (info && ['datum', 'axis-x', 'axis-y'].includes(t.type)) {
     try {
       const hR = holder.getBoundingClientRect(), cR = info.el.getBoundingClientRect();
       if (t.type === 'datum') {
+        // series/data indexes position exactly on any grid; the key-based path is the
+        // legacy fallback for events recorded before indexes were captured
+        if (t.seriesIndex != null && t.dataIndex != null) {
+          const sList = Array.isArray(info.config.series) ? info.config.series : [info.config.series];
+          let d = sList[t.seriesIndex]?.data?.[t.dataIndex];
+          if (d && typeof d === 'object' && !Array.isArray(d) && d.value !== undefined) d = d.value;
+          const [x, y] = info.chart.convertToPixel({ seriesIndex: t.seriesIndex }, Array.isArray(d) ? d : [t.key, d]);
+          return { top: cR.top - hR.top + y - 26, left: cR.left - hR.left + x - 12 };
+        }
         const xa = Array.isArray(info.config.xAxis) ? info.config.xAxis[0] : info.config.xAxis;
         const i = (xa.data || []).indexOf(t.key);
-        const v = info.config.series[0].data[i];
+        const v = (Array.isArray(info.config.series) ? info.config.series[0] : info.config.series).data[i];
         const [x, y] = [info.chart.convertToPixel({ xAxisIndex: 0 }, t.key), info.chart.convertToPixel({ yAxisIndex: 0 }, v)];
         return { top: cR.top - hR.top + y - 26, left: cR.left - hR.left + x - 12 };
       }
@@ -654,6 +711,14 @@ async function watchSpec() {
 (async function boot() {
   mountUI();
   await hydrateIslands();
+  adoptForeignCharts();
+  // spec scripts can create/recreate charts at any time; rescan when canvases appear
+  let adoptTimer = null;
+  new MutationObserver(muts => {
+    if (!muts.some(m => [...m.addedNodes].some(n => n.nodeType === 1 && (n.tagName === 'CANVAS' || (n.querySelector && n.querySelector('canvas')))))) return;
+    clearTimeout(adoptTimer);
+    adoptTimer = setTimeout(adoptForeignCharts, 200);
+  }).observe(document.body, { childList: true, subtree: true });
   if (location.protocol === 'file:' && !('showDirectoryPicker' in window)) {
     document.getElementById('hx-mode').disabled = true;
     status('view-only — this browser cannot annotate file:// pages; use Chrome/Edge, or serve via review-serve.py over http://');
