@@ -140,7 +140,12 @@ async function hydrateIslands() {
       if (config.animation === undefined) config.animation = false; // deterministic renders: screenshots, diffs, headless review
       const chart = window.echarts.init(target);
       // clickable axes/labels for universal anchoring
-      for (const ax of ['xAxis', 'yAxis']) if (config[ax]) config[ax] = Object.assign({ triggerEvent: true }, config[ax]);
+      // multi-axis charts pass xAxis/yAxis as arrays — wrap each element, never Object.assign an array
+      for (const ax of ['xAxis', 'yAxis']) if (config[ax]) {
+        config[ax] = Array.isArray(config[ax])
+          ? config[ax].map(a => Object.assign({ triggerEvent: true }, a))
+          : Object.assign({ triggerEvent: true }, config[ax]);
+      }
       chart.setOption(config);
       const anchor = holderOf(s)?.dataset.anchor;
       state.charts.set(anchor, { chart, config, el: target });
@@ -448,7 +453,8 @@ function pinPos(b, holder) {
     try {
       const hR = holder.getBoundingClientRect(), cR = info.el.getBoundingClientRect();
       if (t.type === 'datum') {
-        const i = (info.config.xAxis.data || []).indexOf(t.key);
+        const xa = Array.isArray(info.config.xAxis) ? info.config.xAxis[0] : info.config.xAxis;
+        const i = (xa.data || []).indexOf(t.key);
         const v = info.config.series[0].data[i];
         const [x, y] = [info.chart.convertToPixel({ xAxisIndex: 0 }, t.key), info.chart.convertToPixel({ yAxisIndex: 0 }, v)];
         return { top: cR.top - hR.top + y - 26, left: cR.left - hR.left + x - 12 };
