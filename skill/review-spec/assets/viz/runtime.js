@@ -164,6 +164,7 @@ async function hydrateIslands() {
       const anchor = holderOf(s)?.dataset.anchor;
       state.charts.set(anchor, { anchor, chart, config, el: target });
       chart.on('click', params => onChartClick(anchor, params));
+      wireChartCommentEvents(anchor, chart);
       const holderEl = holderOf(s);
       zrFallback(chart, () => {
         const peers = [...holderEl.querySelectorAll('[data-render-target]')];
@@ -193,6 +194,19 @@ function loadScript(src) {
   });
 }
 const holderOf = el => el && el.closest('[data-anchor]');
+
+// In comment mode a legend click means "comment on this series", not "toggle it":
+// undo the toggle echarts already applied, then compose against the legend name.
+function wireChartCommentEvents(chartKey, chart) {
+  let undoing = false;
+  chart.on('legendselectchanged', p => {
+    if (!state.commentMode || undoing) return;
+    undoing = true;
+    try { chart.dispatchAction({ type: p.selected[p.name] ? 'legendUnSelect' : 'legendSelect', name: p.name }); } finally { undoing = false; }
+    const info = state.charts.get(chartKey);
+    openComposer((info && info.anchor) || chartKey, { type: 'legend', key: String(p.name) }, 'legend: ' + p.name);
+  });
+}
 
 // A comment-mode canvas click nobody claims (blank space, gridlines, markAreas, silent
 // marks) anchors to the figure itself — no click may feel dead. Claimed clicks open the
@@ -227,13 +241,18 @@ function adoptForeignCharts() {
     if (!holder) continue;
     const anchor = holder.dataset.anchor;
     const key = state.charts.has(anchor) ? anchor + '::' + (dom.id || chart.id) : anchor;
-    // adopted charts get the same line-body click flag islands get at hydrate
+    // adopted charts get the same click flags islands get at hydrate; getOption() returns
+    // normalized arrays, so a same-length positional merge is exact
     try {
-      const sl = chart.getOption().series || [];
-      if (sl.some(s => s.type === 'line')) chart.setOption({ series: sl.map(s => s.type === 'line' ? { triggerLineEvent: true } : {}) });
+      const opt0 = chart.getOption();
+      const patch = {};
+      if (Array.isArray(opt0.series) && opt0.series.some(s => s.type === 'line')) patch.series = opt0.series.map(s => s.type === 'line' ? { triggerLineEvent: true } : {});
+      for (const ax of ['xAxis', 'yAxis']) if (Array.isArray(opt0[ax]) && opt0[ax].length) patch[ax] = opt0[ax].map(() => ({ triggerEvent: true }));
+      if (Object.keys(patch).length) chart.setOption(patch);
     } catch {}
     state.charts.set(key, { anchor, chart, config: chart.getOption(), el: dom });
     chart.on('click', params => onChartClick(key, params));
+    wireChartCommentEvents(key, chart);
     zrFallback(chart, () => {
       openComposer(anchor, dom.id ? { type: 'element', key: dom.tagName.toLowerCase() + '#' + dom.id } : null, 'figure: chart');
     });
@@ -291,9 +310,9 @@ function onChartClick(chartKey, params) {
   } else if (params.componentType === 'yAxis') {
     target = { type: 'axis-y', key: String(params.value) };
     quote = 'y-axis tick: ' + params.value;
-  } else if (params.componentType === 'markLine') {
+  } else if (/^mark(Line|Point|Area)$/.test(params.componentType)) {
     target = { type: 'target', key: String(params.value ?? params.name ?? '') };
-    quote = 'target line: ' + (params.value ?? params.name);
+    quote = params.componentType.replace('mark', 'mark ').toLowerCase() + ': ' + (params.value ?? params.name ?? '');
   } else return;
   openComposer(anchor, target, quote);
 }
@@ -548,12 +567,22 @@ function setCommentMode(on) {
   document.body.classList.toggle('hx-comment', on);
   document.getElementById('hx-mode').setAttribute('aria-pressed', String(on));
   if (on) adoptForeignCharts(); // catch charts the spec script created since the last scan
-  // amber hover highlight on chart marks (canvas can't take CSS outlines); a single-element
-  // series array only merges onto series[0], so build one entry per series
-  for (const { chart } of state.charts.values()) {
+  for (const info of state.charts.values()) {
     try {
-      const n = ((chart.getOption() || {}).series || []).length || 1;
-      chart.setOption({ series: Array.from({ length: n }, () => ({ emphasis: { itemStyle: on ? { borderColor: '#d98e04', borderWidth: 3 } : { borderWidth: 0 } } })) });
+      const opt = info.chart.getOption() || {};
+      const patch = {};
+      // amber hover highlight on chart marks (canvas can't take CSS outlines); a single-element
+      // series array only merges onto series[0], so build one entry per series
+      const n = (opt.series || []).length || 1;
+      patch.series = Array.from({ length: n }, () => ({ emphasis: { itemStyle: on ? { borderColor: '#d98e04', borderWidth: 3 } : { borderWidth: 0 } } }));
+      // comment mode silences chart interactivity: no tooltips / axis pointers.
+      // Only touch charts that have a tooltip — patching one in would add hover UI on exit.
+      const tt = Array.isArray(opt.tooltip) ? opt.tooltip[0] : opt.tooltip;
+      if (tt) {
+        if (info.tooltipShow === undefined) info.tooltipShow = tt.show !== false;
+        patch.tooltip = { show: on ? false : info.tooltipShow };
+      }
+      info.chart.setOption(patch);
     } catch {}
   }
   if (on) openPanel(true);
