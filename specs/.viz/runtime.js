@@ -37,6 +37,7 @@ const state = {
   composer: null,        // {anchorId, target, quote, holder}
   charts: new Map(),     // sectionAnchor -> {chart, config, el}
   specMtime: null,
+  loopsStarted: false,
 };
 
 /* ---------------- transports ---------------- */
@@ -61,6 +62,7 @@ function httpTransport() {
 
 function fsaTransport() {
   let root = null; // directory handle of the folder containing the spec
+  let inflight = null; // single in-progress permission request shared by resume()/connect()
   const idb = () => new Promise((res, rej) => {
     const q = indexedDB.open('spec-chat', 1);
     q.onupgradeneeded = () => q.result.createObjectStore('handles');
@@ -88,8 +90,20 @@ function fsaTransport() {
         return 'prompt'; // needs a user gesture to re-request
       } catch { return 'none'; }
     },
+    async resume() { // gesture-borne re-grant of a persisted handle; never opens the picker
+      if (t.connected) return true;
+      if (!root) return false;
+      if (!inflight) inflight = (async () => {
+        try { if (await root.requestPermission({ mode: 'readwrite' }) === 'granted') t.connected = true; }
+        finally { inflight = null; }
+      })();
+      await inflight;
+      return t.connected;
+    },
     async connect() { // user gesture required
-      if (root && !t.connected) {
+      if (inflight) await inflight; // a resume() may be mid-grant (auto-resume + button race)
+      if (t.connected) return;
+      if (root) {
         if (await root.requestPermission({ mode: 'readwrite' }) === 'granted') { t.connected = true; return; }
         root = null;
       }
@@ -814,6 +828,22 @@ async function watchSpec() {
       btn.addEventListener('click', async () => {
         try { await state.transport.connect(); btn.hidden = true; startLoops(); } catch (e) { status('connect failed: ' + e.message); }
       });
+      if (restored === 'prompt') {
+        // the persisted handle only needs a fresh gesture to re-grant — borrow the next
+        // one anywhere on the page instead of demanding a dedicated button click. Announce
+        // first (status + toast), arm after the UI paints, and only accept trusted
+        // activation-carrying events; the button owns its own gesture.
+        status('click or type anywhere to resume the review');
+        toast('Review paused — your next click or keypress resumes folder access');
+        const EVS = ['keydown', 'pointerdown', 'mousedown', 'pointerup', 'touchend'];
+        const once = async e => {
+          if (!e.isTrusted || (e.target.closest && e.target.closest('#hx-connect'))) return;
+          if (navigator.userActivation && !navigator.userActivation.isActive) return;
+          EVS.forEach(t => document.removeEventListener(t, once, true));
+          try { if (await state.transport.resume()) { btn.hidden = true; startLoops(); } } catch {}
+        };
+        requestAnimationFrame(() => EVS.forEach(t => document.addEventListener(t, once, true)));
+      }
       return;
     }
   }
@@ -821,6 +851,8 @@ async function watchSpec() {
 })();
 
 function startLoops() {
+  if (state.loopsStarted) return; // auto-resume and the connect button can both win
+  state.loopsStarted = true;
   status(state.transport.mode === 'fsa' ? 'connected · local folder' : 'connected · review-serve');
   refresh();
   watchSpec();
