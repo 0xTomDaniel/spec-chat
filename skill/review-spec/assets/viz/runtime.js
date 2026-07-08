@@ -1,10 +1,16 @@
 // spec-chat runtime v0.1 — hydrates semantic islands and mounts the annotation layer.
 // Transports: FSA (file://, primary) | HTTP review-serve (http(s)://, secondary).
 // Same spools, same event schema either way. See DESIGN.md.
+// Classic script, NOT a module: browsers CORS-block module scripts on file:// pages,
+// and file:// is the primary transport. Specs load it with <script defer src=...>.
+(function () {
+'use strict';
 
 const SPEC_FILE = decodeURIComponent(location.pathname.split('/').pop());
 const REVIEW_DIRNAME = SPEC_FILE + '.review';
-const VENDOR = { echarts: new URL('./vendor/echarts-5.5.1.min.js', import.meta.url).href };
+// document.currentScript is only valid during the initial synchronous run — capture now.
+const RUNTIME_URL = (document.currentScript && document.currentScript.src) || new URL('./.viz/runtime.js', document.baseURI).href;
+const VENDOR = { echarts: new URL('./vendor/echarts-5.5.1.min.js', RUNTIME_URL).href };
 
 /* ---------------- error overlay (headless-debuggable) ---------------- */
 window.addEventListener('error', e => overlay('error', e.message + ' @ ' + (e.filename || '').split('/').pop() + ':' + e.lineno));
@@ -566,6 +572,12 @@ async function watchSpec() {
 (async function boot() {
   mountUI();
   await hydrateIslands();
+  if (location.protocol === 'file:' && !('showDirectoryPicker' in window)) {
+    document.getElementById('hx-mode').disabled = true;
+    status('view-only — this browser cannot annotate file:// pages; use Chrome/Edge, or serve via review-serve.py over http://');
+    console.warn('[spec-chat] showDirectoryPicker unavailable; file:// annotation needs the File System Access API (Chromium). Run review-serve.py and open the http://localhost URL instead.');
+    return;
+  }
   state.transport = location.protocol === 'file:' ? fsaTransport() : httpTransport();
 
   if (state.transport.mode === 'fsa') {
@@ -592,3 +604,5 @@ function startLoops() {
   setInterval(watchSpec, 5000);
   window.addEventListener('resize', renderPins);
 }
+
+})();
