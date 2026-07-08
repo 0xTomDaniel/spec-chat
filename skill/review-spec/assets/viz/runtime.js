@@ -78,24 +78,71 @@ function fsaTransport() {
       rq.onerror = () => rej(rq.error);
     });
   };
+  let pending = null; // restored handle (spec dir or broad ancestor) awaiting a gesture re-grant
   const t = {
     mode: 'fsa', label: 'local folder', connected: false,
+    // Any ancestor of the spec works as a grant: the page knows its own absolute path, so
+    // walk from the granted handle down the remaining segments. Deepest name-match first,
+    // validated by the spec file actually being there. Returns the spec's dir or null.
+    async _toSpecDir(h) {
+      try { await h.getFileHandle(SPEC_FILE); return h; } catch {}
+      if (!h.getDirectoryHandle) return null;
+      const segs = decodeURIComponent(location.pathname).split('/').filter(Boolean);
+      segs.pop(); // the spec filename
+      const walk = async at => {
+        let d = h;
+        try {
+          for (const seg of segs.slice(at)) d = await d.getDirectoryHandle(seg);
+          await d.getFileHandle(SPEC_FILE);
+          return d;
+        } catch { return null; }
+      };
+      const candidates = async eq => {
+        const found = [];
+        for (let i = 0; i < segs.length; i++) {
+          if (eq(segs[i], h.name)) { const d = await walk(i + 1); if (d) found.push(d); }
+        }
+        return found;
+      };
+      // exact segment match first; APFS-casing fallback second. Accept only an unambiguous
+      // result — two valid walks could bind the spool to the wrong same-named spec.
+      let found = await candidates((a, b) => a === b);
+      if (!found.length) found = await candidates((a, b) => a.toLowerCase() === b.toLowerCase());
+      return found.length === 1 ? found[0] : null;
+    },
+    async _settle(h, specDir, alsoScope) { // persist a working grant
+      root = specDir;
+      t.connected = true;
+      try { await store('readwrite', s => s.put(specDir, location.href)); } catch {}
+      try { await store('readwrite', s => s.put(h, 'last-dir')); } catch {}
+      if (alsoScope) try { await store('readwrite', s => s.put(h, 'scope-root')); } catch {}
+    },
     async tryRestore() {
       try {
-        const h = await store('readonly', s => s.get(location.href));
+        let h = await store('readonly', s => s.get(location.href));
+        if (!h) h = await store('readonly', s => s.get('scope-root')); // broad grant covers new specs
         if (!h) return 'none';
         const p = await h.queryPermission({ mode: 'readwrite' });
-        if (p === 'granted') { root = h; t.connected = true; return 'granted'; }
-        root = h;
+        if (p === 'granted') {
+          const d = await t._toSpecDir(h);
+          if (!d) return 'none'; // moved/renamed since the grant
+          await t._settle(h, d, false);
+          return 'granted';
+        }
+        pending = h;
         return 'prompt'; // needs a user gesture to re-request
       } catch { return 'none'; }
     },
     async resume() { // gesture-borne re-grant of a persisted handle; never opens the picker
       if (t.connected) return true;
-      if (!root) return false;
+      if (!pending) return false;
       if (!inflight) inflight = (async () => {
-        try { if (await root.requestPermission({ mode: 'readwrite' }) === 'granted') t.connected = true; }
-        finally { inflight = null; }
+        try {
+          if (await pending.requestPermission({ mode: 'readwrite' }) === 'granted') {
+            const d = await t._toSpecDir(pending);
+            if (d) await t._settle(pending, d, false);
+          }
+        } finally { inflight = null; }
       })();
       await inflight;
       return t.connected;
@@ -103,36 +150,39 @@ function fsaTransport() {
     async connect() { // user gesture required
       if (inflight) await inflight; // a resume() may be mid-grant (auto-resume + button race)
       if (t.connected) return;
-      if (root) {
-        if (await root.requestPermission({ mode: 'readwrite' }) === 'granted') { t.connected = true; return; }
-        root = null;
+      if (pending) {
+        if (await pending.requestPermission({ mode: 'readwrite' }) === 'granted') {
+          const d = await t._toSpecDir(pending);
+          if (d) { await t._settle(pending, d, false); return; }
+        }
+        pending = null;
       }
-      // the picker can't be pointed at a path, but it can be steered: per-id memory of the
-      // last pick, startIn from the last folder any spec connected to, and the target path
-      // on the clipboard for the native panel's Go-to-Folder (⌘⇧G on macOS)
+      // The picker can't be pointed at a path, but ANY ancestor folder works (Documents,
+      // home, the repos dir) — so wherever it opens, "Open" usually suffices. Steer it
+      // anyway: id-scoped memory, startIn from the last grant, and the exact path on the
+      // clipboard for the native panel's Go-to-Folder (⌘⇧G on macOS).
       const opts = { mode: 'readwrite', id: 'spec-chat' };
       try { const last = await store('readonly', s => s.get('last-dir')); if (last) opts.startIn = last; } catch {}
       const dir = decodeURIComponent(location.pathname).replace(/\/[^/]*$/, '');
       // fire-and-forget: awaiting could burn the gesture's activation before the picker call
-      try { navigator.clipboard.writeText(dir).then(() => toast(/Mac/.test(navigator.platform) ? 'Folder path copied — in the picker press ⌘⇧G, paste, Enter' : 'Folder path copied to clipboard'), () => {}); } catch {}
-      try { root = await window.showDirectoryPicker(opts); }
+      try { navigator.clipboard.writeText(dir).then(() => toast(/Mac/.test(navigator.platform) ? 'Pick any parent folder of the spec — e.g. your projects folder. Its path is copied: ⌘⇧G + paste jumps there' : 'Pick any parent folder of the spec (path copied to clipboard)'), () => {}); } catch {}
+      let picked;
+      try { picked = await window.showDirectoryPicker(opts); }
       catch (e) {
         if (e && e.name === 'AbortError') throw e; // user cancelled
         delete opts.startIn; // stale/moved last-dir handle
-        root = await window.showDirectoryPicker(opts);
+        picked = await window.showDirectoryPicker(opts);
       }
-      await store('readwrite', s => s.put(root, location.href));
-      try { await store('readwrite', s => s.put(root, 'last-dir')); } catch {}
-      t.connected = true;
+      const d = await t._toSpecDir(picked);
+      if (!d) throw new Error('that folder isn’t above this spec — pick a parent of ' + dir + ' (Chrome refuses top-level folders like Documents itself; a projects folder works)');
+      await t._settle(picked, d, true);
     },
     async adopt(h) { // directory handle from drag-and-drop; write access needs an explicit ask
       if (t.connected) return 'ok';
-      try { await h.getFileHandle(SPEC_FILE); } catch { return 'wrong'; } // must be the spec's own folder
+      const d = await t._toSpecDir(h); // drop carries read access — locate first, then ask for write
+      if (!d) return 'wrong';
       if (await h.requestPermission({ mode: 'readwrite' }) !== 'granted') return 'denied';
-      root = h;
-      await store('readwrite', s => s.put(root, location.href));
-      try { await store('readwrite', s => s.put(root, 'last-dir')); } catch {}
-      t.connected = true;
+      await t._settle(h, d, true);
       return 'ok';
     },
     async _dir(actor, create) {
@@ -852,8 +902,8 @@ async function watchSpec() {
       btn.addEventListener('click', async () => {
         try { await state.transport.connect(); btn.hidden = true; startLoops(); } catch (e) { status('connect failed: ' + e.message); }
       });
-      // picker-free path: drag the spec's folder from Finder anywhere onto the page
-      btn.title = 'Or drag the spec’s folder from Finder onto this page';
+      // picker-free path: drag any ancestor folder (home, Documents, repo) onto the page
+      btn.title = 'Pick or drop ANY folder above the spec — e.g. your projects folder; remembered for every spec beneath it';
       document.addEventListener('dragover', e => { if (!state.loopsStarted) e.preventDefault(); });
       document.addEventListener('drop', async e => {
         if (state.loopsStarted) return;
@@ -862,10 +912,10 @@ async function watchSpec() {
         if (!item || !item.getAsFileSystemHandle) return;
         try {
           const h = await item.getAsFileSystemHandle();
-          if (!h || h.kind !== 'directory') { toast('Drop the folder that contains the spec, not a file'); return; }
+          if (!h || h.kind !== 'directory') { toast('Drop a folder, not a file — any parent folder of the spec works'); return; }
           const r = await state.transport.adopt(h);
           if (r === 'ok') { btn.hidden = true; startLoops(); }
-          else toast(r === 'wrong' ? 'That folder doesn’t contain this spec — drop ' + decodeURIComponent(location.pathname).replace(/^.*\/([^/]+)\/[^/]*$/, '$1') + '/' : 'Write access declined');
+          else toast(r === 'wrong' ? 'That folder isn’t above this spec — drop a parent folder, e.g. the projects folder above the repo' : 'Write access declined');
         } catch {}
       });
       if (restored === 'prompt') {
