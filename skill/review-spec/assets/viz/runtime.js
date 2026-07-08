@@ -107,9 +107,33 @@ function fsaTransport() {
         if (await root.requestPermission({ mode: 'readwrite' }) === 'granted') { t.connected = true; return; }
         root = null;
       }
-      root = await window.showDirectoryPicker({ mode: 'readwrite' });
+      // the picker can't be pointed at a path, but it can be steered: per-id memory of the
+      // last pick, startIn from the last folder any spec connected to, and the target path
+      // on the clipboard for the native panel's Go-to-Folder (⌘⇧G on macOS)
+      const opts = { mode: 'readwrite', id: 'spec-chat' };
+      try { const last = await store('readonly', s => s.get('last-dir')); if (last) opts.startIn = last; } catch {}
+      const dir = decodeURIComponent(location.pathname).replace(/\/[^/]*$/, '');
+      // fire-and-forget: awaiting could burn the gesture's activation before the picker call
+      try { navigator.clipboard.writeText(dir).then(() => toast(/Mac/.test(navigator.platform) ? 'Folder path copied — in the picker press ⌘⇧G, paste, Enter' : 'Folder path copied to clipboard'), () => {}); } catch {}
+      try { root = await window.showDirectoryPicker(opts); }
+      catch (e) {
+        if (e && e.name === 'AbortError') throw e; // user cancelled
+        delete opts.startIn; // stale/moved last-dir handle
+        root = await window.showDirectoryPicker(opts);
+      }
       await store('readwrite', s => s.put(root, location.href));
+      try { await store('readwrite', s => s.put(root, 'last-dir')); } catch {}
       t.connected = true;
+    },
+    async adopt(h) { // directory handle from drag-and-drop; write access needs an explicit ask
+      if (t.connected) return 'ok';
+      try { await h.getFileHandle(SPEC_FILE); } catch { return 'wrong'; } // must be the spec's own folder
+      if (await h.requestPermission({ mode: 'readwrite' }) !== 'granted') return 'denied';
+      root = h;
+      await store('readwrite', s => s.put(root, location.href));
+      try { await store('readwrite', s => s.put(root, 'last-dir')); } catch {}
+      t.connected = true;
+      return 'ok';
     },
     async _dir(actor, create) {
       const rev = await root.getDirectoryHandle(REVIEW_DIRNAME, { create: true });
@@ -827,6 +851,22 @@ async function watchSpec() {
       status('view-only — connect to annotate');
       btn.addEventListener('click', async () => {
         try { await state.transport.connect(); btn.hidden = true; startLoops(); } catch (e) { status('connect failed: ' + e.message); }
+      });
+      // picker-free path: drag the spec's folder from Finder anywhere onto the page
+      btn.title = 'Or drag the spec’s folder from Finder onto this page';
+      document.addEventListener('dragover', e => { if (!state.loopsStarted) e.preventDefault(); });
+      document.addEventListener('drop', async e => {
+        if (state.loopsStarted) return;
+        e.preventDefault();
+        const item = [...(e.dataTransfer.items || [])].find(i => i.kind === 'file');
+        if (!item || !item.getAsFileSystemHandle) return;
+        try {
+          const h = await item.getAsFileSystemHandle();
+          if (!h || h.kind !== 'directory') { toast('Drop the folder that contains the spec, not a file'); return; }
+          const r = await state.transport.adopt(h);
+          if (r === 'ok') { btn.hidden = true; startLoops(); }
+          else toast(r === 'wrong' ? 'That folder doesn’t contain this spec — drop ' + decodeURIComponent(location.pathname).replace(/^.*\/([^/]+)\/[^/]*$/, '$1') + '/' : 'Write access declined');
+        } catch {}
       });
       if (restored === 'prompt') {
         // the persisted handle only needs a fresh gesture to re-grant — borrow the next
