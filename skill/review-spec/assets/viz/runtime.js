@@ -135,7 +135,10 @@ function fsaTransport() {
 async function hydrateIslands() {
   const islands = [...document.querySelectorAll('script[type="application/spec+json"]')];
   if (!islands.length) return;
-  if (islands.some(s => s.dataset.lib === 'echarts')) await loadScript(VENDOR.echarts);
+  // never load a second ECharts if the spec brought its own: two loads mean two instance
+  // registries, and getInstanceByDom in ours would be blind to the spec's charts
+  if (!window.echarts && islands.some(s => s.dataset.lib === 'echarts')) await loadScript(VENDOR.echarts);
+  else if (window.echarts && window.echarts.version !== '5.5.1') console.warn('[spec-chat] page ECharts ' + window.echarts.version + ' differs from vendored 5.5.1; islands will use the page copy');
   for (const s of islands) {
     const target = s.parentElement.querySelector('[data-render-target]');
     if (!target) continue;
@@ -152,14 +155,17 @@ async function hydrateIslands() {
           ? config[ax].map(a => Object.assign({ triggerEvent: true }, a))
           : Object.assign({ triggerEvent: true }, config[ax]);
       }
+      // line series only emit clicks from their (tiny) symbols; the line body needs this flag
+      if (config.series) {
+        const wrap = s => s && s.type === 'line' ? Object.assign({ triggerLineEvent: true }, s) : s;
+        config.series = Array.isArray(config.series) ? config.series.map(wrap) : wrap(config.series);
+      }
       chart.setOption(config);
       const anchor = holderOf(s)?.dataset.anchor;
       state.charts.set(anchor, { anchor, chart, config, el: target });
       chart.on('click', params => onChartClick(anchor, params));
-      // blank canvas (no mark under cursor) anchors to the figure itself
       const holderEl = holderOf(s);
-      chart.getZr().on('click', ev => {
-        if (ev.target || !state.commentMode) return;
+      zrFallback(chart, () => {
         const peers = [...holderEl.querySelectorAll('[data-render-target]')];
         openComposer(anchor, { type: 'element', key: 'figure[' + (peers.indexOf(target) + 1) + ']' }, 'figure: chart');
       });
@@ -188,6 +194,18 @@ function loadScript(src) {
 }
 const holderOf = el => el && el.closest('[data-anchor]');
 
+// A comment-mode canvas click nobody claims (blank space, gridlines, markAreas, silent
+// marks) anchors to the figure itself — no click may feel dead. Claimed clicks open the
+// composer synchronously, so "composer unchanged after a tick" means unclaimed.
+function zrFallback(chart, openFig) {
+  chart.getZr().on('click', ev => {
+    if (!state.commentMode) return;
+    if (!ev.target) { openFig(); return; }
+    const before = state.composer;
+    setTimeout(() => { if (state.commentMode && state.composer === before) openFig(); }, 60);
+  });
+}
+
 /* ---------------- foreign charts ---------------- */
 // Spec scripts may echarts.init() their own charts (no spec+json island). Adopt them so
 // their marks get the same comment-mode targeting as island charts. Re-entrant: rescans
@@ -209,10 +227,14 @@ function adoptForeignCharts() {
     if (!holder) continue;
     const anchor = holder.dataset.anchor;
     const key = state.charts.has(anchor) ? anchor + '::' + (dom.id || chart.id) : anchor;
+    // adopted charts get the same line-body click flag islands get at hydrate
+    try {
+      const sl = chart.getOption().series || [];
+      if (sl.some(s => s.type === 'line')) chart.setOption({ series: sl.map(s => s.type === 'line' ? { triggerLineEvent: true } : {}) });
+    } catch {}
     state.charts.set(key, { anchor, chart, config: chart.getOption(), el: dom });
     chart.on('click', params => onChartClick(key, params));
-    chart.getZr().on('click', ev => {
-      if (ev.target || !state.commentMode) return;
+    zrFallback(chart, () => {
       openComposer(anchor, dom.id ? { type: 'element', key: dom.tagName.toLowerCase() + '#' + dom.id } : null, 'figure: chart');
     });
   }
@@ -227,12 +249,38 @@ function datumKey(params) { // grep-friendly even when name is empty (time axes,
   return String(params.value ?? params.dataIndex ?? params.seriesIndex ?? 'unknown');
 }
 
+function nearestDatum(info, seriesIndex, ev) { // line-body clicks carry no dataIndex — snap to the closest point
+  try {
+    const opt = info.config;
+    const sList = Array.isArray(opt.series) ? opt.series : [opt.series];
+    const s = sList[seriesIndex] || {};
+    const data = s.data || [];
+    if (!data.length) return null;
+    const xv = info.chart.convertFromPixel({ seriesIndex }, [ev.offsetX, ev.offsetY])[0];
+    const axes = Array.isArray(opt.xAxis) ? opt.xAxis : [opt.xAxis];
+    const xa = axes[s.xAxisIndex || 0] || axes[0] || {};
+    const rawX = d => Array.isArray(d) ? d[0] : (d && typeof d === 'object' && d.value !== undefined ? (Array.isArray(d.value) ? d.value[0] : d.value) : null);
+    let idx;
+    if (xa.data) idx = Math.max(0, Math.min(data.length - 1, Math.round(xv)));
+    else {
+      let best = Infinity; idx = 0;
+      data.forEach((d, i) => { const v = rawX(d); if (v == null) return; const dist = Math.abs(v - xv); if (dist < best) { best = dist; idx = i; } });
+    }
+    const name = xa.data ? xa.data[idx] : rawX(data[idx]);
+    return { dataIndex: idx, name: name != null ? String(name) : String(idx) };
+  } catch { return null; }
+}
+
 function onChartClick(chartKey, params) {
   if (!state.commentMode) return;
   const info = state.charts.get(chartKey);
   const anchor = (info && info.anchor) || chartKey;
   let target, quote;
   if (params.componentType === 'series') {
+    if (params.dataIndex == null && params.event && info) {
+      const nd = nearestDatum(info, params.seriesIndex, params.event);
+      if (nd) params = Object.assign({}, params, nd, { value: undefined });
+    }
     const key = datumKey(params);
     target = { type: 'datum', key, seriesIndex: params.seriesIndex, dataIndex: params.dataIndex };
     if (chartKey !== anchor) target.chartKey = chartKey;
