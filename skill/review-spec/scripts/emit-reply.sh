@@ -9,8 +9,10 @@
 set -eu
 DIR=$1; RT=$2; ANCHOR=$3; TARGET=$4; STATUS=$5; CHANGE=$6; TEXT=$7
 mkdir -p "$DIR/agent"
-OUT="$DIR/agent/$(date +%s%N)-reply-$RT.json"
-ID="r$(date +%s%N)"; AT="$(date -Is)"
+# portable across GNU/BSD: ns via python3 (BSD date lacks %N), UTC ISO time
+NS=$(python3 -c 'import time; print(time.time_ns())' 2>/dev/null || date +%s%N)
+OUT="$DIR/agent/${NS}-reply-$RT.json"
+ID="r${NS}"; AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 if command -v jq >/dev/null 2>&1; then
   jq -n --arg id "$ID" --arg rt "$RT" --arg anchor "$ANCHOR" --argjson target "$TARGET" \
