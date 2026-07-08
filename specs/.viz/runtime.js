@@ -208,26 +208,70 @@ function onChartClick(anchor, params) {
   openComposer(anchor, target, quote);
 }
 
+const TARGETABLE = 'h1, h2, h3, h4, h5, h6, p, li, ul, ol, table, tr, td, th, blockquote, pre, code, nav, figcaption, button, input, select, textarea, label, a, output, summary, [data-render-target]';
+const cssId = id => window.CSS && window.CSS.escape ? window.CSS.escape(id) : id.replace(/([^a-zA-Z0-9_-])/g, '\\$1');
+
 function elementDescriptor(el, holder) {
+  if (el.closest && el.closest('svg')) return svgDescriptor(el, holder);
   let node = el;
-  while (node && node !== holder &&
-         !node.matches('h1, h2, p, li, ul, ol, table, tr, td, th, blockquote, pre, code, nav, [data-render-target]')) {
-    node = node.parentElement;
-  }
+  while (node && node !== holder && !node.matches(TARGETABLE)) node = node.parentElement;
   if (!node || node === holder) return null;
   const isFig = node.hasAttribute('data-render-target');
-  const sel = isFig ? '[data-render-target]' : node.tagName.toLowerCase();
+  const tag = node.tagName.toLowerCase();
+  const quote = (node.textContent || node.value || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+  // ids are hand-authored and survive spec edits better than positional indexes
+  if (!isFig && node.id && holder.querySelectorAll(tag + '#' + cssId(node.id)).length === 1) {
+    return { key: tag + '#' + node.id, quote };
+  }
+  const sel = isFig ? '[data-render-target]' : tag;
   const peers = [...holder.querySelectorAll(sel)];
   const name = isFig ? 'figure' : sel === 'h1' ? 'title' : sel === 'nav' ? 'breadcrumbs' : sel;
-  const quote = (node.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60);
   return { key: name + '[' + (peers.indexOf(node) + 1) + ']', quote };
 }
 
-function resolveElement(holder, key) { // 'p[2]' -> element, for pin positioning
-  const m = /^([a-z0-9]+|title|breadcrumbs|figure)\[(\d+)\]$/.exec(key);
+function svgDescriptor(el, holder) { // structural path key, e.g. 'svg[1]/g[2]/path[5]' or 'svg[1]/text#label'
+  const svg = el.closest('svg');
+  if (!svg || !holder.contains(svg)) return null;
+  const seg = n => {
+    const tag = n.tagName.toLowerCase();
+    if (n.id) return tag + '#' + n.id;
+    const peers = [...n.parentElement.children].filter(c => c.tagName === n.tagName);
+    return tag + '[' + (peers.indexOf(n) + 1) + ']';
+  };
+  const svgs = [...holder.querySelectorAll('svg')];
+  const parts = [svg.id ? 'svg#' + svg.id : 'svg[' + (svgs.indexOf(svg) + 1) + ']'];
+  const chain = [];
+  for (let n = el; n && n !== svg; n = n.parentElement) chain.unshift(n);
+  for (const n of chain) parts.push(seg(n));
+  const txt = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+  return { key: parts.join('/'), quote: txt || 'svg ' + el.tagName.toLowerCase() };
+}
+
+function resolveElement(holder, key) { // 'p[2]' | 'button#cycle-play' | 'svg[1]/g[2]/path[5]' -> element, for pin positioning
+  if (/^svg[#\[]/.test(key)) return resolveSvgPath(holder, key);
+  let m = /^([a-z][a-z0-9-]*|title|breadcrumbs|figure)#(.+)$/.exec(key);
+  if (m) {
+    const sel = m[1] === 'title' ? 'h1' : m[1] === 'breadcrumbs' ? 'nav' : m[1] === 'figure' ? '[data-render-target]' : m[1];
+    return holder.querySelector(sel + '#' + cssId(m[2]));
+  }
+  m = /^([a-z][a-z0-9-]*|title|breadcrumbs|figure)\[(\d+)\]$/.exec(key);
   if (!m) return null;
   const sel = m[1] === 'title' ? 'h1' : m[1] === 'breadcrumbs' ? 'nav' : m[1] === 'figure' ? '[data-render-target]' : m[1];
   return [...holder.querySelectorAll(sel)][+m[2] - 1] || null;
+}
+
+function resolveSvgPath(holder, key) {
+  let ctx = null;
+  for (const [i, s] of key.split('/').entries()) {
+    const m = /^([a-z][a-z0-9-]*)(?:#([^\s/#\[\]]+)|\[(\d+)\])$/.exec(s);
+    if (!m) return null;
+    const [, tag, id, idx] = m;
+    if (i === 0) ctx = id ? holder.querySelector('svg#' + cssId(id)) : [...holder.querySelectorAll('svg')][+idx - 1];
+    else if (id) ctx = [...ctx.children].find(c => c.id === id && c.tagName.toLowerCase() === tag);
+    else ctx = [...ctx.children].filter(c => c.tagName.toLowerCase() === tag)[+idx - 1];
+    if (!ctx) return null;
+  }
+  return ctx;
 }
 
 function onDocClick(e) {
@@ -235,6 +279,9 @@ function onDocClick(e) {
   const holder = holderOf(e.target);
   if (!holder) return;
   if (e.target.tagName === 'CANVAS') return; // canvas clicks are the chart's business: marks via chart events, blanks via zrender
+  // comment mode suspends the page: no link navigation, label toggling, or spec-script handlers
+  e.preventDefault();
+  e.stopImmediatePropagation();
   const sel = window.getSelection();
   const selTxt = sel ? String(sel).trim() : '';
   if (selTxt) {
@@ -325,8 +372,10 @@ body.hx-panel-open{padding-right:330px}
 .hx-pin[data-s=resolved]{background:#fff;color:#3d8c40;border:2px solid #3d8c40}
 [data-anchor]{position:relative}
 body.hx-comment [data-anchor]{cursor:copy}
-body.hx-comment [data-anchor]:hover:not(:has(:is(h1,h2,p,li,ul,ol,table,tr,td,th,blockquote,pre,code,nav,[data-render-target]):hover)){outline:2px dashed #d98e04;outline-offset:6px}
-body.hx-comment [data-anchor] :is(h1,h2,p,li,td,th,blockquote,pre,code,nav):hover{outline:1.5px dashed #d98e04;outline-offset:4px;border-radius:2px}
+body.hx-comment [data-anchor]:hover:not(:has(:is(h1,h2,h3,h4,h5,h6,p,li,ul,ol,table,tr,td,th,blockquote,pre,code,nav,figcaption,button,input,select,textarea,label,a,output,summary,svg,[data-render-target]):hover)){outline:2px dashed #d98e04;outline-offset:6px}
+body.hx-comment [data-anchor] :is(h1,h2,h3,h4,h5,h6,p,li,td,th,blockquote,pre,code,nav,figcaption,button,label,a,output,summary):hover{outline:1.5px dashed #d98e04;outline-offset:4px;border-radius:2px}
+body.hx-comment [data-anchor] svg, body.hx-comment [data-anchor] svg *{cursor:copy}
+body.hx-comment [data-anchor] :is(button,input,select,textarea,label,a,summary){cursor:copy}
 [data-render-target]{position:relative}
 .hx-ring{position:absolute;border:2px dashed #d98e04;border-radius:4px;pointer-events:none;z-index:650}
 body.hx-comment [data-render-target]:hover{border:1.5px dashed #d98e04}
@@ -368,7 +417,40 @@ function mountUI() {
     if (e.key.toLowerCase() === 'c' && !/^(textarea|input)$/i.test(e.target.tagName)) setCommentMode(!state.commentMode);
     if (e.key === 'Escape') { state.composer = null; setCommentMode(false); renderPanel(); }
   });
-  document.addEventListener('click', onDocClick);
+  document.addEventListener('click', onDocClick, true); // capture: runs before spec-script handlers
+  // suspend page interactivity while commenting; hover and text selection stay live
+  const INTERACTIVE = 'button, input, select, textarea, label, a, summary, [role="button"], [role="link"]';
+  const suspend = e => {
+    if (!state.commentMode) return;
+    if (e.target.closest && e.target.closest('.hx-pin,.hx-panel,.hx-toolbar,#hx-errors')) return;
+    if (e.target.tagName === 'CANVAS') return;
+    if (!holderOf(e.target)) return;
+    // native drag/toggle on controls dies here; elsewhere only spec-script handlers die (selection survives)
+    if (/^(pointerdown|mousedown|touchstart)$/.test(e.type)) {
+      if (e.target.closest(INTERACTIVE)) { if (e.cancelable) e.preventDefault(); e.stopImmediatePropagation(); }
+      return;
+    }
+    if (e.cancelable) e.preventDefault();
+    e.stopImmediatePropagation();
+  };
+  for (const t of ['pointerdown', 'mousedown', 'touchstart', 'dblclick', 'auxclick', 'contextmenu', 'dragstart', 'submit', 'beforeinput', 'input', 'change']) {
+    document.addEventListener(t, suspend, { capture: true, passive: false });
+  }
+  // hover ring so SVG children and controls show what a click would target
+  let ring = null;
+  document.addEventListener('pointermove', e => {
+    const t = e.target;
+    let box = null;
+    if (state.commentMode && t instanceof Element && !t.closest('.hx-pin,.hx-panel,.hx-toolbar')) {
+      const svg = t.closest && t.closest('[data-anchor] svg');
+      if (svg && t !== svg) box = t.getBoundingClientRect();
+      else if (!svg && t.closest && t.closest(INTERACTIVE) && holderOf(t)) box = t.closest(INTERACTIVE).getBoundingClientRect();
+    }
+    if (!box) { if (ring) ring.style.display = 'none'; return; }
+    ring = ring || document.body.appendChild(Object.assign(document.createElement('div'), { className: 'hx-ring' }));
+    ring.style.cssText = 'position:fixed;border:2px dashed #d98e04;border-radius:4px;pointer-events:none;z-index:650;display:block'
+      + ';left:' + (box.left - 4) + 'px;top:' + (box.top - 4) + 'px;width:' + (Math.max(box.width, 8) + 8) + 'px;height:' + (Math.max(box.height, 8) + 8) + 'px';
+  }, true);
 }
 
 function setCommentMode(on) {
