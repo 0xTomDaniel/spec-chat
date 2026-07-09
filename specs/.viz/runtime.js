@@ -910,9 +910,33 @@ async function watchSpec() {
       btn.hidden = false;
       btn.textContent = restored === 'prompt' ? 'Resume review' : 'Connect review folder';
       status('view-only — pick or drop \u201c' + suggestedGrant() + '\u201d to connect');
-      btn.addEventListener('click', async () => {
-        try { await state.transport.connect(); btn.hidden = true; startLoops(); } catch (e) { status('connect failed: ' + e.message); }
-      });
+      const connected = () => { btn.hidden = true; startLoops(); };
+      if (restored === 'prompt') {
+        // requestPermission() must run while transient activation is still live. Start the
+        // dedicated resume path on mouse pointerdown (the activation-triggering event), not
+        // from the later click handler or the broader picker-based connect flow. Keyboard,
+        // touch, pen, and assistive activation keep a click fallback.
+        let mouseResumeAt = 0;
+        const resumeReview = async () => {
+          try {
+            if (await state.transport.resume()) connected();
+            else status('review access is still paused — click Resume review to allow folder access');
+          } catch (e) { status('resume failed: ' + e.message); }
+        };
+        btn.addEventListener('pointerdown', e => {
+          if (e.pointerType !== 'mouse') return;
+          mouseResumeAt = performance.now();
+          resumeReview();
+        });
+        btn.addEventListener('click', e => {
+          if (e.detail > 0 && performance.now() - mouseResumeAt < 1000) return;
+          resumeReview();
+        });
+      } else {
+        btn.addEventListener('click', async () => {
+          try { await state.transport.connect(); connected(); } catch (e) { status('connect failed: ' + e.message); }
+        });
+      }
       // picker-free path: drag any ancestor folder (home, Documents, repo) onto the page
       btn.title = 'Pick or drop \u201c' + suggestedGrant() + '\u201d (or any folder above the spec) \u2014 remembered for every spec beneath it. Spec lives in: ' + decodeURIComponent(location.pathname).replace(/\/[^/]*$/, '');
       document.addEventListener('dragover', e => { if (!state.loopsStarted) e.preventDefault(); });
