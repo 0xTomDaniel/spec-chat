@@ -46,7 +46,7 @@ Every event carries the quote/context triple regardless of tier → orphan recov
 
 **Flows:**
 1. *Author*: in the CLI — "write a visual spec for X". Skill scaffolds dotdir if missing, writes `spec.html`, opens browser.
-2. *Connect*: open `spec.html` (`file://`) → page renders view-only → "Start review" button → FSA directory picker grants the `spec.html.review/` handle → existing threads render, annotation enabled. Handle persisted to IndexedDB; reopen = one-click re-permission.
+2. *Connect*: open `spec.html` (`file://`) → page renders view-only → "Connect review folder" button → FSA directory picker grants an ancestor of the spec → existing threads render, annotation enabled. The handle is persisted to IndexedDB as a convenience. When write permission expires, **Reconnect review folder** opens the picker again because Arc was live-verified leaving restored-handle `requestPermission()` pending without surfacing permission UI.
 3. *Annotate*: press `C` → hovering highlights anchored sections (anchor chip lights up) → click drops a pin + composer. Comments write to `review/human/` immediately (crash-safe) but sit as **drafts**.
 4. *Hand off*: button writes the hand-off event → watching agent drains the batch → statuses flip draft → acknowledged → replied; agent edits `spec.html`, page detects change (mtime poll via handle), re-renders with "updated by agent" badges on touched sections.
 5. *Converge*: reply in-thread or ✓ Resolve; resolved threads collapse but remain browsable — the spec doubles as its own decision record.

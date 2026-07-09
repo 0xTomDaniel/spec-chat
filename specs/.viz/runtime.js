@@ -73,7 +73,6 @@ function suggestedGrant() {
 
 function fsaTransport() {
   let root = null; // directory handle of the folder containing the spec
-  let inflight = null; // single in-progress permission request shared by resume()/connect()
   const idb = () => new Promise((res, rej) => {
     const q = indexedDB.open('spec-chat', 1);
     q.onupgradeneeded = () => q.result.createObjectStore('handles');
@@ -89,7 +88,6 @@ function fsaTransport() {
       rq.onerror = () => rej(rq.error);
     });
   };
-  let pending = null; // restored handle (spec dir or broad ancestor) awaiting a gesture re-grant
   const t = {
     mode: 'fsa', label: 'local folder', connected: false,
     // Any ancestor of the spec works as a grant: the page knows its own absolute path, so
@@ -140,40 +138,20 @@ function fsaTransport() {
           await t._settle(h, d, false);
           return 'granted';
         }
-        pending = h;
-        return 'prompt'; // needs a user gesture to re-request
+        return 'prompt'; // expired grant; UI reconnects through a fresh picker
       } catch { return 'none'; }
     },
-    async resume() { // gesture-borne re-grant of a persisted handle; never opens the picker
-      if (t.connected) return true;
-      if (!pending) return false;
-      if (!inflight) inflight = (async () => {
-        try {
-          if (await pending.requestPermission({ mode: 'readwrite' }) === 'granted') {
-            const d = await t._toSpecDir(pending);
-            if (d) await t._settle(pending, d, false);
-          }
-        } finally { inflight = null; }
-      })();
-      await inflight;
-      return t.connected;
-    },
-    async connect() { // user gesture required
-      if (inflight) await inflight; // a resume() may be mid-grant (auto-resume + button race)
+    async connect({ useLastDir = true } = {}) { // user gesture required
+      // Some Chromium shells leave requestPermission() pending forever without surfacing
+      // browser UI for a restored file:// handle. Explicit reconnect skips that path and
+      // opens the directory picker while the button's activation is still live.
       if (t.connected) return;
-      if (pending) {
-        if (await pending.requestPermission({ mode: 'readwrite' }) === 'granted') {
-          const d = await t._toSpecDir(pending);
-          if (d) { await t._settle(pending, d, false); return; }
-        }
-        pending = null;
-      }
       // The picker can't be pointed at a path, but ANY ancestor folder works (Documents,
       // home, the repos dir) — so wherever it opens, "Open" usually suffices. Steer it
       // anyway: id-scoped memory, startIn from the last grant, and the exact path on the
       // clipboard for the native panel's Go-to-Folder (⌘⇧G on macOS).
       const opts = { mode: 'readwrite', id: 'spec-chat' };
-      try { const last = await store('readonly', s => s.get('last-dir')); if (last) opts.startIn = last; } catch {}
+      if (useLastDir) try { const last = await store('readonly', s => s.get('last-dir')); if (last) opts.startIn = last; } catch {}
       const dir = decodeURIComponent(location.pathname).replace(/\/[^/]*$/, '');
       // fire-and-forget: awaiting could burn the gesture's activation before the picker call
       try { navigator.clipboard.writeText(dir).then(() => toast(/Mac/.test(navigator.platform) ? 'Pick \u201c' + suggestedGrant() + '\u201d — or any folder above the spec. Exact path copied: \u2318\u21e7G + paste jumps there' : 'Pick \u201c' + suggestedGrant() + '\u201d or any folder above the spec (path copied)'), () => {}); } catch {}
@@ -908,35 +886,15 @@ async function watchSpec() {
     const restored = await state.transport.tryRestore();
     if (restored !== 'granted') {
       btn.hidden = false;
-      btn.textContent = restored === 'prompt' ? 'Resume review' : 'Connect review folder';
-      status('view-only — pick or drop \u201c' + suggestedGrant() + '\u201d to connect');
+      btn.textContent = restored === 'prompt' ? 'Reconnect review folder' : 'Connect review folder';
+      status(restored === 'prompt'
+        ? 'view-only — folder access expired; reconnect \u201c' + suggestedGrant() + '\u201d'
+        : 'view-only — pick or drop \u201c' + suggestedGrant() + '\u201d to connect');
       const connected = () => { btn.hidden = true; startLoops(); };
-      if (restored === 'prompt') {
-        // requestPermission() must run while transient activation is still live. Start the
-        // dedicated resume path on mouse pointerdown (the activation-triggering event), not
-        // from the later click handler or the broader picker-based connect flow. Keyboard,
-        // touch, pen, and assistive activation keep a click fallback.
-        let mouseResumeAt = 0;
-        const resumeReview = async () => {
-          try {
-            if (await state.transport.resume()) connected();
-            else status('review access is still paused — click Resume review to allow folder access');
-          } catch (e) { status('resume failed: ' + e.message); }
-        };
-        btn.addEventListener('pointerdown', e => {
-          if (e.pointerType !== 'mouse') return;
-          mouseResumeAt = performance.now();
-          resumeReview();
-        });
-        btn.addEventListener('click', e => {
-          if (e.detail > 0 && performance.now() - mouseResumeAt < 1000) return;
-          resumeReview();
-        });
-      } else {
-        btn.addEventListener('click', async () => {
-          try { await state.transport.connect(); connected(); } catch (e) { status('connect failed: ' + e.message); }
-        });
-      }
+      btn.addEventListener('click', async () => {
+        try { await state.transport.connect({ useLastDir: restored !== 'prompt' }); connected(); }
+        catch (e) { status('connect failed: ' + e.message); }
+      });
       // picker-free path: drag any ancestor folder (home, Documents, repo) onto the page
       btn.title = 'Pick or drop \u201c' + suggestedGrant() + '\u201d (or any folder above the spec) \u2014 remembered for every spec beneath it. Spec lives in: ' + decodeURIComponent(location.pathname).replace(/\/[^/]*$/, '');
       document.addEventListener('dragover', e => { if (!state.loopsStarted) e.preventDefault(); });
@@ -953,22 +911,6 @@ async function watchSpec() {
           else toast(r === 'wrong' ? 'That folder isn\u2019t above this spec \u2014 drop \u201c' + suggestedGrant() + '\u201d instead' : 'Write access declined');
         } catch {}
       });
-      if (restored === 'prompt') {
-        // the persisted handle only needs a fresh gesture to re-grant — borrow the next
-        // one anywhere on the page instead of demanding a dedicated button click. Announce
-        // first (status + toast), arm after the UI paints, and only accept trusted
-        // activation-carrying events; the button owns its own gesture.
-        status('click or type anywhere to resume the review');
-        toast('Review paused — your next click or keypress resumes folder access');
-        const EVS = ['keydown', 'pointerdown', 'mousedown', 'pointerup', 'touchend'];
-        const once = async e => {
-          if (!e.isTrusted || (e.target.closest && e.target.closest('#hx-connect'))) return;
-          if (navigator.userActivation && !navigator.userActivation.isActive) return;
-          EVS.forEach(t => document.removeEventListener(t, once, true));
-          try { if (await state.transport.resume()) { btn.hidden = true; startLoops(); } } catch {}
-        };
-        requestAnimationFrame(() => EVS.forEach(t => document.addEventListener(t, once, true)));
-      }
       return;
     }
   }
