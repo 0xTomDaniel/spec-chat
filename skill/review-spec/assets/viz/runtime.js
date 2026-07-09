@@ -60,6 +60,17 @@ function httpTransport() {
   };
 }
 
+// Name the folder the user should grant: the first ancestor Chromium will accept
+// (it blocklists the home/Documents/Desktop/Downloads roots themselves).
+function suggestedGrant() {
+  const segs = decodeURIComponent(location.pathname).split('/').filter(Boolean);
+  segs.pop();
+  let i = 0;
+  if ((segs[0] === 'Users' || segs[0] === 'home') && segs.length > 2) i = 2; // past /Users/<name>
+  if (['Documents', 'Desktop', 'Downloads'].includes(segs[i])) i++;
+  return segs[Math.min(i, Math.max(segs.length - 1, 0))] || 'the spec’s folder';
+}
+
 function fsaTransport() {
   let root = null; // directory handle of the folder containing the spec
   let inflight = null; // single in-progress permission request shared by resume()/connect()
@@ -165,7 +176,7 @@ function fsaTransport() {
       try { const last = await store('readonly', s => s.get('last-dir')); if (last) opts.startIn = last; } catch {}
       const dir = decodeURIComponent(location.pathname).replace(/\/[^/]*$/, '');
       // fire-and-forget: awaiting could burn the gesture's activation before the picker call
-      try { navigator.clipboard.writeText(dir).then(() => toast(/Mac/.test(navigator.platform) ? 'Pick any parent folder of the spec — e.g. your projects folder. Its path is copied: ⌘⇧G + paste jumps there' : 'Pick any parent folder of the spec (path copied to clipboard)'), () => {}); } catch {}
+      try { navigator.clipboard.writeText(dir).then(() => toast(/Mac/.test(navigator.platform) ? 'Pick \u201c' + suggestedGrant() + '\u201d — or any folder above the spec. Exact path copied: \u2318\u21e7G + paste jumps there' : 'Pick \u201c' + suggestedGrant() + '\u201d or any folder above the spec (path copied)'), () => {}); } catch {}
       let picked;
       try { picked = await window.showDirectoryPicker(opts); }
       catch (e) {
@@ -898,12 +909,12 @@ async function watchSpec() {
     if (restored !== 'granted') {
       btn.hidden = false;
       btn.textContent = restored === 'prompt' ? 'Resume review' : 'Connect review folder';
-      status('view-only — connect to annotate');
+      status('view-only — pick or drop \u201c' + suggestedGrant() + '\u201d to connect');
       btn.addEventListener('click', async () => {
         try { await state.transport.connect(); btn.hidden = true; startLoops(); } catch (e) { status('connect failed: ' + e.message); }
       });
       // picker-free path: drag any ancestor folder (home, Documents, repo) onto the page
-      btn.title = 'Pick or drop ANY folder above the spec — e.g. your projects folder; remembered for every spec beneath it';
+      btn.title = 'Pick or drop \u201c' + suggestedGrant() + '\u201d (or any folder above the spec) \u2014 remembered for every spec beneath it. Spec lives in: ' + decodeURIComponent(location.pathname).replace(/\/[^/]*$/, '');
       document.addEventListener('dragover', e => { if (!state.loopsStarted) e.preventDefault(); });
       document.addEventListener('drop', async e => {
         if (state.loopsStarted) return;
@@ -915,7 +926,7 @@ async function watchSpec() {
           if (!h || h.kind !== 'directory') { toast('Drop a folder, not a file — any parent folder of the spec works'); return; }
           const r = await state.transport.adopt(h);
           if (r === 'ok') { btn.hidden = true; startLoops(); }
-          else toast(r === 'wrong' ? 'That folder isn’t above this spec — drop a parent folder, e.g. the projects folder above the repo' : 'Write access declined');
+          else toast(r === 'wrong' ? 'That folder isn\u2019t above this spec \u2014 drop \u201c' + suggestedGrant() + '\u201d instead' : 'Write access declined');
         } catch {}
       });
       if (restored === 'prompt') {
