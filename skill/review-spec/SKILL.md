@@ -17,13 +17,15 @@ Your job in review mode: wait for hand-off batches, apply each comment to the sp
 
 ## The loop
 
-1. **Park** on the spool with the bundled watch script — as a background task, never a blocking foreground call (Claude Code forbids foreground sleep loops, and backgrounding keeps the session interactive anyway):
+1. **Park** on the whole spec collection with the bundled multi-spec watch script — as a background task, never a blocking foreground call (Claude Code forbids foreground sleep loops, and backgrounding keeps the session interactive anyway):
 
    ```
-   scripts/watch.sh <spec>.review/ <cursor-file> 3600 3
+   scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 3600 3
    ```
 
-   It exits 0 printing the unseen `human/` filenames when a hand-off marker arrives, or 3 on quiet timeout. On timeout, just re-park silently — an empty wakeup should cost almost nothing. Keep the cursor file outside the spool (e.g. in your scratch space or the repo's spikes dir).
+   `<spec-root>` is normally the repository's shared `spec/` or `specs/` directory, even when review started from a page nested below it. One watcher recursively discovers every `*.spec.html.review/` spool below that root, serializes ready batches, and keeps an independent cursor inside each spool. It exits 0 printing tab-separated `<spec-path> <human-event-filename>` rows for the first ready spec, or 3 on quiet timeout. On timeout, just re-park silently — an empty wakeup should cost almost nothing.
+
+   Use `scripts/watch.sh <spec>.review/ <cursor-file> 3600 3` only when the human explicitly narrows review to one page or while debugging a page-specific problem. Per-page watching is not the default.
 
 2. **Drain the batch.** Read each new event file listed. Rehydrate context from FILES — the current spec, the unresolved events, `<spec>.review/context.md` — not from what you remember of the chat. Chat history is never the review database; files are what survive compaction, session changes, and CLI switches.
 
@@ -37,10 +39,10 @@ Your job in review mode: wait for hand-off batches, apply each comment to the sp
 
    Field exactness matters: the browser runtime renders `respondsTo`, `text`, `status`, and `change` — a missing or renamed field means the user sees nothing. End replies that made an edit with an offer to resolve ("OK to resolve?").
 
-5. **Advance the cursor by APPENDING exactly the filenames the watch reported**:
+5. **Advance that spec's cursor by APPENDING exactly the filenames the watch reported**:
 
    ```
-   printf '%s\n' <file1> <file2> >> <cursor-file>
+   printf '%s\n' <file1> <file2> >> <spec>.review/.cursor-<cli-or-session>
    ```
 
    Never regenerate the cursor with `ls` — events that arrived while you were processing would be silently marked as seen and skipped. This race was observed live; append-only is the fix.
@@ -75,7 +77,7 @@ Full field-by-field reference for reading and writing the spool: `references/eve
 
 ## Per-CLI attachment
 
-The loop is identical on every CLI; only how the watch is hosted differs (Claude Code background task, Codex external wrapper `scripts/codex-review.sh`, pi extension). Details, plus the session-continuity and concurrency rules: `references/cli-adapters.md`.
+The loop is identical on every CLI; only how the collection watch is hosted differs (Claude Code background task, Codex external wrapper `scripts/codex-review.sh <spec-root>`, pi extension). Details, plus the per-spec session-continuity and concurrency rules: `references/cli-adapters.md`.
 
 ## Transports (agent side is identical)
 
@@ -98,10 +100,10 @@ If the repo already has `specs/.viz/`, leave it alone — its version is the rep
 
 ## Starting a review when asked
 
-1. Confirm the spec exists; if the `.review/` spool doesn't, the watch script creates it.
+1. Confirm the spec exists and identify the shared collection root (normally the repository's `spec/` or `specs/` directory, not the page's immediate subdirectory).
 2. Set up transport if remote (above).
-3. Seed the cursor with already-addressed events if resuming (`ls <spool>/human > cursor` is safe ONLY at setup, before you start processing).
-4. Park, and tell the user the page URL and that you're watching.
+3. Park one collection watcher with `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 3600 3`, and tell the user the page URL and that every spec below the root is covered. The watcher discovers a spool as soon as the browser creates it.
+4. For detached Codex review, run `scripts/codex-review.sh <spec-root>`. Passing a specific `.spec.html` remains an explicit single-page override.
 
 If asked only for **status** (no review mode), read the spool, summarize threads by status, and don't edit anything.
 

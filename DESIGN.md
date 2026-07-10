@@ -41,6 +41,7 @@ Every event carries the quote/context triple regardless of tier → orphan recov
 - One shared dotdir at the root (`specs/.viz/` — runtime + vendored libs, versioned once for all specs).
 - Per-spec review dirs (`<name>.spec.html.review/`) keep annotation locality; gitignore pattern `*.review/`.
 - **One FSA grant covers everything**: the browser asks for the `specs/` root handle once; every spec page and every review dir is reachable under it.
+- **One agent watcher covers everything by default**: a recursive collection watcher parks on the `specs/` root, discovers new review spools dynamically, and serially dispatches ready specs while preserving a cursor and session state per spec. Per-page watchers are explicit narrowing/debugging mode only.
 - `index.spec.html` overview: links to all specs with open-thread counts — computed client-side by enumerating review dirs through the root handle, no build step. In-page file switcher on every spec (see mockup).
 - Skill encodes the conventions: when a spec grows past ~a screen-read or gains a second audience, split it.
 
@@ -90,13 +91,14 @@ spec.html.review/
 Indefinite `inotifywait` dies on real runtimes (tool timeouts, missing binaries, read-only/approval-gated sandboxes — Codex's default sandbox included). Instead, a skill loop:
 
 ```
-review-wait --cursor state.json --timeout auto --max-events 20   # exits on first event or timeout
+review-wait specs/ --cursor-name .cursor-agent --timeout auto --max-events 20   # exits on first ready spec or timeout
 → reason, edit spec, emit agent events, update cursor, re-wait
 ```
 
 - `--timeout auto` = host-CLI tool ceiling minus margin (~240s default). Exits instantly on events, so long timeouts cost nothing in latency; empty wakeups are cheap short turns. Long-but-bounded, never unbounded.
 - **Rehydrate from files** (current spec + unresolved-event index + last summary) — chat history is never the review database; survives context compaction over long sessions.
 - **Default cadence: explicit hand-off batches** (human annotates freely, hands off a batch). Live per-annotation mode is opt-in — mid-thought agent edits create churn.
+- **Default scope: the whole spec collection.** The watcher selects one ready spec at a time and uses that spec's independent cursor/context/session files; a file-scoped watcher is an opt-in override.
 - In-session CLI inference throughout (subscription auth). Identical mechanism on Claude Code / Codex / pi.
 
 ### 5. Git & review culture
