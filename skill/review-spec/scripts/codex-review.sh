@@ -2,12 +2,12 @@
 # Codex attachment for the spec-chat review loop.
 # Codex spends ~40k+ tokens per drain cycle, so the watch runs OUTSIDE the
 # Codex session (free) and invokes `codex exec` only when a batch actually
-# arrives. Resumes the recorded authoring thread when review/state.json has
-# one (full authoring context); otherwise a cold exec (files carry context).
+# arrives. Resumes the recorded review thread when review/state.json has one;
+# after a cold exec it captures the new thread id so later batches can resume.
 # A directory target is the default: one process discovers and serially drains
-# every *.spec.html review spool below it. A file target remains available for
+# every reviewable *.html spool below it. A file target remains available for
 # deliberate single-page narrowing.
-# usage: codex-review.sh [--once] SPEC_ROOT_OR_PATH
+# usage: codex-review.sh [--once] REVIEW_ROOT_OR_HTML_PATH
 set -eu
 
 ONCE=0
@@ -16,7 +16,7 @@ if [ "${1:-}" = "--once" ]; then
   shift
 fi
 [ "$#" -eq 1 ] || {
-  echo "usage: codex-review.sh [--once] SPEC_ROOT_OR_PATH" >&2
+  echo "usage: codex-review.sh [--once] REVIEW_ROOT_OR_HTML_PATH" >&2
   exit 2
 }
 
@@ -27,7 +27,7 @@ CURSOR_NAME=.cursor-codex
 if [ -d "$TARGET" ]; then
   MODE=tree
   ROOT=$(CDPATH= cd "$TARGET" && pwd)
-  echo "codex-review: watching every spec below $ROOT"
+  echo "codex-review: watching every reviewable HTML page below $ROOT"
 elif [ -f "$TARGET" ]; then
   MODE=single
   SPEC_DIR=$(CDPATH= cd "$(dirname "$TARGET")" && pwd)
@@ -38,13 +38,33 @@ elif [ -f "$TARGET" ]; then
   [ -f "$CURSOR" ] || : > "$CURSOR"
   echo "codex-review: watching only $REVIEW"
 else
-  echo "codex-review: no such spec root or file: $TARGET" >&2
+  echo "codex-review: no such review root or HTML file: $TARGET" >&2
   exit 2
 fi
 
 command -v codex >/dev/null 2>&1 || {
   echo "codex-review: codex CLI not found" >&2
   exit 2
+}
+
+echo "codex-review: detached mode; this will not wake or stream activity into the authoring chat" >&2
+
+record_session() {
+  RECORDED_SID=$1
+  [ -n "$RECORDED_SID" ] || return 0
+  STATE_TMP="$STATE.tmp.$$"
+  UPDATED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  THREAD_NAME=$(basename "$SPEC")
+  if [ -s "$STATE" ] && jq empty "$STATE" >/dev/null 2>&1; then
+    jq --arg sid "$RECORDED_SID" --arg thread "$THREAD_NAME" --arg updated "$UPDATED_AT" \
+      '. + {sessionId:$sid, threadName:$thread, updatedAt:$updated}' \
+      "$STATE" > "$STATE_TMP"
+  else
+    jq -n --arg sid "$RECORDED_SID" --arg thread "$THREAD_NAME" --arg updated "$UPDATED_AT" \
+      '{sessionId:$sid, threadName:$thread, updatedAt:$updated}' > "$STATE_TMP"
+  fi
+  mv "$STATE_TMP" "$STATE"
+  echo "codex-review: recorded session $RECORDED_SID for $SPEC"
 }
 
 while :; do
@@ -83,8 +103,27 @@ $NEW"
   # gitignored area); workspace-write sandbox still bounds writes.
   # </dev/null: don't let codex block waiting on the wrapper's stdin.
   if [ -n "$SID" ]; then
+    echo "codex-review: resuming session $SID for $SPEC"
     codex exec -s workspace-write --skip-git-repo-check resume "$SID" "$PROMPT" </dev/null
+  elif command -v jq >/dev/null 2>&1; then
+    RUN_JSON=$(mktemp "${TMPDIR:-/tmp}/spec-chat-codex.XXXXXX")
+    echo "codex-review: cold dispatch for $SPEC"
+    set +e
+    codex exec --json -s workspace-write --skip-git-repo-check "$PROMPT" </dev/null > "$RUN_JSON"
+    RC=$?
+    set -e
+    jq -r 'select(.type == "item.completed" and .item.type == "agent_message") | .item.text' "$RUN_JSON"
+    jq -r 'select(.type == "item.completed" and .item.type == "error") | .item.message' "$RUN_JSON" >&2
+    if [ "$RC" -ne 0 ]; then
+      echo "codex-review: cold dispatch failed for $SPEC" >&2
+      rm -f "$RUN_JSON"
+      exit "$RC"
+    fi
+    SID=$(jq -r 'select(.type == "thread.started") | .thread_id' "$RUN_JSON" | sed -n '1p')
+    record_session "$SID"
+    rm -f "$RUN_JSON"
   else
+    echo "codex-review: jq unavailable; cold session cannot be recorded" >&2
     codex exec -s workspace-write --skip-git-repo-check "$PROMPT" </dev/null
   fi
   [ "$ONCE" -eq 1 ] && exit 0
