@@ -8,7 +8,8 @@ const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime
 const start = runtime.indexOf('function foldThreads(events)');
 const end = runtime.indexOf('\n\nfunction ingest(events)', start);
 assert.ok(start >= 0 && end > start, 'runtime exposes the pure thread-folding function');
-const foldThreads = Function(runtime.slice(start, end) + '; return foldThreads;')();
+const model = Function(runtime.slice(start, end) + '; return { foldThreads, resolvedThreadCollapsed };')();
+const { foldThreads, resolvedThreadCollapsed } = model;
 
 const event = (name, actor, body) => ({ name, actor, body: { actor, schemaVersion: 1, ...body } });
 const events = [
@@ -35,7 +36,13 @@ assert.equal(thread.status, 'acknowledged', 'replying to the latest edit acknowl
 assert.equal(thread.messages.at(-1).body.id, 'r-edit');
 
 events.push(event('180-status-resolved.json', 'human', { id: 's-root', event: 'status', respondsTo: 'u-root', threadId: 'u-root', status: 'resolved' }));
-assert.equal(foldThreads(events).get('u-root').status, 'resolved');
+thread = foldThreads(events).get('u-root');
+assert.equal(thread.status, 'resolved');
+const expandedResolved = new Set();
+assert.equal(resolvedThreadCollapsed(thread, expandedResolved), true, 'resolved threads start collapsed');
+expandedResolved.add(thread.id);
+assert.equal(resolvedThreadCollapsed(thread, expandedResolved), false, 'a reopened resolved thread stays expanded');
+assert.equal(resolvedThreadCollapsed({ ...thread, status: 'acknowledged' }, expandedResolved), false, 'non-resolved threads never collapse');
 
 const rootEdit = [
   event('200-comment-root-edit.json', 'human', { id: 'u-edit-root', event: 'comment', anchorId: 'copy', target: null, text: 'Original root' }),
