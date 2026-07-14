@@ -64,6 +64,8 @@ assert.match(runtime, /\.hx-thread-dock\{/, 'collapsed review uses a compact con
 assert.match(runtime, /translateX\(100%\)/, 'the closed sidebar moves completely off-screen');
 assert.match(runtime, /setAttribute\('aria-label', 'Review conversations'\)/, 'the thread dock has an accessible navigation label');
 assert.match(runtime, /Collapse review sidebar/, 'the open sidebar exposes a collapse control');
+assert.match(runtime, /\.hx-dock-thread\[data-s=acknowledged\]\{border-color:#315fbd;color:#264f9e;background:#edf2ff\}/, 'acknowledged dock threads use the blue status palette');
+assert.match(runtime, /\.hx-pin\[data-s=acknowledged\]\{background:#315fbd\}/, 'acknowledged page pins use the blue status palette');
 
 const rootEdit = [
   event('200-comment-root-edit.json', 'human', { id: 'u-edit-root', event: 'comment', anchorId: 'copy', target: null, text: 'Original root' }),
