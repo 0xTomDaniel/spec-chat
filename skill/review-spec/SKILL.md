@@ -17,13 +17,17 @@ Your job in review mode: wait for hand-off batches, apply each comment to the sp
 
 ## The loop
 
-1. **Park** on the whole spec collection with the bundled multi-spec watch script — as a background task, never a blocking foreground call (Claude Code forbids foreground sleep loops, and backgrounding keeps the session interactive anyway):
+1. **Park** on the whole spec collection with the bundled multi-spec watch script through the host's **same-thread yielded/background wait primitive**:
 
    ```
    scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 3600 3
    ```
 
-   `<spec-root>` is normally the repository's shared `spec/` or `specs/` directory, even when review started from a page nested below it. One watcher recursively discovers every `*.spec.html.review/` spool below that root, serializes ready batches, and keeps an independent cursor inside each spool. It exits 0 printing tab-separated `<spec-path> <human-event-filename>` rows for the first ready spec, or 3 on quiet timeout. On timeout, just re-park silently — an empty wakeup should cost almost nothing.
+   `<spec-root>` is normally the repository's shared `spec/` or `specs/` directory, even when review started from a page nested below it. When that collection links other reviewable HTML documents such as whitepapers, use the narrowest common ancestor containing all of them. One watcher recursively discovers every `*.html.review/` spool below that root, serializes ready batches, and keeps an independent cursor inside each spool. This deliberately follows review spools rather than requiring a `.spec.html` suffix, so non-spec visual documents can use the same channel without pretending to be normative specs. It exits 0 printing tab-separated `<html-path> <human-event-filename>` rows for the first ready page, or 3 on quiet timeout. On timeout, just re-park silently — an empty wakeup should cost almost nothing.
+
+   The host attachment is part of the contract. During an explicitly active review window, keep the authoring turn open and wait on the yielded watcher so its completion re-invokes this same agent thread. The parked wait must be silent: do not emit idle heartbeats, periodic commentary, custom tool output, or spinner-producing polls into the chat. The shell may poll the spool internally, but the host wakes the agent only when the watcher exits with a real batch (or an actionable error).
+
+   A yielded wait still leaves some hosts visibly in a long-running “working” state. Do not use it as an indefinite background service when the human expects the turn to look finished while idle. That experience requires a host-native event trigger or same-task automation capable of reactivating the existing thread. If the current surface does not expose one, state the limitation and ask the human to choose between an open active-review wait and detached unattended processing; do not claim that a shell process solves both. Merely leaving a process running, returning its session id, and finishing the turn cannot wake the chat. A detached `codex exec`, even one resumed with the same session id, also cannot stream activity into the already-open chat surface.
 
    Use `scripts/watch.sh <spec>.review/ <cursor-file> 3600 3` only when the human explicitly narrows review to one page or while debugging a page-specific problem. Per-page watching is not the default.
 
@@ -77,7 +81,7 @@ Full field-by-field reference for reading and writing the spool: `references/eve
 
 ## Per-CLI attachment
 
-The loop is identical on every CLI; only how the collection watch is hosted differs (Claude Code background task, Codex external wrapper `scripts/codex-review.sh <spec-root>`, pi extension). Details, plus the per-spec session-continuity and concurrency rules: `references/cli-adapters.md`.
+The loop is identical on every CLI; only how the collection watch is hosted differs. Interactive review must use an in-session attachment that re-invokes the open authoring thread. `scripts/codex-review.sh <spec-root>` is an explicitly detached, context-degraded fallback for unattended review after the authoring thread has closed; it is not interactive review. Details, plus the per-spec session-continuity and concurrency rules: `references/cli-adapters.md`.
 
 ## Transports (agent side is identical)
 
@@ -100,10 +104,10 @@ If the repo already has `specs/.viz/`, leave it alone — its version is the rep
 
 ## Starting a review when asked
 
-1. Confirm the spec exists and identify the shared collection root (normally the repository's `spec/` or `specs/` directory, not the page's immediate subdirectory).
+1. Confirm the page exists and identify the shared collection root (normally the repository's `spec/` or `specs/` directory, not the page's immediate subdirectory; use the narrowest common ancestor when linked reviewable whitepapers or other HTML documents live outside it).
 2. Set up transport if remote (above).
-3. Park one collection watcher with `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 3600 3`, and tell the user the page URL and that every spec below the root is covered. The watcher discovers a spool as soon as the browser creates it.
-4. For detached Codex review, run `scripts/codex-review.sh <spec-root>`. Passing a specific `.spec.html` remains an explicit single-page override.
+3. Park one collection watcher with `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 3600 3` using the host's same-thread yielded/background wait, keep the turn open, and tell the user the page URL and that every reviewable HTML document below the root is covered. The watcher discovers a spool as soon as the browser creates it; its ready output must wake this same thread for the drain cycle.
+4. Use `scripts/codex-review.sh <spec-root>` only when the human explicitly chooses unattended detached review after the interactive thread closes. State that detached mode will not wake or show live activity in the authoring chat. Passing a specific HTML file remains an explicit single-page override.
 
 If asked only for **status** (no review mode), read the spool, summarize threads by status, and don't edit anything.
 

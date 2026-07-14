@@ -1,9 +1,9 @@
 #!/bin/sh
-# Bounded multi-spec wait: scans every *.spec.html below SPEC_ROOT and exits
-# 0 with tab-separated SPEC_PATH / EVENT_FILENAME rows for the first ready
-# hand-off batch. Each review spool owns an independent cursor file.
+# Bounded multi-page wait: scans every *.html.review spool below REVIEW_ROOT
+# and exits 0 with tab-separated HTML_PATH / EVENT_FILENAME rows for the first
+# ready hand-off batch. Each review spool owns an independent cursor file.
 # Exits 3 on timeout.
-# usage: watch-specs.sh SPEC_ROOT [CURSOR_NAME] [TIMEOUT_S] [POLL_S]
+# usage: watch-specs.sh REVIEW_ROOT [CURSOR_NAME] [TIMEOUT_S] [POLL_S]
 set -eu
 
 ROOT=$1
@@ -28,9 +28,10 @@ trap 'rm -f "$SCAN"' EXIT HUP INT TERM
 
 t=0
 while [ "$t" -lt "$TMO" ]; do
-  find "$ROOT" -type f -name '*.spec.html' -print | LC_ALL=C sort > "$SCAN"
-  while IFS= read -r SPEC; do
-    REVIEW="$SPEC.review"
+  find "$ROOT" -type d -name '*.html.review' -prune -print | LC_ALL=C sort > "$SCAN"
+  while IFS= read -r REVIEW; do
+    SPEC=${REVIEW%.review}
+    [ -f "$SPEC" ] || continue
     [ -d "$REVIEW/human" ] || continue
     mkdir -p "$REVIEW/agent"
     CURSOR="$REVIEW/$CURSOR_NAME"
