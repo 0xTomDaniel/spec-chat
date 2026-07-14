@@ -32,6 +32,7 @@ const state = {
   events: [],            // [{actor, name, body}] sorted by name
   seenNames: new Set(),
   threads: new Map(),    // root comment id -> {id, ev, messages:[], status, latestHumanId}
+  expandedResolved: new Set(), // resolved thread ids the human explicitly reopened
   commentMode: false,
   activeThread: null,
   composer: null,        // {anchorId, target, quote, holder}
@@ -535,6 +536,10 @@ function foldThreads(events) {
   return threads;
 }
 
+function resolvedThreadCollapsed(thread, expandedResolved) {
+  return thread.status === 'resolved' && !expandedResolved.has(thread.id);
+}
+
 function ingest(events) {
   let changed = false;
   for (const e of events) {
@@ -546,6 +551,9 @@ function ingest(events) {
   if (!changed) return;
   state.events.sort((a, b) => a.name < b.name ? -1 : 1);
   state.threads = foldThreads(state.events);
+  for (const id of state.expandedResolved) {
+    if (state.threads.get(id)?.status !== 'resolved') state.expandedResolved.delete(id);
+  }
   renderPanel();
   renderPins();
   renderBadges();
@@ -581,9 +589,14 @@ body.hx-panel-open{padding-right:330px}
 .hx-panel-head .hx-sub{font-weight:400;font-size:11px;color:#888}
 .hx-threads{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
 .hx-thread{background:#fff;border:1px solid #ddd;border-radius:8px;padding:10px 12px;cursor:pointer}
+.hx-thread.resolved-collapsed{padding:8px 10px}
 .hx-thread.active{border-color:#d98e04;box-shadow:0 0 0 1px #d98e04}
-.hx-anchor{font-family:ui-monospace,monospace;font-size:10.5px;color:#999;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.hx-pill{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:2px 6px;float:right}
+.hx-thread-summary{display:flex;align-items:center;gap:6px;min-width:0}
+.hx-anchor{flex:1;font-family:ui-monospace,monospace;font-size:10.5px;color:#999;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hx-pill{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:2px 6px}
+.hx-disclosure{border:0;background:transparent;color:#888;border-radius:4px;padding:0 2px;cursor:pointer;font:15px/1 system-ui}
+.hx-disclosure:hover{background:#e8e7e2;color:#444}
+.hx-thread-preview{margin-top:5px;color:#777;font-size:11.5px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hx-pill[data-s=draft],.hx-pill[data-s=pending]{color:#b47308;background:#fbf3e2}
 .hx-pill[data-s=acknowledged]{color:#0e7264;background:#e3f2f0}
 .hx-pill[data-s=resolved]{color:#3d8c40;background:#e8f2e8}
@@ -627,6 +640,7 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-btn{background:#24272c;color:#e8e7e2;border-color:#4a4d52}
 .hx-btn.pri{background:#e8e7e2;color:#1d2024}
 .hx-composer textarea{background:#17191d;color:#e8e7e2;border-color:#4a4d52}
+.hx-disclosure:hover{background:#33363c;color:#e8e7e2}
 }`;
 
 function mountUI() {
@@ -793,46 +807,62 @@ function renderPanel() {
   const threads = [...state.threads.values()].reverse();
   for (const th of threads) {
     const b = th.ev.body;
+    const collapsed = resolvedThreadCollapsed(th, state.expandedResolved);
     const d = document.createElement('div');
-    d.className = 'hx-thread' + (state.activeThread === th.id ? ' active' : '');
-    d.innerHTML = '<span class="hx-pill" data-s="' + th.status + '">' + th.status + '</span><div class="hx-anchor">' + esc(label(b)) + '</div>';
-    for (const message of th.messages) {
-      const m = message.body;
-      const item = document.createElement('div');
-      item.className = 'hx-msg';
-      item.dataset.messageId = m.id;
-      item.innerHTML = '<span class="hx-who">' + (message.actor === 'human' ? 'You' : 'Agent') + '</span>' +
-        (m.quote ? '<span class="hx-quote">“' + esc(m.quote) + '”</span>' : '') + esc(m.text || '');
-      if (message.actor === 'human' && m.id === th.latestHumanId && ['draft', 'pending'].includes(th.status)) {
-        const actions = document.createElement('div');
-        actions.className = 'hx-msg-actions';
-        actions.innerHTML = '<button class="hx-btn" data-act="edit">Edit</button>';
-        actions.querySelector('button').addEventListener('click', e => { e.stopPropagation(); startEdit(th, message); });
-        item.appendChild(actions);
+    d.className = 'hx-thread' + (state.activeThread === th.id ? ' active' : '') + (collapsed ? ' resolved-collapsed' : '');
+    d.innerHTML = '<div class="hx-thread-summary"><div class="hx-anchor">' + esc(label(b)) + '</div>' +
+      '<span class="hx-pill" data-s="' + th.status + '">' + th.status + '</span>' +
+      (th.status === 'resolved' ? '<button class="hx-disclosure" data-act="disclosure" aria-expanded="' + String(!collapsed) + '" aria-label="' + (collapsed ? 'Show' : 'Hide') + ' resolved thread">' + (collapsed ? '▸' : '▾') + '</button>' : '') + '</div>' +
+      (collapsed ? '<div class="hx-thread-preview">' + esc(b.text || 'Resolved comment') + '</div>' : '');
+    if (!collapsed) {
+      for (const message of th.messages) {
+        const m = message.body;
+        const item = document.createElement('div');
+        item.className = 'hx-msg';
+        item.dataset.messageId = m.id;
+        item.innerHTML = '<span class="hx-who">' + (message.actor === 'human' ? 'You' : 'Agent') + '</span>' +
+          (m.quote ? '<span class="hx-quote">“' + esc(m.quote) + '”</span>' : '') + esc(m.text || '');
+        if (message.actor === 'human' && m.id === th.latestHumanId && ['draft', 'pending'].includes(th.status)) {
+          const actions = document.createElement('div');
+          actions.className = 'hx-msg-actions';
+          actions.innerHTML = '<button class="hx-btn" data-act="edit">Edit</button>';
+          actions.querySelector('button').addEventListener('click', e => { e.stopPropagation(); startEdit(th, message); });
+          item.appendChild(actions);
+        }
+        d.appendChild(item);
       }
-      d.appendChild(item);
+      const last = th.messages[th.messages.length - 1];
+      if (last && last.actor === 'agent' && th.status !== 'resolved') {
+        const reply = document.createElement('button');
+        reply.className = 'hx-btn';
+        reply.dataset.act = 'reply';
+        reply.textContent = '↩ Reply';
+        reply.addEventListener('click', e => { e.stopPropagation(); startReply(th, last); });
+        d.appendChild(reply);
+      }
+      if (th.status === 'acknowledged') {
+        const resolve = document.createElement('button');
+        resolve.className = 'hx-btn';
+        resolve.dataset.act = 'resolve';
+        resolve.textContent = '✓ Resolve';
+        d.appendChild(resolve);
+      }
+      if (state.composer && state.composer.threadId === th.id) addComposer(d, state.composer);
     }
-    const last = th.messages[th.messages.length - 1];
-    if (last && last.actor === 'agent' && th.status !== 'resolved') {
-      const reply = document.createElement('button');
-      reply.className = 'hx-btn';
-      reply.dataset.act = 'reply';
-      reply.textContent = '↩ Reply';
-      reply.addEventListener('click', e => { e.stopPropagation(); startReply(th, last); });
-      d.appendChild(reply);
-    }
-    if (th.status === 'acknowledged') {
-      const resolve = document.createElement('button');
-      resolve.className = 'hx-btn';
-      resolve.dataset.act = 'resolve';
-      resolve.textContent = '✓ Resolve';
-      d.appendChild(resolve);
-    }
-    if (state.composer && state.composer.threadId === th.id) addComposer(d, state.composer);
     d.addEventListener('click', () => selectThread(th, true));
+    d.querySelector('[data-act=disclosure]')?.addEventListener('click', e => {
+      e.stopPropagation();
+      if (collapsed) selectThread(th, true);
+      else {
+        state.expandedResolved.delete(th.id);
+        renderPanel();
+        renderPins();
+      }
+    });
     d.querySelector('[data-act=resolve]')?.addEventListener('click', async e => {
       e.stopPropagation();
       await state.transport.postEvent({ id: humanId('s'), event: 'status', respondsTo: th.id, threadId: th.id, status: 'resolved', actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
+      state.expandedResolved.delete(th.id);
       toast('Resolved');
       refresh();
     });
@@ -846,6 +876,7 @@ function renderPanel() {
 
 function selectThread(th, scroll) {
   state.activeThread = th.id;
+  if (th.status === 'resolved') state.expandedResolved.add(th.id);
   openPanel(true);
   renderPanel();
   renderPins();
