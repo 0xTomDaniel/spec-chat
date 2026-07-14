@@ -8,8 +8,8 @@ const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime
 const start = runtime.indexOf('function foldThreads(events)');
 const end = runtime.indexOf('\n\nfunction ingest(events)', start);
 assert.ok(start >= 0 && end > start, 'runtime exposes the pure thread-folding function');
-const model = Function(runtime.slice(start, end) + '; return { foldThreads, resolvedThreadCollapsed, commentModeShortcut };')();
-const { foldThreads, resolvedThreadCollapsed, commentModeShortcut } = model;
+const model = Function(runtime.slice(start, end) + '; return { foldThreads, resolvedThreadCollapsed, commentModeShortcut, threadDockEntries };')();
+const { foldThreads, resolvedThreadCollapsed, commentModeShortcut, threadDockEntries } = model;
 
 const event = (name, actor, body) => ({ name, actor, body: { actor, schemaVersion: 1, ...body } });
 const events = [
@@ -54,8 +54,15 @@ assert.equal(shortcut({ repeat: true }), false, 'key repeat does not toggle comm
 assert.equal(shortcut({ target: { tagName: 'INPUT' } }), false, 'typing in an input does not enter comment mode');
 assert.equal(shortcut({ target: { tagName: 'DIV', isContentEditable: true } }), false, 'typing in editable content does not enter comment mode');
 
-assert.match(runtime, /translateX\(calc\(100% - 44px\)\)/, 'the collapsed sidebar leaves a visible edge control');
-assert.match(runtime, /aria-label="Open review sidebar"/, 'the sidebar starts collapsed with an accessible open control');
+const dockEntries = threadDockEntries(new Map([
+  ['first', { id: 'first' }],
+  ['second', { id: 'second' }],
+]));
+assert.deepEqual(dockEntries.map(entry => [entry.thread.id, entry.number]), [['second', 2], ['first', 1]], 'the dock shows newest threads first while preserving pin numbers');
+
+assert.match(runtime, /\.hx-thread-dock\{/, 'collapsed review uses a compact conversation dock');
+assert.match(runtime, /translateX\(100%\)/, 'the closed sidebar moves completely off-screen');
+assert.match(runtime, /setAttribute\('aria-label', 'Review conversations'\)/, 'the thread dock has an accessible navigation label');
 assert.match(runtime, /Collapse review sidebar/, 'the open sidebar exposes a collapse control');
 
 const rootEdit = [

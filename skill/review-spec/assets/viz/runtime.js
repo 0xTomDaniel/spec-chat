@@ -550,6 +550,10 @@ function commentModeShortcut(e) {
     && !/^(textarea|input|select)$/i.test(target.tagName || '');
 }
 
+function threadDockEntries(threads) {
+  return [...threads.values()].map((thread, index) => ({ thread, number: index + 1 })).reverse();
+}
+
 function ingest(events) {
   let changed = false;
   for (const e of events) {
@@ -592,14 +596,27 @@ article.spec a{color:#34a899}
 .hx-toolbar button{font:600 12.5px system-ui;border:none;background:transparent;border-radius:8px;padding:8px 14px;cursor:pointer}
 .hx-toolbar button[aria-pressed=true]{background:#fbf3e2;color:#b47308}
 .hx-toolbar .hx-status{color:#888;font-size:11.5px;padding:0 10px}
-.hx-panel{position:fixed;top:0;right:0;width:330px;height:100vh;background:#f4f3ef;border-left:1px solid #ddd;z-index:800;display:flex;flex-direction:column;font:13px system-ui;transform:translateX(calc(100% - 44px));transition:transform .2s,box-shadow .2s;box-shadow:-2px 0 8px rgba(30,30,40,.08)}
-.hx-panel.open{transform:none}
+.hx-panel{position:fixed;top:0;right:0;width:330px;height:100vh;background:#f4f3ef;border-left:1px solid #ddd;z-index:800;display:flex;flex-direction:column;font:13px system-ui;transform:translateX(100%);transition:transform .2s,box-shadow .2s;box-shadow:none}
+.hx-panel.open{transform:none;box-shadow:-8px 0 30px rgba(30,30,40,.12)}
 body.hx-panel-open{padding-right:330px}
 .hx-panel-head{position:relative;min-height:44px;padding:14px 16px 14px 52px;box-sizing:border-box;border-bottom:1px solid #ddd;font-weight:650}
 .hx-panel-head .hx-sub{font-weight:400;font-size:11px;color:#888}
 .hx-panel-toggle{position:absolute;top:8px;left:7px;width:30px;height:30px;border:1px solid #ccc;background:#fff;border-radius:7px;color:#555;cursor:pointer;font:18px/1 system-ui;display:grid;place-items:center;padding:0}
 .hx-panel-toggle:hover{background:#e8e7e2;color:#222}
 .hx-panel-content{display:flex;flex:1;min-height:0;flex-direction:column}
+.hx-thread-dock{position:fixed;top:12px;right:12px;z-index:850;display:flex;flex-direction:column;gap:6px;padding:6px;background:rgba(255,255,255,.94);border:1px solid #d9d8d3;border-radius:11px;box-shadow:0 5px 18px rgba(30,30,40,.13);font:12px system-ui;transition:opacity .15s,transform .15s;backdrop-filter:blur(8px)}
+body.hx-panel-open .hx-thread-dock{opacity:0;transform:translateX(10px);pointer-events:none}
+.hx-dock-open,.hx-dock-thread{position:relative;width:32px;height:32px;box-sizing:border-box;border:1px solid #d4d3ce;background:#fff;border-radius:7px;color:#555;cursor:pointer;display:grid;place-items:center;padding:0}
+.hx-dock-open:hover,.hx-dock-thread:hover{background:#f4f3ef;border-color:#aaa;color:#222}
+.hx-dock-open svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.hx-dock-threads{display:flex;flex-direction:column;gap:6px;max-height:calc(100vh - 76px);overflow-y:auto;scrollbar-width:none}
+.hx-dock-threads:not(:empty){border-top:1px solid #e1e0dc;padding-top:6px}
+.hx-dock-threads::-webkit-scrollbar{display:none}
+.hx-dock-thread{font:700 11px/1 ui-monospace,monospace}
+.hx-dock-thread[data-s=draft],.hx-dock-thread[data-s=pending]{border-color:#d98e04;color:#9a6100;background:#fff8e9}
+.hx-dock-thread[data-s=acknowledged]{border-color:#12897c;color:#0e7264;background:#edf8f6}
+.hx-dock-thread[data-s=resolved]{border-color:#69a76b;color:#3d8c40;background:#f1f8f1}
+.hx-dock-thread.active{box-shadow:0 0 0 2px rgba(217,142,4,.28)}
 .hx-threads{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
 .hx-thread{background:#fff;border:1px solid #ddd;border-radius:8px;padding:10px 12px;cursor:pointer}
 .hx-thread.resolved-collapsed{padding:8px 10px}
@@ -656,6 +673,13 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-disclosure:hover{background:#33363c;color:#e8e7e2}
 .hx-panel-toggle{background:#24272c;color:#e8e7e2;border-color:#4a4d52}
 .hx-panel-toggle:hover{background:#33363c;color:#fff}
+.hx-thread-dock{background:rgba(29,32,36,.94);border-color:#3a3d42}
+.hx-dock-open,.hx-dock-thread{background:#24272c;border-color:#4a4d52;color:#d7d6d1}
+.hx-dock-open:hover,.hx-dock-thread:hover{background:#33363c;border-color:#686b71;color:#fff}
+.hx-dock-threads:not(:empty){border-color:#3a3d42}
+.hx-dock-thread[data-s=draft],.hx-dock-thread[data-s=pending]{background:#342d20;color:#e0a33b}
+.hx-dock-thread[data-s=acknowledged]{background:#1e3532;color:#50b7aa}
+.hx-dock-thread[data-s=resolved]{background:#263728;color:#78b87a}
 }`;
 
 function mountUI() {
@@ -668,6 +692,12 @@ function mountUI() {
   bar.innerHTML = '<button id="hx-mode" aria-pressed="false">✛ Comment (C)</button><button id="hx-connect" hidden>Connect review folder</button><span class="hx-status" id="hx-status">starting…</span>';
   document.body.appendChild(bar);
 
+  const dock = document.createElement('nav');
+  dock.className = 'hx-thread-dock';
+  dock.setAttribute('aria-label', 'Review conversations');
+  dock.innerHTML = '<button class="hx-dock-open" id="hx-dock-open" type="button" aria-label="Open review sidebar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14v10H10l-5 3v-13Z"></path><path d="M8 9h8M8 12h5"></path></svg></button><div class="hx-dock-threads" id="hx-dock-threads"></div>';
+  document.body.appendChild(dock);
+
   const panel = document.createElement('aside');
   panel.className = 'hx-panel';
   panel.setAttribute('aria-label', 'Review sidebar');
@@ -675,6 +705,7 @@ function mountUI() {
   document.body.appendChild(panel);
 
   document.getElementById('hx-mode').addEventListener('click', () => setCommentMode(!state.commentMode));
+  document.getElementById('hx-dock-open').addEventListener('click', () => openPanel(true));
   document.getElementById('hx-panel-toggle').addEventListener('click', () => openPanel(!state.panelOpen));
   document.getElementById('hx-handoff').addEventListener('click', handoff);
   document.addEventListener('keydown', e => {
@@ -686,7 +717,7 @@ function mountUI() {
   const INTERACTIVE = 'button, input, select, textarea, label, a, summary, [role="button"], [role="link"]';
   const suspend = e => {
     if (!state.commentMode) return;
-    if (e.target.closest && e.target.closest('.hx-pin,.hx-panel,.hx-toolbar,#hx-errors')) return;
+    if (e.target.closest && e.target.closest('.hx-pin,.hx-panel,.hx-thread-dock,.hx-toolbar,#hx-errors')) return;
     if (e.target.tagName === 'CANVAS') return;
     if (!holderOf(e.target)) return;
     // native drag/toggle on controls dies here; elsewhere only spec-script handlers die (selection survives)
@@ -710,7 +741,7 @@ function mountUI() {
   document.addEventListener('pointermove', e => {
     const t = e.target;
     let box = null;
-    if (state.commentMode && t instanceof Element && !t.closest('.hx-pin,.hx-panel,.hx-toolbar')) {
+    if (state.commentMode && t instanceof Element && !t.closest('.hx-pin,.hx-panel,.hx-thread-dock,.hx-toolbar')) {
       const svg = t.closest && t.closest('[data-anchor] svg');
       if (svg && t !== svg) box = t.getBoundingClientRect();
       else if (!svg && t.closest && t.closest(INTERACTIVE) && holderOf(t)) box = t.closest(INTERACTIVE).getBoundingClientRect();
@@ -720,6 +751,7 @@ function mountUI() {
     ring.style.cssText = 'position:fixed;border:2px dashed #d98e04;border-radius:4px;pointer-events:none;z-index:650;display:block'
       + ';left:' + (box.left - 4) + 'px;top:' + (box.top - 4) + 'px;width:' + (Math.max(box.width, 8) + 8) + 'px;height:' + (Math.max(box.height, 8) + 8) + 'px';
   }, true);
+  renderThreadDock();
 }
 
 function setCommentMode(on) {
@@ -758,6 +790,9 @@ function openPanel(open) {
   const content = document.getElementById('hx-panel-content');
   content.toggleAttribute('inert', !state.panelOpen);
   content.setAttribute('aria-hidden', String(!state.panelOpen));
+  const dock = document.querySelector('.hx-thread-dock');
+  dock.toggleAttribute('inert', state.panelOpen);
+  dock.setAttribute('aria-hidden', String(state.panelOpen));
 }
 function status(msg) { document.getElementById('hx-status').textContent = msg; }
 
@@ -814,6 +849,27 @@ function startEdit(th, message) {
   state.activeThread = th.id;
   state.composer = { kind: 'edit', threadId: th.id, supersedes: b.id, anchorId: b.anchorId || th.ev.body.anchorId, target: b.target || th.ev.body.target, quote: b.quote || null, text: b.text || '' };
   renderPanel();
+}
+
+function renderThreadDock() {
+  const wrap = document.getElementById('hx-dock-threads');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const entries = threadDockEntries(state.threads);
+  const open = document.getElementById('hx-dock-open');
+  open.title = 'Open review sidebar · ' + entries.length + ' thread' + (entries.length === 1 ? '' : 's');
+  for (const { thread: th, number } of entries) {
+    const b = th.ev.body;
+    const button = document.createElement('button');
+    button.className = 'hx-dock-thread' + (state.activeThread === th.id ? ' active' : '');
+    button.type = 'button';
+    button.dataset.s = th.status;
+    button.textContent = number;
+    button.title = label(b) + ' · ' + th.status;
+    button.setAttribute('aria-label', 'Open thread ' + number + ': ' + label(b) + ', ' + th.status);
+    button.addEventListener('click', e => { e.stopPropagation(); selectThread(th, true); });
+    wrap.appendChild(button);
+  }
 }
 
 function renderPanel() {
@@ -896,6 +952,7 @@ function renderPanel() {
   const drafts = [...state.threads.values()].filter(t => t.status === 'draft').length;
   document.getElementById('hx-drafts').textContent = drafts + ' draft' + (drafts === 1 ? '' : 's');
   document.getElementById('hx-handoff').disabled = !drafts;
+  renderThreadDock();
   renderThreadHighlight();
 }
 
