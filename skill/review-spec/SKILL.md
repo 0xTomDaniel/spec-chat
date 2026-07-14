@@ -17,21 +17,15 @@ Your job in review mode: wait for hand-off batches, apply each comment to the sp
 
 ## The loop
 
-1. **Park** on the whole spec collection with the bundled multi-spec watch script through the host's **same-thread yielded/background wait primitive**:
+1. **Reconnect before parking.** On every newly started or resumed spec-chat turn, first run one immediate, read-only collection scan:
 
    ```
-   scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 3600 3
+   scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 0 3
    ```
 
-   `<spec-root>` is normally the repository's shared `spec/` or `specs/` directory, even when review started from a page nested below it. When that collection links other reviewable HTML documents such as whitepapers, use the narrowest common ancestor containing all of them. One watcher recursively discovers every `*.html.review/` spool below that root, serializes ready batches, and keeps an independent cursor inside each spool. This deliberately follows review spools rather than requiring a `.spec.html` suffix, so non-spec visual documents can use the same channel without pretending to be normative specs. It exits 0 printing tab-separated `<html-path> <human-event-filename>` rows for the first ready page, or 3 on quiet timeout. On timeout, just re-park silently — an empty wakeup should cost almost nothing.
+   Exit 0 prints tab-separated `<html-path> <human-event-filename>` rows for the first ready page; exit 3 means the backlog is empty. A ready result contains every unprocessed event through the newest completed hand-off, in filename/event order. Do not reuse, poll, or wait on a watcher/tool session cancelled with the prior turn, and do not start detached Codex processing automatically—the detached process could race the interactive thread.
 
-   The host attachment is part of the contract. During an explicitly active review window, keep the authoring turn open and wait on the yielded watcher so its completion re-invokes this same agent thread. The parked wait must be silent: do not emit idle heartbeats, periodic commentary, custom tool output, or spinner-producing polls into the chat. The shell may poll the spool internally, but the host wakes the agent only when the watcher exits with a real batch (or an actionable error).
-
-   A yielded wait still leaves some hosts visibly in a long-running “working” state. Do not use it as an indefinite background service when the human expects the turn to look finished while idle. That experience requires a host-native event trigger or same-task automation capable of reactivating the existing thread. If the current surface does not expose one, state the limitation and ask the human to choose between an open active-review wait and detached unattended processing; do not claim that a shell process solves both. Merely leaving a process running, returning its session id, and finishing the turn cannot wake the chat. A detached `codex exec`, even one resumed with the same session id, also cannot stream activity into the already-open chat surface.
-
-   Use `scripts/watch.sh <spec>.review/ <cursor-file> 3600 3` only when the human explicitly narrows review to one page or while debugging a page-specific problem. Per-page watching is not the default.
-
-2. **Drain the batch.** Read each new event file listed. Rehydrate context from FILES — the current spec, the unresolved events, `<spec>.review/context.md` — not from what you remember of the chat. Chat history is never the review database; files are what survive compaction, session changes, and CLI switches. Fold each thread before acting: human `reply` events continue the existing conversation, and human `edit` events replace the message named by `supersedes`. Ignore superseded text.
+2. **Drain the reported batch.** Read each event file in the printed order. Rehydrate context from FILES — the current spec, the unresolved events, `<spec>.review/context.md` — not from what you remember of the chat. Chat history is never the review database; files are what survive compaction, session changes, CLI switches, and stopped turns. Fold each thread before acting: human `reply` events continue the existing conversation, and human `edit` events replace the message named by `supersedes`. Ignore superseded text.
 
 3. **Apply each comment** to the spec in place, honoring the dialect (see below). A comment may also be a question rather than a change request — informational replies with `change: "no spec change"` are a normal part of the protocol; answer through the channel, don't force an edit.
 
@@ -43,17 +37,29 @@ Your job in review mode: wait for hand-off batches, apply each comment to the sp
 
    `respondsTo-id` must be the exact newest human `comment`, `reply`, or `edit` id—not automatically the root comment id. Field exactness matters: the browser runtime renders `respondsTo`, `text`, `status`, and `change` — a missing or renamed field means the user sees nothing. End replies that made an edit with an offer to resolve ("OK to resolve?").
 
-5. **Advance that spec's cursor by APPENDING exactly the filenames the watch reported**:
+5. **Externalize agreements** after the spec changes and replies succeed: durable decisions go into the spec itself and a one-line note in `<spec>.review/context.md`. This is what lets a different session — or a different CLI — pick up the review cold.
+
+6. **Advance that spec's cursor only after the entire reported batch was successfully processed and every reply was emitted**, by APPENDING exactly the filenames the scan reported:
 
    ```
    printf '%s\n' <file1> <file2> >> <spec>.review/.cursor-<cli-or-session>
    ```
 
-   Never regenerate the cursor with `ls` — events that arrived while you were processing would be silently marked as seen and skipped. This race was observed live; append-only is the fix.
+   Never regenerate the cursor with `ls` — events that arrived while you were processing would be silently marked as seen and skipped. Never advance it after a partial or failed drain; leaving it unchanged makes the next turn recover the same durable batch. This append-only rule is the lossless commit point.
 
-6. **Externalize agreements** before re-parking: durable decisions go into the spec itself and a one-line note in `<spec>.review/context.md`. This is what lets a different session — or a different CLI — pick up the review cold.
+7. **Reconcile to empty, then park fresh.** Repeat the zero-wait scan and steps 2–6 until it exits 3. If review mode remains active, start a new collection watcher through the host's **same-thread yielded/background wait primitive**:
 
-7. **Re-park** (step 1). Continue until the user ends review mode.
+   ```
+   scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 3600 3
+   ```
+
+   `<spec-root>` is normally the repository's shared `spec/` or `specs/` directory, even when review started from a page nested below it. When that collection links other reviewable HTML documents such as whitepapers, use the narrowest common ancestor containing all of them. One watcher recursively discovers every `*.html.review/` spool below that root, serializes ready batches, and keeps an independent cursor inside each spool. This deliberately follows review spools rather than requiring a `.spec.html` suffix, so non-spec visual documents can use the same channel without pretending to be normative specs. On quiet timeout, reconcile once more with the zero-wait scan before re-parking silently.
+
+   The host attachment is part of the contract. During an explicitly active review window, keep the authoring turn open and wait on the yielded watcher so its completion re-invokes this same agent thread. The parked wait must be silent: do not emit idle heartbeats, periodic commentary, custom tool output, or spinner-producing polls into the chat. The shell may poll the spool internally, but the host wakes the agent only when the watcher exits with a real batch (or an actionable error). If the user presses Stop, the Codex thread cannot wake itself: watcher output has no reliable path back into the stopped turn. The user must send one new message; that message starts a turn whose mandatory zero-wait reconciliation automatically recovers every completed, unprocessed hand-off.
+
+   A yielded wait still leaves some hosts visibly in a long-running “working” state. Do not use it as an indefinite background service when the human expects the turn to look finished while idle. That experience requires a host-native event trigger or same-task automation capable of reactivating the existing thread. If the current surface does not expose one, state the limitation and ask the human to choose between an open active-review wait and detached unattended processing; do not claim that a shell process solves both. Merely leaving a process running, returning its session id, and finishing the turn cannot wake the chat. A detached `codex exec`, even one resumed with the same session id, also cannot stream activity into the already-open chat surface.
+
+   Use `scripts/watch.sh <spec>.review/ <cursor-file> 3600 3` only when the human explicitly narrows review to one page or while debugging a page-specific problem. Per-page watching is not the default.
 
 ## The spec dialect (how to edit)
 
@@ -106,8 +112,9 @@ If the repo already has `specs/.viz/`, leave it alone — its version is the rep
 
 1. Confirm the page exists and identify the shared collection root (normally the repository's `spec/` or `specs/` directory, not the page's immediate subdirectory; use the narrowest common ancestor when linked reviewable whitepapers or other HTML documents live outside it).
 2. Set up transport if remote (above).
-3. Park one collection watcher with `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 3600 3` using the host's same-thread yielded/background wait, keep the turn open, and tell the user the page URL and that every reviewable HTML document below the root is covered. The watcher discovers a spool as soon as the browser creates it; its ready output must wake this same thread for the drain cycle.
-4. Use `scripts/codex-review.sh <spec-root>` only when the human explicitly chooses unattended detached review after the interactive thread closes. State that detached mode will not wake or show live activity in the authoring chat. Passing a specific HTML file remains an explicit single-page override.
+3. On both an initial start and any resumed/reconnected turn, run `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 0 3`; drain, reply, and cursor each ready batch, then repeat until exit 3.
+4. Only after reconciliation is empty, park a fresh collection watcher with `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 3600 3` using the host's same-thread yielded/background wait, keep the turn open, and tell the user the page URL and that every reviewable HTML document below the root is covered. The watcher discovers a spool as soon as the browser creates it; its ready output must wake this same thread for the drain cycle.
+5. Use `scripts/codex-review.sh <spec-root>` only when the human explicitly chooses unattended detached review after the interactive thread closes. State that detached mode will not wake or show live activity in the authoring chat. Passing a specific HTML file remains an explicit single-page override.
 
 If asked only for **status** (no review mode), read the spool, summarize threads by status, and don't edit anything.
 
