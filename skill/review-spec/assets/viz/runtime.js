@@ -34,6 +34,7 @@ const state = {
   threads: new Map(),    // root comment id -> {id, ev, messages:[], status, latestHumanId}
   expandedResolved: new Set(), // resolved thread ids the human explicitly reopened
   commentMode: false,
+  panelOpen: false,
   activeThread: null,
   composer: null,        // {anchorId, target, quote, holder}
   charts: new Map(),     // sectionAnchor -> {chart, config, el}
@@ -540,6 +541,15 @@ function resolvedThreadCollapsed(thread, expandedResolved) {
   return thread.status === 'resolved' && !expandedResolved.has(thread.id);
 }
 
+function commentModeShortcut(e) {
+  const target = e.target || {};
+  return String(e.key || '').toLowerCase() === 'c'
+    && !e.defaultPrevented && !e.repeat
+    && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey
+    && !target.isContentEditable
+    && !/^(textarea|input|select)$/i.test(target.tagName || '');
+}
+
 function ingest(events) {
   let changed = false;
   for (const e of events) {
@@ -582,11 +592,14 @@ article.spec a{color:#34a899}
 .hx-toolbar button{font:600 12.5px system-ui;border:none;background:transparent;border-radius:8px;padding:8px 14px;cursor:pointer}
 .hx-toolbar button[aria-pressed=true]{background:#fbf3e2;color:#b47308}
 .hx-toolbar .hx-status{color:#888;font-size:11.5px;padding:0 10px}
-.hx-panel{position:fixed;top:0;right:0;width:330px;height:100vh;background:#f4f3ef;border-left:1px solid #ddd;z-index:800;display:flex;flex-direction:column;font:13px system-ui;transform:translateX(100%);transition:transform .2s}
+.hx-panel{position:fixed;top:0;right:0;width:330px;height:100vh;background:#f4f3ef;border-left:1px solid #ddd;z-index:800;display:flex;flex-direction:column;font:13px system-ui;transform:translateX(calc(100% - 44px));transition:transform .2s,box-shadow .2s;box-shadow:-2px 0 8px rgba(30,30,40,.08)}
 .hx-panel.open{transform:none}
 body.hx-panel-open{padding-right:330px}
-.hx-panel-head{padding:14px 16px;border-bottom:1px solid #ddd;font-weight:650}
+.hx-panel-head{position:relative;min-height:44px;padding:14px 16px 14px 52px;box-sizing:border-box;border-bottom:1px solid #ddd;font-weight:650}
 .hx-panel-head .hx-sub{font-weight:400;font-size:11px;color:#888}
+.hx-panel-toggle{position:absolute;top:8px;left:7px;width:30px;height:30px;border:1px solid #ccc;background:#fff;border-radius:7px;color:#555;cursor:pointer;font:18px/1 system-ui;display:grid;place-items:center;padding:0}
+.hx-panel-toggle:hover{background:#e8e7e2;color:#222}
+.hx-panel-content{display:flex;flex:1;min-height:0;flex-direction:column}
 .hx-threads{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
 .hx-thread{background:#fff;border:1px solid #ddd;border-radius:8px;padding:10px 12px;cursor:pointer}
 .hx-thread.resolved-collapsed{padding:8px 10px}
@@ -641,6 +654,8 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-btn.pri{background:#e8e7e2;color:#1d2024}
 .hx-composer textarea{background:#17191d;color:#e8e7e2;border-color:#4a4d52}
 .hx-disclosure:hover{background:#33363c;color:#e8e7e2}
+.hx-panel-toggle{background:#24272c;color:#e8e7e2;border-color:#4a4d52}
+.hx-panel-toggle:hover{background:#33363c;color:#fff}
 }`;
 
 function mountUI() {
@@ -655,13 +670,15 @@ function mountUI() {
 
   const panel = document.createElement('aside');
   panel.className = 'hx-panel';
-  panel.innerHTML = '<div class="hx-panel-head">Review <span class="hx-sub" id="hx-agent"></span></div><div class="hx-threads" id="hx-threads"></div><div class="hx-handoff"><span class="hx-note" id="hx-drafts">0 drafts</span><button class="hx-btn pri" id="hx-handoff">Hand off to agent →</button></div>';
+  panel.setAttribute('aria-label', 'Review sidebar');
+  panel.innerHTML = '<div class="hx-panel-head">Review <span class="hx-sub" id="hx-agent"></span><button class="hx-panel-toggle" id="hx-panel-toggle" type="button" aria-expanded="false" aria-label="Open review sidebar">‹</button></div><div class="hx-panel-content" id="hx-panel-content" aria-hidden="true" inert><div class="hx-threads" id="hx-threads"></div><div class="hx-handoff"><span class="hx-note" id="hx-drafts">0 drafts</span><button class="hx-btn pri" id="hx-handoff">Hand off to agent →</button></div></div>';
   document.body.appendChild(panel);
 
   document.getElementById('hx-mode').addEventListener('click', () => setCommentMode(!state.commentMode));
+  document.getElementById('hx-panel-toggle').addEventListener('click', () => openPanel(!state.panelOpen));
   document.getElementById('hx-handoff').addEventListener('click', handoff);
   document.addEventListener('keydown', e => {
-    if (e.key.toLowerCase() === 'c' && !/^(textarea|input)$/i.test(e.target.tagName)) setCommentMode(!state.commentMode);
+    if (commentModeShortcut(e)) setCommentMode(!state.commentMode);
     if (e.key === 'Escape') { state.composer = null; setCommentMode(false); renderPanel(); }
   });
   document.addEventListener('click', onDocClick, true); // capture: runs before spec-script handlers
@@ -731,8 +748,16 @@ function setCommentMode(on) {
   if (on) openPanel(true);
 }
 function openPanel(open) {
-  document.querySelector('.hx-panel').classList.toggle('open', open);
-  document.body.classList.toggle('hx-panel-open', open);
+  state.panelOpen = Boolean(open);
+  document.querySelector('.hx-panel').classList.toggle('open', state.panelOpen);
+  document.body.classList.toggle('hx-panel-open', state.panelOpen);
+  const toggle = document.getElementById('hx-panel-toggle');
+  toggle.setAttribute('aria-expanded', String(state.panelOpen));
+  toggle.setAttribute('aria-label', state.panelOpen ? 'Collapse review sidebar' : 'Open review sidebar');
+  toggle.textContent = state.panelOpen ? '›' : '‹';
+  const content = document.getElementById('hx-panel-content');
+  content.toggleAttribute('inert', !state.panelOpen);
+  content.setAttribute('aria-hidden', String(!state.panelOpen));
 }
 function status(msg) { document.getElementById('hx-status').textContent = msg; }
 

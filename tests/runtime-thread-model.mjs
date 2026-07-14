@@ -8,8 +8,8 @@ const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime
 const start = runtime.indexOf('function foldThreads(events)');
 const end = runtime.indexOf('\n\nfunction ingest(events)', start);
 assert.ok(start >= 0 && end > start, 'runtime exposes the pure thread-folding function');
-const model = Function(runtime.slice(start, end) + '; return { foldThreads, resolvedThreadCollapsed };')();
-const { foldThreads, resolvedThreadCollapsed } = model;
+const model = Function(runtime.slice(start, end) + '; return { foldThreads, resolvedThreadCollapsed, commentModeShortcut };')();
+const { foldThreads, resolvedThreadCollapsed, commentModeShortcut } = model;
 
 const event = (name, actor, body) => ({ name, actor, body: { actor, schemaVersion: 1, ...body } });
 const events = [
@@ -43,6 +43,20 @@ assert.equal(resolvedThreadCollapsed(thread, expandedResolved), true, 'resolved 
 expandedResolved.add(thread.id);
 assert.equal(resolvedThreadCollapsed(thread, expandedResolved), false, 'a reopened resolved thread stays expanded');
 assert.equal(resolvedThreadCollapsed({ ...thread, status: 'acknowledged' }, expandedResolved), false, 'non-resolved threads never collapse');
+
+const shortcut = overrides => commentModeShortcut({ key: 'c', target: { tagName: 'BODY' }, ...overrides });
+assert.equal(shortcut({}), true, 'bare C enters comment mode');
+assert.equal(shortcut({ ctrlKey: true }), false, 'Ctrl+C remains available to the browser');
+assert.equal(shortcut({ metaKey: true }), false, 'Command+C remains available to the browser');
+assert.equal(shortcut({ altKey: true }), false, 'Alt+C does not enter comment mode');
+assert.equal(shortcut({ shiftKey: true }), false, 'Shift+C does not enter comment mode');
+assert.equal(shortcut({ repeat: true }), false, 'key repeat does not toggle comment mode repeatedly');
+assert.equal(shortcut({ target: { tagName: 'INPUT' } }), false, 'typing in an input does not enter comment mode');
+assert.equal(shortcut({ target: { tagName: 'DIV', isContentEditable: true } }), false, 'typing in editable content does not enter comment mode');
+
+assert.match(runtime, /translateX\(calc\(100% - 44px\)\)/, 'the collapsed sidebar leaves a visible edge control');
+assert.match(runtime, /aria-label="Open review sidebar"/, 'the sidebar starts collapsed with an accessible open control');
+assert.match(runtime, /Collapse review sidebar/, 'the open sidebar exposes a collapse control');
 
 const rootEdit = [
   event('200-comment-root-edit.json', 'human', { id: 'u-edit-root', event: 'comment', anchorId: 'copy', target: null, text: 'Original root' }),
