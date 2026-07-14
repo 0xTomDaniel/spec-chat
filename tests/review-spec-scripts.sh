@@ -58,4 +58,5 @@ grep -F 'exec -s workspace-write --skip-git-repo-check resume thread-test-123' "
   exit 1
 }
 
+node "$ROOT/tests/runtime-thread-model.mjs"
 echo "review-spec script tests passed"

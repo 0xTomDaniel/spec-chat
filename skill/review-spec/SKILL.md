@@ -31,17 +31,17 @@ Your job in review mode: wait for hand-off batches, apply each comment to the sp
 
    Use `scripts/watch.sh <spec>.review/ <cursor-file> 3600 3` only when the human explicitly narrows review to one page or while debugging a page-specific problem. Per-page watching is not the default.
 
-2. **Drain the batch.** Read each new event file listed. Rehydrate context from FILES — the current spec, the unresolved events, `<spec>.review/context.md` — not from what you remember of the chat. Chat history is never the review database; files are what survive compaction, session changes, and CLI switches.
+2. **Drain the batch.** Read each new event file listed. Rehydrate context from FILES — the current spec, the unresolved events, `<spec>.review/context.md` — not from what you remember of the chat. Chat history is never the review database; files are what survive compaction, session changes, and CLI switches. Fold each thread before acting: human `reply` events continue the existing conversation, and human `edit` events replace the message named by `supersedes`. Ignore superseded text.
 
 3. **Apply each comment** to the spec in place, honoring the dialect (see below). A comment may also be a question rather than a change request — informational replies with `change: "no spec change"` are a normal part of the protocol; answer through the channel, don't force an edit.
 
-4. **Reply per comment** with the bundled emitter (one event per comment addressed):
+4. **Reply to each newest human message** with the bundled emitter (one event per comment, follow-up reply, or edit addressed):
 
    ```
    scripts/emit-reply.sh <spec>.review/ <respondsTo-id> <anchorId> '<target-json>' acknowledged '<change-summary>' '<reply text>'
    ```
 
-   Field exactness matters: the browser runtime renders `respondsTo`, `text`, `status`, and `change` — a missing or renamed field means the user sees nothing. End replies that made an edit with an offer to resolve ("OK to resolve?").
+   `respondsTo-id` must be the exact newest human `comment`, `reply`, or `edit` id—not automatically the root comment id. Field exactness matters: the browser runtime renders `respondsTo`, `text`, `status`, and `change` — a missing or renamed field means the user sees nothing. End replies that made an edit with an offer to resolve ("OK to resolve?").
 
 5. **Advance that spec's cursor by APPENDING exactly the filenames the watch reported**:
 
@@ -73,7 +73,7 @@ If an anchor or target no longer exists (the spec moved under the pin), reply wi
 
 ## Statuses
 
-`draft` → (hand-off) → `pending` → your reply makes it `acknowledged` → the human resolves (a `status` event with `resolved`). You never mark threads resolved yourself; you propose it.
+Every new human comment, follow-up reply, or edit is `draft` → (hand-off) → `pending` → your reply to that exact message id makes the thread `acknowledged` → the human resolves (a `status` event with `resolved`). You never mark threads resolved yourself; you propose it.
 
 ## Event schema
 

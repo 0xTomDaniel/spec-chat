@@ -7,7 +7,7 @@ One JSON object per file. Read this instead of reverse-engineering the schema fr
 | field | who | notes |
 |---|---|---|
 | `id` | both | unique per event |
-| `event` | both | `comment` \| `handoff` \| `reply` \| `status` |
+| `event` | both | `comment` \| `handoff` \| `reply` \| `edit` \| `status` |
 | `actor` | both | `human` \| `agent` |
 | `createdAt` | both | ISO 8601 |
 | `schemaVersion` | both | currently `1` |
@@ -32,7 +32,22 @@ One JSON object per file. Read this instead of reverse-engineering the schema fr
 
 Marks a batch ready. `text` typically lists the comment ids. `anchorId` empty, `target` null. The watch wakes on this.
 
-## `reply` (agent) — written by `emit-reply.sh`
+## `reply` (human or agent)
+
+A human reply follows an agent message without creating a detached thread:
+
+```json
+{"id":"u2","event":"reply","respondsTo":"r1","threadId":"u1",
+ "anchorId":"latency-budget","target":{"type":"datum","key":"enqueue"},
+ "quote":null,"text":"Use 750ms instead.","actor":"human",
+ "createdAt":"...","schemaVersion":1}
+```
+
+- `respondsTo`: the exact agent reply being answered.
+- `threadId`: the root human comment id.
+- A new human reply is a `draft` until the next hand-off, then `pending` until the agent answers that reply id.
+
+An agent reply is written by `emit-reply.sh`:
 
 ```json
 {"id":"r...","event":"reply","respondsTo":"u1","anchorId":"latency-budget",
@@ -41,9 +56,25 @@ Marks a batch ready. `text` typically lists the comment ids. `anchorId` empty, `
  "actor":"agent","createdAt":"...","schemaVersion":1}
 ```
 
-- `respondsTo`: the comment `id`. The runtime threads replies by this.
+- `respondsTo`: the exact human `comment`, `reply`, or `edit` id being answered. Do not respond to the root id when a newer human message is pending.
 - `status`: `acknowledged` (addressed, awaiting human resolve) or `orphaned` (anchor gone — quote the stored quote, don't guess).
 - `change`: short summary the page badges, or `"no spec change"` for informational replies.
+
+## `edit` (human)
+
+Human-authored comments and follow-up replies remain append-only on disk. Editing an unanswered `draft` or `pending` message writes a replacement event:
+
+```json
+{"id":"e1","event":"edit","supersedes":"u2","threadId":"u1",
+ "anchorId":"latency-budget","target":{"type":"datum","key":"enqueue"},
+ "quote":null,"text":"Use 725ms instead.","actor":"human",
+ "createdAt":"...","schemaVersion":1}
+```
+
+- `supersedes`: the human message id whose displayed text this event replaces.
+- The edit repeats the effective anchor, target, quote, and full replacement text so each event is self-contained.
+- An edit becomes the newest human message id. It returns the thread to `draft`; after hand-off it becomes `pending`, and the agent replies to the edit id.
+- Collapse each supersession chain before acting. Never apply or answer text that a later edit supersedes.
 
 ## `status` (human) — resolution
 
@@ -52,4 +83,11 @@ Marks a batch ready. `text` typically lists the comment ids. `anchorId` empty, `
  "actor":"human","createdAt":"...","schemaVersion":1}
 ```
 
-Only the human resolves; the agent proposes it ("OK to resolve?"). Lifecycle: `draft` (pre-hand-off) → `pending` → `acknowledged` (agent replied) → `resolved`.
+Only the human resolves; the agent proposes it ("OK to resolve?"). Lifecycle: `draft` (new human comment/reply/edit, pre-hand-off) → `pending` → `acknowledged` (agent replied to the newest human message) → `resolved`.
+
+## Thread folding rules
+
+- A human `comment` starts a thread; its id is the `threadId`.
+- Human and agent `reply` events join the thread containing `respondsTo`.
+- `edit` replaces the effective human message named by `supersedes`, while the original file remains immutable.
+- Sort by event filename, collapse edits, then derive status from the newest effective human message. An agent reply acknowledges the thread only when it responds to that message id.

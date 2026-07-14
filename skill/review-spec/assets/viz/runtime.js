@@ -31,7 +31,7 @@ const state = {
   transport: null,       // {mode, ready, listEvents, postEvent, specModified, label}
   events: [],            // [{actor, name, body}] sorted by name
   seenNames: new Set(),
-  threads: new Map(),    // commentId -> {ev, replies:[], status, draft}
+  threads: new Map(),    // root comment id -> {id, ev, messages:[], status, latestHumanId}
   commentMode: false,
   activeThread: null,
   composer: null,        // {anchorId, target, quote, holder}
@@ -259,7 +259,7 @@ async function hydrateIslands() {
         ring.style.cssText += ';left:' + (r.x - 4) + 'px;top:' + (r.y - 4) + 'px;width:' + (r.width + 8) + 'px;height:' + (r.height + 8) + 'px;display:block';
       });
       chart.on('mouseout', () => { const ring = target.querySelector('.hx-ring'); if (ring) ring.style.display = 'none'; });
-      new ResizeObserver(() => { chart.resize(); renderPins(); }).observe(target);
+      new ResizeObserver(() => { chart.resize(); renderPins(); renderThreadHighlight(); }).observe(target);
     }
   }
 }
@@ -481,6 +481,60 @@ function onDocClick(e) {
 }
 
 /* ---------------- events -> threads ---------------- */
+function foldThreads(events) {
+  const threads = new Map();
+  let lastHandoff = '';
+  for (const e of events) if (e.body.event === 'handoff') lastHandoff = e.name;
+  const messageThread = new Map();
+  const messageSlot = new Map();
+  const humanStatus = e => e.name > lastHandoff ? 'draft' : 'pending';
+  for (const e of events) {
+    const b = e.body;
+    if (b.event === 'comment' && e.actor === 'human') {
+      const th = { id: b.id, ev: e, messages: [e], status: humanStatus(e), latestHumanId: b.id };
+      threads.set(b.id, th);
+      messageThread.set(b.id, b.id);
+      messageSlot.set(b.id, { th, index: 0 });
+      continue;
+    }
+    if (b.event === 'reply') {
+      const threadId = b.threadId || messageThread.get(b.respondsTo) || (threads.has(b.respondsTo) ? b.respondsTo : null);
+      const th = threadId && threads.get(threadId);
+      if (!th) continue;
+      const index = th.messages.push(e) - 1;
+      messageThread.set(b.id, th.id);
+      messageSlot.set(b.id, { th, index });
+      if (e.actor === 'human') {
+        th.latestHumanId = b.id;
+        th.status = humanStatus(e);
+      } else if (b.respondsTo === th.latestHumanId) {
+        th.status = b.status || 'acknowledged';
+      }
+      continue;
+    }
+    if (b.event === 'edit' && e.actor === 'human') {
+      const prior = messageSlot.get(b.supersedes);
+      const threadId = b.threadId || messageThread.get(b.supersedes);
+      const th = (prior && prior.th) || (threadId && threads.get(threadId));
+      if (!th) continue;
+      const index = prior ? prior.index : th.messages.length;
+      th.messages[index] = e;
+      if (index === 0) th.ev = e;
+      messageThread.set(b.id, th.id);
+      messageSlot.set(b.id, { th, index });
+      th.latestHumanId = b.id;
+      th.status = humanStatus(e);
+      continue;
+    }
+    if (b.event === 'status') {
+      const threadId = b.threadId || messageThread.get(b.respondsTo) || (threads.has(b.respondsTo) ? b.respondsTo : null);
+      const th = threadId && threads.get(threadId);
+      if (th) th.status = b.status;
+    }
+  }
+  return threads;
+}
+
 function ingest(events) {
   let changed = false;
   for (const e of events) {
@@ -491,18 +545,7 @@ function ingest(events) {
   }
   if (!changed) return;
   state.events.sort((a, b) => a.name < b.name ? -1 : 1);
-  state.threads.clear();
-  let lastHandoff = '';
-  for (const e of state.events) if (e.body.event === 'handoff') lastHandoff = e.name;
-  for (const e of state.events) {
-    const b = e.body;
-    if (b.event === 'comment') state.threads.set(b.id, { ev: e, replies: [], status: e.name > lastHandoff ? 'draft' : 'pending' });
-    else if ((b.event === 'reply' || b.event === 'status') && state.threads.has(b.respondsTo)) {
-      const th = state.threads.get(b.respondsTo);
-      if (b.event === 'reply') { th.replies.push(e); th.status = b.status || 'acknowledged'; }
-      else th.status = b.status;
-    }
-  }
+  state.threads = foldThreads(state.events);
   renderPanel();
   renderPins();
   renderBadges();
@@ -547,6 +590,8 @@ body.hx-panel-open{padding-right:330px}
 .hx-msg{margin-top:7px;font-size:12.5px;line-height:1.45}
 .hx-who{font-size:10px;font-weight:700;color:#999;text-transform:uppercase}
 .hx-quote{display:block;border-left:2px solid #ddd;padding-left:7px;color:#999;font-style:italic;font-size:11.5px;margin:2px 0}
+.hx-msg-actions{display:flex;gap:6px;margin-top:3px}
+.hx-msg-actions .hx-btn{font-size:10.5px;padding:3px 8px;margin-top:2px}
 .hx-composer textarea{width:100%;min-height:56px;font:12.5px system-ui;border:1px solid #ccc;border-radius:6px;padding:6px 8px;box-sizing:border-box;margin-top:6px}
 .hx-btn{font:600 12px system-ui;border:1px solid #ccc;background:#fff;border-radius:6px;padding:5px 12px;cursor:pointer;margin:6px 6px 0 0}
 .hx-btn.pri{background:#22242a;color:#fff;border-color:#22242a}
@@ -556,6 +601,7 @@ body.hx-panel-open{padding-right:330px}
 .hx-pin[data-s=draft],.hx-pin[data-s=pending]{background:#d98e04}
 .hx-pin[data-s=acknowledged]{background:#12897c}
 .hx-pin[data-s=resolved]{background:#fff;color:#3d8c40;border:2px solid #3d8c40}
+.hx-pin.active{box-shadow:0 0 0 3px rgba(217,142,4,.3),0 2px 8px rgba(20,20,30,.3)}
 [data-anchor]{position:relative}
 body.hx-comment [data-anchor]{cursor:copy}
 body.hx-comment [data-anchor]:hover:not(:has(:is(h1,h2,h3,h4,h5,h6,p,li,ul,ol,table,tr,td,th,blockquote,pre,code,nav,figcaption,button,input,select,textarea,label,a,output,summary,svg,[data-render-target]):hover)){outline:2px dashed #d98e04;outline-offset:6px}
@@ -564,6 +610,7 @@ body.hx-comment [data-anchor] svg, body.hx-comment [data-anchor] svg *{cursor:co
 body.hx-comment [data-anchor] :is(button,input,select,textarea,label,a,summary){cursor:copy}
 [data-render-target]{position:relative}
 .hx-ring{position:absolute;border:2px dashed #d98e04;border-radius:4px;pointer-events:none;z-index:650}
+.hx-thread-ring{position:fixed;border:2px solid #d98e04;border-radius:5px;pointer-events:none;z-index:750;box-shadow:0 0 0 3px rgba(217,142,4,.18);transition:left .12s,top .12s,width .12s,height .12s}
 body.hx-comment [data-render-target]:hover{border:1.5px dashed #d98e04}
 body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-badge{font:600 9.5px system-ui;text-transform:uppercase;letter-spacing:.04em;color:#0e7264;background:#e3f2f0;border-radius:4px;padding:2px 7px;margin-left:8px;vertical-align:middle}
@@ -622,6 +669,11 @@ function mountUI() {
   for (const t of ['pointerdown', 'mousedown', 'touchstart', 'dblclick', 'auxclick', 'contextmenu', 'dragstart', 'submit', 'beforeinput', 'input', 'change']) {
     document.addEventListener(t, suspend, { capture: true, passive: false });
   }
+  let highlightFrame = null;
+  document.addEventListener('scroll', () => {
+    cancelAnimationFrame(highlightFrame);
+    highlightFrame = requestAnimationFrame(renderThreadHighlight);
+  }, true);
   // hover ring so SVG children and controls show what a click would target
   let ring = null;
   document.addEventListener('pointermove', e => {
@@ -671,7 +723,7 @@ function openPanel(open) {
 function status(msg) { document.getElementById('hx-status').textContent = msg; }
 
 function openComposer(anchorId, target, quote) {
-  state.composer = { anchorId, target, quote };
+  state.composer = { kind: 'comment', anchorId, target, quote, text: '' };
   setCommentMode(false);
   openPanel(true);
   renderPanel();
@@ -679,47 +731,108 @@ function openComposer(anchorId, target, quote) {
 }
 
 const label = (b) => '#' + b.anchorId + (b.target ? ' › ' + b.target.key : '');
+const humanId = prefix => prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+function addComposer(parent, c) {
+  const box = document.createElement('div');
+  box.className = 'hx-composer';
+  const verb = c.kind === 'edit' ? 'Save edit' : c.kind === 'reply' ? 'Reply' : 'Comment';
+  box.innerHTML = '<textarea placeholder="' + verb + '… (⌘⏎ to send)"></textarea>' +
+    '<button class="hx-btn pri" data-act="save">' + verb + '</button><button class="hx-btn" data-act="cancel">Cancel</button>';
+  const textarea = box.querySelector('textarea');
+  textarea.value = c.text || '';
+  textarea.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); box.querySelector('[data-act=save]').click(); }
+  });
+  box.querySelector('[data-act=save]').addEventListener('click', async e => {
+    e.stopPropagation();
+    const text = textarea.value.trim();
+    if (!text) return;
+    const common = { anchorId: c.anchorId, target: c.target, quote: c.quote || null, text, actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 };
+    let body;
+    if (c.kind === 'reply') body = Object.assign(common, { id: humanId('u'), event: 'reply', respondsTo: c.respondsTo, threadId: c.threadId });
+    else if (c.kind === 'edit') body = Object.assign(common, { id: humanId('e'), event: 'edit', supersedes: c.supersedes, threadId: c.threadId });
+    else body = Object.assign(common, { id: humanId('u'), event: 'comment' });
+    await state.transport.postEvent(body);
+    state.composer = null;
+    toast((c.kind === 'edit' ? 'Edit' : c.kind === 'reply' ? 'Reply' : 'Comment') + ' saved as draft — hand off when ready');
+    refresh();
+  });
+  box.querySelector('[data-act=cancel]').addEventListener('click', e => { e.stopPropagation(); state.composer = null; renderPanel(); });
+  parent.appendChild(box);
+  setTimeout(() => textarea.focus(), 0);
+}
+
+function startReply(th, agentMessage) {
+  const root = th.ev.body;
+  state.activeThread = th.id;
+  state.composer = { kind: 'reply', threadId: th.id, respondsTo: agentMessage.body.id, anchorId: root.anchorId, target: root.target, quote: null, text: '' };
+  renderPanel();
+}
+
+function startEdit(th, message) {
+  const b = message.body;
+  state.activeThread = th.id;
+  state.composer = { kind: 'edit', threadId: th.id, supersedes: b.id, anchorId: b.anchorId || th.ev.body.anchorId, target: b.target || th.ev.body.target, quote: b.quote || null, text: b.text || '' };
+  renderPanel();
+}
 
 function renderPanel() {
   const wrap = document.getElementById('hx-threads');
   if (!wrap) return;
   wrap.innerHTML = '';
-  if (state.composer) {
+  if (state.composer && state.composer.kind === 'comment') {
     const c = state.composer;
     const d = document.createElement('div');
     d.className = 'hx-thread active';
-    d.innerHTML = '<div class="hx-anchor">' + label({ anchorId: c.anchorId, target: c.target }) + '</div>' +
-      (c.quote ? '<span class="hx-quote">“' + esc(c.quote) + '”</span>' : '') +
-      '<div class="hx-composer"><textarea placeholder="Comment… (⌘⏎ to send)"></textarea>' +
-      '<button class="hx-btn pri" data-act="save">Comment</button><button class="hx-btn" data-act="cancel">Cancel</button></div>';
-    d.querySelector('textarea').addEventListener('keydown', e => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); d.querySelector('[data-act=save]').click(); }
-    });
-    d.querySelector('[data-act=save]').addEventListener('click', async () => {
-      const text = d.querySelector('textarea').value.trim();
-      if (!text) return;
-      await state.transport.postEvent({ id: 'u' + Date.now().toString(36), event: 'comment', anchorId: c.anchorId, target: c.target, quote: c.quote, text, actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
-      state.composer = null;
-      toast('Comment saved as draft — hand off when ready');
-      refresh();
-    });
-    d.querySelector('[data-act=cancel]').addEventListener('click', () => { state.composer = null; renderPanel(); });
+    d.innerHTML = '<div class="hx-anchor">' + esc(label({ anchorId: c.anchorId, target: c.target })) + '</div>' +
+      (c.quote ? '<span class="hx-quote">“' + esc(c.quote) + '”</span>' : '');
+    addComposer(d, c);
     wrap.appendChild(d);
   }
   const threads = [...state.threads.values()].reverse();
   for (const th of threads) {
     const b = th.ev.body;
     const d = document.createElement('div');
-    d.className = 'hx-thread' + (state.activeThread === b.id ? ' active' : '');
-    let html = '<span class="hx-pill" data-s="' + th.status + '">' + th.status + '</span><div class="hx-anchor">' + esc(label(b)) + '</div>' +
-      '<div class="hx-msg"><span class="hx-who">You</span>' + (b.quote ? '<span class="hx-quote">“' + esc(b.quote) + '”</span>' : '') + esc(b.text) + '</div>';
-    for (const r of th.replies) html += '<div class="hx-msg"><span class="hx-who">Agent</span>' + esc(r.body.text) + '</div>';
-    if (th.status === 'acknowledged') html += '<button class="hx-btn" data-act="resolve">✓ Resolve</button>';
-    d.innerHTML = html;
-    d.addEventListener('click', () => { state.activeThread = b.id; renderPanel(); renderPins(); scrollToThread(b); });
+    d.className = 'hx-thread' + (state.activeThread === th.id ? ' active' : '');
+    d.innerHTML = '<span class="hx-pill" data-s="' + th.status + '">' + th.status + '</span><div class="hx-anchor">' + esc(label(b)) + '</div>';
+    for (const message of th.messages) {
+      const m = message.body;
+      const item = document.createElement('div');
+      item.className = 'hx-msg';
+      item.dataset.messageId = m.id;
+      item.innerHTML = '<span class="hx-who">' + (message.actor === 'human' ? 'You' : 'Agent') + '</span>' +
+        (m.quote ? '<span class="hx-quote">“' + esc(m.quote) + '”</span>' : '') + esc(m.text || '');
+      if (message.actor === 'human' && m.id === th.latestHumanId && ['draft', 'pending'].includes(th.status)) {
+        const actions = document.createElement('div');
+        actions.className = 'hx-msg-actions';
+        actions.innerHTML = '<button class="hx-btn" data-act="edit">Edit</button>';
+        actions.querySelector('button').addEventListener('click', e => { e.stopPropagation(); startEdit(th, message); });
+        item.appendChild(actions);
+      }
+      d.appendChild(item);
+    }
+    const last = th.messages[th.messages.length - 1];
+    if (last && last.actor === 'agent' && th.status !== 'resolved') {
+      const reply = document.createElement('button');
+      reply.className = 'hx-btn';
+      reply.dataset.act = 'reply';
+      reply.textContent = '↩ Reply';
+      reply.addEventListener('click', e => { e.stopPropagation(); startReply(th, last); });
+      d.appendChild(reply);
+    }
+    if (th.status === 'acknowledged') {
+      const resolve = document.createElement('button');
+      resolve.className = 'hx-btn';
+      resolve.dataset.act = 'resolve';
+      resolve.textContent = '✓ Resolve';
+      d.appendChild(resolve);
+    }
+    if (state.composer && state.composer.threadId === th.id) addComposer(d, state.composer);
+    d.addEventListener('click', () => selectThread(th, true));
     d.querySelector('[data-act=resolve]')?.addEventListener('click', async e => {
       e.stopPropagation();
-      await state.transport.postEvent({ id: 's' + Date.now().toString(36), event: 'status', respondsTo: b.id, status: 'resolved', actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
+      await state.transport.postEvent({ id: humanId('s'), event: 'status', respondsTo: th.id, threadId: th.id, status: 'resolved', actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
       toast('Resolved');
       refresh();
     });
@@ -728,18 +841,159 @@ function renderPanel() {
   const drafts = [...state.threads.values()].filter(t => t.status === 'draft').length;
   document.getElementById('hx-drafts').textContent = drafts + ' draft' + (drafts === 1 ? '' : 's');
   document.getElementById('hx-handoff').disabled = !drafts;
+  renderThreadHighlight();
+}
+
+function selectThread(th, scroll) {
+  state.activeThread = th.id;
+  openPanel(true);
+  renderPanel();
+  renderPins();
+  if (scroll) scrollToThread(th.ev.body);
+  renderThreadHighlight();
 }
 
 function scrollToThread(b) {
   document.querySelector('[data-anchor="' + b.anchorId + '"]')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 
+const chartInfoFor = b => {
+  const t = b.target || {};
+  return (t.chartKey && state.charts.get(t.chartKey)) || state.charts.get(b.anchorId)
+    || [...state.charts.values()].find(i => i.anchor === b.anchorId);
+};
+
+function textTargetRect(holder, needle) {
+  needle = String(needle || '');
+  if (!needle) return null;
+  const walker = document.createTreeWalker(holder, NodeFilter.SHOW_TEXT);
+  const parts = [];
+  let text = '', node;
+  while ((node = walker.nextNode())) { parts.push({ node, start: text.length, end: text.length + node.data.length }); text += node.data; }
+  const start = text.indexOf(needle);
+  if (start < 0) return null;
+  const end = start + needle.length;
+  const a = parts.find(p => start >= p.start && start < p.end);
+  const z = parts.find(p => end > p.start && end <= p.end) || a;
+  if (!a || !z) return null;
+  const range = document.createRange();
+  range.setStart(a.node, start - a.start);
+  range.setEnd(z.node, end - z.start);
+  const rect = range.getBoundingClientRect();
+  return rect.width || rect.height ? rect : null;
+}
+
+function chartDatum(info, t) {
+  const seriesIndex = t.seriesIndex == null ? 0 : t.seriesIndex;
+  const series = (Array.isArray(info.config.series) ? info.config.series : [info.config.series])[seriesIndex] || {};
+  let dataIndex = t.dataIndex;
+  if (dataIndex == null) {
+    const axes = Array.isArray(info.config.xAxis) ? info.config.xAxis : [info.config.xAxis];
+    const axis = axes[series.xAxisIndex || 0] || axes[0] || {};
+    dataIndex = (axis.data || []).map(String).indexOf(String(t.key));
+  }
+  if (dataIndex == null || dataIndex < 0) return null;
+  let value = (series.data || [])[dataIndex];
+  if (value && typeof value === 'object' && !Array.isArray(value) && value.value !== undefined) value = value.value;
+  return { seriesIndex, dataIndex, value };
+}
+
+function chartItemRect(info, datum) {
+  try {
+    const item = info.chart.getModel().getSeriesByIndex(datum.seriesIndex).getData().getItemGraphicEl(datum.dataIndex);
+    if (!item) return null;
+    const rect = item.getBoundingRect().clone();
+    const transform = item.getComputedTransform ? item.getComputedTransform() : item.transform;
+    if (transform) rect.applyTransform(transform);
+    const host = info.el.getBoundingClientRect();
+    const sx = host.width / (info.chart.getWidth() || host.width || 1);
+    const sy = host.height / (info.chart.getHeight() || host.height || 1);
+    return { left: host.left + rect.x * sx, top: host.top + rect.y * sy, width: rect.width * sx, height: rect.height * sy };
+  } catch { return null; }
+}
+
+let activeChartHighlight = null;
+function syncChartHighlight(info, t) {
+  let action = null;
+  if (info && t && t.type === 'datum') {
+    const datum = chartDatum(info, t);
+    if (datum) action = { type: 'highlight', seriesIndex: datum.seriesIndex, dataIndex: datum.dataIndex };
+  } else if (info && t && t.type === 'legend') action = { type: 'highlight', seriesName: t.key };
+  const key = action ? info.chart.id + ':' + JSON.stringify(action) : '';
+  if (activeChartHighlight && activeChartHighlight.key === key) return;
+  if (activeChartHighlight) {
+    try { activeChartHighlight.chart.dispatchAction({ type: 'downplay' }); } catch {}
+    activeChartHighlight = null;
+  }
+  if (action) {
+    try { info.chart.dispatchAction(action); activeChartHighlight = { chart: info.chart, key }; } catch {}
+  }
+}
+
+function threadTargetRect(b, holder) {
+  const t = b.target;
+  if (!t) { syncChartHighlight(null, null); return holder.getBoundingClientRect(); }
+  if (t.type === 'element') {
+    syncChartHighlight(null, null);
+    const el = resolveElement(holder, t.key);
+    return el ? el.getBoundingClientRect() : holder.getBoundingClientRect();
+  }
+  if (t.type === 'text') {
+    syncChartHighlight(null, null);
+    return textTargetRect(holder, t.key || b.quote) || holder.getBoundingClientRect();
+  }
+  const info = chartInfoFor(b);
+  syncChartHighlight(info, t);
+  if (!info) return holder.getBoundingClientRect();
+  const host = info.el.getBoundingClientRect();
+  if (t.type === 'datum') {
+    const datum = chartDatum(info, t);
+    if (datum) {
+      const graphic = chartItemRect(info, datum);
+      if (graphic) return graphic;
+      try {
+        const point = info.chart.convertToPixel({ seriesIndex: datum.seriesIndex }, Array.isArray(datum.value) ? datum.value : [t.key, datum.value]);
+        return { left: host.left + point[0] - 8, top: host.top + point[1] - 8, width: 16, height: 16 };
+      } catch {}
+    }
+  }
+  if (t.type === 'axis-x') {
+    try { const x = info.chart.convertToPixel({ xAxisIndex: 0 }, t.key); return { left: host.left + x - 8, top: host.bottom - 20, width: 16, height: 16 }; } catch {}
+  }
+  if (t.type === 'axis-y') {
+    try { const y = info.chart.convertToPixel({ yAxisIndex: 0 }, +String(t.key).replace(/[,\s]/g, '')); return { left: host.left + 2, top: host.top + y - 8, width: 18, height: 16 }; } catch {}
+  }
+  if (t.type === 'target') {
+    try { const y = info.chart.convertToPixel({ yAxisIndex: 0 }, +String(t.key).replace(/[,\s]/g, '')); return { left: host.left + 4, top: host.top + y - 2, width: host.width - 8, height: 4 }; } catch {}
+  }
+  return host;
+}
+
+function renderThreadHighlight() {
+  let ring = document.querySelector('.hx-thread-ring');
+  const th = state.activeThread && state.threads.get(state.activeThread);
+  const b = th && th.ev.body;
+  const holder = b && document.querySelector('[data-anchor="' + b.anchorId + '"]');
+  if (!holder) {
+    syncChartHighlight(null, null);
+    if (ring) ring.hidden = true;
+    return;
+  }
+  const rect = threadTargetRect(b, holder);
+  if (!rect) return;
+  ring = ring || document.body.appendChild(Object.assign(document.createElement('div'), { className: 'hx-thread-ring' }));
+  ring.hidden = false;
+  ring.style.left = (rect.left - 4) + 'px';
+  ring.style.top = (rect.top - 4) + 'px';
+  ring.style.width = (Math.max(rect.width, 8) + 8) + 'px';
+  ring.style.height = (Math.max(rect.height, 8) + 8) + 'px';
+}
+
 function pinPos(b, holder) {
   const t = b.target;
   if (!t) return { top: 4, left: holder.clientWidth - 30 };
-  const info = (t.chartKey && state.charts.get(t.chartKey)) || state.charts.get(b.anchorId)
-    || [...state.charts.values()].find(i => i.anchor === b.anchorId);
-  if (info && ['datum', 'axis-x', 'axis-y'].includes(t.type)) {
+  const info = chartInfoFor(b);
+  if (info && ['datum', 'axis-x', 'axis-y', 'target'].includes(t.type)) {
     try {
       const hR = holder.getBoundingClientRect(), cR = info.el.getBoundingClientRect();
       if (t.type === 'datum') {
@@ -784,13 +1038,13 @@ function renderPins() {
     if (!holder) continue;
     const pos = pinPos(b, holder);
     const pin = document.createElement('button');
-    pin.className = 'hx-pin';
+    pin.className = 'hx-pin' + (state.activeThread === th.id ? ' active' : '');
     pin.dataset.s = th.status;
     pin.textContent = n;
     pin.title = label(b);
     pin.style.top = pos.top + 'px';
     pin.style.left = pos.left + 'px';
-    pin.addEventListener('click', e => { e.stopPropagation(); state.activeThread = b.id; openPanel(true); renderPanel(); });
+    pin.addEventListener('click', e => { e.stopPropagation(); selectThread(th, true); });
     holder.appendChild(pin);
   }
 }
@@ -925,7 +1179,7 @@ function startLoops() {
   watchSpec();
   setInterval(refresh, 2000);
   setInterval(watchSpec, 5000);
-  window.addEventListener('resize', renderPins);
+  window.addEventListener('resize', () => { renderPins(); renderThreadHighlight(); });
 }
 
 })();
