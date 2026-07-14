@@ -8,8 +8,8 @@ const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime
 const start = runtime.indexOf('function foldThreads(events)');
 const end = runtime.indexOf('\n\nfunction ingest(events)', start);
 assert.ok(start >= 0 && end > start, 'runtime exposes the pure thread-folding function');
-const model = Function(runtime.slice(start, end) + '; return { foldThreads, resolvedThreadCollapsed, commentModeShortcut, threadDockEntries };')();
-const { foldThreads, resolvedThreadCollapsed, commentModeShortcut, threadDockEntries } = model;
+const model = Function(runtime.slice(start, end) + '; return { foldThreads, resolvedThreadCollapsed, commentModeShortcut, threadDockEntries, acknowledgedReplyCount };')();
+const { foldThreads, resolvedThreadCollapsed, commentModeShortcut, threadDockEntries, acknowledgedReplyCount } = model;
 
 const event = (name, actor, body) => ({ name, actor, body: { actor, schemaVersion: 1, ...body } });
 const events = [
@@ -28,16 +28,19 @@ assert.equal(thread.status, 'pending', 'a reply to an older human message does n
 assert.equal(thread.latestHumanId, 'e-follow');
 assert.equal(thread.messages[2].body.text, 'Edited follow-up');
 assert.ok(!thread.messages.some(message => message.body.text === 'Follow-up'), 'superseded text is removed from the effective thread');
+assert.equal(acknowledgedReplyCount(threads), 0, 'a human follow-up clears the acknowledged-reply count');
 
 events.push(event('170-reply-edit.json', 'agent', { id: 'r-edit', event: 'reply', respondsTo: 'e-follow', status: 'acknowledged', text: 'Current answer' }));
 threads = foldThreads(events);
 thread = threads.get('u-root');
 assert.equal(thread.status, 'acknowledged', 'replying to the latest edit acknowledges the thread');
 assert.equal(thread.messages.at(-1).body.id, 'r-edit');
+assert.equal(acknowledgedReplyCount(threads), 1, 'a current agent reply enters the acknowledged-reply count');
 
 events.push(event('180-status-resolved.json', 'human', { id: 's-root', event: 'status', respondsTo: 'u-root', threadId: 'u-root', status: 'resolved' }));
 thread = foldThreads(events).get('u-root');
 assert.equal(thread.status, 'resolved');
+assert.equal(acknowledgedReplyCount(foldThreads(events)), 0, 'resolving a thread clears the acknowledged-reply count');
 const expandedResolved = new Set();
 assert.equal(resolvedThreadCollapsed(thread, expandedResolved), true, 'resolved threads start collapsed');
 expandedResolved.add(thread.id);
@@ -60,12 +63,23 @@ const dockEntries = threadDockEntries(new Map([
 ]));
 assert.deepEqual(dockEntries.map(entry => [entry.thread.id, entry.number]), [['second', 2], ['first', 1]], 'the dock shows newest threads first while preserving pin numbers');
 
+assert.equal(acknowledgedReplyCount(new Map([
+  ['draft', { status: 'draft' }],
+  ['pending', { status: 'pending' }],
+  ['ack-one', { status: 'acknowledged' }],
+  ['ack-two', { status: 'acknowledged' }],
+  ['resolved', { status: 'resolved' }],
+])), 2, 'the unread badge counts only acknowledged threads awaiting a human response');
+assert.equal(acknowledgedReplyCount(new Map([['replied', { status: 'draft' }], ['resolved', { status: 'resolved' }]])), 0, 'replied-to and resolved threads leave the unread count');
+
 assert.match(runtime, /\.hx-thread-dock\{/, 'collapsed review uses a compact conversation dock');
 assert.match(runtime, /translateX\(100%\)/, 'the closed sidebar moves completely off-screen');
 assert.match(runtime, /setAttribute\('aria-label', 'Review conversations'\)/, 'the thread dock has an accessible navigation label');
 assert.match(runtime, /Collapse review sidebar/, 'the open sidebar exposes a collapse control');
 assert.match(runtime, /\.hx-dock-thread\[data-s=acknowledged\]\{border-color:#315fbd;color:#264f9e;background:#edf2ff\}/, 'acknowledged dock threads use the blue status palette');
 assert.match(runtime, /\.hx-pin\[data-s=acknowledged\]\{background:#315fbd\}/, 'acknowledged page pins use the blue status palette');
+assert.match(runtime, /class="hx-unread-badge" id="hx-unread-badge"/, 'the chat launcher includes an acknowledged-reply badge');
+assert.match(runtime, /acknowledged > 99 \? '99\+'/, 'large unread counts stay compact');
 
 const rootEdit = [
   event('200-comment-root-edit.json', 'human', { id: 'u-edit-root', event: 'comment', anchorId: 'copy', target: null, text: 'Original root' }),

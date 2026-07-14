@@ -554,6 +554,10 @@ function threadDockEntries(threads) {
   return [...threads.values()].map((thread, index) => ({ thread, number: index + 1 })).reverse();
 }
 
+function acknowledgedReplyCount(threads) {
+  return [...threads.values()].filter(thread => thread.status === 'acknowledged').length;
+}
+
 function ingest(events) {
   let changed = false;
   for (const e of events) {
@@ -609,6 +613,8 @@ body.hx-panel-open .hx-thread-dock{opacity:0;transform:translateX(10px);pointer-
 .hx-dock-open,.hx-dock-thread{position:relative;width:32px;height:32px;box-sizing:border-box;border:1px solid #d4d3ce;background:#fff;border-radius:7px;color:#555;cursor:pointer;display:grid;place-items:center;padding:0}
 .hx-dock-open:hover,.hx-dock-thread:hover{background:#f4f3ef;border-color:#aaa;color:#222}
 .hx-dock-open svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.hx-unread-badge{position:absolute;top:-6px;right:-6px;min-width:17px;height:17px;box-sizing:border-box;border:2px solid #fff;border-radius:999px;padding:0 3px;background:#315fbd;color:#fff;display:grid;place-items:center;font:700 9px/1 system-ui;box-shadow:0 1px 4px rgba(20,20,30,.28)}
+.hx-unread-badge[hidden]{display:none}
 .hx-dock-threads{display:flex;flex-direction:column;gap:6px;max-height:calc(100vh - 76px);overflow-y:auto;scrollbar-width:none}
 .hx-dock-threads:not(:empty){border-top:1px solid #e1e0dc;padding-top:6px}
 .hx-dock-threads::-webkit-scrollbar{display:none}
@@ -676,6 +682,7 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-thread-dock{background:rgba(29,32,36,.94);border-color:#3a3d42}
 .hx-dock-open,.hx-dock-thread{background:#24272c;border-color:#4a4d52;color:#d7d6d1}
 .hx-dock-open:hover,.hx-dock-thread:hover{background:#33363c;border-color:#686b71;color:#fff}
+.hx-unread-badge{border-color:#1d2024;background:#668fe5;color:#101722}
 .hx-dock-threads:not(:empty){border-color:#3a3d42}
 .hx-dock-thread[data-s=draft],.hx-dock-thread[data-s=pending]{background:#342d20;color:#e0a33b}
 .hx-dock-thread[data-s=acknowledged]{background:#1f2f54;color:#91b2ff}
@@ -695,7 +702,7 @@ function mountUI() {
   const dock = document.createElement('nav');
   dock.className = 'hx-thread-dock';
   dock.setAttribute('aria-label', 'Review conversations');
-  dock.innerHTML = '<button class="hx-dock-open" id="hx-dock-open" type="button" aria-label="Open review sidebar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14v10H10l-5 3v-13Z"></path><path d="M8 9h8M8 12h5"></path></svg></button><div class="hx-dock-threads" id="hx-dock-threads"></div>';
+  dock.innerHTML = '<button class="hx-dock-open" id="hx-dock-open" type="button" aria-label="Open review sidebar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14v10H10l-5 3v-13Z"></path><path d="M8 9h8M8 12h5"></path></svg><span class="hx-unread-badge" id="hx-unread-badge" aria-hidden="true" hidden></span></button><div class="hx-dock-threads" id="hx-dock-threads"></div>';
   document.body.appendChild(dock);
 
   const panel = document.createElement('aside');
@@ -857,7 +864,13 @@ function renderThreadDock() {
   wrap.innerHTML = '';
   const entries = threadDockEntries(state.threads);
   const open = document.getElementById('hx-dock-open');
-  open.title = 'Open review sidebar · ' + entries.length + ' thread' + (entries.length === 1 ? '' : 's');
+  const acknowledged = acknowledgedReplyCount(state.threads);
+  const badge = document.getElementById('hx-unread-badge');
+  badge.textContent = acknowledged > 99 ? '99+' : String(acknowledged);
+  badge.hidden = acknowledged === 0;
+  const awaiting = acknowledged + ' agent ' + (acknowledged === 1 ? 'reply' : 'replies') + ' awaiting your response';
+  open.title = 'Open review sidebar · ' + entries.length + ' thread' + (entries.length === 1 ? '' : 's') + (acknowledged ? ' · ' + awaiting : '');
+  open.setAttribute('aria-label', 'Open review sidebar' + (acknowledged ? ', ' + awaiting : ''));
   for (const { thread: th, number } of entries) {
     const b = th.ev.body;
     const button = document.createElement('button');
