@@ -75,6 +75,8 @@ function suggestedGrant() {
 
 function fsaTransport() {
   let root = null; // directory handle of the folder containing the spec
+  let pending = null; // persisted handle awaiting a gesture-borne write regrant
+  let resumeInFlight = null;
   const idb = () => new Promise((res, rej) => {
     const q = indexedDB.open('spec-chat', 1);
     q.onupgradeneeded = () => q.result.createObjectStore('handles');
@@ -140,8 +142,28 @@ function fsaTransport() {
           await t._settle(h, d, false);
           return 'granted';
         }
-        return 'prompt'; // expired grant; UI reconnects through a fresh picker
+        pending = h;
+        return 'prompt'; // expired grant; UI offers direct regrant plus picker fallback
       } catch { return 'none'; }
+    },
+    async resume() { // user gesture required; keeps the already-selected folder
+      if (t.connected) return true;
+      if (!pending) return false;
+      if (!resumeInFlight) {
+        const candidate = pending;
+        resumeInFlight = (async () => {
+          try {
+            if (await candidate.requestPermission({ mode: 'readwrite' }) !== 'granted') return;
+            if (t.connected) return; // an explicit picker fallback won the race
+            const d = await t._toSpecDir(candidate);
+            if (d) await t._settle(candidate, d, false);
+          } finally {
+            resumeInFlight = null;
+          }
+        })();
+      }
+      await resumeInFlight;
+      return t.connected;
     },
     async connect({ useLastDir = true } = {}) { // user gesture required
       // Some Chromium shells leave requestPermission() pending forever without surfacing
@@ -580,7 +602,7 @@ function ingest(events) {
 /* ---------------- UI ---------------- */
 const CSS = `
 /* document presentation — the spec file stays lean; the dialect's look lives here */
-body{margin:0;background:#faf9f6;color:#22242a;padding-bottom:100px}
+:where(body){margin:0;background:#faf9f6;color:#22242a;padding-bottom:100px}
 article.spec{max-width:720px;margin:0 auto;padding:40px 24px;font:16.5px/1.65 "Iowan Old Style","Palatino Linotype",Georgia,serif}
 article.spec header{border-bottom:1px solid #e2e0d8;padding-bottom:16px;margin-bottom:28px}
 article.spec h1{font-size:29px;line-height:1.2;margin:0 0 8px;letter-spacing:-.01em}
@@ -590,7 +612,7 @@ article.spec p{margin:0 0 10px;max-width:62ch}
 article.spec a{color:#12897c}
 [data-render-target]{border:1px solid #e2e0d8;border-radius:8px;background:#fff;margin:6px 0 10px}
 @media(prefers-color-scheme:dark){
-body{background:#17191d;color:#e8e7e2}
+:where(body){background:#17191d;color:#e8e7e2}
 article.spec header{border-color:#33363c}
 article.spec nav{color:#74767e}
 article.spec a{color:#34a899}
@@ -696,7 +718,7 @@ function mountUI() {
 
   const bar = document.createElement('div');
   bar.className = 'hx-toolbar';
-  bar.innerHTML = '<button id="hx-mode" aria-pressed="false">✛ Comment (C)</button><button id="hx-connect" hidden>Connect review folder</button><span class="hx-status" id="hx-status">starting…</span>';
+  bar.innerHTML = '<button id="hx-mode" aria-pressed="false">✛ Comment (C)</button><button id="hx-connect" hidden>Connect review folder</button><button id="hx-repick" hidden>Choose different folder</button><span class="hx-status" id="hx-status">starting…</span>';
   document.body.appendChild(bar);
 
   const dock = document.createElement('nav');
@@ -1263,18 +1285,43 @@ async function watchSpec() {
 
   if (state.transport.mode === 'fsa') {
     const btn = document.getElementById('hx-connect');
+    const repick = document.getElementById('hx-repick');
     const restored = await state.transport.tryRestore();
     if (restored !== 'granted') {
       btn.hidden = false;
-      btn.textContent = restored === 'prompt' ? 'Reconnect review folder' : 'Connect review folder';
+      btn.textContent = restored === 'prompt' ? 'Resume review' : 'Connect review folder';
       status(restored === 'prompt'
-        ? 'view-only — folder access expired; reconnect \u201c' + suggestedGrant() + '\u201d'
+        ? 'view-only — resume the saved folder, or choose a different ancestor of this spec'
         : 'view-only — pick or drop \u201c' + suggestedGrant() + '\u201d to connect');
-      const connected = () => { btn.hidden = true; startLoops(); };
-      btn.addEventListener('click', async () => {
-        try { await state.transport.connect({ useLastDir: restored !== 'prompt' }); connected(); }
-        catch (e) { status('connect failed: ' + e.message); }
-      });
+      const connected = () => { btn.hidden = true; repick.hidden = true; startLoops(); };
+      if (restored === 'prompt') {
+        repick.hidden = false;
+        let mouseResumeAt = 0;
+        const resumeReview = async () => {
+          try {
+            if (await state.transport.resume()) connected();
+            else status('review access is still paused — resume again or choose a different folder');
+          } catch (e) { status('resume failed: ' + e.message); }
+        };
+        btn.addEventListener('pointerdown', e => {
+          if (e.pointerType !== 'mouse') return;
+          mouseResumeAt = performance.now();
+          resumeReview();
+        });
+        btn.addEventListener('click', e => {
+          if (e.detail > 0 && performance.now() - mouseResumeAt < 1000) return;
+          resumeReview();
+        });
+        repick.addEventListener('click', async () => {
+          try { await state.transport.connect({ useLastDir: false }); connected(); }
+          catch (e) { status('connect failed: ' + e.message); }
+        });
+      } else {
+        btn.addEventListener('click', async () => {
+          try { await state.transport.connect(); connected(); }
+          catch (e) { status('connect failed: ' + e.message); }
+        });
+      }
       // picker-free path: drag any ancestor folder (home, Documents, repo) onto the page
       btn.title = 'Pick or drop \u201c' + suggestedGrant() + '\u201d (or any folder above the spec) \u2014 remembered for every spec beneath it. Spec lives in: ' + decodeURIComponent(location.pathname).replace(/\/[^/]*$/, '');
       document.addEventListener('dragover', e => { if (!state.loopsStarted) e.preventDefault(); });
@@ -1287,7 +1334,7 @@ async function watchSpec() {
           const h = await item.getAsFileSystemHandle();
           if (!h || h.kind !== 'directory') { toast('Drop a folder, not a file — any parent folder of the spec works'); return; }
           const r = await state.transport.adopt(h);
-          if (r === 'ok') { btn.hidden = true; startLoops(); }
+          if (r === 'ok') connected();
           else toast(r === 'wrong' ? 'That folder isn\u2019t above this spec \u2014 drop \u201c' + suggestedGrant() + '\u201d instead' : 'Write access declined');
         } catch {}
       });

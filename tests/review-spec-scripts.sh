@@ -108,4 +108,5 @@ grep -F 'exec -s workspace-write --skip-git-repo-check resume thread-test-123' "
 }
 
 node "$ROOT/tests/runtime-thread-model.mjs"
+node "$ROOT/tests/runtime-fsa-transport.mjs"
 echo "review-spec script tests passed"
