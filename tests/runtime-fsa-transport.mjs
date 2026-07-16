@@ -105,14 +105,31 @@ assert.equal(restoredTransport.connected, true, 'successful regrant reconnects t
 stored.clear();
 const pickedDirectory = new DirectoryHandle('specs');
 pickedDirectory.files.add(specFile);
-window.showDirectoryPicker = async () => pickedDirectory;
+let pickerOptions;
+window.showDirectoryPicker = async options => {
+  pickerOptions = options;
+  return pickedDirectory;
+};
 const pickerTransport = fsaTransport();
 assert.equal(await pickerTransport.tryRestore(), 'none');
-await pickerTransport.connect({ useLastDir: false });
+assert.equal(await pickerTransport.connect({ useLastDir: false }), 'connected');
+assert.equal(pickerOptions.mode, 'readwrite', 'the picker requests the write grant needed by the review spool');
 assert.equal(pickerTransport.connected, true, 'the directory picker remains an explicit fallback');
+
+stored.clear();
+const pickedAncestor = new DirectoryHandle('workspace');
+const nestedSpecDirectory = new DirectoryHandle('specs');
+nestedSpecDirectory.files.add(specFile);
+pickedAncestor.directories.set('specs', nestedSpecDirectory);
+window.showDirectoryPicker = async () => pickedAncestor;
+const ancestorPickerTransport = fsaTransport();
+assert.equal(await ancestorPickerTransport.connect({ useLastDir: false }), 'connected');
+assert.equal(ancestorPickerTransport.connected, true, 'selecting the suggested ancestor resolves the nested spec directory');
+assert.equal(stored.get('scope-root'), pickedAncestor, 'the selected ancestor is persisted as the reusable grant scope');
 
 assert.match(runtime, /id="hx-repick"/, 'reconnect UI exposes a separate folder-picker fallback');
 assert.match(runtime, /state\.transport\.resume\(\)/, 'reconnect UI uses persisted-handle regrant');
+assert.match(runtime, /Allow this site to edit files/, 'picker UI names the browser permission step explicitly');
 assert.match(runtime, /:where\(body\)\{margin:0;/, 'runtime document defaults remain lower-specificity than a spec theme');
 
 console.log('runtime FSA transport tests passed');

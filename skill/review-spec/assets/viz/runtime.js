@@ -125,6 +125,7 @@ function fsaTransport() {
     },
     async _settle(h, specDir, alsoScope) { // persist a working grant
       root = specDir;
+      pending = null;
       t.connected = true;
       try { await store('readwrite', s => s.put(specDir, location.href)); } catch {}
       try { await store('readwrite', s => s.put(h, 'last-dir')); } catch {}
@@ -189,6 +190,7 @@ function fsaTransport() {
       const d = await t._toSpecDir(picked);
       if (!d) throw new Error('that folder isn’t above this spec — pick a parent of ' + dir + ' (Chrome refuses top-level folders like Documents itself; a projects folder works)');
       await t._settle(picked, d, true);
+      return 'connected';
     },
     async adopt(h) { // directory handle from drag-and-drop; write access needs an explicit ask
       if (t.connected) return 'ok';
@@ -1294,15 +1296,31 @@ async function watchSpec() {
         ? 'view-only — resume the saved folder, or choose a different ancestor of this spec'
         : 'view-only — pick or drop \u201c' + suggestedGrant() + '\u201d to connect');
       const connected = () => { btn.hidden = true; repick.hidden = true; startLoops(); };
+      const resumeReview = async () => {
+        btn.textContent = 'Waiting for browser approval…';
+        btn.disabled = true;
+        status('waiting for browser edit approval… if no prompt is visible, switch to the browser’s permission window');
+        try {
+          if (await state.transport.resume()) connected();
+          else {
+            btn.textContent = 'Resume review';
+            btn.disabled = false;
+            status('edit access was not granted — resume again or choose a different folder');
+          }
+        } catch (e) {
+          btn.textContent = 'Resume review';
+          btn.disabled = false;
+          status('resume failed: ' + e.message);
+        }
+      };
+      const chooseFolder = async options => {
+        status('choose the folder, then approve “Allow this site to edit files?” — the browser may open it as a separate window');
+        await state.transport.connect(options);
+        connected();
+      };
       if (restored === 'prompt') {
         repick.hidden = false;
         let mouseResumeAt = 0;
-        const resumeReview = async () => {
-          try {
-            if (await state.transport.resume()) connected();
-            else status('review access is still paused — resume again or choose a different folder');
-          } catch (e) { status('resume failed: ' + e.message); }
-        };
         btn.addEventListener('pointerdown', e => {
           if (e.pointerType !== 'mouse') return;
           mouseResumeAt = performance.now();
@@ -1313,13 +1331,29 @@ async function watchSpec() {
           resumeReview();
         });
         repick.addEventListener('click', async () => {
-          try { await state.transport.connect({ useLastDir: false }); connected(); }
-          catch (e) { status('connect failed: ' + e.message); }
+          try {
+            repick.textContent = 'Waiting for browser approval…';
+            repick.disabled = true;
+            await chooseFolder({ useLastDir: false });
+          }
+          catch (e) {
+            repick.textContent = 'Choose different folder';
+            repick.disabled = false;
+            status('connect failed: ' + e.message);
+          }
         });
       } else {
         btn.addEventListener('click', async () => {
-          try { await state.transport.connect(); connected(); }
-          catch (e) { status('connect failed: ' + e.message); }
+          try {
+            btn.textContent = 'Waiting for browser approval…';
+            btn.disabled = true;
+            await chooseFolder();
+          }
+          catch (e) {
+            btn.textContent = 'Connect review folder';
+            btn.disabled = false;
+            status('connect failed: ' + e.message);
+          }
         });
       }
       // picker-free path: drag any ancestor folder (home, Documents, repo) onto the page
