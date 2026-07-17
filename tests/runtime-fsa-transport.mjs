@@ -75,8 +75,8 @@ class DirectoryHandle {
 
 const specFile = 'example.spec.html';
 const location = {
-  href: `file:///workspace/specs/${specFile}`,
-  pathname: `/workspace/specs/${specFile}`,
+  href: `file:///workspace/docs/specs/${specFile}`,
+  pathname: `/workspace/docs/specs/${specFile}`,
 };
 const navigator = {
   clipboard: { writeText: async () => {} },
@@ -93,8 +93,10 @@ const fsaTransport = Function(
   `${runtime.slice(start, end)}; return fsaTransport;`,
 )(specFile, location, indexedDB, navigator, window, () => {});
 
-const restoredDirectory = new DirectoryHandle('specs', 'prompt');
-restoredDirectory.files.add(specFile);
+const restoredDirectory = new DirectoryHandle('docs', 'prompt');
+const restoredSpecsDirectory = new DirectoryHandle('specs');
+restoredSpecsDirectory.files.add(specFile);
+restoredDirectory.directories.set('specs', restoredSpecsDirectory);
 stored.set('scope-root', restoredDirectory);
 const restoredTransport = fsaTransport();
 assert.equal(await restoredTransport.tryRestore(), 'prompt', 'an expired stored handle requires a gesture regrant');
@@ -103,8 +105,10 @@ assert.equal(restoredDirectory.permissionRequests, 1, 'resume requests write per
 assert.equal(restoredTransport.connected, true, 'successful regrant reconnects the transport');
 
 stored.clear();
-const pickedDirectory = new DirectoryHandle('specs');
-pickedDirectory.files.add(specFile);
+const pickedDirectory = new DirectoryHandle('docs');
+const pickedSpecsDirectory = new DirectoryHandle('specs');
+pickedSpecsDirectory.files.add(specFile);
+pickedDirectory.directories.set('specs', pickedSpecsDirectory);
 let pickerOptions;
 window.showDirectoryPicker = async options => {
   pickerOptions = options;
@@ -118,9 +122,11 @@ assert.equal(pickerTransport.connected, true, 'the directory picker remains an e
 
 stored.clear();
 const pickedAncestor = new DirectoryHandle('workspace');
+const nestedDocsDirectory = new DirectoryHandle('docs');
 const nestedSpecDirectory = new DirectoryHandle('specs');
 nestedSpecDirectory.files.add(specFile);
-pickedAncestor.directories.set('specs', nestedSpecDirectory);
+nestedDocsDirectory.directories.set('specs', nestedSpecDirectory);
+pickedAncestor.directories.set('docs', nestedDocsDirectory);
 window.showDirectoryPicker = async () => pickedAncestor;
 const ancestorPickerTransport = fsaTransport();
 assert.equal(await ancestorPickerTransport.connect({ useLastDir: false }), 'connected');

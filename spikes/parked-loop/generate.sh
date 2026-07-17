@@ -1,5 +1,5 @@
 #!/bin/sh
-# Synthetic annotator: emits human events against specs/order-pipeline.spec.html
+# Synthetic annotator: emits human events against docs/specs/order-pipeline.spec.html
 # on a delay, ending with a hand-off marker. Stands in for the browser runtime.
 # usage: generate.sh REVIEW_DIR
 set -eu

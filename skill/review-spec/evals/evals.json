@@ -5,7 +5,7 @@
     {
       "id": 1,
       "eval_name": "drain-pending-batch",
-      "prompt": "There are pending annotations on specs/order-pipeline.spec.html — address them.",
+      "prompt": "There are pending annotations on docs/specs/order-pipeline.spec.html — address them.",
       "expectations": [
         "Both comments applied to the spec honoring the dialect",
         "One schema-exact reply per comment (change is a summary string)",
@@ -17,7 +17,7 @@
     {
       "id": 2,
       "eval_name": "informational-question-no-edit",
-      "prompt": "Address pending annotations on specs/order-pipeline.spec.html.",
+      "prompt": "Address pending annotations on docs/specs/order-pipeline.spec.html.",
       "expectations": [
         "Spec NOT modified (comment is a question)",
         "Reply to the comment with change indicating no spec change"
@@ -26,7 +26,7 @@
     {
       "id": 3,
       "eval_name": "status-summary-read-only",
-      "prompt": "What's the state of the review on specs/order-pipeline.spec.html?",
+      "prompt": "What's the state of the review on docs/specs/order-pipeline.spec.html?",
       "expectations": [
         "Correctly identifies resolved vs draft threads",
         "No new files written; spec NOT modified"
@@ -35,7 +35,7 @@
     {
       "id": 4,
       "eval_name": "orphaned-anchor",
-      "prompt": "Address pending annotations on specs/order-pipeline.spec.html.",
+      "prompt": "Address pending annotations on docs/specs/order-pipeline.spec.html.",
       "expectations": [
         "Spec NOT edited (no guessed change for the missing anchor)",
         "Reply with status orphaned, quoting the stored quote"
@@ -44,7 +44,7 @@
     {
       "id": 5,
       "eval_name": "island-edit",
-      "prompt": "Address pending annotations on specs/order-pipeline.spec.html.",
+      "prompt": "Address pending annotations on docs/specs/order-pipeline.spec.html.",
       "expectations": [
         "Edits the echarts island's SERIES data array (enqueue 1180 -> 950), not prose",
         "Correctly maps the datum key to its index in the category axis",
@@ -55,7 +55,7 @@
     {
       "id": 6,
       "eval_name": "superseding-batch",
-      "prompt": "Address pending annotations on specs/order-pipeline.spec.html.",
+      "prompt": "Address pending annotations on docs/specs/order-pipeline.spec.html.",
       "expectations": [
         "Recognizes the second comment retracts the first; does NOT apply the first",
         "Applies only the net intent (keeps 2s hard target, adds 1.5s stretch as a separate sentence)",

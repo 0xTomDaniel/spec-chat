@@ -1,6 +1,6 @@
 # Spike 2 results — parked-agent loop
 
-Run 2026-07-03, Claude Code (Fable 5), Linux. Harness: `generate.sh` (synthetic annotator) + `watch.sh` (bounded batch wait) against `specs/order-pipeline.spec.html`. Covers spike 3 (edit fidelity); spike 5 harness ready but needs a human browser.
+Run 2026-07-03, Claude Code (Fable 5), Linux. Harness: `generate.sh` (synthetic annotator) + `watch.sh` (bounded batch wait) against `docs/specs/order-pipeline.spec.html`. Covers spike 3 (edit fidelity); spike 5 harness ready but needs a human browser.
 
 ## Timeline (actual)
 
@@ -40,7 +40,7 @@ Both edits landed first try via exact string matching: `markLine` added inside t
 
 ## Spike 5 — external-write visibility: harness ready
 
-`spool-viewer.html` holds an FSA directory handle and poll-reads `human/` + `agent/` every 1.5 s. To run: open it in Chromium, pick `specs/order-pipeline.spec.html.review/`, re-run the generator and an agent cycle, confirm agent-written replies appear without re-granting. Verdict pending a human at a browser.
+`spool-viewer.html` holds an FSA directory handle and poll-reads `human/` + `agent/` every 1.5 s. To run: open it in Chromium, pick `docs/specs/order-pipeline.spec.html.review/`, re-run the generator and an agent cycle, confirm agent-written replies appear without re-granting. Verdict pending a human at a browser.
 
 ## Design consequences
 

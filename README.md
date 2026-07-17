@@ -20,12 +20,14 @@ Agent-agnostic across Claude Code / Codex / pi · plain files + CLI + skills ove
 ## Repo layout (planned)
 
 ```
-specs/            example/dogfood specs, one per capability
-  .viz/           shared runtime + vendored libs (ECharts, Mermaid, pin runtime)
-specs/.viz/       runtime (island hydration + annotation layer + transports) + vendored libs
-skill/            the review-spec agent skill + polling script
-mockups/          UX mockups
-DESIGN.md         consensus design (Claude ↔ GPT-5.5 adversarial review, 3 rounds)
+docs/                   shared review collection root
+  specs/                visual product/domain specs, one per capability
+    .viz/                shared runtime + vendored libs
+    .style/              shared visual-spec styles
+  adr/                   visual architecture decision records
+skill/                   the review-spec agent skill + polling script
+mockups/                 UX mockups
+DESIGN.md                consensus design (Claude ↔ GPT-5.5 adversarial review, 3 rounds)
 ```
 
 ## License

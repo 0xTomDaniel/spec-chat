@@ -37,11 +37,12 @@ The browser IS the app — no extension, no desktop shell. The runtime in the do
 Every event carries the quote/context triple regardless of tier → orphan recovery works uniformly. Pins position themselves off the live element at render time (recomputed on resize/re-render), so anchors survive re-renders and data edits. Dialect rule: the generator stamps `data-anchor` liberally; the linter (when it exists) enforces anchors on blocks + islands, structural paths cover the rest. Event schema unchanged — `anchorId` becomes `{blockId, target?}`.
 
 **Multi-spec organization (prod v1 requirement — single spec.html is prototype-only).**
-- `specs/` root: one spec file per capability/feature (`checkout.spec.html`, `fulfillment.spec.html`); a spec should be readable in one sitting — extract shared definitions into their own spec and cross-link (`checkout.spec.html#latency-budget`).
-- One shared dotdir at the root (`specs/.viz/` — runtime + vendored libs, versioned once for all specs).
+- `docs/` is the shared review collection root. Product and domain specs live under `docs/specs/`; visual architecture decisions live under `docs/adr/`.
+- `docs/specs/` contains one spec file per capability/feature (`checkout.spec.html`, `fulfillment.spec.html`); a spec should be readable in one sitting — extract shared definitions into their own spec and cross-link (`checkout.spec.html#latency-budget`).
+- Shared runtime and style assets live once under `docs/specs/.viz/` and `docs/specs/.style/`. A root spec references `./.viz/`; a nested spec references the correct relative path such as `../.viz/`; an ADR references `../specs/.viz/` and `../specs/.style/`.
 - Per-spec review dirs (`<name>.spec.html.review/`) keep annotation locality; gitignore pattern `*.review/`.
-- **One FSA grant covers everything**: the browser asks for the `specs/` root handle once; every spec page and every review dir is reachable under it.
-- **One agent watcher covers everything by default**: a recursive collection watcher parks on the `specs/` root, discovers new review spools dynamically, and serially dispatches ready specs while preserving a cursor and session state per spec. Per-page watchers are explicit narrowing/debugging mode only.
+- **One FSA grant covers everything**: the browser asks for the `docs/` root handle once; every spec, ADR, and review dir is reachable under it.
+- **One agent watcher covers everything by default**: a recursive collection watcher parks on the `docs/` root, discovers new review spools dynamically, and serially dispatches ready documents while preserving a cursor and session state per page. Per-page watchers are explicit narrowing/debugging mode only.
 - `index.spec.html` overview: links to all specs with open-thread counts — computed client-side by enumerating review dirs through the root handle, no build step. In-page file switcher on every spec (see mockup).
 - Skill encodes the conventions: when a spec grows past ~a screen-read or gains a second audience, split it.
 
@@ -91,7 +92,7 @@ spec.html.review/
 Indefinite `inotifywait` dies on real runtimes (tool timeouts, missing binaries, read-only/approval-gated sandboxes — Codex's default sandbox included). Instead, a skill loop:
 
 ```
-review-wait specs/ --cursor-name .cursor-agent --timeout auto --max-events 20   # exits on first ready spec or timeout
+review-wait docs/ --cursor-name .cursor-agent --timeout auto --max-events 20   # exits on first ready document or timeout
 → reason, edit spec, emit agent events, update cursor, re-wait
 ```
 
@@ -141,7 +142,7 @@ PolyForm Shield 1.0.0 forbids competing use — clean-room only. Reimplement: gr
 
 Efficient path: one harness covers 2+3+5 (synthetic events → parked CLI → real spec edits → browser renders replies) and retires both remaining review risks plus the FSA read-side unknown.
 
-**🏁 Milestone 2 (2026-07-03): walking skeleton built.** `specs/.viz/runtime.js` is real: ECharts island hydration (vendored, animation off → deterministic renders), dialect document styling, the full annotation layer (pins/threads/composer/hand-off, universal anchoring incl. chart datums + axis marks via `triggerEvent`), and both transports — FSA primary (`file://`, IndexedDB-persisted handle, per user: local is the common path) with review-serve secondary (`http://`, auto-selected by protocol). Headlessly verified on the live spool: 6 threads → 6 pins, 1 chart. Remaining to verify by hand: FSA mode on a local Chromium; interactive composer/hand-off flows.
+**🏁 Milestone 2 (2026-07-03): walking skeleton built.** `docs/specs/.viz/runtime.js` is real: ECharts island hydration (vendored, animation off → deterministic renders), dialect document styling, the full annotation layer (pins/threads/composer/hand-off, universal anchoring incl. chart datums + axis marks via `triggerEvent`), and both transports — FSA primary (`file://`, IndexedDB-persisted handle, per user: local is the common path) with review-serve secondary (`http://`, auto-selected by protocol). Headlessly verified on the live spool: 6 threads → 6 pins, 1 chart. Remaining to verify by hand: FSA mode on a local Chromium; interactive composer/hand-off flows.
 
 **🏁 Milestone 1 (2026-07-03): first real round-trip, over the remote transport.** Human annotated from a laptop browser through an SSH-tunneled `review-serve` → spool → parked Claude Code session → in-place spec edit → reply rendered back in the viewer (~60 s, context-bearing: the reply used same-thread knowledge from an earlier comment to propose the owner). Also observed: the channel naturally carries Q&A, not just change requests — informational replies with `change: "no spec change"` are part of the protocol now.
 
