@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Post-Mortem Architecture Review — 2026-07-23 Operating Session</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="./.viz/runtime.js"></script>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+</script>
+<style>
+  .badge-strong { @apply bg-red-100 text-red-800; }
+  body { font-family: ui-sans-serif, system-ui, sans-serif; }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+<div class="max-w-5xl mx-auto px-6 py-10">
+
+<header class="mb-10">
+  <h1 class="text-3xl font-bold">Post-Mortem Architecture Review</h1>
+  <p class="text-slate-600 mt-2">Operating session 2026-07-22 → 2026-07-23 · Herdr 0.7.5 generation cutover · Claude implementer flip</p>
+  <p class="text-sm text-slate-500 mt-1">Vocabulary: <em>module, interface, depth, seam, adapter, leverage, locality</em> per codebase-design. Five production defects, ~30 friction events, ~15 escalations analyzed.</p>
+</header>
+
+<!-- CARD 1 -->
+<section class="bg-white rounded-2xl shadow p-6 mb-8 border-l-4 border-red-500">
+  <div class="flex items-center justify-between">
+    <h2 class="text-xl font-semibold">1 · The Herdr contract-fidelity seam: a fake that simulates beliefs</h2>
+    <span class="px-3 py-1 rounded-full text-sm font-semibold bg-red-100 text-red-800">Strong</span>
+  </div>
+  <dl class="mt-4 space-y-3 text-sm">
+    <div><dt class="font-semibold">Files</dt><dd class="text-slate-700">elixir/test/symphony_elixir/herdr_transport_test.exs (fake-herdr fixture) · evals/role-workflows/implementer-herdr-delegation/* · .agents/skills/testing/SKILL.md · scripts/deploy-production-host (CD gate home)</dd></div>
+    <div><dt class="font-semibold">Problem</dt><dd class="text-slate-700">The fake-herdr fixture is a hand-written <em>simulator</em> of the Adapter's upstream, not a recording of it. It synthesized responses the real binary cannot produce (e.g. <code>agent_prompt_stalled</code> under a 5000&nbsp;ms wait) and drifted with each fix cycle to keep tests green. The interface of the HerdrTransport Adapter was therefore <em>guessed</em>, and reviewer + QA judged implementations against the same guess — a circular judge. All five 0.7.5 defects passed through this seam. The testing skill's External-contract fidelity doctrine forbids exactly this; the gap is enforcement, not instruction.</dd></div>
+    <div><dt class="font-semibold">Solution</dt><dd class="text-slate-700">(a) A <strong>CD-gated real-binary contract suite</strong>: at deploy time (not CI — operator constraint: keep CI fast), run the transport's contract expectations against the pinned real herdr binary; fixture assertions carry provenance annotations pointing at the upstream behavior they record. (b) <strong>Role-behavior evals</strong> (EMB-1239, transcripts preserved) proving the implementer escalates rather than invents contract facts and the reviewer verifies against authoritative sources.</dd></div>
+    <div><dt class="font-semibold">Benefits</dt><dd class="text-slate-700"><em>Leverage:</em> one contract suite pays back across every future transport change. <em>Locality:</em> contract drift is caught at the fixture, not five defects downstream in production panes. Tests stop validating beliefs and start validating the seam.</dd></div>
+  </dl>
+  <div class="grid grid-cols-2 gap-4 mt-5">
+    <div class="rounded-xl border border-red-200 p-4">
+      <p class="text-xs font-bold text-red-600 uppercase mb-2">Before</p>
+      <div class="text-xs font-mono leading-6">
+        Implementation ──▶ tests ──▶ <span class="bg-red-100 px-1 rounded">fake (beliefs)</span><br>
+        Reviewer ─────────▶ judges vs <span class="bg-red-100 px-1 rounded">same fake</span><br>
+        Real Herdr ◀── first contact: <b>production</b>
+      </div>
+    </div>
+    <div class="rounded-xl border border-emerald-200 p-4">
+      <p class="text-xs font-bold text-emerald-600 uppercase mb-2">After</p>
+      <div class="text-xs font-mono leading-6">
+        Fixture ──▶ provenance ──▶ <span class="bg-emerald-100 px-1 rounded">recording/upstream</span><br>
+        CD gate ──▶ contract suite vs <span class="bg-emerald-100 px-1 rounded">real pinned binary</span><br>
+        Evals ──▶ implementer/reviewer behavior proven
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CARD 2 -->
+<section class="bg-white rounded-2xl shadow p-6 mb-8 border-l-4 border-red-500">
+  <div class="flex items-center justify-between">
+    <h2 class="text-xl font-semibold">2 · A deep FailureEvidence module: fail loudly, carry everything</h2>
+    <span class="px-3 py-1 rounded-full text-sm font-semibold bg-red-100 text-red-800">Strong</span>
+  </div>
+  <dl class="mt-4 space-y-3 text-sm">
+    <div><dt class="font-semibold">Files</dt><dd class="text-slate-700">elixir/lib/symphony_elixir/agent_runner.ex · orchestrator.ex (retry/backoff families, dispatch skip logic) · workspace.ex (hook_env nil-dropping) · role status endpoints and logs</dd></div>
+    <div><dt class="font-semibold">Problem</dt><dd class="text-slate-700">Absorb-vs-report decisions are scattered and default to absorb: nil env values silently dropped (credential-less agents launched), deterministic failures retried forever, error payloads truncated below diagnostic use, dispatch skips visible only in rolling logs, agent process death surfaced as a misleading secondary symptom. The failure-classification boundary is a <em>shallow</em> module — many call sites each doing a sliver of classification and truncation — so diagnosis cost dominated the session (three defects were ultimately diagnosed by reading pane pixels).</dd></div>
+    <div><dt class="font-semibold">Solution</dt><dd class="text-slate-700">EMB-1237 doctrine, realized as one deep module: every failure flows through a FailureEvidence interface that (1) types the failure at the earliest seam with no degraded continuation for active turns, (2) preserves the complete payload (untruncated provider output, command shape with secret names redacted, classification path), (3) justifies retryability — deterministic failures escalate after bounded attempts, (4) makes every skip/withhold queryable from the state endpoint.</dd></div>
+    <div><dt class="font-semibold">Benefits</dt><dd class="text-slate-700"><em>Locality:</em> the "why" of any failure lives in one record, ending pane-forensics archaeology. <em>Leverage:</em> every role, every provider, every future defect inherits complete evidence. The deletion test passes: deleting today's scattered truncation sites concentrates complexity into the one module where it belongs.</dd></div>
+  </dl>
+  <pre class="mermaid mt-5 bg-slate-50 rounded-xl p-3 text-xs">
+flowchart LR
+  subgraph Before
+    A1[launch fails] -->|truncated string| R1[retry loop]
+    B1[env nil] -->|silently dropped| L1[credential-less agent]
+    C1[skip] -->|log line only| X1[invisible]
+  end
+  subgraph After
+    A2[any failure] --> FE[FailureEvidence\ndeep module]
+    FE -->|typed + full payload| ESC[bounded retry / escalate]
+    FE -->|queryable| SE[state endpoint]
+  end
+  </pre>
+</section>
+
+<!-- CARD 3 -->
+<section class="bg-white rounded-2xl shadow p-6 mb-8 border-l-4 border-red-500">
+  <div class="flex items-center justify-between">
+    <h2 class="text-xl font-semibold">3 · Generation-scoped runtime state with one cleanup owner</h2>
+    <span class="px-3 py-1 rounded-full text-sm font-semibold bg-red-100 text-red-800">Strong</span>
+  </div>
+  <dl class="mt-4 space-y-3 text-sm">
+    <div><dt class="font-semibold">Files</dt><dd class="text-slate-700">bin/octo (launcher) · tracker/claim_lease.ex · herdr session state (~/.config/herdr/sessions, /tmp/octo-herdr-*) · role workspaces · dialyzer PLTs</dd></div>
+    <div><dt class="font-semibold">Problem</dt><dd class="text-slate-700">State outlives process and cleanup has no owner. Every rollback/restart left landmines: stale leases blocked dispatch three times, persisted dead herdr sessions caused agent-name collisions, stale PLTs and workspace refs caused fresh-looking failures a cycle later. Cutovers flip binary+pin atomically but leave session state, leases, and workspace refs from the dead generation.</dd></div>
+    <div><dt class="font-semibold">Solution</dt><dd class="text-slate-700">Every stack boot stamps a generation ID. Leases, herdr sessions, runtime roots, and workspace refs are tagged with it. The launcher owns a boot-time reconciler that sweeps foreign-generation state: supersede dead leases (folds in the parked lease-reconciliation work), purge dead sessions and roots, restore workspaces to expected branches. Cutover gains an explicit generation close-out step.</dd></div>
+    <div><dt class="font-semibold">Benefits</dt><dd class="text-slate-700"><em>Locality:</em> cleanup logic in one owner instead of operator archaeology. <em>Leverage:</em> every future cutover, rollback, and crash-restart inherits a clean slate. Cutovers become actually atomic.</dd></div>
+  </dl>
+  <div class="grid grid-cols-2 gap-4 mt-5 text-xs font-mono">
+    <div class="rounded-xl border border-red-200 p-4 leading-6"><p class="text-xs font-bold text-red-600 uppercase mb-2 font-sans">Before</p>gen N dies ─▶ leases, sessions, roots, refs<br>&nbsp;&nbsp;&nbsp;&nbsp;└─▶ haunt gen N+1 (3 lease blocks, 1 name collision, 1 stale PLT)</div>
+    <div class="rounded-xl border border-emerald-200 p-4 leading-6"><p class="text-xs font-bold text-emerald-600 uppercase mb-2 font-sans">After</p>boot(gen N+1) ─▶ reconciler sweeps tag≠N+1<br>&nbsp;&nbsp;&nbsp;&nbsp;└─▶ clean slate, one owner, evidence logged</div>
+  </div>
+</section>
+
+<!-- CARD 4 -->
+<section class="bg-white rounded-2xl shadow p-6 mb-8 border-l-4 border-red-500">
+  <div class="flex items-center justify-between">
+    <h2 class="text-xl font-semibold">4 · Launch-projection secret hygiene</h2>
+    <span class="px-3 py-1 rounded-full text-sm font-semibold bg-red-100 text-red-800">Strong · small</span>
+  </div>
+  <dl class="mt-4 space-y-3 text-sm">
+    <div><dt class="font-semibold">Files</dt><dd class="text-slate-700">elixir/lib/symphony_elixir/implementer_delegation/herdr_transport.ex (materialize_launch_projection) · leakage test matrix</dd></div>
+    <div><dt class="font-semibold">Problem</dt><dd class="text-slate-700">Credential forwarding + self-contained projections compose into forwarded auth values being written into on-disk projection scripts (mode 0500, owner-only, session-lifetime — mitigated but real). The leakage test matrix covers argv, transcripts, and typed errors, not file persistence: a blind spot created by two individually-correct fixes composing.</dd></div>
+    <div><dt class="font-semibold">Solution</dt><dd class="text-slate-700">Exclude the auth allowlist from embedded projection exports — panes already inherit the session server environment, so the env path carries credentials without disk persistence. Add file-persistence to the leakage test matrix so the composition can never regress.</dd></div>
+    <div><dt class="font-semibold">Benefits</dt><dd class="text-slate-700"><em>Locality:</em> the secrecy invariant lives in one projection builder and one test. Closes the gap between the tested interface and the actual artifact surface.</dd></div>
+  </dl>
+</section>
+
+<!-- CARD 5 -->
+<section class="bg-white rounded-2xl shadow p-6 mb-8 border-l-4 border-amber-400">
+  <div class="flex items-center justify-between">
+    <h2 class="text-xl font-semibold">5 · Console preflight: shift the validators left</h2>
+    <span class="px-3 py-1 rounded-full text-sm font-semibold bg-amber-100 text-amber-800">Worth exploring</span>
+  </div>
+  <dl class="mt-4 space-y-3 text-sm">
+    <div><dt class="font-semibold">Files</dt><dd class="text-slate-700">scripts/pr-body-check · work_contract.py · symphony-post-turn-handoff-gate · (new) scripts/console-preflight</dd></div>
+    <div><dt class="font-semibold">Problem</dt><dd class="text-slate-700">Validators are precise but their rules are discoverable only by failing them; roles absorb that across long turns, the console hits them in rapid succession (six PR-body CI round-trips in one night). The validator interface is effectively "submit and see" — shallow from the caller's perspective.</dd></div>
+    <div><dt class="font-semibold">Solution</dt><dd class="text-slate-700">One console-preflight command bundling every submission gate (PR body template + heading order + foreign-key lint + contract TOML validation), runnable locally pre-push; each gate gains an --explain mode listing its rules. Documented in the octo-ops skill.</dd></div>
+    <div><dt class="font-semibold">Benefits</dt><dd class="text-slate-700"><em>Leverage:</em> every future console (and role) submission pays zero discovery cost. Round-trips through CI collapse to one local command.</dd></div>
+  </dl>
+</section>
+
+<!-- CARD 6 -->
+<section class="bg-white rounded-2xl shadow p-6 mb-8 border-l-4 border-amber-400">
+  <div class="flex items-center justify-between">
+    <h2 class="text-xl font-semibold">6 · Turn-context economics: routing carries authoritative context</h2>
+    <span class="px-3 py-1 rounded-full text-sm font-semibold bg-amber-100 text-amber-800">Worth exploring</span>
+  </div>
+  <dl class="mt-4 space-y-3 text-sm">
+    <div><dt class="font-semibold">Files</dt><dd class="text-slate-700">Implementer delegation turn budget (turn_timeout_ms) · issue comment trails · routing macros · implementer-orchestrator profile</dd></div>
+    <div><dt class="font-semibold">Problem</dt><dd class="text-slate-700">A big issue accumulated a comment trail whose reading time exceeded the one-hour turn budget: two full turns spent entirely on context acquisition, zero workspace changes, session context lost at each timeout — a doom loop. The turn interface assumes context fits in the budget; nothing enforces checkpoint discipline (commit + handoff before budget) or bounds the reading list.</dd></div>
+    <div><dt class="font-semibold">Solution</dt><dd class="text-slate-700">Institutionalize what fixed it manually: (a) long-trail issues get an <em>authoritative state note</em> at routing time — verified facts + slice-sized remaining work — so agents never archaeology the trail; (b) checkpoint discipline in the orchestrator profile: commit and forward-handoff well inside the budget, partial progress is a valid turn; (c) optionally scale turn budget with effort tier.</dd></div>
+    <div><dt class="font-semibold">Benefits</dt><dd class="text-slate-700"><em>Locality:</em> progress persists in the workspace every turn instead of evaporating at timeout. <em>Leverage:</em> every future mega-issue inherits the pattern; the two lost hours become the last ones.</dd></div>
+  </dl>
+</section>
+
+<!-- CARD 7 -->
+<section class="bg-white rounded-2xl shadow p-6 mb-8 border-l-4 border-amber-400">
+  <div class="flex items-center justify-between">
+    <h2 class="text-xl font-semibold">7 · The pane shell is a hostile boundary — codify it</h2>
+    <span class="px-3 py-1 rounded-full text-sm font-semibold bg-amber-100 text-amber-800">Worth exploring</span>
+  </div>
+  <dl class="mt-4 space-y-3 text-sm">
+    <div><dt class="font-semibold">Files</dt><dd class="text-slate-700">docs/specs/domains/agent-runtime.md · herdr_transport.ex (all pane-crossing paths)</dd></div>
+    <div><dt class="font-semibold">Problem</dt><dd class="text-slate-700">Three of five defects were the same lesson relearned: anything crossing the pane shell as typed input or ambient environment is unreliable (paste chunking, quote mangling, profile PATH resets). Each fix rediscovered the boundary's hostility independently.</dd></div>
+    <div><dt class="font-semibold">Solution</dt><dd class="text-slate-700">A one-paragraph spec invariant: <em>nothing crosses the pane shell except short, quote-trivial references to self-contained artifacts; no correctness may depend on pane environment ordering or paste integrity</em>. Every future pane-touching change is reviewed against it. Largely already implemented — this codifies it so it cannot be un-learned.</dd></div>
+    <div><dt class="font-semibold">Benefits</dt><dd class="text-slate-700">Converts three hard-won production lessons into one reviewable sentence. Cheap insurance with permanent leverage.</dd></div>
+  </dl>
+</section>
+
+<!-- CARD 8 -->
+<section class="bg-white rounded-2xl shadow p-6 mb-8 border-l-4 border-slate-300">
+  <div class="flex items-center justify-between">
+    <h2 class="text-xl font-semibold">8 · Provider quota telemetry</h2>
+    <span class="px-3 py-1 rounded-full text-sm font-semibold bg-slate-200 text-slate-700">Speculative · spiked as EMB-1236</span>
+  </div>
+  <p class="mt-3 text-sm text-slate-700">Two Codex exhaustions and one Fable cap hit at the wall with zero warning. Spike EMB-1236 inventories readable quota surfaces (the codex stream already exposes rate-limit percentages) and designs pre-exhaustion alarms. Listed for completeness; not architecture work yet.</p>
+</section>
+
+<!-- TOP RECOMMENDATION -->
+<section class="bg-slate-900 text-white rounded-2xl shadow p-6 mb-10">
+  <h2 class="text-xl font-bold">Top recommendation</h2>
+  <p class="mt-3 text-sm leading-6">Tackle <strong>Card 1 (contract-fidelity seam)</strong> first, with <strong>Card 2 (FailureEvidence)</strong> as its immediate pair. Rationale: Card 1 is where the defects were <em>created</em> — five production failures shipped through a fake that simulated beliefs, and no amount of downstream hardening compensates for a seam that lies. Card 2 is where the defects became <em>expensive</em> — diagnosis, not repair, dominated the session. Together they attack both the source and the multiplier. Cards 3 and 4 follow as bounded, high-certainty wins; 5–7 are process/doctrine codifications that ride along with normal work.</p>
+</section>
+
+<!-- ADVERSARIAL CONSENSUS -->
+<section class="bg-indigo-950 text-indigo-50 rounded-2xl shadow p-6 mb-10">
+  <h2 class="text-xl font-bold">Adversarial review — GPT-5.6 Sol (high) · debate · final consensus</h2>
+  <p class="mt-2 text-sm text-indigo-200">Sol's headline attack: <em>the ranking was backwards — the fake didn't create four of five defects, it blinded detection; the root mistake is treating the interactive pane as a process-execution protocol.</em> Conceded, with the feasibility bound that Herdr's pane model is the product. Consensus after one debate round:</p>
+  <ul class="mt-4 space-y-2 text-sm leading-6">
+    <li><b>A · New top invariant (was card 7, elevated):</b> the pane PTY is transport of last resort; every crossing is a fixed tiny bootstrap reference; all control flow uses the typed Herdr API; structured launch/prompt injection filed upstream.</li>
+    <li><b>B · Card 1 amended:</b> fast hermetic real-binary smoke + fake-vs-real differential checks in CI; full shell/locale/size/race matrix at nightly/CD. Tiering, not exclusion.</li>
+    <li><b>C · Role evals positioned:</b> process-layer controls on agent discipline and fleet regressions (EMB-1238/1239); executable schema/differential checks remain the merge gates.</li>
+    <li><b>D · Card 3 amended, topology-bound:</b> durable controller epochs + desired/observed reconciliation with adopt/resume/close/quarantine/GC verbs + tombstoned idempotent cleanup. Distributed fencing deferred until multi-host/rolling deployment exists.</li>
+    <li><b>E · Card 4 amended:</b> per-launch provider-process env injection preferred; session-server inheritance is documented debt only where Herdr offers nothing narrower — no file persistence, rotation notes, upstream structured-injection request.</li>
+    <li><b>F · Card 2 amended:</b> split into failure envelope / bounded evidence store (excerpts inline, blobs by hashed reference) / redaction / retry controller / dispatch state; explicit acceptance-state field (<code>not_sent | sent_unknown | accepted | completed</code>); "untruncated everywhere" rejected as unsafe.</li>
+    <li><b>G · Card 5 amended:</b> preflight must execute the exact CI validator code and versions — a frontend, never a parallel implementation.</li>
+    <li><b>H · Card 6 amended:</b> system-generated versioned task dossier with verifiable source links; typed checkpoint artifacts (commit, patch, repro script, test result, evidenced hypothesis, decision log) — transcript prose is never completion evidence.</li>
+  </ul>
+  <p class="mt-4 text-sm text-indigo-200"><b>Revised top recommendation:</b> the pane-transport invariant (A) leads as the standing architectural rule; Card 1-as-amended (B) and Card 2-as-amended (F) follow as the paired detection + evidence work.</p>
+</section>
+
+<footer class="text-xs text-slate-400">Generated by the Octo operator console · improve-codebase-architecture · adversarial consensus with GPT-5.6 Sol (high) via OpenRouter, 2026-07-23</footer>
+</div>
+</body>
+</html>
