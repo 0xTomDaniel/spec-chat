@@ -110,6 +110,21 @@ review-wait docs/ --cursor-name .cursor-agent --timeout auto --max-events 20   #
 ### 6. Product shape
 Standalone tool, not a Warp-like environment (page-embedded terminal possible later as cosmetic layer; stagewise/Warp both drifted standalone→environment — revisit post-v1).
 
+## Embed mode: annotating a live app (2026-08)
+The same runtime can mount inside a host application (SPA or any live page) so reviewers annotate the real UI, not just spec documents. The host loads the identical script with one extra attribute:
+
+```html
+<script defer src="/path/to/runtime.js" data-review-dir="reviews/my-app.review"></script>
+```
+
+`data-review-dir` switches on embed mode, which changes exactly four things:
+- **One pinned spool.** The review dir is the attribute value instead of deriving from `location.pathname` — an SPA changes pathname per route, which would fragment the review into per-route spools. HTTP transport only (there is no spec file to grant FSA against).
+- **Overlay CSS only.** The document-presentation block (body background, `article.spec` typography) is skipped; the host owns its look and only the `hx-*` overlay ships.
+- **No spec-mtime watching.** `specModified()` returns null; there is no spec file behind a live app, so no stale-spec banner.
+- **No agent badges.** `renderBadges()` is inert in embed mode — injecting "updated by agent" into a product heading pollutes the page under review. Spec pages keep badges.
+
+Host integration is two things the runtime already supports: `data-anchor` attributes on container elements (sub-element descriptors, TARGETABLE controls, and foreign-chart adoption all work unchanged — capture-phase comment mode beats framework-delegated event handlers, React included), and a server implementing the documented `/api/events` transport. One embed-hardening change applies everywhere: pins redraw on a 2s interval, because a host framework re-rendering an anchored container (React remounts, spec scripts rebuilding DOM) silently drops the pins it contains; the redraw is idempotent.
+
 ## Visual stdlib for agent generation
 Pinned versions, vendored in the dotdir (offline + integrity): **ECharts** (charts, Apache-2.0) · **Mermaid** (boxes-and-arrows default, MIT) · **Cytoscape.js + dagre** (interactive graphs, MIT) · **JSXGraph + KaTeX** (math, MIT) · **GSAP** (animation, free non-OSI; Motion if OSI required) · **rough-notation** (emphasis, MIT) · **house comment-pin runtime** (no viable off-the-shelf lib exists).
 Optional: D3, Observable Plot, Konva, markmap, leader-line, function-plot, Floating UI. Rejected: Mafs, React Flow, Motion-as-default, Liveline, tldraw, Excalidraw-as-target (React-only / license / zero training data / poor LLM generation).
