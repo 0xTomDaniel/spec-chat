@@ -3,12 +3,18 @@
 // Same spools, same event schema either way. See DESIGN.md.
 // Classic script, NOT a module: browsers CORS-block module scripts on file:// pages,
 // and file:// is the primary transport. Specs load it with <script defer src=...>.
+// Embed mode: a host app (SPA or any live page) loads the same script with
+// data-review-dir="<repo-relative>.review" on the tag. That pins one spool for the whole
+// app (routes change location.pathname, which normally names the spool), skips the
+// document-presentation CSS (the host owns its look; only the hx-* overlay ships), and
+// disables spec-mtime watching (there is no spec file to go stale). HTTP transport only.
 (function () {
 'use strict';
 
 const SPEC_FILE = decodeURIComponent(location.pathname.split('/').pop());
-const REVIEW_DIRNAME = SPEC_FILE + '.review';
 // document.currentScript is only valid during the initial synchronous run — capture now.
+const EMBED_REVIEW_DIR = (document.currentScript && document.currentScript.dataset && document.currentScript.dataset.reviewDir) || null;
+const REVIEW_DIRNAME = SPEC_FILE + '.review';
 const RUNTIME_URL = (document.currentScript && document.currentScript.src) || new URL('./.viz/runtime.js', document.baseURI).href;
 const VENDOR = { echarts: new URL('./vendor/echarts-5.5.1.min.js', RUNTIME_URL).href };
 
@@ -44,9 +50,9 @@ const state = {
 
 /* ---------------- transports ---------------- */
 function httpTransport() {
-  const dir = location.pathname.replace(/^\//, '') + '.review';
+  const dir = EMBED_REVIEW_DIR || location.pathname.replace(/^\//, '') + '.review';
   return {
-    mode: 'http', label: 'review-serve',
+    mode: 'http', label: EMBED_REVIEW_DIR ? 'review-serve (embedded)' : 'review-serve',
     ready: Promise.resolve(true),
     async listEvents() {
       const r = await fetch('/api/events?dir=' + encodeURIComponent(dir));
@@ -56,6 +62,7 @@ function httpTransport() {
       await fetch('/api/events?dir=' + encodeURIComponent(dir) + '&actor=human', { method: 'POST', body: JSON.stringify(body) });
     },
     async specModified() {
+      if (EMBED_REVIEW_DIR) return null; // no spec file behind a live app; watchSpec stays quiet
       const r = await fetch(location.pathname, { method: 'HEAD' });
       return new Date(r.headers.get('Last-Modified') || 0).getTime();
     },
@@ -602,7 +609,9 @@ function ingest(events) {
 }
 
 /* ---------------- UI ---------------- */
-const CSS = `
+// Document presentation applies only to standalone spec pages: an embedding host app
+// owns its own look, so embed mode ships the hx-* overlay CSS alone.
+const DOC_CSS = `
 /* document presentation — the spec file stays lean; the dialect's look lives here */
 :where(body){margin:0;background:#faf9f6;color:#22242a;padding-bottom:100px}
 article.spec{max-width:720px;margin:0 auto;padding:40px 24px;font:16.5px/1.65 "Iowan Old Style","Palatino Linotype",Georgia,serif}
@@ -619,7 +628,8 @@ article.spec header{border-color:#33363c}
 article.spec nav{color:#74767e}
 article.spec a{color:#34a899}
 [data-render-target]{border-color:#33363c;background:#1d2024}
-}
+}`;
+const CSS = `
 .hx-toolbar{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);display:flex;gap:4px;align-items:center;background:#fff;border:1px solid #ddd;border-radius:12px;box-shadow:0 8px 28px rgba(30,30,40,.14);padding:6px;z-index:900;font:13px system-ui}
 .hx-toolbar button{font:600 12.5px system-ui;border:none;background:transparent;border-radius:8px;padding:8px 14px;cursor:pointer}
 .hx-toolbar button[aria-pressed=true]{background:#fbf3e2;color:#b47308}
@@ -715,7 +725,7 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 
 function mountUI() {
   const style = document.createElement('style');
-  style.textContent = CSS;
+  style.textContent = (EMBED_REVIEW_DIR ? '' : DOC_CSS) + CSS;
   document.head.appendChild(style);
 
   const bar = document.createElement('div');
@@ -1201,6 +1211,9 @@ function renderPins() {
 
 function renderBadges() {
   document.querySelectorAll('.hx-badge').forEach(b => b.remove());
+  // Embed hosts are live product UI: injecting badge text into their headings
+  // pollutes the page being reviewed. Spec pages keep the badges.
+  if (EMBED_REVIEW_DIR) return;
   const changed = new Set();
   for (const e of state.events) if (e.actor === 'agent' && e.body.change && e.body.anchorId) changed.add(e.body.anchorId);
   for (const a of changed) {
@@ -1386,6 +1399,9 @@ function startLoops() {
   watchSpec();
   setInterval(refresh, 2000);
   setInterval(watchSpec, 5000);
+  // Pins live inside anchored holders; a host framework re-rendering a holder (React
+  // remounts, spec scripts rebuilding DOM) silently drops them. Redraw is idempotent.
+  setInterval(() => { renderPins(); renderThreadHighlight(); }, 2000);
   window.addEventListener('resize', () => { renderPins(); renderThreadHighlight(); });
 }
 
