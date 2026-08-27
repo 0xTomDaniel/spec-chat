@@ -1,6 +1,6 @@
 ---
 name: spec-chat-review
-description: Run the spec-chat review loop - park on a visual HTML spec's annotation spool, address human comments as they arrive, edit the spec in place, and reply through the review channel. Use this whenever the user wants to review, annotate, or discuss a .spec.html file; says things like "start review mode", "watch for annotations", "address the annotations", "I'll comment in the browser"; mentions spec-chat, spec.html, hand-off batches, or a *.review/ directory; or asks about the status of a spec review. Also use it when the user authored a spec earlier in the session and now wants feedback round-trips on it, even if they don't name the tool - and when they ask to see, understand, or be walked through a spec.html, since the walkthrough should happen visually in the rendered page rather than as terminal text.
+description: "Run the spec-chat review loop - park on a visual HTML spec's annotation spool, address human comments as they arrive, edit the spec in place, and reply through the review channel. Use this whenever the user wants to review, annotate, or discuss a .spec.html file; says things like start review mode, watch for annotations, address the annotations, or I'll comment in the browser; mentions spec-chat, spec.html, hand-off batches, or a *.review/ directory; or asks about the status of a spec review. Also use it when the user authored a spec earlier in the session and now wants feedback round-trips on it, even if they don't name the tool - and when they ask to see, understand, or be walked through a spec.html, since the walkthrough should happen visually in the rendered page rather than as terminal text."
 ---
 
 # spec-chat review loop
@@ -115,6 +115,29 @@ If the repo already has `docs/specs/.viz/`, leave it alone — its version is th
 3. On both an initial start and any resumed/reconnected turn, run `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 0 3`; drain, reply, and cursor each ready batch, then repeat until exit 3.
 4. Only after reconciliation is empty, park a fresh collection watcher with `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 3600 3` using the host's same-thread yielded/background wait, keep the turn open, and tell the user the page URL and that every reviewable HTML document below the root is covered. The watcher discovers a spool as soon as the browser creates it; its ready output must wake this same thread for the drain cycle.
 5. Use `scripts/codex-review.sh <spec-root>` only when the human explicitly chooses unattended detached review after the interactive thread closes. State that detached mode will not wake or show live activity in the authoring chat. Passing a specific HTML file remains an explicit single-page override.
+
+## Mobile review contract
+
+The HTTP review transport supports phone and tablet annotation as a first-class
+surface. At narrow viewports the toolbar must stay inside the visual viewport,
+all review controls must provide at least a 44px touch target, textareas must use
+at least 16px text to avoid browser input zoom, and the review panel must use a
+safe-area-aware full-viewport sheet without shifting the spec sideways.
+
+Entering Comment mode on a narrow viewport closes the sheet so the human can tap
+the document target. Tapping an anchored target then reopens the sheet with the
+composer focused. Preserve this target-first sequence when changing panel or
+toolbar behavior; a full-screen sheet that remains open during target selection
+makes mobile annotation impossible.
+
+The mobile toolbar keeps Hand off beside Comment. It stays disabled with no
+drafts, displays the current draft count, and emits the same handoff event as the
+panel action.
+
+Prefer a page viewport declaration containing
+`width=device-width, initial-scale=1, viewport-fit=cover`. The runtime still
+contains itself when `viewport-fit=cover` is absent, but the declaration lets its
+safe-area padding protect controls on notched devices.
 
 If asked only for **status** (no review mode), read the spool, summarize threads by status, and don't edit anything.
 

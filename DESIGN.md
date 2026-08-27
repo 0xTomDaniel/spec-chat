@@ -54,6 +54,23 @@ Every event carries the quote/context triple regardless of tier → orphan recov
 5. *Converge*: reply directly to an agent response, edit any still-unanswered human message through an append-only `supersedes` event, or ✓ Resolve. Selecting a thread highlights its associated page element; resolved threads collapse but remain browsable — the spec doubles as its own decision record.
 6. *Async*: no agent running? Annotate anyway (spool is durable); next `/review-spec` in the CLI drains pending batches immediately, then watches.
 
+### Mobile review surface
+
+The HTTP transport supports mobile review without a separate application.
+Below 640px the floating toolbar stays inside the visual viewport with Comment
+and the draft-counted Hand off action side by side, while connection status uses
+its own truncated row.
+
+Comment mode is target-first on mobile: entering it closes the review sheet so
+the document remains tappable, and selecting an anchored target opens a
+safe-area-aware full-viewport composer sheet with focus in a 16px textarea.
+Review controls use at least 44px touch targets, the sheet uses dynamic viewport
+height, and reduced-motion preferences remove shell transitions.
+
+Opaque browser errors with the fully redacted `Script error.` signature carry no
+source, line, stack, or Error object and do not create the fatal review overlay.
+Attributable same-origin exceptions and unhandled rejections remain visible.
+
 Agent presence: page shows "agent watching / last event Ns ago" derived from agent-event recency; if a hand-off gets no ack in ~30 s, prompt "is `/review-spec` running in your CLI?".
 
 ## Target architecture (v3 consensus, 2026-07-03)

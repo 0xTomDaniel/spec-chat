@@ -19,7 +19,13 @@ const RUNTIME_URL = (document.currentScript && document.currentScript.src) || ne
 const VENDOR = { echarts: new URL('./vendor/echarts-5.5.1.min.js', RUNTIME_URL).href };
 
 /* ---------------- error overlay (headless-debuggable) ---------------- */
-window.addEventListener('error', e => overlay('error', e.message + ' @ ' + (e.filename || '').split('/').pop() + ':' + e.lineno));
+window.addEventListener('error', e => {
+  // Browsers intentionally redact some foreign/extension failures to this
+  // detail-free signature. It cannot identify a spec-chat fault and must not
+  // cover a still-working review surface with a fatal-looking overlay.
+  if (e.message === 'Script error.' && !e.filename && !e.lineno && !e.colno && !e.error) return;
+  overlay('error', e.message + ' @ ' + (e.filename || '').split('/').pop() + ':' + e.lineno);
+});
 window.addEventListener('unhandledrejection', e => overlay('rejection', String(e.reason)));
 function overlay(kind, msg) {
   let el = document.getElementById('hx-errors');
@@ -628,10 +634,16 @@ article.spec header{border-color:#33363c}
 article.spec nav{color:#74767e}
 article.spec a{color:#34a899}
 [data-render-target]{border-color:#33363c;background:#1d2024}
+}
+@media(max-width:640px){
+:where(body){padding-bottom:calc(112px + env(safe-area-inset-bottom))}
+article.spec{padding:24px 16px}
 }`;
 const CSS = `
 .hx-toolbar{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);display:flex;gap:4px;align-items:center;background:#fff;border:1px solid #ddd;border-radius:12px;box-shadow:0 8px 28px rgba(30,30,40,.14);padding:6px;z-index:900;font:13px system-ui}
 .hx-toolbar button{font:600 12.5px system-ui;border:none;background:transparent;border-radius:8px;padding:8px 14px;cursor:pointer}
+.hx-toolbar button:disabled{cursor:default;opacity:.45}
+.hx-mobile-handoff{display:none}
 .hx-toolbar button[aria-pressed=true]{background:#fbf3e2;color:#b47308}
 .hx-toolbar .hx-status{color:#888;font-size:11.5px;padding:0 10px}
 .hx-panel{position:fixed;top:0;right:0;width:330px;height:100vh;background:#f4f3ef;border-left:1px solid #ddd;z-index:800;display:flex;flex-direction:column;font:13px system-ui;transform:translateX(100%);transition:transform .2s,box-shadow .2s;box-shadow:none}
@@ -701,6 +713,34 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-toast{position:fixed;bottom:76px;left:50%;transform:translateX(-50%);background:#22242a;color:#faf9f6;font:600 12.5px system-ui;border-radius:8px;padding:9px 16px;box-shadow:0 8px 28px rgba(30,30,40,.3);z-index:960;opacity:0;transition:opacity .25s;pointer-events:none}
 .hx-toast.show{opacity:1}
 .hx-banner button{font:inherit;border:1px solid #fff;background:transparent;color:#fff;border-radius:6px;padding:3px 12px;cursor:pointer}
+@media(max-width:640px){
+.hx-toolbar{left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom));transform:none;max-width:none;display:flex;flex-wrap:wrap;justify-content:stretch;gap:4px;padding:6px}
+.hx-toolbar button{min-height:44px;flex:1 1 auto;padding:8px 12px;touch-action:manipulation}
+.hx-mobile-handoff{display:block}
+.hx-toolbar .hx-status{flex:1 0 100%;min-width:0;padding:2px 8px 4px;overflow:hidden;text-align:center;text-overflow:ellipsis;white-space:nowrap}
+.hx-panel{width:100vw;height:100dvh;max-height:100dvh;border-left:0}
+body.hx-panel-open{padding-right:0;overflow:hidden}
+.hx-panel-head{min-height:56px;padding:18px 16px 14px 60px}
+.hx-panel-toggle{top:6px;left:6px;width:44px;height:44px;touch-action:manipulation}
+.hx-thread-dock{top:calc(8px + env(safe-area-inset-top));right:8px;padding:4px}
+.hx-dock-open,.hx-dock-thread{width:44px;height:44px;touch-action:manipulation}
+.hx-dock-threads{max-height:calc(100dvh - 68px)}
+.hx-threads{padding:12px;overscroll-behavior:contain}
+.hx-thread{padding:12px}
+.hx-disclosure{min-width:44px;min-height:44px;touch-action:manipulation}
+.hx-composer textarea{min-height:120px;font-size:16px;padding:10px 12px}
+.hx-btn,.hx-msg-actions .hx-btn{min-height:44px;padding:8px 12px;touch-action:manipulation}
+.hx-handoff{gap:8px;flex-wrap:wrap;padding:10px 12px calc(10px + env(safe-area-inset-bottom))}
+.hx-handoff .hx-note{flex:1 1 auto}
+.hx-handoff .hx-btn{flex:1 1 auto;margin:0}
+.hx-pin{width:44px;height:44px;font-size:12px;touch-action:manipulation}
+.hx-banner{align-items:flex-start;flex-wrap:wrap;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;text-align:center}
+.hx-banner button{min-height:44px;padding:8px 12px;touch-action:manipulation}
+.hx-toast{bottom:calc(112px + env(safe-area-inset-bottom));max-width:calc(100vw - 24px);box-sizing:border-box;text-align:center}
+}
+@media(prefers-reduced-motion:reduce){
+.hx-panel,.hx-thread-dock,.hx-thread-ring,.hx-toast{transition:none}
+}
 @media(prefers-color-scheme:dark){
 .hx-toolbar,.hx-thread{background:#24272c;border-color:#3a3d42;color:#e8e7e2}
 .hx-toolbar button{color:#e8e7e2}
@@ -730,7 +770,7 @@ function mountUI() {
 
   const bar = document.createElement('div');
   bar.className = 'hx-toolbar';
-  bar.innerHTML = '<button id="hx-mode" aria-pressed="false">✛ Comment (C)</button><button id="hx-connect" hidden>Connect review folder</button><button id="hx-repick" hidden>Choose different folder</button><span class="hx-status" id="hx-status">starting…</span>';
+  bar.innerHTML = '<button id="hx-mode" aria-pressed="false">✛ Comment (C)</button><button class="hx-mobile-handoff" id="hx-mobile-handoff" type="button" disabled>Hand off</button><button id="hx-connect" hidden>Connect review folder</button><button id="hx-repick" hidden>Choose different folder</button><span class="hx-status" id="hx-status">starting…</span>';
   document.body.appendChild(bar);
 
   const dock = document.createElement('nav');
@@ -746,6 +786,7 @@ function mountUI() {
   document.body.appendChild(panel);
 
   document.getElementById('hx-mode').addEventListener('click', () => setCommentMode(!state.commentMode));
+  document.getElementById('hx-mobile-handoff').addEventListener('click', handoff);
   document.getElementById('hx-dock-open').addEventListener('click', () => openPanel(true));
   document.getElementById('hx-panel-toggle').addEventListener('click', () => openPanel(!state.panelOpen));
   document.getElementById('hx-handoff').addEventListener('click', handoff);
@@ -818,7 +859,7 @@ function setCommentMode(on) {
       info.chart.setOption(patch);
     } catch {}
   }
-  if (on) openPanel(true);
+  if (on) openPanel(!window.matchMedia('(max-width: 640px)').matches);
 }
 function openPanel(open) {
   state.panelOpen = Boolean(open);
@@ -999,6 +1040,9 @@ function renderPanel() {
   const drafts = [...state.threads.values()].filter(t => t.status === 'draft').length;
   document.getElementById('hx-drafts').textContent = drafts + ' draft' + (drafts === 1 ? '' : 's');
   document.getElementById('hx-handoff').disabled = !drafts;
+  const mobileHandoff = document.getElementById('hx-mobile-handoff');
+  mobileHandoff.disabled = !drafts;
+  mobileHandoff.textContent = drafts ? 'Hand off (' + drafts + ')' : 'Hand off';
   renderThreadDock();
   renderThreadHighlight();
 }
