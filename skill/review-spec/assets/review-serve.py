@@ -14,6 +14,7 @@ usage: review-serve.py [ROOT] [PORT]
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -30,8 +31,8 @@ try:
 except (OSError, subprocess.CalledProcessError):
     REPO_ROOT = None
 
-if REPO_ROOT and os.path.samefile(ROOT, REPO_ROOT):
-    raise SystemExit('refusing repository root; serve the narrow review collection instead')
+if not REPO_ROOT or os.path.samefile(ROOT, REPO_ROOT):
+    raise SystemExit('refusing broad root; serve a narrow review collection strictly inside its Git repository')
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -149,8 +150,13 @@ class Handler(SimpleHTTPRequestHandler):
             ev = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))))
         except ValueError:
             return self._json({'error': 'bad json'}, 400)
+        event = ev.get('event')
+        event_id = ev.get('id')
+        safe = re.compile(r'[A-Za-z0-9._-]{1,128}')
+        if not isinstance(event, str) or not isinstance(event_id, str) or not safe.fullmatch(event) or not safe.fullmatch(event_id):
+            return self._json({'error': 'bad event name'}, 400)
         os.makedirs(os.path.join(d, actor), exist_ok=True)
-        name = '%d-%s-%s.json' % (time.time_ns(), ev.get('event', 'event'), ev.get('id', 'x'))
+        name = '%d-%s-%s.json' % (time.time_ns(), event, event_id)
         with open(os.path.join(d, actor, name), 'w') as f:
             json.dump(ev, f)
         self._json({'ok': True, 'name': name})
