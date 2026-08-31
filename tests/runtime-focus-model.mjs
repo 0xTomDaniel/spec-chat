@@ -26,7 +26,7 @@ assert.deepEqual([...classifyAnchorSignatures(current, baseline)], [
 ], 'current anchors classify only from baseline signatures');
 assert.deepEqual([...classifyAnchorSignatures(current, null).values()], ['changed', 'changed', 'changed'], 'a new spec is entirely changed');
 
-assert.match(runtime, /new URLSearchParams\(location\.search\)\.get\('focus'\) === 'changes'/, 'focus activates only through the issue-focus URL');
+assert.match(runtime, /new URLSearchParams\(location\.search\)\.get\('focus'\) !== 'changes'/, 'focus activates only through the issue-focus URL');
 assert.match(runtime, /body\.hx-focus-active \[data-hx-focus=unchanged\]/, 'unchanged current blocks visually recede');
 assert.match(runtime, /fetch\('\/api\/baseline\?'/, 'focus reads its baseline from the review server');
 

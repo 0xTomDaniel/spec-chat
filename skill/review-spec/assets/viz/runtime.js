@@ -75,6 +75,53 @@ function httpTransport() {
   };
 }
 
+function classifyAnchorSignatures(current, baseline) {
+  const result = new Map();
+  for (const [anchor, signature] of current) {
+    result.set(anchor, baseline === null || baseline.get(anchor) !== signature ? 'changed' : 'unchanged');
+  }
+  return result;
+}
+
+function anchorSignatures(doc) {
+  const result = new Map();
+  for (const element of doc.querySelectorAll('[data-anchor]')) {
+    if (element.querySelector('[data-anchor]')) continue;
+    result.set(element.dataset.anchor, element.outerHTML);
+  }
+  return result;
+}
+
+async function applyIssueFocus() {
+  if (EMBED_REVIEW_DIR || location.protocol === 'file:' || new URLSearchParams(location.search).get('focus') !== 'changes') return;
+  try {
+    const params = new URLSearchParams({ path: location.pathname.replace(/^\//, '') });
+    const requestedBase = new URLSearchParams(location.search).get('base');
+    if (requestedBase) params.set('base', requestedBase);
+    const [currentResponse, baselineResponse] = await Promise.all([
+      fetch(location.pathname, { cache: 'no-store' }),
+      fetch('/api/baseline?' + params),
+    ]);
+    if (!currentResponse.ok || !baselineResponse.ok) throw new Error('Git baseline unavailable');
+    const currentText = await currentResponse.text();
+    const baseline = await baselineResponse.json();
+    const parser = new DOMParser();
+    const current = anchorSignatures(parser.parseFromString(currentText, 'text/html'));
+    const prior = baseline.html === null ? null : anchorSignatures(parser.parseFromString(baseline.html, 'text/html'));
+    const classification = classifyAnchorSignatures(current, prior);
+    for (const element of document.querySelectorAll('[data-anchor]')) {
+      if (element.querySelector('[data-anchor]')) continue;
+      element.dataset.hxFocus = classification.get(element.dataset.anchor) || 'changed';
+    }
+    document.body.classList.add('hx-focus-active');
+  } catch (error) {
+    const notice = document.createElement('div');
+    notice.className = 'hx-focus-error';
+    notice.textContent = 'Issue focus unavailable. Showing the complete current spec.';
+    document.body.appendChild(notice);
+  }
+}
+
 // Name the folder the user should grant: the first ancestor Chromium will accept
 // (it blocklists the home/Documents/Desktop/Downloads roots themselves).
 function suggestedGrant() {
@@ -641,6 +688,8 @@ article.spec nav{font:12px system-ui;color:#8b8e98}
 article.spec p{margin:0 0 10px;max-width:62ch}
 article.spec a{color:#12897c}
 [data-render-target]{border:1px solid #e2e0d8;border-radius:8px;background:#fff;margin:6px 0 10px}
+body.hx-focus-active [data-hx-focus=unchanged]{opacity:.24;filter:saturate(.45)}
+.hx-focus-error{position:fixed;top:12px;left:50%;transform:translateX(-50%);max-width:calc(100vw - 24px);box-sizing:border-box;padding:8px 12px;border-radius:8px;background:#8b1a1a;color:#fff;font:600 12px system-ui;z-index:970;box-shadow:0 6px 20px rgba(30,30,40,.25)}
 @media(prefers-color-scheme:dark){
 :where(body){background:#17191d;color:#e8e7e2}
 article.spec header{border-color:#33363c}
@@ -1342,6 +1391,7 @@ async function watchSpec() {
 /* ---------------- boot ---------------- */
 (async function boot() {
   mountUI();
+  await applyIssueFocus();
   await hydrateIslands();
   adoptForeignCharts();
   // spec scripts can create/recreate charts at any time; rescan when canvases appear
