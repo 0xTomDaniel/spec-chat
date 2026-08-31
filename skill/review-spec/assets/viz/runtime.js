@@ -53,6 +53,7 @@ const state = {
   specMtime: null,
   loopsStarted: false,
   eventsRendered: false,
+  handoffPosting: false,
 };
 
 /* ---------------- transports ---------------- */
@@ -1361,10 +1362,15 @@ function renderBadges() {
 
 async function handoff() {
   const action = reviewHandoffState(state.threads, Boolean(document.querySelector('[data-spec-tbd]')));
-  if (!action.enabled) return;
-  await state.transport.postEvent({ id: 'h' + Date.now().toString(36), event: 'handoff', anchorId: '', target: null, quote: null, text: 'batch from ' + state.transport.mode, actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
-  toast(action.finish ? 'Review finished' : 'Handed off ' + action.drafts + ' comment' + (action.drafts === 1 ? '' : 's') + ' — agent notified');
-  refresh();
+  if (state.handoffPosting || !action.enabled) return;
+  state.handoffPosting = true;
+  try {
+    await state.transport.postEvent({ id: 'h' + Date.now().toString(36), event: 'handoff', anchorId: '', target: null, quote: null, text: 'batch from ' + state.transport.mode, actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
+    toast(action.finish ? 'Review finished' : 'Handed off ' + action.drafts + ' comment' + (action.drafts === 1 ? '' : 's') + ' — agent notified');
+    refresh();
+  } finally {
+    state.handoffPosting = false;
+  }
 }
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
