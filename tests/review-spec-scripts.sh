@@ -3,6 +3,16 @@ set -eu
 
 ROOT=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
 SCRIPTS="$ROOT/skill/review-spec/scripts"
+
+cmp "$ROOT/skill/review-spec/assets/viz/runtime.js" "$ROOT/docs/specs/.viz/runtime.js" >/dev/null || {
+  echo "dogfood runtime differs from the packaged review runtime" >&2
+  exit 1
+}
+cmp "$ROOT/skill/review-spec/assets/review-serve.py" "$ROOT/tools/review-serve.py" >/dev/null || {
+  echo "dogfood review server differs from the packaged review server" >&2
+  exit 1
+}
+
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/spec-chat-tests.XXXXXX")
 TMP=$(CDPATH= cd "$TMP" && pwd)
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
