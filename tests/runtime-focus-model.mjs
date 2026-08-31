@@ -27,7 +27,11 @@ assert.deepEqual([...classifyAnchorSignatures(current, baseline)], [
 assert.deepEqual([...classifyAnchorSignatures(current, null).values()], ['changed', 'changed', 'changed'], 'a new spec is entirely changed');
 
 assert.match(runtime, /new URLSearchParams\(location\.search\)\.get\('focus'\) !== 'changes'/, 'focus activates only through the issue-focus URL');
-assert.match(runtime, /body\.hx-focus-active \[data-hx-focus=unchanged\]/, 'unchanged current blocks visually recede');
+assert.match(runtime, /function ownAnchorSignature\(/, 'parent anchors compare their own heading and visual-island content');
+assert.doesNotMatch(runtime, /body\.hx-focus-active \[data-hx-focus=unchanged\]\{opacity:/, 'focus never dims pins through ancestor opacity');
+assert.match(runtime, /body\.hx-focus-active \[data-hx-focus=unchanged\] > :not\(\[data-anchor\]\)/, 'unchanged direct spec content visually recedes without dimming nested review controls');
+assert.match(runtime, /AbortController/, 'focus bounds slow baseline reads');
+assert.doesNotMatch(runtime, /await applyIssueFocus\(\)/, 'focus lookup never blocks chart and review boot');
 assert.match(runtime, /fetch\('\/api\/baseline\?'/, 'focus reads its baseline from the review server');
 
 console.log('runtime focus model tests passed');
