@@ -8,8 +8,8 @@ const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime
 const start = runtime.indexOf('function foldThreads(events)');
 const end = runtime.indexOf('\n\nfunction ingest(events)', start);
 assert.ok(start >= 0 && end > start, 'runtime exposes the pure thread-folding function');
-const model = Function(runtime.slice(start, end) + '; return { foldThreads, resolvedThreadCollapsed, threadReplyAction, reviewHandoffState, commentModeShortcut, threadDockEntries, acknowledgedReplyCount };')();
-const { foldThreads, resolvedThreadCollapsed, threadReplyAction, reviewHandoffState, commentModeShortcut, threadDockEntries, acknowledgedReplyCount } = model;
+const model = Function(runtime.slice(start, end) + '; return { foldThreads, resolvedThreadCollapsed, threadReplyAction, reviewHandoffState, handoffObservation, commentModeShortcut, threadDockEntries, acknowledgedReplyCount };')();
+const { foldThreads, resolvedThreadCollapsed, threadReplyAction, reviewHandoffState, handoffObservation, commentModeShortcut, threadDockEntries, acknowledgedReplyCount } = model;
 
 const event = (name, actor, body) => ({ name, actor, body: { actor, schemaVersion: 1, ...body } });
 const events = [
@@ -81,6 +81,11 @@ assert.deepEqual(reviewHandoffState(new Map([['draft', { status: 'draft' }]])), 
 assert.deepEqual(reviewHandoffState(new Map([['pending', { status: 'pending' }], ['resolved', { status: 'resolved' }]])), { drafts: 0, finish: false, enabled: false }, 'unsettled threads cannot finish review');
 assert.deepEqual(reviewHandoffState(new Map([['resolved', { status: 'resolved' }]])), { drafts: 0, finish: true, enabled: true }, 'a clean resolved review enables Finish review');
 assert.deepEqual(reviewHandoffState(new Map()), { drafts: 0, finish: true, enabled: true }, 'a review with no threads may finish explicitly');
+
+const waitingHandoff = [event('300-handoff.json', 'human', { id: 'h-wait', event: 'handoff', createdAt: '2026-08-31T12:00:00.000Z' })];
+assert.equal(handoffObservation(waitingHandoff, Date.parse('2026-08-31T12:00:10.000Z')), 'waiting', 'a fresh unacknowledged hand-off is waiting');
+assert.equal(handoffObservation(waitingHandoff, Date.parse('2026-08-31T12:00:31.000Z')), 'queued', 'an unacknowledged hand-off becomes truthfully queued after 30 seconds');
+assert.equal(handoffObservation([...waitingHandoff, event('310-reply.json', 'agent', { id: 'r-wait', event: 'reply', respondsTo: 'u-root', createdAt: '2026-08-31T12:00:12.000Z' })], Date.parse('2026-08-31T12:00:31.000Z')), null, 'a later agent event clears the waiting observation');
 
 assert.match(runtime, /\.hx-thread-dock\{/, 'collapsed review uses a compact conversation dock');
 assert.match(runtime, /translateX\(100%\)/, 'the closed sidebar moves completely off-screen');
