@@ -118,6 +118,8 @@ grep -F 'exec -s workspace-write --skip-git-repo-check resume thread-test-123' "
 }
 
 node "$ROOT/tests/runtime-thread-model.mjs"
+node "$ROOT/tests/runtime-focus-model.mjs"
 node "$ROOT/tests/runtime-fsa-transport.mjs"
 node "$ROOT/tests/runtime-mobile-contract.mjs"
+(cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/review-serve-baseline.py)
 echo "review-spec script tests passed"

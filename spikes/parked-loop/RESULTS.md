@@ -47,3 +47,13 @@ Both edits landed first try via exact string matching: `markLine` added inside t
 1. Skill protocol: parked watch = background task + wake-on-exit, not a blocking foreground call (Claude Code). Exit codes (0 = batch, 3 = quiet timeout) are a sufficient contract.
 2. Empty wakeups are cheap enough that the ~240 s production timeout looks comfortable.
 3. No changes needed to the event schema or spool layout — both worked as designed under a real agent.
+
+## Prompt-first active-turn handoff, Codex, 2026-08-31
+
+**PASS.** A yielded collection watcher remained attached to the open authoring turn while the human reviewed `prompt-first-shaping.spec.html` through a public capability URL.
+
+The first browser hand-off ended at `1788209595378252501-handoff-hmthptme7.json`; the same turn drained nine current comments plus two superseded drafts, updated and pushed the canonical spec, emitted nine replies, appended exactly the reported filenames, reconciled to empty, and reparked.
+
+The second hand-off ended at `1788210229425200293-handoff-hmthq77l5.json`; the same turn folded eight resolution events plus one new comment, pushed the accepted spec change before its reply, advanced the exact cursor, and reparked again.
+
+This is the green behavior for the observed failure where an agent returned a final response and a later hand-off required a new chat message. The fix keeps the active turn parked; a host-stopped turn still recovers from files when a later agent starts. No supervisor, heartbeat, lease, daemon, or new event type was added.
