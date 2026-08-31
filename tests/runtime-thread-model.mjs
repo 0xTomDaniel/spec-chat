@@ -8,8 +8,8 @@ const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime
 const start = runtime.indexOf('function foldThreads(events)');
 const end = runtime.indexOf('\n\nfunction ingest(events)', start);
 assert.ok(start >= 0 && end > start, 'runtime exposes the pure thread-folding function');
-const model = Function(runtime.slice(start, end) + '; return { foldThreads, resolvedThreadCollapsed, threadReplyAction, commentModeShortcut, threadDockEntries, acknowledgedReplyCount };')();
-const { foldThreads, resolvedThreadCollapsed, threadReplyAction, commentModeShortcut, threadDockEntries, acknowledgedReplyCount } = model;
+const model = Function(runtime.slice(start, end) + '; return { foldThreads, resolvedThreadCollapsed, threadReplyAction, reviewHandoffState, commentModeShortcut, threadDockEntries, acknowledgedReplyCount };')();
+const { foldThreads, resolvedThreadCollapsed, threadReplyAction, reviewHandoffState, commentModeShortcut, threadDockEntries, acknowledgedReplyCount } = model;
 
 const event = (name, actor, body) => ({ name, actor, body: { actor, schemaVersion: 1, ...body } });
 const events = [
@@ -76,6 +76,11 @@ assert.equal(acknowledgedReplyCount(new Map([
   ['resolved', { status: 'resolved' }],
 ])), 2, 'the unread badge counts only acknowledged threads awaiting a human response');
 assert.equal(acknowledgedReplyCount(new Map([['replied', { status: 'draft' }], ['resolved', { status: 'resolved' }]])), 0, 'replied-to and resolved threads leave the unread count');
+
+assert.deepEqual(reviewHandoffState(new Map([['draft', { status: 'draft' }]])), { drafts: 1, finish: false, enabled: true }, 'drafts enable an ordinary hand-off');
+assert.deepEqual(reviewHandoffState(new Map([['pending', { status: 'pending' }], ['resolved', { status: 'resolved' }]])), { drafts: 0, finish: false, enabled: false }, 'unsettled threads cannot finish review');
+assert.deepEqual(reviewHandoffState(new Map([['resolved', { status: 'resolved' }]])), { drafts: 0, finish: true, enabled: true }, 'a clean resolved review enables Finish review');
+assert.deepEqual(reviewHandoffState(new Map()), { drafts: 0, finish: true, enabled: true }, 'a review with no threads may finish explicitly');
 
 assert.match(runtime, /\.hx-thread-dock\{/, 'collapsed review uses a compact conversation dock');
 assert.match(runtime, /translateX\(100%\)/, 'the closed sidebar moves completely off-screen');
