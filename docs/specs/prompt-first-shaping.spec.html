@@ -164,12 +164,11 @@
 
 <section data-anchor="issue-surface">
 <h2>Issue surface</h2>
-<p data-anchor="issue-neutral-language">The core shaping instructions use the neutral term issue surface.</p>
-<p data-anchor="issue-linear-v1">The first implementation defaults directly to Linear and keeps every Linear-specific action together in one focused reference.</p>
-<p data-anchor="issue-no-abstraction">The first implementation has no tracker provider interface, adapter registry, configuration matrix, or generic lifecycle model.</p>
-<p data-anchor="issue-future-seam">A real second tracker justifies extracting a shared tracker seam later, without redesigning the shaping flow.</p>
-<p data-anchor="issue-direct-tool">The agent uses its available Linear tool directly, while the Spec Chat browser runtime and review server ship no Linear client or dependency.</p>
-<p data-anchor="issue-missing-access">Missing Linear access is a visible shaping blocker.</p>
+<p data-anchor="issue-github-only">Spec Chat uses GitHub Issues as its sole issue surface.</p>
+<p data-anchor="issue-same-repo">The shaping skill creates the fresh placeholder issue in the same GitHub repository as the spec.</p>
+<p data-anchor="issue-no-abstraction">The implementation has no tracker provider interface, adapter registry, configuration matrix, or generic lifecycle model.</p>
+<p data-anchor="issue-direct-tool">The agent uses the available GitHub CLI directly, while the Spec Chat browser runtime and review server ship no GitHub client or dependency.</p>
+<p data-anchor="issue-missing-access">Missing GitHub issue access is a visible shaping blocker.</p>
 <p data-anchor="issue-current-only">Resolved decisions replace prior issue prose, and resolved material TBDs are removed immediately.</p>
 </section>
 
@@ -420,7 +419,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <p data-anchor="skill-shape">A new automatically discoverable spec-chat-shape skill owns prompt intake, issue creation, short docs discovery, first issue and spec seed, Git focus launch, in-spec grilling, batch publication, and review completion.</p>
 <p data-anchor="skill-review">The existing spec-chat-review skill remains the sole owner of spool reading, thread folding, reply emission, cursor safety, watcher attachment, mobile review, and cold recovery.</p>
 <p data-anchor="skill-handoff">The shaping skill hands into the review skill and never copies its event protocol.</p>
-<p data-anchor="skill-linear-reference">One focused Linear reference localizes the initial tracker coupling without inventing a provider layer.</p>
+<p data-anchor="skill-github-reference">One focused GitHub Issues reference keeps issue operations concise without inventing a provider layer.</p>
 <p data-anchor="skill-visual-reference">One required visual-generation reference contains the exact doctrine above.</p>
 <p data-anchor="skill-no-octo">No Spec Chat skill depends on octo-lite, another workflow package, or an external orchestrator.</p>
 <p data-anchor="skill-consumer">Other workflows may consume Spec Chat skills as downstream callers without becoming required by Spec Chat.</p>
