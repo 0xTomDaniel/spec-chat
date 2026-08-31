@@ -34,6 +34,11 @@ class BaselineRouteTest(unittest.TestCase):
         run("git", "add", ".", cwd=self.repo)
         run("git", "commit", "-m", "baseline", cwd=self.repo)
         self.base = subprocess.check_output(("git", "rev-parse", "HEAD"), cwd=self.repo, text=True).strip()
+        run("git", "switch", "-c", "stack-base", cwd=self.repo)
+        self.spec.write_text('<p data-anchor="rule">stacked base rule</p>\n')
+        run("git", "add", ".", cwd=self.repo)
+        run("git", "commit", "-m", "stack base", cwd=self.repo)
+        self.stack_base = subprocess.check_output(("git", "rev-parse", "HEAD"), cwd=self.repo, text=True).strip()
         run("git", "switch", "-c", "feature", cwd=self.repo)
         self.spec.write_text('<p data-anchor="rule">changed rule</p>\n<p data-anchor="new">new rule</p>\n')
         (self.specs / "new.spec.html").write_text('<p data-anchor="new-file">new file</p>\n')
@@ -60,8 +65,11 @@ class BaselineRouteTest(unittest.TestCase):
         self.server.wait(timeout=2)
         self.temp.cleanup()
 
-    def baseline(self, path):
-        query = urllib.parse.urlencode({"path": path})
+    def baseline(self, path, base=None):
+        params = {"path": path}
+        if base is not None:
+            params["base"] = base
+        query = urllib.parse.urlencode(params)
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/baseline?{query}") as response:
             return json.load(response)
 
@@ -76,11 +84,48 @@ class BaselineRouteTest(unittest.TestCase):
         self.assertEqual(result["base"], self.base)
         self.assertIsNone(result["html"])
 
+    def test_explicit_base_supports_stacked_change_requests(self):
+        result = self.baseline("specs/focus.spec.html", "stack-base")
+        self.assertEqual(result["base"], self.stack_base)
+        self.assertIn("stacked base rule", result["html"])
+
+    def test_missing_explicit_base_fails_visibly(self):
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.baseline("specs/focus.spec.html", "missing-base")
+        self.assertEqual(error.exception.code, 409)
+
     def test_rejects_paths_outside_the_served_collection(self):
         query = urllib.parse.urlencode({"path": "../secret"})
         with self.assertRaises(urllib.error.HTTPError) as error:
             urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/baseline?{query}")
         self.assertEqual(error.exception.code, 400)
+
+    def test_refuses_to_serve_the_repository_root(self):
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+        process = subprocess.Popen(
+            (sys.executable, str(SERVER), str(self.repo), str(port)),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            output, error = process.communicate(timeout=0.5)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            process.wait(timeout=2)
+            self.fail("review server accepted the repository root")
+        self.assertNotEqual(process.returncode, 0)
+        self.assertIn("review collection", output + error)
+
+    def test_static_serving_does_not_follow_symlinks_outside_collection(self):
+        secret = self.repo / "secret.txt"
+        secret.write_text("not public")
+        (self.docs / "leak.txt").symlink_to(secret)
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(f"http://127.0.0.1:{self.port}/leak.txt")
+        self.assertEqual(error.exception.code, 404)
 
 
 if __name__ == "__main__":
