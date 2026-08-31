@@ -159,16 +159,16 @@
 <p data-anchor="flow-seed">The agent writes one concise current issue seed and one concise current spec seed before deeper grilling.</p>
 <p data-anchor="flow-existing-spec">When a relevant canonical spec exists, the agent edits it in place.</p>
 <p data-anchor="flow-new-spec">When no relevant spec exists, the agent creates a minimal durable capability or domain spec with only sections that contain real behavior.</p>
-<p data-anchor="flow-source-issues">The spec adds the originating issue to its concise source-issues list when accepted work changes that file.</p>
+<p data-anchor="flow-no-issue-link">The spec adds the originating issue to its concise source-issues list when accepted work changes that file.</p>
 <p data-anchor="flow-pr">The first seed is committed and pushed, then one evolving draft change request opens and remains the durable transport for later shaping batches.</p>
 </section>
 
 <section data-anchor="issue-surface">
 <h2>Issue surface</h2>
-<p data-anchor="issue-repo-owned">Each target repository selects its own issue surface through a separate concise issue skill.</p>
-<p data-anchor="issue-examples">TopicFinder work may use Linear while Spec Chat itself uses GitHub Issues.</p>
-<p data-anchor="issue-shape-neutral">The core Spec Chat shaping skill depends only on the issue skill's create, read, replace-current-content, and link operations.</p>
-<p data-anchor="issue-no-runtime-coupling">The Spec Chat browser runtime, review server, and event protocol contain no tracker client or tracker-specific behavior.</p>
+<p data-anchor="issue-github-only">Each target repository selects its own issue surface through a separate concise issue skill.</p>
+<p data-anchor="issue-same-repo">TopicFinder work may use Linear while Spec Chat itself uses GitHub Issues.</p>
+<p data-anchor="issue-no-abstraction">The core Spec Chat shaping skill depends only on the issue skill's create, read, replace-current-content, and link operations.</p>
+<p data-anchor="issue-direct-tool">The Spec Chat browser runtime, review server, and event protocol contain no tracker client or tracker-specific behavior.</p>
 <p data-anchor="issue-missing-access">Missing access to the repository-selected issue surface is a visible shaping blocker.</p>
 <p data-anchor="issue-current-only">Resolved decisions replace prior issue prose, and resolved material TBDs are removed immediately.</p>
 </section>
@@ -188,14 +188,14 @@
 <p data-anchor="focus-base-override">An explicit base reference is allowed only when local repository evidence cannot identify the intended base.</p>
 <p data-anchor="focus-failure">If Git comparison cannot be calculated, focus mode fails visibly and renders the complete current spec without stale highlighting.</p>
 <p data-anchor="focus-removal">A removed behavior must be expressed by the resulting current rule or constraint, because a silent deletion with no current replacement cannot be reviewed in the current-spec highlighting model.</p>
-<p data-anchor="focus-v1-diff">The first version requires no side-by-side viewer, removed-content tray, deletion ghost, or pull-request review.</p>
+<p data-anchor="focus-no-other-diff">The first version requires no side-by-side viewer, removed-content tray, deletion ghost, or pull-request review.</p>
 <p data-anchor="focus-future-diff">The contract leaves room for optional richer in-spec diff views when real use justifies them.</p>
 </section>
 
 <section data-anchor="grilling">
 <h2>In-spec grilling</h2>
 <p data-anchor="grilling-surface">After the seed opens, shaping conversation occurs inside Spec Chat by default.</p>
-<p data-anchor="grilling-orthogonal-batch">The agent may expose a small batch of internally orthogonal material questions so review stays dynamic and fast.</p>
+<p data-anchor="grilling-one-question">The agent may expose a small batch of internally orthogonal material questions so review stays dynamic and fast.</p>
 <p data-anchor="grilling-sequential">Questions whose answers could materially redirect one another remain sequential, and the agent never dumps the complete grill at once.</p>
 <p data-anchor="grilling-tbd">Each question appears as a temporary anchored TBD block in the canonical spec.</p>
 <p data-anchor="grilling-answer">The human answers with an ordinary comment on that block.</p>
@@ -454,7 +454,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <p data-anchor="skill-shape">A new automatically discoverable spec-chat-shape skill owns prompt intake, issue creation, short docs discovery, first issue and spec seed, Git focus launch, in-spec grilling, batch publication, and review completion.</p>
 <p data-anchor="skill-review">The existing spec-chat-review skill remains the sole owner of spool reading, thread folding, reply emission, cursor safety, watcher attachment, mobile review, and cold recovery.</p>
 <p data-anchor="skill-handoff">The shaping skill hands into the review skill without copying its event protocol, while both skills encode the same spec contract invariants.</p>
-<p data-anchor="skill-issue-reference">One repository-selected issue skill owns tracker-specific operations outside the Spec Chat runtime.</p>
+<p data-anchor="skill-github-reference">One repository-selected issue skill owns tracker-specific operations outside the Spec Chat runtime.</p>
 <p data-anchor="skill-visual-reference">One required visual-generation reference contains the exact doctrine above.</p>
 <p data-anchor="skill-information-reference">One required authoring reference contains the information-shape doctrine above.</p>
 <p data-anchor="skill-style">Every skill is short, specific, clear, and human-readable by default.</p>
