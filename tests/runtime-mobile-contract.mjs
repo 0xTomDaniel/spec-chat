@@ -15,5 +15,6 @@ assert.match(runtime, /class="hx-mobile-handoff" id="hx-mobile-handoff"/, 'mobil
 assert.match(runtime, /mobileHandoff\.textContent = handoffState\.finish \? 'Finish review' : drafts \? 'Hand off \(' \+ drafts \+ '\)' : 'Hand off'/, 'mobile handoff renders the current draft count or Finish review');
 assert.match(runtime, /e\.message === 'Script error\.' && !e\.filename && !e\.lineno && !e\.colno && !e\.error/, 'fully opaque browser errors do not raise a fatal review overlay');
 assert.match(runtime, /overlay\('error', e\.message/, 'attributable script errors remain visible');
+assert.match(runtime, /if \(state\.handoffPosting \|\| !action\.enabled\) return/, 'handoff and Finish review latch against duplicate submission');
 
 console.log('runtime mobile contract tests passed');
