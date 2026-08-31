@@ -67,7 +67,7 @@ Keep stable `data-anchor` identities, one sentence per prose line, and pretty se
 4. Publish an unguessable HTTPS capability URL through the repository or host's configured public transport.
 5. Require no SSH, VPN, or separate login; possession of the URL is the only review authentication.
 6. Tell the human the URL is a secret and never publish it into the issue or change request.
-7. Open the spec with `focus=changes` so the runtime derives changed current blocks from local Git.
+7. Open the spec with `focus=changes&base=<exact-local-change-request-base>` so stacked branches compare against their real base and the runtime derives changed current blocks from local Git.
 8. Start `spec-chat-review` in its active in-session attachment mode.
 
 Never fetch or mutate Git from the review server.
@@ -75,7 +75,7 @@ If no safe public capability transport exists, stop rather than exposing the rep
 
 ## Grill in the spec
 
-Put unresolved material questions into temporary anchored TBD blocks.
+Put unresolved material questions into temporary anchored TBD blocks carrying `data-spec-tbd`.
 Ask a small batch only when its questions are internally orthogonal.
 Keep questions sequential when one answer could materially redirect another.
 Never dump the complete grill at once.

@@ -15,7 +15,7 @@
 <p data-anchor="status">Status: shaping contract under direct Spec Chat review.</p>
 </header>
 
-<section data-anchor="outcome">
+<section data-anchor="outcome" id="outcome">
 <h2>Outcome</h2>
 <p data-anchor="outcome-prompt">Every new work unit begins with a plain-language feature prompt.</p>
 <p data-anchor="outcome-durable">The workflow creates clean durable issue and spec surfaces immediately, then iterates on those surfaces instead of treating chat context as product truth.</p>
@@ -23,7 +23,7 @@
 <p data-anchor="outcome-portable">Correctness survives agent, session, CLI, and host replacement through plain files and cold reconstruction.</p>
 </section>
 
-<section data-anchor="source-ownership">
+<section data-anchor="source-ownership" id="source-ownership">
 <h2>Source ownership</h2>
 <p data-anchor="source-issue">The issue surface owns current high-level intent, desired outcome, acceptance criteria, non-goals, dependencies, and governing source links.</p>
 <p data-anchor="source-spec">The canonical spec owns current user stories, detailed behavior, constraints, edge cases, and interaction contracts.</p>
@@ -34,7 +34,7 @@
 <p data-anchor="source-chat">Conversation and model memory are evidence only and never override a durable current source.</p>
 </section>
 
-<section data-anchor="shaping-flow">
+<section data-anchor="shaping-flow" id="shaping-flow">
 <h2>Prompt-first shaping flow</h2>
 <script type="application/spec+json" data-render="chart" data-lib="echarts">
 {
@@ -163,7 +163,7 @@
 <p data-anchor="flow-pr">The first seed is committed and pushed, then one evolving draft change request opens and remains the durable transport for later shaping batches.</p>
 </section>
 
-<section data-anchor="issue-surface">
+<section data-anchor="issue-surface" id="issue-surface">
 <h2>Issue surface</h2>
 <p data-anchor="issue-github-only">Each target repository selects its own issue surface through a separate concise issue skill.</p>
 <p data-anchor="issue-same-repo">External repositories may select a different issue surface without changing Spec Chat's shaping or review contract.</p>
@@ -173,7 +173,7 @@
 <p data-anchor="issue-current-only">Resolved decisions replace prior issue prose, and resolved material TBDs are removed immediately.</p>
 </section>
 
-<section data-anchor="focus-view">
+<section data-anchor="focus-view" id="focus-view">
 <h2>Git-derived focus is the diff viewer</h2>
 <p data-anchor="focus-only-review">The highlighted current spec is the complete required human diff-review surface.</p>
 <p data-anchor="focus-clear">Every current block added or modified by the work branch remains fully clear.</p>
@@ -185,19 +185,19 @@
 <p data-anchor="focus-http">Prompt-first shaping uses the existing HTTP review transport on desktop and mobile because a browser file page cannot inspect Git.</p>
 <p data-anchor="focus-local-git">The review server reads only the current local repository and its merge base, and it never fetches, checks out, stages, commits, or writes Git state.</p>
 <p data-anchor="focus-no-octo">No focus behavior imports, invokes, expects, or mentions octo-lite or another orchestrator.</p>
-<p data-anchor="focus-base-override">An explicit base reference is allowed only when local repository evidence cannot identify the intended base.</p>
+<p data-anchor="focus-base-override">The shaping URL names the exact local base ref of its draft change request, while automatic base discovery remains a fallback for direct review.</p>
 <p data-anchor="focus-failure">If Git comparison cannot be calculated, focus mode fails visibly and renders the complete current spec without stale highlighting.</p>
 <p data-anchor="focus-removal">A removed behavior must be expressed by the resulting current rule or constraint, because a silent deletion with no current replacement cannot be reviewed in the current-spec highlighting model.</p>
 <p data-anchor="focus-no-other-diff">The first version requires no side-by-side viewer, removed-content tray, deletion ghost, or pull-request review.</p>
 <p data-anchor="focus-future-diff">The contract leaves room for optional richer in-spec diff views when real use justifies them.</p>
 </section>
 
-<section data-anchor="grilling">
+<section data-anchor="grilling" id="grilling">
 <h2>In-spec grilling</h2>
 <p data-anchor="grilling-surface">After the seed opens, shaping conversation occurs inside Spec Chat by default.</p>
 <p data-anchor="grilling-one-question">The agent may expose a small batch of internally orthogonal material questions so review stays dynamic and fast.</p>
 <p data-anchor="grilling-sequential">Questions whose answers could materially redirect one another remain sequential, and the agent never dumps the complete grill at once.</p>
-<p data-anchor="grilling-tbd">Each question appears as a temporary anchored TBD block in the canonical spec.</p>
+<p data-anchor="grilling-tbd">Each question appears as a temporary anchored TBD block marked with <code>data-spec-tbd</code> so Finish review cannot become eligible while material questions remain.</p>
 <p data-anchor="grilling-answer">The human answers with an ordinary comment on that block.</p>
 <p data-anchor="grilling-resolve">The agent immediately replaces the TBD with the resulting current rule or removes it when no rule is needed.</p>
 <p data-anchor="grilling-issue-sync">The clean current issue is updated in the same batch when the answer changes its high-level scope or criteria.</p>
@@ -205,7 +205,7 @@
 <p data-anchor="grilling-fallback">Terminal chat is only a fallback when the browser review surface is unavailable.</p>
 </section>
 
-<section data-anchor="thread-lifecycle">
+<section data-anchor="thread-lifecycle" id="thread-lifecycle">
 <h2>Thread lifecycle</h2>
 <p data-anchor="thread-collapse">Resolved threads remain in history and collapse by default.</p>
 <p data-anchor="thread-expand">Selecting a resolved thread expands its complete conversation.</p>
@@ -215,7 +215,7 @@
 <p data-anchor="thread-handoff">The reopened draft follows the ordinary Hand off flow.</p>
 </section>
 
-<section data-anchor="active-review">
+<section data-anchor="active-review" id="active-review">
 <h2>Active review attachment</h2>
 <p data-anchor="active-turn">While browser review is active, the authoring agent keeps its current turn open and parks on one collection watcher.</p>
 <p data-anchor="active-no-final">The agent never returns a final response while that active review window remains open.</p>
@@ -226,7 +226,7 @@
 <p data-anchor="active-working-ui">Hosts may display the authoring turn as working throughout active browser review.</p>
 </section>
 
-<section data-anchor="batch-transaction">
+<section data-anchor="batch-transaction" id="batch-transaction">
 <h2>Hand-off batch transaction</h2>
 <p data-anchor="batch-cutoff">The hand-off event defines the exact batch cutoff.</p>
 <p data-anchor="batch-order-1">The agent folds edits and replies, then rechecks that each newest human message still needs an answer.</p>
@@ -240,7 +240,7 @@
 <p data-anchor="batch-no-claims">Leases, fencing, and distributed claims remain deferred until observed concurrent processors prove a real race.</p>
 </section>
 
-<section data-anchor="portable-recovery">
+<section data-anchor="portable-recovery" id="portable-recovery">
 <h2>Portable recovery</h2>
 <script type="application/spec+json" data-render="chart" data-lib="echarts">
 {
@@ -328,7 +328,7 @@
 <p data-anchor="recovery-trigger">A supervisor is reconsidered only if the active-turn attachment still strands real hand-offs after this contract is implemented and tested.</p>
 </section>
 
-<section data-anchor="truthful-status">
+<section data-anchor="truthful-status" id="truthful-status">
 <h2>Truthful browser status</h2>
 <p data-anchor="status-known-facts">The browser displays only event-backed facts it can know.</p>
 <p data-anchor="status-waiting">After hand-off it shows Handed off, waiting for agent.</p>
@@ -338,9 +338,9 @@
 <p data-anchor="status-no-heartbeat">The first implementation adds no heartbeat, sentinel, lease, connection monitor, or periodic presence write.</p>
 </section>
 
-<section data-anchor="finish-review">
+<section data-anchor="finish-review" id="finish-review">
 <h2>Finish review</h2>
-<p data-anchor="finish-ready">When no draft, pending, acknowledged, unresolved, or material TBD work remains, the disabled hand-off action becomes Finish review.</p>
+<p data-anchor="finish-ready">When no draft, pending, acknowledged, unresolved, or <code>data-spec-tbd</code> work remains, the disabled hand-off action becomes Finish review.</p>
 <p data-anchor="finish-event">Finish review writes the existing hand-off event with an empty batch.</p>
 <p data-anchor="finish-agent">The parked agent interprets that empty hand-off as explicit completion of the browser review window.</p>
 <p data-anchor="finish-final-batch">The agent reconciles issue and spec, commits and pushes any final changes, advances the cursor, and closes the active wait.</p>
@@ -348,7 +348,7 @@
 <p data-anchor="finish-not-acceptance">Finish review is not human acceptance of delivered software, implementation authorization, tracker lifecycle transition, merge approval, or deployment approval.</p>
 </section>
 
-<section data-anchor="mobile">
+<section data-anchor="mobile" id="mobile">
 <h2>Mobile review</h2>
 <p data-anchor="mobile-version">The runtime includes the latest upstream Spec Chat behavior plus the existing mobile-review commit.</p>
 <p data-anchor="mobile-http">Prompt-first shaping uses HTTP transport so the same review works on phones, tablets, and desktops.</p>
@@ -358,7 +358,7 @@
 <p data-anchor="mobile-focus">Issue focus and receded context remain legible and operable on narrow screens without shifting the spec sideways.</p>
 </section>
 
-<section data-anchor="public-review-access">
+<section data-anchor="public-review-access" id="public-review-access">
 <h2>Public review access</h2>
 <p data-anchor="public-review-anywhere">Prompt-first shaping publishes an HTTPS review link that opens from any ordinary browser without SSH, VPN, or a separate account login.</p>
 <p data-anchor="public-review-capability">The unguessable link is a bearer capability, and possession of that link is the only review authentication.</p>
@@ -369,7 +369,7 @@
 <p data-anchor="public-review-provider">The core Spec Chat protocol does not depend on one tunnel provider, and repository or host instructions may select the available public transport.</p>
 </section>
 
-<section data-anchor="visual-generation">
+<section data-anchor="visual-generation" id="visual-generation">
 <h2>Visual generation doctrine</h2>
 <p data-anchor="visual-verbatim">The new shaping skill contains the following doctrine verbatim in one required visual-generation reference.</p>
 <pre data-anchor="visual-doctrine">NON REACT
@@ -429,7 +429,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <p data-anchor="visual-existing-principles">Existing offline fidelity, local vendoring, semantic-island, and small-runtime principles remain in force.</p>
 </section>
 
-<section data-anchor="information-shape-doctrine">
+<section data-anchor="information-shape-doctrine" id="information-shape-doctrine">
 <h2>Information-shape doctrine</h2>
 <p data-anchor="information-shape-question">The organizing question is: what shape is this information, and what medium loses the least of it?</p>
 <p data-anchor="information-shape-visual-rule">A non-prose element exists only when prose would destroy ordering, topology, direction, quantity, spatial proportion, coverage, provenance, or another contract-bearing property.</p>
@@ -460,7 +460,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <p data-anchor="information-shape-errors">Each form is selected to expose its likely error: sequence mistakes in ordinals, missing cases in empty cells, precedence mistakes in predicate order, layout violations in proportional drawings, and false confidence beside provenance.</p>
 </section>
 
-<section data-anchor="skill-ownership">
+<section data-anchor="skill-ownership" id="skill-ownership">
 <h2>Skill ownership</h2>
 <p data-anchor="skill-shape">A new automatically discoverable spec-chat-shape skill owns prompt intake, issue creation, short docs discovery, first issue and spec seed, Git focus launch, in-spec grilling, batch publication, and review completion.</p>
 <p data-anchor="skill-review">The existing spec-chat-review skill remains the sole owner of spool reading, thread folding, reply emission, cursor safety, watcher attachment, mobile review, and cold recovery.</p>
@@ -475,7 +475,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <p data-anchor="skill-consumer">Other workflows may consume Spec Chat skills as downstream callers without becoming required by Spec Chat.</p>
 </section>
 
-<section data-anchor="burden-budget">
+<section data-anchor="burden-budget" id="burden-budget">
 <h2>Burden budget</h2>
 <p data-anchor="burden-rule">Every new mechanism must replace complexity or answer an observed failure that existing files and protocol cannot answer.</p>
 <p data-anchor="burden-pieces">The intended implementation adds one shaping skill, two focused references, focused review-skill changes, one runtime upgrade, and one read-only Git-baseline route in the existing review server.</p>
@@ -484,7 +484,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <p data-anchor="burden-portability">Portability comes from plain durable files and reconstructible current sources, not from a universal resident process.</p>
 </section>
 
-<section data-anchor="tdd-contract">
+<section data-anchor="tdd-contract" id="tdd-contract">
 <h2>Implementation and proof contract</h2>
 <p data-anchor="tdd-prompt-red">Before changing shaping instructions, a fresh agent scenario must show that the current skills do not create the prompt-first issue and spec seed or maintain the agreed burden boundary.</p>
 <p data-anchor="tdd-prompt-green">A different fresh agent scenario must run the same request against the new skill and produce the current issue, spec seed, and review handoff without adding excluded machinery.</p>
@@ -500,7 +500,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <p data-anchor="tdd-visual">Browser evidence must verify focus readability, mobile target-first commenting, resolved-thread reopen, hand-off waiting state, and Finish review on a real rendered spec.</p>
 </section>
 
-<section data-anchor="non-goals">
+<section data-anchor="non-goals" id="non-goals">
 <h2>Non-goals</h2>
 <p data-anchor="non-goal-auto-no-agent">The first version does not guarantee processing while no compatible agent process exists.</p>
 <p data-anchor="non-goal-exact-session">It does not guarantee resurrection of a closed host session or preservation of hidden conversational state.</p>
@@ -509,10 +509,10 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <p data-anchor="non-goal-runtime-stack">It does not install the complete visual-generation doctrine into every spec or the base annotation runtime.</p>
 </section>
 
-<section data-anchor="references">
+<section data-anchor="references" id="references">
 <h2>References</h2>
 <p data-anchor="reference-design">Product design history: <a href="https://github.com/0xTomDaniel/spec-chat/blob/70e22934dc418c7971fde5772a6d9fcc904e892f/DESIGN.md">DESIGN.md at the shaping baseline</a>.</p>
-<p data-anchor="reference-review-skill">Current review procedure: <a href="https://github.com/varelaseb/spec-chat/blob/feat/mobile-review-controls/skill/review-spec/SKILL.md">skill/review-spec/SKILL.md with mobile review</a>.</p>
+<p data-anchor="reference-review-skill">Current review procedure baseline: <a href="https://github.com/varelaseb/spec-chat/blob/cae844f1b85ce39911ab9db7f6bb03c37d434bac/skill/review-spec/SKILL.md">skill/review-spec/SKILL.md at the mobile-review commit</a>.</p>
 <p data-anchor="reference-source-issues">Source issues: <a href="https://github.com/0xTomDaniel/spec-chat/issues/21">#21 Add prompt-first shaping and portable Spec Chat handoffs</a>.</p>
 <p data-anchor="reference-source-rule">Every later issue that materially changes this file is appended to the source-issues list, and unrelated issues are never added.</p>
 </section>
