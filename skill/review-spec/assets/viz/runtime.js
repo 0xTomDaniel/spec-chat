@@ -578,6 +578,12 @@ function resolvedThreadCollapsed(thread, expandedResolved) {
   return thread.status === 'resolved' && !expandedResolved.has(thread.id);
 }
 
+function threadReplyAction(thread) {
+  const message = thread.messages[thread.messages.length - 1];
+  if (!message || message.actor !== 'agent') return null;
+  return { label: thread.status === 'resolved' ? 'Reply and reopen' : '↩ Reply', message };
+}
+
 function commentModeShortcut(e) {
   const target = e.target || {};
   return String(e.key || '').toLowerCase() === 'c'
@@ -1000,13 +1006,13 @@ function renderPanel() {
         }
         d.appendChild(item);
       }
-      const last = th.messages[th.messages.length - 1];
-      if (last && last.actor === 'agent' && th.status !== 'resolved') {
+      const replyAction = threadReplyAction(th);
+      if (replyAction) {
         const reply = document.createElement('button');
         reply.className = 'hx-btn';
         reply.dataset.act = 'reply';
-        reply.textContent = '↩ Reply';
-        reply.addEventListener('click', e => { e.stopPropagation(); startReply(th, last); });
+        reply.textContent = replyAction.label;
+        reply.addEventListener('click', e => { e.stopPropagation(); startReply(th, replyAction.message); });
         d.appendChild(reply);
       }
       if (th.status === 'acknowledged') {
