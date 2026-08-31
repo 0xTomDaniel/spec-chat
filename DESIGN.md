@@ -143,8 +143,8 @@ The same runtime can mount inside a host application (SPA or any live page) so r
 Host integration is two things the runtime already supports: `data-anchor` attributes on container elements (sub-element descriptors, TARGETABLE controls, and foreign-chart adoption all work unchanged — capture-phase comment mode beats framework-delegated event handlers, React included), and a server implementing the documented `/api/events` transport. One embed-hardening change applies everywhere: pins redraw on a 2s interval, because a host framework re-rendering an anchored container (React remounts, spec scripts rebuilding DOM) silently drops the pins it contains; the redraw is idempotent.
 
 ## Visual stdlib for agent generation
-Pinned versions, vendored in the dotdir (offline + integrity): **ECharts** (charts, Apache-2.0) · **Mermaid** (boxes-and-arrows default, MIT) · **Cytoscape.js + dagre** (interactive graphs, MIT) · **JSXGraph + KaTeX** (math, MIT) · **GSAP** (animation, free non-OSI; Motion if OSI required) · **rough-notation** (emphasis, MIT) · **house comment-pin runtime** (no viable off-the-shelf lib exists).
-Optional: D3, Observable Plot, Konva, markmap, leader-line, function-plot, Floating UI. Rejected: Mafs, React Flow, Motion-as-default, Liveline, tldraw, Excalidraw-as-target (React-only / license / zero training data / poor LLM generation).
+The canonical generation doctrine and its React versus non-React routing now live in [the prompt-first shaping spec](docs/specs/prompt-first-shaping.spec.html#visual-generation).
+That contract supersedes this document's earlier library list while retaining the offline fidelity, local vendoring, semantic-island, and small-runtime decisions above.
 
 ## Borrowing from agentation: ideas yes, code no
 PolyForm Shield 1.0.0 forbids competing use — clean-room only. Reimplement: greppable metadata over screenshots, annotation lifecycle states, self-driving review loop (ours via files+shell, theirs via MCP), tiered verbosity, skills-as-onboarding. Skip entirely: React-fiber forensics — we generate the artifact, anchors are baked in at generation time.

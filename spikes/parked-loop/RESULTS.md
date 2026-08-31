@@ -47,3 +47,29 @@ Both edits landed first try via exact string matching: `markLine` added inside t
 1. Skill protocol: parked watch = background task + wake-on-exit, not a blocking foreground call (Claude Code). Exit codes (0 = batch, 3 = quiet timeout) are a sufficient contract.
 2. Empty wakeups are cheap enough that the ~240 s production timeout looks comfortable.
 3. No changes needed to the event schema or spool layout — both worked as designed under a real agent.
+
+## Prompt-first active-turn handoff, Codex, 2026-08-31
+
+**PASS.** A yielded collection watcher remained attached to the open authoring turn while the human reviewed `prompt-first-shaping.spec.html` through a public capability URL.
+
+The first browser hand-off ended at `1788209595378252501-handoff-hmthptme7.json`; the same turn drained nine current comments plus two superseded drafts, updated and pushed the canonical spec, emitted nine replies, appended exactly the reported filenames, reconciled to empty, and reparked.
+
+The second hand-off ended at `1788210229425200293-handoff-hmthq77l5.json`; the same turn folded eight resolution events plus one new comment, pushed the accepted spec change before its reply, advanced the exact cursor, and reparked again.
+
+This is the green behavior for the observed failure where an agent returned a final response and a later hand-off required a new chat message. The fix keeps the active turn parked; a host-stopped turn still recovers from files when a later agent starts. No supervisor, heartbeat, lease, daemon, or new event type was added.
+
+## Prompt-first browser contract, Chromium, 2026-08-31
+
+**PASS.** Playwright 1.61 with Chromium 149 exercised real rendered specs through the narrow HTTP review server.
+
+- Git focus classified unchanged parent-owned headings and chart islands while keeping a changed nested paragraph at full contrast.
+- Deeply nested unchanged table cells rendered at the fixed accessible light target `#6b6e75`; changed text rendered at `#22242a`.
+- Comment pins inside focused anchors retained opacity `1`, while an unchanged modular-boundaries diagram receded to opacity `0.5`.
+- A new spec rendered every current anchor as changed; a normal URL kept the complete document at normal clarity.
+- Resolved threads exposed **Reply and reopen** through the existing reply event.
+- An empty clean review exposed **Finish review**, while injected `data-spec-tbd` content disabled it.
+- A stalled baseline request did not block chart hydration or the review controls.
+- At 390 by 844, the toolbar stayed inside the viewport, comment mode exposed the target before opening the sheet, and the focused composer used 16 pixel text.
+- No page errors occurred in the ordinary focus, reopen, finish, TBD, or mobile scenarios.
+
+The first browser run also caught the empty-event initialization bug before publication: an empty event list left the static Hand off label in place. The runtime now renders derived review state on the first sync even when that list is empty.

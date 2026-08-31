@@ -29,7 +29,9 @@ Your job in review mode: wait for hand-off batches, apply each comment to the sp
 
 3. **Apply each comment** to the spec in place, honoring the dialect (see below). A comment may also be a question rather than a change request — informational replies with `change: "no spec change"` are a normal part of the protocol; answer through the channel, don't force an edit.
 
-4. **Reply to each newest human message** with the bundled emitter (one event per comment, follow-up reply, or edit addressed):
+4. **Publish accepted spec changes before reply.** When the active shaping contract requires durable publication, commit and push every accepted spec change before the browser receives its reply or refreshed Git focus. `spec-chat-shape` owns the exact issue and change-request order. Review-only work follows its caller's publication contract.
+
+5. **Reply to each newest human message** with the bundled emitter (one event per comment, follow-up reply, or edit addressed):
 
    ```
    scripts/emit-reply.sh <spec>.review/ <respondsTo-id> <anchorId> '<target-json>' acknowledged '<change-summary>' '<reply text>'
@@ -37,9 +39,9 @@ Your job in review mode: wait for hand-off batches, apply each comment to the sp
 
    `respondsTo-id` must be the exact newest human `comment`, `reply`, or `edit` id—not automatically the root comment id. Field exactness matters: the browser runtime renders `respondsTo`, `text`, `status`, and `change` — a missing or renamed field means the user sees nothing. End replies that made an edit with an offer to resolve ("OK to resolve?").
 
-5. **Externalize agreements** after the spec changes and replies succeed: durable decisions go into the spec itself and a one-line note in `<spec>.review/context.md`. This is what lets a different session — or a different CLI — pick up the review cold.
+6. **Externalize agreements** after the spec changes and replies succeed: durable decisions go into the spec itself and a one-line note in `<spec>.review/context.md`. This is what lets a different session — or a different CLI — pick up the review cold.
 
-6. **Advance that spec's cursor only after the entire reported batch was successfully processed and every reply was emitted**, by APPENDING exactly the filenames the scan reported:
+7. **Advance that spec's cursor only after the entire reported batch was successfully processed and every reply was emitted**, by APPENDING exactly the filenames the scan reported:
 
    ```
    printf '%s\n' <file1> <file2> >> <spec>.review/.cursor-<cli-or-session>
@@ -47,7 +49,7 @@ Your job in review mode: wait for hand-off batches, apply each comment to the sp
 
    Never regenerate the cursor with `ls` — events that arrived while you were processing would be silently marked as seen and skipped. Never advance it after a partial or failed drain; leaving it unchanged makes the next turn recover the same durable batch. This append-only rule is the lossless commit point.
 
-7. **Reconcile to empty, then park fresh.** Repeat the zero-wait scan and steps 2–6 until it exits 3. If review mode remains active, start a new collection watcher through the host's **same-thread yielded/background wait primitive**:
+8. **Reconcile to empty, then park fresh.** Repeat the zero-wait scan and steps 2–7 until it exits 3. If review mode remains active, start a new collection watcher through the host's **same-thread yielded/background wait primitive**:
 
    ```
    scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 3600 3
@@ -81,6 +83,10 @@ If an anchor or target no longer exists (the spec moved under the pin), reply wi
 
 Every new human comment, follow-up reply, or edit is `draft` → (hand-off) → `pending` → your reply to that exact message id makes the thread `acknowledged` → the human resolves (a `status` event with `resolved`). You never mark threads resolved yourself; you propose it.
 
+A resolved thread remains expandable. When its latest message is from the agent, the browser offers **Reply and reopen**. Saving that response writes the existing human `reply` event and naturally derives `draft`; there is no reopen status or new event type.
+
+When every thread is resolved and no material TBD remains, the no-draft action becomes **Finish review**. It writes the existing empty hand-off. Reconcile it, settle any final durable change, advance the exact cursor, stop the watcher, close any public capability transport, and end the active review window. Finish review is not implementation authorization, acceptance, merge approval, or deployment approval.
+
 ## Event schema
 
 Full field-by-field reference for reading and writing the spool: `references/event-schema.md`. Read it rather than reverse-engineering the schema from `runtime.js`.
@@ -89,12 +95,20 @@ Full field-by-field reference for reading and writing the spool: `references/eve
 
 The loop is identical on every CLI; only how the collection watch is hosted differs. Interactive review must use an in-session attachment that re-invokes the open authoring thread. `scripts/codex-review.sh <spec-root>` is an explicitly detached, context-degraded fallback for unattended review after the authoring thread has closed; it is not interactive review. Details, plus the per-spec session-continuity and concurrency rules: `references/cli-adapters.md`.
 
+## Git-derived focus
+
+Prompt-first shaping opens the HTTP page with `focus=changes&base=<exact-local-change-request-base>`. The runtime reads baseline HTML through the review server, compares stable current anchor signatures, keeps added or modified current blocks clear, and recedes unchanged current blocks. A new spec remains entirely clear. A normal URL renders every block at normal clarity. Automatic base discovery is only a fallback for direct unstacked review.
+
+The review server reads only local Git. It never fetches, checks out, stages, commits, or writes repository state. If no baseline is available, the browser shows a visible warning and the complete current spec without stale focus.
+
+The highlighted current spec is the diff viewer. Do not require pull-request review, a side-by-side page, deleted-content ghosts, issue metadata, anchor lists, or a stored focus manifest.
+
 ## Transports (agent side is identical)
 
 You only ever read and write spool files — the transport is the browser's problem. Two situations you may need to set up:
 
-- **Local browser, same machine**: nothing to run; the page connects to the folder directly (file:// + FSA). Browser security does not reliably persist write permission. When an IndexedDB handle returns `prompt`, the runtime shows **Resume review** and requests write permission on the already-selected handle; **Choose different folder** remains a separate picker fallback for a moved tree, wrong prior scope, or Chromium shell that does not surface the regrant prompt. Chromium can follow the native directory picker with a separate **Allow this site to edit files?** browser window; the runtime must name that step and visibly wait for it because shells such as Arc may not layer it over the spec window. The grant accepts ANY ancestor folder of the spec — pick it in the dialog or drag it from Finder onto the page; the runtime walks down to the spec's folder itself and remembers the ancestor. Caveats: Chromium refuses grants on the top-level roots themselves (home, Documents, Desktop, Downloads — children beneath them are fine), so suggest a workspace/projects folder one level down; if the granted tree contains two same-named specs at matching sub-paths the runtime refuses to guess and asks for a narrower grant. The spec's exact path also lands on the clipboard when the picker opens (⌘⇧G + paste in the macOS panel). If the user wants zero prompts (or uses Safari/Firefox, which lack FSA), run `assets/review-serve.py` locally exactly as in the remote setup, minus the tunnel: the http transport auto-connects.
-- **Remote/SSH**: start `assets/review-serve.py <repo-root> 7160` as a background task and tell the user to tunnel with an explicit IPv4 destination — `ssh -L 7160:127.0.0.1:7160 user@host` (using `localhost` as the destination breaks: sshd tries ::1 first and the server binds IPv4 only). Page URL: `http://localhost:7160/<path-to-spec>`.
+- **Local browser, same machine**: nothing to run; the page connects to the folder directly (file:// + FSA). Browser security does not reliably persist write permission. When an IndexedDB handle returns `prompt`, the runtime shows **Resume review** and requests write permission on the already-selected handle; **Choose different folder** remains a separate picker fallback for a moved tree, wrong prior scope, or Chromium shell that does not surface the regrant prompt. Chromium can follow the native directory picker with a separate **Allow this site to edit files?** browser window; the runtime must name that step and visibly wait for it because shells such as Arc may not layer it over the spec window. The grant accepts ANY ancestor folder of the spec — pick it in the dialog or drag it from Finder onto the page; the runtime walks down to the spec's folder itself and remembers the ancestor. Caveats: Chromium refuses grants on the top-level roots themselves (home, Documents, Desktop, Downloads — children beneath them are fine), so suggest a workspace/projects folder one level down; if the granted tree contains two same-named specs at matching sub-paths the runtime refuses to guess and asks for a narrower grant. The spec's exact path also lands on the clipboard when the picker opens (⌘⇧G + paste in the macOS panel). If the user wants zero prompts or uses Safari or Firefox, run `assets/review-serve.py` on loopback; the HTTP transport auto-connects.
+- **Public capability review**: for prompt-first shaping or any review that must open from anywhere, start `assets/review-serve.py` on loopback against the narrow review collection, never the repository root. Publish that origin through the repository or host's configured public HTTPS capability transport. The unguessable URL is the only authentication: require no SSH, VPN, or separate login; tell the human to treat it as a secret; never publish it into the issue or change request. Stop the transport when review ends so the URL becomes invalid. The protocol does not depend on a specific tunnel provider.
 
 ## Scaffolding spec-chat into a repo
 
@@ -111,9 +125,9 @@ If the repo already has `docs/specs/.viz/`, leave it alone — its version is th
 ## Starting a review when asked
 
 1. Confirm the page exists and identify the shared collection root (normally the repository's `docs/` directory, not the page's immediate `docs/specs/`, `docs/specs/<domain>/`, or `docs/adr/` directory; use the narrowest common ancestor for a legacy or explicitly different layout).
-2. Set up transport if remote (above).
+2. Set up the public capability transport when the page must open outside the file host.
 3. On both an initial start and any resumed/reconnected turn, run `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 0 3`; drain, reply, and cursor each ready batch, then repeat until exit 3.
-4. Only after reconciliation is empty, park a fresh collection watcher with `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 3600 3` using the host's same-thread yielded/background wait, keep the turn open, and tell the user the page URL and that every reviewable HTML document below the root is covered. The watcher discovers a spool as soon as the browser creates it; its ready output must wake this same thread for the drain cycle.
+4. Only after reconciliation is empty, park a fresh collection watcher with `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 3600 3` using the host's same-thread yielded/background wait, keep the turn open, and tell the user the public capability URL and that every reviewable HTML document below the root is covered. The watcher discovers a spool as soon as the browser creates it; its ready output must wake this same thread for the drain cycle.
 5. Use `scripts/codex-review.sh <spec-root>` only when the human explicitly chooses unattended detached review after the interactive thread closes. State that detached mode will not wake or show live activity in the authoring chat. Passing a specific HTML file remains an explicit single-page override.
 
 ## Mobile review contract

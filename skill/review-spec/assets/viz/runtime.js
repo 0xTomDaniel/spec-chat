@@ -52,6 +52,8 @@ const state = {
   charts: new Map(),     // sectionAnchor -> {chart, config, el}
   specMtime: null,
   loopsStarted: false,
+  eventsRendered: false,
+  handoffPosting: false,
 };
 
 /* ---------------- transports ---------------- */
@@ -73,6 +75,61 @@ function httpTransport() {
       return new Date(r.headers.get('Last-Modified') || 0).getTime();
     },
   };
+}
+
+function classifyAnchorSignatures(current, baseline) {
+  const result = new Map();
+  for (const [anchor, signature] of current) {
+    result.set(anchor, baseline === null || baseline.get(anchor) !== signature ? 'changed' : 'unchanged');
+  }
+  return result;
+}
+
+function ownAnchorSignature(element) {
+  const clone = element.cloneNode(true);
+  for (const child of clone.querySelectorAll('[data-anchor]')) child.remove();
+  return clone.outerHTML;
+}
+
+function anchorSignatures(doc) {
+  const result = new Map();
+  for (const element of doc.querySelectorAll('[data-anchor]')) {
+    result.set(element.dataset.anchor, ownAnchorSignature(element));
+  }
+  return result;
+}
+
+async function applyIssueFocus() {
+  if (EMBED_REVIEW_DIR || location.protocol === 'file:' || new URLSearchParams(location.search).get('focus') !== 'changes') return;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const params = new URLSearchParams({ path: location.pathname.replace(/^\//, '') });
+    const requestedBase = new URLSearchParams(location.search).get('base');
+    if (requestedBase) params.set('base', requestedBase);
+    const [currentResponse, baselineResponse] = await Promise.all([
+      fetch(location.pathname, { cache: 'no-store', signal: controller.signal }),
+      fetch('/api/baseline?' + params, { signal: controller.signal }),
+    ]);
+    if (!currentResponse.ok || !baselineResponse.ok) throw new Error('Git baseline unavailable');
+    const currentText = await currentResponse.text();
+    const baseline = await baselineResponse.json();
+    const parser = new DOMParser();
+    const current = anchorSignatures(parser.parseFromString(currentText, 'text/html'));
+    const prior = baseline.html === null ? null : anchorSignatures(parser.parseFromString(baseline.html, 'text/html'));
+    const classification = classifyAnchorSignatures(current, prior);
+    for (const element of document.querySelectorAll('[data-anchor]')) {
+      element.dataset.hxFocus = classification.get(element.dataset.anchor) || 'changed';
+    }
+    document.body.classList.add('hx-focus-active');
+  } catch (error) {
+    const notice = document.createElement('div');
+    notice.className = 'hx-focus-error';
+    notice.textContent = 'Issue focus unavailable. Showing the complete current spec.';
+    document.body.appendChild(notice);
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 // Name the folder the user should grant: the first ancestor Chromium will accept
@@ -578,6 +635,12 @@ function resolvedThreadCollapsed(thread, expandedResolved) {
   return thread.status === 'resolved' && !expandedResolved.has(thread.id);
 }
 
+function threadReplyAction(thread) {
+  const message = thread.messages[thread.messages.length - 1];
+  if (!message || message.actor !== 'agent') return null;
+  return { label: thread.status === 'resolved' ? 'Reply and reopen' : '↩ Reply', message };
+}
+
 function commentModeShortcut(e) {
   const target = e.target || {};
   return String(e.key || '').toLowerCase() === 'c'
@@ -595,6 +658,22 @@ function acknowledgedReplyCount(threads) {
   return [...threads.values()].filter(thread => thread.status === 'acknowledged').length;
 }
 
+function reviewHandoffState(threads, hasTbd = false) {
+  const values = [...threads.values()];
+  const drafts = values.filter(thread => thread.status === 'draft').length;
+  const finish = !hasTbd && drafts === 0 && values.every(thread => thread.status === 'resolved');
+  return { drafts, finish, enabled: drafts > 0 || finish };
+}
+
+function handoffObservation(events, nowMs) {
+  let handoff = null;
+  for (const event of events) if (event.actor === 'human' && event.body.event === 'handoff') handoff = event;
+  if (!handoff) return null;
+  if (events.some(event => event.actor === 'agent' && event.name > handoff.name)) return null;
+  const createdAt = Date.parse(handoff.body.createdAt || '');
+  return Number.isFinite(createdAt) && nowMs - createdAt >= 30000 ? 'queued' : 'waiting';
+}
+
 function ingest(events) {
   let changed = false;
   for (const e of events) {
@@ -603,11 +682,14 @@ function ingest(events) {
     state.events.push(e);
     changed = true;
   }
-  if (!changed) return;
-  state.events.sort((a, b) => a.name < b.name ? -1 : 1);
-  state.threads = foldThreads(state.events);
-  for (const id of state.expandedResolved) {
-    if (state.threads.get(id)?.status !== 'resolved') state.expandedResolved.delete(id);
+  if (!changed && state.eventsRendered) return;
+  state.eventsRendered = true;
+  if (changed) {
+    state.events.sort((a, b) => a.name < b.name ? -1 : 1);
+    state.threads = foldThreads(state.events);
+    for (const id of state.expandedResolved) {
+      if (state.threads.get(id)?.status !== 'resolved') state.expandedResolved.delete(id);
+    }
   }
   renderPanel();
   renderPins();
@@ -628,8 +710,17 @@ article.spec nav{font:12px system-ui;color:#8b8e98}
 article.spec p{margin:0 0 10px;max-width:62ch}
 article.spec a{color:#12897c}
 [data-render-target]{border:1px solid #e2e0d8;border-radius:8px;background:#fff;margin:6px 0 10px}
+:where(body.hx-focus-active [data-hx-focus=unchanged]){color:#6b6e75}
+:where(body.hx-focus-active [data-hx-focus=changed]){color:#22242a}
+:where(body.hx-focus-active [data-hx-focus=unchanged] > :not([data-anchor]):not(.hx-pin):not(.hx-badge):not(script)){color:#6b6e75}
+body.hx-focus-active [data-hx-focus=unchanged] > :is([data-render-target],figure,img,svg,canvas):not([data-anchor]){opacity:.5;filter:saturate(.45)}
+body.hx-focus-active [data-hx-focus=unchanged] .hx-pin,body.hx-focus-active [data-hx-focus=unchanged] .hx-badge{opacity:1;filter:none}
+.hx-focus-error{position:fixed;top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);max-width:calc(100vw - 24px);box-sizing:border-box;padding:8px 12px;border-radius:8px;background:#8b1a1a;color:#fff;font:600 12px system-ui;z-index:970;box-shadow:0 6px 20px rgba(30,30,40,.25)}
 @media(prefers-color-scheme:dark){
 :where(body){background:#17191d;color:#e8e7e2}
+:where(body.hx-focus-active [data-hx-focus=unchanged]){color:#9fa1a7}
+:where(body.hx-focus-active [data-hx-focus=changed]){color:#e8e7e2}
+:where(body.hx-focus-active [data-hx-focus=unchanged] > :not([data-anchor]):not(.hx-pin):not(.hx-badge):not(script)){color:#9fa1a7}
 article.spec header{border-color:#33363c}
 article.spec nav{color:#74767e}
 article.spec a{color:#34a899}
@@ -1000,13 +1091,13 @@ function renderPanel() {
         }
         d.appendChild(item);
       }
-      const last = th.messages[th.messages.length - 1];
-      if (last && last.actor === 'agent' && th.status !== 'resolved') {
+      const replyAction = threadReplyAction(th);
+      if (replyAction) {
         const reply = document.createElement('button');
         reply.className = 'hx-btn';
         reply.dataset.act = 'reply';
-        reply.textContent = '↩ Reply';
-        reply.addEventListener('click', e => { e.stopPropagation(); startReply(th, last); });
+        reply.textContent = replyAction.label;
+        reply.addEventListener('click', e => { e.stopPropagation(); startReply(th, replyAction.message); });
         d.appendChild(reply);
       }
       if (th.status === 'acknowledged') {
@@ -1037,12 +1128,15 @@ function renderPanel() {
     });
     wrap.appendChild(d);
   }
-  const drafts = [...state.threads.values()].filter(t => t.status === 'draft').length;
-  document.getElementById('hx-drafts').textContent = drafts + ' draft' + (drafts === 1 ? '' : 's');
-  document.getElementById('hx-handoff').disabled = !drafts;
+  const handoffState = reviewHandoffState(state.threads, Boolean(document.querySelector('[data-spec-tbd]')));
+  const drafts = handoffState.drafts;
+  document.getElementById('hx-drafts').textContent = handoffState.finish ? 'Review complete' : drafts + ' draft' + (drafts === 1 ? '' : 's');
+  const desktopHandoff = document.getElementById('hx-handoff');
+  desktopHandoff.disabled = !handoffState.enabled;
+  desktopHandoff.textContent = handoffState.finish ? 'Finish review' : 'Hand off to agent →';
   const mobileHandoff = document.getElementById('hx-mobile-handoff');
-  mobileHandoff.disabled = !drafts;
-  mobileHandoff.textContent = drafts ? 'Hand off (' + drafts + ')' : 'Hand off';
+  mobileHandoff.disabled = !handoffState.enabled;
+  mobileHandoff.textContent = handoffState.finish ? 'Finish review' : drafts ? 'Hand off (' + drafts + ')' : 'Hand off';
   renderThreadDock();
   renderThreadHighlight();
 }
@@ -1271,10 +1365,16 @@ function renderBadges() {
 }
 
 async function handoff() {
-  const n = [...state.threads.values()].filter(t => t.status === 'draft').length;
-  await state.transport.postEvent({ id: 'h' + Date.now().toString(36), event: 'handoff', anchorId: '', target: null, quote: null, text: 'batch from ' + state.transport.mode, actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
-  toast('Handed off ' + n + ' comment' + (n === 1 ? '' : 's') + ' — agent notified');
-  refresh();
+  const action = reviewHandoffState(state.threads, Boolean(document.querySelector('[data-spec-tbd]')));
+  if (state.handoffPosting || !action.enabled) return;
+  state.handoffPosting = true;
+  try {
+    await state.transport.postEvent({ id: 'h' + Date.now().toString(36), event: 'handoff', anchorId: '', target: null, quote: null, text: 'batch from ' + state.transport.mode, actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
+    toast(action.finish ? 'Review finished' : 'Handed off ' + action.drafts + ' comment' + (action.drafts === 1 ? '' : 's') + ' — agent notified');
+    refresh();
+  } finally {
+    state.handoffPosting = false;
+  }
 }
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -1300,7 +1400,14 @@ async function refresh() {
     ingest(await state.transport.listEvents());
     const agentEvents = state.events.filter(e => e.actor === 'agent');
     const last = agentEvents[agentEvents.length - 1];
-    document.getElementById('hx-agent').textContent = last ? '· agent last event ' + new Date(last.body.createdAt).toLocaleTimeString() : '· no agent events yet';
+    const observation = handoffObservation(state.events, Date.now());
+    document.getElementById('hx-agent').textContent = observation === 'waiting'
+      ? '· handed off, waiting for agent'
+      : observation === 'queued'
+        ? '· hand-off still queued; review session may be disconnected'
+        : last
+          ? '· agent last event ' + new Date(last.body.createdAt).toLocaleTimeString()
+          : '· no agent events yet';
     status('connected · ' + state.transport.label + ' · ' + state.threads.size + ' threads');
     if (location.hash.includes('hxdebug') && !state._beaconed) {
       state._beaconed = true;
@@ -1325,6 +1432,7 @@ async function watchSpec() {
 /* ---------------- boot ---------------- */
 (async function boot() {
   mountUI();
+  applyIssueFocus();
   await hydrateIslands();
   adoptForeignCharts();
   // spec scripts can create/recreate charts at any time; rescan when canvases appear

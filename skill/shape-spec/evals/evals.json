@@ -1,0 +1,54 @@
+{
+  "skill_name": "spec-chat-shape",
+  "note": "Behavior contract. On 2026-08-31 a fresh isolated Claude session scored the review-only baseline false on six shaping decisions, then scored the new shaping skill true on all seven using only SKILL.md and its required references.",
+  "evals": [
+    {
+      "id": 1,
+      "eval_name": "prompt-first-durable-seed",
+      "prompt": "Start shaping this brand-new feature in Spec Chat: let reviewers compare alternative checkout retry policies.",
+      "expectations": [
+        "Creates a fresh placeholder through the repository-selected issue skill before reading docs",
+        "Runs a short docs-only pass before code or test inspection",
+        "Writes one concise current issue seed and one concise current spec seed",
+        "Uses an existing governing spec or creates a minimal capability spec",
+        "Adds the source issue link to every materially changed spec"
+      ]
+    },
+    {
+      "id": 2,
+      "eval_name": "git-focused-public-review",
+      "prompt": "Publish the first shaping seed for browser review from another device.",
+      "expectations": [
+        "Commits and pushes the seed before presenting review",
+        "Serves only the narrow review collection on loopback",
+        "Publishes an unguessable HTTPS capability URL with no SSH or separate login",
+        "Opens focus=changes with the exact local change-request base ref",
+        "Keeps the authoring turn parked on the collection watcher"
+      ]
+    },
+    {
+      "id": 3,
+      "eval_name": "orthogonal-in-spec-grill",
+      "prompt": "Continue shaping after the first seed exposes several open questions.",
+      "expectations": [
+        "Places material questions in anchored data-spec-tbd blocks",
+        "Batches only internally orthogonal questions",
+        "Keeps direction-changing questions sequential",
+        "Commits and pushes accepted spec changes before browser replies",
+        "Never dumps the complete grill at once"
+      ]
+    },
+    {
+      "id": 4,
+      "eval_name": "finish-and-cold-recovery",
+      "prompt": "The browser review is clean and the human selects Finish review.",
+      "expectations": [
+        "Refuses finish while any data-spec-tbd or unresolved thread remains",
+        "Treats the existing empty hand-off as browser-review completion",
+        "Stops the watcher and public transport after final reconciliation",
+        "Does not infer implementation authorization, acceptance, merge, or deployment approval",
+        "Keeps current files sufficient for a later fresh agent to recover"
+      ]
+    }
+  ]
+}
