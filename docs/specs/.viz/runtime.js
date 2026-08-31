@@ -52,6 +52,7 @@ const state = {
   charts: new Map(),     // sectionAnchor -> {chart, config, el}
   specMtime: null,
   loopsStarted: false,
+  eventsRendered: false,
 };
 
 /* ---------------- transports ---------------- */
@@ -672,11 +673,14 @@ function ingest(events) {
     state.events.push(e);
     changed = true;
   }
-  if (!changed) return;
-  state.events.sort((a, b) => a.name < b.name ? -1 : 1);
-  state.threads = foldThreads(state.events);
-  for (const id of state.expandedResolved) {
-    if (state.threads.get(id)?.status !== 'resolved') state.expandedResolved.delete(id);
+  if (!changed && state.eventsRendered) return;
+  state.eventsRendered = true;
+  if (changed) {
+    state.events.sort((a, b) => a.name < b.name ? -1 : 1);
+    state.threads = foldThreads(state.events);
+    for (const id of state.expandedResolved) {
+      if (state.threads.get(id)?.status !== 'resolved') state.expandedResolved.delete(id);
+    }
   }
   renderPanel();
   renderPins();
