@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Prompt-first shaping and portable handoffs - spec</title>
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1">
+
+<header data-anchor="header">
+<h1>Prompt-first shaping and portable handoffs</h1>
+<nav data-anchor="breadcrumbs">docs / specs / prompt-first-shaping.spec.html</nav>
+<p data-anchor="status">Status: shaping contract under direct Spec Chat review.</p>
+</header>
+
+<section data-anchor="outcome" id="outcome">
+<h2>Outcome</h2>
+<p data-anchor="outcome-prompt">Every new work unit begins with a plain-language feature prompt.</p>
+<p data-anchor="outcome-durable">The workflow creates clean durable issue and spec surfaces immediately, then iterates on those surfaces instead of treating chat context as product truth.</p>
+<p data-anchor="outcome-review">The canonical HTML spec and its Spec Chat overlay are the only required human review surface for spec behavior.</p>
+<p data-anchor="outcome-portable">Correctness survives agent, session, CLI, and host replacement through plain files and cold reconstruction.</p>
+</section>
+
+<section data-anchor="modular-boundaries" id="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-anchor="modular-template-rule">A spec that spans multiple modules includes a concise Modular boundaries section naming responsibility, interface or seam, and dependency direction.</p>
+<p data-anchor="modular-template-level">The section stays architectural and omits classes, functions, files, and replaceable implementation detail.</p>
+<p data-anchor="modular-template-diagram">A contract-bearing semantic diagram is the default when more than one meaningful module relationship exists.</p>
+<script type="application/spec+json" data-render="chart" data-lib="echarts">
+{
+  "tooltip": {
+    "trigger": "item"
+  },
+  "series": [
+    {
+      "type": "graph",
+      "layout": "none",
+      "roam": false,
+      "symbolSize": 58,
+      "label": {
+        "show": true,
+        "position": "bottom",
+        "formatter": "{b}"
+      },
+      "edgeSymbol": [
+        "none",
+        "arrow"
+      ],
+      "edgeSymbolSize": 8,
+      "lineStyle": {
+        "width": 2,
+        "color": "#8a8d94"
+      },
+      "data": [
+        {
+          "id": "shape",
+          "name": "Shaping skill",
+          "x": 100,
+          "y": 70
+        },
+        {
+          "id": "issue",
+          "name": "Issue skill",
+          "x": 300,
+          "y": 30
+        },
+        {
+          "id": "review",
+          "name": "Review skill",
+          "x": 300,
+          "y": 130
+        },
+        {
+          "id": "browser",
+          "name": "Browser runtime",
+          "x": 500,
+          "y": 70
+        },
+        {
+          "id": "transport",
+          "name": "Local transport",
+          "x": 500,
+          "y": 190
+        },
+        {
+          "id": "files",
+          "name": "Durable files + Git",
+          "x": 300,
+          "y": 250
+        },
+        {
+          "id": "public",
+          "name": "Public capability",
+          "x": 100,
+          "y": 190
+        }
+      ],
+      "links": [
+        {
+          "source": "shape",
+          "target": "issue",
+          "value": "current issue"
+        },
+        {
+          "source": "shape",
+          "target": "review",
+          "value": "review contract"
+        },
+        {
+          "source": "review",
+          "target": "browser",
+          "value": "event protocol"
+        },
+        {
+          "source": "browser",
+          "target": "transport",
+          "value": "HTTP reads/writes"
+        },
+        {
+          "source": "transport",
+          "target": "files",
+          "value": "spool + baseline"
+        },
+        {
+          "source": "review",
+          "target": "files",
+          "value": "spec + replies"
+        },
+        {
+          "source": "public",
+          "target": "transport",
+          "value": "narrow relay"
+        }
+      ],
+      "edgeLabel": {
+        "show": true,
+        "formatter": "{c}",
+        "fontSize": 10
+      }
+    }
+  ]
+}
+</script>
+<div data-render-target="chart"></div>
+</section>
+
+<section data-anchor="source-ownership" id="source-ownership">
+<h2>Source ownership</h2>
+<p data-anchor="source-issue">The issue surface owns current high-level intent, desired outcome, acceptance criteria, non-goals, dependencies, and governing source links.</p>
+<p data-anchor="source-spec">The canonical spec owns current user stories, detailed behavior, constraints, edge cases, and interaction contracts.</p>
+<p data-anchor="source-issues">Every canonical spec links each issue whose accepted work materially changed that spec file.</p>
+<p data-anchor="source-pr">The evolving draft change request carries durable commits and history, but it is not a required human spec-review surface.</p>
+<p data-anchor="source-spool">The actor-segregated review spool owns comments, replies, hand-offs, and their causal order.</p>
+<p data-anchor="source-context">The existing review context file carries only concise cold-recovery facts that have not yet become canonical behavior.</p>
+<p data-anchor="source-chat">Conversation and model memory are evidence only and never override a durable current source.</p>
+</section>
+
+<section data-anchor="shaping-flow" id="shaping-flow">
+<h2>Prompt-first shaping flow</h2>
+<script type="application/spec+json" data-render="chart" data-lib="echarts">
+{
+  "tooltip": {
+    "trigger": "item"
+  },
+  "series": [
+    {
+      "type": "graph",
+      "layout": "none",
+      "roam": false,
+      "symbolSize": 54,
+      "label": {
+        "show": true,
+        "position": "bottom",
+        "formatter": "{b}"
+      },
+      "edgeSymbol": [
+        "none",
+        "arrow"
+      ],
+      "edgeSymbolSize": 8,
+      "lineStyle": {
+        "width": 2,
+        "color": "#8a8d94"
+      },
+      "data": [
+        {
+          "id": "prompt",
+          "name": "Feature prompt",
+          "x": 70,
+          "y": 90
+        },
+        {
+          "id": "issue",
+          "name": "Placeholder issue",
+          "x": 220,
+          "y": 90
+        },
+        {
+          "id": "docs",
+          "name": "Short docs pass",
+          "x": 370,
+          "y": 90
+        },
+        {
+          "id": "seed",
+          "name": "Issue + spec seed",
+          "x": 520,
+          "y": 90
+        },
+        {
+          "id": "review",
+          "name": "HTML review",
+          "x": 520,
+          "y": 230
+        },
+        {
+          "id": "batch",
+          "name": "Hand-off batch",
+          "x": 370,
+          "y": 230
+        },
+        {
+          "id": "finish",
+          "name": "Finish review",
+          "x": 220,
+          "y": 230
+        },
+        {
+          "id": "consume",
+          "name": "Optional next gate",
+          "x": 70,
+          "y": 230
+        }
+      ],
+      "links": [
+        {
+          "source": "prompt",
+          "target": "issue"
+        },
+        {
+          "source": "issue",
+          "target": "docs"
+        },
+        {
+          "source": "docs",
+          "target": "seed"
+        },
+        {
+          "source": "seed",
+          "target": "review"
+        },
+        {
+          "source": "review",
+          "target": "batch"
+        },
+        {
+          "source": "batch",
+          "target": "review"
+        },
+        {
+          "source": "review",
+          "target": "finish"
+        },
+        {
+          "source": "finish",
+          "target": "consume"
+        }
+      ]
+    }
+  ]
+}
+</script>
+<div data-render-target="chart"></div>
+<p data-anchor="flow-prompt">The agent creates a fresh placeholder issue immediately from its best concise interpretation of the prompt.</p>
+<p data-anchor="flow-no-transcript">The issue is always-most-recent and clean, so later passes replace its content rather than retaining the raw prompt or accumulating summaries.</p>
+<p data-anchor="flow-branch">The agent creates the work branch, and that branch supplies the local Git comparison baseline.</p>
+<p data-anchor="flow-docs">The short seed pass reads only target instructions, the spec index, clearly related specs and ADRs, and directly relevant product or workflow docs.</p>
+<p data-anchor="flow-docs-exclusion">The seed pass defers code, tests, configuration, and package inspection unless durable docs conflict or cannot identify the correct spec surface.</p>
+<p data-anchor="flow-governing-links">The issue retains links only to sources that actually govern the work, never a bibliography of everything inspected.</p>
+<p data-anchor="flow-seed">The agent writes one concise current issue seed and one concise current spec seed before deeper grilling.</p>
+<p data-anchor="flow-existing-spec">When a relevant canonical spec exists, the agent edits it in place.</p>
+<p data-anchor="flow-new-spec">When no relevant spec exists, the agent creates a minimal durable capability or domain spec with only sections that contain real behavior.</p>
+<p data-anchor="flow-no-issue-link">The spec adds the originating issue to its concise source-issues list when accepted work changes that file.</p>
+<p data-anchor="flow-pr">The first seed is committed and pushed, then one evolving draft change request opens and remains the durable transport for later shaping batches.</p>
+</section>
+
+<section data-anchor="issue-surface" id="issue-surface">
+<h2>Issue surface</h2>
+<p data-anchor="issue-github-only">Each target repository selects its own issue surface through a separate concise issue skill.</p>
+<p data-anchor="issue-same-repo">External repositories may select a different issue surface without changing Spec Chat's shaping or review contract.</p>
+<p data-anchor="issue-no-abstraction">The core Spec Chat shaping skill depends only on the issue skill's create, read, replace-current-content, and link operations.</p>
+<p data-anchor="issue-direct-tool">The Spec Chat browser runtime, review server, and event protocol contain no tracker client or tracker-specific behavior.</p>
+<p data-anchor="issue-missing-access">Missing access to the repository-selected issue surface is a visible shaping blocker.</p>
+<p data-anchor="issue-current-only">Resolved decisions replace prior issue prose, and resolved material TBDs are removed immediately.</p>
+</section>
+
+<section data-anchor="focus-view" id="focus-view">
+<h2>Git-derived focus is the diff viewer</h2>
+<p data-anchor="focus-only-review">The highlighted current spec is the complete required human diff-review surface.</p>
+<p data-anchor="focus-clear">Every current block added or modified by the work branch remains fully clear.</p>
+<p data-anchor="focus-recede">Every unchanged current block recedes visually so the issue-scoped additions hold attention.</p>
+<p data-anchor="focus-new-file">A new spec is entirely clear.</p>
+<p data-anchor="focus-normal-view">Opening the spec without issue focus renders the whole current document at normal clarity.</p>
+<p data-anchor="focus-no-metadata">Focus is derived from Git and never maintained through embedded issue metadata, sidecars, anchor lists, or hand-authored change markers.</p>
+<p data-anchor="focus-commit-discipline">The shaping skill commits and pushes every accepted spec change before presenting the refreshed focus view, so the Git-derived review state remains durable and reproducible.</p>
+<p data-anchor="focus-http">Prompt-first shaping uses the existing HTTP review transport on desktop and mobile because a browser file page cannot inspect Git.</p>
+<p data-anchor="focus-local-git">The review server reads only the current local repository and its merge base, and it never fetches, checks out, stages, commits, or writes Git state.</p>
+<p data-anchor="focus-no-octo">No focus behavior imports, invokes, expects, or mentions octo-lite or another orchestrator.</p>
+<p data-anchor="focus-base-override">The shaping URL names the exact local base ref of its draft change request, while automatic base discovery remains a fallback for direct review.</p>
+<p data-anchor="focus-failure">If Git comparison cannot be calculated, focus mode fails visibly and renders the complete current spec without stale highlighting.</p>
+<p data-anchor="focus-removal">A removed behavior must be expressed by the resulting current rule or constraint, because a silent deletion with no current replacement cannot be reviewed in the current-spec highlighting model.</p>
+<p data-anchor="focus-no-other-diff">The first version requires no side-by-side viewer, removed-content tray, deletion ghost, or pull-request review.</p>
+<p data-anchor="focus-future-diff">The contract leaves room for optional richer in-spec diff views when real use justifies them.</p>
+</section>
+
+<section data-anchor="grilling" id="grilling">
+<h2>In-spec grilling</h2>
+<p data-anchor="grilling-surface">After the seed opens, shaping conversation occurs inside Spec Chat by default.</p>
+<p data-anchor="grilling-one-question">The agent may expose a small batch of internally orthogonal material questions so review stays dynamic and fast.</p>
+<p data-anchor="grilling-sequential">Questions whose answers could materially redirect one another remain sequential, and the agent never dumps the complete grill at once.</p>
+<p data-anchor="grilling-tbd">Each question appears as a temporary anchored TBD block marked with <code>data-spec-tbd</code> so Finish review cannot become eligible while material questions remain.</p>
+<p data-anchor="grilling-answer">The human answers with an ordinary comment on that block.</p>
+<p data-anchor="grilling-resolve">The agent immediately replaces the TBD with the resulting current rule or removes it when no rule is needed.</p>
+<p data-anchor="grilling-issue-sync">The clean current issue is updated in the same batch when the answer changes its high-level scope or criteria.</p>
+<p data-anchor="grilling-no-protocol">Agent questions require no agent-created root thread, new event type, or side channel.</p>
+<p data-anchor="grilling-fallback">Terminal chat is only a fallback when the browser review surface is unavailable.</p>
+</section>
+
+<section data-anchor="thread-lifecycle" id="thread-lifecycle">
+<h2>Thread lifecycle</h2>
+<p data-anchor="thread-collapse">Resolved threads remain in history and collapse by default.</p>
+<p data-anchor="thread-expand">Selecting a resolved thread expands its complete conversation.</p>
+<p data-anchor="thread-reopen">An expanded resolved thread whose latest message is from the agent shows Reply and reopen.</p>
+<p data-anchor="thread-existing-reply">Saving that reply writes the existing human reply event and naturally derives draft status.</p>
+<p data-anchor="thread-no-reopen-status">There is no separate reopen status, state-only Reopen action, or new event schema.</p>
+<p data-anchor="thread-handoff">The reopened draft follows the ordinary Hand off flow.</p>
+</section>
+
+<section data-anchor="active-review" id="active-review">
+<h2>Active review attachment</h2>
+<p data-anchor="active-turn">While browser review is active, the authoring agent keeps its current turn open and parks on one collection watcher.</p>
+<p data-anchor="active-no-final">The agent never returns a final response while that active review window remains open.</p>
+<p data-anchor="active-handoff">A browser hand-off completes the wait, re-enters the same authoring turn, and delivers the exact ready batch.</p>
+<p data-anchor="active-repark">After the batch settles, the same turn reconciles remaining backlog and parks a fresh watcher.</p>
+<p data-anchor="active-timeout">A watcher timeout or watcher error while the turn remains active wakes the same agent, which reconciles and reparks automatically.</p>
+<p data-anchor="active-stop">A host-stopped, completed, or lost turn cannot reactivate itself.</p>
+<p data-anchor="active-working-ui">Hosts may display the authoring turn as working throughout active browser review.</p>
+</section>
+
+<section data-anchor="batch-transaction" id="batch-transaction">
+<h2>Hand-off batch transaction</h2>
+<p data-anchor="batch-cutoff">The hand-off event defines the exact batch cutoff.</p>
+<p data-anchor="batch-order-1">The agent folds edits and replies, then rechecks that each newest human message still needs an answer.</p>
+<p data-anchor="batch-order-2">The agent applies current spec changes in the smallest coherent orthogonal group.</p>
+<p data-anchor="batch-order-3">The agent updates the clean current issue when high-level truth changed.</p>
+<p data-anchor="batch-order-4">The agent commits and pushes every accepted spec change before the browser presents its refreshed Git-derived focus view.</p>
+<p data-anchor="batch-order-5">The agent emits one reply to each newest human message after the durable spec write succeeds.</p>
+<p data-anchor="batch-order-6">Only after every prior action succeeds does the agent append the exact processed filenames to its cursor.</p>
+<p data-anchor="batch-failure">A partial or failed batch leaves the cursor unchanged so the next processor reconstructs and completes the same work.</p>
+<p data-anchor="batch-one-writer">One active writer owns a mutable review collection at a time.</p>
+<p data-anchor="batch-no-claims">Leases, fencing, and distributed claims remain deferred until observed concurrent processors prove a real race.</p>
+</section>
+
+<section data-anchor="portable-recovery" id="portable-recovery">
+<h2>Portable recovery</h2>
+<script type="application/spec+json" data-render="chart" data-lib="echarts">
+{
+  "tooltip": {
+    "trigger": "item"
+  },
+  "series": [
+    {
+      "type": "graph",
+      "layout": "none",
+      "roam": false,
+      "symbolSize": 58,
+      "label": {
+        "show": true,
+        "position": "bottom",
+        "formatter": "{b}"
+      },
+      "edgeSymbol": [
+        "none",
+        "arrow"
+      ],
+      "edgeSymbolSize": 8,
+      "data": [
+        {
+          "id": "request",
+          "name": "Durable hand-off",
+          "x": 90,
+          "y": 100
+        },
+        {
+          "id": "active",
+          "name": "Same turn",
+          "x": 300,
+          "y": 45
+        },
+        {
+          "id": "fresh",
+          "name": "Fresh agent",
+          "x": 300,
+          "y": 155
+        },
+        {
+          "id": "outcome",
+          "name": "Accepted batch outcome",
+          "x": 520,
+          "y": 100
+        }
+      ],
+      "links": [
+        {
+          "source": "request",
+          "target": "active"
+        },
+        {
+          "source": "request",
+          "target": "fresh"
+        },
+        {
+          "source": "active",
+          "target": "outcome"
+        },
+        {
+          "source": "fresh",
+          "target": "outcome"
+        }
+      ],
+      "lineStyle": {
+        "width": 2,
+        "color": "#8a8d94"
+      }
+    }
+  ]
+}
+</script>
+<div data-render-target="chart"></div>
+<p data-anchor="recovery-guarantee">The durable guarantee is one accepted batch outcome, not resumption of a particular worker session.</p>
+<p data-anchor="recovery-attempts">Processing allows at-least-once attempts and accepts one complete current outcome.</p>
+<p data-anchor="recovery-same-session">Same-thread continuation and CLI session resume are performance and context optimizations only.</p>
+<p data-anchor="recovery-cold">Any later compatible agent can cold-start from the current spec, review spool, existing context, repository instructions, current issue, and current change request.</p>
+<p data-anchor="recovery-derived-capsule">The portable work capsule is derived at processing time from those existing sources and is never copied into a job file or ledger.</p>
+<p data-anchor="recovery-no-worker">When no agent process exists, handed-off events remain durably queued and no claim of active processing is made.</p>
+<p data-anchor="recovery-reconnect">When an agent later enters the repository, its first action is a zero-wait collection scan that drains every completed unprocessed hand-off before new work.</p>
+<p data-anchor="recovery-no-self-wake">A completely closed host session cannot self-wake without a host trigger or another local process capable of invoking an agent.</p>
+<p data-anchor="recovery-no-supervisor">The first implementation intentionally adds no foreground supervisor or agent-launching server.</p>
+<p data-anchor="recovery-trigger">A supervisor is reconsidered only if the active-turn attachment still strands real hand-offs after this contract is implemented and tested.</p>
+</section>
+
+<section data-anchor="truthful-status" id="truthful-status">
+<h2>Truthful browser status</h2>
+<p data-anchor="status-known-facts">The browser displays only event-backed facts it can know.</p>
+<p data-anchor="status-waiting">After hand-off it shows Handed off, waiting for agent.</p>
+<p data-anchor="status-ack">After a matching agent reply it shows the acknowledged thread state.</p>
+<p data-anchor="status-queued">When no matching reply appears within the existing timeout, it reports that the hand-off is still queued and the review session may be disconnected.</p>
+<p data-anchor="status-no-presence">The browser never claims that an agent is attached based only on old agent-event recency.</p>
+<p data-anchor="status-no-heartbeat">The first implementation adds no heartbeat, sentinel, lease, connection monitor, or periodic presence write.</p>
+</section>
+
+<section data-anchor="finish-review" id="finish-review">
+<h2>Finish review</h2>
+<p data-anchor="finish-ready">When no draft, pending, acknowledged, unresolved, or <code>data-spec-tbd</code> work remains, the disabled hand-off action becomes Finish review.</p>
+<p data-anchor="finish-event">Finish review writes the existing hand-off event with an empty batch.</p>
+<p data-anchor="finish-agent">The parked agent interprets that empty hand-off as explicit completion of the browser review window.</p>
+<p data-anchor="finish-final-batch">The agent reconciles issue and spec, commits and pushes any final changes, advances the cursor, and closes the active wait.</p>
+<p data-anchor="finish-narrow">Finish review means only that the human HTML review is complete and current durable surfaces agree.</p>
+<p data-anchor="finish-not-acceptance">Finish review is not human acceptance of delivered software, implementation authorization, tracker lifecycle transition, merge approval, or deployment approval.</p>
+</section>
+
+<section data-anchor="mobile" id="mobile">
+<h2>Mobile review</h2>
+<p data-anchor="mobile-version">The runtime includes the latest upstream Spec Chat behavior plus the existing mobile-review commit.</p>
+<p data-anchor="mobile-http">Prompt-first shaping uses HTTP transport so the same review works on phones, tablets, and desktops.</p>
+<p data-anchor="mobile-target-first">Comment mode remains target-first on narrow screens: opening comment mode exposes the document, and selecting a target opens the full-viewport composer.</p>
+<p data-anchor="mobile-controls">Review controls keep at least 44 pixel touch targets, 16 pixel textarea text, dynamic viewport height, safe-area padding, and reduced-motion behavior.</p>
+<p data-anchor="mobile-handoff">The mobile toolbar retains draft-counted Hand off and gains the same Finish review transition.</p>
+<p data-anchor="mobile-focus">Issue focus and receded context remain legible and operable on narrow screens without shifting the spec sideways.</p>
+</section>
+
+<section data-anchor="public-review-access" id="public-review-access">
+<h2>Public review access</h2>
+<p data-anchor="public-review-anywhere">Prompt-first shaping publishes an HTTPS review link that opens from any ordinary browser without SSH, VPN, or a separate account login.</p>
+<p data-anchor="public-review-capability">The unguessable link is a bearer capability, and possession of that link is the only review authentication.</p>
+<p data-anchor="public-review-warning">The shaping skill tells the human to treat the link as a secret and never publishes it into the issue or change request.</p>
+<p data-anchor="public-review-narrow-root">The public server exposes only the declared review collection and its event routes, never the repository root.</p>
+<p data-anchor="public-review-local-origin">The file-serving process remains loopback-bound, and the public transport relays only to that narrow local origin.</p>
+<p data-anchor="public-review-close">Finishing or explicitly ending review closes the public transport and invalidates the capability URL.</p>
+<p data-anchor="public-review-provider">The core Spec Chat protocol does not depend on one tunnel provider, and repository or host instructions may select the available public transport.</p>
+</section>
+
+<section data-anchor="visual-generation" id="visual-generation">
+<h2>Visual generation doctrine</h2>
+<p data-anchor="visual-verbatim">The new shaping skill contains the following doctrine verbatim in one required visual-generation reference.</p>
+<pre data-anchor="visual-doctrine">NON REACT
+Core
+Tailwind CSS v4 — styling
+daisyUI + daisyUI Skill — components and themes
+Alpine.js — page state and UI behavior
+PixiJS + PixiJS Skills — interactive visual scenes
+GSAP — animation and choreography
+ECharts — charts and quantitative data visualization
+KaTeX — mathematical notation
+Beautiful Mermaid — semantic diagrams
+Specialists
+JSXGraph — precise interactive math and geometry
+Paper.js — vector/path manipulation
+Three.js — 3D
+LiquidGlass — selective premium surface effects
+The updated doctrine:
+HTML and Alpine control the page.
+Tailwind and daisyUI define the interface.
+PixiJS defines the visual world.
+GSAP defines time.
+ECharts explains data.
+KaTeX expresses math.
+Beautiful Mermaid explains systems.
+REACT
+
+Core
+React 19 + Vite
+Tailwind v4
+shadcn/ui + Base UI
+@pixi/react
++ PixiJS Skills
+GSAP +
+@gsap/react
+Apache ECharts
+KaTeX
+Beautiful Mermaid
+Interactive specialists
+Mafs — interactive math
+React Flow — interactive node/system diagrams
+React Three Fiber + Drei — 3D
+react-konva — interactive 2D canvas/vector UI
+Paper.js — serious path/Bézier work
+LiquidGlass — selective visual effect
+And there's an interesting consequence:
+Static version
+Alpine + daisyUI + PixiJS
+is extraordinarily lightweight and agent-friendly.
+React version
+React + shadcn + @pixi/react + Mafs + React Flow + R3F
+has a much richer ecosystem for Brilliant-like interactive visual education.</pre>
+<p data-anchor="visual-not-runtime">The doctrine guides generated visual surfaces and does not make every listed library a Spec Chat runtime dependency.</p>
+<p data-anchor="visual-canonical-static">Canonical spec documents always use the NON REACT doctrine so the HTML remains directly editable and canonical.</p>
+<p data-anchor="visual-react-embed">The REACT doctrine applies to existing React applications reviewed through embed mode and to explicitly requested noncanonical throwaway prototypes.</p>
+<p data-anchor="visual-no-build-sync">A target application using React does not turn its canonical spec into React or introduce a Vite source-to-HTML synchronization loop.</p>
+<p data-anchor="visual-existing-principles">Existing offline fidelity, local vendoring, semantic-island, and small-runtime principles remain in force.</p>
+</section>
+
+<section data-anchor="information-shape-doctrine" id="information-shape-doctrine">
+<h2>Information-shape doctrine</h2>
+<p data-anchor="information-shape-question">The organizing question is: what shape is this information, and what medium loses the least of it?</p>
+<p data-anchor="information-shape-visual-rule">A non-prose element exists only when prose would destroy ordering, topology, direction, quantity, spatial proportion, coverage, provenance, or another contract-bearing property.</p>
+<table data-anchor="information-shape-map">
+<thead>
+<tr data-anchor="information-shape-head"><th>Information</th><th>Required form</th><th>Loss prevented</th></tr>
+</thead>
+<tbody>
+<tr data-anchor="information-shape-axioms"><td>Peer governing axioms</td><td>Individually identified peer cards with the claim as each heading</td><td>A numbered list invents sequence and prose lets axioms disappear into narrative</td></tr>
+<tr data-anchor="information-shape-cycle"><td>A cycle with no first step</td><td>Loop or flywheel figure</td><td>Linear sentences force a false starting point</td></tr>
+<tr data-anchor="information-shape-transitions"><td>Guarded transitions</td><td>State machine with guards on edges and meaningful self-loops</td><td>The contract lives on transitions and on visible non-advancement</td></tr>
+<tr data-anchor="information-shape-direction"><td>Direction-dependent state</td><td>Time-path view plus state-versus-input loop</td><td>Hysteresis cannot be represented by one snapshot</td></tr>
+<tr data-anchor="information-shape-order"><td>Order-sensitive procedure</td><td>Bare numbered list</td><td>The ordinal itself is the contract, so a diagram adds no value</td></tr>
+<tr data-anchor="information-shape-math"><td>Relations among quantities</td><td>Math notation with an adjacent one-line gloss</td><td>Multi-variable relations become ambiguous and untestable in prose</td></tr>
+<tr data-anchor="information-shape-cross-product"><td>Cross-product mapping</td><td>Table with one explicit cell per combination</td><td>Missing combinations become visible holes</td></tr>
+<tr data-anchor="information-shape-precedence"><td>Precedence logic</td><td>Numbered first-matching-predicate table</td><td>Bullets cannot express the literal order of an if-else chain</td></tr>
+<tr data-anchor="information-shape-spatial"><td>Spatial rules</td><td>Wireframe drawn to true proportion</td><td>Layout, wrapping, clipping, and adjacency are spatial claims</td></tr>
+<tr data-anchor="information-shape-obligations"><td>Obligations</td><td>Identified acceptance rows pairing scenario and observable</td><td>Every expectation must have proof and none may remain aspirational</td></tr>
+<tr data-anchor="information-shape-negative"><td>Negative space</td><td>Failure families plus explicit non-goals</td><td>Grouped absence makes coverage auditable at a glance</td></tr>
+<tr data-anchor="information-shape-epistemic"><td>Epistemic status</td><td>Provenance or caveat adjacent to the affected constant or claim</td><td>Readers encounter uncertainty at the moment they might act</td></tr>
+<tr data-anchor="information-shape-ownership"><td>Ownership</td><td>Boundary statement before the contract and source map after it</td><td>Readers know what the document does not decide and where deferred authority lives</td></tr>
+<tr data-anchor="information-shape-confusion"><td>Predictable confusion</td><td>Disambiguation beside the conflicting terms or values</td><td>Appendices are not consulted at the moment of confusion</td></tr>
+</tbody>
+</table>
+<p data-anchor="information-shape-addressability">Everything contract-bearing is addressable through stable section, clause, figure, table-row, and acceptance identifiers so reviewers name the rule rather than describe its location.</p>
+<p data-anchor="information-shape-load-bearing">Visuals are load-bearing: changing a contract diagram changes the contract, and a visual removable without information loss is decoration.</p>
+<p data-anchor="information-shape-resolution">Repetition is allowed only when it presents the same rule at different useful resolutions, never when two forms become competing authorities.</p>
+<p data-anchor="information-shape-errors">Each form is selected to expose its likely error: sequence mistakes in ordinals, missing cases in empty cells, precedence mistakes in predicate order, layout violations in proportional drawings, and false confidence beside provenance.</p>
+</section>
+
+<section data-anchor="skill-ownership" id="skill-ownership">
+<h2>Skill ownership</h2>
+<p data-anchor="skill-shape">A new automatically discoverable spec-chat-shape skill owns prompt intake, issue creation, short docs discovery, first issue and spec seed, Git focus launch, in-spec grilling, batch publication, and review completion.</p>
+<p data-anchor="skill-review">The existing spec-chat-review skill remains the sole owner of spool reading, thread folding, reply emission, cursor safety, watcher attachment, mobile review, and cold recovery.</p>
+<p data-anchor="skill-handoff">The shaping skill hands into the review skill without copying its event protocol, while both skills encode the same spec contract invariants.</p>
+<p data-anchor="skill-github-reference">One repository-selected issue skill owns tracker-specific operations outside the Spec Chat runtime.</p>
+<p data-anchor="skill-visual-reference">One required visual-generation reference contains the exact doctrine above.</p>
+<p data-anchor="skill-information-reference">One required authoring reference contains the information-shape doctrine above.</p>
+<p data-anchor="skill-style">Every skill is short, specific, clear, and human-readable by default.</p>
+<p data-anchor="skill-invariants">Skill instructions preserve contract invariants while leaving room for context-sensitive tactics and visual variation.</p>
+<p data-anchor="skill-progressive-detail">Conditional detail lives in focused references so the entry skill remains concise.</p>
+<p data-anchor="skill-no-octo">No Spec Chat skill depends on octo-lite, another workflow package, or an external orchestrator.</p>
+<p data-anchor="skill-consumer">Other workflows may consume Spec Chat skills as downstream callers without becoming required by Spec Chat.</p>
+</section>
+
+<section data-anchor="burden-budget" id="burden-budget">
+<h2>Burden budget</h2>
+<p data-anchor="burden-rule">Every new mechanism must replace complexity or answer an observed failure that existing files and protocol cannot answer.</p>
+<p data-anchor="burden-pieces">The intended implementation adds one shaping skill, two focused references, focused review-skill changes, one runtime upgrade, and one read-only Git-baseline route in the existing review server.</p>
+<p data-anchor="burden-reuse">It reuses the current spec dialect, review spools, event schema, cursor commit point, watcher scripts, reply emitter, HTTP server, and context file.</p>
+<p data-anchor="burden-excluded">It adds no database, job ledger, capsule file, daemon, generic supervisor, heartbeat, presence sentinel, lease system, fencing system, tracker adapter registry, new event protocol, copied task context, or background infrastructure.</p>
+<p data-anchor="burden-portability">Portability comes from plain durable files and reconstructible current sources, not from a universal resident process.</p>
+</section>
+
+<section data-anchor="tdd-contract" id="tdd-contract">
+<h2>Implementation and proof contract</h2>
+<p data-anchor="tdd-prompt-red">Before changing shaping instructions, a fresh agent scenario must show that the current skills do not create the prompt-first issue and spec seed or maintain the agreed burden boundary.</p>
+<p data-anchor="tdd-prompt-green">A different fresh agent scenario must run the same request against the new skill and produce the current issue, spec seed, and review handoff without adding excluded machinery.</p>
+<p data-anchor="tdd-focus-red">A runtime test must first fail because current Spec Chat cannot classify current anchored blocks against a Git baseline or render focus solely from that classification.</p>
+<p data-anchor="tdd-focus-green">The focus test passes for added, modified, unchanged, new-file, normal-view, and unavailable-baseline cases.</p>
+<p data-anchor="tdd-thread-red">A thread-model test must first fail because the current UI withholds reply from a resolved thread.</p>
+<p data-anchor="tdd-thread-green">The same test passes when a resolved thread offers Reply and reopen and the existing human reply event derives draft status.</p>
+<p data-anchor="tdd-finish-red">A runtime test must first fail because the current no-draft hand-off remains disabled and cannot signal review completion.</p>
+<p data-anchor="tdd-finish-green">The finish test passes when a clean review emits the existing empty hand-off and an ineligible review cannot finish.</p>
+<p data-anchor="tdd-handoff-red">A watcher attachment scenario must first demonstrate that returning a final response strands a later browser hand-off until another agent turn begins.</p>
+<p data-anchor="tdd-handoff-green">The same scenario passes when the active authoring turn remains parked, processes the hand-off, settles the batch, and reparks.</p>
+<p data-anchor="tdd-mobile">Existing mobile, FSA, thread-model, and review-script suites remain green.</p>
+<p data-anchor="tdd-visual">Browser evidence must verify focus readability, mobile target-first commenting, resolved-thread reopen, hand-off waiting state, and Finish review on a real rendered spec.</p>
+</section>
+
+<section data-anchor="non-goals" id="non-goals">
+<h2>Non-goals</h2>
+<p data-anchor="non-goal-auto-no-agent">The first version does not guarantee processing while no compatible agent process exists.</p>
+<p data-anchor="non-goal-exact-session">It does not guarantee resurrection of a closed host session or preservation of hidden conversational state.</p>
+<p data-anchor="non-goal-distributed">It does not build a distributed scheduler, exactly-once execution system, multi-writer coordinator, or cross-host presence service.</p>
+<p data-anchor="non-goal-review-pr">It does not require humans to inspect GitHub or another change-request UI to understand the spec change.</p>
+<p data-anchor="non-goal-runtime-stack">It does not install the complete visual-generation doctrine into every spec or the base annotation runtime.</p>
+</section>
+
+<section data-anchor="references" id="references">
+<h2>References</h2>
+<p data-anchor="reference-design">Product design history: <a href="https://github.com/0xTomDaniel/spec-chat/blob/70e22934dc418c7971fde5772a6d9fcc904e892f/DESIGN.md">DESIGN.md at the shaping baseline</a>.</p>
+<p data-anchor="reference-review-skill">Current review procedure baseline: <a href="https://github.com/varelaseb/spec-chat/blob/cae844f1b85ce39911ab9db7f6bb03c37d434bac/skill/review-spec/SKILL.md">skill/review-spec/SKILL.md at the mobile-review commit</a>.</p>
+<p data-anchor="reference-source-issues">Source issues: <a href="https://github.com/0xTomDaniel/spec-chat/issues/21">#21 Add prompt-first shaping and portable Spec Chat handoffs</a>.</p>
+<p data-anchor="reference-source-rule">Every later issue that materially changes this file is appended to the source-issues list, and unrelated issues are never added.</p>
+</section>
+
+</article>
+</body>
+</html>
