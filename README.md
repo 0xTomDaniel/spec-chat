@@ -2,7 +2,7 @@
 
 Visual HTML specs you annotate in the browser; a coding agent addresses the annotations and edits the spec in place. Discussion happens *on* the visualization, not in chat prose.
 
-**Status:** design phase. Canonical design doc: [DESIGN.md](DESIGN.md) · clickable UX mockup: [mockups/spec-review-ux.html](mockups/spec-review-ux.html)
+**Status:** design phase. Product design history: [DESIGN.md](DESIGN.md) · canonical prompt-first shaping contract: [docs/specs/prompt-first-shaping.spec.html](docs/specs/prompt-first-shaping.spec.html) · clickable UX mockup: [mockups/spec-review-ux.html](mockups/spec-review-ux.html)
 
 ## The idea in one pass
 
