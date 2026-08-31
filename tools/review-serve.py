@@ -20,8 +20,18 @@ import time
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
-ROOT = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else '.')
+ROOT = os.path.realpath(sys.argv[1] if len(sys.argv) > 1 else '.')
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 7160
+
+try:
+    REPO_ROOT = subprocess.check_output(
+        ('git', '-C', ROOT, 'rev-parse', '--show-toplevel'), text=True, stderr=subprocess.DEVNULL
+    ).strip()
+except (OSError, subprocess.CalledProcessError):
+    REPO_ROOT = None
+
+if REPO_ROOT and os.path.samefile(ROOT, REPO_ROOT):
+    raise SystemExit('refusing repository root; serve the narrow review collection instead')
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -38,9 +48,16 @@ class Handler(SimpleHTTPRequestHandler):
         if 'hxdebug' in line:
             print('DEBUG-BEACON:', line, flush=True)
 
+    def translate_path(self, path):
+        translated = super().translate_path(path)
+        resolved = os.path.realpath(translated)
+        if resolved != ROOT and not resolved.startswith(ROOT + os.sep):
+            return os.path.join(ROOT, '.spec-chat-path-denied')
+        return translated
+
     def _review_dir(self, q):
         rel = q.get('dir', [''])[0]
-        d = os.path.abspath(os.path.join(ROOT, rel))
+        d = os.path.realpath(os.path.join(ROOT, rel))
         if not d.startswith(ROOT + os.sep) or not d.endswith('.review'):
             return None
         return d
@@ -55,7 +72,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def _baseline(self, q):
         rel = q.get('path', [''])[0]
-        target = os.path.abspath(os.path.join(ROOT, rel))
+        target = os.path.realpath(os.path.join(ROOT, rel))
         if not rel or not target.startswith(ROOT + os.sep) or not os.path.isfile(target):
             return self._json({'error': 'bad path'}, 400)
         try:
