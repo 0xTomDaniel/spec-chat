@@ -84,24 +84,31 @@ function classifyAnchorSignatures(current, baseline) {
   return result;
 }
 
+function ownAnchorSignature(element) {
+  const clone = element.cloneNode(true);
+  for (const child of clone.querySelectorAll('[data-anchor]')) child.remove();
+  return clone.outerHTML;
+}
+
 function anchorSignatures(doc) {
   const result = new Map();
   for (const element of doc.querySelectorAll('[data-anchor]')) {
-    if (element.querySelector('[data-anchor]')) continue;
-    result.set(element.dataset.anchor, element.outerHTML);
+    result.set(element.dataset.anchor, ownAnchorSignature(element));
   }
   return result;
 }
 
 async function applyIssueFocus() {
   if (EMBED_REVIEW_DIR || location.protocol === 'file:' || new URLSearchParams(location.search).get('focus') !== 'changes') return;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
   try {
     const params = new URLSearchParams({ path: location.pathname.replace(/^\//, '') });
     const requestedBase = new URLSearchParams(location.search).get('base');
     if (requestedBase) params.set('base', requestedBase);
     const [currentResponse, baselineResponse] = await Promise.all([
-      fetch(location.pathname, { cache: 'no-store' }),
-      fetch('/api/baseline?' + params),
+      fetch(location.pathname, { cache: 'no-store', signal: controller.signal }),
+      fetch('/api/baseline?' + params, { signal: controller.signal }),
     ]);
     if (!currentResponse.ok || !baselineResponse.ok) throw new Error('Git baseline unavailable');
     const currentText = await currentResponse.text();
@@ -111,7 +118,6 @@ async function applyIssueFocus() {
     const prior = baseline.html === null ? null : anchorSignatures(parser.parseFromString(baseline.html, 'text/html'));
     const classification = classifyAnchorSignatures(current, prior);
     for (const element of document.querySelectorAll('[data-anchor]')) {
-      if (element.querySelector('[data-anchor]')) continue;
       element.dataset.hxFocus = classification.get(element.dataset.anchor) || 'changed';
     }
     document.body.classList.add('hx-focus-active');
@@ -120,6 +126,8 @@ async function applyIssueFocus() {
     notice.className = 'hx-focus-error';
     notice.textContent = 'Issue focus unavailable. Showing the complete current spec.';
     document.body.appendChild(notice);
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -701,8 +709,11 @@ article.spec nav{font:12px system-ui;color:#8b8e98}
 article.spec p{margin:0 0 10px;max-width:62ch}
 article.spec a{color:#12897c}
 [data-render-target]{border:1px solid #e2e0d8;border-radius:8px;background:#fff;margin:6px 0 10px}
-body.hx-focus-active [data-hx-focus=unchanged]{opacity:.24;filter:saturate(.45)}
-.hx-focus-error{position:fixed;top:12px;left:50%;transform:translateX(-50%);max-width:calc(100vw - 24px);box-sizing:border-box;padding:8px 12px;border-radius:8px;background:#8b1a1a;color:#fff;font:600 12px system-ui;z-index:970;box-shadow:0 6px 20px rgba(30,30,40,.25)}
+body.hx-focus-active [data-hx-focus=unchanged]{color:color-mix(in srgb,currentColor 62%,transparent)}
+body.hx-focus-active [data-hx-focus=unchanged] > :not([data-anchor]):not(.hx-pin):not(.hx-badge):not(script){color:color-mix(in srgb,currentColor 62%,transparent)}
+body.hx-focus-active [data-hx-focus=unchanged] > :is([data-render-target],figure,img,svg,canvas){opacity:.5;filter:saturate(.45)}
+body.hx-focus-active [data-hx-focus=unchanged] .hx-pin,body.hx-focus-active [data-hx-focus=unchanged] .hx-badge{opacity:1;filter:none}
+.hx-focus-error{position:fixed;top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);max-width:calc(100vw - 24px);box-sizing:border-box;padding:8px 12px;border-radius:8px;background:#8b1a1a;color:#fff;font:600 12px system-ui;z-index:970;box-shadow:0 6px 20px rgba(30,30,40,.25)}
 @media(prefers-color-scheme:dark){
 :where(body){background:#17191d;color:#e8e7e2}
 article.spec header{border-color:#33363c}
@@ -1411,7 +1422,7 @@ async function watchSpec() {
 /* ---------------- boot ---------------- */
 (async function boot() {
   mountUI();
-  await applyIssueFocus();
+  applyIssueFocus();
   await hydrateIslands();
   adoptForeignCharts();
   // spec scripts can create/recreate charts at any time; rescan when canvases appear
