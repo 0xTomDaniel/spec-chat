@@ -127,6 +127,42 @@ class BaselineRouteTest(unittest.TestCase):
             urllib.request.urlopen(f"http://127.0.0.1:{self.port}/leak.txt")
         self.assertEqual(error.exception.code, 404)
 
+    def test_refuses_to_serve_an_ancestor_of_a_repository(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ancestor = Path(directory)
+            repo = ancestor / "repo"
+            repo.mkdir()
+            run("git", "init", "-b", "main", cwd=repo)
+            (ancestor / "private-notes.txt").write_text("not public")
+            with socket.socket() as sock:
+                sock.bind(("127.0.0.1", 0))
+                port = sock.getsockname()[1]
+            process = subprocess.Popen(
+                (sys.executable, str(SERVER), str(ancestor), str(port)),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                output, error = process.communicate(timeout=0.5)
+            except subprocess.TimeoutExpired:
+                process.terminate()
+                process.wait(timeout=2)
+                self.fail("review server accepted a repository ancestor")
+            self.assertNotEqual(process.returncode, 0)
+            self.assertIn("review collection", output + error)
+
+    def test_rejects_malformed_public_event_names(self):
+        query = urllib.parse.urlencode({"dir": "specs/focus.spec.html.review", "actor": "human"})
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/api/events?{query}",
+            data=json.dumps({"event": "../escape", "id": "bad/id"}).encode(),
+            method="POST",
+        )
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(request)
+        self.assertEqual(error.exception.code, 400)
+
 
 if __name__ == "__main__":
     unittest.main()
