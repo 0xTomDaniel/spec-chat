@@ -711,12 +711,14 @@ article.spec p{margin:0 0 10px;max-width:62ch}
 article.spec a{color:#12897c}
 [data-render-target]{border:1px solid #e2e0d8;border-radius:8px;background:#fff;margin:6px 0 10px}
 body.hx-focus-active [data-hx-focus=unchanged]{color:color-mix(in srgb,currentColor 62%,transparent)}
+body.hx-focus-active [data-hx-focus=changed]{color:#22242a}
 body.hx-focus-active [data-hx-focus=unchanged] > :not([data-anchor]):not(.hx-pin):not(.hx-badge):not(script){color:color-mix(in srgb,currentColor 62%,transparent)}
-body.hx-focus-active [data-hx-focus=unchanged] > :is([data-render-target],figure,img,svg,canvas){opacity:.5;filter:saturate(.45)}
+body.hx-focus-active [data-hx-focus=unchanged] > :is([data-render-target],figure,img,svg,canvas):not([data-anchor]){opacity:.5;filter:saturate(.45)}
 body.hx-focus-active [data-hx-focus=unchanged] .hx-pin,body.hx-focus-active [data-hx-focus=unchanged] .hx-badge{opacity:1;filter:none}
 .hx-focus-error{position:fixed;top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);max-width:calc(100vw - 24px);box-sizing:border-box;padding:8px 12px;border-radius:8px;background:#8b1a1a;color:#fff;font:600 12px system-ui;z-index:970;box-shadow:0 6px 20px rgba(30,30,40,.25)}
 @media(prefers-color-scheme:dark){
 :where(body){background:#17191d;color:#e8e7e2}
+body.hx-focus-active [data-hx-focus=changed]{color:#e8e7e2}
 article.spec header{border-color:#33363c}
 article.spec nav{color:#74767e}
 article.spec a{color:#34a899}
