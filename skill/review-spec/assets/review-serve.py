@@ -15,6 +15,7 @@ forwarded channel fails, because this server binds IPv4 loopback only.
 """
 import json
 import os
+import subprocess
 import sys
 import time
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -53,8 +54,53 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _baseline(self, q):
+        rel = q.get('path', [''])[0]
+        target = os.path.abspath(os.path.join(ROOT, rel))
+        if not rel or not target.startswith(ROOT + os.sep) or not os.path.isfile(target):
+            return self._json({'error': 'bad path'}, 400)
+        try:
+            repo = subprocess.check_output(
+                ('git', '-C', ROOT, 'rev-parse', '--show-toplevel'), text=True, stderr=subprocess.DEVNULL
+            ).strip()
+            repo_rel = os.path.relpath(target, repo)
+            if repo_rel.startswith('..' + os.sep) or repo_rel == '..':
+                return self._json({'error': 'path outside repository'}, 400)
+            requested = q.get('base', [''])[0]
+            candidates = [requested] if requested else []
+            if not candidates:
+                try:
+                    candidates.append(subprocess.check_output(
+                        ('git', '-C', repo, 'symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'),
+                        text=True,
+                        stderr=subprocess.DEVNULL,
+                    ).strip())
+                except subprocess.CalledProcessError:
+                    candidates.extend(('main', 'master'))
+            base_ref = next((candidate for candidate in candidates if candidate and subprocess.run(
+                ('git', '-C', repo, 'rev-parse', '--verify', '--quiet', candidate + '^{commit}'),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ).returncode == 0), None)
+            if not base_ref:
+                return self._json({'error': 'no local base ref'}, 409)
+            base = subprocess.check_output(
+                ('git', '-C', repo, 'merge-base', 'HEAD', base_ref), text=True, stderr=subprocess.DEVNULL
+            ).strip()
+            prior = subprocess.run(
+                ('git', '-C', repo, 'show', base + ':' + repo_rel),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+            html = prior.stdout.decode('utf-8') if prior.returncode == 0 else None
+            return self._json({'base': base, 'html': html})
+        except (OSError, subprocess.CalledProcessError, UnicodeDecodeError):
+            return self._json({'error': 'git baseline unavailable'}, 409)
+
     def do_GET(self):
         u = urlparse(self.path)
+        if u.path == '/api/baseline':
+            return self._baseline(parse_qs(u.query))
         if u.path != '/api/events':
             return super().do_GET()
         d = self._review_dir(parse_qs(u.query))
