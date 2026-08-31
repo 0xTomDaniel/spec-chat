@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""spec-chat review-serve — remote-dev transport.
+"""spec-chat review-serve - local HTTP transport.
 
 FSA requires the browser and the spool files to share a machine; over SSH they
-don't. This serves the repo statically plus a tiny spool API on localhost, to
-be reached through an SSH port forward. Stdlib only.
+don't. This serves a narrow review collection plus tiny spool and Git-baseline
+routes on loopback. A separate unguessable public capability transport may
+relay to this origin when the review must open from anywhere. Stdlib only.
 
 usage: review-serve.py [ROOT] [PORT]
 
-Tunnel with an EXPLICIT IPv4 destination — `ssh -L PORT:127.0.0.1:PORT host`.
-Using `localhost` as the destination makes sshd try ::1 first and every
-forwarded channel fails, because this server binds IPv4 loopback only.
   GET  /api/events?dir=<review-dir-rel-path>            -> ordered event list
   POST /api/events?dir=<...>&actor=human|agent  (JSON)  -> writes one event file
+  GET  /api/baseline?path=<spec-rel-path>[&base=<ref>]  -> local Git baseline
 """
 import json
 import os
