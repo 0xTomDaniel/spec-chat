@@ -8,8 +8,8 @@ const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime
 const start = runtime.indexOf('function foldThreads(events)');
 const end = runtime.indexOf('\n\nfunction ingest(events)', start);
 assert.ok(start >= 0 && end > start, 'runtime exposes the pure thread-folding function');
-const model = Function(runtime.slice(start, end) + '; return { foldThreads, resolvedThreadCollapsed, commentModeShortcut, threadDockEntries, acknowledgedReplyCount };')();
-const { foldThreads, resolvedThreadCollapsed, commentModeShortcut, threadDockEntries, acknowledgedReplyCount } = model;
+const model = Function(runtime.slice(start, end) + '; return { foldThreads, resolvedThreadCollapsed, threadReplyAction, commentModeShortcut, threadDockEntries, acknowledgedReplyCount };')();
+const { foldThreads, resolvedThreadCollapsed, threadReplyAction, commentModeShortcut, threadDockEntries, acknowledgedReplyCount } = model;
 
 const event = (name, actor, body) => ({ name, actor, body: { actor, schemaVersion: 1, ...body } });
 const events = [
@@ -46,6 +46,11 @@ assert.equal(resolvedThreadCollapsed(thread, expandedResolved), true, 'resolved 
 expandedResolved.add(thread.id);
 assert.equal(resolvedThreadCollapsed(thread, expandedResolved), false, 'a reopened resolved thread stays expanded');
 assert.equal(resolvedThreadCollapsed({ ...thread, status: 'acknowledged' }, expandedResolved), false, 'non-resolved threads never collapse');
+assert.deepEqual(threadReplyAction(thread), { label: 'Reply and reopen', message: thread.messages.at(-1) }, 'a resolved thread continues through an ordinary reply');
+assert.deepEqual(threadReplyAction({ ...thread, status: 'acknowledged' }), { label: '↩ Reply', message: thread.messages.at(-1) }, 'an active thread keeps the ordinary reply action');
+
+const reopenedEvents = [...events, event('190-reply-reopen.json', 'human', { id: 'u-reopen', event: 'reply', respondsTo: 'r-edit', threadId: 'u-root', anchorId: 'policy', target: null, text: 'Reopened' })];
+assert.equal(foldThreads(reopenedEvents).get('u-root').status, 'draft', 'replying to a resolved thread reopens it as a draft without a new status');
 
 const shortcut = overrides => commentModeShortcut({ key: 'c', target: { tagName: 'BODY' }, ...overrides });
 assert.equal(shortcut({}), true, 'bare C enters comment mode');
