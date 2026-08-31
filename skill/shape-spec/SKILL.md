@@ -58,6 +58,8 @@ Read [references/visual-doctrine.md](references/visual-doctrine.md) when selecti
 Canonical `*.spec.html` documents use the non-React doctrine.
 React is limited to an existing embedded application or an explicitly noncanonical throwaway prototype.
 Keep stable `data-anchor` identities, one sentence per prose line, and pretty semantic-island JSON.
+When behavior spans multiple modules, include a high-level **Modular boundaries** section that names module responsibility, interface or seam, and dependency direction.
+Prefer a contract-bearing diagram for that section; omit classes, functions, and internal implementation detail.
 
 ## Publish the seed
 

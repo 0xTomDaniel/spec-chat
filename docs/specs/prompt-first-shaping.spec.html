@@ -23,6 +23,129 @@
 <p data-anchor="outcome-portable">Correctness survives agent, session, CLI, and host replacement through plain files and cold reconstruction.</p>
 </section>
 
+<section data-anchor="modular-boundaries" id="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-anchor="modular-template-rule">A spec that spans multiple modules includes a concise Modular boundaries section naming responsibility, interface or seam, and dependency direction.</p>
+<p data-anchor="modular-template-level">The section stays architectural and omits classes, functions, files, and replaceable implementation detail.</p>
+<p data-anchor="modular-template-diagram">A contract-bearing semantic diagram is the default when more than one meaningful module relationship exists.</p>
+<script type="application/spec+json" data-render="chart" data-lib="echarts">
+{
+  "tooltip": {
+    "trigger": "item"
+  },
+  "series": [
+    {
+      "type": "graph",
+      "layout": "none",
+      "roam": false,
+      "symbolSize": 58,
+      "label": {
+        "show": true,
+        "position": "bottom",
+        "formatter": "{b}"
+      },
+      "edgeSymbol": [
+        "none",
+        "arrow"
+      ],
+      "edgeSymbolSize": 8,
+      "lineStyle": {
+        "width": 2,
+        "color": "#8a8d94"
+      },
+      "data": [
+        {
+          "id": "shape",
+          "name": "Shaping skill",
+          "x": 100,
+          "y": 70
+        },
+        {
+          "id": "issue",
+          "name": "Issue skill",
+          "x": 300,
+          "y": 30
+        },
+        {
+          "id": "review",
+          "name": "Review skill",
+          "x": 300,
+          "y": 130
+        },
+        {
+          "id": "browser",
+          "name": "Browser runtime",
+          "x": 500,
+          "y": 70
+        },
+        {
+          "id": "transport",
+          "name": "Local transport",
+          "x": 500,
+          "y": 190
+        },
+        {
+          "id": "files",
+          "name": "Durable files + Git",
+          "x": 300,
+          "y": 250
+        },
+        {
+          "id": "public",
+          "name": "Public capability",
+          "x": 100,
+          "y": 190
+        }
+      ],
+      "links": [
+        {
+          "source": "shape",
+          "target": "issue",
+          "value": "current issue"
+        },
+        {
+          "source": "shape",
+          "target": "review",
+          "value": "review contract"
+        },
+        {
+          "source": "review",
+          "target": "browser",
+          "value": "event protocol"
+        },
+        {
+          "source": "browser",
+          "target": "transport",
+          "value": "HTTP reads/writes"
+        },
+        {
+          "source": "transport",
+          "target": "files",
+          "value": "spool + baseline"
+        },
+        {
+          "source": "review",
+          "target": "files",
+          "value": "spec + replies"
+        },
+        {
+          "source": "public",
+          "target": "transport",
+          "value": "narrow relay"
+        }
+      ],
+      "edgeLabel": {
+        "show": true,
+        "formatter": "{c}",
+        "fontSize": 10
+      }
+    }
+  ]
+}
+</script>
+<div data-render-target="chart"></div>
+</section>
+
 <section data-anchor="source-ownership" id="source-ownership">
 <h2>Source ownership</h2>
 <p data-anchor="source-issue">The issue surface owns current high-level intent, desired outcome, acceptance criteria, non-goals, dependencies, and governing source links.</p>

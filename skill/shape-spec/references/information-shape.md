@@ -23,3 +23,10 @@ Everything contract-bearing is addressable through stable section, clause, figur
 A visual is load-bearing only when changing it changes the contract; otherwise it is decoration.
 Repeat a rule only to present the same authority at a different useful resolution.
 Choose forms that expose likely mistakes: bad order in ordinals, missing cases in empty cells, precedence errors in predicate order, layout violations in proportional drawings, and false confidence beside provenance.
+
+## Modular boundaries
+
+When a spec spans multiple modules, include a concise Modular boundaries section.
+Name each module's responsibility, the interface or seam callers depend on, and the direction of dependency.
+Prefer a semantic diagram when the section contains more than one meaningful relationship, because prose hides ownership and direction.
+Keep the view architectural: omit classes, functions, files, and replaceable implementation detail.
