@@ -81,6 +81,7 @@ assert.deepEqual(reviewHandoffState(new Map([['draft', { status: 'draft' }]])), 
 assert.deepEqual(reviewHandoffState(new Map([['pending', { status: 'pending' }], ['resolved', { status: 'resolved' }]])), { drafts: 0, finish: false, enabled: false }, 'unsettled threads cannot finish review');
 assert.deepEqual(reviewHandoffState(new Map([['resolved', { status: 'resolved' }]])), { drafts: 0, finish: true, enabled: true }, 'a clean resolved review enables Finish review');
 assert.deepEqual(reviewHandoffState(new Map()), { drafts: 0, finish: true, enabled: true }, 'a review with no threads may finish explicitly');
+assert.deepEqual(reviewHandoffState(new Map(), true), { drafts: 0, finish: false, enabled: false }, 'a material TBD blocks Finish review even when no threads exist');
 
 const waitingHandoff = [event('300-handoff.json', 'human', { id: 'h-wait', event: 'handoff', createdAt: '2026-08-31T12:00:00.000Z' })];
 assert.equal(handoffObservation(waitingHandoff, Date.parse('2026-08-31T12:00:10.000Z')), 'waiting', 'a fresh unacknowledged hand-off is waiting');
