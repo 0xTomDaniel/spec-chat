@@ -655,6 +655,15 @@ function reviewHandoffState(threads) {
   return { drafts, finish, enabled: drafts > 0 || finish };
 }
 
+function handoffObservation(events, nowMs) {
+  let handoff = null;
+  for (const event of events) if (event.actor === 'human' && event.body.event === 'handoff') handoff = event;
+  if (!handoff) return null;
+  if (events.some(event => event.actor === 'agent' && event.name > handoff.name)) return null;
+  const createdAt = Date.parse(handoff.body.createdAt || '');
+  return Number.isFinite(createdAt) && nowMs - createdAt >= 30000 ? 'queued' : 'waiting';
+}
+
 function ingest(events) {
   let changed = false;
   for (const e of events) {
@@ -1366,7 +1375,14 @@ async function refresh() {
     ingest(await state.transport.listEvents());
     const agentEvents = state.events.filter(e => e.actor === 'agent');
     const last = agentEvents[agentEvents.length - 1];
-    document.getElementById('hx-agent').textContent = last ? '· agent last event ' + new Date(last.body.createdAt).toLocaleTimeString() : '· no agent events yet';
+    const observation = handoffObservation(state.events, Date.now());
+    document.getElementById('hx-agent').textContent = observation === 'waiting'
+      ? '· handed off, waiting for agent'
+      : observation === 'queued'
+        ? '· hand-off still queued; review session may be disconnected'
+        : last
+          ? '· agent last event ' + new Date(last.body.createdAt).toLocaleTimeString()
+          : '· no agent events yet';
     status('connected · ' + state.transport.label + ' · ' + state.threads.size + ' threads');
     if (location.hash.includes('hxdebug') && !state._beaconed) {
       state._beaconed = true;
