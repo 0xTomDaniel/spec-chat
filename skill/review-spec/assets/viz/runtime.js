@@ -601,6 +601,13 @@ function acknowledgedReplyCount(threads) {
   return [...threads.values()].filter(thread => thread.status === 'acknowledged').length;
 }
 
+function reviewHandoffState(threads) {
+  const values = [...threads.values()];
+  const drafts = values.filter(thread => thread.status === 'draft').length;
+  const finish = drafts === 0 && values.every(thread => thread.status === 'resolved');
+  return { drafts, finish, enabled: drafts > 0 || finish };
+}
+
 function ingest(events) {
   let changed = false;
   for (const e of events) {
@@ -1043,12 +1050,15 @@ function renderPanel() {
     });
     wrap.appendChild(d);
   }
-  const drafts = [...state.threads.values()].filter(t => t.status === 'draft').length;
-  document.getElementById('hx-drafts').textContent = drafts + ' draft' + (drafts === 1 ? '' : 's');
-  document.getElementById('hx-handoff').disabled = !drafts;
+  const handoffState = reviewHandoffState(state.threads);
+  const drafts = handoffState.drafts;
+  document.getElementById('hx-drafts').textContent = handoffState.finish ? 'Review complete' : drafts + ' draft' + (drafts === 1 ? '' : 's');
+  const desktopHandoff = document.getElementById('hx-handoff');
+  desktopHandoff.disabled = !handoffState.enabled;
+  desktopHandoff.textContent = handoffState.finish ? 'Finish review' : 'Hand off to agent →';
   const mobileHandoff = document.getElementById('hx-mobile-handoff');
-  mobileHandoff.disabled = !drafts;
-  mobileHandoff.textContent = drafts ? 'Hand off (' + drafts + ')' : 'Hand off';
+  mobileHandoff.disabled = !handoffState.enabled;
+  mobileHandoff.textContent = handoffState.finish ? 'Finish review' : drafts ? 'Hand off (' + drafts + ')' : 'Hand off';
   renderThreadDock();
   renderThreadHighlight();
 }
@@ -1277,9 +1287,10 @@ function renderBadges() {
 }
 
 async function handoff() {
-  const n = [...state.threads.values()].filter(t => t.status === 'draft').length;
+  const action = reviewHandoffState(state.threads);
+  if (!action.enabled) return;
   await state.transport.postEvent({ id: 'h' + Date.now().toString(36), event: 'handoff', anchorId: '', target: null, quote: null, text: 'batch from ' + state.transport.mode, actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
-  toast('Handed off ' + n + ' comment' + (n === 1 ? '' : 's') + ' — agent notified');
+  toast(action.finish ? 'Review finished' : 'Handed off ' + action.drafts + ' comment' + (action.drafts === 1 ? '' : 's') + ' — agent notified');
   refresh();
 }
 
