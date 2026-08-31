@@ -649,10 +649,10 @@ function acknowledgedReplyCount(threads) {
   return [...threads.values()].filter(thread => thread.status === 'acknowledged').length;
 }
 
-function reviewHandoffState(threads) {
+function reviewHandoffState(threads, hasTbd = false) {
   const values = [...threads.values()];
   const drafts = values.filter(thread => thread.status === 'draft').length;
-  const finish = drafts === 0 && values.every(thread => thread.status === 'resolved');
+  const finish = !hasTbd && drafts === 0 && values.every(thread => thread.status === 'resolved');
   return { drafts, finish, enabled: drafts > 0 || finish };
 }
 
@@ -1112,7 +1112,7 @@ function renderPanel() {
     });
     wrap.appendChild(d);
   }
-  const handoffState = reviewHandoffState(state.threads);
+  const handoffState = reviewHandoffState(state.threads, Boolean(document.querySelector('[data-spec-tbd]')));
   const drafts = handoffState.drafts;
   document.getElementById('hx-drafts').textContent = handoffState.finish ? 'Review complete' : drafts + ' draft' + (drafts === 1 ? '' : 's');
   const desktopHandoff = document.getElementById('hx-handoff');
@@ -1349,7 +1349,7 @@ function renderBadges() {
 }
 
 async function handoff() {
-  const action = reviewHandoffState(state.threads);
+  const action = reviewHandoffState(state.threads, Boolean(document.querySelector('[data-spec-tbd]')));
   if (!action.enabled) return;
   await state.transport.postEvent({ id: 'h' + Date.now().toString(36), event: 'handoff', anchorId: '', target: null, quote: null, text: 'batch from ' + state.transport.mode, actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
   toast(action.finish ? 'Review finished' : 'Handed off ' + action.drafts + ' comment' + (action.drafts === 1 ? '' : 's') + ' — agent notified');
