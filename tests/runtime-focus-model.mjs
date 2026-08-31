@@ -29,9 +29,11 @@ assert.deepEqual([...classifyAnchorSignatures(current, null).values()], ['change
 assert.match(runtime, /new URLSearchParams\(location\.search\)\.get\('focus'\) !== 'changes'/, 'focus activates only through the issue-focus URL');
 assert.match(runtime, /function ownAnchorSignature\(/, 'parent anchors compare their own heading and visual-island content');
 assert.doesNotMatch(runtime, /body\.hx-focus-active \[data-hx-focus=unchanged\]\{opacity:/, 'focus never dims pins through ancestor opacity');
-assert.match(runtime, /body\.hx-focus-active \[data-hx-focus=unchanged\] > :not\(\[data-anchor\]\)/, 'unchanged direct spec content visually recedes without dimming nested review controls');
-assert.match(runtime, /body\.hx-focus-active \[data-hx-focus=changed\]\{color:#22242a\}/, 'changed blocks reset to full light-mode contrast inside unchanged parents');
-assert.match(runtime, /body\.hx-focus-active \[data-hx-focus=changed\]\{color:#e8e7e2\}/, 'changed blocks reset to full dark-mode contrast inside unchanged parents');
+assert.doesNotMatch(runtime, /color-mix\(in srgb,currentColor/, 'focus recession never compounds inherited transparency');
+assert.match(runtime, /:where\(body\.hx-focus-active \[data-hx-focus=unchanged\]\)\{color:#6b6e75\}/, 'unchanged light-mode text uses one accessible fixed target color');
+assert.match(runtime, /:where\(body\.hx-focus-active \[data-hx-focus=changed\]\)\{color:#22242a\}/, 'changed blocks reset to full light-mode contrast inside unchanged parents');
+assert.match(runtime, /:where\(body\.hx-focus-active \[data-hx-focus=unchanged\]\)\{color:#9fa1a7\}/, 'unchanged dark-mode text uses one accessible fixed target color');
+assert.match(runtime, /:where\(body\.hx-focus-active \[data-hx-focus=changed\]\)\{color:#e8e7e2\}/, 'changed blocks reset to full dark-mode contrast inside unchanged parents');
 assert.match(runtime, /> :is\(\[data-render-target\],figure,img,svg,canvas\):not\(\[data-anchor\]\)/, 'visual recession never wraps an independently anchored visual block');
 assert.match(runtime, /AbortController/, 'focus bounds slow baseline reads');
 assert.doesNotMatch(runtime, /await applyIssueFocus\(\)/, 'focus lookup never blocks chart and review boot');
