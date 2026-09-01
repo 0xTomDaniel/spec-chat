@@ -34,6 +34,16 @@ case "$POLL" in
     ;;
 esac
 
+if [ "$TMO" -gt 0 ]; then
+  case "${SPEC_CHAT_WATCH_OWNER:-}" in
+    turn-yielded | external-wake) ;;
+    *)
+      echo "watch-specs: detection-only raw long watcher cannot own review wake; use review-control.sh yielded, external, or manual" >&2
+      exit 2
+      ;;
+  esac
+fi
+
 ROOT=$(CDPATH= cd "$ROOT" && pwd)
 SCAN=${TMPDIR:-/tmp}/spec-chat-watch-specs.$$
 trap 'rm -f "$SCAN"' EXIT HUP INT TERM

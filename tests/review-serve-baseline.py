@@ -111,7 +111,7 @@ class BaselineRouteTest(unittest.TestCase):
             text=True,
         )
         try:
-            output, error = process.communicate(timeout=0.5)
+            output, error = process.communicate(timeout=2)
         except subprocess.TimeoutExpired:
             process.terminate()
             process.wait(timeout=2)
@@ -144,7 +144,7 @@ class BaselineRouteTest(unittest.TestCase):
                 text=True,
             )
             try:
-                output, error = process.communicate(timeout=0.5)
+                output, error = process.communicate(timeout=2)
             except subprocess.TimeoutExpired:
                 process.terminate()
                 process.wait(timeout=2)

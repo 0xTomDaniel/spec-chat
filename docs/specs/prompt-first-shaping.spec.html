@@ -369,8 +369,8 @@
 
 <section data-anchor="active-review" id="active-review">
 <h2>Active review attachment</h2>
-<p data-anchor="active-turn">While browser review is active, the authoring agent keeps its current turn open and parks on one collection watcher.</p>
-<p data-anchor="active-no-final">The agent never returns a final response while that active review window remains open.</p>
+<p data-anchor="active-turn">In turn-yielded state, the authoring agent keeps its current turn open and parks through the review-control wrapper.</p>
+<p data-anchor="active-no-final">The agent never returns a final response while turn-yielded state remains active.</p>
 <p data-anchor="active-handoff">A browser hand-off completes the wait, re-enters the same authoring turn, and delivers the exact ready batch.</p>
 <p data-anchor="active-repark">After the batch settles, the same turn reconciles remaining backlog and parks a fresh watcher.</p>
 <p data-anchor="active-timeout">A watcher timeout or watcher error while the turn remains active wakes the same agent, which reconciles and reparks automatically.</p>
@@ -382,34 +382,32 @@
 <h2>Review wake ownership</h2>
 <p data-anchor="wake-terminal-control">Every open review is in exactly one terminal control state: turn-yielded, external-wake, or manual-resume.</p>
 <figure data-anchor="wake-state-figure" aria-labelledby="wake-state-caption">
-<svg viewBox="0 0 920 300" role="img">
+<svg viewBox="0 0 600 680" role="img">
 <title>Review wake ownership state machine</title>
 <g font-family="ui-monospace, Menlo, monospace">
-<rect x="30" y="55" width="240" height="110" fill="#fffefa" stroke="#171719" stroke-width="2"/>
-<rect x="30" y="55" width="7" height="110" fill="#087158"/>
-<text x="54" y="86" font-size="18" font-weight="700" fill="#171719">TURN-YIELDED</text>
-<text x="54" y="113" font-size="13" fill="#303036">same turn owns the wait</text>
-<text x="54" y="138" font-size="13" fill="#303036">final response forbidden</text>
-<rect x="340" y="55" width="240" height="110" fill="#fffefa" stroke="#171719" stroke-width="2"/>
-<rect x="340" y="55" width="7" height="110" fill="#2947c7"/>
-<text x="364" y="86" font-size="18" font-weight="700" fill="#171719">EXTERNAL-WAKE</text>
-<text x="364" y="113" font-size="13" fill="#303036">verified adapter owns wake</text>
-<text x="364" y="138" font-size="13" fill="#303036">final response allowed</text>
-<rect x="650" y="55" width="240" height="110" fill="#fffefa" stroke="#171719" stroke-width="2"/>
-<rect x="650" y="55" width="7" height="110" fill="#835600"/>
-<text x="674" y="86" font-size="18" font-weight="700" fill="#171719">MANUAL-RESUME</text>
-<text x="674" y="113" font-size="13" fill="#303036">no automatic wake claim</text>
-<text x="674" y="138" font-size="13" fill="#303036">new human message required</text>
-<path d="M270 110 H332" fill="none" stroke="#171719" stroke-width="2"/>
-<polygon points="340,110 329,104 329,116" fill="#171719"/>
-<text x="305" y="94" text-anchor="middle" font-size="11" fill="#5c5c63">verify adapter</text>
-<path d="M580 140 C610 188 620 188 650 140" fill="none" stroke="#171719" stroke-width="2"/>
-<polygon points="650,140 638,140 644,150" fill="#171719"/>
-<text x="615" y="207" text-anchor="middle" font-size="11" fill="#5c5c63">adapter lost or stopped</text>
-<path d="M650 80 C620 32 610 32 580 80" fill="none" stroke="#171719" stroke-width="2"/>
-<polygon points="580,80 592,80 586,70" fill="#171719"/>
-<text x="615" y="24" text-anchor="middle" font-size="11" fill="#5c5c63">verify new adapter</text>
-<text x="460" y="260" text-anchor="middle" font-size="13" fill="#303036">There is no generic WATCHING state.</text>
+<rect x="40" y="35" width="520" height="135" fill="#fffefa" stroke="#171719" stroke-width="3"/>
+<rect x="40" y="35" width="10" height="135" fill="#087158"/>
+<text x="78" y="78" font-size="28" font-weight="700" fill="#171719">TURN-YIELDED</text>
+<text x="78" y="113" font-size="22" fill="#303036">same turn owns wait</text>
+<text x="78" y="143" font-size="20" font-weight="700" fill="#087158">FINAL FORBIDDEN</text>
+<path d="M300 170 V225" fill="none" stroke="#171719" stroke-width="3"/>
+<polygon points="300,237 291,220 309,220" fill="#171719"/>
+<text x="322" y="207" font-size="18" fill="#5c5c63">verify adapter</text>
+<rect x="40" y="237" width="520" height="135" fill="#fffefa" stroke="#171719" stroke-width="3"/>
+<rect x="40" y="237" width="10" height="135" fill="#2947c7"/>
+<text x="78" y="280" font-size="28" font-weight="700" fill="#171719">EXTERNAL-WAKE</text>
+<text x="78" y="315" font-size="22" fill="#303036">verified adapter owns wake</text>
+<text x="78" y="345" font-size="20" font-weight="700" fill="#2947c7">FINAL ALLOWED</text>
+<path d="M300 372 V427" fill="none" stroke="#171719" stroke-width="3"/>
+<polygon points="300,439 291,422 309,422" fill="#171719"/>
+<text x="322" y="409" font-size="18" fill="#5c5c63">adapter lost</text>
+<rect x="40" y="439" width="520" height="135" fill="#fffefa" stroke="#171719" stroke-width="3"/>
+<rect x="40" y="439" width="10" height="135" fill="#835600"/>
+<text x="78" y="482" font-size="28" font-weight="700" fill="#171719">MANUAL-RESUME</text>
+<text x="78" y="517" font-size="22" fill="#303036">no automatic wake claim</text>
+<text x="78" y="547" font-size="20" font-weight="700" fill="#835600">NEW HUMAN MESSAGE REQUIRED</text>
+<path d="M40 627 H560" fill="none" stroke="#171719" stroke-width="2"/>
+<text x="300" y="654" text-anchor="middle" font-size="20" font-weight="700" fill="#303036">NO GENERIC WATCHING STATE</text>
 </g>
 </svg>
 <figcaption id="wake-state-caption">Figure: final response is legal only after external wake is verified or the review is explicitly downgraded to manual resume.</figcaption>
@@ -527,8 +525,8 @@
 <p data-anchor="recovery-no-worker">When no agent process exists, handed-off events remain durably queued and no claim of active processing is made.</p>
 <p data-anchor="recovery-reconnect">When an agent later enters the repository, its first action is a zero-wait collection scan that drains every completed unprocessed hand-off before new work.</p>
 <p data-anchor="recovery-no-self-wake">A completely closed host session cannot self-wake without a host trigger or another local process capable of invoking an agent.</p>
-<p data-anchor="recovery-no-supervisor">The first implementation intentionally adds no foreground supervisor or agent-launching server.</p>
-<p data-anchor="recovery-trigger">A supervisor is reconsidered only if the active-turn attachment still strands real hand-offs after this contract is implemented and tested.</p>
+<p data-anchor="recovery-no-supervisor">The implementation adds no generic supervisor or agent-launching server.</p>
+<p data-anchor="recovery-wake-monitor">An optional foreground host monitor may detect a complete handoff and invoke one verified wake adapter, but it never launches a second processor.</p>
 </section>
 
 <section data-anchor="truthful-status" id="truthful-status">
@@ -740,7 +738,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <section data-anchor="burden-budget" id="burden-budget">
 <h2>Burden budget</h2>
 <p data-anchor="burden-rule">Every new mechanism must replace complexity or answer an observed failure that existing files and protocol cannot answer.</p>
-<p data-anchor="burden-pieces">The intended implementation adds one shaping skill, two focused references, focused review-skill changes, one runtime upgrade, and one read-only Git-baseline route in the existing review server.</p>
+<p data-anchor="burden-pieces">The implementation keeps shaping, review, rendering, transport, and optional wake adaptation in focused self-contained pieces.</p>
 <p data-anchor="burden-reuse">It reuses the current spec dialect, review spools, event schema, cursor commit point, watcher scripts, reply emitter, HTTP server, and context file.</p>
 <p data-anchor="burden-excluded">It adds no database, job ledger, capsule file, daemon, generic supervisor, heartbeat, presence sentinel, lease system, fencing system, tracker adapter registry, new event protocol, copied task context, or background infrastructure.</p>
 <p data-anchor="burden-portability">Portability comes from plain durable files and reconstructible current sources, not from a universal resident process.</p>
@@ -757,7 +755,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <p data-anchor="tdd-finish-red">A runtime test must first fail because the current no-draft hand-off remains disabled and cannot signal review completion.</p>
 <p data-anchor="tdd-finish-green">The finish test passes when a clean review emits the existing empty hand-off and an ineligible review cannot finish.</p>
 <p data-anchor="tdd-handoff-red">A watcher attachment scenario must first demonstrate that returning a final response strands a later browser hand-off until another agent turn begins.</p>
-<p data-anchor="tdd-handoff-green">The same scenario passes when the active authoring turn remains parked, processes the hand-off, settles the batch, and reparks.</p>
+<p data-anchor="tdd-handoff-green">The same scenario passes when turn-yielded keeps the turn open, external-wake reactivates the exact owner, or manual-resume explicitly requires a new human message.</p>
 <p data-anchor="tdd-mobile">Existing mobile, FSA, thread-model, and review-script suites remain green.</p>
 <p data-anchor="tdd-visual">Browser evidence must verify focus readability, mobile target-first commenting, resolved-thread reopen, hand-off waiting state, and Finish review on a real rendered spec.</p>
 </section>

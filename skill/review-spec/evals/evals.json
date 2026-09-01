@@ -1,6 +1,6 @@
 {
   "skill_name": "spec-chat-review",
-  "note": "Behavior evals. Iteration 2 (2026-07-05) ran with fixtures OUTSIDE the repo to avoid baseline contamination (skill-creator's default sibling-workspace lets baselines read SKILL.md/DESIGN.md). Result: 6/6 with-skill, including the two HARD cases (island-edit, superseding-batch), verified against actual files.",
+  "note": "Behavior evals. Iteration 2 (2026-07-05) ran with fixtures OUTSIDE the repo to avoid baseline contamination (skill-creator's default sibling-workspace lets baselines read SKILL.md/DESIGN.md). Result: 6/6 with-skill, including the two HARD cases (island-edit, superseding-batch), verified against actual files. On 2026-09-01 the wake-ownership regression reproduced a raw watcher surviving a closed turn without reactivation; the control-state fix binds long waits to yielded, external-wake, or manual-resume. A fresh Herdr external-wake scenario then scored true on all nine ownership decisions.",
   "evals": [
     {
       "id": 1,
@@ -74,6 +74,20 @@
         "Preserves compatible customized target assets",
         "Restarts an already-running migrated server on the same local port",
         "Verifies served capabilities and the exact-base /api/baseline response before presenting the review URL"
+      ]
+    },
+    {
+      "id": 8,
+      "eval_name": "closed-turn-handoff-wake-ownership",
+      "prompt": "Start review, leave a watcher alive, then end the authoring turn before a later browser handoff arrives.",
+      "expectations": [
+        "Refuses to call a raw background watcher an active attachment",
+        "Selects exactly turn-yielded, verified external-wake, or manual-resume",
+        "Forbids final response while turn-yielded",
+        "Uses a foreground host-neutral monitor plus exact-identity Herdr adapter when Herdr wake is available",
+        "Keeps all comment processing and cursor advancement in the reactivated owner pane",
+        "Uses manual-resume with an explicit new-message instruction when no verified wake exists",
+        "Never starts detached Codex processing"
       ]
     }
   ]

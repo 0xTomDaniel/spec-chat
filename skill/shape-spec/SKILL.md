@@ -98,7 +98,7 @@ Finish only when hierarchy, contrast, artifact density, label and edge collision
 5. Require no SSH, VPN, or separate login; possession of the URL is the only review authentication.
 6. Tell the human the URL is a secret and never publish it into the issue or change request.
 7. Open the spec with `focus=changes&base=<exact-local-change-request-base>` so stacked branches compare against their real base and the runtime derives changed current blocks from local Git.
-8. Start `spec-chat-review` in its active in-session attachment mode.
+8. Start `spec-chat-review` and establish turn-yielded, verified external-wake, or explicit manual-resume before describing review availability.
 
 Never fetch or mutate Git from the review server.
 If no safe public capability transport exists, stop rather than exposing the repository or substituting SSH.

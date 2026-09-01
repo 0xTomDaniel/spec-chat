@@ -79,41 +79,12 @@ RECOVERED_EXPECTED=$(printf '%s\t%s\n%s\t%s\n%s\t%s' \
   exit 1
 }
 
-command -v jq >/dev/null 2>&1 || {
-  echo "jq is required for the codex session-continuity test" >&2
-  exit 1
-}
-
-FAKE_BIN="$TMP/bin"
-CALLS="$TMP/codex-calls"
-mkdir -p "$FAKE_BIN"
-cat > "$FAKE_BIN/codex" <<'EOF'
-#!/bin/sh
-printf '%s\n' "$*" >> "$FAKE_CODEX_CALLS"
-case " $* " in
-  *' --json '*)
-    printf '%s\n' \
-      '{"type":"thread.started","thread_id":"thread-test-123"}' \
-      '{"type":"item.completed","item":{"type":"agent_message","text":"cold drain complete"}}'
-    ;;
-esac
-EOF
-chmod +x "$FAKE_BIN/codex"
-
-PATH="$FAKE_BIN:$PATH" FAKE_CODEX_CALLS="$CALLS" \
-  "$SCRIPTS/codex-review.sh" --once "$TMP" >/dev/null 2>&1
-
-STATE="$REVIEW/state.json"
-[ "$(jq -r '.sessionId' "$STATE")" = 'thread-test-123' ] || {
-  echo "codex-review did not persist the cold thread id" >&2
-  exit 1
-}
-
-PATH="$FAKE_BIN:$PATH" FAKE_CODEX_CALLS="$CALLS" \
-  "$SCRIPTS/codex-review.sh" --once "$TMP" >/dev/null 2>&1
-
-grep -F 'exec -s workspace-write --skip-git-repo-check resume thread-test-123' "$CALLS" >/dev/null || {
-  echo "codex-review did not resume the persisted thread id" >&2
+set +e
+DETACHED_OUTPUT=$("$SCRIPTS/codex-review.sh" --once "$TMP" 2>&1)
+DETACHED_RC=$?
+set -e
+[ "$DETACHED_RC" -eq 2 ] && printf '%s' "$DETACHED_OUTPUT" | grep -F 'detached processing is disabled' >/dev/null || {
+  echo "codex-review still permits a second detached processor" >&2
   exit 1
 }
 
@@ -124,4 +95,5 @@ node "$ROOT/tests/runtime-mobile-contract.mjs"
 (cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/review-serve-baseline.py)
 (cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/review-surface-preflight.py)
 (cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/spec-style-contract.py)
+"$ROOT/tests/review-wake-control.sh"
 echo "review-spec script tests passed"

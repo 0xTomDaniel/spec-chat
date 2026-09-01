@@ -1,5 +1,5 @@
 // spec-chat runtime v0.1 — hydrates semantic islands and mounts the annotation layer.
-// spec-chat-capabilities: finish-review git-focus mobile-review reopen-thread semantic-islands
+// spec-chat-capabilities: finish-review git-focus manual-resume-status mobile-review reopen-thread semantic-islands
 // Transports: FSA (file://, primary) | HTTP review-serve (http(s)://, secondary).
 // Same spools, same event schema either way. See DESIGN.md.
 // Classic script, NOT a module: browsers CORS-block module scripts on file:// pages,
@@ -1405,7 +1405,7 @@ async function refresh() {
     document.getElementById('hx-agent').textContent = observation === 'waiting'
       ? '· handed off, waiting for agent'
       : observation === 'queued'
-        ? '· hand-off still queued; review session may be disconnected'
+        ? '· automatic wake did not occur; send a new chat message to resume'
         : last
           ? '· agent last event ' + new Date(last.body.createdAt).toLocaleTimeString()
           : '· no agent events yet';
