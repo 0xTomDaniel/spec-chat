@@ -118,17 +118,28 @@ The skill is self-contained: `assets/` carries the browser runtime (`viz/runtime
 2. Gitignore the spools: add `*.review/` to `.gitignore`.
 3. Reference shared assets relative to the page: a root `docs/specs/*.spec.html` page uses `<script defer src="./.viz/runtime.js">`; a nested page such as `docs/specs/domains/*.spec.html` uses `../.viz/runtime.js`; and `docs/adr/*.spec.html` uses `../specs/.viz/runtime.js` (plus the equivalent `.style/` path). The runtime is a classic script, never `type="module"` (browsers CORS-block module scripts on `file://`, which is the primary local transport).
 
-If the repo already has `docs/specs/.viz/`, leave it alone — its version is the repo's contract. Copy `assets/review-serve.py` to `tools/` only if remote transport is needed and the repo lacks it.
+Before every initial or resumed review, run the self-contained compatibility preflight from this skill:
+
+```
+python3 scripts/preflight.py <target-repository-root> <spec-html>
+```
+
+Preflight preserves target runtime and server assets that declare every capability required by the current bundle.
+It replaces only incompatible assets from the bundle, including vendored visual dependencies when runtime migration is required, and rejects semantic islands without a same-parent `data-render-target`.
+Treat a preflight failure as a review blocker.
+Commit and push migrated assets before presenting a shaping review.
+If the server was already running when migration occurred, restart it on the same local port before retaining its public relay.
 
 **Exception — module-loading migration**: if an existing repo's runtime is loaded with `<script type="module">` (or its `runtime.js` still contains `import.meta.url`), it predates the classic-script fix and is broken on `file://` (browsers CORS-block module scripts there — the annotation layer silently never loads). On contact, replace the vendored `.viz/runtime.js` with this skill's copy and switch every page to a classic `<script defer>` tag using the correct relative path described above.
 
 ## Starting a review when asked
 
-1. Confirm the page exists and identify the shared collection root (normally the repository's `docs/` directory, not the page's immediate `docs/specs/`, `docs/specs/<domain>/`, or `docs/adr/` directory; use the narrowest common ancestor for a legacy or explicitly different layout).
-2. Set up the public capability transport when the page must open outside the file host.
-3. On both an initial start and any resumed/reconnected turn, run `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 0 3`; drain, reply, and cursor each ready batch, then repeat until exit 3.
-4. Only after reconciliation is empty, park a fresh collection watcher with `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 3600 3` using the host's same-thread yielded/background wait, keep the turn open, and tell the user the public capability URL and that every reviewable HTML document below the root is covered. The watcher discovers a spool as soon as the browser creates it; its ready output must wake this same thread for the drain cycle.
-5. Use `scripts/codex-review.sh <spec-root>` only when the human explicitly chooses unattended detached review after the interactive thread closes. State that detached mode will not wake or show live activity in the authoring chat. Passing a specific HTML file remains an explicit single-page override.
+1. Confirm the page exists, run `scripts/preflight.py`, and identify the shared collection root (normally the repository's `docs/` directory, not the page's immediate `docs/specs/`, `docs/specs/<domain>/`, or `docs/adr/` directory; use the narrowest common ancestor for a legacy or explicitly different layout).
+2. Start or restart the local server when HTTP review is required, then verify the served runtime advertises the required capabilities and `/api/baseline` succeeds for the exact page and change-request base.
+3. Set up the public capability transport when the page must open outside the file host.
+4. On both an initial start and any resumed/reconnected turn, run `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 0 3`; drain, reply, and cursor each ready batch, then repeat until exit 3.
+5. Only after reconciliation is empty, park a fresh collection watcher with `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 3600 3` using the host's same-thread yielded/background wait, keep the turn open, and tell the user the public capability URL and that every reviewable HTML document below the root is covered. The watcher discovers a spool as soon as the browser creates it; its ready output must wake this same thread for the drain cycle.
+6. Use `scripts/codex-review.sh <spec-root>` only when the human explicitly chooses unattended detached review after the interactive thread closes. State that detached mode will not wake or show live activity in the authoring chat. Passing a specific HTML file remains an explicit single-page override.
 
 ## Mobile review contract
 

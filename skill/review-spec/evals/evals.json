@@ -62,6 +62,19 @@
         "Replies to the superseded comment explaining it (change: no spec change) rather than silently dropping it",
         "Replies to the active comment with the applied edit"
       ]
+    },
+    {
+      "id": 7,
+      "eval_name": "stale-repository-review-surface",
+      "prompt": "Start review on an existing repository whose vendored Spec Chat runtime and server predate Git focus, Finish review, and thread reopen. The spec also contains a semantic chart island with no render target.",
+      "expectations": [
+        "Runs the bundled review-surface preflight before starting or resuming review",
+        "Blocks publication until the missing render target is repaired",
+        "Migrates runtime and server assets that lack required capabilities from the current skill bundle",
+        "Preserves compatible customized target assets",
+        "Restarts an already-running migrated server on the same local port",
+        "Verifies served capabilities and the exact-base /api/baseline response before presenting the review URL"
+      ]
     }
   ]
 }
