@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# spec-chat-capabilities: git-baseline narrow-review-root
 """spec-chat review-serve - local HTTP transport.
 
 FSA requires the browser and the spool files to share a machine; over SSH they
