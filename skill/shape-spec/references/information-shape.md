@@ -1,8 +1,9 @@
 # Information shape
 
-Ask: what shape is this information, and what medium loses the least of it?
+Ask: what shape is this information, and what medium communicates it with the highest readable density and the least loss?
 
-Use non-prose only when prose would destroy a contract-bearing property.
+Prefer a visual form whenever it materially improves comprehension, comparison, error detection, memory, or review of contract-bearing structure.
+Use prose when it is equally or more legible, especially for atomic rules with no meaningful relationship to display.
 
 - Peer axioms: identified peer cards; numbering would invent sequence.
 - Cycles with no first step: loop or flywheel; sentences force a false start.
@@ -21,7 +22,9 @@ Use non-prose only when prose would destroy a contract-bearing property.
 
 Everything contract-bearing is addressable through stable section, clause, figure, row, and acceptance identifiers.
 A visual is load-bearing only when changing it changes the contract; otherwise it is decoration.
-Repeat a rule only to present the same authority at a different useful resolution.
+Each rule has one authoritative expression.
+Use an adjacent one-line gloss or a complementary view only when it adds necessary context or preserves a distinct material dimension.
+Never restate a diagram as paragraphs or turn relational structure into a long list of rules.
 Choose forms that expose likely mistakes: bad order in ordinals, missing cases in empty cells, precedence errors in predicate order, layout violations in proportional drawings, and false confidence beside provenance.
 
 ## Modular boundaries

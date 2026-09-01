@@ -90,7 +90,7 @@ flowchart LR
   Public[Public capability transport] -->|narrow HTTPS relay| Local
 ```
 
-- The shaping skill owns prompt intake, durable seed order, visual composition, artifact coverage, fallback spec styling, completeness reconciliation, and orchestration through the issue and review interfaces.
+- The shaping skill owns prompt intake, durable seed order, readable information-density optimization, visual-system selection, artifact coverage, fallback styling, completeness reconciliation, and orchestration through the issue and review interfaces.
 - The repository-selected issue skill owns tracker-specific create, read, replace-current-content, and link behavior; no tracker behavior enters the browser runtime, review transport, or event protocol.
 - The review skill owns review-surface preflight, capability migration from its self-contained bundle, active-turn attachment, exact batch processing, spec edits, replies, cursor advancement, and cold reconstruction from durable sources.
 - The browser runtime owns annotation interaction, current event derivation, mobile controls, truthful status, and Git-focused presentation through the transport interface.

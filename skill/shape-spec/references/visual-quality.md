@@ -1,47 +1,61 @@
-# Visual quality
+# Readable visual density
 
-Treat the spec as an editorial visual contract, not prose placed inside cards.
+Optimize for maximum contract-bearing information per unit of reader attention and page space, constrained by high readability.
+Treat the spec as a coherent visual contract, not prose placed inside cards.
 Libraries are implementation choices made after the information and composition plan.
 
 ## Plan before authoring
 
-Create a small working map for every major behavior cluster:
+Classify every behavior cluster as a required, valuable, or unsuitable visual opportunity:
 
 - information shape
 - least-lossy artifact
 - visual role in the page
 - observable proof that the artifact is legible and complete
 
-Establish the reading order before styling: masthead and authority, governing clauses, explanatory figures, detailed interfaces and failures, acceptance, then sources.
-Dense specs need visual coverage proportional to their real relationships.
-A long multi-section contract with one token chart requires either more load-bearing artifacts or a recorded reason each remaining cluster is least-lossy as prose or a table.
+- Required: prose would lose contract-bearing structure.
+- Valuable: a visual materially improves comprehension, comparison, error detection, memory, or review.
+- Unsuitable: prose is equally or more legible because the rule is atomic or has no useful relationship to display.
+
+Realize every required and valuable opportunity unless a concise reason shows prose is equally or more legible.
+Use no fixed artifact count.
+A simple contract can remain simple, while a relationship-dense contract should produce many load-bearing visual elements.
+Do not combine unrelated relationships merely to reduce artifact count.
+Use complementary views when each preserves a distinct material dimension that one view cannot, such as time path plus state-versus-input or desktop plus mobile placement.
+
+Establish a coherent reading order before styling.
+Each artifact should replace relational prose, not duplicate it.
+Give it only the adjacent context, caveat, or one-line gloss needed for correct interpretation.
+Lists remain appropriate when item independence or literal order is itself the information shape; they are not a fallback for topology, state, causality, space, or cross-product logic.
 
 ## Positive correction map
 
 - Library-list drift: begin with the artifact and hierarchy plan, then select the smallest suitable renderer.
-- Token visual: give each relationship-bearing cluster its appropriate diagram, rail, wireframe, table, formula, or identified clause group.
-- Invented pale theme: reuse the target's proven spec language or the bundled high-contrast editorial stylesheet.
+- Token visual: realize every suitable visual opportunity and separate unrelated structures into legible artifacts.
+- Redundant prose: make each rule authoritative once and let diagrams replace relational explanation.
+- Incoherent theme: use a complete target visual system or the bundled high-contrast editorial fallback.
 - Render-only QA: inspect the complete rendered page and every artifact for hierarchy, contrast, collision, clipping, and review-control obstruction.
 - Weak focus base: evaluate normal and Git-focus views together so changed content leads while unchanged context remains readable.
 
-## Editorial visual language
+## Visual system contract
 
-Prefer:
+The aesthetic may vary, but one coherent system defines:
 
-- near-black ink on warm light paper
-- one to three restrained semantic accents
-- strong rules and deliberate whitespace
-- a large masthead with compact metadata
-- numbered sections, identified clauses, figures, and captions
-- square or lightly rounded geometry
-- monospace for identifiers, formulas, state labels, and metadata
+- primary, secondary, metadata, and interactive type roles
+- surface, text, rule, semantic, and focus color roles
+- spacing rhythm, geometry, and artifact framing
+- section hierarchy and reading order
+- responsive behavior and annotation affordance
+- normal-view and Git-focus emphasis
 
 Color communicates state, ownership, category, or warning and is always reinforced by text, position, or line shape.
 Normal text and diagram labels meet 4.5 to 1 contrast.
 Large text and meaningful graphic boundaries meet 3 to 1.
 Muted text remains readable and is never produced with low opacity.
 
-Use the bundled [../assets/style/spec.css](../assets/style/spec.css) only when the target has no established high-quality spec stylesheet.
+Use an established target visual system when it satisfies these invariants.
+The bundled [../assets/style/spec.css](../assets/style/spec.css) is one tested crisp editorial implementation, not the required aesthetic identity.
+Use it only when the target has no coherent high-quality spec stylesheet.
 Copy it to `docs/specs/.style/spec.css` and link it with the correct relative path.
 A root `docs/specs/*.spec.html` page uses `./.style/spec.css`, a nested `docs/specs/domains/*.spec.html` page uses `../.style/spec.css`, and `docs/adr/*.spec.html` uses `../specs/.style/spec.css`.
 
@@ -79,6 +93,7 @@ If a layout engine cannot meet those conditions, change the layout or renderer r
 ## Browser gate
 
 Before publication, inspect the rendered page at desktop and mobile widths in normal and Git-focus modes.
+Apply the same gate regardless of the chosen visual system.
 Inspect the full-page reading order and each artifact at its actual embedded size.
 Reject the page until all of these are true:
 
