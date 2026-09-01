@@ -1,6 +1,6 @@
 {
   "skill_name": "spec-chat-shape",
-  "note": "Behavior contract. On 2026-08-31 a fresh isolated Claude session scored the review-only baseline false on six shaping decisions, then scored the new shaping skill true on all seven using only SKILL.md and its required references. On 2026-09-01 the same fresh semantic-completeness scenario scored the prior skill false on all eight decisions, then the updated skill true on all eight.",
+  "note": "Behavior contract. On 2026-08-31 a fresh isolated Claude session scored the review-only baseline false on six shaping decisions, then scored the new shaping skill true on all seven using only SKILL.md and its required references. On 2026-09-01 the same fresh semantic-completeness scenario scored the prior skill false on all eight decisions, then the updated skill true on all eight. On 2026-09-01 a dense visual-contract scenario scored the prior skill true on artifact coverage only, then the updated skill true on composition, coverage, fallback style, browser QA, and focus resilience.",
   "evals": [
     {
       "id": 1,
@@ -91,6 +91,19 @@
         "Skips the TDD contract for the docs-only correction",
         "Records a narrow waiver and alternative proof in the issue and spec for the unsuitable behavior test",
         "Does not treat either exception as blanket permission to skip behavioral proof"
+      ]
+    },
+    {
+      "id": 9,
+      "eval_name": "dense-visual-contract-quality",
+      "prompt": "Author a dense canonical spec covering topology, guarded state, lifecycle, two layouts, quantities, interfaces, failures, acceptance, and non-goals in a repo with no established spec stylesheet.",
+      "expectations": [
+        "Plans visual hierarchy and artifact roles from information shape before selecting libraries",
+        "Checks every relationship-bearing behavior cluster for its least-lossy artifact instead of using one token chart",
+        "Copies the bundled high-contrast editorial stylesheet because the target has no proven spec style",
+        "Uses system and state diagrams for topology and lifecycle while reserving ECharts for quantitative relationships",
+        "Runs rendered full-page and per-artifact browser inspection at desktop and mobile widths",
+        "Checks normal and Git-focus views for contrast, hierarchy, collisions, clipping, and review-control obstruction"
       ]
     }
   ]

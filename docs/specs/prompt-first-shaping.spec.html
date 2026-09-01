@@ -31,6 +31,7 @@
 <p data-anchor="story-agent">As an authoring agent, I want hand-offs to wake the active shaping turn and durable files to support cold recovery so processing remains portable without a resident supervisor.</p>
 <p data-anchor="story-implementer">As an implementer, I want current stories, modular seams, acceptance rules, decisions, and proof obligations to agree so implementation begins from one coherent contract.</p>
 <p data-anchor="story-compatible-review">As a reviewer, I want the same required review capabilities in every repository so an old vendored runtime cannot silently remove controls, focus, or visuals.</p>
+<p data-anchor="story-visual-quality">As a reviewer, I want a high-contrast visual contract with legible load-bearing artifacts so complex behavior is understood from the page rather than decoded from prose.</p>
 </section>
 
 <section data-anchor="modular-boundaries" id="modular-boundaries">
@@ -596,6 +597,41 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <p data-anchor="visual-existing-principles">Existing offline fidelity, local vendoring, semantic-island, and small-runtime principles remain in force.</p>
 </section>
 
+<section data-anchor="visual-quality" id="visual-quality">
+<h2>Visual quality contract</h2>
+<p data-anchor="visual-quality-plan">Before authoring prose, the agent maps each contract-bearing relationship to its least-lossy visual form and establishes the document hierarchy that connects those artifacts.</p>
+<p data-anchor="visual-quality-density">A long multi-section spec with only one token visual is presumptively under-visualized and must add the missing load-bearing views or explain why every remaining section is least-lossy as prose or a table.</p>
+<p data-anchor="visual-quality-editorial">The default visual language is crisp editorial documentation: near-black ink, warm light surfaces, restrained semantic accents, strong rules, compact metadata, numbered sections, identified clauses, figures, and captions.</p>
+<p data-anchor="visual-quality-no-wash">Decorative gradients, translucent cards, low-opacity text, excessive rounded containers, and washed-out pastel-on-light combinations are excluded unless the product's established spec language requires them.</p>
+<p data-anchor="visual-quality-contrast">Normal text and diagram labels meet at least 4.5 to 1 contrast, while large text and meaningful graphic boundaries meet at least 3 to 1.</p>
+<p data-anchor="visual-quality-color">Color distinguishes semantic categories, states, warnings, or ownership and never substitutes for labels, line shape, or position.</p>
+<p data-anchor="visual-quality-diagrams">System, state, lifecycle, spatial, and cyclic relationships use purpose-fit diagrams with collision-free labels rather than default chart layouts.</p>
+<p data-anchor="visual-quality-quantitative">ECharts is reserved for quantitative relationships whose scales and values matter; topology alone does not justify a chart.</p>
+<p data-anchor="visual-quality-style">A target's established high-quality spec stylesheet is reused, otherwise the shaping skill's self-contained high-contrast stylesheet becomes the shared local fallback.</p>
+<p data-anchor="visual-quality-browser">Before publication, browser QA checks the complete page and each artifact at desktop and mobile widths in normal and Git-focus views for hierarchy, contrast, collision, clipping, and review-control obstruction.</p>
+<p data-anchor="visual-quality-focus">The base palette and focus treatment are evaluated together so changed material leads clearly while unchanged context remains readable rather than disappearing into an already weak page.</p>
+<table data-anchor="visual-quality-corrections">
+<thead><tr><th>Observed failure</th><th>Required positive case</th><th>Proof before publication</th></tr></thead>
+<tbody>
+<tr data-anchor="visual-quality-correction-composition"><td>A library list substitutes for design direction</td><td>An artifact and hierarchy plan maps each information shape to a visual role before styling</td><td>The rendered page has a coherent visual reading order independent of library choice</td></tr>
+<tr data-anchor="visual-quality-correction-density"><td>One default chart represents a dense contract</td><td>Every relationship-bearing behavior cluster receives its least-lossy diagram, rail, wireframe, table, formula, or identified clause group</td><td>Artifact coverage is reviewed against every major behavior section</td></tr>
+<tr data-anchor="visual-quality-correction-style"><td>Each agent invents a pale decorative theme</td><td>The target's proven spec language or the shared high-contrast editorial fallback defines palette, typography, spacing, rules, and metadata</td><td>Computed contrast and full-page hierarchy pass at desktop and mobile widths</td></tr>
+<tr data-anchor="visual-quality-correction-qa"><td>A technically rendered but colliding artifact passes</td><td>Each artifact is inspected at rendered size with legible labels, intentional spacing, complete edges, and unobstructed review controls</td><td>Browser evidence covers the complete page and every artifact, not DOM presence alone</td></tr>
+<tr data-anchor="visual-quality-correction-focus"><td>Focus recession compounds a weak base page</td><td>A strong base palette preserves readable unchanged context while clear changed blocks retain dominant emphasis</td><td>Normal and Git-focus screenshots both pass the same contrast, hierarchy, and artifact-legibility checks</td></tr>
+</tbody>
+</table>
+<table data-anchor="visual-quality-forms">
+<thead><tr><th>Information</th><th>Preferred artifact</th><th>Quality failure to reject</th></tr></thead>
+<tbody>
+<tr data-anchor="visual-quality-form-system"><td>System topology</td><td>Directed semantic diagram with labeled seams</td><td>Overlapping default graph nodes or unlabeled arrows</td></tr>
+<tr data-anchor="visual-quality-form-state"><td>State and lifecycle</td><td>State machine, lifecycle rail, or paired time and state views</td><td>Paragraph sequence that hides guards or direction</td></tr>
+<tr data-anchor="visual-quality-form-space"><td>Layout and placement</td><td>Proportional wireframe</td><td>Generic cards that do not preserve spatial rules</td></tr>
+<tr data-anchor="visual-quality-form-quantity"><td>Quantity</td><td>Chart with meaningful scale, labels, and thresholds</td><td>Chart used decoratively without quantitative evidence</td></tr>
+<tr data-anchor="visual-quality-form-obligation"><td>Coverage and proof</td><td>Identified acceptance or failure table</td><td>Unscannable prose checklist</td></tr>
+</tbody>
+</table>
+</section>
+
 <section data-anchor="information-shape-doctrine" id="information-shape-doctrine">
 <h2>Information-shape doctrine</h2>
 <p data-anchor="information-shape-question">The organizing question is: what shape is this information, and what medium loses the least of it?</p>
@@ -680,7 +716,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <h2>References</h2>
 <p data-anchor="reference-design">Product design history: <a href="https://github.com/0xTomDaniel/spec-chat/blob/70e22934dc418c7971fde5772a6d9fcc904e892f/DESIGN.md">DESIGN.md at the shaping baseline</a>.</p>
 <p data-anchor="reference-review-skill">Current review procedure baseline: <a href="https://github.com/varelaseb/spec-chat/blob/cae844f1b85ce39911ab9db7f6bb03c37d434bac/skill/review-spec/SKILL.md">skill/review-spec/SKILL.md at the mobile-review commit</a>.</p>
-<p data-anchor="reference-source-issues">Source issues: <a href="https://github.com/0xTomDaniel/spec-chat/issues/21">#21 Add prompt-first shaping and portable Spec Chat handoffs</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/22">#22 Prevent stale review capabilities in existing repositories</a>.</p>
+<p data-anchor="reference-source-issues">Source issues: <a href="https://github.com/0xTomDaniel/spec-chat/issues/21">#21 Add prompt-first shaping and portable Spec Chat handoffs</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/22">#22 Prevent stale review capabilities in existing repositories</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/24">#24 Raise generated spec visual quality and contrast</a>.</p>
 <p data-anchor="reference-source-rule">Every later issue that materially changes this file is appended to the source-issues list, and unrelated issues are never added.</p>
 </section>
 
