@@ -12,7 +12,7 @@ Keep instructions, artifacts, and questions concise and human-readable.
 
 - The target repository selects a separate issue skill that owns tracker-specific create, read, replace-current-content, and link operations.
 - The issue owns current high-level intent, outcome, criteria, non-goals, dependencies, and governing source links.
-- Canonical specs own current user stories, detailed behavior, constraints, edge cases, and interaction contracts.
+- Canonical specs own current user stories, detailed behavior, constraints, edge cases, and interaction contracts unless target instructions name a separate canonical story source.
 - Every changed spec links each issue whose accepted work materially changed that file.
 - The highlighted current HTML spec is the required human diff-review surface.
 - Chat and model memory never override current durable sources.
@@ -50,6 +50,15 @@ Edit an existing canonical spec when one governs the area.
 Otherwise create a minimal capability or domain spec with only sections that contain real behavior.
 Append the issue link to the spec's source-issues list.
 
+## Deepen after the seed
+
+After the seed is durable, inspect only relevant code, tests, configuration, and current change-request state.
+Resolve questions those sources answer before asking the human, and stop visibly when durable sources conflict.
+
+Keep every created, changed, or retired user outcome current in the canonical story source, or in the governing spec when the target names no separate source.
+When behavior spans modules, reconcile the spec's high-level modular view with the target-declared architecture source.
+Architecture records stable module responsibilities, interfaces or seams, and dependency direction; issue-specific behavior stays in the spec.
+
 ## Author the spec
 
 Read [references/information-shape.md](references/information-shape.md) for every new spec or material restructure.
@@ -60,6 +69,16 @@ React is limited to an existing embedded application or an explicitly noncanonic
 Keep stable `data-anchor` identities, one sentence per prose line, and pretty semantic-island JSON.
 When behavior spans multiple modules, include a high-level **Modular boundaries** section that names module responsibility, interface or seam, and dependency direction.
 Prefer a contract-bearing diagram for that section; omit classes, functions, and internal implementation detail.
+
+## Complete the shaping contract
+
+Classify each candidate acceptance criterion as clear, gap, or not needed.
+Keep clear criteria observable and backed by an identified spec rule, mark each gap with `data-spec-tbd`, and remove criteria that are not needed.
+
+Create or update an ADR only when a decision is hard to reverse, surprising to a future maintainer, and carries a real tradeoff.
+For behavior changes, name a deep-module seam in the spec, the smallest first failing test at that seam, and the observable acceptance evidence.
+Docs-only work skips this TDD contract.
+When the smallest failing test is genuinely unsuitable, record a narrow waiver and alternative proof in the issue and spec.
 
 ## Publish the seed
 
@@ -98,6 +117,8 @@ Replace or remove each resolved TBD immediately.
 ## Finish review
 
 Finish only after no draft, pending, acknowledged, unresolved, or material TBD work remains.
+Reconcile the issue, spec, applicable ADRs, user stories, acceptance criteria, architecture, and TDD contract before enabling completion.
+Every applicable source must describe the same current behavior; absent ADRs, single-module work, docs-only work, and recorded test waivers remain valid when their stated conditions hold.
 An empty hand-off means explicit completion of the browser review window.
 Reconcile issue and spec, push any final change, advance the cursor, stop the watcher, close the public transport, and invalidate its capability URL.
 

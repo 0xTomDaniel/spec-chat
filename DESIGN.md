@@ -77,6 +77,27 @@ Agent presence: page shows "agent watching / last event Ns ago" derived from age
 
 Reached via adversarial design review: Claude (Fable 5) ↔ GPT-5.5 (xhigh), three rounds. The full design below is the target; v1 implements the cut line above.
 
+### Modular boundaries
+
+```mermaid
+flowchart LR
+  Shape[Shaping skill] -->|issue interface| Issue[Repository-selected issue skill]
+  Shape -->|review interface| Review[Review skill]
+  Review -->|event protocol| Browser[Browser runtime]
+  Browser -->|HTTP events and baseline reads| Local[Local review transport]
+  Review -->|spec edits and replies| Files[Durable files and Git]
+  Local -->|spool writes and Git reads| Files
+  Public[Public capability transport] -->|narrow HTTPS relay| Local
+```
+
+- The shaping skill owns prompt intake, durable seed order, completeness reconciliation, and orchestration through the issue and review interfaces.
+- The repository-selected issue skill owns tracker-specific create, read, replace-current-content, and link behavior; no tracker behavior enters the browser runtime, review transport, or event protocol.
+- The review skill owns active-turn attachment, exact batch processing, spec edits, replies, cursor advancement, and cold reconstruction from durable sources.
+- The browser runtime owns annotation interaction, current event derivation, mobile controls, truthful status, and Git-focused presentation through the transport interface.
+- The local review transport owns narrow collection reads and writes plus read-only local Git baseline calculation; it never invokes an agent or mutates Git.
+- The public capability transport owns only an unguessable HTTPS relay to the narrow local origin; provider choice remains outside the core protocol.
+- Durable files and Git own current specs, actor-segregated events, cursors, context, and recoverable history; they contain no active worker behavior.
+
 ### 1. HTML is canonical — constrained dialect
 The HTML file IS the spec (no markdown counterpart, no sync loop), but only with discipline:
 - **Semantic islands**: visual state committed as semantic input, not rendered debris — `<script type="application/spec+json" data-chart="echarts">{...}</script>` + `<div data-render="chart">` targets. Prose in lean semantic sections.

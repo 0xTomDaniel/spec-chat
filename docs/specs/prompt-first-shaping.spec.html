@@ -23,11 +23,22 @@
 <p data-anchor="outcome-portable">Correctness survives agent, session, CLI, and host replacement through plain files and cold reconstruction.</p>
 </section>
 
+<section data-anchor="user-stories" id="user-stories">
+<h2>User stories</h2>
+<p data-anchor="story-operator">As a product operator, I want a prompt to become clean durable issue and spec surfaces immediately so shaping survives a lost chat session.</p>
+<p data-anchor="story-reviewer">As a reviewer, I want additions to remain clear while existing context recedes so the canonical spec itself explains the current issue-scoped change.</p>
+<p data-anchor="story-mobile">As a reviewer away from the authoring machine, I want to comment and finish from an ordinary mobile browser using one secret link so review requires no SSH or separate account.</p>
+<p data-anchor="story-agent">As an authoring agent, I want hand-offs to wake the active shaping turn and durable files to support cold recovery so processing remains portable without a resident supervisor.</p>
+<p data-anchor="story-implementer">As an implementer, I want current stories, modular seams, acceptance rules, decisions, and proof obligations to agree so implementation begins from one coherent contract.</p>
+</section>
+
 <section data-anchor="modular-boundaries" id="modular-boundaries">
 <h2>Modular boundaries</h2>
 <p data-anchor="modular-template-rule">A spec that spans multiple modules includes a concise Modular boundaries section naming responsibility, interface or seam, and dependency direction.</p>
 <p data-anchor="modular-template-level">The section stays architectural and omits classes, functions, files, and replaceable implementation detail.</p>
 <p data-anchor="modular-template-diagram">A contract-bearing semantic diagram is the default when more than one meaningful module relationship exists.</p>
+<p data-anchor="modular-architecture-sync">The same stable responsibilities, interfaces or seams, and dependency direction remain current in the target-declared architecture source.</p>
+<p data-anchor="modular-architecture-detail">Issue-specific behavior and acceptance detail remain in the spec rather than being copied into architecture.</p>
 <script type="application/spec+json" data-render="chart" data-lib="echarts">
 {
   "tooltip": {
@@ -284,6 +295,22 @@
 <p data-anchor="flow-new-spec">When no relevant spec exists, the agent creates a minimal durable capability or domain spec with only sections that contain real behavior.</p>
 <p data-anchor="flow-no-issue-link">The spec adds the originating issue to its concise source-issues list when accepted work changes that file.</p>
 <p data-anchor="flow-pr">The first seed is committed and pushed, then one evolving draft change request opens and remains the durable transport for later shaping batches.</p>
+<p data-anchor="flow-deepen">After the seed is durable, the agent inspects only relevant code, tests, configuration, and current change-request state before asking questions those sources can answer.</p>
+<p data-anchor="flow-conflict">A conflict between durable sources stops shaping visibly instead of being resolved from chat or model memory.</p>
+</section>
+
+<section data-anchor="shaping-completeness" id="shaping-completeness">
+<h2>Shaping completeness</h2>
+<p data-anchor="complete-stories">Every user outcome created, changed, or retired by the work is current in the target-declared canonical story source, or in the governing spec when no separate story source exists.</p>
+<p data-anchor="complete-acceptance-classification">Each candidate acceptance criterion is classified as clear, gap, or not needed.</p>
+<p data-anchor="complete-acceptance-clear">A clear criterion names an observable outcome and an identified governing spec rule.</p>
+<p data-anchor="complete-acceptance-gap">A gap remains visible in an anchored <code>data-spec-tbd</code> block until resolved.</p>
+<p data-anchor="complete-acceptance-remove">A criterion that is not needed is removed rather than retained as historical prose.</p>
+<p data-anchor="complete-adr">An ADR is created or updated only when a decision is hard to reverse, surprising to a future maintainer, and carries a real tradeoff.</p>
+<p data-anchor="complete-tdd">A behavior change names a deep-module seam in the spec, the smallest first failing test at that seam, and observable acceptance evidence.</p>
+<p data-anchor="complete-docs-only">Docs-only work skips the TDD contract.</p>
+<p data-anchor="complete-waiver">When the smallest failing test is genuinely unsuitable, the issue and spec record one narrow waiver and its alternative proof.</p>
+<p data-anchor="complete-architecture">Multi-module behavior is reconciled with the target-declared architecture source at the stable modular level.</p>
 </section>
 
 <section data-anchor="issue-surface" id="issue-surface">
@@ -467,7 +494,9 @@
 <p data-anchor="finish-event">Finish review writes the existing hand-off event with an empty batch.</p>
 <p data-anchor="finish-agent">The parked agent interprets that empty hand-off as explicit completion of the browser review window.</p>
 <p data-anchor="finish-final-batch">The agent reconciles issue and spec, commits and pushes any final changes, advances the cursor, and closes the active wait.</p>
-<p data-anchor="finish-narrow">Finish review means only that the human HTML review is complete and current durable surfaces agree.</p>
+<p data-anchor="finish-alignment">The issue, spec, applicable ADRs, user stories, acceptance criteria, architecture, and TDD contract must describe the same current behavior before Finish review is eligible.</p>
+<p data-anchor="finish-conditional">Absent ADRs, single-module work, docs-only work, and recorded test waivers are valid only when their stated conditions hold.</p>
+<p data-anchor="finish-narrow">Finish review means only that the human HTML review is complete and the applicable durable surfaces agree.</p>
 <p data-anchor="finish-not-acceptance">Finish review is not human acceptance of delivered software, implementation authorization, tracker lifecycle transition, merge approval, or deployment approval.</p>
 </section>
 

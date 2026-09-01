@@ -30,3 +30,5 @@ When a spec spans multiple modules, include a concise Modular boundaries section
 Name each module's responsibility, the interface or seam callers depend on, and the direction of dependency.
 Prefer a semantic diagram when the section contains more than one meaningful relationship, because prose hides ownership and direction.
 Keep the view architectural: omit classes, functions, files, and replaceable implementation detail.
+Reconcile the same stable responsibilities, interfaces or seams, and dependency direction in the target-declared architecture source.
+Keep issue-specific behavior and acceptance detail in the spec rather than copying it into architecture.
