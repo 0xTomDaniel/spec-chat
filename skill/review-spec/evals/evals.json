@@ -85,6 +85,7 @@
         "Selects exactly turn-yielded, verified external-wake, or manual-resume",
         "Forbids final response while turn-yielded",
         "Uses a foreground host-neutral monitor plus exact-identity Herdr adapter when Herdr wake is available",
+        "Rejects a second control owner for the same collection root and cursor with a local process-held lock",
         "Keeps all comment processing and cursor advancement in the reactivated owner pane",
         "Uses manual-resume with an explicit new-message instruction when no verified wake exists",
         "Never starts detached Codex processing"
