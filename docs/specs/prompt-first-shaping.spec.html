@@ -30,6 +30,7 @@
 <p data-anchor="story-mobile">As a reviewer away from the authoring machine, I want to comment and finish from an ordinary mobile browser using one secret link so review requires no SSH or separate account.</p>
 <p data-anchor="story-agent">As an authoring agent, I want hand-offs to wake the active shaping turn and durable files to support cold recovery so processing remains portable without a resident supervisor.</p>
 <p data-anchor="story-implementer">As an implementer, I want current stories, modular seams, acceptance rules, decisions, and proof obligations to agree so implementation begins from one coherent contract.</p>
+<p data-anchor="story-compatible-review">As a reviewer, I want the same required review capabilities in every repository so an old vendored runtime cannot silently remove controls, focus, or visuals.</p>
 </section>
 
 <section data-anchor="modular-boundaries" id="modular-boundaries">
@@ -521,6 +522,20 @@
 <p data-anchor="public-review-provider">The core Spec Chat protocol does not depend on one tunnel provider, and repository or host instructions may select the available public transport.</p>
 </section>
 
+<section data-anchor="review-surface-compatibility" id="review-surface-compatibility">
+<h2>Review surface compatibility</h2>
+<p data-anchor="compatibility-seam">The review-surface preflight is the single seam that verifies a target spec, browser runtime, and local transport before review opens.</p>
+<p data-anchor="compatibility-capabilities">Compatibility is determined from explicit capabilities required by the current bundled runtime and server rather than global skill freshness, file age, or an external registry.</p>
+<p data-anchor="compatibility-migrate">When a target copy lacks a required capability, preflight replaces that incompatible asset from the current self-contained skill bundle before the server starts.</p>
+<p data-anchor="compatibility-preserve">A target asset declaring every required capability remains untouched even when its implementation or pin differs from the bundle.</p>
+<p data-anchor="compatibility-pair">Runtime and server compatibility are checked together because Git focus requires both the browser behavior and the read-only baseline route.</p>
+<p data-anchor="compatibility-live-restart">A migrated running server is restarted on the same local port before the existing public relay continues.</p>
+<p data-anchor="compatibility-http-proof">The agent verifies the served runtime capabilities and a successful Git-baseline response through the actual local HTTP surface before presenting the capability URL.</p>
+<p data-anchor="compatibility-visual-target">Every semantic visual island has a render target in the same parent, and a missing target blocks publication rather than silently producing prose-only output.</p>
+<p data-anchor="compatibility-failure">A failed migration or preflight is a visible review blocker.</p>
+<p data-anchor="compatibility-no-service">Preflight adds no service, registry, package dependency, background updater, or cross-repository control plane.</p>
+</section>
+
 <section data-anchor="visual-generation" id="visual-generation">
 <h2>Visual generation doctrine</h2>
 <p data-anchor="visual-verbatim">The new shaping skill contains the following doctrine verbatim in one required visual-generation reference.</p>
@@ -665,7 +680,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <h2>References</h2>
 <p data-anchor="reference-design">Product design history: <a href="https://github.com/0xTomDaniel/spec-chat/blob/70e22934dc418c7971fde5772a6d9fcc904e892f/DESIGN.md">DESIGN.md at the shaping baseline</a>.</p>
 <p data-anchor="reference-review-skill">Current review procedure baseline: <a href="https://github.com/varelaseb/spec-chat/blob/cae844f1b85ce39911ab9db7f6bb03c37d434bac/skill/review-spec/SKILL.md">skill/review-spec/SKILL.md at the mobile-review commit</a>.</p>
-<p data-anchor="reference-source-issues">Source issues: <a href="https://github.com/0xTomDaniel/spec-chat/issues/21">#21 Add prompt-first shaping and portable Spec Chat handoffs</a>.</p>
+<p data-anchor="reference-source-issues">Source issues: <a href="https://github.com/0xTomDaniel/spec-chat/issues/21">#21 Add prompt-first shaping and portable Spec Chat handoffs</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/22">#22 Prevent stale review capabilities in existing repositories</a>.</p>
 <p data-anchor="reference-source-rule">Every later issue that materially changes this file is appended to the source-issues list, and unrelated issues are never added.</p>
 </section>
 
