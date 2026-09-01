@@ -369,13 +369,62 @@
 
 <section data-anchor="active-review" id="active-review">
 <h2>Active review attachment</h2>
-<p data-anchor="active-turn">While browser review is active, the authoring agent keeps its current turn open and parks on one collection watcher.</p>
-<p data-anchor="active-no-final">The agent never returns a final response while that active review window remains open.</p>
+<p data-anchor="active-turn">In turn-yielded state, the authoring agent keeps its current turn open and parks through the review-control wrapper.</p>
+<p data-anchor="active-no-final">The agent never returns a final response while turn-yielded state remains active.</p>
 <p data-anchor="active-handoff">A browser hand-off completes the wait, re-enters the same authoring turn, and delivers the exact ready batch.</p>
 <p data-anchor="active-repark">After the batch settles, the same turn reconciles remaining backlog and parks a fresh watcher.</p>
 <p data-anchor="active-timeout">A watcher timeout or watcher error while the turn remains active wakes the same agent, which reconciles and reparks automatically.</p>
 <p data-anchor="active-stop">A host-stopped, completed, or lost turn cannot reactivate itself.</p>
 <p data-anchor="active-working-ui">Hosts may display the authoring turn as working throughout active browser review.</p>
+</section>
+
+<section data-anchor="wake-ownership" id="wake-ownership">
+<h2>Review wake ownership</h2>
+<p data-anchor="wake-terminal-control">Every open review is in exactly one terminal control state: turn-yielded, external-wake, or manual-resume.</p>
+<figure data-anchor="wake-state-figure" aria-labelledby="wake-state-caption">
+<svg viewBox="0 0 600 680" role="img">
+<title>Review wake ownership state machine</title>
+<g font-family="ui-monospace, Menlo, monospace">
+<rect x="40" y="35" width="520" height="135" fill="#fffefa" stroke="#171719" stroke-width="3"/>
+<rect x="40" y="35" width="10" height="135" fill="#087158"/>
+<text x="78" y="78" font-size="28" font-weight="700" fill="#171719">TURN-YIELDED</text>
+<text x="78" y="113" font-size="22" fill="#303036">same turn owns wait</text>
+<text x="78" y="143" font-size="20" font-weight="700" fill="#087158">FINAL FORBIDDEN</text>
+<path d="M300 170 V225" fill="none" stroke="#171719" stroke-width="3"/>
+<polygon points="300,237 291,220 309,220" fill="#171719"/>
+<text x="322" y="207" font-size="18" fill="#5c5c63">verify adapter</text>
+<rect x="40" y="237" width="520" height="135" fill="#fffefa" stroke="#171719" stroke-width="3"/>
+<rect x="40" y="237" width="10" height="135" fill="#2947c7"/>
+<text x="78" y="280" font-size="28" font-weight="700" fill="#171719">EXTERNAL-WAKE</text>
+<text x="78" y="315" font-size="22" fill="#303036">verified adapter owns wake</text>
+<text x="78" y="345" font-size="20" font-weight="700" fill="#2947c7">FINAL ALLOWED</text>
+<path d="M300 372 V427" fill="none" stroke="#171719" stroke-width="3"/>
+<polygon points="300,439 291,422 309,422" fill="#171719"/>
+<text x="322" y="409" font-size="18" fill="#5c5c63">adapter lost</text>
+<rect x="40" y="439" width="520" height="135" fill="#fffefa" stroke="#171719" stroke-width="3"/>
+<rect x="40" y="439" width="10" height="135" fill="#835600"/>
+<text x="78" y="482" font-size="28" font-weight="700" fill="#171719">MANUAL-RESUME</text>
+<text x="78" y="517" font-size="22" fill="#303036">no automatic wake claim</text>
+<text x="78" y="547" font-size="20" font-weight="700" fill="#835600">NEW HUMAN MESSAGE REQUIRED</text>
+<path d="M40 627 H560" fill="none" stroke="#171719" stroke-width="2"/>
+<text x="300" y="654" text-anchor="middle" font-size="20" font-weight="700" fill="#303036">NO GENERIC WATCHING STATE</text>
+</g>
+</svg>
+<figcaption id="wake-state-caption">Figure: final response is legal only after external wake is verified or the review is explicitly downgraded to manual resume.</figcaption>
+</figure>
+<table data-anchor="wake-state-table">
+<thead><tr><th>Control state</th><th>Wake owner</th><th>Final response</th><th>Reviewer promise</th></tr></thead>
+<tbody>
+<tr data-anchor="wake-state-yielded"><td>turn-yielded</td><td>The open authoring turn through a verified same-turn yield</td><td>Forbidden</td><td>Handoff re-enters this turn</td></tr>
+<tr data-anchor="wake-state-external"><td>external-wake</td><td>A foreground host monitor and verified adapter bound to exact owner identity</td><td>Allowed</td><td>Handoff prompts the owning pane</td></tr>
+<tr data-anchor="wake-state-manual"><td>manual-resume</td><td>The human</td><td>Allowed</td><td>Send a new chat message to drain queued work</td></tr>
+</tbody>
+</table>
+<p data-anchor="wake-raw-watcher">A raw shell watcher is detection-only and never establishes turn-yielded or external-wake state.</p>
+<p data-anchor="wake-monitor">The host-neutral foreground monitor observes complete handoffs without advancing the processing cursor and invokes one configured wake adapter once per unchanged batch.</p>
+<p data-anchor="wake-adapter">A wake adapter owns only host reactivation and never reads comments, edits the spec, emits replies, advances cursors, or invokes detached agent processing.</p>
+<p data-anchor="wake-herdr">When Herdr is available, its optional adapter binds the owner pane and terminal identity before using modal-safe prompt transport.</p>
+<p data-anchor="wake-portable">Other hosts may supply adapters through the same executable seam, while a missing verified adapter selects manual-resume rather than false active status.</p>
 </section>
 
 <section data-anchor="batch-transaction" id="batch-transaction">
@@ -476,8 +525,8 @@
 <p data-anchor="recovery-no-worker">When no agent process exists, handed-off events remain durably queued and no claim of active processing is made.</p>
 <p data-anchor="recovery-reconnect">When an agent later enters the repository, its first action is a zero-wait collection scan that drains every completed unprocessed hand-off before new work.</p>
 <p data-anchor="recovery-no-self-wake">A completely closed host session cannot self-wake without a host trigger or another local process capable of invoking an agent.</p>
-<p data-anchor="recovery-no-supervisor">The first implementation intentionally adds no foreground supervisor or agent-launching server.</p>
-<p data-anchor="recovery-trigger">A supervisor is reconsidered only if the active-turn attachment still strands real hand-offs after this contract is implemented and tested.</p>
+<p data-anchor="recovery-no-supervisor">The implementation adds no generic supervisor or agent-launching server.</p>
+<p data-anchor="recovery-wake-monitor">An optional foreground host monitor may detect a complete handoff and invoke one verified wake adapter, but it never launches a second processor.</p>
 </section>
 
 <section data-anchor="truthful-status" id="truthful-status">
@@ -485,7 +534,7 @@
 <p data-anchor="status-known-facts">The browser displays only event-backed facts it can know.</p>
 <p data-anchor="status-waiting">After hand-off it shows Handed off, waiting for agent.</p>
 <p data-anchor="status-ack">After a matching agent reply it shows the acknowledged thread state.</p>
-<p data-anchor="status-queued">When no matching reply appears within the existing timeout, it reports that the hand-off is still queued and the review session may be disconnected.</p>
+<p data-anchor="status-queued">When no matching reply appears within the existing timeout, it reports that automatic wake did not occur and instructs the human to send a new chat message to resume.</p>
 <p data-anchor="status-no-presence">The browser never claims that an agent is attached based only on old agent-event recency.</p>
 <p data-anchor="status-no-heartbeat">The first implementation adds no heartbeat, sentinel, lease, connection monitor, or periodic presence write.</p>
 </section>
@@ -689,7 +738,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <section data-anchor="burden-budget" id="burden-budget">
 <h2>Burden budget</h2>
 <p data-anchor="burden-rule">Every new mechanism must replace complexity or answer an observed failure that existing files and protocol cannot answer.</p>
-<p data-anchor="burden-pieces">The intended implementation adds one shaping skill, two focused references, focused review-skill changes, one runtime upgrade, and one read-only Git-baseline route in the existing review server.</p>
+<p data-anchor="burden-pieces">The implementation keeps shaping, review, rendering, transport, and optional wake adaptation in focused self-contained pieces.</p>
 <p data-anchor="burden-reuse">It reuses the current spec dialect, review spools, event schema, cursor commit point, watcher scripts, reply emitter, HTTP server, and context file.</p>
 <p data-anchor="burden-excluded">It adds no database, job ledger, capsule file, daemon, generic supervisor, heartbeat, presence sentinel, lease system, fencing system, tracker adapter registry, new event protocol, copied task context, or background infrastructure.</p>
 <p data-anchor="burden-portability">Portability comes from plain durable files and reconstructible current sources, not from a universal resident process.</p>
@@ -706,7 +755,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <p data-anchor="tdd-finish-red">A runtime test must first fail because the current no-draft hand-off remains disabled and cannot signal review completion.</p>
 <p data-anchor="tdd-finish-green">The finish test passes when a clean review emits the existing empty hand-off and an ineligible review cannot finish.</p>
 <p data-anchor="tdd-handoff-red">A watcher attachment scenario must first demonstrate that returning a final response strands a later browser hand-off until another agent turn begins.</p>
-<p data-anchor="tdd-handoff-green">The same scenario passes when the active authoring turn remains parked, processes the hand-off, settles the batch, and reparks.</p>
+<p data-anchor="tdd-handoff-green">The same scenario passes when turn-yielded keeps the turn open, external-wake reactivates the exact owner, or manual-resume explicitly requires a new human message.</p>
 <p data-anchor="tdd-mobile">Existing mobile, FSA, thread-model, and review-script suites remain green.</p>
 <p data-anchor="tdd-visual">Browser evidence must verify focus readability, mobile target-first commenting, resolved-thread reopen, hand-off waiting state, and Finish review on a real rendered spec.</p>
 </section>
@@ -724,7 +773,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <h2>References</h2>
 <p data-anchor="reference-design">Product design history: <a href="https://github.com/0xTomDaniel/spec-chat/blob/70e22934dc418c7971fde5772a6d9fcc904e892f/DESIGN.md">DESIGN.md at the shaping baseline</a>.</p>
 <p data-anchor="reference-review-skill">Current review procedure baseline: <a href="https://github.com/varelaseb/spec-chat/blob/cae844f1b85ce39911ab9db7f6bb03c37d434bac/skill/review-spec/SKILL.md">skill/review-spec/SKILL.md at the mobile-review commit</a>.</p>
-<p data-anchor="reference-source-issues">Source issues: <a href="https://github.com/0xTomDaniel/spec-chat/issues/21">#21 Add prompt-first shaping and portable Spec Chat handoffs</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/22">#22 Prevent stale review capabilities in existing repositories</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/24">#24 Raise generated spec visual quality and contrast</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/26">#26 Generalize visual richness without lowering quality</a>.</p>
+<p data-anchor="reference-source-issues">Source issues: <a href="https://github.com/0xTomDaniel/spec-chat/issues/21">#21 Add prompt-first shaping and portable Spec Chat handoffs</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/22">#22 Prevent stale review capabilities in existing repositories</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/24">#24 Raise generated spec visual quality and contrast</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/26">#26 Generalize visual richness without lowering quality</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/28">#28 Make review wake ownership explicit and reliable</a>.</p>
 <p data-anchor="reference-source-rule">Every later issue that materially changes this file is appended to the source-issues list, and unrelated issues are never added.</p>
 </section>
 

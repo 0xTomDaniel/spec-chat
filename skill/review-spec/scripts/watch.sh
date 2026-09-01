@@ -7,6 +7,15 @@ DIR=$1
 CUR=$2
 TMO=${3:-240}
 POLL=${4:-2}
+if [ "$TMO" -gt 0 ]; then
+  case "${SPEC_CHAT_WATCH_OWNER:-}" in
+    turn-yielded | external-wake) ;;
+    *)
+      echo "watch: detection-only raw long watcher cannot own review wake; use review-control.sh yielded, external, or manual" >&2
+      exit 2
+      ;;
+  esac
+fi
 mkdir -p "$DIR/human" "$DIR/agent"
 touch "$CUR"
 t=0

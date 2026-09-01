@@ -10,7 +10,7 @@ PREFLIGHT = ROOT / "skill" / "review-spec" / "scripts" / "preflight.py"
 BUNDLED_RUNTIME = ROOT / "skill" / "review-spec" / "assets" / "viz" / "runtime.js"
 BUNDLED_SERVER = ROOT / "skill" / "review-spec" / "assets" / "review-serve.py"
 
-RUNTIME_CAPABILITIES = "// spec-chat-capabilities: finish-review git-focus mobile-review reopen-thread semantic-islands\n"
+RUNTIME_CAPABILITIES = "// spec-chat-capabilities: finish-review git-focus manual-resume-status mobile-review reopen-thread semantic-islands\n"
 SERVER_CAPABILITIES = "# spec-chat-capabilities: git-baseline narrow-review-root\n"
 
 

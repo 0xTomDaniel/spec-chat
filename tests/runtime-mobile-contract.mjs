@@ -16,5 +16,6 @@ assert.match(runtime, /mobileHandoff\.textContent = handoffState\.finish \? 'Fin
 assert.match(runtime, /e\.message === 'Script error\.' && !e\.filename && !e\.lineno && !e\.colno && !e\.error/, 'fully opaque browser errors do not raise a fatal review overlay');
 assert.match(runtime, /overlay\('error', e\.message/, 'attributable script errors remain visible');
 assert.match(runtime, /if \(state\.handoffPosting \|\| !action\.enabled\) return/, 'handoff and Finish review latch against duplicate submission');
+assert.match(runtime, /automatic wake did not occur; send a new chat message to resume/, 'queued handoff gives an explicit manual-resume instruction');
 
 console.log('runtime mobile contract tests passed');
