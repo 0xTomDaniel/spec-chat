@@ -18,8 +18,24 @@ claim_control() {
     exit 4
   }
   CONTROL_KEY=$(printf '%s\n%s\n' "$CONTROL_ROOT" "$CONTROL_CURSOR" | cksum | awk '{ print $1 "-" $2 }')
-  CONTROL_LOCK_DIR=${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}
-  CONTROL_LOCK="$CONTROL_LOCK_DIR/spec-chat-control-$CONTROL_KEY.lock"
+  CONTROL_UID=$(id -u)
+  if [ -d "/run/user/$CONTROL_UID" ] && [ -w "/run/user/$CONTROL_UID" ]; then
+    CONTROL_LOCK_DIR="/run/user/$CONTROL_UID/spec-chat-review-control"
+  else
+    CONTROL_LOCK_DIR="/tmp/spec-chat-review-control-$CONTROL_UID"
+  fi
+  [ ! -L "$CONTROL_LOCK_DIR" ] || {
+    echo "control=manual-resume reason=unsafe-lock-directory; new human chat message required" >&2
+    exit 4
+  }
+  umask 077
+  mkdir -p "$CONTROL_LOCK_DIR"
+  [ "$(stat -c '%u' "$CONTROL_LOCK_DIR")" = "$CONTROL_UID" ] || {
+    echo "control=manual-resume reason=foreign-lock-directory; new human chat message required" >&2
+    exit 4
+  }
+  chmod 700 "$CONTROL_LOCK_DIR"
+  CONTROL_LOCK="$CONTROL_LOCK_DIR/control-$CONTROL_KEY.lock"
   exec 9>"$CONTROL_LOCK"
   flock -n 9 || {
     echo "review-control: control owner already exists for $CONTROL_ROOT and $CONTROL_CURSOR" >&2

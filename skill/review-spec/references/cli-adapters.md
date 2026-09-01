@@ -33,6 +33,7 @@ scripts/review-control.sh external \
 The monitor is host-neutral.
 It reads complete handoff readiness without advancing the processing cursor, computes one in-memory batch identity, and invokes the adapter once while that batch remains unchanged.
 The review-control wrapper holds one nonblocking local kernel lock for the canonical collection root and cursor name.
+A user-owned absolute runtime namespace remains identical across Herdr panes and ordinary shells even when their environment variables differ.
 A second yielded or external owner fails visibly; process exit releases the lock automatically.
 This is not a lease, heartbeat, fencing protocol, or persistent coordinator.
 The adapter owns only wake.
