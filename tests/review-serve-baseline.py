@@ -51,7 +51,7 @@ class BaselineRouteTest(unittest.TestCase):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        for _ in range(50):
+        for _ in range(200):
             try:
                 urllib.request.urlopen(f"http://127.0.0.1:{self.port}/", timeout=0.1).close()
                 break

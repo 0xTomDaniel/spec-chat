@@ -10,6 +10,23 @@ MODE=${1:-}
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
 WATCH="$SCRIPT_DIR/watch-specs.sh"
 
+claim_control() {
+  CONTROL_ROOT=$1
+  CONTROL_CURSOR=$2
+  command -v flock >/dev/null 2>&1 || {
+    echo "control=manual-resume reason=flock-unavailable; new human chat message required" >&2
+    exit 4
+  }
+  CONTROL_KEY=$(printf '%s\n%s\n' "$CONTROL_ROOT" "$CONTROL_CURSOR" | cksum | awk '{ print $1 "-" $2 }')
+  CONTROL_LOCK_DIR=${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}
+  CONTROL_LOCK="$CONTROL_LOCK_DIR/spec-chat-control-$CONTROL_KEY.lock"
+  exec 9>"$CONTROL_LOCK"
+  flock -n 9 || {
+    echo "review-control: control owner already exists for $CONTROL_ROOT and $CONTROL_CURSOR" >&2
+    exit 5
+  }
+}
+
 case "$MODE" in
   manual)
     [ "$#" -eq 1 ] || {
@@ -24,10 +41,11 @@ case "$MODE" in
       echo "usage: review-control.sh yielded REVIEW_ROOT CURSOR_NAME [TIMEOUT_S] [POLL_S]" >&2
       exit 2
     }
-    ROOT=$2
+    ROOT=$(CDPATH= cd "$2" && pwd)
     CURSOR=$3
     TIMEOUT=${4:-3600}
     POLL=${5:-3}
+    claim_control "$ROOT" "$CURSOR"
     echo "control=turn-yielded final=forbidden wake-owner=same-turn"
     SPEC_CHAT_WATCH_OWNER=turn-yielded exec "$WATCH" "$ROOT" "$CURSOR" "$TIMEOUT" "$POLL"
     ;;
@@ -36,7 +54,7 @@ case "$MODE" in
       echo "usage: review-control.sh external REVIEW_ROOT CURSOR_NAME OWNER_ID OWNER_SESSION ADAPTER [ARG...]" >&2
       exit 2
     }
-    ROOT=$2
+    ROOT=$(CDPATH= cd "$2" && pwd)
     CURSOR=$3
     OWNER_ID=$4
     OWNER_SESSION=$5
@@ -45,6 +63,7 @@ case "$MODE" in
       echo "review-control: wake adapter is not executable: $1" >&2
       exit 2
     }
+    claim_control "$ROOT" "$CURSOR"
     echo "control=external-wake final=allowed owner=$OWNER_ID session=$OWNER_SESSION"
     LAST_BATCH=
     while :; do

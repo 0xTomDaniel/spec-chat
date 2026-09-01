@@ -56,6 +56,7 @@ Your job in review mode: reconcile hand-off batches, apply each comment to the s
    - `manual-resume`: run `scripts/review-control.sh manual`, return a final response that explicitly requires a new human chat message, and claim no automatic wake.
 
    `<spec-root>` is normally the repository's shared `docs/` collection root.
+   `review-control.sh` holds one local kernel lock per canonical collection root and cursor, so a second yielded or external owner fails visibly instead of racing the first.
    A raw `watch-specs.sh` or `watch.sh` long wait is detection-only and now fails unless invoked by `review-control.sh`.
    A background shell, unified exec session, watcher PID, or returned tool session never proves host attachment.
    Before any final response, transition out of `turn-yielded` into verified `external-wake` or explicit `manual-resume`.

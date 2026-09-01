@@ -97,6 +97,7 @@ flowchart LR
 - The repository-selected issue skill owns tracker-specific create, read, replace-current-content, and link behavior; no tracker behavior enters the browser runtime, review transport, or event protocol.
 - The review skill owns review-surface preflight, capability migration, explicit control-state selection, exact batch processing, spec edits, replies, cursor advancement, and cold reconstruction from durable sources.
 - The foreground handoff monitor owns read-only detection and invokes one configured adapter once per unchanged batch; it never advances review state or runs an agent.
+- One process-held local kernel lock permits a single control owner for each collection root and cursor; process exit releases it without a lease protocol.
 - An optional host adapter owns exact conversation reactivation only; Herdr is one adapter and is not a core dependency.
 - The browser runtime owns annotation interaction, current event derivation, mobile controls, truthful status, and Git-focused presentation through the transport interface.
 - The local review transport owns narrow collection reads and writes plus read-only local Git baseline calculation; it never invokes an agent or mutates Git.
@@ -147,6 +148,7 @@ review-wait docs/ --cursor-name .cursor-agent --timeout auto --max-events 20   #
 - A long raw watcher is invalid because detection does not own host wake.
 - `turn-yielded` keeps the same turn open and forbids final response.
 - `external-wake` uses a foreground host monitor and verified exact-identity adapter; the adapter wakes but never processes.
+- A second yielded or external control owner for the same collection and cursor fails visibly.
 - `manual-resume` makes no wake claim and requires a new user message.
 - Detached agent processing is disabled because it can race the interactive owner.
 

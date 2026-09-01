@@ -25,6 +25,28 @@ MANUAL=$($SCRIPTS/review-control.sh manual)
 printf '%s' "$MANUAL" | grep -F 'control=manual-resume' >/dev/null
 printf '%s' "$MANUAL" | grep -F 'new human chat message required' >/dev/null
 
+LOCK_DOCS="$TMP/lock-docs"
+LOCK_PAGE="$LOCK_DOCS/lock.spec.html"
+mkdir -p "$LOCK_PAGE.review/human" "$LOCK_PAGE.review/agent"
+: > "$LOCK_PAGE"
+"$SCRIPTS/review-control.sh" yielded "$LOCK_DOCS" .cursor-lock 20 1 \
+  > "$TMP/lock-owner" 2>&1 &
+LOCK_OWNER_PID=$!
+for _ in 1 2 3 4 5; do
+  grep -F 'control=turn-yielded' "$TMP/lock-owner" >/dev/null 2>&1 && break
+  sleep 1
+done
+set +e
+SECOND_OWNER=$("$SCRIPTS/review-control.sh" yielded "$LOCK_DOCS" .cursor-lock 1 1 2>&1)
+SECOND_OWNER_RC=$?
+set -e
+kill "$LOCK_OWNER_PID" 2>/dev/null || true
+wait "$LOCK_OWNER_PID" 2>/dev/null || true
+[ "$SECOND_OWNER_RC" -eq 5 ] && printf '%s' "$SECOND_OWNER" | grep -F 'control owner already exists' >/dev/null || {
+  echo "two review control owners were allowed for one collection cursor" >&2
+  exit 1
+}
+
 cat > "$TMP/fake-wake.sh" <<'EOF'
 #!/bin/sh
 set -eu

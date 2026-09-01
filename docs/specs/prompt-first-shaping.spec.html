@@ -422,6 +422,8 @@
 </table>
 <p data-anchor="wake-raw-watcher">A raw shell watcher is detection-only and never establishes turn-yielded or external-wake state.</p>
 <p data-anchor="wake-monitor">The host-neutral foreground monitor observes complete handoffs without advancing the processing cursor and invokes one configured wake adapter once per unchanged batch.</p>
+<p data-anchor="wake-exclusive-owner">A local kernel-held lock permits one turn-yielded or external-wake control owner for each canonical collection root and cursor name, and a second owner fails visibly into manual resume.</p>
+<p data-anchor="wake-no-lease">The ownership lock is released automatically with its foreground process and introduces no lease, heartbeat, fencing protocol, or persistent coordinator.</p>
 <p data-anchor="wake-adapter">A wake adapter owns only host reactivation and never reads comments, edits the spec, emits replies, advances cursors, or invokes detached agent processing.</p>
 <p data-anchor="wake-herdr">When Herdr is available, its optional adapter binds the owner pane and terminal identity before using modal-safe prompt transport.</p>
 <p data-anchor="wake-portable">Other hosts may supply adapters through the same executable seam, while a missing verified adapter selects manual-resume rather than false active status.</p>
