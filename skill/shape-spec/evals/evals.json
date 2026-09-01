@@ -1,6 +1,6 @@
 {
   "skill_name": "spec-chat-shape",
-  "note": "Behavior contract. On 2026-08-31 a fresh isolated Claude session scored the review-only baseline false on six shaping decisions, then scored the new shaping skill true on all seven using only SKILL.md and its required references.",
+  "note": "Behavior contract. On 2026-08-31 a fresh isolated Claude session scored the review-only baseline false on six shaping decisions, then scored the new shaping skill true on all seven using only SKILL.md and its required references. On 2026-09-01 the same fresh semantic-completeness scenario scored the prior skill false on all eight decisions, then the updated skill true on all eight.",
   "evals": [
     {
       "id": 1,
@@ -48,6 +48,49 @@
         "Stops the watcher and public transport after final reconciliation",
         "Does not infer implementation authorization, acceptance, merge, or deployment approval",
         "Keeps current files sufficient for a later fresh agent to recover"
+      ]
+    },
+    {
+      "id": 5,
+      "eval_name": "targeted-post-seed-deepening",
+      "prompt": "The first docs-only seed is durable. Continue shaping before asking the operator questions.",
+      "expectations": [
+        "Inspects only relevant code, tests, configuration, and current change-request state",
+        "Answers discoverable questions from durable sources before asking the human",
+        "Stops visibly when durable sources conflict"
+      ]
+    },
+    {
+      "id": 6,
+      "eval_name": "stories-architecture-and-decisions",
+      "prompt": "The feature changes an existing user outcome, retires another, and crosses multiple modules with a surprising hard-to-reverse tradeoff.",
+      "expectations": [
+        "Updates every created, changed, and retired outcome in the canonical user-story source",
+        "Keeps the spec's modular view aligned with stable responsibilities, interfaces or seams, and dependency direction in the authoritative architecture source",
+        "Keeps issue-specific behavior out of architecture",
+        "Creates or updates an ADR because reversibility, surprise, and real-tradeoff conditions all hold"
+      ]
+    },
+    {
+      "id": 7,
+      "eval_name": "acceptance-and-tdd-readiness",
+      "prompt": "Finish shaping a behavior change whose draft criteria include one clear observable, one unresolved gap, and one unnecessary criterion.",
+      "expectations": [
+        "Classifies each candidate criterion as clear, gap, or not needed",
+        "Backs retained clear criteria with identified spec rules and marks the gap data-spec-tbd",
+        "Removes the unnecessary criterion",
+        "Names a deep-module seam, the smallest first failing test, and observable acceptance evidence",
+        "Refuses Finish review while the gap or any applicable source misalignment remains"
+      ]
+    },
+    {
+      "id": 8,
+      "eval_name": "docs-only-and-test-waiver",
+      "prompt": "Shape one docs-only correction, then a separate behavior change where the smallest failing test is genuinely unsuitable.",
+      "expectations": [
+        "Skips the TDD contract for the docs-only correction",
+        "Records a narrow waiver and alternative proof in the issue and spec for the unsuitable behavior test",
+        "Does not treat either exception as blanket permission to skip behavioral proof"
       ]
     }
   ]
