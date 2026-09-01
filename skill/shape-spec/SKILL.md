@@ -63,10 +63,14 @@ Architecture records stable module responsibilities, interfaces or seams, and de
 
 Read [references/information-shape.md](references/information-shape.md) for every new spec or material restructure.
 Read [references/visual-doctrine.md](references/visual-doctrine.md) when selecting or generating visual media.
+Read [references/visual-quality.md](references/visual-quality.md) for every new spec or material restructure.
 
 Canonical `*.spec.html` documents use the non-React doctrine.
 React is limited to an existing embedded application or an explicitly noncanonical throwaway prototype.
 Keep stable `data-anchor` identities, one sentence per prose line, and pretty semantic-island JSON.
+Plan the visual hierarchy and artifact coverage from information shape before styling prose or selecting libraries.
+For a dense multi-section contract, verify every relationship-bearing behavior cluster has its least-lossy artifact rather than one token chart.
+Reuse the target's established high-quality spec stylesheet; when none exists, copy [assets/style/spec.css](assets/style/spec.css) into the target's shared spec style directory.
 When behavior spans multiple modules, include a high-level **Modular boundaries** section that names module responsibility, interface or seam, and dependency direction.
 Prefer a contract-bearing diagram for that section; omit classes, functions, and internal implementation detail.
 
@@ -79,6 +83,9 @@ Create or update an ADR only when a decision is hard to reverse, surprising to a
 For behavior changes, name a deep-module seam in the spec, the smallest first failing test at that seam, and the observable acceptance evidence.
 Docs-only work skips this TDD contract.
 When the smallest failing test is genuinely unsuitable, record a narrow waiver and alternative proof in the issue and spec.
+
+Before publication, inspect the complete rendered page and every artifact at desktop and mobile widths in normal and Git-focus modes.
+Finish only when hierarchy, contrast, artifact density, label and edge collision, clipping, and review-control clearance meet the positive cases in `references/visual-quality.md`.
 
 ## Publish the seed
 
