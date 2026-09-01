@@ -54,11 +54,49 @@ Every event carries the quote/context triple regardless of tier → orphan recov
 5. *Converge*: reply directly to an agent response, edit any still-unanswered human message through an append-only `supersedes` event, or ✓ Resolve. Selecting a thread highlights its associated page element; resolved threads collapse but remain browsable — the spec doubles as its own decision record.
 6. *Async*: no agent running? Annotate anyway (spool is durable); next `/review-spec` in the CLI drains pending batches immediately, then watches.
 
+### Mobile review surface
+
+The HTTP transport supports mobile review without a separate application.
+Below 640px the floating toolbar stays inside the visual viewport with Comment
+and the draft-counted Hand off action side by side, while connection status uses
+its own truncated row.
+
+Comment mode is target-first on mobile: entering it closes the review sheet so
+the document remains tappable, and selecting an anchored target opens a
+safe-area-aware full-viewport composer sheet with focus in a 16px textarea.
+Review controls use at least 44px touch targets, the sheet uses dynamic viewport
+height, and reduced-motion preferences remove shell transitions.
+
+Opaque browser errors with the fully redacted `Script error.` signature carry no
+source, line, stack, or Error object and do not create the fatal review overlay.
+Attributable same-origin exceptions and unhandled rejections remain visible.
+
 Agent presence: page shows "agent watching / last event Ns ago" derived from agent-event recency; if a hand-off gets no ack in ~30 s, prompt "is `/review-spec` running in your CLI?".
 
 ## Target architecture (v3 consensus, 2026-07-03)
 
 Reached via adversarial design review: Claude (Fable 5) ↔ GPT-5.5 (xhigh), three rounds. The full design below is the target; v1 implements the cut line above.
+
+### Modular boundaries
+
+```mermaid
+flowchart LR
+  Shape[Shaping skill] -->|issue interface| Issue[Repository-selected issue skill]
+  Shape -->|review interface| Review[Review skill]
+  Review -->|event protocol| Browser[Browser runtime]
+  Browser -->|HTTP events and baseline reads| Local[Local review transport]
+  Review -->|spec edits and replies| Files[Durable files and Git]
+  Local -->|spool writes and Git reads| Files
+  Public[Public capability transport] -->|narrow HTTPS relay| Local
+```
+
+- The shaping skill owns prompt intake, durable seed order, completeness reconciliation, and orchestration through the issue and review interfaces.
+- The repository-selected issue skill owns tracker-specific create, read, replace-current-content, and link behavior; no tracker behavior enters the browser runtime, review transport, or event protocol.
+- The review skill owns active-turn attachment, exact batch processing, spec edits, replies, cursor advancement, and cold reconstruction from durable sources.
+- The browser runtime owns annotation interaction, current event derivation, mobile controls, truthful status, and Git-focused presentation through the transport interface.
+- The local review transport owns narrow collection reads and writes plus read-only local Git baseline calculation; it never invokes an agent or mutates Git.
+- The public capability transport owns only an unguessable HTTPS relay to the narrow local origin; provider choice remains outside the core protocol.
+- Durable files and Git own current specs, actor-segregated events, cursors, context, and recoverable history; they contain no active worker behavior.
 
 ### 1. HTML is canonical — constrained dialect
 The HTML file IS the spec (no markdown counterpart, no sync loop), but only with discipline:
@@ -126,8 +164,8 @@ The same runtime can mount inside a host application (SPA or any live page) so r
 Host integration is two things the runtime already supports: `data-anchor` attributes on container elements (sub-element descriptors, TARGETABLE controls, and foreign-chart adoption all work unchanged — capture-phase comment mode beats framework-delegated event handlers, React included), and a server implementing the documented `/api/events` transport. One embed-hardening change applies everywhere: pins redraw on a 2s interval, because a host framework re-rendering an anchored container (React remounts, spec scripts rebuilding DOM) silently drops the pins it contains; the redraw is idempotent.
 
 ## Visual stdlib for agent generation
-Pinned versions, vendored in the dotdir (offline + integrity): **ECharts** (charts, Apache-2.0) · **Mermaid** (boxes-and-arrows default, MIT) · **Cytoscape.js + dagre** (interactive graphs, MIT) · **JSXGraph + KaTeX** (math, MIT) · **GSAP** (animation, free non-OSI; Motion if OSI required) · **rough-notation** (emphasis, MIT) · **house comment-pin runtime** (no viable off-the-shelf lib exists).
-Optional: D3, Observable Plot, Konva, markmap, leader-line, function-plot, Floating UI. Rejected: Mafs, React Flow, Motion-as-default, Liveline, tldraw, Excalidraw-as-target (React-only / license / zero training data / poor LLM generation).
+The canonical generation doctrine and its React versus non-React routing now live in [the prompt-first shaping spec](docs/specs/prompt-first-shaping.spec.html#visual-generation).
+That contract supersedes this document's earlier library list while retaining the offline fidelity, local vendoring, semantic-island, and small-runtime decisions above.
 
 ## Borrowing from agentation: ideas yes, code no
 PolyForm Shield 1.0.0 forbids competing use — clean-room only. Reimplement: greppable metadata over screenshots, annotation lifecycle states, self-driving review loop (ours via files+shell, theirs via MCP), tiered verbosity, skills-as-onboarding. Skip entirely: React-fiber forensics — we generate the artifact, anchors are baked in at generation time.
