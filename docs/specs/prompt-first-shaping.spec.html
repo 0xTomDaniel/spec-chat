@@ -27,13 +27,14 @@
 
 <section data-anchor="user-stories" id="user-stories">
 <h2>User stories</h2>
-<p data-anchor="story-operator">As a product operator, I want a prompt to become clean durable issue and spec surfaces immediately so shaping survives a lost chat session.</p>
-<p data-anchor="story-reviewer">As a reviewer, I want additions to remain clear while existing context recedes so the canonical spec itself explains the current issue-scoped change.</p>
-<p data-anchor="story-mobile">As a reviewer away from the authoring machine, I want to comment and finish from an ordinary mobile browser using one secret link so review requires no SSH or separate account.</p>
-<p data-anchor="story-agent">As an authoring agent, I want hand-offs to wake the active shaping turn and durable files to support cold recovery so processing remains portable without a resident supervisor.</p>
-<p data-anchor="story-implementer">As an implementer, I want current stories, modular seams, acceptance rules, decisions, and proof obligations to agree so implementation begins from one coherent contract.</p>
-<p data-anchor="story-compatible-review">As a reviewer, I want the same required review capabilities in every repository so an old vendored runtime cannot silently remove controls, focus, or visuals.</p>
-<p data-anchor="story-visual-quality">As a reviewer, I want a high-contrast visual contract with legible load-bearing artifacts so complex behavior is understood from the page rather than decoded from prose.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-operator">As a product operator, I want a prompt to become clean durable issue and spec surfaces immediately so shaping survives a lost chat session.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-reviewer">As a reviewer, I want additions to remain clear while existing context recedes so the canonical spec itself explains the current issue-scoped change.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-mobile">As a reviewer away from the authoring machine, I want to comment and finish from an ordinary mobile browser using one secret link so review requires no SSH or separate account.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-agent">As an authoring agent, I want hand-offs to wake the active shaping turn and durable files to support cold recovery so processing remains portable without a resident supervisor.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-implementer">As an implementer, I want current stories, modular seams, acceptance rules, decisions, and proof obligations to agree so implementation begins from one coherent contract.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-compatible-review">As a reviewer, I want the same required review capabilities in every repository so an old vendored runtime cannot silently remove controls, focus, or visuals.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-visual-quality">As a reviewer, I want a high-contrast visual contract with legible load-bearing artifacts so complex behavior is understood from the page rather than decoded from prose.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-guided-impact">As a feature author, I want every changed user-facing story to state whether the central guided journey extends so onboarding impact is explicit without forcing every feature into onboarding.</p>
 </section>
 
 <section data-anchor="modular-boundaries" id="modular-boundaries">
@@ -43,6 +44,7 @@
 <p data-anchor="modular-template-diagram">A contract-bearing semantic diagram is the default when more than one meaningful module relationship exists.</p>
 <p data-anchor="modular-architecture-sync">The same stable responsibilities, interfaces or seams, and dependency direction remain current in the target-declared architecture source.</p>
 <p data-anchor="modular-architecture-detail">Issue-specific behavior and acceptance detail remain in the spec rather than being copied into architecture.</p>
+<p data-anchor="modular-guided-runtime">Guided-journey declarations do not invert runtime ownership: the central registry owns journey order, while feature modules own their targets and semantic success milestones.</p>
 <script type="application/spec+json" data-render="chart" data-lib="echarts">
 {
   "tooltip": {
@@ -171,6 +173,9 @@
 <p data-anchor="source-issue">The issue surface owns current high-level intent, desired outcome, acceptance criteria, non-goals, dependencies, and governing source links.</p>
 <p data-anchor="source-implementation-tickets">Linked implementation tickets own bounded independently assignable code outcomes and explicit blocker relations.</p>
 <p data-anchor="source-spec">The canonical spec owns current user stories, detailed behavior, constraints, edge cases, and interaction contracts.</p>
+<p data-anchor="source-guided-impact">Each changed user-facing story declares in canonical HTML whether it requires a guided-journey extension; no declaration is copied into lifecycle tracking or generated catalogs.</p>
+<p data-anchor="source-linear-story-boundary">Linear carries issue lifecycle and governing links, not canonical story or guided-journey declaration text.</p>
+<p data-anchor="source-markdown-story-boundary">Markdown story catalogs remain generated downstream QA output.</p>
 <p data-anchor="source-issues">Every canonical spec links each issue whose accepted work materially changed that spec file.</p>
 <p data-anchor="source-pr">The evolving draft change request carries durable commits and history, but it is not a required human spec-review surface.</p>
 <p data-anchor="source-spool">The actor-segregated review spool owns comments, replies, hand-offs, and their causal order.</p>
@@ -311,7 +316,10 @@
 
 <section data-anchor="shaping-completeness" id="shaping-completeness">
 <h2>Shaping completeness</h2>
-<p data-anchor="complete-stories">Every user outcome created, changed, or retired by the work is current in the target-declared canonical story source, or in the governing spec when no separate story source exists.</p>
+<p data-anchor="complete-stories">Every governing HTML spec contains explicit anchored user stories, and every user outcome created, changed, or retired by the work is current there.</p>
+<p data-anchor="complete-guided-binary">Every changed user-facing story declares <code>data-guided-journey="yes|no"</code>; no requires no rationale and does not imply universal onboarding.</p>
+<p data-anchor="complete-guided-yes">A yes declaration links one applicable guided-journey step and states passive or required; required also names the feature-owned semantic success milestone.</p>
+<p data-anchor="complete-guided-review">Shaping creates and maintains declarations, review evaluates their semantic correctness, and structural validation checks only presence and reference integrity on changed specs.</p>
 <p data-anchor="complete-acceptance-classification">Each candidate acceptance criterion is classified as clear, gap, or not needed.</p>
 <p data-anchor="complete-acceptance-clear">A clear criterion names an observable outcome and an identified governing spec rule.</p>
 <p data-anchor="complete-acceptance-gap">A gap remains visible in an anchored <code>data-spec-tbd</code> block until resolved.</p>
@@ -787,6 +795,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <p data-anchor="tdd-focus-boundary">The runtime test proves only outermost changed blocks receive the explicit focus boundary and that the new runtime capability migrates stale repository copies.</p>
 <p data-anchor="tdd-material-routing">Skill validation proves review-only is limited to questions and atomic corrections and material batches are routed through the complete shaping quality contract before editing.</p>
 <p data-anchor="tdd-style-provenance">Style-provenance tests accept unchanged established styling and the exact fallback while rejecting local style blocks, new custom themes, and changed established themes.</p>
+<p data-anchor="tdd-guided-declarations">Changed-spec validation accepts complete no, passive, and required declarations while rejecting missing binary decisions, invalid modes, missing required milestones, and broken step anchors.</p>
 <p data-anchor="tdd-thread-red">A thread-model test must first fail because the current UI withholds reply from a resolved thread.</p>
 <p data-anchor="tdd-thread-green">The same test passes when a resolved thread offers Reply and reopen and the existing human reply event derives draft status.</p>
 <p data-anchor="tdd-finish-red">A runtime test must first fail because the current no-draft hand-off remains disabled and cannot signal review completion.</p>
@@ -810,7 +819,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <h2>References</h2>
 <p data-anchor="reference-design">Product design history: <a href="https://github.com/0xTomDaniel/spec-chat/blob/70e22934dc418c7971fde5772a6d9fcc904e892f/DESIGN.md">DESIGN.md at the shaping baseline</a>.</p>
 <p data-anchor="reference-review-skill">Current review procedure baseline: <a href="https://github.com/varelaseb/spec-chat/blob/cae844f1b85ce39911ab9db7f6bb03c37d434bac/skill/review-spec/SKILL.md">skill/review-spec/SKILL.md at the mobile-review commit</a>.</p>
-<p data-anchor="reference-source-issues">Source issues: <a href="https://github.com/0xTomDaniel/spec-chat/issues/21">#21 Add prompt-first shaping and portable Spec Chat handoffs</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/22">#22 Prevent stale review capabilities in existing repositories</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/24">#24 Raise generated spec visual quality and contrast</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/26">#26 Generalize visual richness without lowering quality</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/28">#28 Make review wake ownership explicit and reliable</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/32">#32 Make implementation ticket graphs canonical in Spec Chat shaping</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/36">#36 Prevent material review edits from bypassing visual quality</a>.</p>
+<p data-anchor="reference-source-issues">Source issues: <a href="https://github.com/0xTomDaniel/spec-chat/issues/21">#21 Add prompt-first shaping and portable Spec Chat handoffs</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/22">#22 Prevent stale review capabilities in existing repositories</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/24">#24 Raise generated spec visual quality and contrast</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/26">#26 Generalize visual richness without lowering quality</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/28">#28 Make review wake ownership explicit and reliable</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/32">#32 Make implementation ticket graphs canonical in Spec Chat shaping</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/36">#36 Prevent material review edits from bypassing visual quality</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/38">#38 Require guided-journey declarations on changed user stories</a>.</p>
 <p data-anchor="reference-source-rule">Every later issue that materially changes this file is appended to the source-issues list, and unrelated issues are never added.</p>
 </section>
 
