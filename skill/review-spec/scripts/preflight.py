@@ -6,6 +6,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 import shutil
 import sys
+from urllib.parse import urlsplit
 
 
 CAPABILITY_PREFIX = "spec-chat-capabilities:"
@@ -94,6 +95,34 @@ def validate_visuals(spec):
     return parser.errors
 
 
+class RuntimeReferenceParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.sources = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag != "script":
+            return
+        source = dict(attrs).get("src")
+        if source and Path(urlsplit(source).path).name == "runtime.js":
+            self.sources.append(source)
+
+
+def runtime_path(spec):
+    parser = RuntimeReferenceParser()
+    parser.feed(spec.read_text(errors="replace"))
+    parser.close()
+    resolved = set()
+    for source in parser.sources:
+        parsed = urlsplit(source)
+        if parsed.scheme or parsed.netloc or parsed.path.startswith("/"):
+            continue
+        resolved.add((spec.parent / parsed.path).resolve())
+    if len(resolved) != 1:
+        return None
+    return resolved.pop()
+
+
 def copy_tree(source, target):
     for path in source.rglob("*"):
         relative = path.relative_to(source)
@@ -143,8 +172,10 @@ def main(argv):
     bundled_viz = skill / "assets" / "viz"
     bundled_runtime = bundled_viz / "runtime.js"
     bundled_server = skill / "assets" / "review-serve.py"
-    target_viz = repository / "docs" / "specs" / ".viz"
-    target_runtime = target_viz / "runtime.js"
+    target_runtime = runtime_path(spec)
+    if target_runtime is None:
+        return fail("spec must reference exactly one repository-relative runtime.js")
+    target_viz = target_runtime.parent
     target_server = repository / "tools" / "review-serve.py"
 
     asset_paths = [target_viz, target_runtime, target_server]
