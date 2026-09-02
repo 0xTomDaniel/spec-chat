@@ -1,5 +1,5 @@
 // spec-chat runtime v0.1 — hydrates semantic islands and mounts the annotation layer.
-// spec-chat-capabilities: changed-root-focus custom-style-focus finish-review git-focus manual-resume-status mobile-pre-wrap mobile-review reopen-thread semantic-islands
+// spec-chat-capabilities: changed-root-focus custom-style-focus finish-review git-focus manual-resume-status mobile-pre-wrap mobile-review reopen-thread semantic-islands shared-style-ownership
 // Transports: FSA (file://, primary) | HTTP review-serve (http(s)://, secondary).
 // Same spools, same event schema either way. See DESIGN.md.
 // Classic script, NOT a module: browsers CORS-block module scripts on file:// pages,
@@ -878,7 +878,8 @@ body.hx-panel-open{padding-right:0;overflow:hidden}
 
 function mountUI() {
   const style = document.createElement('style');
-  style.textContent = (EMBED_REVIEW_DIR ? '' : DOC_CSS) + CSS;
+  const sharedDocumentStyle = document.querySelector('link[rel~="stylesheet"][href*=".style/spec.css"]');
+  style.textContent = (EMBED_REVIEW_DIR || sharedDocumentStyle ? '' : DOC_CSS) + CSS;
   document.head.appendChild(style);
 
   const bar = document.createElement('div');
@@ -1363,7 +1364,8 @@ function renderPins() {
     pin.textContent = n;
     pin.title = label(b);
     pin.style.top = pos.top + 'px';
-    pin.style.left = pos.left + 'px';
+    const pinSize = window.matchMedia('(max-width: 640px)').matches ? 44 : 24;
+    pin.style.left = Math.max(0, Math.min(pos.left, holder.clientWidth - pinSize)) + 'px';
     pin.addEventListener('click', e => { e.stopPropagation(); selectThread(th, true); });
     holder.appendChild(pin);
   }

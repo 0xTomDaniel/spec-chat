@@ -39,9 +39,11 @@ Use one coherent system for type roles, surfaces, text, rules, semantic colors, 
 Color always has a text, position, or line-shape cue.
 Normal text and labels meet 4.5:1 contrast; large text and meaningful boundaries meet 3:1; muted text never relies on low opacity.
 
-Reuse a target visual system only when it meets these invariants.
-Otherwise copy [../assets/style/spec.css](../assets/style/spec.css) to the target shared spec style directory and link it relatively.
-The fallback is a tested crisp editorial implementation, not a required aesthetic identity.
+Use only a shared spec stylesheet that already exists unchanged at the exact change-request base.
+If none exists, copy [../assets/style/spec.css](../assets/style/spec.css) unchanged to the target shared spec style directory and link it relatively.
+Do not invent a page-level palette, typography, background, surface, or geometry system during shaping, and do not put one in a spec-local `<style>` block.
+Inline styling is limited to artifact-local geometry and semantic marks that the shared system does not express.
+The fallback is the approved default, not an invitation to synthesize another aesthetic.
 
 Every artifact needs collision-free labels, complete distinguishable edges, intentional grouping, legible type without zoom, a contract-bearing title or caption, and stable anchors.
 Change the layout or renderer instead of shrinking content until it fits.

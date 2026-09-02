@@ -49,6 +49,12 @@ class SkillRoutingContractTest(unittest.TestCase):
         self.assertFalse((ROOT / "skill" / "shape-spec" / "evals").exists())
         self.assertTrue((ROOT / "tests" / "shape-skill-evals.json").is_file())
 
+    def test_material_shape_requires_style_provenance_validation(self):
+        self.assertIn("scripts/validate-style.py", self.shape)
+        reference = (ROOT / "skill" / "shape-spec" / "references" / "authoring.md").read_text()
+        self.assertIn("already exists unchanged at the exact change-request base", reference)
+        self.assertIn("Do not invent a page-level palette", reference)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -64,5 +64,6 @@ assert.match(runtime, /> :is\(\[data-render-target\],figure,img,svg,canvas\):not
 assert.match(runtime, /AbortController/, 'focus bounds slow baseline reads');
 assert.doesNotMatch(runtime, /await applyIssueFocus\(\)/, 'focus lookup never blocks chart and review boot');
 assert.match(runtime, /fetch\('\/api\/baseline\?'/, 'focus reads its baseline from the review server');
+assert.match(runtime, /sharedDocumentStyle \? '' : DOC_CSS/, 'a linked shared spec stylesheet owns document presentation');
 
 console.log('runtime focus model tests passed');

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Prompt-first shaping and portable handoffs - spec</title>
 <link rel="icon" href="data:,">
+<link rel="stylesheet" href="./.style/spec.css">
 <script defer src="./.viz/runtime.js"></script>
 </head>
 <body>
@@ -692,7 +693,9 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <p data-anchor="visual-quality-color">Color distinguishes semantic categories, states, warnings, or ownership and never substitutes for labels, line shape, or position.</p>
 <p data-anchor="visual-quality-diagrams">System, state, lifecycle, spatial, and cyclic relationships use purpose-fit diagrams with collision-free labels rather than default chart layouts.</p>
 <p data-anchor="visual-quality-quantitative">ECharts is reserved for quantitative relationships whose scales and values matter; topology alone does not justify a chart.</p>
-<p data-anchor="visual-quality-style">A target's established coherent spec visual system is reused, otherwise the shaping skill's self-contained high-contrast editorial implementation becomes the shared local fallback.</p>
+<p data-anchor="visual-quality-style">A material spec uses only an unchanged shared stylesheet present at its exact Git base, otherwise the byte-identical bundled high-contrast editorial stylesheet becomes its shared fallback.</p>
+<p data-anchor="visual-quality-style-inline">A canonical spec contains no page-level style block; inline styling is limited to artifact-local geometry and semantic marks absent from the shared system.</p>
+<p data-anchor="visual-quality-style-gate">A deterministic prepublication check rejects missing style provenance, newly invented shared themes, changed established themes, and spec-local page styling.</p>
 <p data-anchor="visual-quality-browser">Before publication, browser QA checks the complete page and each artifact at desktop and mobile widths in normal and Git-focus views for hierarchy, contrast, collision, clipping, and review-control obstruction.</p>
 <p data-anchor="visual-quality-focus">The base palette and focus treatment are evaluated together so changed material leads clearly while unchanged context remains readable rather than disappearing into an already weak page.</p>
 <table data-anchor="visual-quality-corrections">
@@ -700,7 +703,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <tbody>
 <tr data-anchor="visual-quality-correction-composition"><td>A library list substitutes for design direction</td><td>An artifact and hierarchy plan maps each information shape to its densest readable expression before styling</td><td>The rendered page has a coherent visual reading order independent of library choice</td></tr>
 <tr data-anchor="visual-quality-correction-density"><td>One default chart or long rule list represents a dense contract</td><td>Every suitable opportunity receives a purpose-fit artifact that replaces relational prose, with complementary views only for distinct dimensions</td><td>All behavior clusters are classified, suitable opportunities are covered, and repeated rules are removed</td></tr>
-<tr data-anchor="visual-quality-correction-style"><td>Each agent invents an incoherent or unreadable theme</td><td>A coherent target visual system or the shared high-contrast editorial fallback defines all presentation roles</td><td>Computed contrast and full-page hierarchy pass at desktop and mobile widths</td></tr>
+<tr data-anchor="visual-quality-correction-style"><td>Each agent invents a new theme that technically passes contrast</td><td>An unchanged base stylesheet or the byte-identical editorial fallback defines every page-level presentation role</td><td>Style provenance validation passes before desktop and mobile browser QA</td></tr>
 <tr data-anchor="visual-quality-correction-qa"><td>A technically rendered but colliding artifact passes</td><td>Each artifact is inspected at rendered size with legible labels, intentional spacing, complete edges, and unobstructed review controls</td><td>Browser evidence covers the complete page and every artifact, not DOM presence alone</td></tr>
 <tr data-anchor="visual-quality-correction-focus"><td>Focus recession compounds a weak base page</td><td>A strong base palette preserves readable unchanged context while clear changed blocks retain dominant emphasis</td><td>Normal and Git-focus screenshots both pass the same contrast, hierarchy, and artifact-legibility checks</td></tr>
 <tr data-anchor="visual-quality-correction-review-routing"><td>An existing-spec review materially expands a weak page without loading shaping quality</td><td>The review skill routes material authoring through the shaping skill before editing and old pages receive no exemption</td><td>The complete affected page passes information-shape classification and desktop and mobile browser QA before publication</td></tr>
@@ -783,6 +786,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <p data-anchor="tdd-focus-green">The focus test passes for added, modified, unchanged, new-file, normal-view, and unavailable-baseline cases.</p>
 <p data-anchor="tdd-focus-boundary">The runtime test proves only outermost changed blocks receive the explicit focus boundary and that the new runtime capability migrates stale repository copies.</p>
 <p data-anchor="tdd-material-routing">Skill validation proves review-only is limited to questions and atomic corrections and material batches are routed through the complete shaping quality contract before editing.</p>
+<p data-anchor="tdd-style-provenance">Style-provenance tests accept unchanged established styling and the exact fallback while rejecting local style blocks, new custom themes, and changed established themes.</p>
 <p data-anchor="tdd-thread-red">A thread-model test must first fail because the current UI withholds reply from a resolved thread.</p>
 <p data-anchor="tdd-thread-green">The same test passes when a resolved thread offers Reply and reopen and the existing human reply event derives draft status.</p>
 <p data-anchor="tdd-finish-red">A runtime test must first fail because the current no-draft hand-off remains disabled and cannot signal review completion.</p>
