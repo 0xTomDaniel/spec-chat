@@ -55,6 +55,12 @@ class SkillRoutingContractTest(unittest.TestCase):
         self.assertIn("already exists unchanged at the exact change-request base", reference)
         self.assertIn("Do not invent a page-level palette", reference)
 
+    def test_shape_and_review_split_guided_story_responsibility(self):
+        reference = (ROOT / "skill" / "shape-spec" / "references" / "authoring.md").read_text()
+        self.assertIn('data-guided-journey="yes|no"', reference)
+        self.assertIn("data-guided-journey-milestone", reference)
+        self.assertIn("Structural validation does not decide these meanings", self.review)
+
 
 if __name__ == "__main__":
     unittest.main()

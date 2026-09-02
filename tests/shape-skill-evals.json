@@ -135,6 +135,20 @@
         "Refuses Finish review until the ticket graph matches current spec truth",
         "Does not mark implementation tickets In Progress or Done"
       ]
+    },
+    {
+      "id": 12,
+      "eval_name": "guided-journey-story-impact",
+      "prompt": "Shape one changed user-facing outcome that belongs in required onboarding and another that does not extend onboarding.",
+      "expectations": [
+        "Keeps both stories as explicit stable anchors in the governing HTML spec",
+        "Declares guided-journey impact yes or no on each changed user-facing story without an exemption rationale ledger",
+        "Links the yes story to one applicable guided-journey step and marks it required",
+        "Names the required story's feature-owned semantic success milestone",
+        "Does not copy canonical declarations into Linear or generated Markdown",
+        "Leaves journey order with the central registry and target or milestone ownership with the feature",
+        "Uses review for semantic judgment and the existing validator only for structural presence and reference integrity"
+      ]
     }
   ]
 }

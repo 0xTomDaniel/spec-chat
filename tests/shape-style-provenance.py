@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VALIDATOR = ROOT / "skill" / "shape-spec" / "scripts" / "validate-style.py"
 FALLBACK = ROOT / "skill" / "shape-spec" / "assets" / "style" / "spec.css"
+DEFAULT_STORY = '<p data-user-story data-anchor="story" data-user-facing="true" data-guided-journey="no">Story</p>'
 
 
 class ShapeStyleProvenanceTest(unittest.TestCase):
@@ -34,10 +35,10 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
             capture_output=True,
         )
 
-    def write_spec(self, inline=False, href="../.style/spec.css", extra=""):
+    def write_spec(self, inline=False, href="../.style/spec.css", extra="", body=DEFAULT_STORY):
         local = "<style>body { background: navy; }</style>" if inline else ""
         link = f'<link rel="stylesheet" href="{href}">' if href else ""
-        self.spec.write_text(f"<!doctype html><html><head>{link}{extra}{local}</head><body></body></html>\n")
+        self.spec.write_text(f"<!doctype html><html><head>{link}{extra}{local}</head><body>{body}</body></html>\n")
 
     def commit(self):
         self.git("add", ".")
@@ -74,6 +75,7 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("style=fallback", result.stdout)
+        self.assertIn("stories=valid", result.stdout)
 
     def test_rejects_spec_local_style_block(self):
         self.write_spec()
@@ -125,6 +127,84 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("only one shared stylesheet", result.stderr)
+
+    def test_rejects_changed_governing_spec_without_explicit_stories(self):
+        base = self.empty_base()
+        self.write_spec(body="<p>Unanchored outcome</p>")
+        shutil.copy2(FALLBACK, self.style)
+
+        result = self.validate(base)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no explicit data-user-story", result.stderr)
+
+    def test_rejects_user_facing_story_without_binary_declaration(self):
+        base = self.empty_base()
+        self.write_spec(body='<p data-user-story data-anchor="story" data-user-facing="true">Story</p>')
+        shutil.copy2(FALLBACK, self.style)
+
+        result = self.validate(base)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("needs data-guided-journey=yes|no", result.stderr)
+
+    def test_accepts_passive_extension_with_resolved_step_link(self):
+        base = self.empty_base()
+        journey = self.spec.parent / "guided.spec.html"
+        journey.write_text('<section data-anchor="guided-step">Step</section>\n')
+        self.write_spec(body='<p data-user-story data-anchor="story" data-user-facing="true" data-guided-journey="yes" data-guided-journey-mode="passive">Story <a data-guided-journey-step href="guided.spec.html#guided-step">Guided step</a></p>')
+        shutil.copy2(FALLBACK, self.style)
+
+        result = self.validate(base)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("stories=valid", result.stdout)
+
+    def test_required_extension_needs_semantic_success_milestone(self):
+        base = self.empty_base()
+        journey = self.spec.parent / "guided.spec.html"
+        journey.write_text('<section data-anchor="guided-step">Step</section>\n')
+        self.write_spec(body='<p data-user-story data-anchor="story" data-user-facing="true" data-guided-journey="yes" data-guided-journey-mode="required">Story <a data-guided-journey-step href="guided.spec.html#guided-step">Guided step</a></p>')
+        shutil.copy2(FALLBACK, self.style)
+
+        result = self.validate(base)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("needs a semantic success milestone", result.stderr)
+
+    def test_rejects_guided_step_link_with_missing_anchor(self):
+        base = self.empty_base()
+        journey = self.spec.parent / "guided.spec.html"
+        journey.write_text('<section data-anchor="other-step">Step</section>\n')
+        self.write_spec(body='<p data-user-story data-anchor="story" data-user-facing="true" data-guided-journey="yes" data-guided-journey-mode="required" data-guided-journey-milestone="profile_saved">Story <a data-guided-journey-step href="guided.spec.html#guided-step">Guided step</a></p>')
+        shutil.copy2(FALLBACK, self.style)
+
+        result = self.validate(base)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("names a missing anchor", result.stderr)
+
+    def test_accepts_required_extension_with_milestone_and_step(self):
+        base = self.empty_base()
+        journey = self.spec.parent / "guided.spec.html"
+        journey.write_text('<section data-anchor="guided-step">Step</section>\n')
+        self.write_spec(body='<p data-user-story data-anchor="story" data-user-facing="true" data-guided-journey="yes" data-guided-journey-mode="required" data-guided-journey-milestone="profile_saved">Story <a data-guided-journey-step href="guided.spec.html#guided-step">Guided step</a></p>')
+        shutil.copy2(FALLBACK, self.style)
+
+        result = self.validate(base)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("stories=valid", result.stdout)
+
+    def test_unchanged_legacy_spec_does_not_trigger_structural_backfill(self):
+        self.write_spec(body="<p>Legacy outcome</p>")
+        self.style.write_text("body { color: #111; }\n")
+        base = self.commit()
+
+        result = self.validate(base)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("stories=unchanged", result.stdout)
 
 
 if __name__ == "__main__":
