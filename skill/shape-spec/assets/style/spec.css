@@ -352,12 +352,14 @@ aside.figure {
 
 body.hx-focus-active .page [data-hx-focus="unchanged"],
 body.hx-focus-active article.spec [data-hx-focus="unchanged"] {
-  color: var(--spec-focus-context);
+  color: var(--spec-focus-context) !important;
+  background-image: none !important;
+  box-shadow: none !important;
 }
 
-body.hx-focus-active .page [data-hx-focus="unchanged"] :is(h1, h2, h3, h4, p, li, td, th, dt, dd, figcaption, .sec-num, .clause-id, .mono, .k),
-body.hx-focus-active article.spec [data-hx-focus="unchanged"] :is(h1, h2, h3, h4, p, li, td, th, dt, dd, figcaption, .sec-num, .clause-id, .mono, .k) {
-  color: var(--spec-focus-context);
+body.hx-focus-active .page [data-hx-focus="unchanged"] :is(h1, h2, h3, h4, p, li, td, th, dt, dd, figcaption, .sec-num, .clause-id, .mono, .k):not([data-hx-focus="changed"] *),
+body.hx-focus-active article.spec [data-hx-focus="unchanged"] :is(h1, h2, h3, h4, p, li, td, th, dt, dd, figcaption, .sec-num, .clause-id, .mono, .k):not([data-hx-focus="changed"] *) {
+  color: var(--spec-focus-context) !important;
 }
 
 body.hx-focus-active .page [data-hx-focus="unchanged"] :is(svg, canvas, [data-render-target]),
@@ -369,6 +371,12 @@ body.hx-focus-active article.spec [data-hx-focus="unchanged"] :is(svg, canvas, [
 body.hx-focus-active .page [data-hx-focus="changed"],
 body.hx-focus-active article.spec [data-hx-focus="changed"] {
   color: var(--spec-body);
+}
+
+body.hx-focus-active .page [data-hx-focus-root="changed"],
+body.hx-focus-active article.spec [data-hx-focus-root="changed"] {
+  outline: 3px solid var(--spec-teal) !important;
+  outline-offset: 5px;
 }
 
 @media (max-width: 780px) {

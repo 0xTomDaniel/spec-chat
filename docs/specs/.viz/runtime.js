@@ -1,5 +1,5 @@
 // spec-chat runtime v0.1 — hydrates semantic islands and mounts the annotation layer.
-// spec-chat-capabilities: finish-review git-focus manual-resume-status mobile-review reopen-thread semantic-islands
+// spec-chat-capabilities: changed-root-focus custom-style-focus finish-review git-focus manual-resume-status mobile-review reopen-thread semantic-islands
 // Transports: FSA (file://, primary) | HTTP review-serve (http(s)://, secondary).
 // Same spools, same event schema either way. See DESIGN.md.
 // Classic script, NOT a module: browsers CORS-block module scripts on file:// pages,
@@ -86,6 +86,15 @@ function classifyAnchorSignatures(current, baseline) {
   return result;
 }
 
+function changedRootAnchors(parents, classification) {
+  const result = new Set();
+  for (const [anchor, parent] of parents) {
+    if (classification.get(anchor) !== 'changed') continue;
+    if (!parent || classification.get(parent) !== 'changed') result.add(anchor);
+  }
+  return result;
+}
+
 function ownAnchorSignature(element) {
   const clone = element.cloneNode(true);
   for (const child of clone.querySelectorAll('[data-anchor]')) child.remove();
@@ -119,8 +128,17 @@ async function applyIssueFocus() {
     const current = anchorSignatures(parser.parseFromString(currentText, 'text/html'));
     const prior = baseline.html === null ? null : anchorSignatures(parser.parseFromString(baseline.html, 'text/html'));
     const classification = classifyAnchorSignatures(current, prior);
-    for (const element of document.querySelectorAll('[data-anchor]')) {
+    const focused = [...document.querySelectorAll('[data-anchor]')];
+    for (const element of focused) {
       element.dataset.hxFocus = classification.get(element.dataset.anchor) || 'changed';
+    }
+    const parents = new Map(focused.map(element => [
+      element.dataset.anchor,
+      element.parentElement?.closest('[data-anchor]')?.dataset.anchor || null,
+    ]));
+    const changedRoots = changedRootAnchors(parents, classification);
+    for (const element of focused) {
+      if (changedRoots.has(element.dataset.anchor)) element.dataset.hxFocusRoot = 'changed';
     }
     document.body.classList.add('hx-focus-active');
   } catch (error) {
@@ -711,17 +729,19 @@ article.spec nav{font:12px system-ui;color:#8b8e98}
 article.spec p{margin:0 0 10px;max-width:62ch}
 article.spec a{color:#12897c}
 [data-render-target]{border:1px solid #e2e0d8;border-radius:8px;background:#fff;margin:6px 0 10px}
-:where(body.hx-focus-active [data-hx-focus=unchanged]){color:#6b6e75}
+:where(body.hx-focus-active [data-hx-focus=unchanged]){color:#6b6e75!important;background-image:none!important;box-shadow:none!important}
 :where(body.hx-focus-active [data-hx-focus=changed]){color:#22242a}
-:where(body.hx-focus-active [data-hx-focus=unchanged] > :not([data-anchor]):not(.hx-pin):not(.hx-badge):not(script)){color:#6b6e75}
+:where(body.hx-focus-active [data-hx-focus-root=changed]){outline:3px solid #087f73!important;outline-offset:5px}
+:where(body.hx-focus-active [data-hx-focus=unchanged] :not([data-anchor]):not(.hx-pin):not(.hx-badge):not(script):not([data-hx-focus=changed] *)){color:#6b6e75!important}
 body.hx-focus-active [data-hx-focus=unchanged] > :is([data-render-target],figure,img,svg,canvas):not([data-anchor]){opacity:.5;filter:saturate(.45)}
 body.hx-focus-active [data-hx-focus=unchanged] .hx-pin,body.hx-focus-active [data-hx-focus=unchanged] .hx-badge{opacity:1;filter:none}
 .hx-focus-error{position:fixed;top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);max-width:calc(100vw - 24px);box-sizing:border-box;padding:8px 12px;border-radius:8px;background:#8b1a1a;color:#fff;font:600 12px system-ui;z-index:970;box-shadow:0 6px 20px rgba(30,30,40,.25)}
 @media(prefers-color-scheme:dark){
 :where(body){background:#17191d;color:#e8e7e2}
-:where(body.hx-focus-active [data-hx-focus=unchanged]){color:#9fa1a7}
+:where(body.hx-focus-active [data-hx-focus=unchanged]){color:#9fa1a7!important}
 :where(body.hx-focus-active [data-hx-focus=changed]){color:#e8e7e2}
-:where(body.hx-focus-active [data-hx-focus=unchanged] > :not([data-anchor]):not(.hx-pin):not(.hx-badge):not(script)){color:#9fa1a7}
+:where(body.hx-focus-active [data-hx-focus-root=changed]){outline-color:#5eead4!important}
+:where(body.hx-focus-active [data-hx-focus=unchanged] :not([data-anchor]):not(.hx-pin):not(.hx-badge):not(script):not([data-hx-focus=changed] *)){color:#9fa1a7!important}
 article.spec header{border-color:#33363c}
 article.spec nav{color:#74767e}
 article.spec a{color:#34a899}

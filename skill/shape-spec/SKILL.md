@@ -1,6 +1,6 @@
 ---
 name: spec-chat-shape
-description: Shape a new work unit from a plain-language feature prompt into a current issue and canonical Spec Chat HTML seed, then run Git-focused in-page review. Use when starting new product or development work in a Spec Chat repository. Use spec-chat-review alone for review-only work on an existing spec.
+description: Shape a new work unit from a plain-language feature prompt into a current issue and canonical Spec Chat HTML seed, then run Git-focused in-page review. Use when starting new product or development work in a Spec Chat repository, materially restructuring an existing spec, or processing a review batch that materially changes behavior or information architecture. Use spec-chat-review alone only for questions and atomic corrections.
 ---
 
 # Spec Chat Shape
@@ -66,6 +66,10 @@ Read [references/information-shape.md](references/information-shape.md) for ever
 Read [references/visual-doctrine.md](references/visual-doctrine.md) when selecting or generating visual media.
 Read [references/visual-quality.md](references/visual-quality.md) for every new spec or material restructure.
 
+An existing spec is not grandfathered.
+A review batch that adds or changes a behavior cluster, user outcome, flow, state model, module boundary, acceptance family, spatial contract, or information architecture is a material restructure and must pass this authoring contract before publication.
+Do not preserve a weak composition merely to minimize the Git diff.
+
 Canonical `*.spec.html` documents use the non-React doctrine.
 React is limited to an existing embedded application or an explicitly noncanonical throwaway prototype.
 Keep stable `data-anchor` identities, one sentence per prose line, and pretty semantic-island JSON.
@@ -89,6 +93,7 @@ When the smallest failing test is genuinely unsuitable, record a narrow waiver a
 
 Before publication, inspect the complete rendered page and every artifact at desktop and mobile widths in normal and Git-focus modes regardless of visual system.
 Finish only when hierarchy, contrast, artifact density, label and edge collision, clipping, and review-control clearance meet the positive cases in `references/visual-quality.md`.
+In Git focus, every added or modified root block must have an unmistakable runtime-owned focus boundary, while unchanged context remains readable enough to understand the change.
 
 ## Create the implementation graph
 
