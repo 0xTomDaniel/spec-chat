@@ -8,6 +8,9 @@ const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime
 
 assert.match(runtime, /@media\(max-width:640px\)/, 'runtime defines a narrow review layout');
 assert.match(runtime, /\.hx-panel\{width:100vw;height:100dvh;max-height:100dvh/, 'mobile review uses a dynamic full-viewport sheet');
+assert.match(runtime, /\.hx-panel\{[^}]*display:none;/, 'closed panel cannot widen or intercept the mobile page');
+assert.match(runtime, /\.hx-panel\.open\{display:flex;/, 'open panel restores layout and interaction');
+assert.match(runtime, /article\.spec pre\{white-space:pre-wrap;overflow-wrap:anywhere\}/, 'standalone doctrine and code blocks cannot widen mobile specs');
 assert.match(runtime, /\.hx-composer textarea\{min-height:120px;font-size:16px/, 'mobile composer avoids browser input zoom');
 assert.match(runtime, /\.hx-dock-open,\.hx-dock-thread\{width:44px;height:44px/, 'mobile conversation controls meet the touch target floor');
 assert.match(runtime, /openPanel\(!window\.matchMedia\('\(max-width: 640px\)'\)\.matches\)/, 'mobile comment mode exposes the document before target selection');

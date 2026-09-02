@@ -1,5 +1,5 @@
 // spec-chat runtime v0.1 — hydrates semantic islands and mounts the annotation layer.
-// spec-chat-capabilities: changed-root-focus custom-style-focus finish-review git-focus manual-resume-status mobile-review reopen-thread semantic-islands
+// spec-chat-capabilities: changed-root-focus custom-style-focus finish-review git-focus manual-resume-status mobile-pre-wrap mobile-review reopen-thread semantic-islands
 // Transports: FSA (file://, primary) | HTTP review-serve (http(s)://, secondary).
 // Same spools, same event schema either way. See DESIGN.md.
 // Classic script, NOT a module: browsers CORS-block module scripts on file:// pages,
@@ -727,6 +727,7 @@ article.spec h1{font-size:29px;line-height:1.2;margin:0 0 8px;letter-spacing:-.0
 article.spec h2{font-size:20px;margin:26px 0 10px}
 article.spec nav{font:12px system-ui;color:#8b8e98}
 article.spec p{margin:0 0 10px;max-width:62ch}
+article.spec pre{white-space:pre-wrap;overflow-wrap:anywhere}
 article.spec a{color:#12897c}
 [data-render-target]{border:1px solid #e2e0d8;border-radius:8px;background:#fff;margin:6px 0 10px}
 :where(body.hx-focus-active [data-hx-focus=unchanged]){color:#6b6e75!important;background-image:none!important;box-shadow:none!important}
@@ -758,8 +759,8 @@ const CSS = `
 .hx-mobile-handoff{display:none}
 .hx-toolbar button[aria-pressed=true]{background:#fbf3e2;color:#b47308}
 .hx-toolbar .hx-status{color:#888;font-size:11.5px;padding:0 10px}
-.hx-panel{position:fixed;top:0;right:0;width:330px;height:100vh;background:#f4f3ef;border-left:1px solid #ddd;z-index:800;display:flex;flex-direction:column;font:13px system-ui;transform:translateX(100%);transition:transform .2s,box-shadow .2s;box-shadow:none}
-.hx-panel.open{transform:none;box-shadow:-8px 0 30px rgba(30,30,40,.12)}
+.hx-panel{position:fixed;top:0;right:0;width:330px;height:100vh;background:#f4f3ef;border-left:1px solid #ddd;z-index:800;display:none;flex-direction:column;font:13px system-ui;box-shadow:none}
+.hx-panel.open{display:flex;box-shadow:-8px 0 30px rgba(30,30,40,.12)}
 body.hx-panel-open{padding-right:330px}
 .hx-panel-head{position:relative;min-height:44px;padding:14px 16px 14px 52px;box-sizing:border-box;border-bottom:1px solid #ddd;font-weight:650}
 .hx-panel-head .hx-sub{font-weight:400;font-size:11px;color:#888}
@@ -851,7 +852,7 @@ body.hx-panel-open{padding-right:0;overflow:hidden}
 .hx-toast{bottom:calc(112px + env(safe-area-inset-bottom));max-width:calc(100vw - 24px);box-sizing:border-box;text-align:center}
 }
 @media(prefers-reduced-motion:reduce){
-.hx-panel,.hx-thread-dock,.hx-thread-ring,.hx-toast{transition:none}
+.hx-thread-dock,.hx-thread-ring,.hx-toast{transition:none}
 }
 @media(prefers-color-scheme:dark){
 .hx-toolbar,.hx-thread{background:#24272c;border-color:#3a3d42;color:#e8e7e2}

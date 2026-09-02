@@ -28,7 +28,7 @@ class SkillRoutingContractTest(unittest.TestCase):
 
         self.assertIn("atomic corrections", review_description)
         self.assertIn("spec-chat-shape", review_description)
-        self.assertIn("materially restructuring an existing spec", shape_description)
+        self.assertIn("existing-spec review", shape_description)
         self.assertIn("materially changes behavior or information architecture", shape_description)
 
     def test_review_gate_runs_before_material_file_edits(self):
@@ -38,11 +38,16 @@ class SkillRoutingContractTest(unittest.TestCase):
         self.assertIn("leave the batch durable and stop before editing", self.review[gate:])
 
     def test_shape_gate_has_current_quality_references_and_no_grandfathering(self):
-        authoring = self.shape[self.shape.index("## Author the spec") :]
-        self.assertIn("references/information-shape.md", authoring)
-        self.assertIn("references/visual-quality.md", authoring)
-        self.assertIn("An existing spec is not grandfathered", authoring)
-        self.assertIn("desktop and mobile widths in normal and Git-focus modes", authoring)
+        self.assertIn("references/authoring.md", self.shape)
+        self.assertIn("Existing specs are not grandfathered", self.shape)
+        reference = (ROOT / "skill" / "shape-spec" / "references" / "authoring.md").read_text()
+        self.assertIn("desktop and mobile widths in normal and Git-focus modes", reference)
+
+    def test_installed_shape_package_has_one_instruction_reference(self):
+        references = sorted((ROOT / "skill" / "shape-spec" / "references").glob("*.md"))
+        self.assertEqual([path.name for path in references], ["authoring.md"])
+        self.assertFalse((ROOT / "skill" / "shape-spec" / "evals").exists())
+        self.assertTrue((ROOT / "tests" / "shape-skill-evals.json").is_file())
 
 
 if __name__ == "__main__":
