@@ -162,6 +162,7 @@
 <section data-anchor="source-ownership" id="source-ownership">
 <h2>Source ownership</h2>
 <p data-anchor="source-issue">The issue surface owns current high-level intent, desired outcome, acceptance criteria, non-goals, dependencies, and governing source links.</p>
+<p data-anchor="source-implementation-tickets">Linked implementation tickets own bounded independently assignable code outcomes and explicit blocker relations.</p>
 <p data-anchor="source-spec">The canonical spec owns current user stories, detailed behavior, constraints, edge cases, and interaction contracts.</p>
 <p data-anchor="source-issues">Every canonical spec links each issue whose accepted work materially changed that spec file.</p>
 <p data-anchor="source-pr">The evolving draft change request carries durable commits and history, but it is not a required human spec-review surface.</p>
@@ -313,6 +314,19 @@
 <p data-anchor="complete-docs-only">Docs-only work skips the TDD contract.</p>
 <p data-anchor="complete-waiver">When the smallest failing test is genuinely unsuitable, the issue and spec record one narrow waiver and its alternative proof.</p>
 <p data-anchor="complete-architecture">Multi-module behavior is reconciled with the target-declared architecture source at the stable modular level.</p>
+</section>
+
+<section data-anchor="implementation-ticket-graph" id="implementation-ticket-graph">
+<h2>Implementation ticket graph</h2>
+<p data-anchor="ticket-graph-create">Before Finish review, the repository-selected issue skill creates or updates linked implementation tickets from current reviewed spec truth.</p>
+<p data-anchor="ticket-graph-outcome">Each ticket owns one bounded independently assignable code outcome.</p>
+<p data-anchor="ticket-graph-links">Each ticket links exact governing spec anchors and names observable completion evidence.</p>
+<p data-anchor="ticket-graph-blockers">Tracker blocking relations express real dependency direction instead of prose ordering or ticket numbering.</p>
+<p data-anchor="ticket-graph-frontier">Every incomplete ticket with no incomplete blocker belongs to the ready frontier.</p>
+<p data-anchor="ticket-graph-no-serialization">Shaping does not invent dependencies merely to serialize delivery.</p>
+<p data-anchor="ticket-graph-reconcile">Every material spec edit reconciles ticket scope and relations and removes or closes tickets made obsolete by current truth.</p>
+<p data-anchor="ticket-graph-state">Shaping keeps ticket state truthful and never marks implementation work In Progress or Done.</p>
+<p data-anchor="ticket-graph-modularity">Tracker-specific graph mutations remain behind the repository-selected issue skill, so Spec Chat depends on no tracker or orchestrator.</p>
 </section>
 
 <section data-anchor="issue-surface" id="issue-surface">
@@ -548,7 +562,7 @@
 <p data-anchor="finish-event">Finish review writes the existing hand-off event with an empty batch.</p>
 <p data-anchor="finish-agent">The parked agent interprets that empty hand-off as explicit completion of the browser review window.</p>
 <p data-anchor="finish-final-batch">The agent reconciles issue and spec, commits and pushes any final changes, advances the cursor, and closes the active wait.</p>
-<p data-anchor="finish-alignment">The issue, spec, applicable ADRs, user stories, acceptance criteria, architecture, and TDD contract must describe the same current behavior before Finish review is eligible.</p>
+<p data-anchor="finish-alignment">The issue, spec, applicable ADRs, user stories, acceptance criteria, architecture, TDD contract, and implementation ticket graph must describe the same current behavior before Finish review is eligible.</p>
 <p data-anchor="finish-conditional">Absent ADRs, single-module work, docs-only work, and recorded test waivers are valid only when their stated conditions hold.</p>
 <p data-anchor="finish-narrow">Finish review means only that the human HTML review is complete and the applicable durable surfaces agree.</p>
 <p data-anchor="finish-not-acceptance">Finish review is not human acceptance of delivered software, implementation authorization, tracker lifecycle transition, merge approval, or deployment approval.</p>
@@ -776,7 +790,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <h2>References</h2>
 <p data-anchor="reference-design">Product design history: <a href="https://github.com/0xTomDaniel/spec-chat/blob/70e22934dc418c7971fde5772a6d9fcc904e892f/DESIGN.md">DESIGN.md at the shaping baseline</a>.</p>
 <p data-anchor="reference-review-skill">Current review procedure baseline: <a href="https://github.com/varelaseb/spec-chat/blob/cae844f1b85ce39911ab9db7f6bb03c37d434bac/skill/review-spec/SKILL.md">skill/review-spec/SKILL.md at the mobile-review commit</a>.</p>
-<p data-anchor="reference-source-issues">Source issues: <a href="https://github.com/0xTomDaniel/spec-chat/issues/21">#21 Add prompt-first shaping and portable Spec Chat handoffs</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/22">#22 Prevent stale review capabilities in existing repositories</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/24">#24 Raise generated spec visual quality and contrast</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/26">#26 Generalize visual richness without lowering quality</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/28">#28 Make review wake ownership explicit and reliable</a>.</p>
+<p data-anchor="reference-source-issues">Source issues: <a href="https://github.com/0xTomDaniel/spec-chat/issues/21">#21 Add prompt-first shaping and portable Spec Chat handoffs</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/22">#22 Prevent stale review capabilities in existing repositories</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/24">#24 Raise generated spec visual quality and contrast</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/26">#26 Generalize visual richness without lowering quality</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/28">#28 Make review wake ownership explicit and reliable</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/32">#32 Make implementation ticket graphs canonical in Spec Chat shaping</a>.</p>
 <p data-anchor="reference-source-rule">Every later issue that materially changes this file is appended to the source-issues list, and unrelated issues are never added.</p>
 </section>
 
