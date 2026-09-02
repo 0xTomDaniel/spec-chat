@@ -22,8 +22,17 @@ t=0
 while [ "$t" -lt "$TMO" ]; do
   new=$(ls "$DIR/human" 2>/dev/null | grep -vxFf "$CUR" || true)
   if [ -n "$new" ]; then
-    if [ "${LIVE:-0}" = 1 ] || echo "$new" | grep -q handoff; then
-      echo "$new"
+    ready=$new
+    if [ "${LIVE:-0}" != 1 ]; then
+      last_handoff=$(printf '%s\n' "$new" | awk '/-handoff-/ { line = NR } END { if (line) print line }')
+      if [ -n "$last_handoff" ]; then
+        ready=$(printf '%s\n' "$new" | sed -n "1,${last_handoff}p")
+      else
+        ready=""
+      fi
+    fi
+    if [ -n "$ready" ]; then
+      printf '%s\n' "$ready"
       exit 0
     fi
   fi

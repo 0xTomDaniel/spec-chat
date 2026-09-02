@@ -24,6 +24,7 @@ class ReviewSurfacePreflightTest(unittest.TestCase):
         self.runtime.parent.mkdir(parents=True)
         self.server.parent.mkdir(parents=True)
         self.spec.write_text(
+            '<script defer src="./.viz/runtime.js"></script>'
             '<figure><script type="application/spec+json" data-render="chart">{}</script>'
             '<div data-render-target="chart"></div></figure>\n'
         )
@@ -68,6 +69,7 @@ class ReviewSurfacePreflightTest(unittest.TestCase):
         self.runtime.write_text(RUNTIME_CAPABILITIES)
         self.server.write_text(SERVER_CAPABILITIES)
         self.spec.write_text(
+            '<script defer src="./.viz/runtime.js"></script>'
             '<figure><script type="application/spec+json" data-render="chart">{}</script></figure>\n'
         )
 
@@ -102,6 +104,37 @@ class ReviewSurfacePreflightTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("asset path escapes the target repository", result.stderr)
         self.assertEqual(outside_runtime.read_text(), "// outside legacy runtime\n")
+
+    def test_migrates_the_repository_relative_runtime_referenced_by_a_nested_spec(self):
+        nested = self.repo / "spec" / "domains" / "nested.spec.html"
+        target_runtime = self.repo / "spec" / ".viz" / "runtime.js"
+        nested.parent.mkdir(parents=True)
+        nested.write_text('<script defer src="../.viz/runtime.js"></script>\n')
+        self.server.write_text(SERVER_CAPABILITIES)
+
+        result = self.run_preflight(nested)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(target_runtime.read_bytes(), BUNDLED_RUNTIME.read_bytes())
+        self.assertFalse((self.repo / "docs" / "specs" / ".viz" / "vendor").exists())
+
+    def test_rejects_missing_ambiguous_remote_and_noncanonical_runtime_references(self):
+        self.server.write_text(SERVER_CAPABILITIES)
+        cases = {
+            "missing": "<p>No runtime.</p>\n",
+            "ambiguous": (
+                '<script defer src="./.viz/runtime.js"></script>'
+                '<script defer src="../other/runtime.js"></script>\n'
+            ),
+            "remote": '<script defer src="https://example.test/runtime.js"></script>\n',
+            "noncanonical": '<script defer src="./app-runtime.js"></script>\n',
+        }
+        for name, html in cases.items():
+            with self.subTest(name=name):
+                self.spec.write_text(html)
+                result = self.run_preflight()
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("exactly one repository-relative runtime.js", result.stderr)
 
 
 if __name__ == "__main__":
