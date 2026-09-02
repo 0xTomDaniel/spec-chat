@@ -1,6 +1,6 @@
 {
   "skill_name": "spec-chat-shape",
-  "note": "Behavior contract. On 2026-08-31 a fresh isolated Claude session scored the review-only baseline false on six shaping decisions, then scored the new shaping skill true on all seven using only SKILL.md and its required references. On 2026-09-01 the same fresh semantic-completeness scenario scored the prior skill false on all eight decisions, then the updated skill true on all eight. On 2026-09-01 a dense visual-contract scenario scored the prior skill true on artifact coverage only, then the updated skill true on composition, coverage, fallback style, browser QA, and focus resilience. A later generalization baseline lacked the explicit readable-density objective, maximize-suitable-visuals rule, and general visual-system contract; the updated skill scored true on all ten generalized decisions.",
+  "note": "Behavior contract. On 2026-08-31 a fresh isolated Claude session scored the review-only baseline false on six shaping decisions, then scored the new shaping skill true on all seven using only SKILL.md and its required references. On 2026-09-01 the same fresh semantic-completeness scenario scored the prior skill false on all eight decisions, then the updated skill true on all eight. On 2026-09-01 a dense visual-contract scenario scored the prior skill true on artifact coverage only, then the updated skill true on composition, coverage, fallback style, browser QA, and focus resilience. A later generalization baseline lacked the explicit readable-density objective, maximize-suitable-visuals rule, and general visual-system contract; the updated skill scored true on all ten generalized decisions. On 2026-09-02 a fresh implementation-graph scenario scored true on all nine graph decisions.",
   "evals": [
     {
       "id": 1,
@@ -119,6 +119,21 @@
         "Preserves the coherent target visual language because it satisfies invariant quality roles",
         "Treats the bundled editorial stylesheet as a fallback implementation rather than a universal aesthetic",
         "Applies identical desktop, mobile, normal, and Git-focus browser gates to both visual systems"
+      ]
+    },
+    {
+      "id": 11,
+      "eval_name": "implementation-ticket-frontier",
+      "prompt": "Finish shaping a reviewed multi-module behavior spec that can be delivered through several partially parallel code outcomes.",
+      "expectations": [
+        "Creates linked implementation tickets through the repository-selected issue skill",
+        "Gives each ticket one independently assignable outcome, exact governing spec anchors, and observable evidence",
+        "Uses tracker blocker relations for real dependencies and no numbered delivery sequence",
+        "Leaves every unblocked incomplete ticket on the ready frontier",
+        "Does not invent dependencies to serialize work",
+        "Reconciles or removes tickets after material spec edits",
+        "Refuses Finish review until the ticket graph matches current spec truth",
+        "Does not mark implementation tickets In Progress or Done"
       ]
     }
   ]

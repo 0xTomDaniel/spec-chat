@@ -93,7 +93,7 @@ flowchart LR
   Adapter -->|exact owner prompt| Review
 ```
 
-- The shaping skill owns prompt intake, durable seed order, readable information-density optimization, visual-system selection, artifact coverage, fallback styling, completeness reconciliation, and orchestration through the issue and review interfaces.
+- The shaping skill owns prompt intake, durable seed order, readable information-density optimization, visual-system selection, artifact coverage, fallback styling, completeness reconciliation, implementation-graph shaping, and orchestration through the issue and review interfaces.
 - The repository-selected issue skill owns tracker-specific create, read, replace-current-content, and link behavior; no tracker behavior enters the browser runtime, review transport, or event protocol.
 - The review skill owns review-surface preflight, capability migration, explicit control-state selection, exact batch processing, spec edits, replies, cursor advancement, and cold reconstruction from durable sources.
 - The foreground handoff monitor owns read-only detection and invokes one configured adapter once per unchanged batch; it never advances review state or runs an agent.

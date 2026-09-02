@@ -12,6 +12,7 @@ Keep instructions, artifacts, and questions concise and human-readable.
 
 - The target repository selects a separate issue skill that owns tracker-specific create, read, replace-current-content, and link operations.
 - The issue owns current high-level intent, outcome, criteria, non-goals, dependencies, and governing source links.
+- Linked implementation tickets own bounded code outcomes and explicit blocking relations.
 - Canonical specs own current user stories, detailed behavior, constraints, edge cases, and interaction contracts unless target instructions name a separate canonical story source.
 - Every changed spec links each issue whose accepted work materially changed that file.
 - The highlighted current HTML spec is the required human diff-review surface.
@@ -89,6 +90,16 @@ When the smallest failing test is genuinely unsuitable, record a narrow waiver a
 Before publication, inspect the complete rendered page and every artifact at desktop and mobile widths in normal and Git-focus modes regardless of visual system.
 Finish only when hierarchy, contrast, artifact density, label and edge collision, clipping, and review-control clearance meet the positive cases in `references/visual-quality.md`.
 
+## Create the implementation graph
+
+Before finishing shaping, use the repository-selected issue skill to create or update implementation tickets linked to the spec issue.
+Each ticket describes one independently assignable code outcome, links exact governing spec anchors, names observable completion evidence, and lists explicit blockers.
+Represent dependencies with tracker blocking relations, not prose ordering or ticket numbering.
+Every incomplete ticket with no incomplete blocker is on the ready frontier.
+Do not create artificial dependencies merely to serialize work.
+Reconcile ticket scope and relations after every material spec edit, and remove or close tickets made obsolete by current spec truth.
+Keep tracker state truthful; shaping does not mark implementation tickets In Progress or Done.
+
 ## Publish the seed
 
 1. Commit and push the first issue-backed spec seed.
@@ -125,7 +136,7 @@ Replace or remove each resolved TBD immediately.
 
 ## Finish review
 
-Finish only after no draft, pending, acknowledged, unresolved, or material TBD work remains.
+Finish only after no draft, pending, acknowledged, unresolved, or material TBD work remains and the implementation ticket graph matches the reviewed spec.
 Reconcile the issue, spec, applicable ADRs, user stories, acceptance criteria, architecture, and TDD contract before enabling completion.
 Every applicable source must describe the same current behavior; absent ADRs, single-module work, docs-only work, and recorded test waivers remain valid when their stated conditions hold.
 An empty hand-off means explicit completion of the browser review window.
