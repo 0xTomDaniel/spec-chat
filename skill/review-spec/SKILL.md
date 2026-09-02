@@ -78,6 +78,7 @@ Your job in review mode: reconcile hand-off batches, route material authoring th
 `spec-chat-review` owns the conversation and spool transaction, not material authoring quality.
 When a handed-off batch is material, `spec-chat-shape` becomes a required co-skill before the first file edit.
 Read its authoring reference, reassess the complete affected page, and run its desktop and mobile browser gate in normal and Git-focus modes before publication.
+For each changed user-facing story, evaluate whether its guided-journey yes/no declaration is semantically correct; for yes, also evaluate the linked step, passive/required mode, and required-flow success milestone. Structural validation does not decide these meanings.
 Do not grandfather a weak existing page, preserve a poor layout merely to minimize the diff, or call a material expansion review-only.
 If `spec-chat-shape` is unavailable, leave the batch durable and stop before editing rather than silently using the review-only path.
 

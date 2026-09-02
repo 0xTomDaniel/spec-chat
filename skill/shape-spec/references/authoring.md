@@ -3,6 +3,17 @@
 Optimize for maximum contract-bearing information per unit of attention and page space, constrained by high readability.
 Treat the spec as a coherent visual contract, not prose placed inside cards.
 
+## User stories
+
+Every governing HTML spec contains explicit story elements with `data-user-story`, a stable `data-anchor`, and `data-user-facing="true|false"`.
+Every changed user-facing story declares `data-guided-journey="yes|no"`.
+A no declaration needs no exemption rationale and does not imply that every feature belongs in onboarding.
+A yes declaration contains exactly one repository-relative `<a data-guided-journey-step href="...#step-anchor">`, plus `data-guided-journey-mode="passive|required"` on the story.
+A required declaration also names its feature-owned semantic success milestone in `data-guided-journey-milestone`.
+The declaration is canonical only in HTML; Linear carries lifecycle and links, while Markdown story catalogs remain generated QA output.
+Spec Chat review judges whether the declaration, step, mode, and milestone are semantically correct; the validator checks only presence and reference integrity.
+Runtime ownership stays independent: a central registry orders the journey, while feature modules own targets and success milestones.
+
 ## Information plan
 
 Before writing or styling, classify each behavior cluster:
