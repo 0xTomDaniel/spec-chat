@@ -1,6 +1,6 @@
 ---
 name: spec-chat-review
-description: "Run the spec-chat review loop - park on a visual HTML spec's annotation spool, address human comments as they arrive, edit the spec in place, and reply through the review channel. Use this whenever the user wants to review, annotate, or discuss a .spec.html file; says things like start review mode, watch for annotations, address the annotations, or I'll comment in the browser; mentions spec-chat, spec.html, hand-off batches, or a *.review/ directory; or asks about the status of a spec review. Also use it when the user authored a spec earlier in the session and now wants feedback round-trips on it, even if they don't name the tool - and when they ask to see, understand, or be walked through a spec.html, since the walkthrough should happen visually in the rendered page rather than as terminal text."
+description: "Run the spec-chat review loop - park on a visual HTML spec's annotation spool, address human comments as they arrive, edit the spec in place, and reply through the review channel. Use this whenever the user wants to review, annotate, or discuss a .spec.html file; says things like start review mode, watch for annotations, address the annotations, or I'll comment in the browser; mentions spec-chat, spec.html, hand-off batches, or a *.review/ directory; or asks about the status of a spec review. Also use it when the user authored a spec earlier in the session and now wants feedback round-trips on it, even if they don't name the tool - and when they ask to see, understand, or be walked through a spec.html, since the walkthrough should happen visually in the rendered page rather than as terminal text. Review-only permits questions and atomic corrections; load spec-chat-shape too before any batch materially changes behavior or information architecture."
 ---
 
 # spec-chat review loop
@@ -13,7 +13,7 @@ spec-chat specs are visual HTML documents (`*.spec.html`) the user annotates in 
   agent/   ← you write here; the browser renders these live
 ```
 
-Your job in review mode: reconcile hand-off batches, apply each comment to the spec, reply through the spool, and leave review in one truthful terminal control state.
+Your job in review mode: reconcile hand-off batches, route material authoring through `spec-chat-shape`, apply each comment to the spec, reply through the spool, and leave review in one truthful terminal control state.
 
 ## The loop
 
@@ -27,7 +27,7 @@ Your job in review mode: reconcile hand-off batches, apply each comment to the s
 
 2. **Drain the reported batch.** Read each event file in the printed order. Rehydrate context from FILES — the current spec, the unresolved events, `<spec>.review/context.md` — not from what you remember of the chat. Chat history is never the review database; files are what survive compaction, session changes, CLI switches, and stopped turns. Fold each thread before acting: human `reply` events continue the existing conversation, and human `edit` events replace the message named by `supersedes`. Ignore superseded text.
 
-3. **Apply each comment** to the spec in place, honoring the dialect (see below). A comment may also be a question rather than a change request — informational replies with `change: "no spec change"` are a normal part of the protocol; answer through the channel, don't force an edit.
+3. **Classify before editing, then apply each comment** to the spec in place. Questions and atomic corrections that do not change behavior or information architecture remain review-only. A batch is material when it adds or changes a behavior cluster, user outcome, flow, state model, module boundary, acceptance family, spatial contract, or the page's information architecture. Before a material edit, load `spec-chat-shape` and apply its complete authoring and browser-quality contract to the affected spec. The existence or age of the spec never exempts it. If the current page cannot carry the new material with readable visual density, restructure it instead of appending prose, cards, or one catch-all diagram. An informational comment may use `change: "no spec change"`; answer through the channel without forcing an edit.
 
 4. **Publish accepted spec changes before reply.** When the active shaping contract requires durable publication, commit and push every accepted spec change before the browser receives its reply or refreshed Git focus. `spec-chat-shape` owns the exact issue and change-request order. Review-only work follows its caller's publication contract.
 
@@ -73,6 +73,14 @@ Your job in review mode: reconcile hand-off batches, apply each comment to the s
 - Visual state lives in semantic islands: `<script type="application/spec+json" data-render="chart" data-lib="echarts">` with pretty-printed JSON, rendered into a sibling `[data-render-target]`. Edit the island JSON, not rendered output. Pretty-printing is what makes your string-match edits land unambiguously — keep it.
 - New meaningful elements get sensible anchors; new sections get `data-anchor` + an `<h2>`.
 
+## Material edit gate
+
+`spec-chat-review` owns the conversation and spool transaction, not material authoring quality.
+When a handed-off batch is material, `spec-chat-shape` becomes a required co-skill before the first file edit.
+Read its authoring reference, reassess the complete affected page, and run its desktop and mobile browser gate in normal and Git-focus modes before publication.
+Do not grandfather a weak existing page, preserve a poor layout merely to minimize the diff, or call a material expansion review-only.
+If `spec-chat-shape` is unavailable, leave the batch durable and stop before editing rather than silently using the review-only path.
+
 ## Anchors in events
 
 `anchorId` names the block; `target` narrows to an element within it:
@@ -107,7 +115,7 @@ Prompt-first shaping opens the HTTP page with `focus=changes&base=<exact-local-c
 
 The review server reads only local Git. It never fetches, checks out, stages, commits, or writes repository state. If no baseline is available, the browser shows a visible warning and the complete current spec without stale focus.
 
-The highlighted current spec is the diff viewer. Do not require pull-request review, a side-by-side page, deleted-content ghosts, issue metadata, anchor lists, or a stored focus manifest.
+The highlighted current spec is the diff viewer. Added or modified root blocks carry a runtime-owned focus boundary that remains visible across custom page styles; unchanged context recedes but stays readable. Do not require pull-request review, a side-by-side page, deleted-content ghosts, issue metadata, anchor lists, or a stored focus manifest.
 
 ## Transports (agent side is identical)
 

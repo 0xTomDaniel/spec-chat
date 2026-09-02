@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Prompt-first shaping and portable handoffs - spec</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./.style/spec.css">
 <script defer src="./.viz/runtime.js"></script>
 </head>
 <body>
@@ -120,6 +122,11 @@
           "source": "shape",
           "target": "review",
           "value": "review contract"
+        },
+        {
+          "source": "review",
+          "target": "shape",
+          "value": "material authoring"
         },
         {
           "source": "review",
@@ -343,6 +350,7 @@
 <h2>Git-derived focus is the diff viewer</h2>
 <p data-anchor="focus-only-review">The highlighted current spec is the complete required human diff-review surface.</p>
 <p data-anchor="focus-clear">Every current block added or modified by the work branch remains fully clear.</p>
+<p data-anchor="focus-boundary">The runtime marks each outermost added or modified block with an unmistakable focus boundary that remains visible across custom spec styles without outlining every changed descendant.</p>
 <p data-anchor="focus-recede">Every unchanged current block recedes visually so the issue-scoped additions hold attention.</p>
 <p data-anchor="focus-new-file">A new spec is entirely clear.</p>
 <p data-anchor="focus-normal-view">Opening the spec without issue focus renders the whole current document at normal clarity.</p>
@@ -448,6 +456,10 @@
 <h2>Hand-off batch transaction</h2>
 <p data-anchor="batch-cutoff">The hand-off event defines the exact batch cutoff.</p>
 <p data-anchor="batch-order-1">The agent folds edits and replies, then rechecks that each newest human message still needs an answer.</p>
+<p data-anchor="batch-material-classification">Before editing, the agent classifies whether the batch changes behavior or information architecture.</p>
+<p data-anchor="batch-review-only-boundary">Questions and atomic corrections remain review-only, while a material batch loads the shaping skill and its complete authoring quality contract before the first file edit.</p>
+<p data-anchor="batch-no-grandfathering">An existing or old spec receives no exemption from the current information-shape, visual-quality, or browser gates when a material batch changes it.</p>
+<p data-anchor="batch-restructure-weak-page">When the current page cannot carry new material with readable visual density, the agent restructures the affected page rather than appending prose, cards, or one catch-all diagram.</p>
 <p data-anchor="batch-order-2">The agent applies current spec changes in the smallest coherent orthogonal group.</p>
 <p data-anchor="batch-order-3">The agent updates the clean current issue when high-level truth changed.</p>
 <p data-anchor="batch-order-4">The agent commits and pushes every accepted spec change before the browser presents its refreshed Git-derived focus view.</p>
@@ -681,7 +693,9 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <p data-anchor="visual-quality-color">Color distinguishes semantic categories, states, warnings, or ownership and never substitutes for labels, line shape, or position.</p>
 <p data-anchor="visual-quality-diagrams">System, state, lifecycle, spatial, and cyclic relationships use purpose-fit diagrams with collision-free labels rather than default chart layouts.</p>
 <p data-anchor="visual-quality-quantitative">ECharts is reserved for quantitative relationships whose scales and values matter; topology alone does not justify a chart.</p>
-<p data-anchor="visual-quality-style">A target's established coherent spec visual system is reused, otherwise the shaping skill's self-contained high-contrast editorial implementation becomes the shared local fallback.</p>
+<p data-anchor="visual-quality-style">A material spec uses only an unchanged shared stylesheet present at its exact Git base, otherwise the byte-identical bundled high-contrast editorial stylesheet becomes its shared fallback.</p>
+<p data-anchor="visual-quality-style-inline">A canonical spec contains no page-level style block; inline styling is limited to artifact-local geometry and semantic marks absent from the shared system.</p>
+<p data-anchor="visual-quality-style-gate">A deterministic prepublication check rejects missing style provenance, newly invented shared themes, changed established themes, and spec-local page styling.</p>
 <p data-anchor="visual-quality-browser">Before publication, browser QA checks the complete page and each artifact at desktop and mobile widths in normal and Git-focus views for hierarchy, contrast, collision, clipping, and review-control obstruction.</p>
 <p data-anchor="visual-quality-focus">The base palette and focus treatment are evaluated together so changed material leads clearly while unchanged context remains readable rather than disappearing into an already weak page.</p>
 <table data-anchor="visual-quality-corrections">
@@ -689,9 +703,10 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <tbody>
 <tr data-anchor="visual-quality-correction-composition"><td>A library list substitutes for design direction</td><td>An artifact and hierarchy plan maps each information shape to its densest readable expression before styling</td><td>The rendered page has a coherent visual reading order independent of library choice</td></tr>
 <tr data-anchor="visual-quality-correction-density"><td>One default chart or long rule list represents a dense contract</td><td>Every suitable opportunity receives a purpose-fit artifact that replaces relational prose, with complementary views only for distinct dimensions</td><td>All behavior clusters are classified, suitable opportunities are covered, and repeated rules are removed</td></tr>
-<tr data-anchor="visual-quality-correction-style"><td>Each agent invents an incoherent or unreadable theme</td><td>A coherent target visual system or the shared high-contrast editorial fallback defines all presentation roles</td><td>Computed contrast and full-page hierarchy pass at desktop and mobile widths</td></tr>
+<tr data-anchor="visual-quality-correction-style"><td>Each agent invents a new theme that technically passes contrast</td><td>An unchanged base stylesheet or the byte-identical editorial fallback defines every page-level presentation role</td><td>Style provenance validation passes before desktop and mobile browser QA</td></tr>
 <tr data-anchor="visual-quality-correction-qa"><td>A technically rendered but colliding artifact passes</td><td>Each artifact is inspected at rendered size with legible labels, intentional spacing, complete edges, and unobstructed review controls</td><td>Browser evidence covers the complete page and every artifact, not DOM presence alone</td></tr>
 <tr data-anchor="visual-quality-correction-focus"><td>Focus recession compounds a weak base page</td><td>A strong base palette preserves readable unchanged context while clear changed blocks retain dominant emphasis</td><td>Normal and Git-focus screenshots both pass the same contrast, hierarchy, and artifact-legibility checks</td></tr>
+<tr data-anchor="visual-quality-correction-review-routing"><td>An existing-spec review materially expands a weak page without loading shaping quality</td><td>The review skill routes material authoring through the shaping skill before editing and old pages receive no exemption</td><td>The complete affected page passes information-shape classification and desktop and mobile browser QA before publication</td></tr>
 </tbody>
 </table>
 <table data-anchor="visual-quality-forms">
@@ -741,13 +756,15 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <h2>Skill ownership</h2>
 <p data-anchor="skill-shape">A new automatically discoverable spec-chat-shape skill owns prompt intake, issue creation, short docs discovery, first issue and spec seed, Git focus launch, in-spec grilling, batch publication, and review completion.</p>
 <p data-anchor="skill-review">The existing spec-chat-review skill remains the sole owner of spool reading, thread folding, reply emission, cursor safety, watcher attachment, mobile review, and cold recovery.</p>
+<p data-anchor="skill-material-boundary">Review-only ends when a batch changes behavior or information architecture, at which point the review skill retains the spool transaction while the shaping skill becomes the required material-authoring co-skill.</p>
 <p data-anchor="skill-handoff">The shaping skill hands into the review skill without copying its event protocol, while both skills encode the same spec contract invariants.</p>
 <p data-anchor="skill-github-reference">One repository-selected issue skill owns tracker-specific operations outside the Spec Chat runtime.</p>
-<p data-anchor="skill-visual-reference">One required visual-generation reference contains the exact doctrine above.</p>
-<p data-anchor="skill-information-reference">One required authoring reference contains the information-shape doctrine above.</p>
+<p data-anchor="skill-visual-reference">One required authoring reference contains information shape, visual quality, browser proof, and the exact technology doctrine above.</p>
+<p data-anchor="skill-information-reference">No parallel instruction file restates any part of that authoring contract.</p>
 <p data-anchor="skill-style">Every skill is short, specific, clear, and human-readable by default.</p>
 <p data-anchor="skill-invariants">Skill instructions preserve contract invariants while leaving room for context-sensitive tactics and visual variation.</p>
-<p data-anchor="skill-progressive-detail">Conditional detail lives in focused references so the entry skill remains concise.</p>
+<p data-anchor="skill-progressive-detail">Conditional authoring detail lives in the single reference so the entry skill remains concise.</p>
+<p data-anchor="skill-evals-location">Evaluation fixtures live with repository tests and are not installed as agent instructions.</p>
 <p data-anchor="skill-no-octo">No Spec Chat skill depends on octo-lite, another workflow package, or an external orchestrator.</p>
 <p data-anchor="skill-consumer">Other workflows may consume Spec Chat skills as downstream callers without becoming required by Spec Chat.</p>
 </section>
@@ -767,6 +784,9 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <p data-anchor="tdd-prompt-green">A different fresh agent scenario must run the same request against the new skill and produce the current issue, spec seed, and review handoff without adding excluded machinery.</p>
 <p data-anchor="tdd-focus-red">A runtime test must first fail because current Spec Chat cannot classify current anchored blocks against a Git baseline or render focus solely from that classification.</p>
 <p data-anchor="tdd-focus-green">The focus test passes for added, modified, unchanged, new-file, normal-view, and unavailable-baseline cases.</p>
+<p data-anchor="tdd-focus-boundary">The runtime test proves only outermost changed blocks receive the explicit focus boundary and that the new runtime capability migrates stale repository copies.</p>
+<p data-anchor="tdd-material-routing">Skill validation proves review-only is limited to questions and atomic corrections and material batches are routed through the complete shaping quality contract before editing.</p>
+<p data-anchor="tdd-style-provenance">Style-provenance tests accept unchanged established styling and the exact fallback while rejecting local style blocks, new custom themes, and changed established themes.</p>
 <p data-anchor="tdd-thread-red">A thread-model test must first fail because the current UI withholds reply from a resolved thread.</p>
 <p data-anchor="tdd-thread-green">The same test passes when a resolved thread offers Reply and reopen and the existing human reply event derives draft status.</p>
 <p data-anchor="tdd-finish-red">A runtime test must first fail because the current no-draft hand-off remains disabled and cannot signal review completion.</p>
@@ -790,7 +810,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <h2>References</h2>
 <p data-anchor="reference-design">Product design history: <a href="https://github.com/0xTomDaniel/spec-chat/blob/70e22934dc418c7971fde5772a6d9fcc904e892f/DESIGN.md">DESIGN.md at the shaping baseline</a>.</p>
 <p data-anchor="reference-review-skill">Current review procedure baseline: <a href="https://github.com/varelaseb/spec-chat/blob/cae844f1b85ce39911ab9db7f6bb03c37d434bac/skill/review-spec/SKILL.md">skill/review-spec/SKILL.md at the mobile-review commit</a>.</p>
-<p data-anchor="reference-source-issues">Source issues: <a href="https://github.com/0xTomDaniel/spec-chat/issues/21">#21 Add prompt-first shaping and portable Spec Chat handoffs</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/22">#22 Prevent stale review capabilities in existing repositories</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/24">#24 Raise generated spec visual quality and contrast</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/26">#26 Generalize visual richness without lowering quality</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/28">#28 Make review wake ownership explicit and reliable</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/32">#32 Make implementation ticket graphs canonical in Spec Chat shaping</a>.</p>
+<p data-anchor="reference-source-issues">Source issues: <a href="https://github.com/0xTomDaniel/spec-chat/issues/21">#21 Add prompt-first shaping and portable Spec Chat handoffs</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/22">#22 Prevent stale review capabilities in existing repositories</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/24">#24 Raise generated spec visual quality and contrast</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/26">#26 Generalize visual richness without lowering quality</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/28">#28 Make review wake ownership explicit and reliable</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/32">#32 Make implementation ticket graphs canonical in Spec Chat shaping</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/36">#36 Prevent material review edits from bypassing visual quality</a>.</p>
 <p data-anchor="reference-source-rule">Every later issue that materially changes this file is appended to the source-issues list, and unrelated issues are never added.</p>
 </section>
 

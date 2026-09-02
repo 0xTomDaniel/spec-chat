@@ -1,5 +1,5 @@
 // spec-chat runtime v0.1 — hydrates semantic islands and mounts the annotation layer.
-// spec-chat-capabilities: finish-review git-focus manual-resume-status mobile-review reopen-thread semantic-islands
+// spec-chat-capabilities: changed-root-focus custom-style-focus finish-review git-focus manual-resume-status mobile-pre-wrap mobile-review reopen-thread semantic-islands shared-style-ownership
 // Transports: FSA (file://, primary) | HTTP review-serve (http(s)://, secondary).
 // Same spools, same event schema either way. See DESIGN.md.
 // Classic script, NOT a module: browsers CORS-block module scripts on file:// pages,
@@ -86,6 +86,15 @@ function classifyAnchorSignatures(current, baseline) {
   return result;
 }
 
+function changedRootAnchors(parents, classification) {
+  const result = new Set();
+  for (const [anchor, parent] of parents) {
+    if (classification.get(anchor) !== 'changed') continue;
+    if (!parent || classification.get(parent) !== 'changed') result.add(anchor);
+  }
+  return result;
+}
+
 function ownAnchorSignature(element) {
   const clone = element.cloneNode(true);
   for (const child of clone.querySelectorAll('[data-anchor]')) child.remove();
@@ -119,8 +128,17 @@ async function applyIssueFocus() {
     const current = anchorSignatures(parser.parseFromString(currentText, 'text/html'));
     const prior = baseline.html === null ? null : anchorSignatures(parser.parseFromString(baseline.html, 'text/html'));
     const classification = classifyAnchorSignatures(current, prior);
-    for (const element of document.querySelectorAll('[data-anchor]')) {
+    const focused = [...document.querySelectorAll('[data-anchor]')];
+    for (const element of focused) {
       element.dataset.hxFocus = classification.get(element.dataset.anchor) || 'changed';
+    }
+    const parents = new Map(focused.map(element => [
+      element.dataset.anchor,
+      element.parentElement?.closest('[data-anchor]')?.dataset.anchor || null,
+    ]));
+    const changedRoots = changedRootAnchors(parents, classification);
+    for (const element of focused) {
+      if (changedRoots.has(element.dataset.anchor)) element.dataset.hxFocusRoot = 'changed';
     }
     document.body.classList.add('hx-focus-active');
   } catch (error) {
@@ -709,19 +727,22 @@ article.spec h1{font-size:29px;line-height:1.2;margin:0 0 8px;letter-spacing:-.0
 article.spec h2{font-size:20px;margin:26px 0 10px}
 article.spec nav{font:12px system-ui;color:#8b8e98}
 article.spec p{margin:0 0 10px;max-width:62ch}
+article.spec pre{white-space:pre-wrap;overflow-wrap:anywhere}
 article.spec a{color:#12897c}
 [data-render-target]{border:1px solid #e2e0d8;border-radius:8px;background:#fff;margin:6px 0 10px}
-:where(body.hx-focus-active [data-hx-focus=unchanged]){color:#6b6e75}
+:where(body.hx-focus-active [data-hx-focus=unchanged]){color:#6b6e75!important;background-image:none!important;box-shadow:none!important}
 :where(body.hx-focus-active [data-hx-focus=changed]){color:#22242a}
-:where(body.hx-focus-active [data-hx-focus=unchanged] > :not([data-anchor]):not(.hx-pin):not(.hx-badge):not(script)){color:#6b6e75}
+:where(body.hx-focus-active [data-hx-focus-root=changed]){outline:3px solid #087f73!important;outline-offset:5px}
+:where(body.hx-focus-active [data-hx-focus=unchanged] :not([data-anchor]):not(.hx-pin):not(.hx-badge):not(script):not([data-hx-focus=changed] *)){color:#6b6e75!important}
 body.hx-focus-active [data-hx-focus=unchanged] > :is([data-render-target],figure,img,svg,canvas):not([data-anchor]){opacity:.5;filter:saturate(.45)}
 body.hx-focus-active [data-hx-focus=unchanged] .hx-pin,body.hx-focus-active [data-hx-focus=unchanged] .hx-badge{opacity:1;filter:none}
 .hx-focus-error{position:fixed;top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);max-width:calc(100vw - 24px);box-sizing:border-box;padding:8px 12px;border-radius:8px;background:#8b1a1a;color:#fff;font:600 12px system-ui;z-index:970;box-shadow:0 6px 20px rgba(30,30,40,.25)}
 @media(prefers-color-scheme:dark){
 :where(body){background:#17191d;color:#e8e7e2}
-:where(body.hx-focus-active [data-hx-focus=unchanged]){color:#9fa1a7}
+:where(body.hx-focus-active [data-hx-focus=unchanged]){color:#9fa1a7!important}
 :where(body.hx-focus-active [data-hx-focus=changed]){color:#e8e7e2}
-:where(body.hx-focus-active [data-hx-focus=unchanged] > :not([data-anchor]):not(.hx-pin):not(.hx-badge):not(script)){color:#9fa1a7}
+:where(body.hx-focus-active [data-hx-focus-root=changed]){outline-color:#5eead4!important}
+:where(body.hx-focus-active [data-hx-focus=unchanged] :not([data-anchor]):not(.hx-pin):not(.hx-badge):not(script):not([data-hx-focus=changed] *)){color:#9fa1a7!important}
 article.spec header{border-color:#33363c}
 article.spec nav{color:#74767e}
 article.spec a{color:#34a899}
@@ -738,8 +759,8 @@ const CSS = `
 .hx-mobile-handoff{display:none}
 .hx-toolbar button[aria-pressed=true]{background:#fbf3e2;color:#b47308}
 .hx-toolbar .hx-status{color:#888;font-size:11.5px;padding:0 10px}
-.hx-panel{position:fixed;top:0;right:0;width:330px;height:100vh;background:#f4f3ef;border-left:1px solid #ddd;z-index:800;display:flex;flex-direction:column;font:13px system-ui;transform:translateX(100%);transition:transform .2s,box-shadow .2s;box-shadow:none}
-.hx-panel.open{transform:none;box-shadow:-8px 0 30px rgba(30,30,40,.12)}
+.hx-panel{position:fixed;top:0;right:0;width:330px;height:100vh;background:#f4f3ef;border-left:1px solid #ddd;z-index:800;display:none;flex-direction:column;font:13px system-ui;box-shadow:none}
+.hx-panel.open{display:flex;box-shadow:-8px 0 30px rgba(30,30,40,.12)}
 body.hx-panel-open{padding-right:330px}
 .hx-panel-head{position:relative;min-height:44px;padding:14px 16px 14px 52px;box-sizing:border-box;border-bottom:1px solid #ddd;font-weight:650}
 .hx-panel-head .hx-sub{font-weight:400;font-size:11px;color:#888}
@@ -831,7 +852,7 @@ body.hx-panel-open{padding-right:0;overflow:hidden}
 .hx-toast{bottom:calc(112px + env(safe-area-inset-bottom));max-width:calc(100vw - 24px);box-sizing:border-box;text-align:center}
 }
 @media(prefers-reduced-motion:reduce){
-.hx-panel,.hx-thread-dock,.hx-thread-ring,.hx-toast{transition:none}
+.hx-thread-dock,.hx-thread-ring,.hx-toast{transition:none}
 }
 @media(prefers-color-scheme:dark){
 .hx-toolbar,.hx-thread{background:#24272c;border-color:#3a3d42;color:#e8e7e2}
@@ -857,7 +878,8 @@ body.hx-panel-open{padding-right:0;overflow:hidden}
 
 function mountUI() {
   const style = document.createElement('style');
-  style.textContent = (EMBED_REVIEW_DIR ? '' : DOC_CSS) + CSS;
+  const sharedDocumentStyle = document.querySelector('link[rel~="stylesheet"][href*=".style/spec.css"]');
+  style.textContent = (EMBED_REVIEW_DIR || sharedDocumentStyle ? '' : DOC_CSS) + CSS;
   document.head.appendChild(style);
 
   const bar = document.createElement('div');
@@ -1342,7 +1364,8 @@ function renderPins() {
     pin.textContent = n;
     pin.title = label(b);
     pin.style.top = pos.top + 'px';
-    pin.style.left = pos.left + 'px';
+    const pinSize = window.matchMedia('(max-width: 640px)').matches ? 44 : 24;
+    pin.style.left = Math.max(0, Math.min(pos.left, holder.clientWidth - pinSize)) + 'px';
     pin.addEventListener('click', e => { e.stopPropagation(); selectThread(th, true); });
     holder.appendChild(pin);
   }

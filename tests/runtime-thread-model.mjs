@@ -89,7 +89,7 @@ assert.equal(handoffObservation(waitingHandoff, Date.parse('2026-08-31T12:00:31.
 assert.equal(handoffObservation([...waitingHandoff, event('310-reply.json', 'agent', { id: 'r-wait', event: 'reply', respondsTo: 'u-root', createdAt: '2026-08-31T12:00:12.000Z' })], Date.parse('2026-08-31T12:00:31.000Z')), null, 'a later agent event clears the waiting observation');
 
 assert.match(runtime, /\.hx-thread-dock\{/, 'collapsed review uses a compact conversation dock');
-assert.match(runtime, /translateX\(100%\)/, 'the closed sidebar moves completely off-screen');
+assert.match(runtime, /\.hx-panel\{[^}]*display:none;/, 'the closed sidebar leaves document layout entirely');
 assert.match(runtime, /setAttribute\('aria-label', 'Review conversations'\)/, 'the thread dock has an accessible navigation label');
 assert.match(runtime, /Collapse review sidebar/, 'the open sidebar exposes a collapse control');
 assert.match(runtime, /\.hx-dock-thread\[data-s=acknowledged\]\{border-color:#315fbd;color:#264f9e;background:#edf2ff\}/, 'acknowledged dock threads use the blue status palette');

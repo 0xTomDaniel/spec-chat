@@ -49,6 +49,12 @@ class SpecStyleContractTest(unittest.TestCase):
         self.assertNotIn("linear-gradient", self.css)
         self.assertNotIn("backdrop-filter", self.css)
 
+    def test_mobile_tables_scroll_inside_the_page(self):
+        self.assertRegex(
+            self.css,
+            r"table\s*\{\s*display:\s*block;\s*max-width:\s*100%;\s*overflow-x:\s*auto;",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
