@@ -52,18 +52,22 @@ assert.match(runtime, /new URLSearchParams\(location\.search\)\.get\('focus'\) !
 assert.match(runtime, /function ownAnchorSignature\(/, 'parent anchors compare their own heading and visual-island content');
 assert.doesNotMatch(runtime, /body\.hx-focus-active \[data-hx-focus=unchanged\]\{opacity:/, 'focus never dims pins through ancestor opacity');
 assert.doesNotMatch(runtime, /color-mix\(in srgb,currentColor/, 'focus recession never compounds inherited transparency');
-assert.match(runtime, /:where\(body\.hx-focus-active \[data-hx-focus=unchanged\]\)\{color:#6b6e75!important;background-image:none!important;box-shadow:none!important\}/, 'unchanged light-mode surfaces resist custom color and decorative background overrides');
-assert.match(runtime, /:not\(\[data-hx-focus=changed\] \*\)\)\{color:#6b6e75!important\}/, 'recession does not override descendants of a changed block');
-assert.match(runtime, /:where\(body\.hx-focus-active \[data-hx-focus=changed\]\)\{color:#22242a\}/, 'changed blocks reset to full light-mode contrast inside unchanged parents');
 assert.match(runtime, /element\.dataset\.hxFocusRoot = 'changed'/, 'focus marks classified changed roots in the rendered document');
 assert.match(runtime, /\[data-hx-focus-root=changed\]\)\{outline:3px solid #087f73!important/, 'changed roots keep an explicit light-mode focus boundary across document styles');
-assert.match(runtime, /:where\(body\.hx-focus-active \[data-hx-focus=unchanged\]\)\{color:#9fa1a7!important\}/, 'unchanged dark-mode text resists custom page overrides');
-assert.match(runtime, /:where\(body\.hx-focus-active \[data-hx-focus=changed\]\)\{color:#e8e7e2\}/, 'changed blocks reset to full dark-mode contrast inside unchanged parents');
 assert.match(runtime, /\[data-hx-focus-root=changed\]\)\{outline-color:#5eead4!important\}/, 'changed roots keep an explicit dark-mode focus boundary');
-assert.match(runtime, /> :is\(\[data-render-target\],figure,img,svg,canvas\):not\(\[data-anchor\]\)/, 'visual recession never wraps an independently anchored visual block');
 assert.match(runtime, /AbortController/, 'focus bounds slow baseline reads');
 assert.doesNotMatch(runtime, /await applyIssueFocus\(\)/, 'focus lookup never blocks chart and review boot');
 assert.match(runtime, /fetch\('\/api\/baseline\?'/, 'focus reads its baseline from the review server');
 assert.match(runtime, /sharedDocumentStyle \? '' : DOC_CSS/, 'a linked shared spec stylesheet owns document presentation');
+assert.match(runtime, /sharedDocumentStyle \? '' : DOC_CSS\) \+ FOCUS_CSS \+ CSS/, 'focus styling is injected even when a shared spec stylesheet owns document presentation');
+const docCss = runtime.slice(runtime.indexOf('const DOC_CSS = `'), runtime.indexOf('const FOCUS_CSS = `'));
+assert.doesNotMatch(docCss, /hx-focus/, 'no focus rule lives in the document stylesheet that a shared spec stylesheet replaces');
+const focusCss = runtime.slice(runtime.indexOf('const FOCUS_CSS = `'), runtime.indexOf('const CSS = `'));
+assert.match(focusCss, /\[data-hx-focus=unchanged\]:not\(:has\(\[data-hx-focus=changed\]\)\)[^{]*::after\{content:"";position:absolute;inset:-3px;background:rgba\(0,0,0,\.5\)[^}]*backdrop-filter:blur\(2\.5px\)\}/, 'the outermost unchanged block sits under one translucent blurred dark layer');
+assert.match(focusCss, /:not\(\[data-hx-focus=unchanged\]:not\(:has\(\[data-hx-focus=changed\]\)\) \*\)/, 'nested unchanged blocks never stack a second layer');
+assert.match(focusCss, /tr\[data-hx-focus=unchanged\][^{]*> :is\(td,th\)::after\{content:"";position:absolute;inset:0;background:rgba\(0,0,0,\.5\)/, 'unchanged rows inside a changed table dim cell by cell');
+assert.match(focusCss, /\[data-hx-focus=unchanged\] \.hx-pin[^{]*\{opacity:1;filter:none;z-index:700\}/, 'pins and badges float above the layer');
+assert.doesNotMatch(focusCss, /color:#6b6e75/, 'focus no longer recolors unchanged text; the layer does the receding');
+assert.match(focusCss, /prefers-color-scheme:dark\)\{[^`]*background:rgba\(0,0,0,\.6\)/, 'the dark scheme deepens the layer');
 
 console.log('runtime focus model tests passed');
