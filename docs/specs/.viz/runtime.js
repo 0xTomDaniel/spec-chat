@@ -730,19 +730,8 @@ article.spec p{margin:0 0 10px;max-width:62ch}
 article.spec pre{white-space:pre-wrap;overflow-wrap:anywhere}
 article.spec a{color:#12897c}
 [data-render-target]{border:1px solid #e2e0d8;border-radius:8px;background:#fff;margin:6px 0 10px}
-:where(body.hx-focus-active [data-hx-focus=unchanged]){color:#6b6e75!important;background-image:none!important;box-shadow:none!important}
-:where(body.hx-focus-active [data-hx-focus=changed]){color:#22242a}
-:where(body.hx-focus-active [data-hx-focus-root=changed]){outline:3px solid #087f73!important;outline-offset:5px}
-:where(body.hx-focus-active [data-hx-focus=unchanged] :not([data-anchor]):not(.hx-pin):not(.hx-badge):not(script):not([data-hx-focus=changed] *)){color:#6b6e75!important}
-body.hx-focus-active [data-hx-focus=unchanged] > :is([data-render-target],figure,img,svg,canvas):not([data-anchor]){opacity:.5;filter:saturate(.45)}
-body.hx-focus-active [data-hx-focus=unchanged] .hx-pin,body.hx-focus-active [data-hx-focus=unchanged] .hx-badge{opacity:1;filter:none}
-.hx-focus-error{position:fixed;top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);max-width:calc(100vw - 24px);box-sizing:border-box;padding:8px 12px;border-radius:8px;background:#8b1a1a;color:#fff;font:600 12px system-ui;z-index:970;box-shadow:0 6px 20px rgba(30,30,40,.25)}
 @media(prefers-color-scheme:dark){
 :where(body){background:#17191d;color:#e8e7e2}
-:where(body.hx-focus-active [data-hx-focus=unchanged]){color:#9fa1a7!important}
-:where(body.hx-focus-active [data-hx-focus=changed]){color:#e8e7e2}
-:where(body.hx-focus-active [data-hx-focus-root=changed]){outline-color:#5eead4!important}
-:where(body.hx-focus-active [data-hx-focus=unchanged] :not([data-anchor]):not(.hx-pin):not(.hx-badge):not(script):not([data-hx-focus=changed] *)){color:#9fa1a7!important}
 article.spec header{border-color:#33363c}
 article.spec nav{color:#74767e}
 article.spec a{color:#34a899}
@@ -752,6 +741,24 @@ article.spec a{color:#34a899}
 :where(body){padding-bottom:calc(112px + env(safe-area-inset-bottom))}
 article.spec{padding:24px 16px}
 }`;
+
+const FOCUS_CSS = `
+/* Git focus is runtime-owned and always injected, including on pages that link the shared .style/spec.css.
+   Changed blocks stay fully clear with a boundary; unchanged blocks sit under a translucent black layer.
+   Pins and badges (z 700) float above the layer. */
+:where(body.hx-focus-active [data-hx-focus-root=changed]){outline:3px solid #087f73!important;outline-offset:5px}
+body.hx-focus-active [data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])):not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *):not(tr):not(td):not(th):not(script):not(style){position:relative}
+body.hx-focus-active [data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])):not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *):not(tr):not(td):not(th):not(script):not(style)::after{content:"";position:absolute;inset:-3px;background:rgba(0,0,0,.5);border-radius:inherit;pointer-events:none;z-index:2;-webkit-backdrop-filter:blur(2.5px);backdrop-filter:blur(2.5px)}
+body.hx-focus-active tr[data-hx-focus=unchanged]:not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *) > :is(td,th){position:relative}
+body.hx-focus-active tr[data-hx-focus=unchanged]:not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *) > :is(td,th)::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.5);pointer-events:none;z-index:2;-webkit-backdrop-filter:blur(2.5px);backdrop-filter:blur(2.5px)}
+body.hx-focus-active [data-hx-focus=unchanged] .hx-pin,body.hx-focus-active [data-hx-focus=unchanged] .hx-badge{opacity:1;filter:none;z-index:700}
+.hx-focus-error{position:fixed;top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);max-width:calc(100vw - 24px);box-sizing:border-box;padding:8px 12px;border-radius:8px;background:#8b1a1a;color:#fff;font:600 12px system-ui;z-index:970;box-shadow:0 6px 20px rgba(30,30,40,.25)}
+@media(prefers-color-scheme:dark){
+:where(body.hx-focus-active [data-hx-focus-root=changed]){outline-color:#5eead4!important}
+body.hx-focus-active [data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])):not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *):not(tr):not(td):not(th):not(script):not(style)::after{background:rgba(0,0,0,.6)}
+body.hx-focus-active tr[data-hx-focus=unchanged]:not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *) > :is(td,th)::after{background:rgba(0,0,0,.6)}
+}
+`;
 const CSS = `
 .hx-toolbar{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);display:flex;gap:4px;align-items:center;background:#fff;border:1px solid #ddd;border-radius:12px;box-shadow:0 8px 28px rgba(30,30,40,.14);padding:6px;z-index:900;font:13px system-ui}
 .hx-toolbar button{font:600 12.5px system-ui;border:none;background:transparent;border-radius:8px;padding:8px 14px;cursor:pointer}
@@ -879,7 +886,7 @@ body.hx-panel-open{padding-right:0;overflow:hidden}
 function mountUI() {
   const style = document.createElement('style');
   const sharedDocumentStyle = document.querySelector('link[rel~="stylesheet"][href*=".style/spec.css"]');
-  style.textContent = (EMBED_REVIEW_DIR || sharedDocumentStyle ? '' : DOC_CSS) + CSS;
+  style.textContent = (EMBED_REVIEW_DIR || sharedDocumentStyle ? '' : DOC_CSS) + FOCUS_CSS + CSS;
   document.head.appendChild(style);
 
   const bar = document.createElement('div');

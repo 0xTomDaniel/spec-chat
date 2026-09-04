@@ -115,7 +115,7 @@ Prompt-first shaping opens the HTTP page with `focus=changes&base=<exact-local-c
 
 The review server reads only local Git. It never fetches, checks out, stages, commits, or writes repository state. If no baseline is available, the browser shows a visible warning and the complete current spec without stale focus.
 
-The highlighted current spec is the diff viewer. Added or modified root blocks carry a runtime-owned focus boundary that remains visible across custom page styles; unchanged context recedes but stays readable. Do not require pull-request review, a side-by-side page, deleted-content ghosts, issue metadata, anchor lists, or a stored focus manifest.
+The highlighted current spec is the diff viewer. Added or modified root blocks carry a runtime-owned focus boundary and stay fully clear across custom page styles; unchanged context sits under a translucent, lightly blurred dark layer and stays legible. Do not require pull-request review, a side-by-side page, deleted-content ghosts, issue metadata, anchor lists, or a stored focus manifest.
 
 ## Transports (agent side is identical)
 
