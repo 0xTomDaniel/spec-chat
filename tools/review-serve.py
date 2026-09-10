@@ -116,7 +116,7 @@ class Handler(SimpleHTTPRequestHandler):
             # baseline to HEAD and erase the review diff.
             if prior.returncode != 0:
                 seed = subprocess.run(
-                    ('git', '-C', repo, 'log', '--reverse', '--diff-filter=A', '--format=%H', 'HEAD', '--', repo_rel),
+                    ('git', '-C', repo, 'rev-list', '--reverse', 'HEAD', '--', repo_rel),
                     stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL,
                     text=True,
