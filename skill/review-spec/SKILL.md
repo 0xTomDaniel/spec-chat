@@ -113,6 +113,8 @@ The loop is identical on every CLI; only the verified wake adapter differs. Read
 
 Prompt-first shaping opens the HTTP page with `focus=changes&base=<exact-local-change-request-base>`. The runtime reads baseline HTML through the review server, compares stable current anchor signatures, keeps added or modified current blocks clear, and recedes unchanged current blocks. A new spec remains entirely clear. A normal URL renders every block at normal clarity. Automatic base discovery is only a fallback for direct unstacked review.
 
+When the selected base does not contain a spec that is already committed on the current branch, the review server uses the first committed snapshot that introduced the file. This seed stays stable across later edits, keeping a newly seeded spec focused without adding another review mode.
+
 The review server reads only local Git. It never fetches, checks out, stages, commits, or writes repository state. If no baseline is available, the browser shows a visible warning and the complete current spec without stale focus.
 
 The highlighted current spec is the diff viewer. Added or modified root blocks carry a runtime-owned focus boundary that remains visible across custom page styles; unchanged context recedes but stays readable. Do not require pull-request review, a side-by-side page, deleted-content ghosts, issue metadata, anchor lists, or a stored focus manifest.

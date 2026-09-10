@@ -110,6 +110,26 @@ class Handler(SimpleHTTPRequestHandler):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
             )
+            # A newly seeded spec is absent from the change-request base. Use
+            # the first committed snapshot that introduced it. This seed must
+            # stay stable across later spec commits, or refresh would move the
+            # baseline to HEAD and erase the review diff.
+            if prior.returncode != 0:
+                seed = subprocess.run(
+                    ('git', '-C', repo, 'log', '--reverse', '--diff-filter=A', '--format=%H', 'HEAD', '--', repo_rel),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                )
+                seed = seed.stdout.strip().splitlines()[0] if seed.returncode == 0 and seed.stdout.strip() else None
+                if seed:
+                    seed_prior = subprocess.run(
+                        ('git', '-C', repo, 'show', seed + ':' + repo_rel),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    if seed_prior.returncode == 0:
+                        base, prior = seed, seed_prior
             html = prior.stdout.decode('utf-8') if prior.returncode == 0 else None
             return self._json({'base': base, 'html': html})
         except (OSError, subprocess.CalledProcessError, UnicodeDecodeError):
