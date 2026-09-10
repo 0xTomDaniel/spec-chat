@@ -89,11 +89,9 @@ class BaselineRouteTest(unittest.TestCase):
         seeded.write_text('<p data-anchor="seed">seeded baseline</p>\n')
         run("git", "add", str(seeded), cwd=self.repo)
         run("git", "commit", "-m", "seed new spec", cwd=self.repo)
-        head = subprocess.check_output(("git", "rev-parse", "HEAD"), cwd=self.repo, text=True).strip()
+        result = self.baseline("specs/seeded.spec.html", "main")
 
-        result = self.baseline("specs/seeded.spec.html")
-
-        self.assertEqual(result["base"], head)
+        self.assertEqual(result["base"], self.base)
         self.assertIn("seeded baseline", result["html"])
 
     def test_committed_new_file_baseline_stays_at_seed_after_later_edit(self):
@@ -101,14 +99,13 @@ class BaselineRouteTest(unittest.TestCase):
         seeded.write_text('<p data-anchor="seed">seed version</p>\n')
         run("git", "add", str(seeded), cwd=self.repo)
         run("git", "commit", "-m", "seed stable spec", cwd=self.repo)
-        seed = subprocess.check_output(("git", "rev-parse", "HEAD"), cwd=self.repo, text=True).strip()
         seeded.write_text('<p data-anchor="seed">later version</p>\n')
         run("git", "add", str(seeded), cwd=self.repo)
         run("git", "commit", "-m", "edit stable spec", cwd=self.repo)
 
-        result = self.baseline("specs/stable-seed.spec.html")
+        result = self.baseline("specs/stable-seed.spec.html", "main")
 
-        self.assertEqual(result["base"], seed)
+        self.assertEqual(result["base"], self.base)
         self.assertIn("seed version", result["html"])
         self.assertNotIn("later version", result["html"])
 

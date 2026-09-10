@@ -129,7 +129,7 @@ class Handler(SimpleHTTPRequestHandler):
                         stderr=subprocess.DEVNULL,
                     )
                     if seed_prior.returncode == 0:
-                        base, prior = seed, seed_prior
+                        prior = seed_prior
             html = prior.stdout.decode('utf-8') if prior.returncode == 0 else None
             return self._json({'base': base, 'html': html})
         except (OSError, subprocess.CalledProcessError, UnicodeDecodeError):
