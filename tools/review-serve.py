@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # spec-chat-capabilities: git-baseline narrow-review-root
-"""spec-chat review-serve - local HTTP transport.
+"""spec-chat review-serve - HTTP transport for a narrow review collection.
 
 FSA requires the browser and the spool files to share a machine; over SSH they
 don't. This serves a narrow review collection plus tiny spool and Git-baseline
-routes on loopback. A separate unguessable public capability transport may
-relay to this origin when the review must open from anywhere. Stdlib only.
+routes. For remote review, bind directly to the host interface and treat the
+printed URL as the secret. Stdlib only.
 
-usage: review-serve.py [ROOT] [PORT]
+usage: review-serve.py [ROOT] [PORT] [--public] [--bind HOST] [--host HOST]
 
   GET  /api/events?dir=<review-dir-rel-path>            -> ordered event list
   POST /api/events?dir=<...>&actor=human|agent  (JSON)  -> writes one event file
@@ -16,14 +16,47 @@ usage: review-serve.py [ROOT] [PORT]
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import time
+import argparse
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
-ROOT = os.path.realpath(sys.argv[1] if len(sys.argv) > 1 else '.')
-PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 7160
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('root', nargs='?', default='.')
+    parser.add_argument('port', nargs='?', type=int, default=None)
+    parser.add_argument('--public', action='store_true', help='bind to all host interfaces')
+    parser.add_argument('--bind', default=None, help='bind address (default: loopback)')
+    parser.add_argument('--host', default=None, help='host name or address printed in the review URL')
+    return parser.parse_args()
+
+
+ARGS = parse_args()
+ROOT = os.path.realpath(ARGS.root)
+PORT = ARGS.port if ARGS.port is not None else (0 if ARGS.public else 7160)
+BIND = ARGS.bind or ('0.0.0.0' if ARGS.public else '127.0.0.1')
+
+
+def advertised_host():
+    if ARGS.host:
+        return ARGS.host
+    if not ARGS.public:
+        return '127.0.0.1'
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        probe.connect(('8.8.8.8', 80))
+        address = probe.getsockname()[0]
+        probe.close()
+        if address and not address.startswith('127.'):
+            return address
+    except OSError:
+        pass
+    return socket.gethostname()
 
 try:
     REPO_ROOT = subprocess.check_output(
@@ -110,6 +143,26 @@ class Handler(SimpleHTTPRequestHandler):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
             )
+            # A newly seeded spec is absent from the change-request base. Use
+            # the first committed snapshot that introduced it. This seed must
+            # stay stable across later spec commits, or refresh would move the
+            # baseline to HEAD and erase the review diff.
+            if prior.returncode != 0:
+                seed = subprocess.run(
+                    ('git', '-C', repo, 'rev-list', '--reverse', 'HEAD', '--', repo_rel),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                )
+                seed = seed.stdout.strip().splitlines()[0] if seed.returncode == 0 and seed.stdout.strip() else None
+                if seed:
+                    seed_prior = subprocess.run(
+                        ('git', '-C', repo, 'show', seed + ':' + repo_rel),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    if seed_prior.returncode == 0:
+                        prior = seed_prior
             html = prior.stdout.decode('utf-8') if prior.returncode == 0 else None
             return self._json({'base': base, 'html': html})
         except (OSError, subprocess.CalledProcessError, UnicodeDecodeError):
@@ -164,5 +217,9 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 if __name__ == '__main__':
-    print('spec-chat review-serve on http://127.0.0.1:%d  root=%s' % (PORT, ROOT))
-    HTTPServer(('127.0.0.1', PORT), Handler).serve_forever()
+    server = HTTPServer((BIND, PORT), Handler)
+    PORT = server.server_port
+    host = advertised_host()
+    print('spec-chat review-serve on http://%s:%d  root=%s' % (host, PORT, ROOT), flush=True)
+    print('review URL is the secret; stop this process when review ends', flush=True)
+    server.serve_forever()

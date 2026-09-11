@@ -84,6 +84,31 @@ class BaselineRouteTest(unittest.TestCase):
         self.assertEqual(result["base"], self.base)
         self.assertIsNone(result["html"])
 
+    def test_committed_new_file_uses_seed_when_absent_from_base(self):
+        seeded = self.specs / "seeded.spec.html"
+        seeded.write_text('<p data-anchor="seed">seeded baseline</p>\n')
+        run("git", "add", str(seeded), cwd=self.repo)
+        run("git", "commit", "-m", "seed new spec", cwd=self.repo)
+        result = self.baseline("specs/seeded.spec.html", "main")
+
+        self.assertEqual(result["base"], self.base)
+        self.assertIn("seeded baseline", result["html"])
+
+    def test_committed_new_file_baseline_stays_at_seed_after_later_edit(self):
+        seeded = self.specs / "stable-seed.spec.html"
+        seeded.write_text('<p data-anchor="seed">seed version</p>\n')
+        run("git", "add", str(seeded), cwd=self.repo)
+        run("git", "commit", "-m", "seed stable spec", cwd=self.repo)
+        seeded.write_text('<p data-anchor="seed">later version</p>\n')
+        run("git", "add", str(seeded), cwd=self.repo)
+        run("git", "commit", "-m", "edit stable spec", cwd=self.repo)
+
+        result = self.baseline("specs/stable-seed.spec.html", "main")
+
+        self.assertEqual(result["base"], self.base)
+        self.assertIn("seed version", result["html"])
+        self.assertNotIn("later version", result["html"])
+
     def test_explicit_base_supports_stacked_change_requests(self):
         result = self.baseline("specs/focus.spec.html", "stack-base")
         self.assertEqual(result["base"], self.stack_base)

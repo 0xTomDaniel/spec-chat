@@ -100,7 +100,7 @@ A resolved thread remains expandable. When its latest message is from the agent,
 
 If a hand-off remains unacknowledged past the existing timeout, the browser states that automatic wake did not occur and instructs the human to send a new chat message to resume.
 
-When every thread is resolved and no material TBD remains, the no-draft action becomes **Finish review**. It writes the existing empty hand-off. Reconcile it, settle any final durable change, advance the exact cursor, stop the watcher, close any public capability transport, and end the active review window. Finish review is not implementation authorization, acceptance, merge approval, or deployment approval.
+When every thread is resolved and no material TBD remains, the no-draft action becomes **Finish review**. It writes the existing empty hand-off. Reconcile it, settle any final durable change, advance the exact cursor, stop the watcher, stop the review server, and end the active review window. Finish review is not implementation authorization, acceptance, merge approval, or deployment approval.
 
 ## Event schema
 
@@ -114,6 +114,8 @@ The loop is identical on every CLI; only the verified wake adapter differs. Read
 
 Prompt-first shaping opens the HTTP page with `focus=changes&base=<exact-local-change-request-base>`. The runtime reads baseline HTML through the review server, compares stable current anchor signatures, keeps added or modified current blocks clear, and recedes unchanged current blocks. A new spec remains entirely clear. A normal URL renders every block at normal clarity. Automatic base discovery is only a fallback for direct unstacked review.
 
+When the selected base does not contain a spec that is already committed on the current branch, the review server uses the first committed snapshot that introduced the file. This seed stays stable across later edits, keeping a newly seeded spec focused without adding another review mode.
+
 The review server reads only local Git. It never fetches, checks out, stages, commits, or writes repository state. If no baseline is available, the browser shows a visible warning and the complete current spec without stale focus.
 
 The highlighted current spec is the diff viewer. Added or modified root blocks carry a runtime-owned focus boundary that remains visible across custom page styles; unchanged context recedes but stays readable. Do not require pull-request review, a side-by-side page, deleted-content ghosts, issue metadata, anchor lists, or a stored focus manifest.
@@ -123,7 +125,7 @@ The highlighted current spec is the diff viewer. Added or modified root blocks c
 You only ever read and write spool files — the transport is the browser's problem. Two situations you may need to set up:
 
 - **Local browser, same machine**: nothing to run; the page connects to the folder directly (file:// + FSA). Browser security does not reliably persist write permission. When an IndexedDB handle returns `prompt`, the runtime shows **Resume review** and requests write permission on the already-selected handle; **Choose different folder** remains a separate picker fallback for a moved tree, wrong prior scope, or Chromium shell that does not surface the regrant prompt. Chromium can follow the native directory picker with a separate **Allow this site to edit files?** browser window; the runtime must name that step and visibly wait for it because shells such as Arc may not layer it over the spec window. The grant accepts ANY ancestor folder of the spec — pick it in the dialog or drag it from Finder onto the page; the runtime walks down to the spec's folder itself and remembers the ancestor. Caveats: Chromium refuses grants on the top-level roots themselves (home, Documents, Desktop, Downloads — children beneath them are fine), so suggest a workspace/projects folder one level down; if the granted tree contains two same-named specs at matching sub-paths the runtime refuses to guess and asks for a narrower grant. The spec's exact path also lands on the clipboard when the picker opens (⌘⇧G + paste in the macOS panel). If the user wants zero prompts or uses Safari or Firefox, run `assets/review-serve.py` on loopback; the HTTP transport auto-connects.
-- **Public capability review**: for prompt-first shaping or any review that must open from anywhere, start `assets/review-serve.py` on loopback against the narrow review collection, never the repository root. Publish that origin through the repository or host's configured public HTTPS capability transport. The unguessable URL is the only authentication: require no SSH, VPN, or separate login; tell the human to treat it as a secret; never publish it into the issue or change request. Stop the transport when review ends so the URL becomes invalid. The protocol does not depend on a specific tunnel provider.
+- **Remote browser**: start `assets/review-serve.py <docs-root> --public` against the narrow review collection, never the repository root. The server chooses a free port unless one is supplied, binds directly to the host interface, and prints the review URL. The URL itself is the secret; require no login, token, SSH, VPN, tunnel, or separate proxy. Verify the printed URL serves the exact spec and `/api/baseline` accepts the selected base before handing it to the human. Keep the same server and URL through review edits. Stop the server when review ends so the URL becomes invalid.
 
 ## Scaffolding spec-chat into a repo
 
@@ -150,8 +152,8 @@ If the server was already running when migration occurred, restart it on the sam
 ## Starting a review when asked
 
 1. Confirm the page exists, run `scripts/preflight.py`, and identify the shared collection root (normally the repository's `docs/` directory, not the page's immediate `docs/specs/`, `docs/specs/<domain>/`, or `docs/adr/` directory; use the narrowest common ancestor for a legacy or explicitly different layout).
-2. Start or restart the local server when HTTP review is required, then verify the served runtime advertises the required capabilities and `/api/baseline` succeeds for the exact page and change-request base.
-3. Set up the public capability transport when the page must open outside the file host.
+2. Start or restart `assets/review-serve.py` when HTTP review is required. For remote review, use `--public` and keep the server on the host interface. Verify the served runtime advertises the required capabilities and `/api/baseline` succeeds for the exact page and change-request base.
+3. Present the verified review URL. Do not hand back a GitHub link or a loopback URL when the human is reviewing from another machine.
 4. On both an initial start and any resumed/reconnected turn, run `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 0 3`; drain, reply, and cursor each ready batch, then repeat until exit 3.
 5. After reconciliation is empty, establish `turn-yielded`, verified `external-wake`, or `manual-resume` through `scripts/review-control.sh`.
 6. State the selected control state truthfully. Never say watching, attached, or active after final unless `external-wake` is verified.
@@ -183,4 +185,4 @@ If asked only for **status** (no review mode), read the spool, summarize threads
 
 ## Get out of the terminal — visual-first
 
-When the user asks to see, understand, or walk through a spec ("what's in this spec?", "walk me through it"), don't answer with a terminal summary — the whole point of spec-chat is that the spec is better experienced rendered. Set up the visual surface (open the file locally, or start the serve + tunnel if remote), start review mode, and offer to have the conversation in-page: they can pin questions on the elements they're asking about and your walkthrough arrives as replies anchored to the exact marks. A terminal summary is the fallback when the user can't open a browser, not the default.
+When the user asks to see, understand, or walk through a spec ("what's in this spec?", "walk me through it"), don't answer with a terminal summary — the whole point of spec-chat is that the spec is better experienced rendered. Set up the visual surface (open the file locally, or start the direct public review server if remote), start review mode, and offer to have the conversation in-page: they can pin questions on the elements they're asking about and your walkthrough arrives as replies anchored to the exact marks. A terminal summary is the fallback when the user can't open a browser, not the default.

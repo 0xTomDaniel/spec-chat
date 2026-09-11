@@ -16,6 +16,7 @@ Create durable current truth before deep investigation.
 - Chat and memory never override durable sources; stop on source conflict.
 - Accepted spec changes are committed and pushed before refreshed Git focus or review replies.
 - `spec-chat-review` alone owns browser review, spool transactions, transport, wake, and recovery.
+- A shaping handoff is not review-ready until the exact spec has a verified hosted review surface.
 
 ## Shape
 
@@ -26,6 +27,7 @@ Create durable current truth before deep investigation.
 5. For every new spec or material restructure, read [references/authoring.md](references/authoring.md) completely before editing. Existing specs are not grandfathered. Before publication, run `python3 scripts/validate-style.py <repository> <spec-html> <exact-change-request-base>` and stop on failure.
 6. Classify acceptance criteria as clear, gap, or not needed. Back clear criteria with identified rules, mark material gaps `data-spec-tbd`, and remove unnecessary criteria.
 7. Add an ADR only for a hard-to-reverse, surprising decision with a real tradeoff. For behavior changes, name the deep-module seam, smallest first failing test, and observable evidence; docs-only work skips this, while unsuitable tests require a narrow waiver and alternative proof.
+8. Before the first human review handoff, start the direct review server for the narrow collection, verify the exact spec and baseline through its URL, and keep that server and URL for the review lifetime.
 
 ## Implementation graph
 
@@ -42,8 +44,8 @@ Shaping never marks implementation work In Progress or Done.
 
 Material uncertainties become temporary anchored TBDs.
 Ask small dependency-aware batches in Spec Chat, resolve each answer into current spec and issue truth, and reconcile tickets after material changes.
-Invoke `spec-chat-review` with `focus=changes&base=<exact-change-request-base>`; it owns publication mechanics and the review loop.
-Possession of the unguessable HTTPS review URL is the only authentication; never publish it into the issue or change request.
+Invoke `spec-chat-review` with `focus=changes&base=<exact-change-request-base>`; it owns publication mechanics, review hosting, and the review loop.
+For remote review, start the direct public review server against the narrow collection, verify the exact spec and baseline, and include only the resulting review URL, spec path, and baseline in the shaping handoff. The URL itself is the secret; never publish it into the issue or change request.
 
 ## Finish
 
@@ -51,7 +53,7 @@ Finish shaping only when:
 
 - no draft, pending, acknowledged, unresolved, or material TBD work remains
 - issue, spec, applicable ADRs, stories, acceptance criteria, architecture, and implementation graph agree
-- `spec-chat-review` has completed the browser review and invalidated its public capability URL
+- `spec-chat-review` has completed the browser review and stopped its public review server
 
 Review completion is not implementation authorization, acceptance, merge approval, or deployment approval.
 
