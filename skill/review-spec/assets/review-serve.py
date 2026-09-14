@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# spec-chat-capabilities: git-baseline narrow-review-root
+# spec-chat-capabilities: exact-baseline git-baseline narrow-review-root
 """spec-chat review-serve - HTTP transport for a narrow review collection.
 
 FSA requires the browser and the spool files to share a machine; over SSH they
@@ -135,14 +135,18 @@ class Handler(SimpleHTTPRequestHandler):
             ).returncode == 0), None)
             if not base_ref:
                 return self._json({'error': 'no local base ref'}, 409)
+            # Explicit review snapshots may be on sibling branches. Only
+            # automatic discovery asks for the common ancestor with HEAD.
+            command = ('rev-parse', '--verify', base_ref + '^{commit}') if requested else ('merge-base', 'HEAD', base_ref)
             base = subprocess.check_output(
-                ('git', '-C', repo, 'merge-base', 'HEAD', base_ref), text=True, stderr=subprocess.DEVNULL
+                ('git', '-C', repo, *command), text=True, stderr=subprocess.DEVNULL
             ).strip()
             prior = subprocess.run(
                 ('git', '-C', repo, 'show', base + ':' + repo_rel),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
             )
+            html_base = base if prior.returncode == 0 else None
             # A newly seeded spec is absent from the change-request base. Use
             # the first committed snapshot that introduced it. This seed must
             # stay stable across later spec commits, or refresh would move the
@@ -163,8 +167,9 @@ class Handler(SimpleHTTPRequestHandler):
                     )
                     if seed_prior.returncode == 0:
                         prior = seed_prior
+                        html_base = seed
             html = prior.stdout.decode('utf-8') if prior.returncode == 0 else None
-            return self._json({'base': base, 'html': html})
+            return self._json({'base': base, 'htmlBase': html_base, 'html': html})
         except (OSError, subprocess.CalledProcessError, UnicodeDecodeError):
             return self._json({'error': 'git baseline unavailable'}, 409)
 

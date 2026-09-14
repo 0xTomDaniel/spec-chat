@@ -29,9 +29,6 @@ def main():
     try:
         owner = required("SPEC_CHAT_OWNER_ID")
         session = required("SPEC_CHAT_OWNER_SESSION")
-        batch = required("SPEC_CHAT_BATCH_ID")
-        spec = required("SPEC_CHAT_READY_SPEC")
-        cursor = required("SPEC_CHAT_CURSOR_NAME")
     except ValueError as error:
         return fail(str(error))
 
@@ -49,6 +46,12 @@ def main():
     if verify_only:
         print(f"herdr-owner=verified pane={owner} terminal={session}")
         return 0
+    try:
+        batch = required("SPEC_CHAT_BATCH_ID")
+        spec = required("SPEC_CHAT_READY_SPEC")
+        cursor = required("SPEC_CHAT_CURSOR_NAME")
+    except ValueError as error:
+        return fail(str(error))
     if agent.get("agent_status") == "working":
         print("wake-herdr: owner is still working; retry after it becomes idle", file=sys.stderr)
         return 75

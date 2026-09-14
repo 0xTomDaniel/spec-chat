@@ -77,7 +77,7 @@ Your job in review mode: reconcile hand-off batches, route material authoring th
 
 `spec-chat-review` owns the conversation and spool transaction, not material authoring quality.
 When a handed-off batch is material, `spec-chat-shape` becomes a required co-skill before the first file edit.
-Read its authoring reference, reassess the complete affected page, and run its desktop and mobile browser gate in normal and Git-focus modes before publication.
+Read its authoring reference, reassess the complete affected page, and run its browser gate before the material batch's review handoff or replies, using its proportional recheck rule for later local corrections.
 Do not grandfather a weak existing page, preserve a poor layout merely to minimize the diff, or call a material expansion review-only.
 If `spec-chat-shape` is unavailable, leave the batch durable and stop before editing rather than silently using the review-only path.
 
@@ -111,9 +111,17 @@ The loop is identical on every CLI; only the verified wake adapter differs. Read
 
 ## Git-derived focus
 
-Prompt-first shaping opens the HTTP page with `focus=changes&base=<exact-local-change-request-base>`. The runtime reads baseline HTML through the review server, compares stable current anchor signatures, keeps added or modified current blocks clear, and recedes unchanged current blocks. A new spec remains entirely clear. A normal URL renders every block at normal clarity. Automatic base discovery is only a fallback for direct unstacked review.
+Prompt-first shaping opens the HTTP page with `focus=changes&base=<exact-local-review-base>`. An explicit base is the exact selected snapshot, including a previously reviewed sibling branch; it may differ from the change request's merge base. Pin its resolved commit in the review URL. The runtime reads baseline HTML through the review server, compares stable current anchor signatures, keeps added or modified current blocks clear, and recedes unchanged current blocks. A new spec remains entirely clear. A normal URL renders every block at normal clarity. Only automatic base discovery uses a merge base.
 
-When the selected base does not contain a spec that is already committed on the current branch, the review server uses the first committed snapshot that introduced the file. This seed stays stable across later edits, keeping a newly seeded spec focused without adding another review mode.
+When the selected base does not contain a spec that is already committed on the current branch, the review server uses the first committed snapshot that introduced the file. This seed stays stable across later edits, keeping a newly seeded spec focused without adding another review mode. The baseline response keeps the selected commit in `base` and identifies the actual HTML source in `htmlBase`, or null for an uncommitted new file.
+
+Before collecting HTTP browser evidence or handing off the review, verify the served source and comparison:
+
+```sh
+python3 scripts/verify-review.py <repository> <spec-html> '<review-url>' <exact-review-base>
+```
+
+The read-only check compares page bytes and baseline HTML with local files and Git, reports any seed fallback, and fails on a substituted baseline or wrong served page. It does not replace visual inspection or require both changed and unchanged blocks. Reuse a verified host while its collection and owner remain unchanged; rerun the byte check after source or baseline changes.
 
 The review server reads only local Git. It never fetches, checks out, stages, commits, or writes repository state. If no baseline is available, the browser shows a visible warning and the complete current spec without stale focus.
 
