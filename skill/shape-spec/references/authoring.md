@@ -26,6 +26,8 @@ Choose the least-lossy form:
 - peer axioms: identified clause group
 - formula: readable notation with a one-line gloss
 
+When simplifying visible statuses, use a table mapping underlying state and evidence to label and recovery action; fewer labels do not erase lifecycle or failure rules.
+
 Preserve existing `data-anchor` identities; give every new contract-bearing section, clause, figure, row, and acceptance rule a stable anchor.
 Use one sentence per prose line and pretty semantic-island JSON beside its render target.
 A removable visual is decoration, not a contract artifact.
@@ -49,64 +51,44 @@ Every artifact needs collision-free labels, complete distinguishable edges, inte
 Change the layout or renderer instead of shrinking content until it fits.
 Use ECharts for quantities, not topology; use readable inline SVG for small exact diagrams and Beautiful Mermaid when semantic source expresses the system cleanly.
 
+### Shared markup
+
+Inspect the established stylesheet's layout before reusing its classes.
+In the bundled system, `.sec-num` occupies a narrow marker column; put the title in `h2`:
+
+```html
+<div class="sec-head">
+  <span class="sec-num">02</span>
+  <h2 data-anchor="save-heading">Save and continue</h2>
+  <p class="sec-note" data-anchor="save-note">Durability before navigation.</p>
+</div>
+```
+
+`.duo` places its immediate children in two columns; a title for both belongs outside that grid:
+
+```html
+<figure data-anchor="save-comparison">
+  <h3 data-anchor="save-comparison-heading">Save behavior</h3>
+  <div class="duo">
+    <p data-anchor="save-before">Before: wait for background completion.</p>
+    <p data-anchor="save-after">After: advance once work is durably owned.</p>
+  </div>
+</figure>
+```
+
+Use `.table-scroll` around a wide table and `.rail-wrap` around a rail so local horizontal scrolling stays inside the page.
+
 ## Browser gate
 
-Before publication, inspect the complete rendered page and every artifact at desktop and mobile widths in normal and Git-focus modes.
+After the review skill verifies served bytes and baseline, inspect the complete rendered page and every artifact at desktop and mobile widths in normal and Git-focus modes before the first review handoff or a material batch's replies.
 Reject it until hierarchy and contrast are clear, changed material leads, unchanged context remains usable, nothing collides or clips, diagrams need no prose reconstruction, review controls obscure nothing, and mobile has no horizontal page drift.
 DOM presence or successful library initialization is not visual proof.
+Complete the batch before this pass and group discovered corrections before rechecking.
+For a local correction after a complete pass, inspect the affected area and nearby layout at the relevant widths and modes; repeat the full pass when shared styles, runtime, page structure, or unresolved findings make that necessary.
+Keep enough readable evidence for the checks performed; do not regenerate every full page, tile, and contact sheet after each small edit.
 
-## Technology doctrine
+## Runtime
 
-Canonical `*.spec.html` uses NON REACT.
-REACT is limited to an existing embedded application or an explicitly noncanonical throwaway prototype.
-
-NON REACT
-Core
-Tailwind CSS v4 — styling
-daisyUI + daisyUI Skill — components and themes
-Alpine.js — page state and UI behavior
-PixiJS + PixiJS Skills — interactive visual scenes
-GSAP — animation and choreography
-ECharts — charts and quantitative data visualization
-KaTeX — mathematical notation
-Beautiful Mermaid — semantic diagrams
-Specialists
-JSXGraph — precise interactive math and geometry
-Paper.js — vector/path manipulation
-Three.js — 3D
-LiquidGlass — selective premium surface effects
-The updated doctrine:
-HTML and Alpine control the page.
-Tailwind and daisyUI define the interface.
-PixiJS defines the visual world.
-GSAP defines time.
-ECharts explains data.
-KaTeX expresses math.
-Beautiful Mermaid explains systems.
-REACT
-
-Core
-React 19 + Vite
-Tailwind v4
-shadcn/ui + Base UI
-@pixi/react
-+ PixiJS Skills
-GSAP +
-@gsap/react
-Apache ECharts
-KaTeX
-Beautiful Mermaid
-Interactive specialists
-Mafs — interactive math
-React Flow — interactive node/system diagrams
-React Three Fiber + Drei — 3D
-react-konva — interactive 2D canvas/vector UI
-Paper.js — serious path/Bézier work
-LiquidGlass — selective visual effect
-And there's an interesting consequence:
-Static version
-Alpine + daisyUI + PixiJS
-is extraordinarily lightweight and agent-friendly.
-React version
-React + shadcn + @pixi/react + Mafs + React Flow + R3F
-has a much richer ecosystem for Brilliant-like interactive visual education.
+Canonical `*.spec.html` uses HTML and the committed offline Spec Chat runtime, not a React application.
+Reuse the shared stylesheet and choose only the artifact renderer the information requires.
+React remains appropriate for an existing embedded application or an explicitly noncanonical throwaway prototype.

@@ -109,6 +109,16 @@ printf '%s\n' 'message_id=test status=pending'
 EOF
 chmod +x "$TMP/bin/herdr" "$TMP/bin/herdr-say"
 
+VERIFY_ONLY=$(env -u SPEC_CHAT_BATCH_ID -u SPEC_CHAT_READY_SPEC -u SPEC_CHAT_CURSOR_NAME \
+  PATH="$TMP/bin:$PATH" FAKE_HERDR_SAY_LOG="$TMP/herdr-verify-log" \
+  SPEC_CHAT_OWNER_ID='wC:pTest' SPEC_CHAT_OWNER_SESSION='term-test' \
+  python3 "$SCRIPTS/wake-herdr.py" --verify-only)
+printf '%s' "$VERIFY_ONLY" | grep -F 'herdr-owner=verified' >/dev/null
+[ ! -e "$TMP/herdr-verify-log" ] || {
+  echo "verify-only sent a wake prompt" >&2
+  exit 1
+}
+
 PATH="$TMP/bin:$PATH" FAKE_HERDR_SAY_LOG="$TMP/herdr-say-log" \
   SPEC_CHAT_OWNER_ID='wC:pTest' SPEC_CHAT_OWNER_SESSION='term-test' \
   SPEC_CHAT_BATCH_ID='batch-test' SPEC_CHAT_READY_SPEC="$PAGE" \

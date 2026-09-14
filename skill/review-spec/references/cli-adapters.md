@@ -44,8 +44,12 @@ The reactivated owner performs the mandatory zero-wait scan, processing transact
 Herdr is the preferred adapter when the authoring conversation is already in a Herdr pane.
 Run the monitor in a separate visible Herdr shell pane, not in the owner pane and not as a detached agent processor.
 Pass the exact owner `pane_id` and current `terminal_id` from `herdr agent get <pane-id>`.
+Verify that identity before starting the monitor; no synthetic handoff or batch values are needed:
 
 ```sh
+set -e
+SPEC_CHAT_OWNER_ID=wC:pOwner SPEC_CHAT_OWNER_SESSION=term_exact \
+  scripts/wake-herdr.py --verify-only
 scripts/review-control.sh external \
   docs .cursor-codex-session \
   wC:pOwner term_exact \
@@ -53,8 +57,9 @@ scripts/review-control.sh external \
 ```
 
 `wake-herdr.py` refuses a changed pane or terminal identity and uses `herdr-say` for modal-safe delivery.
-If the owner is busy, Herdr may queue the wake prompt; no second Codex process is started.
+If the owner is busy, the adapter defers until it is idle; no second Codex process is started.
 If identity validation or wake transport fails, the monitor exits with an explicit manual-resume downgrade.
+Reuse the live verified monitor for the same collection, cursor, pane, and terminal; a resumed authoring turn still performs its zero-wait scan without launching another monitor.
 
 Other hosts may provide any executable adapter through the same environment contract:
 

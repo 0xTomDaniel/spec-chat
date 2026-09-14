@@ -304,7 +304,7 @@
 <p data-anchor="flow-existing-spec">When a relevant canonical spec exists, the agent edits it in place.</p>
 <p data-anchor="flow-new-spec">When no relevant spec exists, the agent creates a minimal durable capability or domain spec with only sections that contain real behavior.</p>
 <p data-anchor="flow-no-issue-link">The spec adds the originating issue to its concise source-issues list when accepted work changes that file.</p>
-<p data-anchor="flow-pr">The first seed is committed and pushed, then one evolving draft change request opens and remains the durable transport for later shaping batches.</p>
+<p data-anchor="flow-pr">The first seed is committed and pushed, then one evolving draft change request remains the durable transport for later shaping batches; this checkpoint does not establish browser review readiness.</p>
 <p data-anchor="flow-deepen">After the seed is durable, the agent inspects only relevant code, tests, configuration, and current change-request state before asking questions those sources can answer.</p>
 <p data-anchor="flow-conflict">A conflict between durable sources stops shaping visibly instead of being resolved from chat or model memory.</p>
 </section>
@@ -357,9 +357,10 @@
 <p data-anchor="focus-no-metadata">Focus is derived from Git and never maintained through embedded issue metadata, sidecars, anchor lists, or hand-authored change markers.</p>
 <p data-anchor="focus-commit-discipline">The shaping skill commits and pushes every accepted spec change before presenting the refreshed focus view, so the Git-derived review state remains durable and reproducible.</p>
 <p data-anchor="focus-http">Prompt-first shaping uses the existing HTTP review transport on desktop and mobile because a browser file page cannot inspect Git.</p>
-<p data-anchor="focus-local-git">The review server reads only the current local repository and its merge base, and it never fetches, checks out, stages, commits, or writes Git state.</p>
+<p data-anchor="focus-local-git">The review server reads only the current local repository and never fetches, checks out, stages, commits, or writes Git state.</p>
 <p data-anchor="focus-no-octo">No focus behavior imports, invokes, expects, or mentions octo-lite or another orchestrator.</p>
-<p data-anchor="focus-base-override">The shaping URL names the exact local base ref of its draft change request, while automatic base discovery remains a fallback for direct review.</p>
+<p data-anchor="focus-base-override">An explicit review base resolves to the exact selected local commit, including a previously reviewed sibling branch, while automatic discovery alone uses a merge base.</p>
+<p data-anchor="focus-baseline-provenance">The baseline response retains the selected commit in <code>base</code> and identifies the actual HTML snapshot in <code>htmlBase</code>; a file absent from the selected base uses its stable first committed seed, or null when still uncommitted.</p>
 <p data-anchor="focus-failure">If Git comparison cannot be calculated, focus mode fails visibly and renders the complete current spec without stale highlighting.</p>
 <p data-anchor="focus-removal">A removed behavior must be expressed by the resulting current rule or constraint, because a silent deletion with no current replacement cannot be reviewed in the current-spec highlighting model.</p>
 <p data-anchor="focus-no-other-diff">The first version requires no side-by-side viewer, removed-content tray, deletion ghost, or pull-request review.</p>
@@ -448,7 +449,7 @@
 <p data-anchor="wake-lock-namespace">The lock uses one user-owned absolute runtime namespace independent of shell environment variables so Herdr panes and ordinary shells contend on the same identity.</p>
 <p data-anchor="wake-no-lease">The ownership lock is released automatically with its foreground process and introduces no lease, heartbeat, fencing protocol, or persistent coordinator.</p>
 <p data-anchor="wake-adapter">A wake adapter owns only host reactivation and never reads comments, edits the spec, emits replies, advances cursors, or invokes detached agent processing.</p>
-<p data-anchor="wake-herdr">When Herdr is available, its optional adapter binds the owner pane and terminal identity before using modal-safe prompt transport.</p>
+<p data-anchor="wake-herdr">When Herdr is available, its optional adapter verifies the owner pane and terminal identity without a synthetic batch before the foreground monitor starts; real wake still validates that identity before modal-safe transport.</p>
 <p data-anchor="wake-portable">Other hosts may supply adapters through the same executable seam, while a missing verified adapter selects manual-resume rather than false active status.</p>
 </section>
 
@@ -460,7 +461,7 @@
 <p data-anchor="batch-review-only-boundary">Questions and atomic corrections remain review-only, while a material batch loads the shaping skill and its complete authoring quality contract before the first file edit.</p>
 <p data-anchor="batch-no-grandfathering">An existing or old spec receives no exemption from the current information-shape, visual-quality, or browser gates when a material batch changes it.</p>
 <p data-anchor="batch-restructure-weak-page">When the current page cannot carry new material with readable visual density, the agent restructures the affected page rather than appending prose, cards, or one catch-all diagram.</p>
-<p data-anchor="batch-order-2">The agent applies current spec changes in the smallest coherent orthogonal group.</p>
+<p data-anchor="batch-order-2">The agent completes each coherent batch of behavior, acceptance, and necessary layout changes before final browser inspection and implementation-ticket reconciliation.</p>
 <p data-anchor="batch-order-3">The agent updates the clean current issue when high-level truth changed.</p>
 <p data-anchor="batch-order-4">The agent commits and pushes every accepted spec change before the browser presents its refreshed Git-derived focus view.</p>
 <p data-anchor="batch-order-5">The agent emits one reply to each newest human message after the durable spec write succeeds.</p>
@@ -609,7 +610,7 @@
 <p data-anchor="compatibility-preserve">A target asset declaring every required capability remains untouched even when its implementation or pin differs from the bundle.</p>
 <p data-anchor="compatibility-pair">Runtime and server compatibility are checked together because Git focus requires both the browser behavior and the read-only baseline route.</p>
 <p data-anchor="compatibility-live-restart">A migrated running server is restarted on the same local port before the existing public relay continues.</p>
-<p data-anchor="compatibility-http-proof">The agent verifies the served runtime capabilities and a successful Git-baseline response through the actual local HTTP surface before presenting the capability URL.</p>
+<p data-anchor="compatibility-http-proof">Before browser evidence or a review handoff, the agent verifies served runtime capabilities and uses the read-only verifier to compare served spec bytes and baseline HTML with local files and Git, including seed-fallback provenance; these checks do not replace visual inspection.</p>
 <p data-anchor="compatibility-visual-target">Every semantic visual island has a render target in the same parent, and a missing target blocks publication rather than silently producing prose-only output.</p>
 <p data-anchor="compatibility-failure">A failed migration or preflight is a visible review blocker.</p>
 <p data-anchor="compatibility-no-service">Preflight adds no service, registry, package dependency, background updater, or cross-repository control plane.</p>
@@ -617,60 +618,11 @@
 
 <section data-anchor="visual-generation" id="visual-generation">
 <h2>Visual generation doctrine</h2>
-<p data-anchor="visual-verbatim">The new shaping skill contains the following doctrine verbatim in one required visual-generation reference.</p>
-<pre data-anchor="visual-doctrine">NON REACT
-Core
-Tailwind CSS v4 — styling
-daisyUI + daisyUI Skill — components and themes
-Alpine.js — page state and UI behavior
-PixiJS + PixiJS Skills — interactive visual scenes
-GSAP — animation and choreography
-ECharts — charts and quantitative data visualization
-KaTeX — mathematical notation
-Beautiful Mermaid — semantic diagrams
-Specialists
-JSXGraph — precise interactive math and geometry
-Paper.js — vector/path manipulation
-Three.js — 3D
-LiquidGlass — selective premium surface effects
-The updated doctrine:
-HTML and Alpine control the page.
-Tailwind and daisyUI define the interface.
-PixiJS defines the visual world.
-GSAP defines time.
-ECharts explains data.
-KaTeX expresses math.
-Beautiful Mermaid explains systems.
-REACT
-
-Core
-React 19 + Vite
-Tailwind v4
-shadcn/ui + Base UI
-@pixi/react
-+ PixiJS Skills
-GSAP +
-@gsap/react
-Apache ECharts
-KaTeX
-Beautiful Mermaid
-Interactive specialists
-Mafs — interactive math
-React Flow — interactive node/system diagrams
-React Three Fiber + Drei — 3D
-react-konva — interactive 2D canvas/vector UI
-Paper.js — serious path/Bézier work
-LiquidGlass — selective visual effect
-And there's an interesting consequence:
-Static version
-Alpine + daisyUI + PixiJS
-is extraordinarily lightweight and agent-friendly.
-React version
-React + shadcn + @pixi/react + Mafs + React Flow + R3F
-has a much richer ecosystem for Brilliant-like interactive visual education.</pre>
-<p data-anchor="visual-not-runtime">The doctrine guides generated visual surfaces and does not make every listed library a Spec Chat runtime dependency.</p>
-<p data-anchor="visual-canonical-static">Canonical spec documents always use the NON REACT doctrine so the HTML remains directly editable and canonical.</p>
-<p data-anchor="visual-react-embed">The REACT doctrine applies to existing React applications reviewed through embed mode and to explicitly requested noncanonical throwaway prototypes.</p>
+<p data-anchor="visual-verbatim">The shaping reference states the canonical runtime boundary and selects renderers from the information being expressed.</p>
+<p data-anchor="visual-doctrine">Canonical specs use editable HTML, the shared stylesheet, and the committed offline Spec Chat runtime.</p>
+<p data-anchor="visual-not-runtime">Only the artifact renderer needed by the contract belongs in the page; no application framework catalog is a shaping prerequisite.</p>
+<p data-anchor="visual-canonical-static">Canonical spec documents remain non-React HTML so the source stays directly editable and canonical.</p>
+<p data-anchor="visual-react-embed">React applies to existing applications reviewed through embed mode and to explicitly requested noncanonical throwaway prototypes.</p>
 <p data-anchor="visual-no-build-sync">A target application using React does not turn its canonical spec into React or introduce a Vite source-to-HTML synchronization loop.</p>
 <p data-anchor="visual-existing-principles">Existing offline fidelity, local vendoring, semantic-island, and small-runtime principles remain in force.</p>
 </section>
@@ -695,8 +647,10 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <p data-anchor="visual-quality-quantitative">ECharts is reserved for quantitative relationships whose scales and values matter; topology alone does not justify a chart.</p>
 <p data-anchor="visual-quality-style">A material spec uses only an unchanged shared stylesheet present at its exact Git base, otherwise the byte-identical bundled high-contrast editorial stylesheet becomes its shared fallback.</p>
 <p data-anchor="visual-quality-style-inline">A canonical spec contains no page-level style block; inline styling is limited to artifact-local geometry and semantic marks absent from the shared system.</p>
-<p data-anchor="visual-quality-style-gate">A deterministic prepublication check rejects missing style provenance, newly invented shared themes, changed established themes, and spec-local page styling.</p>
-<p data-anchor="visual-quality-browser">Before publication, browser QA checks the complete page and each artifact at desktop and mobile widths in normal and Git-focus views for hierarchy, contrast, collision, clipping, and review-control obstruction.</p>
+<p data-anchor="visual-quality-style-gate">Before presenting a new or materially revised draft for review, a deterministic check rejects missing style provenance, newly invented shared themes, changed established themes, and spec-local page styling.</p>
+<p data-anchor="visual-quality-browser">After source and baseline verification, browser QA inspects the complete page and each artifact at desktop and mobile widths in normal and Git-focus views before the first review handoff or a material batch's replies.</p>
+<p data-anchor="visual-quality-recheck">After a complete pass, local corrections require inspection of the affected area and nearby layout at relevant widths and modes; shared styles, runtime, page structure, or unresolved findings can require another complete pass.</p>
+<p data-anchor="visual-quality-evidence">Corrections are grouped before rechecking, and evidence matches the checks performed without regenerating every full page, tile, and contact sheet after each small edit.</p>
 <p data-anchor="visual-quality-focus">The base palette and focus treatment are evaluated together so changed material leads clearly while unchanged context remains readable rather than disappearing into an already weak page.</p>
 <table data-anchor="visual-quality-corrections">
 <thead><tr><th>Observed failure</th><th>Required positive case</th><th>Proof before publication</th></tr></thead>
@@ -759,7 +713,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <p data-anchor="skill-material-boundary">Review-only ends when a batch changes behavior or information architecture, at which point the review skill retains the spool transaction while the shaping skill becomes the required material-authoring co-skill.</p>
 <p data-anchor="skill-handoff">The shaping skill hands into the review skill without copying its event protocol, while both skills encode the same spec contract invariants.</p>
 <p data-anchor="skill-github-reference">One repository-selected issue skill owns tracker-specific operations outside the Spec Chat runtime.</p>
-<p data-anchor="skill-visual-reference">One required authoring reference contains information shape, visual quality, browser proof, and the exact technology doctrine above.</p>
+<p data-anchor="skill-visual-reference">One required authoring reference contains information shape, shared markup examples, visual quality, proportional browser proof, and canonical runtime constraints.</p>
 <p data-anchor="skill-information-reference">No parallel instruction file restates any part of that authoring contract.</p>
 <p data-anchor="skill-style">Every skill is short, specific, clear, and human-readable by default.</p>
 <p data-anchor="skill-invariants">Skill instructions preserve contract invariants while leaving room for context-sensitive tactics and visual variation.</p>
@@ -783,6 +737,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <p data-anchor="tdd-prompt-red">Before changing shaping instructions, a fresh agent scenario must show that the current skills do not create the prompt-first issue and spec seed or maintain the agreed burden boundary.</p>
 <p data-anchor="tdd-prompt-green">A different fresh agent scenario must run the same request against the new skill and produce the current issue, spec seed, and review handoff without adding excluded machinery.</p>
 <p data-anchor="tdd-focus-red">A runtime test must first fail because current Spec Chat cannot classify current anchored blocks against a Git baseline or render focus solely from that classification.</p>
+<p data-anchor="tdd-exact-baseline">A regression requests both the ref and commit of a sibling snapshot and verifies exact baseline bytes; source-verifier tests cover substituted baselines, wrong served pages, stable seed provenance, and uncommitted new files.</p>
 <p data-anchor="tdd-focus-green">The focus test passes for added, modified, unchanged, new-file, normal-view, and unavailable-baseline cases.</p>
 <p data-anchor="tdd-focus-boundary">The runtime test proves only outermost changed blocks receive the explicit focus boundary and that the new runtime capability migrates stale repository copies.</p>
 <p data-anchor="tdd-material-routing">Skill validation proves review-only is limited to questions and atomic corrections and material batches are routed through the complete shaping quality contract before editing.</p>
@@ -803,7 +758,7 @@ has a much richer ecosystem for Brilliant-like interactive visual education.</pr
 <p data-anchor="non-goal-exact-session">It does not guarantee resurrection of a closed host session or preservation of hidden conversational state.</p>
 <p data-anchor="non-goal-distributed">It does not build a distributed scheduler, exactly-once execution system, multi-writer coordinator, or cross-host presence service.</p>
 <p data-anchor="non-goal-review-pr">It does not require humans to inspect GitHub or another change-request UI to understand the spec change.</p>
-<p data-anchor="non-goal-runtime-stack">It does not install the complete visual-generation doctrine into every spec or the base annotation runtime.</p>
+<p data-anchor="non-goal-runtime-stack">It does not install an application framework catalog into every shaping context or add a source-to-HTML build loop.</p>
 </section>
 
 <section data-anchor="references" id="references">

@@ -21,13 +21,13 @@ Create durable current truth before deep investigation.
 ## Shape
 
 1. Resolve the repository-selected issue skill, create a concise placeholder issue immediately, and create the work branch using target conventions. Missing issue access is a visible blocker.
-2. Read only target instructions, the spec index, clearly related specs or ADRs, and directly relevant product docs. Update the governing spec or create a minimal spec containing only real behavior; append the issue to its source-issues list and keep only governing links, not a research bibliography. Commit, push, and open one evolving draft change request.
+2. Read only target instructions, the spec index, clearly related specs or ADRs, and directly relevant product docs. Update the governing spec or create a minimal spec containing only real behavior; append the issue to its source-issues list and keep only governing links, not a research bibliography. Commit, push, and open one evolving draft change request. This durable seed is a checkpoint; browser review readiness still requires the authoring gate and verified review surface.
 3. Deepen only from relevant code, tests, configuration, and change-request state. Resolve discoverable questions before asking the human. Keep the issue always-most-recent and remove stale prose or resolved TBDs.
 4. Keep every changed user outcome current in the target-declared story source or governing spec. For cross-module behavior, reconcile stable responsibilities, seams, and dependency direction with the target-declared architecture source while keeping issue-specific detail in the spec.
-5. For every new spec or material restructure, read [references/authoring.md](references/authoring.md) completely before editing. Existing specs are not grandfathered. Before publication, run `python3 scripts/validate-style.py <repository> <spec-html> <exact-change-request-base>` and stop on failure.
+5. For every new spec or material restructure, read [references/authoring.md](references/authoring.md) completely before editing. Existing specs are not grandfathered. Before presenting a new or materially revised draft for browser review, run `python3 scripts/validate-style.py <repository> <spec-html> <exact-change-request-base>` and the authoring browser gate; stop on failure.
 6. Classify acceptance criteria as clear, gap, or not needed. Back clear criteria with identified rules, mark material gaps `data-spec-tbd`, and remove unnecessary criteria.
 7. Add an ADR only for a hard-to-reverse, surprising decision with a real tradeoff. For behavior changes, name the deep-module seam, smallest first failing test, and observable evidence; docs-only work skips this, while unsuitable tests require a narrow waiver and alternative proof.
-8. Before the first human review handoff, start the direct review server for the narrow collection, verify the exact spec and baseline through its URL, and keep that server and URL for the review lifetime.
+8. Before browser evidence or the first human review handoff, use `spec-chat-review` to start the direct server for the narrow collection and verify the served spec and exact baseline. Keep that server and URL for the review lifetime.
 
 ## Implementation graph
 
@@ -44,7 +44,9 @@ Shaping never marks implementation work In Progress or Done.
 
 Material uncertainties become temporary anchored TBDs.
 Ask small dependency-aware batches in Spec Chat, resolve each answer into current spec and issue truth, and reconcile tickets after material changes.
-Invoke `spec-chat-review` with `focus=changes&base=<exact-change-request-base>`; it owns publication mechanics, review hosting, and the review loop.
+Finish each batch's behavior, acceptance, and necessary layout changes together before final browser inspection and ticket reconciliation; apply the authoring reference's proportional recheck rule to later corrections.
+Invoke `spec-chat-review` with `focus=changes&base=<exact-review-base>`; it owns publication mechanics, review hosting, baseline selection, and the review loop.
+An operator-selected previously reviewed snapshot may differ from the change request's base; keep the latter for stylesheet provenance validation.
 For remote review, start the direct public review server against the narrow collection, verify the exact spec and baseline, and include only the resulting review URL, spec path, and baseline in the shaping handoff. The URL itself is the secret; never publish it into the issue or change request.
 
 ## Finish
