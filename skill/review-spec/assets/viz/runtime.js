@@ -1,5 +1,5 @@
 // spec-chat runtime v0.1 — hydrates semantic islands and mounts the annotation layer.
-// spec-chat-capabilities: changed-root-focus custom-style-focus finish-review git-focus manual-resume-status mobile-pre-wrap mobile-review reopen-thread semantic-islands shared-style-ownership
+// spec-chat-capabilities: changed-root-focus custom-style-focus diff-visibility-control finish-review git-focus manual-resume-status mobile-pre-wrap mobile-review reopen-thread semantic-islands shared-style-ownership
 // Transports: FSA (file://, primary) | HTTP review-serve (http(s)://, secondary).
 // Same spools, same event schema either way. See DESIGN.md.
 // Classic script, NOT a module: browsers CORS-block module scripts on file:// pages,
@@ -743,17 +743,15 @@ article.spec{padding:24px 16px}
 }`;
 const FOCUS_CSS = `
 /* Unchanged context sits beneath a readable black veil; changed content stays clear. */
-:where(body.hx-focus-active [data-hx-focus-root=changed]){outline:3px solid #087f73!important;outline-offset:5px}
 body.hx-focus-active [data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])):not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *):not(tr):not(td):not(th):not(script):not(style){position:relative}
-body.hx-focus-active [data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])):not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *):not(tr):not(td):not(th):not(script):not(style)::after{content:"";position:absolute;inset:-3px;background:rgba(0,0,0,.5);border-radius:inherit;pointer-events:none;z-index:2;-webkit-backdrop-filter:blur(2.5px);backdrop-filter:blur(2.5px)}
+body.hx-focus-active [data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])):not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *):not(tr):not(td):not(th):not(script):not(style)::after{content:"";position:absolute;inset:-3px;background:rgba(0,0,0,calc(.5*var(--hx-veil,1)));border-radius:inherit;pointer-events:none;z-index:2;-webkit-backdrop-filter:blur(calc(2.5px*var(--hx-veil,1)));backdrop-filter:blur(calc(2.5px*var(--hx-veil,1)))}
 body.hx-focus-active tr[data-hx-focus=unchanged]:not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *) > :is(td,th){position:relative}
-body.hx-focus-active tr[data-hx-focus=unchanged]:not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *) > :is(td,th)::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.5);pointer-events:none;z-index:2;-webkit-backdrop-filter:blur(2.5px);backdrop-filter:blur(2.5px)}
+body.hx-focus-active tr[data-hx-focus=unchanged]:not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *) > :is(td,th)::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,calc(.5*var(--hx-veil,1)));pointer-events:none;z-index:2;-webkit-backdrop-filter:blur(calc(2.5px*var(--hx-veil,1)));backdrop-filter:blur(calc(2.5px*var(--hx-veil,1)))}
 body.hx-focus-active [data-hx-focus=unchanged] .hx-pin,body.hx-focus-active [data-hx-focus=unchanged] .hx-badge{opacity:1;filter:none;z-index:700}
 .hx-focus-error{position:fixed;top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);max-width:calc(100vw - 24px);box-sizing:border-box;padding:8px 12px;border-radius:8px;background:#8b1a1a;color:#fff;font:600 12px system-ui;z-index:970;box-shadow:0 6px 20px rgba(30,30,40,.25)}
 @media(prefers-color-scheme:dark){
-:where(body.hx-focus-active [data-hx-focus-root=changed]){outline-color:#5eead4!important}
-body.hx-focus-active [data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])):not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *):not(tr):not(td):not(th):not(script):not(style)::after{background:rgba(0,0,0,.6)}
-body.hx-focus-active tr[data-hx-focus=unchanged]:not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *) > :is(td,th)::after{background:rgba(0,0,0,.6)}
+body.hx-focus-active [data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])):not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *):not(tr):not(td):not(th):not(script):not(style)::after{background:rgba(0,0,0,calc(.6*var(--hx-veil,1)))}
+body.hx-focus-active tr[data-hx-focus=unchanged]:not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *) > :is(td,th)::after{background:rgba(0,0,0,calc(.6*var(--hx-veil,1)))}
 }
 `;
 const CSS = `
@@ -770,6 +768,14 @@ body.hx-panel-open{padding-right:330px}
 .hx-panel-head .hx-sub{font-weight:400;font-size:11px;color:#888}
 .hx-panel-toggle{position:absolute;top:8px;left:7px;width:30px;height:30px;border:1px solid #ccc;background:#fff;border-radius:7px;color:#555;cursor:pointer;font:18px/1 system-ui;display:grid;place-items:center;padding:0}
 .hx-panel-toggle:hover{background:#e8e7e2;color:#222}
+.hx-panel-gear{position:absolute;top:8px;right:10px;width:30px;height:30px;border:1px solid #ccc;background:#fff;border-radius:7px;color:#555;cursor:pointer;font:14px/1 system-ui;display:grid;place-items:center;padding:0}
+.hx-panel-gear:hover{background:#e8e7e2;color:#222}
+.hx-panel-gear[aria-expanded=true]{background:#fbf3e2;color:#b47308;border-color:#e3d3ab}
+.hx-settings{padding:12px 16px;border-bottom:1px solid #ddd;background:#efeee9}
+.hx-set-row{display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:center;font:650 12px system-ui;color:#444}
+.hx-set-row input[type=range]{grid-column:1/-1;width:100%;margin:4px 0 0;accent-color:#087f73;min-height:24px;touch-action:manipulation}
+.hx-set-val{font:650 11.5px ui-monospace,Menlo,monospace;color:#777}
+.hx-set-note{margin:7px 0 0;font:400 11px/1.45 system-ui;color:#888}
 .hx-panel-content{display:flex;flex:1;min-height:0;flex-direction:column}
 .hx-thread-dock{position:fixed;top:12px;right:12px;z-index:850;display:flex;flex-direction:column;gap:6px;padding:6px;background:rgba(255,255,255,.94);border:1px solid #d9d8d3;border-radius:11px;box-shadow:0 5px 18px rgba(30,30,40,.13);font:12px system-ui;transition:opacity .15s,transform .15s;backdrop-filter:blur(8px)}
 body.hx-panel-open .hx-thread-dock{opacity:0;transform:translateX(10px);pointer-events:none}
@@ -839,6 +845,7 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 body.hx-panel-open{padding-right:0;overflow:hidden}
 .hx-panel-head{min-height:56px;padding:18px 16px 14px 60px}
 .hx-panel-toggle{top:6px;left:6px;width:44px;height:44px;touch-action:manipulation}
+.hx-panel-gear{top:6px;right:8px;width:44px;height:44px;touch-action:manipulation}
 .hx-thread-dock{top:calc(8px + env(safe-area-inset-top));right:8px;padding:4px}
 .hx-dock-open,.hx-dock-thread{width:44px;height:44px;touch-action:manipulation}
 .hx-dock-threads{max-height:calc(100dvh - 68px)}
@@ -870,6 +877,11 @@ body.hx-panel-open{padding-right:0;overflow:hidden}
 .hx-disclosure:hover{background:#33363c;color:#e8e7e2}
 .hx-panel-toggle{background:#24272c;color:#e8e7e2;border-color:#4a4d52}
 .hx-panel-toggle:hover{background:#33363c;color:#fff}
+.hx-panel-gear{background:#24272c;color:#e8e7e2;border-color:#4a4d52}
+.hx-panel-gear:hover{background:#33363c;color:#fff}
+.hx-settings{background:#1e2126;border-color:#3a3d42}
+.hx-set-row{color:#cfd2d6}
+.hx-set-val,.hx-set-note{color:#9aa0a6}
 .hx-thread-dock{background:rgba(29,32,36,.94);border-color:#3a3d42}
 .hx-dock-open,.hx-dock-thread{background:#24272c;border-color:#4a4d52;color:#d7d6d1}
 .hx-dock-open:hover,.hx-dock-thread:hover{background:#33363c;border-color:#686b71;color:#fff}
@@ -881,6 +893,43 @@ body.hx-panel-open{padding-right:0;overflow:hidden}
 }`;
 
 function mountUI() {
+  function setupDiffVisibility() {
+    const gear = document.getElementById('hx-panel-gear');
+    const box = document.getElementById('hx-settings');
+    const slider = document.getElementById('hx-veil');
+    const out = document.getElementById('hx-veil-val');
+    if (!gear || !box || !slider || !out) return;
+    const KEY = 'hx-diff-visibility';
+    const apply = pct => {
+      document.documentElement.style.setProperty('--hx-veil', String(pct / 100));
+      out.textContent = pct + '%';
+    };
+    let start = 100;
+    try {
+      const saved = window.localStorage.getItem(KEY);
+      if (saved !== null && saved !== '' && !Number.isNaN(Number(saved))) {
+        start = Math.min(100, Math.max(0, Number(saved)));
+      }
+    } catch (_) { /* private mode or blocked storage: keep the default */ }
+    slider.value = String(start);
+    apply(start);
+    slider.addEventListener('input', () => {
+      const pct = Number(slider.value);
+      apply(pct);
+      try { window.localStorage.setItem(KEY, String(pct)); } catch (_) { /* nothing to persist to */ }
+    });
+    gear.addEventListener('click', () => {
+      const show = box.hasAttribute('hidden');
+      if (show) {
+        box.removeAttribute('hidden');
+        if (!state.panelOpen) openPanel(true);
+      } else {
+        box.setAttribute('hidden', '');
+      }
+      gear.setAttribute('aria-expanded', show ? 'true' : 'false');
+    });
+  }
+
   const style = document.createElement('style');
   const sharedDocumentStyle = document.querySelector('link[rel~="stylesheet"][href*=".style/spec.css"]');
   style.textContent = (EMBED_REVIEW_DIR || sharedDocumentStyle ? '' : DOC_CSS) + FOCUS_CSS + CSS;
@@ -900,7 +949,7 @@ function mountUI() {
   const panel = document.createElement('aside');
   panel.className = 'hx-panel';
   panel.setAttribute('aria-label', 'Review sidebar');
-  panel.innerHTML = '<div class="hx-panel-head">Review <span class="hx-sub" id="hx-agent"></span><button class="hx-panel-toggle" id="hx-panel-toggle" type="button" aria-expanded="false" aria-label="Open review sidebar">‹</button></div><div class="hx-panel-content" id="hx-panel-content" aria-hidden="true" inert><div class="hx-threads" id="hx-threads"></div><div class="hx-handoff"><span class="hx-note" id="hx-drafts">0 drafts</span><button class="hx-btn pri" id="hx-handoff">Hand off to agent →</button></div></div>';
+  panel.innerHTML = '<div class="hx-panel-head">Review <span class="hx-sub" id="hx-agent"></span><button class="hx-panel-toggle" id="hx-panel-toggle" type="button" aria-expanded="false" aria-label="Open review sidebar">‹</button><button class="hx-panel-gear" id="hx-panel-gear" type="button" aria-expanded="false" aria-controls="hx-settings" aria-label="Review display settings" title="Display settings">⚙</button></div><div class="hx-panel-content" id="hx-panel-content" aria-hidden="true" inert><div class="hx-settings" id="hx-settings" hidden><label class="hx-set-row" for="hx-veil">Diff visibility<span class="hx-set-val" id="hx-veil-val">100%</span><input type="range" id="hx-veil" min="0" max="100" step="5" value="100"></label><p class="hx-set-note">How strongly unchanged blocks are dimmed and blurred. At 0 the whole spec reads at normal clarity.</p></div><div class="hx-threads" id="hx-threads"></div><div class="hx-handoff"><span class="hx-note" id="hx-drafts">0 drafts</span><button class="hx-btn pri" id="hx-handoff">Hand off to agent →</button></div></div>';
   document.body.appendChild(panel);
 
   document.getElementById('hx-mode').addEventListener('click', () => setCommentMode(!state.commentMode));
@@ -908,6 +957,7 @@ function mountUI() {
   document.getElementById('hx-dock-open').addEventListener('click', () => openPanel(true));
   document.getElementById('hx-panel-toggle').addEventListener('click', () => openPanel(!state.panelOpen));
   document.getElementById('hx-handoff').addEventListener('click', handoff);
+  setupDiffVisibility();
   document.addEventListener('keydown', e => {
     if (commentModeShortcut(e)) setCommentMode(!state.commentMode);
     if (e.key === 'Escape') { state.composer = null; setCommentMode(false); renderPanel(); }

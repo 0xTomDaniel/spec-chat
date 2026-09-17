@@ -53,15 +53,18 @@ assert.match(runtime, /function ownAnchorSignature\(/, 'parent anchors compare t
 assert.doesNotMatch(runtime, /body\.hx-focus-active \[data-hx-focus=unchanged\]\{opacity:/, 'focus never dims pins through ancestor opacity');
 assert.doesNotMatch(runtime, /color-mix\(in srgb,currentColor/, 'focus recession never compounds inherited transparency');
 assert.match(runtime, /element\.dataset\.hxFocusRoot = 'changed'/, 'focus marks classified changed roots in the rendered document');
-assert.match(runtime, /\[data-hx-focus-root=changed\]\)\{outline:3px solid #087f73!important/, 'changed roots keep an explicit light-mode focus boundary across document styles');
-assert.match(runtime, /\[data-hx-focus-root=changed\]\)\{outline-color:#5eead4!important\}/, 'changed roots keep an explicit dark-mode focus boundary');
+assert.doesNotMatch(runtime, /data-hx-focus-root=changed\]\)\{outline:/, 'changed roots carry no outline; being unveiled is the only marker they need');
+assert.doesNotMatch(runtime, /outline-color:#5eead4/, 'no dark-mode outline survives on changed roots');
 assert.match(runtime, /AbortController/, 'focus bounds slow baseline reads');
 assert.doesNotMatch(runtime, /await applyIssueFocus\(\)/, 'focus lookup never blocks chart and review boot');
 assert.match(runtime, /fetch\('\/api\/baseline\?'/, 'focus reads its baseline from the review server');
 assert.match(runtime, /sharedDocumentStyle \? '' : DOC_CSS/, 'a linked shared spec stylesheet owns document presentation');
 assert.match(runtime, /sharedDocumentStyle \? '' : DOC_CSS\) \+ FOCUS_CSS \+ CSS/, 'focus styling loads with shared document styles');
 const focusCss = runtime.slice(runtime.indexOf('const FOCUS_CSS = `'), runtime.indexOf('const CSS = `'));
-assert.match(focusCss, /background:rgba\(0,0,0,\.5\)[^}]*backdrop-filter:blur\(2\.5px\)/, 'unchanged blocks use a translucent blurred black veil');
+assert.match(focusCss, /background:rgba\(0,0,0,calc\(\.5\*var\(--hx-veil,1\)\)\)[^}]*backdrop-filter:blur\(calc\(2\.5px\*var\(--hx-veil,1\)\)\)/, 'unchanged blocks use a blurred black veil whose alpha and blur both scale from --hx-veil');
+assert.match(runtime, /id="hx-veil"[^>]*min="0"[^>]*max="100"/, 'the review panel exposes one diff visibility slider over the full range');
+assert.match(runtime, /setProperty\('--hx-veil'/, 'the slider drives --hx-veil so one control governs the whole veil');
+assert.doesNotMatch(focusCss, /blur\(2\.5px\)/, 'no unscaled blur remains');
 assert.match(focusCss, /\[data-hx-focus=unchanged\] \.hx-pin[^}]*z-index:700/, 'pins remain above the veil');
 
 console.log('runtime focus model tests passed');
