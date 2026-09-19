@@ -4,6 +4,15 @@ The spool protocol is portable.
 Wake ownership is host-specific and must be explicit.
 Every open review ends in exactly one terminal control state.
 
+Terminal control selects the checker owner, not the hosting lifetime. While a
+remote review is parked, the same public server, captured secret URL, and
+checker remain alive. Empty spool, timeout, no draft, a final assistant
+response, and `manual-resume` are non-terminal for hosting. The only hosting
+terminal is the processed empty **Finish review** hand-off: the human selected
+Finish review, the agent consumed that hand-off, and the exact cursor advance
+succeeded. A manual-resume owner must preserve the live URL and resume against
+it when the next human message arrives.
+
 ## Turn-yielded
 
 Use when the host proves that completion of the yielded tool call re-enters the same open authoring turn.
@@ -78,7 +87,7 @@ Use when neither a verified same-turn yield nor a verified host adapter exists.
 scripts/review-control.sh manual
 ```
 
-Return a final response that says automatic wake is not active and a new human chat message is required.
+Return a final response that says automatic wake is not active and a new human chat message is required. Keep the existing public server, captured URL, and checker alive. On that message, resume the checker against the same URL; do not start a second server or treat the empty spool as review completion.
 On that message, discard any old watcher or tool session, run the zero-wait collection scan, and drain every complete batch before new work.
 
 The browser independently changes an unacknowledged handoff to: automatic wake did not occur; send a new chat message to resume.
