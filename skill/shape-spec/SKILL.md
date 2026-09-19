@@ -15,8 +15,9 @@ Create durable current truth before deep investigation.
 - Implementation tickets own independently assignable outcomes and blocking relations.
 - Chat and memory never override durable sources; stop on source conflict.
 - Accepted spec changes are committed and pushed before refreshed Git focus or review replies.
-- `spec-chat-review` alone owns browser review, spool transactions, transport, wake, and recovery.
-- A shaping handoff is not review-ready until the exact spec has a verified hosted review surface.
+- `spec-chat-review` alone owns browser review, server startup and shutdown, spool transactions, transport, wake, recovery, and hosting verification.
+- A remote or cross-machine shaping handoff is blocked until `spec-chat-review` has a direct public `assets/review-serve.py` process serving the narrow spec collection, never the repository root, with evidence that the exact spec URL returns the exact current bytes and `/api/baseline` resolves the selected exact Git base.
+- A same-machine reviewer may use the supported local transport without a public server. Shape owns this blocking handoff condition; `spec-chat-review` owns its mechanics.
 
 ## Shape
 
@@ -27,7 +28,7 @@ Create durable current truth before deep investigation.
 5. For every new spec or material restructure, read [references/authoring.md](references/authoring.md) completely before editing. Existing specs are not grandfathered. Before presenting a new or materially revised draft for browser review, run `python3 scripts/validate-style.py <repository> <spec-html> <exact-change-request-base>` and the authoring browser gate; stop on failure.
 6. Classify acceptance criteria as clear, gap, or not needed. Back clear criteria with identified rules, mark material gaps `data-spec-tbd`, and remove unnecessary criteria.
 7. Add an ADR only for a hard-to-reverse, surprising decision with a real tradeoff. For behavior changes, name the deep-module seam, smallest first failing test, and observable evidence; docs-only work skips this, while unsuitable tests require a narrow waiver and alternative proof.
-8. Before browser evidence or the first human review handoff, use `spec-chat-review` to start the direct server for the narrow collection and verify the served spec and exact baseline. Keep that server and URL for the review lifetime.
+8. Before browser evidence or the first remote or cross-machine review handoff, use `spec-chat-review` to start the direct public server for the narrow collection and verify the served spec and exact baseline. Keep that server and URL for the review lifetime. For a same-machine reviewer, use the supported local transport instead; no public server is required.
 
 ## Implementation graph
 
@@ -47,7 +48,8 @@ Ask small dependency-aware batches in Spec Chat, resolve each answer into curren
 Finish each batch's behavior, acceptance, and necessary layout changes together before final browser inspection and ticket reconciliation; apply the authoring reference's proportional recheck rule to later corrections.
 Invoke `spec-chat-review` with `focus=changes&base=<exact-review-base>`; it owns publication mechanics, review hosting, baseline selection, and the review loop.
 An operator-selected previously reviewed snapshot may differ from the change request's base; keep the latter for stylesheet provenance validation.
-For remote review, start the direct public review server against the narrow collection, verify the exact spec and baseline, and include only the resulting review URL, spec path, and baseline in the shaping handoff. The URL itself is the secret; never publish it into the issue or change request.
+For remote or cross-machine review, block the shaping handoff until the direct public review server serves the narrow collection, never the repository root, and verification proves that the exact spec URL returns the exact current bytes and `/api/baseline` resolves the selected exact Git base. The handoff contains exactly the secret review URL, spec path, and exact baseline. The URL itself is the secret; never publish it into the issue or change request. Keep the same server and URL alive through review; a file path or stale URL is not a substitute. The same-machine local transport is the only exception to the public-server requirement.
+Failure checks are explicit: missing or non-observable hosting, a wrong collection root, mismatched spec bytes, or an unresolved or substituted baseline blocks handoff and means shaping cannot report ready. `spec-chat-review` performs startup, verification, transport, wake, recovery, and shutdown; shape only enforces this gate.
 
 ## Finish
 
@@ -55,7 +57,7 @@ Finish shaping only when:
 
 - no draft, pending, acknowledged, unresolved, or material TBD work remains
 - issue, spec, applicable ADRs, stories, acceptance criteria, architecture, and implementation graph agree
-- `spec-chat-review` has completed the browser review and stopped its public review server
+- `spec-chat-review` has completed the browser review and stopped its public review server when remote review was used
 
 Review completion is not implementation authorization, acceptance, merge approval, or deployment approval.
 
