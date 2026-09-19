@@ -14,6 +14,54 @@ The declaration is canonical only in HTML; Linear carries lifecycle and links, w
 Spec Chat review judges whether the declaration, step, mode, and milestone are semantically correct; the validator checks only presence and reference integrity.
 Runtime ownership stays independent: a central registry orders the journey, while feature modules own targets and success milestones.
 
+## Required shaped-spec sections
+
+New or materially revised governing specs opt into the structural contract with
+`data-spec-contract="shaped-sections-v1"` on the article. Untouched specs without
+that marker remain on the legacy path until an explicit migration.
+
+Every marked spec has exactly one visible, named section for each contract
+surface:
+
+```html
+<article class="spec" data-spec-contract="shaped-sections-v1">
+  <section data-spec-section="user-stories" data-anchor="user-stories">
+    <h2>User stories</h2>
+    <p data-user-story data-anchor="story-name" data-user-facing="true" data-guided-journey="no">As a ...</p>
+  </section>
+  <section data-spec-section="acceptance" data-acceptance-scope="traceability" data-anchor="acceptance">
+    <h2>Acceptance criteria</h2>
+    <p data-acceptance-criterion data-anchor="acceptance-name">
+      <span data-acceptance-scenario>When ...</span>
+      <span data-acceptance-observable>The page ...</span>
+    </p>
+  </section>
+  <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+    <h2>Modular boundaries</h2>
+    <p data-modular-boundary data-anchor="boundary-review">
+      <span data-boundary-responsibility>Review owns ...</span>
+      <span data-boundary-seam>The caller-facing seam is ...</span>
+      <span data-boundary-dependency>Direction is self-contained or external-provider ...</span>
+      <span data-boundary-scope>Observable scope: ...</span>
+    </p>
+  </section>
+</article>
+```
+
+The validator requires exact `h2` headings `User stories`, `Acceptance criteria`,
+and `Modular boundaries`. Every story must be inside the User stories section,
+so stories cannot be buried in behavior prose. Acceptance criteria prove the
+requirements of the governing spec. Their scope is carried by the descriptive
+`data-acceptance-scope` when useful, anchors, and surrounding source context;
+these scope hints are optional and descriptive, and no MVP-labelled heading is required. A deferred or `data-spec-tbd`
+criterion cannot satisfy the governing Acceptance criteria section.
+
+Every marked spec has one Modular boundaries section, including a self-contained
+single-module spec. Each anchored boundary names responsibility, the
+caller-facing seam, dependency direction including self-contained or an
+external provider, and observable scope. The structural gate checks these
+fields; review still judges whether their meanings are correct.
+
 ## Information plan
 
 Before writing or styling, classify each behavior cluster:
@@ -43,7 +91,7 @@ Preserve existing `data-anchor` identities; give every new contract-bearing sect
 Use one sentence per prose line and pretty semantic-island JSON beside its render target.
 A removable visual is decoration, not a contract artifact.
 
-For cross-module behavior, include a concise Modular boundaries section naming responsibility, caller-facing seam, and dependency direction.
+Every shaped spec includes a concise Modular boundaries section naming responsibility, caller-facing seam, dependency direction, and observable scope, including self-contained single-module specs.
 Prefer a semantic diagram for multiple relationships; omit classes, functions, files, and replaceable detail.
 
 ## Visual system

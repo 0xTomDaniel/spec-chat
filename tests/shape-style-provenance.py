@@ -40,6 +40,23 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
         link = f'<link rel="stylesheet" href="{href}">' if href else ""
         self.spec.write_text(f"<!doctype html><html><head>{link}{extra}{local}</head><body>{body}</body></html>\n")
 
+    def write_shaped_spec(self, story=DEFAULT_STORY, scope="traceability", current="", acceptance_heading="Acceptance criteria", acceptance_extra="", boundary_extra="", boundary_scope="Observable scope is this review"):
+        current_attr = f' data-current-slice="{current}"' if current else ""
+        body = f"""<article class=\"spec\" data-spec-contract=\"shaped-sections-v1\"{current_attr}>
+<section data-spec-section=\"user-stories\" data-anchor=\"user-stories\">
+<h2>User stories</h2>{story}
+</section>
+<section data-spec-section=\"acceptance\" data-acceptance-scope=\"{scope}\" data-anchor=\"acceptance\">
+<h2>{acceptance_heading}</h2>
+<p data-acceptance-criterion data-anchor=\"acceptance-rule\"{acceptance_extra}><span data-acceptance-scenario>When the rule is exercised</span><span data-acceptance-observable>The observable result is recorded</span></p>
+</section>
+<section data-spec-section=\"modular-boundaries\" data-anchor=\"modular-boundaries\">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor=\"boundary-rule\"{boundary_extra}><span data-boundary-responsibility>The spec owner defines the contract</span><span data-boundary-seam>The caller-facing seam is the review handoff</span><span data-boundary-dependency>The direction is self-contained</span><span data-boundary-scope>{boundary_scope}</span></p>
+</section>
+</article>"""
+        self.write_spec(body=body)
+
     def commit(self):
         self.git("add", ".")
         self.git("commit", "-qm", "base")
@@ -195,6 +212,72 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("stories=valid", result.stdout)
+
+    def test_accepts_marked_spec_with_exact_named_sections(self):
+        base = self.empty_base()
+        self.write_shaped_spec()
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("stories=valid", result.stdout)
+
+    def test_unmarked_legacy_spec_remains_valid_without_section_backfill(self):
+        self.write_spec()
+        self.style.write_text("body { color: #111; }\n")
+        base = self.commit()
+        self.write_spec()
+        result = self.validate(base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_rejects_marked_buried_story(self):
+        base = self.empty_base()
+        story = '<p data-user-story data-anchor="story" data-user-facing="true" data-guided-journey="no">Story</p>'
+        self.write_shaped_spec(story=story)
+        html = self.spec.read_text().replace('<h2>User stories</h2>'+story, '<h2>User stories</h2>').replace('</article>', story+'</article>')
+        self.spec.write_text(html)
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("visibly contained in the User stories section", result.stderr)
+
+    def test_accepts_marked_acceptance_without_optional_scope(self):
+        base = self.empty_base()
+        self.write_shaped_spec(scope="")
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_rejects_marked_deferred_acceptance(self):
+        base = self.empty_base()
+        self.write_shaped_spec(acceptance_extra=' data-spec-tbd="open"')
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot be deferred", result.stderr)
+
+    def test_rejects_ambiguous_acceptance_scope(self):
+        base = self.empty_base()
+        self.write_shaped_spec(scope="deferred")
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot be deferred", result.stderr)
+
+    def test_rejects_marked_noncanonical_acceptance_heading(self):
+        base = self.empty_base()
+        self.write_shaped_spec(acceptance_heading="Evidence contract acceptance")
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("visible Acceptance criteria section", result.stderr)
+
+    def test_rejects_marked_weak_modular_boundary(self):
+        base = self.empty_base()
+        self.write_shaped_spec(boundary_scope="")
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("needs observable scope", result.stderr)
 
     def test_unchanged_legacy_spec_does_not_trigger_structural_backfill(self):
         self.write_spec(body="<p>Legacy outcome</p>")

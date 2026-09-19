@@ -15,6 +15,46 @@ spec-chat specs are visual HTML documents (`*.spec.html`) the user annotates in 
 
 Your job in review mode: reconcile hand-off batches, route material authoring through `spec-chat-shape`, apply each comment to the spec, reply through the spool, and leave review in one truthful terminal control state.
 
+## Remote hosting lifecycle
+
+For remote or cross-machine review, the public review server, its printed URL,
+and the watcher or checker are one review session. An empty spool means the
+session is parked and waiting, not that review ended. No timeout, empty scan,
+missing draft, manual-resume selection, or final assistant response ends the
+hosting session.
+
+Start the narrow collection through the approved-port launcher. It discovers
+the host's approved ingress ports from `SPEC_CHAT_APPROVED_INGRESS_PORTS` or
+the firewall rule set, probes those ports for availability, and chooses one
+free approved port. Do not encode a port number in the skill or launcher.
+
+```sh
+scripts/launch-review-serve.sh <narrow-collection> <spec-path> <exact-base> \
+  --external-probe <non-loopback-probe-command>
+```
+
+The launcher may pass the selected approved port to `review-serve.py`; it must
+never assume a particular port and must fail when approved ports cannot be
+discovered or none is free. Capture the server's printed URL as the secret
+review URL and retain that exact value for the whole session. An ephemeral port
+from `--public` with no approved-port check is insufficient.
+
+Before handing the URL to a reviewer, verify the exact served spec bytes and
+`/api/baseline` against the selected exact Git base. Deliver, in this order,
+the secret URL, spec path, exact baseline, and verification result. The launcher
+must also run the probe from a non-loopback vantage and verify those same spec
+and baseline responses through the URL. A local curl or loopback request is not
+external proof. Only after external verification and URL delivery may the
+watcher or checker park. The URL must stay out of Linear, pull requests, and
+other durable public text.
+
+Shutdown is allowed only after the human selects **Finish review**, or after a
+durable review-ended control records that same action. The observable terminal
+condition is a processed empty Finish review hand-off: the browser had no draft,
+pending, acknowledged, unresolved, or `data-spec-tbd` work, the agent consumed
+that hand-off, and the exact cursor advance succeeded. A zero-wait scan without
+that terminal hand-off is parked review and keeps hosting alive.
+
 ## The loop
 
 1. **Reconnect before parking.** On every newly started or resumed spec-chat turn, first run one immediate, read-only collection scan:
@@ -53,7 +93,7 @@ Your job in review mode: reconcile hand-off batches, route material authoring th
 
    - `turn-yielded`: run `scripts/review-control.sh yielded <spec-root> .cursor-<cli-or-session> 3600 3` through a verified same-turn yield and keep this turn open. A final response is forbidden.
    - `external-wake`: run `scripts/review-control.sh external <spec-root> .cursor-<cli-or-session> <owner-id> <owner-session> <adapter> [args...]` in a persistent foreground host-owned terminal. Final is allowed only after the adapter verifies the exact owner identity.
-   - `manual-resume`: run `scripts/review-control.sh manual`, return a final response that explicitly requires a new human chat message, and claim no automatic wake.
+   - `manual-resume`: run `scripts/review-control.sh manual`, return a final response that explicitly requires a new human chat message, and claim no automatic wake. Keep the same public server, secret URL, and checker alive while waiting; the new message resumes the checker against that URL.
 
    `<spec-root>` is normally the repository's shared `docs/` collection root.
    `review-control.sh` holds one local kernel lock per canonical collection root and cursor, so a second yielded or external owner fails visibly instead of racing the first.
@@ -79,6 +119,7 @@ Your job in review mode: reconcile hand-off batches, route material authoring th
 When a handed-off batch is material, `spec-chat-shape` becomes a required co-skill before the first file edit.
 Read its authoring reference, reassess the complete affected page, and run its browser gate before the material batch's review handoff or replies, using its proportional recheck rule for later local corrections.
 For each changed user-facing story, evaluate whether its guided-journey yes/no declaration is semantically correct; for yes, also evaluate the linked step, passive/required mode, and required-flow success milestone. Structural validation does not decide these meanings.
+For every new or materially revised governing HTML spec with `data-spec-contract="shaped-sections-v1"`, run the shaping validator before reply or handoff. It must find exactly one visible `User stories`, `Acceptance criteria`, and `Modular boundaries` section, with anchored observable acceptance and boundary fields. A validator failure blocks review.
 Do not grandfather a weak existing page, preserve a poor layout merely to minimize the diff, or call a material expansion review-only.
 If `spec-chat-shape` is unavailable, leave the batch durable and stop before editing rather than silently using the review-only path.
 
@@ -100,7 +141,7 @@ A resolved thread remains expandable. When its latest message is from the agent,
 
 If a hand-off remains unacknowledged past the existing timeout, the browser states that automatic wake did not occur and instructs the human to send a new chat message to resume.
 
-When every thread is resolved and no material TBD remains, the no-draft action becomes **Finish review**. It writes the existing empty hand-off. Reconcile it, settle any final durable change, advance the exact cursor, stop the watcher, stop the review server, and end the active review window. Finish review is not implementation authorization, acceptance, merge approval, or deployment approval.
+When every thread is resolved and no material TBD remains, the no-draft action becomes **Finish review**. It writes the existing empty hand-off. Reconcile it, settle any final durable change, and advance the exact cursor. Only after that processed terminal hand-off may the watcher, checker, and public review server stop and the active review window end. Finish review is not implementation authorization, acceptance, merge approval, or deployment approval.
 
 ## Event schema
 
@@ -136,7 +177,7 @@ Whichever transport is in play, host the spec with `assets/review-serve.py`.
 Do not substitute `python3 -m http.server` or another static file server: it serves the page but provides no annotation spool, no `/api/baseline`, no capability check, and no review URL contract, so the review layer silently never works.
 
 - **Local browser, same machine**: nothing to run; the page connects to the folder directly (file:// + FSA). Browser security does not reliably persist write permission. When an IndexedDB handle returns `prompt`, the runtime shows **Resume review** and requests write permission on the already-selected handle; **Choose different folder** remains a separate picker fallback for a moved tree, wrong prior scope, or Chromium shell that does not surface the regrant prompt. Chromium can follow the native directory picker with a separate **Allow this site to edit files?** browser window; the runtime must name that step and visibly wait for it because shells such as Arc may not layer it over the spec window. The grant accepts ANY ancestor folder of the spec — pick it in the dialog or drag it from Finder onto the page; the runtime walks down to the spec's folder itself and remembers the ancestor. Caveats: Chromium refuses grants on the top-level roots themselves (home, Documents, Desktop, Downloads — children beneath them are fine), so suggest a workspace/projects folder one level down; if the granted tree contains two same-named specs at matching sub-paths the runtime refuses to guess and asks for a narrower grant. The spec's exact path also lands on the clipboard when the picker opens (⌘⇧G + paste in the macOS panel). If the user wants zero prompts or uses Safari or Firefox, run `assets/review-serve.py` on loopback; the HTTP transport auto-connects.
-- **Remote browser**: start `assets/review-serve.py <docs-root> --public` against the narrow review collection, never the repository root. The server chooses a free port unless one is supplied, binds directly to the host interface, and prints the review URL. The URL itself is the secret; require no login, token, SSH, VPN, tunnel, or separate proxy. Verify the printed URL serves the exact spec and `/api/baseline` accepts the selected base before handing it to the human. Keep the same server and URL through review edits. Stop the server when review ends so the URL becomes invalid.
+- **Remote browser**: use `scripts/launch-review-serve.sh` for the narrow collection. It discovers approved ingress ports, probes them, binds `assets/review-serve.py` to a free approved port, captures the printed URL, and runs a non-loopback external probe. Do not substitute an ephemeral public port without the approved-port check, a fixed port assumption, or a local curl. The URL itself is the secret; require no login, token, SSH, VPN, tunnel, or separate proxy. Verify the exact spec bytes and `/api/baseline` against the selected base locally and from the external vantage before handing it to the human. Deliver the URL, spec path, exact baseline, and both verification results before parking any watcher or checker. Keep the same server, URL, and checker through review edits, empty scans, timeouts, and manual-resume. Stop them only after the processed empty Finish review hand-off described above.
 
 ## Scaffolding spec-chat into a repo
 
