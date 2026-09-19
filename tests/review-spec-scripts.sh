@@ -108,5 +108,7 @@ node "$ROOT/tests/runtime-mobile-contract.mjs"
 (cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/review-surface-preflight.py)
 (cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/review-hosting-lifecycle-contract.py)
 (cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/spec-style-contract.py)
+(cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/shape-style-provenance.py)
+(cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/skill-routing-contract.py)
 "$ROOT/tests/review-wake-control.sh"
 echo "review-spec script tests passed"
