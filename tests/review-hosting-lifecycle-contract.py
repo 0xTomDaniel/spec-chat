@@ -36,9 +36,11 @@ class ReviewHostingLifecycleContractTest(unittest.TestCase):
         wait = LAUNCHER.rindex('wait "$SERVER_PID"')
         self.assertLess(probe, handoff)
         self.assertLess(handoff, wait)
-        self.assertIn("non-loopback external probe", REVIEW)
+        self.assertIn("non-loopback vantage", REVIEW)
+        self.assertIn("operator-confirmed public URL receipt", REVIEW)
         self.assertIn("HTTP 200", SHAPE)
-        self.assertIn("loopback-only proof", SHAPE)
+        self.assertIn("same-machine proof", SHAPE)
+        self.assertIn("exact resource and baseline proof", SHAPE)
 
     def test_contract_requires_url_delivery_before_parking(self):
         deliver = REVIEW.index("Deliver, in this order")
@@ -46,6 +48,7 @@ class ReviewHostingLifecycleContractTest(unittest.TestCase):
         self.assertLess(deliver, park)
         self.assertIn("URL delivery", SHAPE)
         self.assertIn("Refuse URL delivery and checker parking", SHAPE)
+        self.assertIn("neither an executable non-loopback probe nor a complete operator-confirmed public URL receipt", SHAPE)
 
     def test_empty_spool_and_manual_resume_keep_hosting_alive(self):
         self.assertIn("empty spool", REVIEW)
