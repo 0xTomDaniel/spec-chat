@@ -48,17 +48,32 @@ the unchanged review session. A local curl or loopback request is not remote
 transport proof. The operator receipt records proof class, UTC time, attestor,
 stated reviewer vantage, URL fingerprint, HTTP status, resource path, exact
 spec hash, selected baseline commit, baseline response hash, and the command or
-observation method. It proves only those recorded facts; visual inspection
-alone never claims exact byte equality. Same-machine proof is allowed only for
-an explicitly same-machine handoff and records that it makes no remote
-reachability claim. Only after exact content proof and one accepted transport
-proof may the watcher or checker park. The URL must stay out of Linear, pull
-requests, and other durable public text.
+observation method. The operator uses an append-only local operator receipt. It
+stores only a URL fingerprint: never write the raw secret URL to the receipt,
+Linear, a pull request, or another public durable record. It proves only those
+recorded facts; visual inspection alone never claims exact byte equality.
+Same-machine proof is allowed only for an explicitly same-machine handoff and
+its append-only local receipt records explicit same-machine scope, host identity
+or equivalent local scope, the approved port, server process identity, exact
+content result, and local URL or transport path (URL fingerprint only), plus
+an explicit statement that no public reachability claim was made. Keep any
+secret URL only in the active handoff.
+
+The launcher's external-probe path remains the executable external-probe
+class and is separate from the operator receipt path. When an executable
+non-loopback probe is unavailable, the caller may manually deliver the secret
+URL after supplying a complete operator-confirmed receipt through this manual caller-owned handoff seam. This documents the handoff contract only; it does
+not add an application-wide receipt store or receipt implementation. Refuse
+URL delivery and checker parking when the receipt is missing, incomplete, or
+stale, or when the handoff session is new. A changed spec, baseline, server process,
+approved port, URL, resource path, or reviewer vantage requires fresh exact
+content proof and fresh transport proof. Only after exact content proof and
+one accepted transport proof may the watcher or checker park.
 
 Refuse URL delivery and checker parking when neither accepted transport proof
-exists, when the receipt is incomplete or stale, or when the exact spec and
-`/api/baseline` proof fails. Never silently downgrade remote review to
-same-machine scope.
+exists, when the receipt is incomplete or stale, when a new session has no
+fresh receipt, or when the exact spec and `/api/baseline` proof fails. Never
+silently downgrade remote review to same-machine scope.
 
 Shutdown is allowed only after the human selects **Finish review**, or after a
 durable review-ended control records that same action. The observable terminal
@@ -189,7 +204,7 @@ Whichever transport is in play, host the spec with `assets/review-serve.py`.
 Do not substitute `python3 -m http.server` or another static file server: it serves the page but provides no annotation spool, no `/api/baseline`, no capability check, and no review URL contract, so the review layer silently never works.
 
 - **Local browser, same machine**: nothing to run; the page connects to the folder directly (file:// + FSA). Browser security does not reliably persist write permission. When an IndexedDB handle returns `prompt`, the runtime shows **Resume review** and requests write permission on the already-selected handle; **Choose different folder** remains a separate picker fallback for a moved tree, wrong prior scope, or Chromium shell that does not surface the regrant prompt. Chromium can follow the native directory picker with a separate **Allow this site to edit files?** browser window; the runtime must name that step and visibly wait for it because shells such as Arc may not layer it over the spec window. The grant accepts ANY ancestor folder of the spec — pick it in the dialog or drag it from Finder onto the page; the runtime walks down to the spec's folder itself and remembers the ancestor. Caveats: Chromium refuses grants on the top-level roots themselves (home, Documents, Desktop, Downloads — children beneath them are fine), so suggest a workspace/projects folder one level down; if the granted tree contains two same-named specs at matching sub-paths the runtime refuses to guess and asks for a narrower grant. The spec's exact path also lands on the clipboard when the picker opens (⌘⇧G + paste in the macOS panel). If the user wants zero prompts or uses Safari or Firefox, run `assets/review-serve.py` on loopback; the HTTP transport auto-connects.
-- **Remote browser**: use `scripts/launch-review-serve.sh` for the narrow collection. It discovers approved ingress ports, probes them, binds `assets/review-serve.py` to a free approved port, captures the printed URL, and supports the executable non-loopback probe path. Do not substitute an ephemeral public port without the approved-port check, a fixed port assumption, or a local curl. The URL itself is the secret; require no login, token, SSH, VPN, tunnel, or separate proxy. Verify the exact spec bytes and `/api/baseline` against the selected base, then record either the non-loopback probe result or the complete operator-confirmed public URL receipt before handing it to the human. Deliver the URL, spec path, exact baseline, selected proof class, and verification result before parking any watcher or checker. Keep the same server, URL, receipt, and checker through review edits, empty scans, timeouts, and manual-resume. Stop them only after the processed empty Finish review hand-off described above.
+- **Remote browser**: use `scripts/launch-review-serve.sh` for the narrow collection. It discovers approved ingress ports, probes them, binds `assets/review-serve.py` to a free approved port, captures the printed URL, and supports the executable non-loopback probe path. The launcher external-probe path is one transport proof class; the separate operator-confirmed receipt path is a manual caller-owned handoff when that executable probe is unavailable. Do not substitute an ephemeral public port without the approved-port check, a fixed port assumption, or a local curl. The URL itself is the secret; require no login, token, SSH, VPN, tunnel, or separate proxy. Verify the exact spec bytes and `/api/baseline` against the selected base, then record either the non-loopback probe result or the complete append-only local operator receipt before handing it to the human. Deliver the URL, spec path, exact baseline, selected proof class, and verification result before parking any watcher or checker. Keep the same server, URL, receipt, and checker through review edits, empty scans, timeouts, and manual-resume. A changed session or stale receipt refuses handoff and requires fresh proof. Stop them only after the processed empty Finish review hand-off described above.
 
 ## Scaffolding spec-chat into a repo
 
