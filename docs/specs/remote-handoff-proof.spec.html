@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./.style/spec.css">
+<title>Remote handoff proof policy</title>
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Remote handoff proof policy</h1>
+<nav data-anchor="breadcrumbs">docs / specs / remote-handoff-proof.spec.html</nav>
+<p data-anchor="source-issues">Source issue: <a href="https://linear.app/annotateanything/issue/ANN-40/shape-portable-remote-handoff-proof-alternatives">ANN-40</a>.</p>
+<p data-anchor="context-issue">ANN-30 remains context only and is not changed by this policy.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-remote-review">As a remote reviewer, I can receive a review URL when an accepted transport proof and exact content proof establish the requested resource.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-same-machine">As a same-machine reviewer, I can use a local review transport after exact local content and baseline checks without a public URL.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-truthful-proof">As an operator, I can see which proof class was used, what it proves, and why a handoff remains refused when a required fact is missing.</p>
+</section>
+
+<section data-anchor="decision">
+<h2>Decision</h2>
+<p data-anchor="decision-relax">Relax the mandatory non-loopback probe for remote handoff, but do not remove transport proof.</p>
+<p data-anchor="decision-classes">A remote handoff accepts either an executable non-loopback probe or an operator-confirmed public URL receipt for the unchanged review session.</p>
+<p data-anchor="decision-same-machine">A same-machine proof is valid only for a handoff explicitly scoped to a reviewer on the same machine.</p>
+<p data-anchor="decision-no-waiver">No proof class silently waives exact resource bytes, exact baseline identity, approved-port selection, collision safety, secret URL handling, explicit process ownership, or Finish review lifecycle.</p>
+</section>
+
+<section data-anchor="proof-model">
+<h2>Proof model</h2>
+<figure data-anchor="proof-flow">
+<svg viewBox="0 0 920 250" role="img" aria-label="Content proof is combined with one of three transport proof classes">
+<defs>
+<marker id="proof-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2947c7"></path></marker>
+</defs>
+<rect x="28" y="34" width="250" height="74" rx="8" fill="#e8edf9" stroke="#2947c7"></rect>
+<text x="48" y="66" fill="#171719" font-size="16" font-weight="700">Exact content proof</text>
+<text x="48" y="91" fill="#303036" font-size="13">spec bytes + /api/baseline</text>
+<rect x="28" y="146" width="250" height="74" rx="8" fill="#e8edf9" stroke="#2947c7"></rect>
+<text x="48" y="178" fill="#171719" font-size="16" font-weight="700">Transport proof</text>
+<text x="48" y="203" fill="#303036" font-size="13">one accepted class</text>
+<line x1="278" y1="72" x2="430" y2="72" stroke="#2947c7" stroke-width="2" marker-end="url(#proof-arrow)"></line>
+<line x1="278" y1="183" x2="430" y2="183" stroke="#2947c7" stroke-width="2" marker-end="url(#proof-arrow)"></line>
+<rect x="432" y="20" width="214" height="58" rx="8" fill="#e7f3ef" stroke="#167b68"></rect>
+<text x="450" y="46" fill="#171719" font-size="14" font-weight="700">External probe</text>
+<text x="450" y="66" fill="#303036" font-size="12">HTTP 200 from non-loopback</text>
+<rect x="432" y="96" width="214" height="58" rx="8" fill="#fff2d9" stroke="#9b6500"></rect>
+<text x="450" y="122" fill="#171719" font-size="14" font-weight="700">Operator confirmation</text>
+<text x="450" y="142" fill="#303036" font-size="12">public URL from stated vantage</text>
+<rect x="432" y="172" width="214" height="58" rx="8" fill="#f0edf9" stroke="#5c45a8"></rect>
+<text x="450" y="198" fill="#171719" font-size="14" font-weight="700">Same-machine</text>
+<text x="450" y="218" fill="#303036" font-size="12">local reviewer scope only</text>
+<line x1="646" y1="49" x2="760" y2="113" stroke="#2947c7" stroke-width="2" marker-end="url(#proof-arrow)"></line>
+<line x1="646" y1="125" x2="760" y2="125" stroke="#2947c7" stroke-width="2" marker-end="url(#proof-arrow)"></line>
+<line x1="646" y1="201" x2="760" y2="137" stroke="#2947c7" stroke-width="2" marker-end="url(#proof-arrow)"></line>
+<rect x="762" y="88" width="132" height="74" rx="8" fill="#e7f3ef" stroke="#167b68"></rect>
+<text x="779" y="119" fill="#171719" font-size="15" font-weight="700">Handoff</text>
+<text x="779" y="141" fill="#303036" font-size="12">URL or local path</text>
+</svg>
+<figcaption data-anchor="proof-flow-caption">Figure: exact content proof is independent from transport reachability.</figcaption>
+</figure>
+<table data-anchor="proof-table">
+<thead><tr data-anchor="proof-table-head"><th>Class</th><th>Permitted scope</th><th>Proves</th><th>Does not prove</th></tr></thead>
+<tbody>
+<tr data-anchor="proof-external"><td>external-probe</td><td>Remote or same-machine public URL</td><td>HTTP 200 and route reachability from the configured non-loopback vantage.</td><td>Future availability after the session changes.</td></tr>
+<tr data-anchor="proof-operator"><td>operator-confirmed-public-url</td><td>Remote URL handoff</td><td>The operator observed the exact printed URL from the stated reviewer vantage and recorded the response facts.</td><td>Exact bytes unless the receipt includes checker output or hashes.</td></tr>
+<tr data-anchor="proof-same"><td>same-machine</td><td>Reviewer and server on one machine</td><td>Local transport plus exact local content and baseline checks.</td><td>Reachability from another machine or a public network.</td></tr>
+</tbody>
+</table>
+</section>
+
+<section data-anchor="content-proof">
+<h2>Exact content proof</h2>
+<p data-anchor="content-spec">Every class runs the read-only verifier against the exact current spec bytes and the selected exact Git base.</p>
+<p data-anchor="content-baseline">Spec Chat proof includes HTTP 200 for the requested resource, byte equality for the served spec, the exact <code>/api/baseline</code> response, the resolved baseline commit, and baseline HTML byte equality or an explicit new-file result.</p>
+<p data-anchor="content-evidence-interface">A portable evidence service applies the same interface to its exact manifest and artifact bytes, candidate Git baseline record and hash, and deterministic served-page hash.</p>
+<p data-anchor="content-change">Any spec, baseline, server process, selected port, URL, resource path, or reviewer-vantage change invalidates the receipt and requires fresh proof.</p>
+</section>
+
+<section data-anchor="transport-proof">
+<h2>Transport proof and operator receipt</h2>
+<p data-anchor="transport-external">The executable external probe remains the strongest automated class and verifies HTTP 200, exact served bytes, and the exact baseline response through the printed URL before URL delivery.</p>
+<p data-anchor="transport-operator">An operator-confirmed public URL is an accepted alternative only when the operator records an append-only local receipt containing proof class, UTC time, attestor identity, stated reviewer vantage, URL fingerprint, HTTP status, resource path, exact spec hash, selected baseline commit, baseline response hash, and the command or observation method.</p>
+<p data-anchor="transport-operator-limit">The operator attestation proves only the facts explicitly recorded, and visual page inspection alone cannot claim exact byte equality.</p>
+<p data-anchor="transport-same">Same-machine proof records reviewer scope as same-machine, host identity or equivalent local scope, selected approved port, process identity, exact content result, and local URL or transport path.</p>
+<p data-anchor="transport-secret">The secret URL is delivered only through the active handoff and is never written to Linear, a pull request, or another public durable record; the local receipt stores only a URL fingerprint.</p>
+<p data-anchor="transport-port">Approved ingress discovery, free-port selection, collision safety, narrow collection root, and explicit server and checker ownership remain mandatory before any transport proof is accepted.</p>
+</section>
+
+<section data-anchor="failure">
+<h2>Failure and refusal</h2>
+<p data-anchor="failure-no-proof">If neither an executable non-loopback probe nor a complete operator-confirmed public URL receipt exists for a remote handoff, URL delivery and checker parking remain refused.</p>
+<p data-anchor="failure-incomplete">An incomplete receipt, a loopback-only request presented as remote proof, a missing hash or baseline identity, an unknown vantage, a stale URL, a changed process, a port collision, an unapproved port, wrong bytes, or a substituted baseline fails closed.</p>
+<p data-anchor="failure-local">When remote proof is unavailable, the operator may downgrade explicitly to same-machine scope and use local transport, or keep the server unparked while waiting for proof; the downgrade never claims public reachability.</p>
+<p data-anchor="failure-retry">A new handoff session, source edit, baseline edit, server restart, URL change, or reviewer-vantage change requires fresh local content proof and a fresh transport proof.</p>
+</section>
+
+<section data-anchor="lifecycle">
+<h2>Lifecycle</h2>
+<p data-anchor="lifecycle-owner">The launcher owns approved-port discovery, server process identity, URL capture, local verification, and the selected transport proof receipt.</p>
+<p data-anchor="lifecycle-checker">The checker owns readiness detection and exact cursor advancement, and remains parked on the same server, URL, receipt, and cursor through empty spool, timeout, and manual-resume states.</p>
+<p data-anchor="lifecycle-finish">Hosting and checker shutdown occur only after the processed empty Finish review hand-off records no draft, pending, acknowledged, unresolved, or <code>data-spec-tbd</code> work and the exact cursor advance succeeds.</p>
+<p data-anchor="lifecycle-scope">Finish review means human HTML review completion only and never implementation authorization, acceptance, merge approval, deployment approval, or traffic shift.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="proof-policy" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-classes"><span data-acceptance-scenario>When a remote review handoff is requested,</span> <span data-acceptance-observable>the owning procedure accepts an executable non-loopback probe or a complete operator-confirmed public URL receipt and records the selected proof class.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-content"><span data-acceptance-scenario>When any proof class is selected,</span> <span data-acceptance-observable>exact current resource bytes and the applicable exact baseline response are verified separately from transport reachability.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-same-machine"><span data-acceptance-scenario>When reviewer and server are explicitly scoped to one machine,</span> <span data-acceptance-observable>same-machine proof permits local transport and records that no remote reachability claim was made.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-refusal"><span data-acceptance-scenario>When transport proof, exact content proof, approved-port safety, or receipt identity is missing or stale,</span> <span data-acceptance-observable>the procedure refuses remote URL delivery and checker parking without silently waiving the missing fact.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-lifecycle"><span data-acceptance-scenario>When review is parked or finished,</span> <span data-acceptance-observable>the same server, URL, checker, cursor, and explicit Finish review lifecycle remain in force.</span></p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-spec-chat"><span data-boundary-responsibility>Spec Chat owns resource paths, exact spec bytes, the <code>/api/baseline</code> route, annotation spools, cursors, and Finish review state.</span> <span data-boundary-seam>Caller-facing seam: a review launcher receives a narrow collection, spec path, exact base, and one accepted transport proof and returns a secret URL plus local receipt.</span> <span data-boundary-dependency>Dependency direction: external-provider direction from host ingress and Git source bytes into the self-contained Spec Chat review service.</span> <span data-boundary-scope>Observable scope: exact resource response, baseline response, proof class, receipt, cursor, checker, and lifecycle.</span></p>
+<p data-modular-boundary data-anchor="boundary-evidence"><span data-boundary-responsibility>The annotateanything evidence service owns bundle paths, immutable manifests and artifacts, candidate baseline records, deterministic page hashes, checkers, and evidence review state.</span> <span data-boundary-seam>Caller-facing seam: an evidence launcher receives a narrow bundle collection, candidate baseline, and one accepted transport proof and returns a secret URL plus local receipt.</span> <span data-boundary-dependency>Dependency direction: external-provider direction from host ingress and the existing immutable bundle reader into the self-contained evidence service.</span> <span data-boundary-scope>Observable scope: exact bundle responses, baseline record, page hash, proof class, receipt, checker, and lifecycle.</span></p>
+<p data-modular-boundary data-anchor="boundary-policy"><span data-boundary-responsibility>This policy owns proof classes, evidence separation, refusal rules, secret handling, and portable receipt fields.</span> <span data-boundary-seam>Caller-facing seam: each owner supplies transport and content facts and receives an allowed or refused handoff decision.</span> <span data-boundary-dependency>Dependency direction: self-contained policy semantics consume owner-specific exact-byte and baseline results without importing either service or tracker runtime.</span> <span data-boundary-scope>Observable scope: same-machine, external-probe, and operator-confirmed outcomes and their failure reasons.</span></p>
+</section>
+
+<section data-anchor="non-goals">
+<h2>Non-goals</h2>
+<p data-anchor="non-goal-implementation">This policy does not implement a launcher, external probe, application server, checker, or receipt store.</p>
+<p data-anchor="non-goal-issue">This policy does not edit ANN-30, annotateanything, or the installed shared profile.</p>
+<p data-anchor="non-goal-acceptance">This policy does not accept delivered software, merge work, promote preproduction, or shift live traffic.</p>
+</section>
+
+</article>
+</body>
+</html>
