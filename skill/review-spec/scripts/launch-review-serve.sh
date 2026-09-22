@@ -1,34 +1,21 @@
 #!/bin/sh
-# Launch review-serve on a free approved ingress port and prove reachability
-# before handing the capability URL to a remote reviewer.
+# Launch review-serve on a free approved ingress port and run host-side
+# exact-resource and baseline checks before handing the capability URL over.
 set -eu
 
 usage() {
-  echo "usage: launch-review-serve.sh NARROW_ROOT SPEC_PATH EXACT_BASE --external-probe EXECUTABLE" >&2
+  echo "usage: launch-review-serve.sh NARROW_ROOT SPEC_PATH EXACT_BASE" >&2
   exit 2
 }
 
-[ "$#" -ge 5 ] || usage
+[ "$#" -eq 3 ] || usage
 ROOT=$1
 SPEC_PATH=$2
 EXACT_BASE=$3
-shift 3
-[ "$1" = "--external-probe" ] || usage
-[ "$#" -eq 2 ] || usage
-PROBE=$2
-[ -x "$PROBE" ] || {
-  echo "launch-review-serve: external probe is not executable: $PROBE" >&2
-  exit 2
-}
 [ -d "$ROOT" ] || {
   echo "launch-review-serve: narrow root is not a directory: $ROOT" >&2
   exit 2
 }
-[ -n "${SPEC_CHAT_EXTERNAL_VANTAGE:-}" ] || {
-  echo "launch-review-serve: set SPEC_CHAT_EXTERNAL_VANTAGE to the non-loopback probe vantage" >&2
-  exit 2
-}
-
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
 ROOT=$(CDPATH= cd "$ROOT" && pwd)
 REPO=$(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null) || {
@@ -123,25 +110,27 @@ REVIEW_URL="$BASE_URL/${SPEC_PATH#./}?focus=changes&base=$EXACT_BASE"
 python3 "$SCRIPT_DIR/verify-review.py" "$REPO" "$SPEC" "$REVIEW_URL" "$EXACT_BASE" >/dev/null
 SPEC_SHA256=$(sha256sum "$SPEC" | awk '{print $1}')
 BASELINE_URL="$BASE_URL/api/baseline?path=${SPEC_PATH#./}&base=$EXACT_BASE"
-PROBE_RESULT=$("$PROBE" "$REVIEW_URL" "$BASELINE_URL" "$EXACT_BASE" "$SPEC_SHA256" "$SPEC_PATH")
-printf '%s\n' "$PROBE_RESULT"
-printf '%s\n' "$PROBE_RESULT" | grep -F 'external-spec-http=200' >/dev/null || {
-  echo "launch-review-serve: external probe did not verify spec HTTP 200" >&2
-  exit 2
-}
-printf '%s\n' "$PROBE_RESULT" | grep -F 'external-baseline-http=200' >/dev/null || {
-  echo "launch-review-serve: external probe did not verify baseline HTTP 200" >&2
-  exit 2
-}
-printf '%s\n' "$PROBE_RESULT" | grep -F "external-spec-sha256=$SPEC_SHA256" >/dev/null || {
-  echo "launch-review-serve: external probe did not verify exact spec bytes" >&2
-  exit 2
-}
-printf '%s\n' "$PROBE_RESULT" | grep -F "external-baseline-base=$EXACT_BASE" >/dev/null || {
-  echo "launch-review-serve: external probe did not verify exact baseline" >&2
-  exit 2
-}
+python3 - "$REVIEW_URL" "$BASELINE_URL" "$SPEC_SHA256" "$EXACT_BASE" <<'PY'
+import hashlib
+import json
+import sys
+import urllib.request
+
+spec_url, baseline_url, expected_sha, expected_base = sys.argv[1:]
+with urllib.request.urlopen(spec_url, timeout=10) as response:
+    if response.status != 200:
+        raise SystemExit("launch-review-serve: served spec was not HTTP 200")
+    served = response.read()
+if hashlib.sha256(served).hexdigest() != expected_sha:
+    raise SystemExit("launch-review-serve: served spec bytes differ from local spec")
+with urllib.request.urlopen(baseline_url, timeout=10) as response:
+    if response.status != 200:
+        raise SystemExit("launch-review-serve: baseline route was not HTTP 200")
+    baseline = json.load(response)
+if baseline.get("base") != expected_base:
+    raise SystemExit("launch-review-serve: baseline route returned a different base")
+PY
 printf '%s\n' "$LINE"
-printf 'review-hosting=verified approved-port=%s external-vantage=%s\n' "$SELECTED" "$SPEC_CHAT_EXTERNAL_VANTAGE"
-printf '%s\n' 'review-handoff=allowed only after this URL, spec path, exact baseline, and external proof are delivered'
+printf 'review-hosting=verified approved-port=%s internal-vantage=host\n' "$SELECTED"
+printf '%s\n' 'review-handoff=allowed only after this secret URL, resource path, exact baseline, and internal proof are delivered'
 wait "$SERVER_PID"

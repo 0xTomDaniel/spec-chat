@@ -24,29 +24,31 @@ missing draft, manual-resume selection, or final assistant response ends the
 hosting session.
 
 Start the narrow collection through the approved-port launcher. It discovers
-the host's approved ingress ports from `SPEC_CHAT_APPROVED_INGRESS_PORTS` or
-the firewall rule set, probes those ports for availability, and chooses one
-free approved port. Do not encode a port number in the skill or launcher.
+approved ingress ports from `SPEC_CHAT_APPROVED_INGRESS_PORTS` or the host
+firewall rules, probes each candidate, binds directly to the first usable
+approved port, and fails when no usable port exists. The host needs no operator
+or reviewer-machine setup.
 
 ```sh
-scripts/launch-review-serve.sh <narrow-collection> <spec-path> <exact-base> \
-  --external-probe <non-loopback-probe-command>
+scripts/launch-review-serve.sh <narrow-collection> <spec-path> <exact-base>
 ```
 
-The launcher may pass the selected approved port to `review-serve.py`; it must
-never assume a particular port and must fail when approved ports cannot be
-discovered or none is free. Capture the server's printed URL as the secret
-review URL and retain that exact value for the whole session. An ephemeral port
-from `--public` with no approved-port check is insufficient.
+The launcher never assumes a port. It captures the server's printed URL as the
+secret review URL and retains that exact value for the whole session. An
+unapproved or ephemeral port is invalid.
 
-Before handing the URL to a reviewer, verify the exact served spec bytes and
-`/api/baseline` against the selected exact Git base. Deliver, in this order,
-the secret URL, spec path, exact baseline, and verification result. The launcher
-must also run the probe from a non-loopback vantage and verify those same spec
-and baseline responses through the URL. A local curl or loopback request is not
-external proof. Only after external verification and URL delivery may the
-watcher or checker park. The URL must stay out of Linear, pull requests, and
-other durable public text.
+Port collision safety is required: the launcher probes and reserves only a free
+approved port before starting the owned service process.
+
+Before handing the URL to a reviewer, the host verifies the exact served HTML
+bytes and `/api/baseline` against the selected exact Git base. These are
+internal host checks, not a second transport ceremony. Deliver the active
+secret URL, resource path, and exact baseline only after those checks pass. The
+URL stays out of Linear, pull requests, and other public durable records.
+
+The launcher owns the narrow server process, selected port, URL, and internal
+validation. The checker owns readiness and cursor advancement. A changed
+resource, baseline, process, port, or collection requires fresh host checks.
 
 Shutdown is allowed only after the human selects **Finish review**, or after a
 durable review-ended control records that same action. The observable terminal
@@ -177,7 +179,7 @@ Whichever transport is in play, host the spec with `assets/review-serve.py`.
 Do not substitute `python3 -m http.server` or another static file server: it serves the page but provides no annotation spool, no `/api/baseline`, no capability check, and no review URL contract, so the review layer silently never works.
 
 - **Local browser, same machine**: nothing to run; the page connects to the folder directly (file:// + FSA). Browser security does not reliably persist write permission. When an IndexedDB handle returns `prompt`, the runtime shows **Resume review** and requests write permission on the already-selected handle; **Choose different folder** remains a separate picker fallback for a moved tree, wrong prior scope, or Chromium shell that does not surface the regrant prompt. Chromium can follow the native directory picker with a separate **Allow this site to edit files?** browser window; the runtime must name that step and visibly wait for it because shells such as Arc may not layer it over the spec window. The grant accepts ANY ancestor folder of the spec — pick it in the dialog or drag it from Finder onto the page; the runtime walks down to the spec's folder itself and remembers the ancestor. Caveats: Chromium refuses grants on the top-level roots themselves (home, Documents, Desktop, Downloads — children beneath them are fine), so suggest a workspace/projects folder one level down; if the granted tree contains two same-named specs at matching sub-paths the runtime refuses to guess and asks for a narrower grant. The spec's exact path also lands on the clipboard when the picker opens (⌘⇧G + paste in the macOS panel). If the user wants zero prompts or uses Safari or Firefox, run `assets/review-serve.py` on loopback; the HTTP transport auto-connects.
-- **Remote browser**: use `scripts/launch-review-serve.sh` for the narrow collection. It discovers approved ingress ports, probes them, binds `assets/review-serve.py` to a free approved port, captures the printed URL, and runs a non-loopback external probe. Do not substitute an ephemeral public port without the approved-port check, a fixed port assumption, or a local curl. The URL itself is the secret; require no login, token, SSH, VPN, tunnel, or separate proxy. Verify the exact spec bytes and `/api/baseline` against the selected base locally and from the external vantage before handing it to the human. Deliver the URL, spec path, exact baseline, and both verification results before parking any watcher or checker. Keep the same server, URL, and checker through review edits, empty scans, timeouts, and manual-resume. Stop them only after the processed empty Finish review hand-off described above.
+- **Remote browser**: use `scripts/launch-review-serve.sh` for the narrow collection. It discovers approved ingress ports on the host, probes them, binds `assets/review-serve.py` directly to a free approved port, captures the printed URL, and performs internal exact-byte and `/api/baseline` checks. Do not substitute an ephemeral port, fixed-port assumption, external probe, tunnel, VPN, or reviewer-machine setup. The URL itself is the secret; require no login, token, SSH, or proxy. Deliver the active URL, resource path, and exact baseline after host checks pass. Keep the same server, URL, and checker through review edits, empty scans, timeouts, and manual-resume. Stop them only after the processed empty Finish review hand-off described above.
 
 ## Scaffolding spec-chat into a repo
 
