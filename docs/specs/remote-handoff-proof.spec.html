@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./.style/spec.css">
+<title>Box-side HTML review hosting</title>
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="2" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Box-side HTML review hosting</h1>
+<nav data-anchor="breadcrumbs">docs / specs / remote-handoff-proof.spec.html</nav>
+<p data-anchor="source-issues">Source issue: <a href="https://linear.app/annotateanything/issue/ANN-40/shape-portable-remote-handoff-proof-alternatives">ANN-40</a>.</p>
+<p data-anchor="context-issue">The same host contract serves Spec Chat and QA evidence HTML.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-remote-review">As a reviewer on another machine, I can open a secret HTTP URL served directly by the review host.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-host-owner">As a host owner, I can start review hosting without operator or reviewer-machine setup when an approved ingress port is available.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-failure">As a host owner, I get a clear failure when no approved ingress port is usable.</p>
+</section>
+
+<section data-anchor="decision">
+<h2>Decision</h2>
+<p data-anchor="decision-relax">Use one box-side hosting path for remote Spec Chat and QA evidence HTML.</p>
+<p data-anchor="decision-host">The host discovers approved ingress ports, probes each for availability, binds the narrow review service to the first usable approved port, and prints its secret URL.</p>
+<p data-anchor="decision-no-port">The launcher fails before handoff when approved ports cannot be discovered or none is usable.</p>
+<p data-anchor="decision-no-operator">The launcher requires no external probe, operator receipt, laptop setup, tunnel, VPN, or reviewer-machine configuration.</p>
+<p data-anchor="decision-no-waiver">Internal content checks never waive exact served bytes, exact baseline identity, approved-port collision safety, secret URL handling, service ownership, or Finish review lifecycle.</p>
+</section>
+
+<section data-anchor="proof-model">
+<h2>Hosting model</h2>
+<figure data-anchor="proof-flow">
+<svg viewBox="0 0 920 220" role="img" aria-label="The host discovers an approved port, validates content, and serves a secret URL">
+<defs>
+<marker id="proof-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2947c7"></path></marker>
+</defs>
+<rect x="28" y="74" width="220" height="72" rx="8" fill="#e8edf9" stroke="#2947c7"></rect>
+<text x="48" y="105" fill="#171719" font-size="15" font-weight="700">Approved ingress</text>
+<text x="48" y="128" fill="#303036" font-size="13">discover and probe on host</text>
+<line x1="248" y1="110" x2="350" y2="110" stroke="#2947c7" stroke-width="2" marker-end="url(#proof-arrow)"></line>
+<rect x="352" y="74" width="220" height="72" rx="8" fill="#fff2d9" stroke="#9b6500"></rect>
+<text x="372" y="105" fill="#171719" font-size="15" font-weight="700">Internal validation</text>
+<text x="372" y="128" fill="#303036" font-size="13">served bytes + /api/baseline</text>
+<line x1="572" y1="110" x2="674" y2="110" stroke="#2947c7" stroke-width="2" marker-end="url(#proof-arrow)"></line>
+<rect x="676" y="74" width="216" height="72" rx="8" fill="#e7f3ef" stroke="#167b68"></rect>
+<text x="696" y="105" fill="#171719" font-size="15" font-weight="700">Secret review URL</text>
+<text x="696" y="128" fill="#303036" font-size="13">reachable from another machine</text>
+</svg>
+<figcaption data-anchor="proof-flow-caption">Figure: all hosting and validation work runs on the serving box.</figcaption>
+</figure>
+<table data-anchor="proof-table">
+<thead><tr data-anchor="proof-table-head"><th>Host step</th><th>Required behavior</th><th>Failure</th></tr></thead>
+<tbody>
+<tr data-anchor="proof-external"><td>Port discovery and probe</td><td>Read approved ingress configuration or firewall rules, probe candidates, and reserve a free approved port without a fixed-port assumption.</td><td>Fail when rules are unavailable or every approved port is occupied or unusable.</td></tr>
+<tr data-anchor="proof-operator"><td>Service bind and ownership</td><td>Bind the narrow collection directly on the selected port, retain the server and checker as one owned review session, and expose no repository root.</td><td>Fail when the service cannot bind or ownership is not observable.</td></tr>
+<tr data-anchor="proof-same"><td>Internal validation and handoff</td><td>Verify exact served bytes and <code>/api/baseline</code> against the selected Git base on the host, then print the secret URL for the remote reviewer.</td><td>Refuse handoff when either internal check fails.</td></tr>
+</tbody>
+</table>
+</section>
+
+<section data-anchor="content-proof">
+<h2>Internal content validation</h2>
+<p data-anchor="content-spec">The host runs the read-only verifier against the exact current HTML bytes and selected exact Git base before printing a review URL.</p>
+<p data-anchor="content-baseline">Validation requires HTTP 200 for the requested resource, byte equality for the served HTML, the exact <code>/api/baseline</code> response, the resolved baseline commit, and baseline HTML byte equality or an explicit new-file result.</p>
+<p data-anchor="content-evidence-interface">The same internal interface applies to Spec Chat HTML and QA evidence HTML without adding application-wide receipt state.</p>
+<p data-anchor="content-change">A source, baseline, selected port, service process, or resource-path change requires the host to rerun internal validation before handoff.</p>
+</section>
+
+<section data-anchor="transport-proof">
+<h2>Remote access and secret handling</h2>
+<p data-anchor="transport-external">The serving box binds directly to a free approved ingress port so a reviewer on another machine can open the printed URL without a separate probe or relay.</p>
+<p data-anchor="transport-operator">The handoff consists of the active secret URL, resource path, and selected exact Git base after host-side validation.</p>
+<p data-anchor="transport-operator-limit">No second transport ceremony, laptop probe, or reviewer-side setup is part of this policy.</p>
+<p data-anchor="transport-same">Same-machine access uses the same host service when needed and does not create a second proof class.</p>
+<p data-anchor="transport-secret">The secret URL stays in the active handoff and is never written to Linear, a pull request, or another public durable record.</p>
+<p data-anchor="transport-port">Approved ingress discovery, free-port selection, collision safety, narrow collection root, and explicit server and checker ownership remain mandatory.</p>
+</section>
+
+<section data-anchor="failure">
+<h2>Failure and refusal</h2>
+<p data-anchor="failure-no-proof">If approved ingress cannot be discovered or no approved port is usable, the launcher fails and does not print a handoff URL.</p>
+<p data-anchor="failure-incomplete">A port collision, unapproved port, wrong bytes, substituted baseline, bind failure, broad collection root, or lost service ownership fails closed.</p>
+<p data-anchor="failure-local">No operator or reviewer-machine action is required to recover; the host may retry after its ingress state changes.</p>
+<p data-anchor="failure-retry">A source, baseline, port, process, or resource-path change requires fresh host-side internal validation.</p>
+</section>
+
+<section data-anchor="lifecycle">
+<h2>Lifecycle</h2>
+<p data-anchor="lifecycle-owner">The launcher owns approved-port discovery, availability probing, service process identity, URL capture, internal validation, and direct host binding.</p>
+<p data-anchor="lifecycle-checker">The checker owns readiness detection and exact cursor advancement, and remains parked on the same server, URL, and cursor through empty spool, timeout, and manual-resume states.</p>
+<p data-anchor="lifecycle-finish">Hosting and checker shutdown occur only after the processed empty Finish review hand-off records no draft, pending, acknowledged, unresolved, or <code>data-spec-tbd</code> work and the exact cursor advance succeeds.</p>
+<p data-anchor="lifecycle-scope">Finish review means human HTML review completion only and never implementation authorization, acceptance, merge approval, deployment approval, or traffic shift.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="box-hosting" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-classes"><span data-acceptance-scenario>When remote Spec Chat or QA evidence HTML hosting starts,</span> <span data-acceptance-observable>the host discovers and probes approved ingress ports, binds the narrow service to a free approved port, and prints a secret URL reachable from another machine.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-content"><span data-acceptance-scenario>Before the URL is printed,</span> <span data-acceptance-observable>the host verifies exact current resource bytes and the applicable exact baseline response internally.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-refusal"><span data-acceptance-scenario>When approved ingress is unavailable, a port is occupied, binding fails, or internal content validation fails,</span> <span data-acceptance-observable>the launcher fails closed without requiring operator or reviewer-machine intervention.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-lifecycle"><span data-acceptance-scenario>When review is parked or finished,</span> <span data-acceptance-observable>the same server, URL, checker, cursor, and explicit Finish review lifecycle remain in force.</span></p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-spec-chat"><span data-boundary-responsibility>Spec Chat hosting owns narrow resource paths, exact HTML bytes, the <code>/api/baseline</code> route, annotation spools, cursors, and Finish review state.</span> <span data-boundary-seam>Caller-facing seam: the host launcher receives a narrow collection, resource path, and exact base and returns a secret URL after internal validation.</span> <span data-boundary-dependency>Dependency direction: host ingress and Git source bytes flow into the self-contained Spec Chat review service.</span> <span data-boundary-scope>Observable scope: approved port, bound process, exact resource response, baseline response, URL, cursor, checker, and lifecycle.</span></p>
+<p data-modular-boundary data-anchor="boundary-evidence"><span data-boundary-responsibility>QA evidence hosting owns narrow bundle paths, immutable manifests and artifacts, candidate baseline records, deterministic page hashes, checkers, and evidence review state.</span> <span data-boundary-seam>Caller-facing seam: the evidence launcher receives a narrow bundle collection and exact base and returns a secret URL after internal validation.</span> <span data-boundary-dependency>Dependency direction: host ingress and the existing immutable bundle reader flow into the self-contained evidence service.</span> <span data-boundary-scope>Observable scope: approved port, bound process, exact bundle response, baseline record, page hash, URL, checker, and lifecycle.</span></p>
+<p data-modular-boundary data-anchor="boundary-policy"><span data-boundary-responsibility>This policy owns approved-port discovery, direct binding, internal exact-byte validation, secret handling, refusal rules, and service ownership.</span> <span data-boundary-seam>Caller-facing seam: each host supplies its narrow collection and exact base and receives a reachable secret URL or a fail-closed result.</span> <span data-boundary-dependency>Dependency direction: self-contained policy semantics consume host-specific ingress, HTML, and Git results without importing a tracker or remote probe.</span> <span data-boundary-scope>Observable scope: bound service, internal validation, URL handoff, failure reason, checker, and Finish review.</span></p>
+</section>
+
+<section data-anchor="non-goals">
+<h2>Non-goals</h2>
+<p data-anchor="non-goal-implementation">This policy does not add a second transport mechanism, application server, checker, or remote relay.</p>
+<p data-anchor="non-goal-issue">This policy does not edit ANN-30, annotateanything, or the installed shared profile.</p>
+<p data-anchor="non-goal-acceptance">This policy does not accept delivered software, merge work, promote preproduction, or shift live traffic.</p>
+</section>
+
+</article>
+</body>
+</html>
