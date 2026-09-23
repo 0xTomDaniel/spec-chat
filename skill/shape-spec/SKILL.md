@@ -19,6 +19,7 @@ Create durable current truth before deep investigation.
 - A remote or cross-machine shaping handoff is blocked until `spec-chat-review` has a direct public `assets/review-serve.py` process serving the narrow collection, never the repository root, on a free approved ingress port discovered and probed by the host.
 - The host performs exact served-resource and `/api/baseline` checks internally before printing the secret URL. No second probe, tunnel, VPN, laptop setup, or reviewer-machine setup is part of the handoff.
 - The selected port must not be hard-coded. Collision safety, direct service ownership, secret URL handling, and Finish review remain mandatory. Shape owns this blocking condition; `spec-chat-review` owns its mechanics.
+- A processed human **Finish review** hand-off is human acceptance of the reviewed canonical spec. It closes the browser review loop, permits the shaping lane to close its review host and checker, and permits implementation dispatch under that accepted spec. This acceptance is distinct from implementation PR acceptance, merge, preproduction promotion, and live traffic gates, which remain explicit. Preserve the exact baseline, cursor, Finish receipt, and source/head binding requirements.
 
 ## Shape
 
@@ -60,7 +61,7 @@ Finish shaping only when:
 - issue, spec, applicable ADRs, stories, acceptance criteria, architecture, and implementation graph agree
 - `spec-chat-review` has completed the browser review and stopped its public review server when remote review was used
 
-Review completion is not implementation authorization, acceptance, merge approval, or deployment approval.
+The processed Finish review hand-off is acceptance of the reviewed canonical spec and permits implementation dispatch under that spec. It is not implementation PR acceptance, merge approval, preproduction promotion, or live traffic approval. Those gates remain explicit.
 
 ## Burden
 
