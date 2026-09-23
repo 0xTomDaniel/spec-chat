@@ -9,6 +9,7 @@ SHAPE = (ROOT / "skill/shape-spec/SKILL.md").read_text()
 ADAPTERS = (ROOT / "skill/review-spec/references/cli-adapters.md").read_text()
 LAUNCHER_PATH = ROOT / "skill/review-spec/scripts/launch-review-serve.sh"
 LAUNCHER = LAUNCHER_PATH.read_text()
+SPEC = (ROOT / "docs/specs/remote-handoff-proof.spec.html").read_text()
 
 
 class ReviewHostingLifecycleContractTest(unittest.TestCase):
@@ -61,6 +62,29 @@ class ReviewHostingLifecycleContractTest(unittest.TestCase):
         self.assertIn("direct service ownership", SHAPE)
         self.assertIn("same public server, secret URL, and checker", REVIEW)
         self.assertIn("processed empty **Finish review** hand-off", ADAPTERS)
+
+    def test_topology_keeps_two_services_and_laptop_client_separate(self):
+        self.assertIn("service=spec-chat", LAUNCHER)
+        self.assertIn("Starts the Spec Chat service only", LAUNCHER)
+        for forbidden in ("bb ", "BB_", "evidence_site", "plugin install"):
+            self.assertNotIn(forbidden, LAUNCHER)
+        self.assertIn("starts the Spec Chat service only", REVIEW)
+        self.assertIn("never requires, installs,\nor starts BB", REVIEW)
+        for anchor in (
+            'data-anchor="topology"',
+            'data-anchor="topology-independent"',
+            'data-anchor="topology-shared-helpers"',
+            'data-anchor="topology-box-only"',
+            'data-anchor="topology-bb"',
+            'data-anchor="topology-urls"',
+            'data-anchor="acceptance-independent-services"',
+            'data-anchor="acceptance-box-only"',
+            'data-anchor="acceptance-laptop-urls"',
+            'data-anchor="boundary-laptop"',
+        ):
+            self.assertIn(anchor, SPEC)
+        self.assertIn("never requires, installs, or starts BB", SPEC)
+        self.assertIn("two public URLs", SPEC)
 
     def test_launcher_syntax(self):
         subprocess.run(["sh", "-n", str(LAUNCHER_PATH)], check=True)

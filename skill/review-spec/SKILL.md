@@ -50,6 +50,12 @@ The launcher owns the narrow server process, selected port, URL, and internal
 validation. The checker owns readiness and cursor advancement. A changed
 resource, baseline, process, port, or collection requires fresh host checks.
 
+This launcher starts the Spec Chat service only. The annotateanything evidence
+service is a separate box-side service with its own launcher and lifecycle;
+never start, stop, or rebind it from here. Box hosting never requires, installs,
+or starts BB or any laptop component; BB on the laptop only opens the verified
+URL. Topology: `docs/specs/remote-handoff-proof.spec.html#topology`.
+
 Shutdown is allowed only after the human selects **Finish review**, or after a
 durable review-ended control records that same action. The observable terminal
 condition is a processed empty Finish review hand-off: the browser had no draft,
@@ -199,14 +205,14 @@ Preflight preserves target runtime and server assets that declare every capabili
 It replaces only incompatible assets from the bundle, including vendored visual dependencies when runtime migration is required, and rejects semantic islands without a same-parent `data-render-target`.
 Treat a preflight failure as a review blocker.
 Commit and push migrated assets before presenting a shaping review.
-If the server was already running when migration occurred, restart it on the same local port before retaining its public relay.
+If the server was already running when migration occurred, restart it through the launcher and rerun host checks before handoff.
 
 **Exception — module-loading migration**: if an existing repo's runtime is loaded with `<script type="module">` (or its `runtime.js` still contains `import.meta.url`), it predates the classic-script fix and is broken on `file://` (browsers CORS-block module scripts there — the annotation layer silently never loads). On contact, replace the vendored `.viz/runtime.js` with this skill's copy and switch every page to a classic `<script defer>` tag using the correct relative path described above.
 
 ## Starting a review when asked
 
 1. Confirm the page exists, run `scripts/preflight.py`, and identify the shared collection root (normally the repository's `docs/` directory, not the page's immediate `docs/specs/`, `docs/specs/<domain>/`, or `docs/adr/` directory; use the narrowest common ancestor for a legacy or explicitly different layout).
-2. Start or restart `assets/review-serve.py` when HTTP review is required. For remote review, use `--public` and keep the server on the host interface. Verify the served runtime advertises the required capabilities and `/api/baseline` succeeds for the exact page and change-request base.
+2. Start or restart `assets/review-serve.py` when HTTP review is required. For remote review, start it only through `scripts/launch-review-serve.sh`, which binds the host interface on a free approved port. Verify the served runtime advertises the required capabilities and `/api/baseline` succeeds for the exact page and change-request base.
 3. Present the verified review URL. Do not hand back a GitHub link or a loopback URL when the human is reviewing from another machine.
 4. On both an initial start and any resumed/reconnected turn, run `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 0 3`; drain, reply, and cursor each ready batch, then repeat until exit 3.
 5. After reconciliation is empty, establish `turn-yielded`, verified `external-wake`, or `manual-resume` through `scripts/review-control.sh`.

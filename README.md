@@ -16,7 +16,18 @@ Visual HTML specs you annotate in the browser; a coding agent addresses the anno
 
 ## Constraints (fixed)
 
-Agent-agnostic across Claude Code / Codex / pi · plain files + CLI + skills over MCP/hooks/inference services · all inference through the CLI session · tiny loopback file transport only when the browser cannot share the filesystem · no alt-tabbing to the terminal to trigger the agent.
+Agent-agnostic across Claude Code / Codex / pi · plain files + CLI + skills over MCP/hooks/inference services · all inference through the CLI session · tiny HTTP file transport only when the browser cannot share the filesystem (loopback on one machine, box-side public service for remote review) · no alt-tabbing to the terminal to trigger the agent.
+
+## Remote hosting
+
+Canonical contract: [docs/specs/remote-handoff-proof.spec.html](docs/specs/remote-handoff-proof.spec.html) (`#topology`).
+
+- The box hosts two independent services only: Spec Chat review (this repo) and annotateanything evidence (peer repo).
+- Each service has its own launcher, process, lifecycle, approved-port discovery, collision-safe binding, narrow root, secret URL, exact served-byte check, and baseline check. Starting, failing, or stopping one never touches the other.
+- Spec Chat starts with `skill/review-spec/scripts/launch-review-serve.sh <narrow-collection> <spec-path> <exact-base>`. Approved ports come from `SPEC_CHAT_APPROVED_INGRESS_PORTS` or readable host firewall rules. It checks exact spec bytes and `/api/baseline` on the box before printing the secret URL.
+- Shared helper code is allowed only when service-neutral.
+- BB is a laptop client. Box hosting boot never requires, installs, or starts BB. BB consumes two public URLs: the Spec Chat URL and the evidence URL.
+- No external probe, tunnel, VPN, or client-machine setup. Secret URLs never enter Linear, pull requests, or other public durable records.
 
 ## Repo layout (planned)
 
