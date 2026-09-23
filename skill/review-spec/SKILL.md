@@ -152,7 +152,7 @@ A resolved thread remains expandable. When its latest message is from the agent,
 
 If a hand-off remains unacknowledged past the existing timeout, the browser states that automatic wake did not occur and instructs the human to send a new chat message to resume.
 
-When every thread is resolved and no material TBD remains, the no-draft action becomes **Finish review**. It writes the existing empty hand-off. Reconcile it, settle any final durable change, and advance the exact cursor. Only after that processed terminal hand-off may the watcher, checker, and public review server stop and the active review window end. Finish review is not implementation authorization, acceptance, merge approval, or deployment approval.
+When every thread is resolved and no material TBD remains, the no-draft action becomes **Finish review**. It writes the existing empty hand-off. Reconcile it, settle any final durable change, and advance the exact cursor. The processed hand-off is human acceptance of the reviewed canonical spec, closes the browser review loop, and permits the shaping lane to stop its watcher, checker, and public review server and advance to implementation dispatch under that accepted spec. It does not accept an implementation PR, approve a merge, promote to preproduction, or approve live traffic. Preserve the exact baseline, cursor, Finish receipt, and source/head binding requirements.
 
 ## Event schema
 
