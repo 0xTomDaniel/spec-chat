@@ -1,6 +1,8 @@
 #!/bin/sh
 # Launch review-serve on a free approved ingress port and run host-side
 # exact-resource and baseline checks before handing the capability URL over.
+# Starts the Spec Chat service only. The evidence service has its own launcher,
+# and laptop clients are never required, installed, or started here.
 set -eu
 
 usage() {
@@ -131,6 +133,6 @@ if baseline.get("base") != expected_base:
     raise SystemExit("launch-review-serve: baseline route returned a different base")
 PY
 printf '%s\n' "$LINE"
-printf 'review-hosting=verified approved-port=%s internal-vantage=host\n' "$SELECTED"
+printf 'review-hosting=verified service=spec-chat approved-port=%s internal-vantage=host\n' "$SELECTED"
 printf '%s\n' 'review-handoff=allowed only after this secret URL, resource path, exact baseline, and internal proof are delivered'
 wait "$SERVER_PID"
