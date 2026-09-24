@@ -579,7 +579,7 @@
 
 <section data-anchor="finish-review" id="finish-review">
 <h2>Finish review</h2>
-<p data-anchor="finish-ready">When no draft, pending, acknowledged, unresolved, or <code>data-spec-tbd</code> work remains, the disabled hand-off action becomes Finish review.</p>
+<p data-anchor="finish-ready">When no draft, pending, acknowledged, or unresolved work remains, the hand-off action becomes Finish review. If only open <code>data-spec-tbd</code> work remains, it reads TBD open and instead scrolls to and focuses the first open TBD.</p>
 <p data-anchor="finish-event">Finish review writes the existing hand-off event with an empty batch.</p>
 <p data-anchor="finish-agent">The parked agent interprets that empty hand-off as explicit completion of the browser review window.</p>
 <p data-anchor="finish-final-batch">The agent reconciles issue and spec, commits and pushes any final changes, advances the cursor, and closes the active wait.</p>
