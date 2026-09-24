@@ -142,6 +142,7 @@ class ReviewHostT2Test(unittest.TestCase):
             self.states.append(state)
         env = os.environ.copy()
         env.pop("REVIEW_APPROVED_INGRESS_PORTS", None)
+        env.pop("SPEC_CHAT_TEST_LOOPBACK", None)
         env["SPEC_CHAT_APPROVED_INGRESS_PORTS"] = str(ports or self.port())
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         if extra_env:
@@ -155,7 +156,7 @@ class ReviewHostT2Test(unittest.TestCase):
         state = Path(state or (self.work / "state"))
         args = [
             "start", "--state-dir", str(state), "--bind", "127.0.0.1",
-            "--proof-host", "127.0.0.1", "--resource", resource["value"],
+            "--proof-host", "127.0.0.1", "--test-loopback", "--resource", resource["value"],
             "--owner", resource["owner"], "--checker", resource["checker"],
             "--cursor-name", resource["cursor"], "--slug", resource["slug"],
         ]
@@ -185,8 +186,8 @@ class ReviewHostT2Test(unittest.TestCase):
             receipt = self.receipt(state)
             registry = Path(state) / "registry.toml"
             pid = receipt.get("pid")
-            if receipt.get("state") == "running" and review_host.process_owned(pid, registry):
-                review_host.kill_owned(pid, registry)
+            if receipt.get("state") == "running" and review_host.process_owned(pid, registry, receipt):
+                review_host.kill_owned(pid, registry, receipt)
         except (OSError, ValueError, review_host.LauncherError):
             pass
 
@@ -253,6 +254,54 @@ class ReviewHostT2Test(unittest.TestCase):
         finally:
             occupied.close()
 
+    def test_loopback_requires_explicit_test_mode_and_invalidates_handoff(self):
+        resource = self.resource("alpha", self.repo_a, "alpha")
+        state = self.work / "loopback-policy"
+        args = self.start_args(resource, state)
+        args.remove("--test-loopback")
+        rejected = self.run_cli(*args, state=state)
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("--test-loopback", rejected.stderr)
+        self.assertNotIn("review-handoff=allowed", rejected.stdout)
+        self.assertEqual(self.receipt(state)["state"], "failed")
+
+        accepted = self.run_cli(*self.start_args(resource, state), state=state)
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        receipt = self.receipt(state)
+        self.assertFalse(receipt["handoff_valid"])
+        self.assertNotIn("review-handoff=allowed", accepted.stdout)
+        self.stop_cleanly(state, [resource])
+
+    def test_stop_refuses_receipt_with_reused_pid_identity(self):
+        resource = self.resource("alpha", self.repo_a, "alpha")
+        state = self.work / "identity-state"
+        started = self.run_cli(*self.start_args(resource, state), state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        self.assertEqual(self.lifecycle("remove", state, resource).returncode, 0)
+        receipt = self.receipt(state)
+        original = dict(receipt)
+        receipt["process_start_time"] = "0"
+        review_host.write_receipt(state / "receipt.toml", receipt)
+        rejected = self.run_cli("stop", "--state-dir", str(state), state=state)
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("recorded owned process", rejected.stderr)
+        self.assertTrue(review_host.process_owned(original["pid"], state / "registry.toml", original))
+        review_host.write_receipt(state / "receipt.toml", original)
+        self.assertEqual(self.run_cli("stop", "--state-dir", str(state), state=state).returncode, 0)
+
+    def test_process_ownership_rejects_similarly_named_foreign_argv(self):
+        registry = self.work / "registry.toml"
+        command = ["python3", str(self.work / "fake-review-serve.py"), "--registry", str(registry)]
+        receipt = {
+            "process_start_time": "1", "server_path": str(SERVER_PATH.resolve()),
+            "process_argv": command, "process_boot_id": "boot", "bind": "127.0.0.1",
+            "port": 1, "public_url": "http://127.0.0.1:1",
+        }
+        with mock.patch.object(review_host, "process_cmdline", return_value=command):
+            with mock.patch.object(review_host, "process_start_time", return_value="1"):
+                with mock.patch.object(review_host.Path, "read_text", return_value="boot"):
+                    self.assertFalse(review_host.process_owned(1234, registry, receipt))
+
     def test_proof_rejects_wrong_bytes_and_substituted_baseline(self):
         resource = review_host.parse_resource_spec(
             self.resource("alpha", self.repo_a, "alpha")["value"], "owner", "checker", ".cursor-test", "alpha", None
@@ -280,13 +329,21 @@ class ReviewHostT2Test(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         before = self.receipt(state)
         before_resource = before["resource"][0]
+        pid, port, url = before["pid"], before["port"], before["public_url"]
         for key in ("service_kind", "state", "pid", "port", "bind", "public_url", "source_revision"):
             self.assertIn(key, before)
+        for key in ("server_path", "process_start_time", "process_argv", "handoff_valid"):
+            self.assertIn(key, before)
+        self.assertFalse(before["handoff_valid"])
+        self.assertEqual(before["server_path"], str(SERVER_PATH.resolve()))
+        self.assertTrue(before["process_start_time"])
+        self.assertTrue(review_host.process_owned(pid, Path(state) / "registry.toml", before))
+        forged = dict(before, process_start_time="0")
+        self.assertFalse(review_host.process_owned(pid, Path(state) / "registry.toml", forged))
         for key in ("id", "stable_path", "root", "spec", "base", "resolved_base_commit", "spec_sha256", "owner", "checker", "lifecycle", "cursor_name", "cursor_snapshot", "finish_event", "proof"):
             self.assertIn(key, before_resource)
         self.assertEqual(before_resource["owner"], "owner-a")
         self.assertEqual(before_resource["checker"], "checker-a")
-        pid, port, url = before["pid"], before["port"], before["public_url"]
 
         added = self.run_cli(*self.add_args(state, second), state=state, ports=port)
         self.assertEqual(added.returncode, 0, added.stderr)
@@ -303,7 +360,7 @@ class ReviewHostT2Test(unittest.TestCase):
 
         missing_owner = self.run_cli(
             "start", "--state-dir", str(self.work / "missing-owner"), "--bind", "127.0.0.1",
-            "--proof-host", "127.0.0.1", "--resource", first["value"], "--checker", "checker",
+            "--proof-host", "127.0.0.1", "--test-loopback", "--resource", first["value"], "--checker", "checker",
             "--cursor-name", ".cursor", state=self.work / "missing-owner"
         )
         self.assertNotEqual(missing_owner.returncode, 0)
@@ -314,7 +371,7 @@ class ReviewHostT2Test(unittest.TestCase):
         second = self.resource("beta", self.repo_b, "beta", slug="shared")
         state = self.work / "duplicate-state"
         duplicate_start = self.run_cli(
-            "start", "--state-dir", str(state), "--bind", "127.0.0.1", "--proof-host", "127.0.0.1",
+            "start", "--state-dir", str(state), "--bind", "127.0.0.1", "--proof-host", "127.0.0.1", "--test-loopback",
             "--resource", first["value"], "--resource", first["value"], "--owner", "owner", "--checker", "checker",
             "--cursor-name", ".cursor", "--slug", "shared", state=state
         )
@@ -337,7 +394,7 @@ class ReviewHostT2Test(unittest.TestCase):
         second = self.resource("beta", self.repo_b, "beta", owner="owner-b", checker="checker-b", cursor=".cursor-b", slug="beta")
         state = self.work / "lifecycle-state"
         result = self.run_cli(
-            "start", "--state-dir", str(state), "--bind", "127.0.0.1", "--proof-host", "127.0.0.1",
+            "start", "--state-dir", str(state), "--bind", "127.0.0.1", "--proof-host", "127.0.0.1", "--test-loopback",
             "--resource", first["value"], "--resource", second["value"],
             "--owner", "owner-a", "--owner", "owner-b", "--checker", "checker-a", "--checker", "checker-b",
             "--cursor-name", ".cursor-a", "--cursor-name", ".cursor-b", "--slug", "alpha", "--slug", "beta",
@@ -439,7 +496,7 @@ class ReviewHostT2Test(unittest.TestCase):
         self.assertEqual(self.lifecycle("remove", state, second).returncode, 0)
         stopped = self.run_cli("stop", "--state-dir", str(state), state=state)
         self.assertEqual(stopped.returncode, 0, stopped.stderr)
-        self.assertFalse(review_host.process_owned(pid, Path(state) / "registry.toml"))
+        self.assertFalse(review_host.process_owned(pid, Path(state) / "registry.toml", self.receipt(state)))
 
     def test_independent_startup_keeps_foreign_listener_on_launcher_failure(self):
         foreign = ForeignHTTP()

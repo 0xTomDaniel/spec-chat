@@ -33,8 +33,9 @@ or reviewer-machine setup.
 scripts/launch-review-serve.sh <narrow-collection> <spec-path> <exact-base>
 ```
 
-The launcher never assumes a port. It captures the server's printed URL as the
-secret review URL and retains that exact value for the whole session. An
+The launcher never assumes a port. It captures the server's printed public URL
+and retains that exact value for the whole session. The URL is not a secret in
+any security sense or an authentication boundary. An
 unapproved or ephemeral port is invalid.
 
 Port collision safety is required: the launcher probes and reserves only a free
@@ -43,7 +44,7 @@ approved port before starting the owned service process.
 Before handing the URL to a reviewer, the host verifies the exact served HTML
 bytes and `/api/baseline` against the selected exact Git base. These are
 internal host checks, not a second transport ceremony. Deliver the active
-public URL, resource path, and exact baseline only after those checks pass. The public URL is not a secret URL or authentication boundary. The
+public URL, resource path, and exact baseline only after those checks pass. The public URL is not a secret in any security sense or an authentication boundary. The
 URL stays out of Linear, pull requests, and other public durable records.
 
 The launcher owns the narrow server process, selected port, URL, and internal
@@ -104,7 +105,7 @@ that terminal hand-off is parked review and keeps hosting alive.
 
    - `turn-yielded`: run `scripts/review-control.sh yielded <spec-root> .cursor-<cli-or-session> 3600 3` through a verified same-turn yield and keep this turn open. A final response is forbidden.
    - `external-wake`: run `scripts/review-control.sh external <spec-root> .cursor-<cli-or-session> <owner-id> <owner-session> <adapter> [args...]` in a persistent foreground host-owned terminal. Final is allowed only after the adapter verifies the exact owner identity.
-   - `manual-resume`: run `scripts/review-control.sh manual`, return a final response that explicitly requires a new human chat message, and claim no automatic wake. Keep the same public server and checker alive while waiting; the old phrase "same public server, secret URL, and checker" is obsolete because the public URL is not a secret or authentication boundary. The new message resumes the checker against that URL.
+   - `manual-resume`: run `scripts/review-control.sh manual`, return a final response that explicitly requires a new human chat message, and claim no automatic wake. Keep the same public server and checker alive while waiting. The new message resumes the checker against that public URL.
 
    `<spec-root>` is normally the repository's shared `docs/` collection root.
    `review-control.sh` holds one local kernel lock per canonical collection root and cursor, so a second yielded or external owner fails visibly instead of racing the first.

@@ -51,16 +51,21 @@ class ReviewHostingLifecycleContractTest(unittest.TestCase):
         self.assertIn("No second probe", SHAPE)
         self.assertIn("no usable port exists", REVIEW)
 
-    def test_contract_preserves_secret_url_ownership_and_finish_lifecycle(self):
+    def test_contract_preserves_public_url_ownership_and_finish_lifecycle(self):
         for contract in (REVIEW, SHAPE):
-            self.assertIn("secret URL", contract)
             self.assertIn("collision safety", contract.lower())
             self.assertTrue("exact resource" in contract or "exact served HTML" in contract)
             self.assertIn("/api/baseline", contract)
             self.assertIn("Finish review", contract)
+        self.assertIn("public URL", REVIEW)
+        self.assertIn("not a secret in any security sense", REVIEW)
+        self.assertIn("not an authentication boundary", REVIEW)
+        self.assertNotIn("secret URL", REVIEW)
+        self.assertIn("not a secret in any security sense", LAUNCHER)
+        self.assertNotIn("secret URL", LAUNCHER)
         self.assertIn("service process", REVIEW)
         self.assertIn("direct service ownership", SHAPE)
-        self.assertIn("same public server, secret URL, and checker", REVIEW)
+        self.assertNotIn("same public server, secret URL, and checker", REVIEW)
         self.assertIn("processed empty **Finish review** hand-off", ADAPTERS)
 
     def test_topology_keeps_two_services_and_laptop_client_separate(self):

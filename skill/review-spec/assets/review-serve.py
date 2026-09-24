@@ -4,7 +4,7 @@
 
 FSA requires the browser and the spool files to share a machine; over SSH they
 don't. This serves a narrow review collection plus tiny spool and Git-baseline
-routes. The URL is public and is not a secret or authentication boundary.
+routes. The URL is public and is not a secret in any security sense or an authentication boundary.
 Stdlib only.
 
 usage: review-serve.py [ROOT] [PORT] [--public] [--bind HOST] [--host HOST]
@@ -20,12 +20,14 @@ import json
 import os
 import re
 import socket
+import stat
 import subprocess
 import sys
 import time
 import argparse
 import mimetypes
 import tomllib
+import contextlib
 from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from html.parser import HTMLParser
 from urllib.parse import urlparse, parse_qs, quote
@@ -110,7 +112,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def _review_dir(self, q):
         rel = q.get('dir', [''])[0]
-        d = os.path.realpath(os.path.join(ROOT, rel))
+        d = os.path.abspath(os.path.join(ROOT, rel))
         if not d.startswith(ROOT + os.sep) or not d.endswith('.review'):
             return None
         return d
@@ -309,17 +311,9 @@ a:focus-visible { border-radius: .25rem; outline: 3px solid #087f73; outline-off
         d = self._review_dir(parse_qs(u.query))
         if not d:
             return self._json({'error': 'bad dir'}, 400)
-        events = []
-        for actor in ('human', 'agent'):
-            p = os.path.join(d, actor)
-            if not os.path.isdir(p):
-                continue
-            for name in os.listdir(p):
-                try:
-                    with open(os.path.join(p, name)) as f:
-                        events.append({'actor': actor, 'name': name, 'body': json.load(f)})
-                except (OSError, ValueError):
-                    pass
+        events = _read_spool_events(d, ROOT)
+        if events is None:
+            return self._json({'error': 'unsafe spool path'}, 400)
         events.sort(key=lambda e: e['name'])
         self._json(events)
 
@@ -343,10 +337,11 @@ a:focus-visible { border-radius: .25rem; outline: 3px solid #087f73; outline-off
         safe = re.compile(r'[A-Za-z0-9._-]{1,128}')
         if not isinstance(event, str) or not isinstance(event_id, str) or not safe.fullmatch(event) or not safe.fullmatch(event_id):
             return self._json({'error': 'bad event name'}, 400)
-        os.makedirs(os.path.join(d, actor), exist_ok=True)
         name = '%d-%s-%s.json' % (time.time_ns(), event, event_id)
-        with open(os.path.join(d, actor, name), 'w') as f:
-            json.dump(ev, f)
+        try:
+            _write_event(d, ROOT, actor, name, ev)
+        except OSError:
+            return self._json({'error': 'unsafe spool path'}, 400)
         self._json({'ok': True, 'name': name})
 
 
@@ -361,6 +356,63 @@ def _inside(path, parent, strict=False):
     except ValueError:
         return False
     return common == os.path.realpath(parent) and (not strict or os.path.realpath(path) != os.path.realpath(parent))
+
+
+@contextlib.contextmanager
+def _actor_directory(review, root, actor, create=False):
+    """Anchor spool access to directory descriptors; never follow symlinks."""
+    relative = os.path.relpath(review, root)
+    parts = relative.split(os.sep) + [actor]
+    if any(part in ('', '.', '..') for part in parts) or not _inside(review, root, strict=True):
+        raise OSError('review path escapes collection')
+    flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, 'O_NOFOLLOW', 0)
+    descriptor = os.open(root, flags)
+    try:
+        for part in parts:
+            if create:
+                try:
+                    os.mkdir(part, dir_fd=descriptor)
+                except FileExistsError:
+                    pass
+            child = os.open(part, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
+def _read_spool_events(review, root):
+    events = []
+    for actor in ('human', 'agent'):
+        try:
+            with _actor_directory(review, root, actor) as directory:
+                for name in os.listdir(directory):
+                    if not name.endswith('.json'):
+                        continue
+                    flags = os.O_RDONLY | os.O_NONBLOCK | getattr(os, 'O_NOFOLLOW', 0)
+                    descriptor = os.open(name, flags, dir_fd=directory)
+                    with os.fdopen(descriptor, encoding='utf-8') as stream:
+                        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                            return None
+                        try:
+                            body = json.load(stream)
+                        except ValueError:
+                            continue
+                    events.append({'actor': actor, 'name': name, 'body': body})
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return None
+    return events
+
+
+def _write_event(review, root, actor, name, event):
+    with _actor_directory(review, root, actor, create=True) as directory:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0)
+        descriptor = os.open(name, flags, 0o600, dir_fd=directory)
+        with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
+            json.dump(event, stream)
 
 
 def _own_viz_asset(path):
@@ -634,8 +686,8 @@ class MultiHandler(SimpleHTTPRequestHandler):
         for resource in self.resources:
             expected = resource['slug'] + '/' + resource['spec'] + '.review'
             if decoded == expected and resource['lifecycle'] != 'removed':
-                review = os.path.realpath(os.path.join(resource['root'], resource['spec'] + '.review'))
-                if _inside(review, resource['root']):
+                review = resource['spec_file'] + '.review'
+                if _inside(review, resource['narrow_root'], strict=True):
                     return resource, review
             if decoded == expected and resource['lifecycle'] == 'removed':
                 return resource, None
@@ -647,17 +699,9 @@ class MultiHandler(SimpleHTTPRequestHandler):
             return self._json({'error': 'resource removed'}, 404)
         if not resource or not directory:
             return self._json({'error': 'bad dir'}, 400)
-        events = []
-        for actor in ('human', 'agent'):
-            actor_dir = os.path.join(directory, actor)
-            if not os.path.isdir(actor_dir):
-                continue
-            for name in sorted(os.listdir(actor_dir)):
-                try:
-                    with open(os.path.join(actor_dir, name), encoding='utf-8') as stream:
-                        events.append({'actor': actor, 'name': name, 'body': json.load(stream)})
-                except (OSError, ValueError):
-                    continue
+        events = _read_spool_events(directory, resource['narrow_root'])
+        if events is None:
+            return self._json({'error': 'unsafe spool path'}, 400)
         events.sort(key=lambda event: event['name'])
         return self._json(events)
 
@@ -734,10 +778,11 @@ class MultiHandler(SimpleHTTPRequestHandler):
         safe = re.compile(r'[A-Za-z0-9._-]{1,128}\Z')
         if not isinstance(event_name, str) or not isinstance(event_id, str) or not safe.fullmatch(event_name) or not safe.fullmatch(event_id):
             return self._json({'error': 'bad event name'}, 400)
-        os.makedirs(os.path.join(directory, actor), exist_ok=True)
         name = '%d-%s-%s.json' % (time.time_ns(), event_name, event_id)
-        with open(os.path.join(directory, actor, name), 'w', encoding='utf-8') as stream:
-            json.dump(event, stream)
+        try:
+            _write_event(directory, resource['narrow_root'], actor, name, event)
+        except OSError:
+            return self._json({'error': 'unsafe spool path'}, 400)
         return self._json({'ok': True, 'name': name})
 
 
@@ -761,5 +806,5 @@ if __name__ == '__main__':
     PORT = server.server_port
     host = advertised_host()
     print('spec-chat review-serve on http://%s:%d  root=%s' % (host, PORT, ROOT), flush=True)
-    print('review URL is public and is not an authentication boundary; stop this process when review ends', flush=True)
+    print('review URL is public and is not a secret in any security sense or an authentication boundary; stop this process when review ends', flush=True)
     server.serve_forever()

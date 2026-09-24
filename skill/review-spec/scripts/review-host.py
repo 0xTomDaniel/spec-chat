@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -31,6 +32,7 @@ from typing import Any, Mapping, Sequence
 SCRIPT = Path(__file__).resolve()
 REPO = SCRIPT.parents[3]
 SERVER = SCRIPT.parents[1] / "assets" / "review-serve.py"
+SERVER_PATH = str(SERVER.resolve())
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
 SAFE_CURSOR_RE = re.compile(r"[^/\\]+\Z")
 
@@ -207,30 +209,73 @@ def process_cmdline(pid: int) -> list[str] | None:
     return [part.decode(errors="replace") for part in raw.split(b"\0") if part]
 
 
-def process_owned(pid: Any, registry: Path) -> bool:
+def process_start_time(pid: int) -> str | None:
+    """Return Linux /proc start time, which changes when a PID is reused."""
+    try:
+        raw = Path(f"/proc/{pid}/stat").read_text(encoding="ascii")
+    except OSError:
+        return None
+    end = raw.rfind(")")
+    if end < 0:
+        return None
+    fields = raw[end + 2 :].split()
+    if len(fields) <= 19:
+        return None
+    return fields[19]
+
+
+def server_command(registry: Path, bind: str, port: int, host: str) -> list[str]:
+    return [str(Path(sys.executable).resolve()), SERVER_PATH, "--registry", str(registry.resolve()),
+            "--bind", bind, "--port", str(port), "--host", host]
+
+
+def process_owned(pid: Any, registry: Path, receipt: Mapping[str, Any] | None = None) -> bool:
+    if receipt is None:
+        return False
     if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
         return False
-    command = process_cmdline(pid)
-    if not command:
+    started = receipt.get("process_start_time")
+    if not isinstance(started, str) or not started or receipt.get("server_path") != SERVER_PATH:
         return False
-    joined = "\0".join(command)
-    return "review-serve.py" in joined and "--registry" in command and str(registry) in command
-
-
-def kill_owned(pid: int, registry: Path) -> None:
-    if not process_owned(pid, registry):
-        raise LauncherError("receipt process is not an owned review-serve process")
+    if started != process_start_time(pid):
+        return False
     try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return
-    deadline = time.monotonic() + 3
-    while time.monotonic() < deadline:
-        if process_cmdline(pid) is None:
+        host = urllib.parse.urlsplit(receipt["public_url"]).hostname
+        expected = server_command(registry, receipt["bind"], receipt["port"], host)
+        executable = str(Path(f"/proc/{pid}/exe").resolve(strict=True))
+        boot_id = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+    except (KeyError, OSError, ValueError, TypeError):
+        return False
+    return (
+        receipt.get("process_argv") == expected
+        and process_cmdline(pid) == expected
+        and executable == expected[0]
+        and receipt.get("process_boot_id") == boot_id
+        and process_start_time(pid) == started
+    )
+
+
+def kill_owned(pid: int, registry: Path, receipt: Mapping[str, Any] | None = None) -> None:
+    # A pidfd pins the checked process across exit/PID reuse, including escalation.
+    try:
+        descriptor = os.pidfd_open(pid)
+    except (OSError, AttributeError) as exc:
+        raise LauncherError("cannot pin receipt process identity for shutdown") from exc
+    try:
+        if receipt is None or not process_owned(pid, registry, receipt):
+            raise LauncherError("receipt process is not an owned review-serve process")
+        try:
+            signal.pidfd_send_signal(descriptor, signal.SIGTERM)
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                if not process_owned(pid, registry, receipt):
+                    return
+                time.sleep(0.05)
+            signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+        except ProcessLookupError:
             return
-        time.sleep(0.05)
-    if process_cmdline(pid) is not None:
-        os.kill(pid, signal.SIGKILL)
+    finally:
+        os.close(descriptor)
 
 
 def cursor_snapshot(spec_file: Path, cursor_name: str) -> dict[str, Any]:
@@ -600,24 +645,63 @@ def parse_resources(args: argparse.Namespace) -> list[dict[str, Any]]:
     return result
 
 
+def test_loopback_enabled(args: argparse.Namespace) -> bool:
+    return bool(getattr(args, "test_loopback", False) or os.environ.get("SPEC_CHAT_TEST_LOOPBACK") == "1")
+
+
+def resolved_addresses(host: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    try:
+        literal = ipaddress.ip_address(host)
+        return [literal]
+    except ValueError:
+        try:
+            infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+        except OSError as exc:
+            raise LauncherError(f"host address cannot be resolved: {host}") from exc
+        addresses: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
+        for info in infos:
+            try:
+                addresses.append(ipaddress.ip_address(info[4][0]))
+            except ValueError:
+                continue
+        if not addresses:
+            raise LauncherError(f"host address cannot be resolved: {host}")
+        return addresses
+
+
+def checked_host(host: str, *, test_loopback: bool, role: str, allow_wildcard: bool = False) -> str:
+    addresses = resolved_addresses(host)
+    effective = [getattr(address, "ipv4_mapped", None) or address for address in addresses]
+    if test_loopback:
+        if not all(address.is_loopback for address in effective):
+            raise LauncherError(f"test-only launches require a loopback {role}")
+    else:
+        if any(address.is_loopback for address in effective):
+            raise LauncherError(f"normal launches require a non-loopback {role}; use --test-loopback only for tests")
+        if any(address.is_unspecified for address in effective) and not allow_wildcard:
+            raise LauncherError(f"{role} must be a concrete host address")
+    # Pin resolution so a hostname cannot pass validation then resolve to loopback.
+    return str(next((address for address in addresses if address.version == 4), addresses[0]))
+
+
 def bind_host(args: argparse.Namespace) -> str:
-    return args.bind or os.environ.get("SPEC_CHAT_BIND_HOST") or "0.0.0.0"
+    test_mode = test_loopback_enabled(args)
+    selected = args.bind or os.environ.get("SPEC_CHAT_BIND_HOST") or ("127.0.0.1" if test_mode else "0.0.0.0")
+    return checked_host(selected, test_loopback=test_mode, role="bind host", allow_wildcard=True)
 
 
 def proof_host(args: argparse.Namespace, bind: str) -> str:
     selected = args.proof_host or os.environ.get("SPEC_CHAT_PROOF_HOST") or os.environ.get("REVIEW_PROOF_HOST")
-    if selected:
-        return selected
-    if bind not in {"0.0.0.0", "::"}:
-        return bind
-    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        probe.connect(("8.8.8.8", 80))
-        return probe.getsockname()[0]
-    except OSError as exc:
-        raise ProofError("cannot determine proof host; set SPEC_CHAT_PROOF_HOST") from exc
-    finally:
-        probe.close()
+    if not selected and bind not in {"0.0.0.0", "::"}:
+        selected = bind
+    if not selected:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            try:
+                probe.connect(("8.8.8.8", 80))
+                selected = probe.getsockname()[0]
+            except OSError as exc:
+                raise ProofError("cannot determine proof host; set SPEC_CHAT_PROOF_HOST") from exc
+    return checked_host(selected, test_loopback=test_loopback_enabled(args), role="proof host")
 
 
 def state_dir(args: argparse.Namespace) -> Path:
@@ -632,7 +716,11 @@ def paths(state: Path) -> tuple[Path, Path, Path]:
 
 
 def initial_receipt(records: Sequence[Mapping[str, Any]], *, pid: int, port: int, bind: str,
-                    public_url: str, source_revision: str, proofs: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+                    public_url: str, source_revision: str, proofs: Mapping[str, Mapping[str, Any]],
+                    process_argv: Sequence[str], handoff_valid: bool) -> dict[str, Any]:
+    started = process_start_time(pid)
+    if not started:
+        raise LauncherError("cannot record review server process identity")
     resources = []
     for record in records:
         resource = dict(record)
@@ -649,6 +737,9 @@ def initial_receipt(records: Sequence[Mapping[str, Any]], *, pid: int, port: int
     return {
         "service_kind": "spec-chat", "state": "running", "pid": pid, "port": port,
         "bind": bind, "public_url": public_url, "source_revision": source_revision,
+        "server_path": SERVER_PATH, "process_start_time": started,
+        "process_argv": list(process_argv), "handoff_valid": handoff_valid,
+        "process_boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
         "started_at": now(), "resource": resources,
     }
 
@@ -669,7 +760,7 @@ def sync_receipt_lifecycle(receipt: dict[str, Any], record: Mapping[str, Any]) -
 
 def owned_running(receipt: Mapping[str, Any], registry: Path) -> int:
     pid = receipt.get("pid")
-    if receipt.get("state") != "running" or not process_owned(pid, registry):
+    if receipt.get("state") != "running" or not process_owned(pid, registry, receipt):
         raise LauncherError("review host is not running under the recorded owned process")
     assert isinstance(pid, int)
     return pid
@@ -681,7 +772,7 @@ def launch(args: argparse.Namespace) -> int:
     prior_bytes = registry.read_bytes() if registry.exists() else None
     if receipt_path.exists():
         old = read_receipt(receipt_path)
-        if process_owned(old.get("pid"), registry):
+        if process_owned(old.get("pid"), registry, old):
             raise LauncherError("receipt names a live owned review host")
     resources = parse_resources(args)
     records = [registry_record(resource) for resource in resources]
@@ -692,8 +783,7 @@ def launch(args: argparse.Namespace) -> int:
         bind = bind_host(args)
         selected_host = proof_host(args, bind)
         port = select_port(approved_ports(), bind)
-        command = [sys.executable, str(SERVER), "--registry", str(registry), "--bind", bind,
-                   "--port", str(port), "--host", selected_host]
+        command = server_command(registry, bind, port, selected_host)
         with log_path.open("w", encoding="utf-8") as log:
             child = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
                                      start_new_session=True, text=True)
@@ -715,12 +805,21 @@ def launch(args: argparse.Namespace) -> int:
         if not url:
             raise LauncherError("review server did not print a URL")
         proofs = {resource["id"]: prove_resource(url, resource) for resource in resources}
-        receipt = initial_receipt(records, pid=child.pid, port=port, bind=bind,
-                                  public_url=url, source_revision=run_git(REPO, "rev-parse", "HEAD"), proofs=proofs)
+        handoff_valid = not test_loopback_enabled(args)
+        receipt = initial_receipt(
+            records, pid=child.pid, port=port, bind=bind, public_url=url,
+            source_revision=run_git(REPO, "rev-parse", "HEAD"), proofs=proofs,
+            process_argv=command, handoff_valid=handoff_valid,
+        )
+        if not process_owned(child.pid, registry, receipt):
+            raise LauncherError("review server process identity changed during launch")
         write_receipt(receipt_path, receipt)
-        print(f"service URL: {url}")
-        for resource in resources:
-            print(f"{resource['id']} URL: {url.rstrip('/')}{stable_path(resource)}")
+        if handoff_valid:
+            print(f"service URL: {url}")
+            for resource in resources:
+                print(f"{resource['id']} URL: {url.rstrip('/')}{stable_path(resource)}")
+        else:
+            print("test-only host started; handoff_valid=false")
         return 0
     except BaseException as exc:
         if child is not None and child.poll() is None:
@@ -728,7 +827,10 @@ def launch(args: argparse.Namespace) -> int:
                 os.kill(child.pid, signal.SIGTERM)
             with contextlib.suppress(Exception):
                 child.wait(timeout=3)
-        failure = {"service_kind": "spec-chat", "state": "failed", "failed_at": now(), "error": str(exc), "resource": []}
+        failure = {
+            "service_kind": "spec-chat", "state": "failed", "failed_at": now(), "error": str(exc),
+            "handoff_valid": False, "resource": [],
+        }
         with contextlib.suppress(Exception):
             write_receipt(receipt_path, failure)
         if prior_bytes is None:
@@ -763,8 +865,11 @@ def add_resources(args: argparse.Namespace) -> int:
             resource["finish_event"] = ""; resource["proof"] = proofs[item["id"]]
             receipt.setdefault("resource", []).append(resource)
         receipt["updated_at"] = now(); write_receipt(receipt_path, receipt)
-        for item in additions:
-            print(f"{item['id']} URL: {url.rstrip('/')}{stable_path(item)}")
+        if receipt.get("handoff_valid") is True:
+            for item in additions:
+                print(f"{item['id']} URL: {url.rstrip('/')}{stable_path(item)}")
+        else:
+            print("test-only resources added; handoff_valid=false")
         return 0
     except BaseException:
         atomic_write(registry, old_bytes.decode("utf-8"))
@@ -806,7 +911,7 @@ def stop_host(args: argparse.Namespace) -> int:
     unfinished = [item["id"] for item in records if item["lifecycle"] in {"serving", "parked"}]
     if unfinished:
         raise LauncherError("cannot stop while resources are serving or parked: " + ", ".join(unfinished))
-    kill_owned(pid, registry)
+    kill_owned(pid, registry, receipt)
     receipt["state"] = "stopped"; receipt["stopped_at"] = now(); write_receipt(receipt_path, receipt)
     print("review host stopped")
     return 0
@@ -814,7 +919,7 @@ def stop_host(args: argparse.Namespace) -> int:
 
 def status_host(args: argparse.Namespace) -> int:
     _, receipt_path, _ = paths(state_dir(args)); receipt = read_receipt(receipt_path)
-    for key in ("service_kind", "state", "pid", "port", "bind"):
+    for key in ("service_kind", "state", "pid", "port", "bind", "handoff_valid"):
         if key in receipt: print(f"{key}={receipt[key]}")
     for item in receipt.get("resource", []):
         print(f"resource={item.get('id')} lifecycle={item.get('lifecycle')}")
@@ -835,6 +940,11 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--state-dir", dest="state_dir", default=argparse.SUPPRESS)
         sub.add_argument("--bind", dest="bind", default=argparse.SUPPRESS)
         sub.add_argument("--proof-host", dest="proof_host", default=argparse.SUPPRESS)
+        if name == "start":
+            sub.add_argument(
+                "--test-loopback", "--test-only-loopback", dest="test_loopback", action="store_true",
+                help="allow loopback binding for tests; receipt is not handoff-valid",
+            )
     for name in ("park", "resume", "finish", "remove"):
         sub = commands.add_parser(name); sub.add_argument("--id", required=True)
         sub.add_argument("--state-dir", dest="state_dir", default=argparse.SUPPRESS)

@@ -193,6 +193,52 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertEqual(fetch("/specs/.style/site.css"), (200, b"collection style"))
         self.assertEqual(fetch("/specs/.viz/missing.js")[0], 404)
 
+    def test_legacy_event_spool_rejects_actor_and_event_symlinks(self):
+        repo = self.work / "legacy-spool"
+        docs = repo / "docs"
+        spec = docs / "specs/legacy.spec.html"
+        spec.parent.mkdir(parents=True)
+        spec.write_text("legacy")
+        review = Path(str(spec) + ".review")
+        review.mkdir()
+        outside = self.work / "legacy-outside"
+        (outside / "human").mkdir(parents=True)
+        secret = outside / "secret.json"
+        secret.write_text('{"outside": true}')
+        (outside / "human" / "leak.json").symlink_to(secret)
+        (review / "human").symlink_to(outside / "human", target_is_directory=True)
+        git(repo, "init", "-b", "main")
+        git(repo, "config", "user.name", "Spec Chat Test")
+        git(repo, "config", "user.email", "spec-chat@example.test")
+        git(repo, "add", ".")
+        git(repo, "commit", "-m", "legacy spool")
+        port = self._free_port()
+        process = subprocess.Popen((sys.executable, str(SERVER), str(docs), str(port)), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(self.stop, process)
+        for _ in range(100):
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=0.1).close()
+                break
+            except Exception:
+                time.sleep(0.01)
+        query = urllib.parse.urlencode({"dir": "specs/legacy.spec.html.review", "actor": "human"})
+        url = f"http://127.0.0.1:{port}/api/events?{query}"
+        self.assertEqual(self.request_url(url)[0], 400)
+        body = json.dumps({"event": "comment", "id": "escape"}).encode()
+        self.assertEqual(self.request_url(url, "POST", body)[0], 400)
+        (review / "human").unlink()
+        (review / "human").mkdir()
+        (review / "human/leak.json").symlink_to(secret)
+        self.assertEqual(self.request_url(url)[0], 400)
+
+    def request_url(self, url, method="GET", body=None):
+        request = urllib.request.Request(url, method=method, data=body)
+        try:
+            with urllib.request.urlopen(request, timeout=2) as response:
+                return response.status, response.read()
+        except urllib.error.HTTPError as error:
+            return error.code, error.read()
+
     def test_registry_allows_multiple_specs_with_one_slug_in_one_repository(self):
         resource = self.make_resource("first")
         other = resource | {"id": "spec:first::docs/adr/y.spec.html", "spec": "docs/adr/y.spec.html"}
@@ -212,6 +258,11 @@ class MultiReviewServeTest(unittest.TestCase):
         review = repo / (resource["spec"] + ".review")
         (repo / "docs/spool-alias").symlink_to(review, target_is_directory=True)
         (review / "human/001-comment.json").write_text('{"event":"comment"}')
+        outside_spool = self.work / "outside-spool"
+        (outside_spool / "human").mkdir(parents=True)
+        (outside_spool / "human/secret.json").write_text('{"outside": true}')
+        (review / "human").rename(review / "human-real")
+        (review / "human").symlink_to(outside_spool / "human", target_is_directory=True)
         self.start([resource])
         for path in (
             "/first/docs/unregistered.spec.html", "/first/outside.txt", "/first/docs/leak.txt",
@@ -224,6 +275,13 @@ class MultiReviewServeTest(unittest.TestCase):
                 self.assertEqual(self.request(path, "HEAD")[0], 404)
         self.assertEqual(self.request("/api/events?dir=first/docs/unregistered.spec.html.review")[0], 400)
         self.assertEqual(self.request("/api/baseline?path=first/docs/unregistered.spec.html")[0], 400)
+        events = self.api(resource)
+        self.assertEqual(self.request(events)[0], 400)
+        self.assertEqual(self.request(events, "POST", {"event": "comment", "id": "escape"})[0], 400)
+        (review / "human").unlink()
+        (review / "human").mkdir()
+        (review / "human/leak.json").symlink_to(outside_spool / "human/secret.json")
+        self.assertEqual(self.request(events)[0], 400)
 
     def test_reload_add_remove_and_invalid_updates_preserve_siblings(self):
         first, second, third = (self.make_resource(name) for name in ("first", "second", "third"))
