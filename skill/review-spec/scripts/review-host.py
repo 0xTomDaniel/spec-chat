@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import hashlib
+from html.parser import HTMLParser
 import ipaddress
 import json
 import os
@@ -528,6 +529,29 @@ def event_files(review: Path, actor: str | None = None) -> list[tuple[str, str, 
     return sorted(events, key=lambda item: item[0])
 
 
+class _TbdAttributeParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.found = False
+
+    def _inspect(self, attrs: list[tuple[str, str | None]]) -> None:
+        if any(name.casefold() == "data-spec-tbd" for name, _ in attrs):
+            self.found = True
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self._inspect(attrs)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self._inspect(attrs)
+
+
+def spec_has_tbd_attribute(markup: str) -> bool:
+    parser = _TbdAttributeParser()
+    parser.feed(markup)
+    parser.close()
+    return parser.found
+
+
 def finish_event_for(resource: Mapping[str, Any]) -> str:
     spec = Path(resource.get("spec_file") or (Path(resource["root"]) / resource["spec"]))
     review = Path(str(spec) + ".review")
@@ -551,7 +575,7 @@ def finish_event_for(resource: Mapping[str, Any]) -> str:
         if body.get("event") != "status" or body.get("status") != "resolved":
             raise LauncherError(f"Finish batch contains non-resolution event: {name}")
     current = spec.read_text(encoding="utf-8", errors="replace")
-    if re.search(r"\bdata-spec-tbd(?:\s*=|\s|>)", current, re.IGNORECASE):
+    if spec_has_tbd_attribute(current):
         raise LauncherError("current spec still has data-spec-tbd")
     folded = event_files(review)
     folded = [item for item in folded if item[0] <= handoff_name]

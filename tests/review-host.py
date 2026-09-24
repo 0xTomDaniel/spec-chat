@@ -446,12 +446,13 @@ class ReviewHostT2Test(unittest.TestCase):
         (review / ".cursor-a").write_text("020-handoff-old.json\n030-handoff-final.json\n", encoding="utf-8")
         self.assertNotEqual(self.finish(state, first).returncode, 0)  # unresolved folded thread
 
-        original_spec = first["spec_file"].read_text(encoding="utf-8")
-        first["spec_file"].write_text(original_spec.replace("</title>", ' data-spec-tbd="true"></title>'), encoding="utf-8")
-        try:
-            self.assertNotEqual(self.finish(state, first).returncode, 0)
-        finally:
-            first["spec_file"].write_text(original_spec, encoding="utf-8")
+        self.clear_review(first)
+        self.event(review, "human", "010-comment.json", {"event": "comment", "id": "900"})
+        self.event(review, "human", "020-handoff-old.json", {"event": "handoff", "id": "100"})
+        self.event(review, "agent", "030-reply.json", {"event": "reply", "id": "700", "respondsTo": "900", "status": "acknowledged"})
+        self.event(review, "human", "040-handoff-final.json", {"event": "handoff", "id": "001"})
+        (review / ".cursor-a").write_text("020-handoff-old.json\n040-handoff-final.json\n", encoding="utf-8")
+        self.assertNotEqual(self.finish(state, first).returncode, 0)  # acknowledged but unresolved
 
         self.clear_review(first)
         self.event(review, "human", "010-handoff-old.json", {"event": "handoff", "id": "100"})
@@ -465,11 +466,12 @@ class ReviewHostT2Test(unittest.TestCase):
 
         self.clear_review(first)
         self.event(review, "human", "010-comment.json", {"event": "comment", "id": "900"})
-        self.event(review, "human", "020-handoff-old.json", {"event": "handoff", "id": "100"})
-        self.event(review, "agent", "030-reply.json", {"event": "reply", "id": "700", "respondsTo": "900"})
-        self.event(review, "human", "040-status-resolved.json", {"event": "status", "id": "050", "respondsTo": "900", "status": "resolved"})
-        self.event(review, "human", "050-handoff-final.json", {"event": "handoff", "id": "001"})
-        (review / ".cursor-a").write_text("020-handoff-old.json\n050-handoff-final.json\n", encoding="utf-8")
+        self.event(review, "human", "020-edit.json", {"event": "edit", "id": "600", "supersedes": "900"})
+        self.event(review, "human", "030-handoff-old.json", {"event": "handoff", "id": "100"})
+        self.event(review, "agent", "040-reply.json", {"event": "reply", "id": "700", "respondsTo": "600", "status": "acknowledged"})
+        self.event(review, "human", "050-status-resolved.json", {"event": "status", "id": "050", "respondsTo": "600", "status": "resolved"})
+        self.event(review, "human", "060-handoff-final.json", {"event": "handoff", "id": "001"})
+        (review / ".cursor-a").write_text("030-handoff-old.json\n060-handoff-final.json\n", encoding="utf-8")
         self.assertEqual(self.finish(state, first).returncode, 0)
         after_finish = self.receipt(state)
         self.assertEqual(next(item for item in after_finish["resource"] if item["id"] == first["id"])["lifecycle"], "finished")
@@ -484,7 +486,7 @@ class ReviewHostT2Test(unittest.TestCase):
         self.assertEqual(removed.returncode, 0, removed.stderr)
         self.assertEqual(http_request(url + "/alpha/docs/specs/alpha.spec.html")[0], 404)
         self.assertEqual(http_request(events_url)[0], 404)
-        self.assertTrue((review / "human" / "050-handoff-final.json").exists())
+        self.assertTrue((review / "human" / "060-handoff-final.json").exists())
         readd = self.run_cli(*self.add_args(state, first), state=state, ports=port)
         self.assertNotEqual(readd.returncode, 0)
         self.assertIn("duplicate resource identity", readd.stderr)
@@ -497,6 +499,40 @@ class ReviewHostT2Test(unittest.TestCase):
         stopped = self.run_cli("stop", "--state-dir", str(state), state=state)
         self.assertEqual(stopped.returncode, 0, stopped.stderr)
         self.assertFalse(review_host.process_owned(pid, Path(state) / "registry.toml", self.receipt(state)))
+
+    def test_finish_uses_dom_tbd_attribute_semantics(self):
+        resource = self.resource("alpha", self.repo_a, "alpha")
+        original_spec = resource["spec_file"].read_text(encoding="utf-8")
+        cases = (
+            ("<meta data-spec-tbd/>", True),
+            ("<meta data-spec-tbd>", True),
+            ("<meta data-spec-tbd=\"true\">", True),
+            ("<p>prose mention data-spec-tbd here</p>", False),
+            ("<!-- comment mentions data-spec-tbd -->", False),
+            ("<script>const marker = 'data-spec-tbd ';</script>", False),
+        )
+        try:
+            for index, (marker, blocked) in enumerate(cases):
+                state = self.work / f"tbd-semantics-{index}"
+                resource["spec_file"].write_text(original_spec + "\n" + marker + "\n", encoding="utf-8")
+                review = self.clear_review(resource)
+                self.event(review, "human", "010-comment.json", {"event": "comment", "id": "900"})
+                self.event(review, "human", "020-handoff-old.json", {"event": "handoff", "id": "100"})
+                self.event(review, "agent", "030-reply.json", {"event": "reply", "id": "700", "respondsTo": "900", "status": "acknowledged"})
+                self.event(review, "human", "040-status-resolved.json", {"event": "status", "id": "050", "respondsTo": "900", "status": "resolved"})
+                self.event(review, "human", "050-handoff-final.json", {"event": "handoff", "id": "001"})
+                (review / ".cursor-test").write_text("020-handoff-old.json\n050-handoff-final.json\n", encoding="utf-8")
+                started = self.run_cli(*self.start_args(resource, state), state=state)
+                self.assertEqual(started.returncode, 0, started.stderr)
+                finished = self.finish(state, resource)
+                if blocked:
+                    self.assertNotEqual(finished.returncode, 0, marker)
+                    self.assertIn("data-spec-tbd", finished.stderr)
+                else:
+                    self.assertEqual(finished.returncode, 0, finished.stderr)
+                self.stop_cleanly(state, [resource])
+        finally:
+            resource["spec_file"].write_text(original_spec, encoding="utf-8")
 
     def test_independent_startup_keeps_foreign_listener_on_launcher_failure(self):
         foreign = ForeignHTTP()
