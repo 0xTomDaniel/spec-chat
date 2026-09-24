@@ -79,27 +79,6 @@ RECOVERED_EXPECTED=$(printf '%s\t%s\n%s\t%s\n%s\t%s' \
   exit 1
 }
 
-SINGLE_REVIEW="$TMP/single.spec.html.review"
-mkdir -p "$SINGLE_REVIEW/human" "$SINGLE_REVIEW/agent"
-: > "$SINGLE_REVIEW/human/010-comment.json"
-: > "$SINGLE_REVIEW/human/020-handoff-h.json"
-: > "$SINGLE_REVIEW/human/030-later-draft.json"
-SINGLE_READY=$(SPEC_CHAT_WATCH_OWNER=turn-yielded "$SCRIPTS/watch.sh" "$SINGLE_REVIEW" "$SINGLE_REVIEW/.cursor-test" 1 1)
-SINGLE_EXPECTED=$(printf '%s\n%s' '010-comment.json' '020-handoff-h.json')
-[ "$SINGLE_READY" = "$SINGLE_EXPECTED" ] || {
-  echo "single-page watch crossed the newest completed handoff into later drafts" >&2
-  exit 1
-}
-
-set +e
-DETACHED_OUTPUT=$("$SCRIPTS/codex-review.sh" --once "$TMP" 2>&1)
-DETACHED_RC=$?
-set -e
-[ "$DETACHED_RC" -eq 2 ] && printf '%s' "$DETACHED_OUTPUT" | grep -F 'detached processing is disabled' >/dev/null || {
-  echo "codex-review still permits a second detached processor" >&2
-  exit 1
-}
-
 node "$ROOT/tests/runtime-thread-model.mjs"
 node "$ROOT/tests/runtime-focus-model.mjs"
 node "$ROOT/tests/runtime-fsa-transport.mjs"

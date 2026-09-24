@@ -9,7 +9,7 @@ Create durable current truth before deep investigation.
 
 ## Invariants
 
-- The repository-selected issue skill owns tracker operations; Spec Chat contains no tracker dependency.
+- The repository-selected issue skill, named by target instructions, owns tracker operations; Spec Chat contains no tracker dependency.
 - The issue owns current intent, outcomes, criteria, non-goals, dependencies, and governing links.
 - The canonical spec owns current stories, detailed behavior, constraints, edge cases, and interaction contracts.
 - Implementation tickets own independently assignable outcomes and blocking relations.
