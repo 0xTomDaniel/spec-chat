@@ -14,6 +14,7 @@ Create durable current truth before deep investigation.
 - The canonical spec owns current stories, detailed behavior, constraints, edge cases, and interaction contracts.
 - Implementation tickets own independently assignable outcomes and blocking relations.
 - Chat and memory never override durable sources; stop on source conflict.
+- Use swimlane diagrams for ownership and handoffs, and Sankey diagrams for flows that split or merge, wherever they clarify the spec.
 - Accepted spec changes are committed and pushed before refreshed Git focus or review replies.
 - `spec-chat-review` alone owns browser review, server startup and shutdown, spool transactions, transport, wake, recovery, and hosting verification.
 - A remote or cross-machine shaping handoff is blocked until `spec-chat-review` has a direct public `assets/review-serve.py` process serving the narrow collection, never the repository root, on a free approved ingress port discovered and probed by the host.
