@@ -77,11 +77,16 @@ assert.equal(acknowledgedReplyCount(new Map([
 ])), 2, 'the unread badge counts only acknowledged threads awaiting a human response');
 assert.equal(acknowledgedReplyCount(new Map([['replied', { status: 'draft' }], ['resolved', { status: 'resolved' }]])), 0, 'replied-to and resolved threads leave the unread count');
 
-assert.deepEqual(reviewHandoffState(new Map([['draft', { status: 'draft' }]])), { drafts: 1, finish: false, enabled: true }, 'drafts enable an ordinary hand-off');
-assert.deepEqual(reviewHandoffState(new Map([['pending', { status: 'pending' }], ['resolved', { status: 'resolved' }]])), { drafts: 0, finish: false, enabled: false }, 'unsettled threads cannot finish review');
-assert.deepEqual(reviewHandoffState(new Map([['resolved', { status: 'resolved' }]])), { drafts: 0, finish: true, enabled: true }, 'a clean resolved review enables Finish review');
-assert.deepEqual(reviewHandoffState(new Map()), { drafts: 0, finish: true, enabled: true }, 'a review with no threads may finish explicitly');
-assert.deepEqual(reviewHandoffState(new Map(), true), { drafts: 0, finish: false, enabled: false }, 'a material TBD blocks Finish review even when no threads exist');
+assert.deepEqual(reviewHandoffState(new Map([['draft', { status: 'draft' }]])), { drafts: 1, finish: false, tbd: false, enabled: true }, 'drafts enable an ordinary hand-off');
+assert.deepEqual(reviewHandoffState(new Map([['pending', { status: 'pending' }], ['resolved', { status: 'resolved' }]])), { drafts: 0, finish: false, tbd: false, enabled: false }, 'unsettled threads cannot finish review');
+assert.deepEqual(reviewHandoffState(new Map([['resolved', { status: 'resolved' }]])), { drafts: 0, finish: true, tbd: false, enabled: true }, 'a clean resolved review enables Finish review');
+assert.deepEqual(reviewHandoffState(new Map()), { drafts: 0, finish: true, tbd: false, enabled: true }, 'a review with no threads may finish explicitly');
+assert.deepEqual(reviewHandoffState(new Map(), true), { drafts: 0, finish: false, tbd: true, enabled: true }, 'a material TBD blocks Finish review and enables the TBD jump');
+assert.deepEqual(reviewHandoffState(new Map([['resolved', { status: 'resolved' }]]), true), { drafts: 0, finish: false, tbd: true, enabled: true }, 'a TBD alone blocks an otherwise resolved review');
+assert.deepEqual(reviewHandoffState(new Map([['draft', { status: 'draft' }]]), true), { drafts: 1, finish: false, tbd: false, enabled: true }, 'drafts still hand off despite a TBD');
+assert.deepEqual(reviewHandoffState(new Map([['pending', { status: 'pending' }]]), true), { drafts: 0, finish: false, tbd: false, enabled: false }, 'unsettled threads stay disabled despite a TBD');
+assert.match(runtime, /handoffState\.tbd \? 'TBD open'/, 'handoff controls read TBD open when only a TBD blocks Finish');
+assert.match(runtime, /if \(action\.tbd\) return jumpToTbd\(tbdEl\);/, 'the TBD handoff jumps to the TBD before posting any event');
 
 const waitingHandoff = [event('300-handoff.json', 'human', { id: 'h-wait', event: 'handoff', createdAt: '2026-08-31T12:00:00.000Z' })];
 assert.equal(handoffObservation(waitingHandoff, Date.parse('2026-08-31T12:00:10.000Z')), 'waiting', 'a fresh unacknowledged hand-off is waiting');

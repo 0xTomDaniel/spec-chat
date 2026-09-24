@@ -680,8 +680,10 @@ function acknowledgedReplyCount(threads) {
 function reviewHandoffState(threads, hasTbd = false) {
   const values = [...threads.values()];
   const drafts = values.filter(thread => thread.status === 'draft').length;
-  const finish = !hasTbd && drafts === 0 && values.every(thread => thread.status === 'resolved');
-  return { drafts, finish, enabled: drafts > 0 || finish };
+  const settled = drafts === 0 && values.every(thread => thread.status === 'resolved');
+  const finish = !hasTbd && settled;
+  const tbd = hasTbd && settled;
+  return { drafts, finish, tbd, enabled: drafts > 0 || finish || tbd };
 }
 
 function handoffObservation(events, nowMs) {
@@ -1224,10 +1226,10 @@ function renderPanel() {
   document.getElementById('hx-drafts').textContent = handoffState.finish ? 'Review complete' : drafts + ' draft' + (drafts === 1 ? '' : 's');
   const desktopHandoff = document.getElementById('hx-handoff');
   desktopHandoff.disabled = !handoffState.enabled;
-  desktopHandoff.textContent = handoffState.finish ? 'Finish review' : 'Hand off to agent →';
+  desktopHandoff.textContent = handoffState.finish ? 'Finish review' : handoffState.tbd ? 'TBD open' : 'Hand off to agent →';
   const mobileHandoff = document.getElementById('hx-mobile-handoff');
   mobileHandoff.disabled = !handoffState.enabled;
-  mobileHandoff.textContent = handoffState.finish ? 'Finish review' : drafts ? 'Hand off (' + drafts + ')' : 'Hand off';
+  mobileHandoff.textContent = handoffState.finish ? 'Finish review' : handoffState.tbd ? 'TBD open' : drafts ? 'Hand off (' + drafts + ')' : 'Hand off';
   renderThreadDock();
   renderThreadHighlight();
 }
@@ -1457,7 +1459,9 @@ function renderBadges() {
 }
 
 async function handoff() {
-  const action = reviewHandoffState(state.threads, Boolean(document.querySelector('[data-spec-tbd]')));
+  const tbdEl = document.querySelector('[data-spec-tbd]');
+  const action = reviewHandoffState(state.threads, Boolean(tbdEl));
+  if (action.tbd) return jumpToTbd(tbdEl);
   if (state.handoffPosting || !action.enabled) return;
   state.handoffPosting = true;
   try {
@@ -1467,6 +1471,12 @@ async function handoff() {
   } finally {
     state.handoffPosting = false;
   }
+}
+
+function jumpToTbd(el) {
+  if (!el.matches('a[href],button,input,select,textarea,[tabindex]')) el.setAttribute('tabindex', '-1');
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  el.focus({ preventScroll: true });
 }
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
