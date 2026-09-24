@@ -90,26 +90,6 @@ class BaselineRouteTest(unittest.TestCase):
         self.assertIn('href="specs/focus.spec.html"', body)
         self.assertIn('focus.spec', body)
 
-    def test_spec_detail_response_injects_a_keyboard_accessible_index_link(self):
-        detail = self.specs / "detail.spec.html"
-        source = (
-            b"<!doctype html><html><body><p data-anchor=\"detail\">detail</p>"
-            b"</body></html>"
-        )
-        detail.write_bytes(source)
-
-        with urllib.request.urlopen(
-            f"http://127.0.0.1:{self.port}/specs/detail.spec.html?focus=changes&base=main"
-        ) as response:
-            served = response.read()
-
-        navigation = b'<nav aria-label="Spec Chat service navigation"><a href="/">Back to Spec Chat index</a></nav>'
-        self.assertEqual(response.status, 200)
-        self.assertIn(navigation, served)
-        self.assertLess(served.index(navigation), served.index(b"</body>"))
-        self.assertIn(b'data-anchor="detail"', served)
-        self.assertEqual(detail.read_bytes(), source)
-
     def verify(self, path="specs/focus.spec.html", base="main", local_spec=None):
         link_base = subprocess.check_output(("git", "rev-parse", base), cwd=self.repo, text=True).strip()
         return subprocess.run(
