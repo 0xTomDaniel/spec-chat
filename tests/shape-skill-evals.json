@@ -149,18 +149,6 @@
         "Leaves journey order with the central registry and target or milestone ownership with the feature",
         "Uses review for semantic judgment and the existing validator only for structural presence and reference integrity"
       ]
-    },
-    {
-      "id": 13,
-      "eval_name": "diagram-selection-and-accessibility",
-      "prompt": "Author a spec where work crosses owners and stages, and another flow has trustworthy quantities that split and merge.",
-      "expectations": [
-        "Uses a swimlane diagram when ownership or stage handoffs are material",
-        "Uses a Sankey diagram only when flow or dependency magnitude and proportions are trustworthy",
-        "Runs the relevance test against a simpler prose or table alternative",
-        "Provides an adjacent semantic table or ordered text fallback with labels, directions, and values",
-        "Does not rely on color alone and does not use either diagram for an atomic rule or unweighted dependency graph"
-      ]
     }
   ]
 }
