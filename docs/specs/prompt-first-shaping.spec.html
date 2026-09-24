@@ -153,7 +153,7 @@
         {
           "source": "public",
           "target": "transport",
-          "value": "narrow relay"
+          "value": "approved-port bind"
         }
       ],
       "edgeLabel": {
@@ -616,7 +616,7 @@
 <p data-anchor="compatibility-migrate">When a target copy lacks a required capability, preflight replaces that incompatible asset from the current self-contained skill bundle before the server starts.</p>
 <p data-anchor="compatibility-preserve">A target asset declaring every required capability remains untouched even when its implementation or pin differs from the bundle.</p>
 <p data-anchor="compatibility-pair">Runtime and server compatibility are checked together because Git focus requires both the browser behavior and the read-only baseline route.</p>
-<p data-anchor="compatibility-live-restart">A migrated running server is restarted on the same local port before the existing public relay continues.</p>
+<p data-anchor="compatibility-live-restart">A migrated running server is restarted on the same approved port before review continues.</p>
 <p data-anchor="compatibility-http-proof">Before browser evidence or a review handoff, the agent verifies served runtime capabilities and uses the read-only verifier to compare served spec bytes and baseline HTML with local files and Git, including seed-fallback provenance; these checks do not replace visual inspection.</p>
 <p data-anchor="compatibility-visual-target">Every semantic visual island has a render target in the same parent, and a missing target blocks publication rather than silently producing prose-only output.</p>
 <p data-anchor="compatibility-failure">A failed migration or preflight is a visible review blocker.</p>
