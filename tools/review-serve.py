@@ -117,7 +117,38 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header('Content-Length', str(len(body)))
             self.end_headers()
             return io.BytesIO(body)
+        detail = self._detail_response()
+        if detail is not None:
+            return detail
         return super().send_head()
+
+    def _detail_response(self):
+        path = urlparse(self.path).path
+        if not path.lower().endswith('.spec.html'):
+            return None
+        filename = self.translate_path(path)
+        if not os.path.isfile(filename):
+            return None
+        try:
+            with open(filename, 'rb') as source:
+                body = source.read()
+            modified = os.stat(filename).st_mtime
+        except OSError:
+            return None
+
+        navigation = b'<nav aria-label="Spec Chat service navigation"><a href="/">Back to Spec Chat index</a></nav>'
+        closing_body = re.search(rb'</body\s*>', body, re.IGNORECASE)
+        if closing_body:
+            body = body[:closing_body.start()] + navigation + body[closing_body.start():]
+        else:
+            body += navigation
+
+        self.send_response(200)
+        self.send_header('Content-Type', self.guess_type(filename))
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Last-Modified', self.date_time_string(modified))
+        self.end_headers()
+        return io.BytesIO(body)
 
     def _detail_pages(self):
         pages = []
