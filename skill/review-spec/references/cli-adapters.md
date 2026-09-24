@@ -97,7 +97,6 @@ Durable spools and unchanged cursors make this lossless.
 
 Do not invoke `codex exec`, Claude headless mode, or another agent process from a watcher while an interactive owner may exist.
 That creates a second processor and can race the authoring thread.
-`scripts/codex-review.sh` is retained only as a compatibility tombstone that exits with guidance.
 
 ## Recovery invariant
 

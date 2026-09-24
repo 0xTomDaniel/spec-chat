@@ -108,7 +108,7 @@ that terminal hand-off is parked review and keeps hosting alive.
 
    `<spec-root>` is normally the repository's shared `docs/` collection root.
    `review-control.sh` holds one local kernel lock per canonical collection root and cursor, so a second yielded or external owner fails visibly instead of racing the first.
-   A raw `watch-specs.sh` or `watch.sh` long wait is detection-only and now fails unless invoked by `review-control.sh`.
+   A raw `watch-specs.sh` long wait is detection-only and now fails unless invoked by `review-control.sh`.
    A background shell, unified exec session, watcher PID, or returned tool session never proves host attachment.
    Before any final response, transition out of `turn-yielded` into verified `external-wake` or explicit `manual-resume`.
    Detached Codex processing is disabled because it can race the interactive owner.
@@ -160,7 +160,7 @@ Full field-by-field reference for reading and writing the spool: `references/eve
 
 ## Per-CLI attachment
 
-The loop is identical on every CLI; only the verified wake adapter differs. Read `references/cli-adapters.md` before selecting `turn-yielded`, `external-wake`, or `manual-resume`. `scripts/codex-review.sh` is a compatibility tombstone and never launches detached processing.
+The loop is identical on every CLI; only the verified wake adapter differs. Read `references/cli-adapters.md` before selecting `turn-yielded`, `external-wake`, or `manual-resume`.
 
 ## Git-derived focus
 
