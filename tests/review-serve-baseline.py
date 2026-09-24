@@ -79,6 +79,17 @@ class BaselineRouteTest(unittest.TestCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/baseline?{query}") as response:
             return json.load(response)
 
+    def test_service_root_serves_a_responsive_index_with_detail_links(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as response:
+            body = response.read().decode()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.headers.get_content_type(), "text/html")
+        self.assertIn('<meta name="viewport"', body)
+        self.assertIn('<title>Spec Chat index</title>', body)
+        self.assertIn('href="specs/focus.spec.html"', body)
+        self.assertIn('focus.spec', body)
+
     def verify(self, path="specs/focus.spec.html", base="main", local_spec=None):
         link_base = subprocess.check_output(("git", "rev-parse", base), cwd=self.repo, text=True).strip()
         return subprocess.run(
