@@ -50,6 +50,7 @@ Shaping never marks implementation work In Progress or Done.
 
 Material uncertainties become temporary anchored TBDs.
 Ask small dependency-aware batches in Spec Chat, resolve each answer into current spec and issue truth, and reconcile tickets after material changes.
+When resolving a review finding, prefer removing or deferring scope over adding spec text; keep v1 minimal.
 Finish each batch's behavior, acceptance, and necessary layout changes together before final browser inspection and ticket reconciliation; apply the authoring reference's proportional recheck rule to later corrections.
 Invoke `spec-chat-review` with `focus=changes&base=<exact-review-base>`; it owns publication mechanics, review hosting, baseline selection, and the review loop.
 An operator-selected previously reviewed snapshot may differ from the change request's base; keep the latter for stylesheet provenance validation.
