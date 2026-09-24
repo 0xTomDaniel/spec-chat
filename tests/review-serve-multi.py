@@ -249,6 +249,24 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertEqual(self.request(self.stable(resource))[0], 200)
         self.assertEqual(self.request(self.stable(other)), (200, b"other registered spec"))
 
+    def test_removed_spec_keeps_active_same_slug_sibling_and_shared_assets(self):
+        resource = self.make_resource("first")
+        other = resource | {"id": "spec:first::docs/adr/y.spec.html", "spec": "docs/adr/y.spec.html"}
+        path = Path(resource["root"]) / other["spec"]
+        path.parent.mkdir(parents=True)
+        path.write_text("other registered spec")
+        self.start([resource, other])
+        resource["lifecycle"] = "removed"
+        self.write_registry([resource, other])
+        time.sleep(0.2)
+
+        self.assertEqual(self.request(self.stable(resource))[0], 404)
+        self.assertEqual(self.request(self.api(resource))[0], 404)
+        self.assertEqual(self.request(self.api(resource, "baseline", base="main"))[0], 404)
+        self.assertEqual(self.request(self.stable(other)), (200, b"other registered spec"))
+        self.assertEqual(self.request(self.api(other))[0], 200)
+        self.assertEqual(self.request("/first/docs/specs/.viz/runtime.js")[0], 200)
+
     def test_narrow_collection_denies_unregistered_specs_spools_and_escapes(self):
         resource = self.make_resource("first")
         repo = Path(resource["root"])

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import fcntl
 import hashlib
 from html.parser import HTMLParser
 import ipaddress
@@ -739,6 +740,20 @@ def paths(state: Path) -> tuple[Path, Path, Path]:
     return state / "registry.toml", state / "receipt.toml", state / "server.log"
 
 
+@contextlib.contextmanager
+def resource_lock(state: Path, resource_id: str):
+    digest = hashlib.sha256(resource_id.encode("utf-8")).hexdigest()
+    path = state / f".resource-{digest}.lock"
+    state.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
+
+
 def initial_receipt(records: Sequence[Mapping[str, Any]], *, pid: int, port: int, bind: str,
                     public_url: str, source_revision: str, proofs: Mapping[str, Mapping[str, Any]],
                     process_argv: Sequence[str], handoff_valid: bool) -> dict[str, Any]:
@@ -916,8 +931,21 @@ def lifecycle(args: argparse.Namespace) -> int:
         if current != "parked": raise LauncherError("only a parked resource can resume")
         record["lifecycle"] = "serving"
     elif command == "finish":
-        if current not in {"serving", "parked"}: raise LauncherError("only a serving or parked resource can finish")
-        record["finish_event"] = finish_event_for(record); record["cursor_snapshot"] = cursor_snapshot(Path(record["root"]) / record["spec"], record["cursor_name"]); record["lifecycle"] = "finished"
+        with resource_lock(state, record["id"]):
+            records = read_registry(registry)
+            record = next((item for item in records if item.get("id") == args.id), None)
+            if record is None:
+                raise LauncherError(f"unknown resource id: {args.id}")
+            current = record["lifecycle"]
+            if current not in {"serving", "parked"}: raise LauncherError("only a serving or parked resource can finish")
+            record["finish_event"] = finish_event_for(record)
+            record["cursor_snapshot"] = cursor_snapshot(Path(record["root"]) / record["spec"], record["cursor_name"])
+            record["lifecycle"] = "finished"
+            record["updated_at"] = now()
+            write_registry(registry, records)
+        sync_receipt_lifecycle(receipt, record); receipt["updated_at"] = now(); write_receipt(receipt_path, receipt)
+        print(f"{args.id}: {record['lifecycle']}")
+        return 0
     elif command == "remove":
         if current == "removed": raise LauncherError("resource is already removed")
         record["lifecycle"] = "removed"

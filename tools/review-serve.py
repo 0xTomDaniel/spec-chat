@@ -15,6 +15,7 @@ usage: review-serve.py [ROOT] [PORT] [--public] [--bind HOST] [--host HOST]
   GET  /api/baseline?path=<spec-rel-path>[&base=<ref>]  -> local Git baseline
 """
 import html
+import hashlib
 import io
 import json
 import os
@@ -25,6 +26,7 @@ import subprocess
 import sys
 import time
 import argparse
+import fcntl
 import mimetypes
 import tomllib
 import contextlib
@@ -415,6 +417,22 @@ def _write_event(review, root, actor, name, event):
             json.dump(event, stream)
 
 
+def _resource_lock_path(registry, resource_id):
+    digest = hashlib.sha256(resource_id.encode('utf-8')).hexdigest()
+    return os.path.join(os.path.dirname(os.path.realpath(registry)), '.resource-%s.lock' % digest)
+
+
+@contextlib.contextmanager
+def _resource_lock(registry, resource_id):
+    descriptor = os.open(_resource_lock_path(registry, resource_id), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
+
+
 def _own_viz_asset(path):
     """Resolve .viz assets to the server's vendored runtime, never the collection."""
     decoded = urllib_unquote(urlparse(path).path)
@@ -624,8 +642,8 @@ class MultiHandler(SimpleHTTPRequestHandler):
     def _send_file(self, path):
         decoded = self._decoded_path(path) or ''
         route_parts = decoded.split('/')
-        if len(route_parts) > 1 and any(
-            resource['slug'] == route_parts[1] and resource['lifecycle'] == 'removed'
+        if len(route_parts) > 1 and not any(
+            resource['slug'] == route_parts[1] and resource['lifecycle'] != 'removed'
             for resource in self.resources
         ):
             self.send_error(404)
@@ -766,8 +784,6 @@ class MultiHandler(SimpleHTTPRequestHandler):
             return self._json({'error': 'bad dir or actor'}, 400)
         if actor == 'agent':
             return self._json({'error': 'agent spool writes are disk-only'}, 403)
-        if resource['lifecycle'] == 'finished':
-            return self._json({'error': 'resource finished'}, 409)
         try:
             body = self.rfile.read(int(self.headers.get('Content-Length', 0)))
             event = json.loads(body)
@@ -779,10 +795,21 @@ class MultiHandler(SimpleHTTPRequestHandler):
         if not isinstance(event_name, str) or not isinstance(event_id, str) or not safe.fullmatch(event_name) or not safe.fullmatch(event_id):
             return self._json({'error': 'bad event name'}, 400)
         name = '%d-%s-%s.json' % (time.time_ns(), event_name, event_id)
-        try:
-            _write_event(directory, resource['narrow_root'], actor, name, event)
-        except OSError:
-            return self._json({'error': 'unsafe spool path'}, 400)
+        with _resource_lock(self.server.registry_state.path, resource['id']):
+            try:
+                fresh = _read_resource_records(self.server.registry_state.path)
+            except (OSError, RegistryError):
+                return self._json({'error': 'registry unavailable'}, 409)
+            resource = next((item for item in fresh if item['id'] == resource['id']), None)
+            if not resource or resource['lifecycle'] == 'removed':
+                return self._json({'error': 'resource removed'}, 404)
+            if resource['lifecycle'] == 'finished':
+                return self._json({'error': 'resource finished'}, 409)
+            directory = resource['spec_file'] + '.review'
+            try:
+                _write_event(directory, resource['narrow_root'], actor, name, event)
+            except OSError:
+                return self._json({'error': 'unsafe spool path'}, 400)
         return self._json({'ok': True, 'name': name})
 
 

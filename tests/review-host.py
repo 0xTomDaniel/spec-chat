@@ -534,6 +534,43 @@ class ReviewHostT2Test(unittest.TestCase):
         finally:
             resource["spec_file"].write_text(original_spec, encoding="utf-8")
 
+    def test_delayed_body_post_cannot_commit_after_finish(self):
+        resource = self.resource("alpha", self.repo_a, "alpha")
+        state = self.work / "delayed-post-state"
+        started = self.run_cli(*self.start_args(resource, state), state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        receipt = self.receipt(state)
+        review = self.clear_review(resource)
+        self.event(review, "human", "010-comment.json", {"event": "comment", "id": "900"})
+        self.event(review, "human", "020-handoff-old.json", {"event": "handoff", "id": "100"})
+        self.event(review, "agent", "030-reply.json", {"event": "reply", "id": "700", "respondsTo": "900", "status": "acknowledged"})
+        self.event(review, "human", "040-status-resolved.json", {"event": "status", "id": "050", "respondsTo": "900", "status": "resolved"})
+        self.event(review, "human", "050-handoff-final.json", {"event": "handoff", "id": "001"})
+        (review / ".cursor-test").write_text("020-handoff-old.json\n050-handoff-final.json\n", encoding="utf-8")
+
+        body = json.dumps({"event": "comment", "id": "late"}).encode()
+        parsed = urllib.parse.urlsplit(receipt["public_url"])
+        query = urllib.parse.urlencode({"dir": "alpha/docs/specs/alpha.spec.html.review", "actor": "human"})
+        request = (
+            f"POST /api/events?{query} HTTP/1.1\r\n"
+            f"Host: {parsed.hostname}:{parsed.port}\r\n"
+            f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n"
+        ).encode()
+        with socket.create_connection((parsed.hostname, parsed.port), timeout=3) as connection:
+            connection.sendall(request)
+            finished = self.finish(state, resource)
+            self.assertEqual(finished.returncode, 0, finished.stderr)
+            connection.sendall(body)
+            connection.shutdown(socket.SHUT_WR)
+            response = b""
+            while True:
+                chunk = connection.recv(4096)
+                if not chunk:
+                    break
+                response += chunk
+        self.assertIn(b" 409 ", response.split(b"\r\n", 1)[0])
+        self.assertEqual(list((review / "human").glob("*late*.json")), [])
+
     def test_independent_startup_keeps_foreign_listener_on_launcher_failure(self):
         foreign = ForeignHTTP()
         try:
