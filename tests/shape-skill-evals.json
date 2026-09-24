@@ -7,7 +7,7 @@
       "eval_name": "prompt-first-durable-seed",
       "prompt": "Start shaping this brand-new feature in Spec Chat: let reviewers compare alternative checkout retry policies.",
       "expectations": [
-        "Creates a fresh placeholder through the repository-selected issue skill before reading docs",
+        "Creates a fresh placeholder through the `linear` CLI before reading docs",
         "Runs a short docs-only pass before code or test inspection",
         "Writes one concise current issue seed and one concise current spec seed",
         "Uses an existing governing spec or creates a minimal capability spec",
@@ -126,7 +126,7 @@
       "eval_name": "implementation-ticket-frontier",
       "prompt": "Finish shaping a reviewed multi-module behavior spec that can be delivered through several partially parallel code outcomes.",
       "expectations": [
-        "Creates linked implementation tickets through the repository-selected issue skill",
+        "Creates linked implementation tickets through the `linear` CLI",
         "Gives each ticket one independently assignable outcome, exact governing spec anchors, and observable evidence",
         "Uses tracker blocker relations for real dependencies and no numbered delivery sequence",
         "Leaves every unblocked incomplete ticket on the ready frontier",

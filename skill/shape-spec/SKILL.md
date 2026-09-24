@@ -9,7 +9,7 @@ Create durable current truth before deep investigation.
 
 ## Invariants
 
-- The repository-selected issue skill owns tracker operations; Spec Chat contains no tracker dependency.
+- Tracker operations use the Linear tool named in the operating model (the `linear` CLI); Spec Chat runtime contains no tracker dependency.
 - The issue owns current intent, outcomes, criteria, non-goals, dependencies, and governing links.
 - The canonical spec owns current stories, detailed behavior, constraints, edge cases, and interaction contracts.
 - Implementation tickets own independently assignable outcomes and blocking relations.
@@ -24,7 +24,7 @@ Create durable current truth before deep investigation.
 
 ## Shape
 
-1. Resolve the repository-selected issue skill, create a concise placeholder issue immediately, and create the work branch using target conventions. Missing issue access is a visible blocker.
+1. Using the `linear` CLI, create a concise placeholder issue immediately, and create the work branch using target conventions. Missing issue access is a visible blocker.
 2. Read only target instructions, the spec index, clearly related specs or ADRs, and directly relevant product docs. Update the governing spec or create a minimal spec containing only real behavior; append the issue to its source-issues list and keep only governing links, not a research bibliography. Commit, push, and open one evolving draft change request. This durable seed is a checkpoint; browser review readiness still requires the authoring gate and verified review surface.
 3. Deepen only from relevant code, tests, configuration, and change-request state. Resolve discoverable questions before asking the human. Keep the issue always-most-recent and remove stale prose or resolved TBDs.
 4. Keep every changed user outcome current in the target-declared story source or governing spec, including the guided-journey declaration defined by [references/authoring.md](references/authoring.md). Do not duplicate canonical story declarations into the issue or generated Markdown catalog. For cross-module behavior, reconcile stable responsibilities, seams, and dependency direction with the target-declared architecture source while keeping issue-specific detail in the spec.
@@ -36,7 +36,7 @@ Create durable current truth before deep investigation.
 
 ## Implementation graph
 
-Before finishing review, use the selected issue skill to reconcile implementation tickets:
+Before finishing review, use the `linear` CLI to reconcile implementation tickets:
 
 - one independently assignable code outcome per ticket
 - exact governing spec anchors and observable completion evidence
