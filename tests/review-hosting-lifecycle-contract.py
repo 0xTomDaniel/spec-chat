@@ -67,6 +67,18 @@ class ReviewHostingLifecycleContractTest(unittest.TestCase):
         self.assertIn("direct service ownership", SHAPE)
         self.assertNotIn("same public server, secret URL, and checker", REVIEW)
         self.assertIn("processed empty **Finish review** hand-off", ADAPTERS)
+        self.assertIn("public URL", ADAPTERS)
+        self.assertIn("not a secret in any security sense", ADAPTERS)
+        self.assertIn("not an authentication boundary", ADAPTERS)
+        self.assertIn("Keep it out of Linear, pull requests, and other public durable records", ADAPTERS)
+        self.assertNotIn("secret URL", ADAPTERS)
+
+    def test_no_stale_secret_url_or_unguessable_wording_in_user_contracts(self):
+        files = [ROOT / "README.md", *sorted((ROOT / "skill").rglob("*.md"))]
+        for candidate in files:
+            text = candidate.read_text(encoding="utf-8")
+            self.assertNotIn("secret URL", text, candidate)
+            self.assertNotIn("unguessable", text.lower(), candidate)
 
     def test_topology_keeps_two_services_and_laptop_client_separate(self):
         self.assertIn("service=spec-chat", LAUNCHER)

@@ -12,7 +12,7 @@ Visual HTML specs you annotate in the browser; a coding agent addresses the anno
 - A compact floating dock shows one status-colored square per conversation; selecting a square opens that thread, while comment mode or the dock’s chat control opens the full review sidebar.
 - Threads support human↔agent follow-up replies and append-only edits to unanswered human messages; selecting a thread rings the exact page element it annotates, and resolved threads collapse automatically while remaining browsable.
 - One parked CLI watcher (Claude Code, Codex CLI, or pi) covers the whole spec collection by default: it discovers per-page hand-off spools, drains batches serially with independent cursors/session state, edits the selected spec, and writes replies back. In-session subscription inference; no MCP, hooks, inference service, or mandatory daemon.
-- A prompt-first shaping skill creates the durable issue and spec seed, opens Git-derived focus through an public review link, and keeps the same authoring turn parked through hand-off batches.
+- A prompt-first shaping skill creates the durable issue and spec seed, opens Git-derived focus through a public review link, and keeps the same authoring turn parked through hand-off batches.
 
 ## Constraints (fixed)
 

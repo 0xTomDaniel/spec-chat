@@ -5,8 +5,9 @@ Wake ownership is host-specific and must be explicit.
 Every open review ends in exactly one terminal control state.
 
 Terminal control selects the checker owner, not the hosting lifetime. While a
-remote review is parked, the same public server, captured secret URL, and
-checker remain alive. Empty spool, timeout, no draft, a final assistant
+remote review is parked, the same public server, captured public URL, and
+checker remain alive. The public URL is not a secret in any security sense. It
+is not an authentication boundary. Keep it out of Linear, pull requests, and other public durable records. Empty spool, timeout, no draft, a final assistant
 response, and `manual-resume` are non-terminal for hosting. The only hosting
 terminal is the processed empty **Finish review** hand-off: the human selected
 Finish review, the agent consumed that hand-off, and the exact cursor advance
