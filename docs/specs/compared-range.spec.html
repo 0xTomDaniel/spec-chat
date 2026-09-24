@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./.style/spec.css">
+<title>Compared commit range</title>
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Compared commit range</h1>
+<nav data-anchor="breadcrumbs">docs / specs / compared-range.spec.html</nav>
+<p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-90/spec-chat-show-and-change-the-compared-commit-range">ANN-90</a>.</p>
+<p data-anchor="context">Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a>: the page states which commits it compares and lets the reviewer change the base in place.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-see-range">As a reviewer, I can see which commits the served spec compares, so I know what the highlighted changes mean.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-change-base">As a reviewer, I can pick an earlier commit of this spec or paste a commit id and see the page re-diff, without editing the URL.</p>
+</section>
+
+<section data-anchor="range-bar">
+<h2>Range bar</h2>
+<p data-anchor="bar-where">Every spec served over HTTP shows one compact line above the spec header: <code>Changes from &lt;base&gt; to &lt;head&gt;</code>.</p>
+<p data-anchor="bar-ids">Each end shows a 7-character commit id and its commit date as <code>YYYY-MM-DD</code>; the full id is the hover title.</p>
+<p data-anchor="bar-base">The base end is the commit whose spec bytes are compared, which is the selected base or, for a spec absent there, its first committed seed.</p>
+<p data-anchor="bar-head">The head end is the current commit of the serving worktree; when the served spec differs from that commit, it reads <code>working copy of &lt;head&gt;</code>.</p>
+<p data-anchor="bar-flow">The bar sits in page flow, wraps on narrow screens, and never covers the spec or review controls.</p>
+<p data-anchor="bar-no-file">A <code>file://</code> page shows no bar, because it cannot read Git.</p>
+<figure data-anchor="bar-figure">
+<div class="rail-wrap" data-anchor="bar-figure-scroll">
+<svg viewBox="0 0 720 210" style="min-width: 560px" role="img" aria-label="Range bar above the spec header reads Changes from 3186fae 2026-09-20 to working copy of 800a788 2026-09-24 with a Change base button. The open picker lists recent commits of this spec and a paste field.">
+<rect x="8" y="8" width="704" height="40" rx="6" fill="#e8edf9" stroke="#2947c7" stroke-width="1.5"></rect>
+<text x="22" y="33" fill="#171719" font-size="14">Changes from <tspan font-weight="700">3186fae</tspan> 2026-09-20 to working copy of <tspan font-weight="700">800a788</tspan> 2026-09-24</text>
+<rect x="588" y="15" width="112" height="26" rx="4" fill="#ffffff" stroke="#2947c7"></rect>
+<text x="602" y="33" fill="#2947c7" font-size="13" font-weight="700">Change base</text>
+<rect x="388" y="56" width="312" height="146" rx="6" fill="#ffffff" stroke="#303036" stroke-width="1.5"></rect>
+<text x="402" y="78" fill="#303036" font-size="12" font-weight="700">RECENT COMMITS OF THIS SPEC</text>
+<text x="402" y="100" fill="#171719" font-size="13">800a788  2026-09-24  fix: serialize finish</text>
+<rect x="394" y="108" width="300" height="22" rx="3" fill="#e7f3ef" stroke="#167b68"></rect>
+<text x="402" y="124" fill="#171719" font-size="13">3186fae  2026-09-20  lean review (current base)</text>
+<text x="402" y="148" fill="#171719" font-size="13">4bdc1a6  2026-09-18  artifact ownership</text>
+<rect x="402" y="164" width="284" height="26" rx="4" fill="#ffffff" stroke="#303036" stroke-dasharray="4 3"></rect>
+<text x="412" y="182" fill="#5a5a63" font-size="13">Paste a commit id</text>
+<rect x="8" y="64" width="360" height="120" rx="6" fill="none" stroke="#303036" stroke-dasharray="6 4"></rect>
+<text x="22" y="92" fill="#303036" font-size="13">spec header and content</text>
+<text x="22" y="114" fill="#303036" font-size="13">(pushed down by the bar, never covered)</text>
+</svg>
+</div>
+<figcaption data-anchor="bar-figure-caption">Range bar and open base picker at desktop width.</figcaption>
+</figure>
+</section>
+
+<section data-anchor="change-base">
+<h2>Changing the base</h2>
+<p data-anchor="change-picker">Change base opens a picker listing up to 20 most recent commits reachable from head that changed this spec file, each with short id, date, and subject, and a field for pasting a commit id.</p>
+<p data-anchor="change-apply">Choosing a commit re-diffs in place through the same <code>/api/baseline</code> route, turns on change highlighting, and updates the bar.</p>
+<p data-anchor="change-url">The page then replaces its own URL with <code>?focus=changes&amp;base=&lt;full id&gt;</code> without reloading, so reload and a copied link keep the chosen range.</p>
+<p data-anchor="change-highlight-optin">Without <code>focus=changes</code> the bar still states the range and the spec renders at normal clarity until a base is chosen.</p>
+<p data-anchor="change-refused">A pasted value that does not resolve to a local commit shows an inline error and keeps the previous range and highlighting.</p>
+<p data-anchor="change-no-option">A base value beginning with <code>-</code> is refused, so no input is ever read as a Git option.</p>
+</section>
+
+<section data-anchor="baseline-response">
+<h2>Baseline response</h2>
+<p data-anchor="response-keep">Existing <code>base</code>, <code>htmlBase</code>, and <code>html</code> fields keep their meaning, so host baseline checks are unchanged.</p>
+<div class="table-scroll" data-anchor="response-table-scroll">
+<table data-anchor="response-table">
+<thead><tr><th>Added field</th><th>Value</th></tr></thead>
+<tbody>
+<tr data-anchor="field-head"><td><code>head</code></td><td>Full id of the serving worktree's current commit.</td></tr>
+<tr data-anchor="field-dirty"><td><code>dirty</code></td><td>True when the spec file differs from <code>head</code>.</td></tr>
+<tr data-anchor="field-dates"><td><code>headDate</code>, <code>htmlBaseDate</code></td><td>Commit dates as <code>YYYY-MM-DD</code>; <code>htmlBaseDate</code> is null when <code>htmlBase</code> is null.</td></tr>
+<tr data-anchor="field-commits"><td><code>commits</code></td><td>Up to 20 <code>{id, date, subject}</code> entries, newest first, for commits reachable from head that changed the spec file.</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="response-both-modes">Single-root and registry serving return the same fields.</p>
+<p data-anchor="response-read-only">The route stays read-only over local Git, as <a href="./prompt-first-shaping.spec.html#focus-local-git">focus</a> requires.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="compared-range" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-bar"><span data-acceptance-scenario>When any spec is opened over HTTP, with or without <code>focus=changes</code>,</span> <span data-acceptance-observable>the page shows <code>Changes from &lt;base&gt; to &lt;head&gt;</code> with short ids and dates matching <code>htmlBase</code> and <code>head</code>, and <code>working copy of</code> when the file is dirty.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-pick"><span data-acceptance-scenario>When the reviewer picks a listed commit,</span> <span data-acceptance-observable>highlighting and bar reflect that base without a page reload, and the URL carries <code>focus=changes&amp;base=&lt;full id&gt;</code>.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-paste"><span data-acceptance-scenario>When the reviewer pastes a valid commit id,</span> <span data-acceptance-observable>the page re-diffs against it as if picked; an unknown or option-like value shows an inline error and the previous range stays.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-list"><span data-acceptance-scenario>When the picker opens,</span> <span data-acceptance-observable>it lists at most 20 commits that changed this spec, newest first, matching <code>git log</code> for that file from head.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-compat"><span data-acceptance-scenario>When the review host verifies a served resource,</span> <span data-acceptance-observable>its existing <code>base</code>, <code>htmlBase</code>, and <code>html</code> checks pass unchanged in single-root and registry modes.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-mobile"><span data-acceptance-scenario>When the page is 375px wide,</span> <span data-acceptance-observable>bar and picker fit without horizontal page drift and cover no review control.</span></p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-server"><span data-boundary-responsibility>The review server owns range facts: resolved base and seed, head, dirty state, dates, and the spec's recent commits.</span> <span data-boundary-seam>Caller-facing seam: <code>GET /api/baseline?path=&lt;spec&gt;[&amp;base=&lt;id&gt;]</code> and its JSON fields.</span> <span data-boundary-dependency>Dependency direction: self-contained; the server reads local Git only and nothing calls back into the runtime.</span> <span data-boundary-scope>Observable scope: baseline JSON in single-root and registry modes.</span></p>
+<p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns the bar, picker, in-place re-diff, and URL replacement.</span> <span data-boundary-seam>Caller-facing seam: the rendered bar and picker on every HTTP-served spec.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; the runtime consumes the baseline route and existing focus classification and holds no Git logic.</span> <span data-boundary-scope>Observable scope: bar text, picker entries, highlighting, URL, and inline errors.</span></p>
+</section>
+
+<section data-anchor="non-goals">
+<h2>Non-goals</h2>
+<p data-anchor="non-goal-head">Changing the head end, comparing two arbitrary commits, or browsing other branches.</p>
+<p data-anchor="non-goal-diff-view">Side-by-side, deleted-text, or per-commit diff views.</p>
+<p data-anchor="non-goal-search">Commit search, pagination beyond 20, or fetching from remotes.</p>
+</section>
+
+</article>
+</body>
+</html>
