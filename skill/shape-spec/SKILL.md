@@ -1,6 +1,6 @@
 ---
 name: spec-chat-shape
-description: Shape a feature prompt into a current issue, canonical Spec Chat HTML spec, and dependency-linked implementation tickets. Also use for any existing-spec review that materially changes behavior or information architecture. Use spec-chat-review alone only for questions and atomic corrections.
+description: Shape a feature prompt into a current issue, canonical Spec Chat HTML spec, any needed ADRs, and dependency-linked implementation tickets. Also use for any existing-spec review that materially changes behavior or information architecture. Use spec-chat-review alone only for questions and atomic corrections.
 ---
 
 # Spec Chat Shape
@@ -11,8 +11,9 @@ Create durable current truth before deep investigation.
 
 - The repository-selected issue skill, named by target instructions, owns tracker operations; Spec Chat contains no tracker dependency.
 - The issue owns current intent, outcomes, criteria, non-goals, dependencies, and governing links.
-- The canonical spec owns current stories, detailed behavior, constraints, edge cases, and interaction contracts.
-- Implementation tickets own independently assignable outcomes and blocking relations.
+- The canonical spec owns what the result must do: current stories, behavior, edge cases, interaction contracts, and acceptance.
+- An ADR owns a hard-to-reverse decision, its tradeoff, and the policy and mechanics that follow from it.
+- Implementation tickets own independently assignable outcomes, blocking relations, and delivery steps.
 - Chat and memory never override durable sources; stop on source conflict.
 - Use swimlane diagrams for ownership and handoffs, and Sankey diagrams for flows that split or merge, wherever they clarify the spec.
 - Accepted spec changes are committed and pushed before refreshed Git focus or review replies.
