@@ -105,13 +105,24 @@ class BaselineRouteTest(unittest.TestCase):
         self.assertNotIn("support/", body)
         self.assertNotIn(".hidden/", body)
 
-        navigation = '<nav aria-label="Spec Chat service navigation"><a href="/">Back to Spec Chat index</a></nav>'
-        self.spec.write_text(f'<p data-anchor="rule">baseline rule</p>\n{navigation}\n')
-        with urllib.request.urlopen(
-            f"http://127.0.0.1:{self.port}/specs/focus.spec.html?focus=changes&base=main"
-        ) as response:
-            detail = response.read().decode()
+        source = (
+            b"<!doctype html><html><body><p data-anchor=\"rule\">baseline rule</p>"
+            b"</body></html>"
+        )
+        self.spec.write_bytes(source)
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/specs/focus.spec.html?focus=changes&base=main",
+            headers={"Accept": "text/html"},
+        )
+        with urllib.request.urlopen(request) as response:
+            detail = response.read()
+
+        navigation = b'<nav aria-label="Spec Chat service navigation"><a href="/">Back to Spec Chat index</a></nav>'
+        self.assertEqual(response.status, 200)
         self.assertIn(navigation, detail)
+        self.assertLess(detail.index(navigation), detail.index(b"</body>"))
+        self.assertIn(b'data-anchor="rule"', detail)
+        self.assertEqual(self.spec.read_bytes(), source)
 
     def verify(self, path="specs/focus.spec.html", base="main", local_spec=None):
         link_base = subprocess.check_output(("git", "rev-parse", base), cwd=self.repo, text=True).strip()
