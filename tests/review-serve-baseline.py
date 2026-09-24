@@ -80,15 +80,38 @@ class BaselineRouteTest(unittest.TestCase):
             return json.load(response)
 
     def test_service_root_serves_a_responsive_index_with_detail_links(self):
-        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as response:
+        (self.docs / "evidence-bundle.html").write_text("<title>Evidence</title>")
+        (self.docs / "index.html").write_text("<title>Collection index</title>")
+        support = self.docs / "support"
+        support.mkdir()
+        (support / "fixture.html").write_text("<title>Fixture</title>")
+        (support / "fixture.spec.html").write_text("<title>Fixture spec</title>")
+        hidden = self.docs / ".hidden"
+        hidden.mkdir()
+        (hidden / "hidden.spec.html").write_text("<title>Hidden spec</title>")
+
+        index_url = f"http://127.0.0.1:{self.port}/?focus=changes&base=main"
+        with urllib.request.urlopen(index_url) as response:
             body = response.read().decode()
 
         self.assertEqual(response.status, 200)
         self.assertEqual(response.headers.get_content_type(), "text/html")
         self.assertIn('<meta name="viewport"', body)
         self.assertIn('<title>Spec Chat index</title>', body)
-        self.assertIn('href="specs/focus.spec.html"', body)
+        self.assertIn('href="specs/focus.spec.html?focus=changes&amp;base=main"', body)
         self.assertIn('focus.spec', body)
+        self.assertNotIn("evidence-bundle.html", body)
+        self.assertNotIn("index.html", body)
+        self.assertNotIn("support/", body)
+        self.assertNotIn(".hidden/", body)
+
+        navigation = '<nav aria-label="Spec Chat service navigation"><a href="/">Back to Spec Chat index</a></nav>'
+        self.spec.write_text(f'<p data-anchor="rule">baseline rule</p>\n{navigation}\n')
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{self.port}/specs/focus.spec.html?focus=changes&base=main"
+        ) as response:
+            detail = response.read().decode()
+        self.assertIn(navigation, detail)
 
     def verify(self, path="specs/focus.spec.html", base="main", local_spec=None):
         link_base = subprocess.check_output(("git", "rev-parse", base), cwd=self.repo, text=True).strip()

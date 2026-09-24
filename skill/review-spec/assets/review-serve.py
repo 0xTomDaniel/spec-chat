@@ -121,12 +121,13 @@ class Handler(SimpleHTTPRequestHandler):
 
     def _detail_pages(self):
         pages = []
+        support_dirs = {'evidence', 'evidence-bundle', 'evidence-bundles', 'fixture', 'fixtures', 'support', 'supports'}
         for directory, directories, names in os.walk(ROOT, followlinks=False):
             directories[:] = sorted(name for name in directories
-                                    if not name.startswith('.') and not name.endswith('.review'))
+                                    if (not name.startswith('.') and not name.endswith('.review')
+                                        and name.lower() not in support_dirs))
             for name in sorted(names):
-                if (not name.lower().endswith('.html') or name.lower() == 'index.html'
-                        or name.startswith('.')):
+                if not name.endswith('.spec.html') or name.startswith('.'):
                     continue
                 path = os.path.join(directory, name)
                 resolved = os.path.realpath(path)
@@ -177,7 +178,7 @@ class Handler(SimpleHTTPRequestHandler):
                     html.escape(relative),
                 )
             )
-        listing = '\n'.join(entries) or '<li class="empty">No HTML detail pages are available.</li>'
+        listing = '\n'.join(entries) or '<li class="empty">No Spec Chat spec pages are available.</li>'
         return '''<!doctype html>
 <html lang="en">
 <head>
