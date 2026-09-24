@@ -61,6 +61,16 @@ class SkillRoutingContractTest(unittest.TestCase):
         self.assertIn("data-guided-journey-milestone", reference)
         self.assertIn("Structural validation does not decide these meanings", self.review)
 
+    def test_shape_diagrams_have_relevance_and_accessibility_guidance(self):
+        reference = (ROOT / "skill" / "shape-spec" / "references" / "authoring.md").read_text()
+        self.assertIn("swimlane diagram", self.shape)
+        self.assertIn("Sankey diagram", self.shape)
+        self.assertIn("## Diagram relevance and fallback", reference)
+        self.assertIn("material reduction in ambiguity or review effort", reference)
+        self.assertIn("semantic table or ordered text fallback", reference)
+        self.assertIn("Never make color the only cue", reference)
+        self.assertIn("swimlane diagrams", (ROOT / "README.md").read_text())
+
 
 if __name__ == "__main__":
     unittest.main()

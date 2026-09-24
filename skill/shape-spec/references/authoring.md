@@ -77,6 +77,8 @@ Give every rule one authoritative expression: artifacts replace relational prose
 Choose the least-lossy form:
 
 - topology or module ownership: directed semantic diagram with labeled seams
+- ownership or stage handoffs: swimlane diagram with named lanes, owners, and directed handoffs
+- weighted dependencies or flow: Sankey diagram with labeled nodes, links, values, units, and totals
 - guarded state: state machine with guards and meaningful self-loops
 - lifecycle, order, or cycle: rail, numbered sequence, or loop
 - spatial behavior: proportional wireframe
@@ -86,6 +88,18 @@ Choose the least-lossy form:
 - formula: readable notation with a one-line gloss
 
 When simplifying visible statuses, use a table mapping underlying state and evidence to label and recovery action; fewer labels do not erase lifecycle or failure rules.
+
+### Diagram relevance and fallback
+
+Use a swimlane diagram when two or more owners or stages make responsibility or handoff order a contract readers must verify. Use a Sankey diagram when dependency or flow magnitude, split, or merge is material and trustworthy values or proportions exist. Do not use a Sankey for an unweighted dependency graph or a swimlane for one owner or one atomic rule.
+
+Before selecting either diagram, answer three questions:
+
+1. What ownership, transition, dependency, or flow relationship must the reader understand?
+2. What decision, comparison, or review check becomes easier than with prose or a table?
+3. Which named lanes, directed links, values, units, or totals make the relationship complete and testable?
+
+If the answers do not show a material reduction in ambiguity or review effort, keep the simpler prose or table. When a diagram is selected, place an adjacent semantic table or ordered text fallback that enumerates the same owners, stages, nodes, directions, and values. Give the artifact a descriptive caption and stable anchor. Never make color the only cue; labels, position, line shape, or patterns must carry the meaning and the fallback must remain usable by assistive technology.
 
 Preserve existing `data-anchor` identities; give every new contract-bearing section, clause, figure, row, and acceptance rule a stable anchor.
 Use one sentence per prose line and pretty semantic-island JSON beside its render target.
