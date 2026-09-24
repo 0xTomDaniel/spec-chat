@@ -9,10 +9,13 @@ printed URL as the secret. Stdlib only.
 
 usage: review-serve.py [ROOT] [PORT] [--public] [--bind HOST] [--host HOST]
 
+  GET  /                                             -> Spec Chat collection index
   GET  /api/events?dir=<review-dir-rel-path>            -> ordered event list
   POST /api/events?dir=<...>&actor=human|agent  (JSON)  -> writes one event file
   GET  /api/baseline?path=<spec-rel-path>[&base=<ref>]  -> local Git baseline
 """
+import html
+import io
 import json
 import os
 import re
@@ -22,7 +25,8 @@ import sys
 import time
 import argparse
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+from html.parser import HTMLParser
+from urllib.parse import urlparse, parse_qs, quote
 
 
 
@@ -104,6 +108,115 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def send_head(self):
+        if urlparse(self.path).path == '/':
+            body = self._index().encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            return io.BytesIO(body)
+        return super().send_head()
+
+    def _detail_pages(self):
+        pages = []
+        support_dirs = {'evidence', 'evidence-bundle', 'evidence-bundles', 'fixture', 'fixtures', 'support', 'supports'}
+        for directory, directories, names in os.walk(ROOT, followlinks=False):
+            directories[:] = sorted(name for name in directories
+                                    if (not name.startswith('.') and not name.endswith('.review')
+                                        and name.lower() not in support_dirs))
+            for name in sorted(names):
+                if not name.endswith('.spec.html') or name.startswith('.'):
+                    continue
+                path = os.path.join(directory, name)
+                resolved = os.path.realpath(path)
+                if not resolved.startswith(ROOT + os.sep) or not os.path.isfile(path):
+                    continue
+                relative = os.path.relpath(path, ROOT).replace(os.sep, '/')
+                pages.append((relative, self._page_title(path)))
+        return pages
+
+    @staticmethod
+    def _page_title(path):
+        class TitleParser(HTMLParser):
+            def __init__(self):
+                super().__init__(convert_charrefs=True)
+                self.in_title = False
+                self.parts = []
+
+            def handle_starttag(self, tag, attrs):
+                if tag.lower() == 'title':
+                    self.in_title = True
+
+            def handle_endtag(self, tag):
+                if tag.lower() == 'title':
+                    self.in_title = False
+
+            def handle_data(self, data):
+                if self.in_title:
+                    self.parts.append(data)
+
+        parser = TitleParser()
+        try:
+            with open(path, encoding='utf-8', errors='replace') as page:
+                parser.feed(page.read())
+        except OSError:
+            pass
+        title = ' '.join(''.join(parser.parts).split())
+        return title or os.path.splitext(os.path.basename(path))[0]
+
+    def _index(self):
+        entries = []
+        query = urlparse(self.path).query
+        for relative, title in self._detail_pages():
+            href = quote(relative, safe='/') + ('?' + query if query else '')
+            entries.append(
+                '<li><a href="%s">%s</a><span>%s</span></li>' % (
+                    html.escape(href, quote=True),
+                    html.escape(title),
+                    html.escape(relative),
+                )
+            )
+        listing = '\n'.join(entries) or '<li class="empty">No Spec Chat spec pages are available.</li>'
+        return '''<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spec Chat index</title>
+<style>
+:root { color-scheme: light; font-family: system-ui, sans-serif; background: #faf9f6; color: #22242a; }
+body { margin: 0; }
+main { box-sizing: border-box; max-width: 60rem; margin: 0 auto; padding: clamp(1.25rem, 4vw, 3rem); }
+header { margin-bottom: 2rem; }
+.eyebrow { color: #595e68; font-size: .8rem; font-weight: 700; letter-spacing: .08em; margin: 0 0 .5rem; text-transform: uppercase; }
+h1 { font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1.1; margin: 0; }
+header p:last-child { color: #595e68; line-height: 1.5; margin-bottom: 0; }
+ul { display: grid; gap: .75rem; list-style: none; margin: 0; padding: 0; }
+li { min-width: 0; background: #fff; border: 1px solid #e2e0d8; border-radius: .75rem; padding: .25rem 1rem 1rem; }
+li a { color: #087f73; display: flex; align-items: center; min-height: 44px; padding: .25rem 0; font-weight: 700; font-size: 1.05rem; line-height: 1.35; overflow-wrap: anywhere; }
+li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywhere; }
+a:focus-visible { border-radius: .25rem; outline: 3px solid #087f73; outline-offset: 3px; }
+.empty { color: #595e68; padding: 1rem; }
+</style>
+</head>
+<body>
+<main>
+<header>
+<p class="eyebrow">Spec Chat</p>
+<h1>Review index</h1>
+<p>Choose a visual spec to open its detail page.</p>
+</header>
+<nav aria-label="Spec Chat detail pages">
+<ul>
+%s
+</ul>
+</nav>
+</main>
+</body>
+</html>
+''' % listing
 
     def _baseline(self, q):
         rel = q.get('path', [''])[0]

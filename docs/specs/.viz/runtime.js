@@ -576,7 +576,7 @@ function resolveSvgPath(holder, key) {
 }
 
 function onDocClick(e) {
-  if (!state.commentMode || e.target.closest('.hx-pin,.hx-panel,.hx-toolbar,#hx-errors')) return;
+  if (!state.commentMode || e.target.closest('.hx-pin,.hx-panel,.hx-toolbar,.hx-service-index-link,#hx-errors')) return;
   const holder = holderOf(e.target);
   if (!holder) return;
   if (e.target.tagName === 'CANVAS') return; // canvas clicks are the chart's business: marks via chart events, blanks via zrender
@@ -761,6 +761,9 @@ const CSS = `
 .hx-mobile-handoff{display:none}
 .hx-toolbar button[aria-pressed=true]{background:#fbf3e2;color:#b47308}
 .hx-toolbar .hx-status{color:#888;font-size:11.5px;padding:0 10px}
+.hx-service-index-link{position:fixed;top:12px;left:12px;z-index:1000;display:inline-flex;align-items:center;min-height:44px;box-sizing:border-box;padding:8px 12px;border:1px solid #d9d8d3;border-radius:8px;background:rgba(255,255,255,.96);box-shadow:0 5px 18px rgba(30,30,40,.13);color:#087f73;font:650 12px/1 system-ui;text-decoration:none;backdrop-filter:blur(8px)}
+.hx-service-index-link:hover{background:#f4f3ef;border-color:#aaa;color:#075f57}
+.hx-service-index-link:focus-visible{outline:3px solid #f59e0b;outline-offset:3px}
 .hx-panel{position:fixed;top:0;right:0;width:330px;height:100vh;background:#f4f3ef;border-left:1px solid #ddd;z-index:800;display:none;flex-direction:column;font:13px system-ui;box-shadow:none}
 .hx-panel.open{display:flex;box-shadow:-8px 0 30px rgba(30,30,40,.12)}
 body.hx-panel-open{padding-right:330px}
@@ -847,6 +850,7 @@ body.hx-panel-open{padding-right:0;overflow:hidden}
 .hx-panel-toggle{top:6px;left:6px;width:44px;height:44px;touch-action:manipulation}
 .hx-panel-gear{top:6px;right:8px;width:44px;height:44px;touch-action:manipulation}
 .hx-thread-dock{top:calc(8px + env(safe-area-inset-top));right:8px;padding:4px}
+.hx-service-index-link{top:calc(8px + env(safe-area-inset-top));left:8px;max-width:calc(100vw - 68px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hx-dock-open,.hx-dock-thread{width:44px;height:44px;touch-action:manipulation}
 .hx-dock-threads{max-height:calc(100dvh - 68px)}
 .hx-threads{padding:12px;overscroll-behavior:contain}
@@ -935,6 +939,16 @@ function mountUI() {
   style.textContent = (EMBED_REVIEW_DIR || sharedDocumentStyle ? '' : DOC_CSS) + FOCUS_CSS + CSS;
   document.head.appendChild(style);
 
+  if (location.protocol === 'http:' || location.protocol === 'https:') {
+    const indexLink = document.createElement('a');
+    indexLink.className = 'hx-service-index-link';
+    indexLink.href = new URL('/', location.href).href;
+    indexLink.textContent = 'Back to Spec Chat index';
+    indexLink.setAttribute('aria-label', 'Back to Spec Chat index');
+    indexLink.dataset.specChatNavigation = 'index';
+    document.body.insertBefore(indexLink, document.body.firstChild);
+  }
+
   const bar = document.createElement('div');
   bar.className = 'hx-toolbar';
   bar.innerHTML = '<button id="hx-mode" aria-pressed="false">✛ Comment (C)</button><button class="hx-mobile-handoff" id="hx-mobile-handoff" type="button" disabled>Hand off</button><button id="hx-connect" hidden>Connect review folder</button><button id="hx-repick" hidden>Choose different folder</button><span class="hx-status" id="hx-status">starting…</span>';
@@ -967,7 +981,7 @@ function mountUI() {
   const INTERACTIVE = 'button, input, select, textarea, label, a, summary, [role="button"], [role="link"]';
   const suspend = e => {
     if (!state.commentMode) return;
-    if (e.target.closest && e.target.closest('.hx-pin,.hx-panel,.hx-thread-dock,.hx-toolbar,#hx-errors')) return;
+    if (e.target.closest && e.target.closest('.hx-pin,.hx-panel,.hx-thread-dock,.hx-toolbar,.hx-service-index-link,#hx-errors')) return;
     if (e.target.tagName === 'CANVAS') return;
     if (!holderOf(e.target)) return;
     // native drag/toggle on controls dies here; elsewhere only spec-script handlers die (selection survives)

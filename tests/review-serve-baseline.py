@@ -79,6 +79,66 @@ class BaselineRouteTest(unittest.TestCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/baseline?{query}") as response:
             return json.load(response)
 
+    def test_service_root_serves_a_responsive_index_with_detail_links(self):
+        (self.docs / "evidence-bundle.html").write_text("<title>Evidence</title>")
+        (self.docs / "index.html").write_text("<title>Collection index</title>")
+        support = self.docs / "support"
+        support.mkdir()
+        (support / "fixture.html").write_text("<title>Fixture</title>")
+        (support / "fixture.spec.html").write_text("<title>Fixture spec</title>")
+        hidden = self.docs / ".hidden"
+        hidden.mkdir()
+        (hidden / "hidden.spec.html").write_text("<title>Hidden spec</title>")
+
+        index_url = f"http://127.0.0.1:{self.port}/?focus=changes&base=main"
+        with urllib.request.urlopen(index_url) as response:
+            body = response.read().decode()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.headers.get_content_type(), "text/html")
+        self.assertIn('<meta name="viewport"', body)
+        self.assertIn('<title>Spec Chat index</title>', body)
+        self.assertIn('href="specs/focus.spec.html?focus=changes&amp;base=main"', body)
+        self.assertIn('focus.spec', body)
+        self.assertNotIn("evidence-bundle.html", body)
+        self.assertNotIn("index.html", body)
+        self.assertNotIn("support/", body)
+        self.assertNotIn(".hidden/", body)
+
+        source = (
+            b"<!doctype html><html><body><p data-anchor=\"rule\">baseline rule</p>"
+            b"</body></html>"
+        )
+        self.spec.write_bytes(source)
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/specs/focus.spec.html?focus=changes&base=main",
+            headers={"Accept": "text/html"},
+        )
+        with urllib.request.urlopen(request) as response:
+            detail = response.read()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(detail, source)
+
+    def test_runtime_navigation_is_fixed_top_and_server_preserves_raw_spec_bytes(self):
+        runtime = (ROOT / "skill" / "review-spec" / "assets" / "viz" / "runtime.js").read_text()
+        self.assertIn("document.body.insertBefore(indexLink, document.body.firstChild)", runtime)
+        self.assertRegex(runtime, r"\.hx-service-index-link\{position:fixed;top:12px;left:12px;z-index:1000;")
+        self.assertIn(".hx-service-index-link", runtime)
+        self.assertIn("e.target.closest('.hx-pin,.hx-panel,.hx-toolbar,.hx-service-index-link,#hx-errors')", runtime)
+
+        source = b"<!doctype html><html><body><p data-anchor=\"rule\">raw bytes</p></body></html>"
+        self.spec.write_bytes(source)
+        for accept in (None, "text/html"):
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{self.port}/specs/focus.spec.html",
+                headers={} if accept is None else {"Accept": accept},
+            )
+            with urllib.request.urlopen(request) as response:
+                self.assertEqual(response.read(), source)
+                self.assertEqual(response.headers.get_content_type(), "text/html")
+        self.assertEqual(self.spec.read_bytes(), source)
+
     def verify(self, path="specs/focus.spec.html", base="main", local_spec=None):
         link_base = subprocess.check_output(("git", "rev-parse", base), cwd=self.repo, text=True).strip()
         return subprocess.run(
