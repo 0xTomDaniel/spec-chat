@@ -15,7 +15,6 @@ usage: review-serve.py [ROOT] [PORT] [--public] [--bind HOST] [--host HOST]
   GET  /api/baseline?path=<spec-rel-path>[&base=<ref>]  -> local Git baseline
 """
 import html
-import hashlib
 import io
 import json
 import os
@@ -417,14 +416,13 @@ def _write_event(review, root, actor, name, event):
             json.dump(event, stream)
 
 
-def _resource_lock_path(registry, resource_id):
-    digest = hashlib.sha256(resource_id.encode('utf-8')).hexdigest()
-    return os.path.join(os.path.dirname(os.path.realpath(registry)), '.resource-%s.lock' % digest)
+def _state_lock_path(registry):
+    return os.path.join(os.path.dirname(os.path.realpath(registry)), '.state.lock')
 
 
 @contextlib.contextmanager
-def _resource_lock(registry, resource_id):
-    descriptor = os.open(_resource_lock_path(registry, resource_id), os.O_RDWR | os.O_CREAT, 0o600)
+def _state_lock(registry):
+    descriptor = os.open(_state_lock_path(registry), os.O_RDWR | os.O_CREAT, 0o600)
     try:
         fcntl.flock(descriptor, fcntl.LOCK_EX)
         yield
@@ -795,7 +793,7 @@ class MultiHandler(SimpleHTTPRequestHandler):
         if not isinstance(event_name, str) or not isinstance(event_id, str) or not safe.fullmatch(event_name) or not safe.fullmatch(event_id):
             return self._json({'error': 'bad event name'}, 400)
         name = '%d-%s-%s.json' % (time.time_ns(), event_name, event_id)
-        with _resource_lock(self.server.registry_state.path, resource['id']):
+        with _state_lock(self.server.registry_state.path):
             try:
                 fresh = _read_resource_records(self.server.registry_state.path)
             except (OSError, RegistryError):

@@ -83,7 +83,8 @@ class ReviewHostT2Test(unittest.TestCase):
         self.states = []
         self.repos = {}
         self.repo_a = self.make_repo("alpha", {"alpha": "alpha-current"})
-        self.repo_b = self.make_repo("beta", {"beta": "beta-current"})
+        self.repo_b = self.make_repo("beta", {"beta": "beta-current", "delta": "delta-current"})
+        self.repo_c = self.make_repo("charlie", {"charlie": "charlie-current"})
 
     def tearDown(self):
         for state in self.states:
@@ -202,6 +203,50 @@ class ReviewHostT2Test(unittest.TestCase):
         path = review / actor / name
         path.write_text(json.dumps(body), encoding="utf-8")
         return path
+
+    def finish_fixture(self, resource):
+        review = self.clear_review(resource)
+        self.event(review, "human", "010-comment.json", {"event": "comment", "id": resource["id"]})
+        self.event(review, "human", "020-handoff-old.json", {"event": "handoff", "id": "old"})
+        self.event(review, "agent", "030-reply.json", {
+            "event": "reply", "id": "reply", "respondsTo": resource["id"], "status": "acknowledged",
+        })
+        self.event(review, "human", "040-status-resolved.json", {
+            "event": "status", "id": "status", "respondsTo": resource["id"], "status": "resolved",
+        })
+        self.event(review, "human", "050-handoff-final.json", {"event": "handoff", "id": "final"})
+        (review / resource["cursor"]).write_text(
+            "020-handoff-old.json\n050-handoff-final.json\n", encoding="utf-8"
+        )
+
+    def run_parallel_lifecycle(self, operations, *, delay_first_registry_write=True):
+        barrier = threading.Barrier(len(operations))
+        errors = []
+        original_atomic_write = review_host.atomic_write
+        delayed = threading.Event()
+
+        def atomic_write(path, text):
+            if delay_first_registry_write and path.name == "registry.toml" and not delayed.is_set():
+                delayed.set()
+                time.sleep(0.4)
+            return original_atomic_write(path, text)
+
+        def invoke(operation):
+            try:
+                barrier.wait(timeout=5)
+                operation()
+            except BaseException as exc:
+                errors.append(exc)
+
+        with mock.patch.object(review_host, "owned_running", return_value=1), \
+             mock.patch.object(review_host, "atomic_write", side_effect=atomic_write):
+            threads = [threading.Thread(target=invoke, args=(operation,)) for operation in operations]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=8)
+                self.assertFalse(thread.is_alive(), "parallel lifecycle command stalled")
+        self.assertEqual(errors, [])
 
     def finish(self, state, resource):
         return self.run_cli("finish", "--state-dir", str(state), "--id", resource["id"])
@@ -570,6 +615,75 @@ class ReviewHostT2Test(unittest.TestCase):
                 response += chunk
         self.assertIn(b" 409 ", response.split(b"\r\n", 1)[0])
         self.assertEqual(list((review / "human").glob("*late*.json")), [])
+
+    def test_parallel_finish_keeps_every_registry_and_receipt_transition(self):
+        first = self.resource("alpha", self.repo_a, "alpha", cursor=".cursor-a")
+        second = self.resource("beta", self.repo_b, "beta", cursor=".cursor-b")
+        state = self.work / "parallel-finish-state"
+        result = self.run_cli(
+            "start", "--state-dir", str(state), "--bind", "127.0.0.1", "--proof-host", "127.0.0.1",
+            "--test-loopback", "--resource", first["value"], "--resource", second["value"],
+            "--owner", "owner-a", "--owner", "owner-b", "--checker", "checker-a", "--checker", "checker-b",
+            "--cursor-name", ".cursor-a", "--cursor-name", ".cursor-b", "--slug", "alpha", "--slug", "beta",
+            state=state,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.finish_fixture(first)
+        self.finish_fixture(second)
+        self.run_parallel_lifecycle((
+            lambda: review_host.lifecycle(
+                review_host.build_parser().parse_args(["finish", "--state-dir", str(state), "--id", first["id"]])
+            ),
+            lambda: review_host.lifecycle(
+                review_host.build_parser().parse_args(["finish", "--state-dir", str(state), "--id", second["id"]])
+            ),
+        ))
+        registry = self.registry(state)["resource"]
+        receipt = self.receipt(state)["resource"]
+        self.assertEqual({item["id"] for item in registry}, {first["id"], second["id"]})
+        self.assertTrue(all(item["lifecycle"] == "finished" for item in registry))
+        self.assertEqual({item["id"] for item in receipt}, {first["id"], second["id"]})
+        self.assertTrue(all(item["lifecycle"] == "finished" for item in receipt))
+        self.assertTrue(all(item["finish_event"] == "050-handoff-final.json" for item in receipt))
+
+    def test_parallel_add_park_remove_finish_keeps_every_transition(self):
+        first = self.resource("alpha", self.repo_a, "alpha", cursor=".cursor-a")
+        second = self.resource("beta", self.repo_b, "beta", cursor=".cursor-b")
+        third = self.resource("charlie", self.repo_c, "charlie", cursor=".cursor-c")
+        added = self.resource("delta", self.repo_b, "delta", cursor=".cursor-d")
+        state = self.work / "parallel-mutations-state"
+        result = self.run_cli(
+            "start", "--state-dir", str(state), "--bind", "127.0.0.1", "--proof-host", "127.0.0.1",
+            "--test-loopback", "--resource", first["value"], "--resource", second["value"], "--resource", third["value"],
+            "--owner", "owner-a", "--owner", "owner-b", "--owner", "owner-c",
+            "--checker", "checker-a", "--checker", "checker-b", "--checker", "checker-c",
+            "--cursor-name", ".cursor-a", "--cursor-name", ".cursor-b", "--cursor-name", ".cursor-c",
+            "--slug", "alpha", "--slug", "beta", "--slug", "charlie", state=state,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.finish_fixture(first)
+        add_args = review_host.build_parser().parse_args(self.add_args(state, added))
+        finish_args = review_host.build_parser().parse_args(["finish", "--state-dir", str(state), "--id", first["id"]])
+        park_args = review_host.build_parser().parse_args(["park", "--state-dir", str(state), "--id", second["id"]])
+        remove_args = review_host.build_parser().parse_args(["remove", "--state-dir", str(state), "--id", third["id"]])
+        proof = {
+            "http_status": 200, "bytes_sha256": "test", "baseline_base": self.base(self.repo_b),
+            "baseline_commit": self.base(self.repo_b), "proof_host": "127.0.0.1", "verified_at": "test",
+        }
+        with mock.patch.object(review_host, "prove_resource", return_value=proof):
+            self.run_parallel_lifecycle((
+                lambda: review_host.add_resources(add_args),
+                lambda: review_host.lifecycle(finish_args),
+                lambda: review_host.lifecycle(park_args),
+                lambda: review_host.lifecycle(remove_args),
+            ))
+        expected = {first["id"]: "finished", second["id"]: "parked", third["id"]: "removed", added["id"]: "serving"}
+        registry = {item["id"]: item for item in self.registry(state)["resource"]}
+        receipt = {item["id"]: item for item in self.receipt(state)["resource"]}
+        self.assertEqual({item["id"] for item in registry.values()}, set(expected))
+        self.assertEqual({item["id"] for item in receipt.values()}, set(expected))
+        self.assertEqual({rid: item["lifecycle"] for rid, item in registry.items()}, expected)
+        self.assertEqual({rid: item["lifecycle"] for rid, item in receipt.items()}, expected)
 
     def test_independent_startup_keeps_foreign_listener_on_launcher_failure(self):
         foreign = ForeignHTTP()

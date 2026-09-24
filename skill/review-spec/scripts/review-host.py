@@ -741,9 +741,8 @@ def paths(state: Path) -> tuple[Path, Path, Path]:
 
 
 @contextlib.contextmanager
-def resource_lock(state: Path, resource_id: str):
-    digest = hashlib.sha256(resource_id.encode("utf-8")).hexdigest()
-    path = state / f".resource-{digest}.lock"
+def state_lock(state: Path):
+    path = state / ".state.lock"
     state.mkdir(parents=True, exist_ok=True)
     descriptor = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
     try:
@@ -808,165 +807,158 @@ def owned_running(receipt: Mapping[str, Any], registry: Path) -> int:
 def launch(args: argparse.Namespace) -> int:
     state = state_dir(args); registry, receipt_path, log_path = paths(state)
     state.mkdir(parents=True, exist_ok=True); state.chmod(0o700)
-    prior_bytes = registry.read_bytes() if registry.exists() else None
-    if receipt_path.exists():
-        old = read_receipt(receipt_path)
-        if process_owned(old.get("pid"), registry, old):
-            raise LauncherError("receipt names a live owned review host")
     resources = parse_resources(args)
     records = [registry_record(resource) for resource in resources]
     validate_records(records)
-    write_registry(registry, records)
-    child: subprocess.Popen[str] | None = None
-    try:
-        bind = bind_host(args)
-        selected_host = proof_host(args, bind)
-        port = select_port(approved_ports(), bind)
-        command = server_command(registry, bind, port, selected_host)
-        with log_path.open("w", encoding="utf-8") as log:
-            child = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
-                                     start_new_session=True, text=True)
-        url = None
-        deadline = time.monotonic() + 8
-        pattern = re.compile(r"spec-chat review-serve on (https?://\S+)")
-        while time.monotonic() < deadline:
-            if child.poll() is not None:
-                raise LauncherError("review server exited before printing its URL")
-            try:
-                text = log_path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                text = ""
-            matches = pattern.findall(text)
-            if matches:
-                url = matches[-1]
-                break
-            time.sleep(0.05)
-        if not url:
-            raise LauncherError("review server did not print a URL")
-        proofs = {resource["id"]: prove_resource(url, resource) for resource in resources}
-        handoff_valid = not test_loopback_enabled(args)
-        receipt = initial_receipt(
-            records, pid=child.pid, port=port, bind=bind, public_url=url,
-            source_revision=run_git(REPO, "rev-parse", "HEAD"), proofs=proofs,
-            process_argv=command, handoff_valid=handoff_valid,
-        )
-        if not process_owned(child.pid, registry, receipt):
-            raise LauncherError("review server process identity changed during launch")
-        write_receipt(receipt_path, receipt)
-        if handoff_valid:
-            print(f"service URL: {url}")
-            for resource in resources:
-                print(f"{resource['id']} URL: {url.rstrip('/')}{stable_path(resource)}")
-        else:
-            print("test-only host started; handoff_valid=false")
-        return 0
-    except BaseException as exc:
-        if child is not None and child.poll() is None:
+    with state_lock(state):
+        prior_bytes = registry.read_bytes() if registry.exists() else None
+        if receipt_path.exists():
+            old = read_receipt(receipt_path)
+            if process_owned(old.get("pid"), registry, old):
+                raise LauncherError("receipt names a live owned review host")
+        write_registry(registry, records)
+        child: subprocess.Popen[str] | None = None
+        try:
+            bind = bind_host(args)
+            selected_host = proof_host(args, bind)
+            port = select_port(approved_ports(), bind)
+            command = server_command(registry, bind, port, selected_host)
+            with log_path.open("w", encoding="utf-8") as log:
+                child = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
+                                         start_new_session=True, text=True)
+            url = None
+            deadline = time.monotonic() + 8
+            pattern = re.compile(r"spec-chat review-serve on (https?://\S+)")
+            while time.monotonic() < deadline:
+                if child.poll() is not None:
+                    raise LauncherError("review server exited before printing its URL")
+                try:
+                    text = log_path.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    text = ""
+                matches = pattern.findall(text)
+                if matches:
+                    url = matches[-1]
+                    break
+                time.sleep(0.05)
+            if not url:
+                raise LauncherError("review server did not print a URL")
+            proofs = {resource["id"]: prove_resource(url, resource) for resource in resources}
+            handoff_valid = not test_loopback_enabled(args)
+            receipt = initial_receipt(
+                records, pid=child.pid, port=port, bind=bind, public_url=url,
+                source_revision=run_git(REPO, "rev-parse", "HEAD"), proofs=proofs,
+                process_argv=command, handoff_valid=handoff_valid,
+            )
+            if not process_owned(child.pid, registry, receipt):
+                raise LauncherError("review server process identity changed during launch")
+            write_receipt(receipt_path, receipt)
+            if handoff_valid:
+                print(f"service URL: {url}")
+                for resource in resources:
+                    print(f"{resource['id']} URL: {url.rstrip('/')}{stable_path(resource)}")
+            else:
+                print("test-only host started; handoff_valid=false")
+            return 0
+        except BaseException as exc:
+            if child is not None and child.poll() is None:
+                with contextlib.suppress(Exception):
+                    os.kill(child.pid, signal.SIGTERM)
+                with contextlib.suppress(Exception):
+                    child.wait(timeout=3)
+            failure = {
+                "service_kind": "spec-chat", "state": "failed", "failed_at": now(), "error": str(exc),
+                "handoff_valid": False, "resource": [],
+            }
             with contextlib.suppress(Exception):
-                os.kill(child.pid, signal.SIGTERM)
-            with contextlib.suppress(Exception):
-                child.wait(timeout=3)
-        failure = {
-            "service_kind": "spec-chat", "state": "failed", "failed_at": now(), "error": str(exc),
-            "handoff_valid": False, "resource": [],
-        }
-        with contextlib.suppress(Exception):
-            write_receipt(receipt_path, failure)
-        if prior_bytes is None:
-            with contextlib.suppress(FileNotFoundError):
-                registry.unlink()
-        else:
-            with contextlib.suppress(Exception):
-                atomic_write(registry, prior_bytes.decode("utf-8"))
-        raise
+                write_receipt(receipt_path, failure)
+            if prior_bytes is None:
+                with contextlib.suppress(FileNotFoundError):
+                    registry.unlink()
+            else:
+                with contextlib.suppress(Exception):
+                    atomic_write(registry, prior_bytes.decode("utf-8"))
+            raise
 
 
 def add_resources(args: argparse.Namespace) -> int:
     state = state_dir(args); registry, receipt_path, _ = paths(state)
-    receipt = read_receipt(receipt_path); pid = owned_running(receipt, registry)
-    existing = read_registry(registry)
     additions = parse_resources(args)
     new_records = [registry_record(item) for item in additions]
-    candidate = existing + new_records
-    validate_records(candidate)
-    old_bytes = registry.read_bytes()
-    write_registry(registry, candidate)
-    try:
-        url = receipt["public_url"]
-        proofs = {item["id"]: prove_resource(url, item) for item in additions}
-        for item in additions:
-            record = next(record for record in new_records if record["id"] == item["id"])
-            resource = dict(record)
-            resource.pop("spec_file", None); resource.pop("resolved_base_commit", None)
-            resource["stable_path"] = stable_path(item)
-            resource["resolved_base_commit"] = item["resolved_base_commit"]
-            resource["spec_sha256"] = sha256(Path(item["spec_file"]).read_bytes())
-            resource["finish_event"] = ""; resource["proof"] = proofs[item["id"]]
-            receipt.setdefault("resource", []).append(resource)
-        receipt["updated_at"] = now(); write_receipt(receipt_path, receipt)
-        if receipt.get("handoff_valid") is True:
+    with state_lock(state):
+        receipt = read_receipt(receipt_path); owned_running(receipt, registry)
+        existing = read_registry(registry)
+        candidate = existing + new_records
+        validate_records(candidate)
+        old_bytes = registry.read_bytes()
+        write_registry(registry, candidate)
+        try:
+            url = receipt["public_url"]
+            proofs = {item["id"]: prove_resource(url, item) for item in additions}
             for item in additions:
-                print(f"{item['id']} URL: {url.rstrip('/')}{stable_path(item)}")
-        else:
-            print("test-only resources added; handoff_valid=false")
-        return 0
-    except BaseException:
-        atomic_write(registry, old_bytes.decode("utf-8"))
-        raise
+                record = next(record for record in new_records if record["id"] == item["id"])
+                resource = dict(record)
+                resource.pop("spec_file", None); resource.pop("resolved_base_commit", None)
+                resource["stable_path"] = stable_path(item)
+                resource["resolved_base_commit"] = item["resolved_base_commit"]
+                resource["spec_sha256"] = sha256(Path(item["spec_file"]).read_bytes())
+                resource["finish_event"] = ""; resource["proof"] = proofs[item["id"]]
+                receipt.setdefault("resource", []).append(resource)
+            receipt["updated_at"] = now(); write_receipt(receipt_path, receipt)
+            if receipt.get("handoff_valid") is True:
+                for item in additions:
+                    print(f"{item['id']} URL: {url.rstrip('/')}{stable_path(item)}")
+            else:
+                print("test-only resources added; handoff_valid=false")
+            return 0
+        except BaseException:
+            atomic_write(registry, old_bytes.decode("utf-8"))
+            raise
 
 
 def lifecycle(args: argparse.Namespace) -> int:
     state = state_dir(args); registry, receipt_path, _ = paths(state)
-    receipt = read_receipt(receipt_path); owned_running(receipt, registry)
-    records = read_registry(registry)
-    record = next((item for item in records if item.get("id") == args.id), None)
-    if record is None:
-        raise LauncherError(f"unknown resource id: {args.id}")
-    command = args.command
-    current = record["lifecycle"]
-    if command == "park":
-        if current != "serving": raise LauncherError("only a serving resource can be parked")
-        record["lifecycle"] = "parked"; record["cursor_snapshot"] = cursor_snapshot(Path(record["root"]) / record["spec"], record["cursor_name"])
-    elif command == "resume":
-        if current != "parked": raise LauncherError("only a parked resource can resume")
-        record["lifecycle"] = "serving"
-    elif command == "finish":
-        with resource_lock(state, record["id"]):
-            records = read_registry(registry)
-            record = next((item for item in records if item.get("id") == args.id), None)
-            if record is None:
-                raise LauncherError(f"unknown resource id: {args.id}")
-            current = record["lifecycle"]
+    with state_lock(state):
+        receipt = read_receipt(receipt_path); owned_running(receipt, registry)
+        records = read_registry(registry)
+        record = next((item for item in records if item.get("id") == args.id), None)
+        if record is None:
+            raise LauncherError(f"unknown resource id: {args.id}")
+        command = args.command
+        current = record["lifecycle"]
+        if command == "park":
+            if current != "serving": raise LauncherError("only a serving resource can be parked")
+            record["lifecycle"] = "parked"; record["cursor_snapshot"] = cursor_snapshot(Path(record["root"]) / record["spec"], record["cursor_name"])
+        elif command == "resume":
+            if current != "parked": raise LauncherError("only a parked resource can resume")
+            record["lifecycle"] = "serving"
+        elif command == "finish":
             if current not in {"serving", "parked"}: raise LauncherError("only a serving or parked resource can finish")
             record["finish_event"] = finish_event_for(record)
             record["cursor_snapshot"] = cursor_snapshot(Path(record["root"]) / record["spec"], record["cursor_name"])
             record["lifecycle"] = "finished"
-            record["updated_at"] = now()
-            write_registry(registry, records)
+        elif command == "remove":
+            if current == "removed": raise LauncherError("resource is already removed")
+            record["lifecycle"] = "removed"
+        record["updated_at"] = now()
+        write_registry(registry, records)
         sync_receipt_lifecycle(receipt, record); receipt["updated_at"] = now(); write_receipt(receipt_path, receipt)
         print(f"{args.id}: {record['lifecycle']}")
         return 0
-    elif command == "remove":
-        if current == "removed": raise LauncherError("resource is already removed")
-        record["lifecycle"] = "removed"
-    record["updated_at"] = now()
-    write_registry(registry, records)
-    sync_receipt_lifecycle(receipt, record); receipt["updated_at"] = now(); write_receipt(receipt_path, receipt)
-    print(f"{args.id}: {record['lifecycle']}")
-    return 0
 
 
 def stop_host(args: argparse.Namespace) -> int:
     state = state_dir(args); registry, receipt_path, _ = paths(state)
-    receipt = read_receipt(receipt_path); pid = owned_running(receipt, registry)
-    records = read_registry(registry)
-    unfinished = [item["id"] for item in records if item["lifecycle"] in {"serving", "parked"}]
-    if unfinished:
-        raise LauncherError("cannot stop while resources are serving or parked: " + ", ".join(unfinished))
-    kill_owned(pid, registry, receipt)
-    receipt["state"] = "stopped"; receipt["stopped_at"] = now(); write_receipt(receipt_path, receipt)
-    print("review host stopped")
-    return 0
+    with state_lock(state):
+        receipt = read_receipt(receipt_path); pid = owned_running(receipt, registry)
+        records = read_registry(registry)
+        unfinished = [item["id"] for item in records if item["lifecycle"] in {"serving", "parked"}]
+        if unfinished:
+            raise LauncherError("cannot stop while resources are serving or parked: " + ", ".join(unfinished))
+        kill_owned(pid, registry, receipt)
+        receipt["state"] = "stopped"; receipt["stopped_at"] = now(); write_receipt(receipt_path, receipt)
+        print("review host stopped")
+        return 0
 
 
 def status_host(args: argparse.Namespace) -> int:
