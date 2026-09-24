@@ -761,7 +761,7 @@ const CSS = `
 .hx-mobile-handoff{display:none}
 .hx-toolbar button[aria-pressed=true]{background:#fbf3e2;color:#b47308}
 .hx-toolbar .hx-status{color:#888;font-size:11.5px;padding:0 10px}
-.hx-service-index-link{position:fixed;top:12px;left:12px;z-index:850;display:inline-flex;align-items:center;min-height:44px;box-sizing:border-box;padding:8px 12px;border:1px solid #d9d8d3;border-radius:8px;background:rgba(255,255,255,.96);box-shadow:0 5px 18px rgba(30,30,40,.13);color:#087f73;font:650 12px/1 system-ui;text-decoration:none;backdrop-filter:blur(8px)}
+.hx-service-index-link{position:fixed;top:12px;left:12px;z-index:1000;display:inline-flex;align-items:center;min-height:44px;box-sizing:border-box;padding:8px 12px;border:1px solid #d9d8d3;border-radius:8px;background:rgba(255,255,255,.96);box-shadow:0 5px 18px rgba(30,30,40,.13);color:#087f73;font:650 12px/1 system-ui;text-decoration:none;backdrop-filter:blur(8px)}
 .hx-service-index-link:hover{background:#f4f3ef;border-color:#aaa;color:#075f57}
 .hx-service-index-link:focus-visible{outline:3px solid #f59e0b;outline-offset:3px}
 .hx-panel{position:fixed;top:0;right:0;width:330px;height:100vh;background:#f4f3ef;border-left:1px solid #ddd;z-index:800;display:none;flex-direction:column;font:13px system-ui;box-shadow:none}
@@ -946,7 +946,7 @@ function mountUI() {
     indexLink.textContent = 'Back to Spec Chat index';
     indexLink.setAttribute('aria-label', 'Back to Spec Chat index');
     indexLink.dataset.specChatNavigation = 'index';
-    document.body.appendChild(indexLink);
+    document.body.insertBefore(indexLink, document.body.firstChild);
   }
 
   const bar = document.createElement('div');

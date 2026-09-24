@@ -117,11 +117,26 @@ class BaselineRouteTest(unittest.TestCase):
         with urllib.request.urlopen(request) as response:
             detail = response.read()
 
-        navigation = b'<nav aria-label="Spec Chat service navigation"><a href="/">Back to Spec Chat index</a></nav>'
         self.assertEqual(response.status, 200)
-        self.assertIn(navigation, detail)
-        self.assertLess(detail.index(navigation), detail.index(b"</body>"))
-        self.assertIn(b'data-anchor="rule"', detail)
+        self.assertEqual(detail, source)
+
+    def test_runtime_navigation_is_fixed_top_and_server_preserves_raw_spec_bytes(self):
+        runtime = (ROOT / "skill" / "review-spec" / "assets" / "viz" / "runtime.js").read_text()
+        self.assertIn("document.body.insertBefore(indexLink, document.body.firstChild)", runtime)
+        self.assertRegex(runtime, r"\.hx-service-index-link\{position:fixed;top:12px;left:12px;z-index:1000;")
+        self.assertIn(".hx-service-index-link", runtime)
+        self.assertIn("e.target.closest('.hx-pin,.hx-panel,.hx-toolbar,.hx-service-index-link,#hx-errors')", runtime)
+
+        source = b"<!doctype html><html><body><p data-anchor=\"rule\">raw bytes</p></body></html>"
+        self.spec.write_bytes(source)
+        for accept in (None, "text/html"):
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{self.port}/specs/focus.spec.html",
+                headers={} if accept is None else {"Accept": accept},
+            )
+            with urllib.request.urlopen(request) as response:
+                self.assertEqual(response.read(), source)
+                self.assertEqual(response.headers.get_content_type(), "text/html")
         self.assertEqual(self.spec.read_bytes(), source)
 
     def verify(self, path="specs/focus.spec.html", base="main", local_spec=None):
