@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./.style/spec.css">
+<title>One lane slug across repositories</title>
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">One lane slug across repositories</h1>
+<nav data-anchor="breadcrumbs">docs / specs / lane-hosting.spec.html</nav>
+<p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-119/kanban-shows-the-whole-fleet-not-one-repo">ANN-119</a>.</p>
+<p data-anchor="context">Extends <code>skill/review-spec/SKILL.md</code>, Remote hosting lifecycle: a lane registers its specs under one lane slug, even when they live in several repositories.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="false" data-anchor="story-one-slug">As a lane owner whose specs span repositories, I register every spec under the lane slug, so everything that reads the lane slug finds them all.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-stable-url">As a reviewer, a spec's review URL stays the same when the lane adds a spec from another repository.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="lane-hosting" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-second-root"><span data-acceptance-scenario>Given slug <code>ann45</code> with project <code>aa</code> registered from one repository, when project <code>sc</code> registers <code>docs/specs/x.spec.html</code> from another,</span> <span data-acceptance-observable>registration succeeds, <code>aa</code>'s specs keep <code>ann45/&lt;spec&gt;</code>, and x is served at <code>ann45/sc/docs/specs/x.spec.html</code> with its own stylesheet and runtime.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-path-field"><span data-acceptance-scenario>After any registration,</span> <span data-acceptance-observable>every registry row carries <code>path</code> equal to the URL path its spec is served at, without the leading slash.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-same-project"><span data-acceptance-scenario>When project <code>aa</code> registers a spec from a second root under the same slug,</span> <span data-acceptance-observable>registration fails with <code>ambiguous resource slug</code>, as today.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-remove"><span data-acceptance-scenario>When <code>aa</code>'s rows are removed and <code>sc</code>'s remain,</span> <span data-acceptance-observable><code>sc</code>'s specs keep <code>ann45/sc/&lt;spec&gt;</code>.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-review-state"><span data-acceptance-scenario>With two roots under one slug,</span> <span data-acceptance-observable>each spec's spool, cursor, baseline, and <a href="./compared-range.spec.html#last-reviewed">last reviewed version</a> belong to its own root, and host baseline checks pass for both.</span></p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-host"><span data-boundary-responsibility>The review host owns which root serves which path under a slug and records it as the row's <code>path</code>.</span> <span data-boundary-seam>Caller-facing seam: <code>review-host register</code> and the registry rows.</span> <span data-boundary-dependency>Dependency direction: self-contained; the review server reads the rows and never decides paths itself.</span> <span data-boundary-scope>Observable scope: registry rows, served URLs, and registration errors.</span></p>
+<p data-modular-boundary data-anchor="boundary-readers"><span data-boundary-responsibility>Registry readers such as a worklane board own nothing here; they take each row's <code>path</code> as its served path.</span> <span data-boundary-seam>Caller-facing seam: the row's <code>path</code>.</span> <span data-boundary-dependency>Dependency direction: external-provider; readers depend on the registry, never the reverse.</span> <span data-boundary-scope>Observable scope: links built from <code>path</code>.</span></p>
+</section>
+
+<section data-anchor="paths">
+<h2>Served paths</h2>
+<p data-anchor="paths-rule">A slug may hold several roots, one project per root. The project that first registers under a slug is its primary; its specs keep <code>&lt;slug&gt;/&lt;spec&gt;</code>, unchanged. Each other project's root is served under <code>&lt;slug&gt;/&lt;project&gt;/</code>, spec pages and their relative assets alike, so the URL names the project only when needed.</p>
+<div class="table-scroll" data-anchor="paths-table-scroll">
+<table data-anchor="paths-table">
+<thead><tr><th>Row</th><th>Served path</th></tr></thead>
+<tbody>
+<tr data-anchor="paths-row-primary"><td>Primary project, or the only one</td><td><code>&lt;slug&gt;/&lt;spec&gt;</code></td></tr>
+<tr data-anchor="paths-row-other"><td>Any other project under the slug</td><td><code>&lt;slug&gt;/&lt;project&gt;/&lt;spec&gt;</code></td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="paths-project">The project is the resource's <code>PROJECT_ID</code>, the part of its id before <code>::</code>. A project id is one path segment; one that equals a top-level directory name of the primary's collection is refused, so no path is ever ambiguous.</p>
+<p data-anchor="paths-primary-stays">A row's path is fixed when it registers and never recomputed. A project gets the plain form only when no other project holds rows under the slug.</p>
+<p data-anchor="paths-field">Each registry row records its served path as <code>path</code>. Readers use it rather than rebuilding a path from <code>slug</code> and <code>spec</code>.</p>
+</section>
+
+</article>
+</body>
+</html>
