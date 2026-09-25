@@ -1,0 +1,75 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime.js'), 'utf8');
+
+const paramsStart = runtime.indexOf('function jevParams(');
+const paramsEnd = runtime.indexOf('\n\nasync function fetchJev(', paramsStart);
+assert.ok(paramsStart >= 0 && paramsEnd > paramsStart, 'runtime exposes Jev request parameters');
+const jevParams = Function('location', 'URLSearchParams', runtime.slice(paramsStart, paramsEnd) + '; return jevParams;')(
+  { pathname: '/docs/specs/example.spec.html', search: '?view=reading&extra=ignored' },
+  URLSearchParams,
+);
+const params = jevParams('base-123');
+assert.equal(params.get('path'), 'docs/specs/example.spec.html');
+assert.equal(params.get('base'), 'base-123');
+assert.equal(params.get('view'), 'reading');
+assert.equal(params.has('extra'), false);
+
+const fetchStart = runtime.indexOf('async function fetchJev(');
+const fetchEnd = runtime.indexOf('\n\nfunction jevItem(', fetchStart);
+assert.ok(fetchStart >= 0 && fetchEnd > fetchStart, 'runtime exposes Jev route consumer');
+let requested = '';
+const fakeFetch = async url => {
+  requested = url;
+  return { ok: true, json: async () => ({ jev: 'on', items: [
+    { kind: 'type', id: 'change-type', state: 'label', label: 'behavioral', target: null, record: 'r1' },
+    { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2' },
+  ] }) };
+};
+const fetchJev = Function('fetch', 'jevParams', 'location', 'URLSearchParams', runtime.slice(fetchStart, fetchEnd) + '; return fetchJev;')(
+  fakeFetch,
+  jevParams,
+  { pathname: '/docs/specs/example.spec.html', search: '' },
+  URLSearchParams,
+);
+const answer = await fetchJev('base-123');
+assert.match(requested, /^\/api\/jev\\?/);
+assert.deepEqual(answer, {
+  jev: 'on',
+  items: [
+    { kind: 'type', id: 'change-type', state: 'label', label: 'behavioral', target: null, record: 'r1' },
+    { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2' },
+  ],
+});
+
+const moveStart = runtime.indexOf('async function moveOrphan(');
+const moveEnd = runtime.indexOf('\n\nconst chartInfoFor', moveStart);
+assert.ok(moveStart >= 0 && moveEnd > moveStart, 'runtime exposes orphan move action');
+const posted = [];
+const moveState = {
+  movingOrphans: new Set(),
+  transport: { postEvent: async event => posted.push(event) },
+  activeThread: 'thread-1',
+};
+const moveOrphan = Function('state', 'humanId', 'renderPanel', 'toast', 'refresh', 'renderPins', runtime.slice(moveStart, moveEnd) + '; return moveOrphan;')(
+  moveState,
+  prefix => prefix + 'fixed',
+  () => {},
+  () => {},
+  async () => {},
+  () => {},
+);
+await moveOrphan({ id: 'thread-1', ev: { body: { quote: 'old quote', text: 'Original note' } } }, 'new-section');
+assert.equal(posted.length, 2);
+assert.equal(posted[0].event, 'status');
+assert.equal(posted[0].status, 'resolved');
+assert.equal(posted[1].event, 'comment');
+assert.equal(posted[1].anchorId, 'new-section');
+assert.equal(posted[1].quote, 'old quote');
+assert.equal(posted[1].text, 'Original note');
+
+console.log('runtime Jev contract tests passed');
