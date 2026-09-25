@@ -22,6 +22,15 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+try:
+    from jev import JevService
+except ModuleNotFoundError:
+    import importlib.util
+    _jev_spec = importlib.util.spec_from_file_location("review_serve_jev", os.path.join(os.path.dirname(__file__), "jev.py"))
+    _jev_module = importlib.util.module_from_spec(_jev_spec)
+    _jev_spec.loader.exec_module(_jev_module)
+    JevService = _jev_module.JevService
+
 
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
 SAFE_CURSOR_RE = re.compile(r"[^/\\]+\Z")
@@ -549,6 +558,32 @@ li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywh
         events.sort(key=lambda event: event["name"])
         return self._json(events)
 
+    def _jev(self, query):
+        mount, target, relative = self._resolve_path(query.get("path", [""])[0], spec_only=True)
+        if not mount:
+            return self._json({"error": "bad path"}, 400)
+        base = query.get("base", [mount.get("base", "")])[0]
+        if not base or base.startswith("-"):
+            return self._json({"error": "invalid base"}, 400)
+        try:
+            subprocess.check_call(
+                ("git", "-C", mount["root"], "rev-parse", "--verify", base + "^{commit}"),
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except (OSError, subprocess.CalledProcessError):
+            return self._json({"error": "invalid base"}, 400)
+        review = target + ".review"
+        events = _read_spool_events(review, mount["narrow_root"])
+        if events is None:
+            return self._json({"error": "unsafe spool path"}, 400)
+        service = getattr(self.server, "jev", None)
+        if service is None:
+            service = self.server.jev = JevService()
+        try:
+            return self._json(service.response(mount, target, relative, base, events))
+        except (OSError, RuntimeError, ValueError):
+            return self._json({"error": "jev unavailable"}, 503)
+
     def _post_event(self, query):
         mount, review = self._route_review(query)
         actor = query.get("actor", ["human"])[0]
@@ -614,6 +649,8 @@ li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywh
             return self._events(query)
         if parsed.path == "/api/baseline":
             return self._baseline(query)
+        if parsed.path == "/api/jev":
+            return self._jev(query)
         return self._send_file(parsed.path)
 
     def do_HEAD(self):
@@ -672,6 +709,7 @@ def main(argv=None):
         print("review-serve: %s" % exc, file=sys.stderr)
         return 2
     server.mount_state = state
+    server.jev = JevService()
     print("spec-chat review-serve on http://%s:%d" % (advertised_host(args), server.server_port), flush=True)
     print("review URL is public and is not a secret in any security sense or an authentication boundary; stop this process when review ends", flush=True)
     try:
