@@ -357,6 +357,45 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertEqual(self.request(self.stable(second)), second_bytes)
         self.assertIsNone(self.server.poll())
 
+    def test_index_groups_lanes_projects_and_status_in_order(self):
+        """ANN-136 lane-hosting #acceptance-review-index."""
+        import html as html_lib
+        import re
+
+        board = self.make_resource("ann134") | {"project": "aa"}
+        repo = Path(board["root"])
+        Path(repo / board["spec"]).write_text("<title>Zeta board</title>changed\n")
+        fresh = board | {"id": "spec:ann134:aa::docs/specs/new.spec.html", "spec": "docs/specs/new.spec.html"}
+        (repo / fresh["spec"]).write_text("<title>Alpha fresh</title>\n")
+        tool = board | {"id": "spec:ann134:sc::docs/specs/domains/x.spec.html", "project": "sc"}
+        tool["path"] = "ann134/sc/" + tool["spec"]
+        steady = self.make_resource("ann119") | {"project": "sc"}
+        git(steady["root"], "checkout", "--", steady["spec"])
+        broken = self.make_resource("ann7") | {"project": "aa"}
+        git(broken["root"], "branch", "gone")
+        broken["base"] = "gone"
+        self.start([steady, broken, board, fresh, tool])
+        git(broken["root"], "branch", "-D", "gone")
+
+        status, raw = self.request("/?focus=changes")
+        self.assertEqual(status, 200)
+        body = raw.decode()
+        self.assertIn('"GIT_OPTIONAL_LOCKS": "0"', SERVER.read_text())
+        text = html_lib.unescape(re.sub(r"<style>.*?</style>|<[^>]+>", "\n", body, flags=re.S))
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        self.assertEqual(lines[:2], ["Spec Chat index", "Review index"])
+        self.assertEqual(lines[2:], [
+            "ANN-134", "3 of 3 changed",
+            "aa", "Alpha fresh", "Changed since you reviewed", "Zeta board", "Changed since you reviewed",
+            "sc", "Zeta board", "Changed since you reviewed",
+            "ANN-7", "up to date", "aa", "ann7",
+            "ANN-119", "up to date", "sc", "ann119", "Up to date",
+        ])
+        for leaked in ("docs/specs", "spec:", "main", "gone", "ann134/"):
+            self.assertNotIn(leaked, "\n".join(lines))
+        self.assertIn('href="/ann134/sc/docs/specs/domains/x.spec.html?focus=changes"', body)
+        self.assertIn('href="/ann134/docs/specs/new.spec.html?focus=changes"', body)
+
     def test_invalid_registries_exit_before_binding_or_printing_url(self):
         first, second = (self.make_resource(name) for name in ("first", "second"))
         invalid = [
