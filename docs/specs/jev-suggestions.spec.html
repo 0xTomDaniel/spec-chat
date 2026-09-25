@@ -14,7 +14,7 @@
 <h1 data-anchor="title">Jev review suggestions</h1>
 <nav data-anchor="breadcrumbs">docs / specs / jev-suggestions.spec.html</nav>
 <p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-100">ANN-100</a>.</p>
-<p data-anchor="context">Governed by the Jev seam contract, annotateanything <code>docs/specs/jev-seam.spec.html</code> (ANN-49): its rules, label criteria, focus treatments, and calibration gate apply unchanged. This spec owns only how Spec Chat delivers them. Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a> and <a href="./compared-range.spec.html#change-base">compared range</a>.</p>
+<p data-anchor="context">Follows the shared Jev contract, annotateanything <code>docs/specs/jev-seam.spec.html#contract</code> (ANN-49): typed suggestions, show everything below threshold, never act, validated criteria, one judgment record, cache per source revision, text only, server-side key. This spec owns Spec Chat's questions, criteria, and display; no code or data is shared with annotateanything. Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a> and <a href="./compared-range.spec.html#change-base">compared range</a>.</p>
 </header>
 
 <section data-spec-section="user-stories" data-anchor="user-stories">
@@ -42,7 +42,7 @@
 <text x="12" y="50" fill="#171719" font-size="14" font-weight="700">Browser</text>
 <text x="12" y="146" fill="#171719" font-size="14" font-weight="700">Review server</text>
 <text x="12" y="246" fill="#171719" font-size="14" font-weight="700">Jev (OpenRouter)</text>
-<rect x="140" y="24" width="170" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
+<rect x="140" y="24" width="190" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
 <text x="152" y="51" fill="#171719" font-size="13">1 Focus renders as today</text>
 <rect x="580" y="24" width="190" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
 <text x="592" y="51" fill="#171719" font-size="13">6 Badge, or stays neutral</text>
@@ -50,15 +50,15 @@
 <text x="172" y="147" fill="#171719" font-size="13">2 Sections and orphans</text>
 <rect x="500" y="120" width="200" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
 <text x="512" y="147" fill="#171719" font-size="13">5 Threshold, record, cache</text>
-<rect x="340" y="220" width="170" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
+<rect x="340" y="220" width="190" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
 <text x="352" y="247" fill="#171719" font-size="13">4 Choice + probabilities</text>
 <path d="M225 68 L245 118" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
 <text x="240" y="90" fill="#171719" font-size="12">GET /api/jev path, base</text>
 <path d="M330 164 L385 218" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
-<text x="262" y="206" fill="#171719" font-size="12">3 miss: POST decisions</text>
+<text x="160" y="212" fill="#171719" font-size="12">3 miss: POST decisions</text>
 <path d="M360 142 L496 142" stroke="#171719" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#flow-arrow)"></path>
 <text x="388" y="136" fill="#171719" font-size="12">cache hit</text>
-<path d="M470 220 L540 166" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
+<path d="M490 220 L550 166" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
 <path d="M630 120 L660 70" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
 <text x="652" y="100" fill="#171719" font-size="12">labels</text>
 <defs><marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#171719"></path></marker></defs>
@@ -70,8 +70,20 @@
 
 <section data-anchor="change-type">
 <h2>Change type in Git focus</h2>
-<p data-anchor="type-sections">Each changed root section of the current focus comparison gets one change-type question over its base text and current text, as the contract's <code>#change-type</code> defines.</p>
-<p data-anchor="type-treatment">A confident label applies the contract's focus treatment and badge: Scope, Behavior, Clarification, or Cosmetic. Anything else leaves the section exactly as today.</p>
+<p data-anchor="type-sections">Each changed root section of the current focus comparison gets one Choice question over its base text and current text: scope, behavioral, clarification, or cosmetic.</p>
+<div class="table-scroll" data-anchor="type-table-scroll">
+<table data-anchor="type-table">
+<thead><tr><th>Answer</th><th>Criterion</th><th>Focus treatment and badge</th></tr></thead>
+<tbody>
+<tr data-anchor="type-scope"><td>scope, confident</td><td>Adds, removes, or moves a capability, surface, or non-goal</td><td>Changed highlight, strongest; badge <code>Scope</code></td></tr>
+<tr data-anchor="type-behavioral"><td>behavioral, confident</td><td>Alters what the result does: a rule, interface, edge case, or criterion</td><td>Changed highlight; badge <code>Behavior</code></td></tr>
+<tr data-anchor="type-clarification"><td>clarification, confident</td><td>Same behavior, meaning stated more precisely</td><td>Changed highlight, lighter; badge <code>Clarification</code></td></tr>
+<tr data-anchor="type-cosmetic"><td>cosmetic, confident</td><td>Wording, typo, order, or style with no change in meaning</td><td>Dimmed, still 4.5:1 readable; badge <code>Cosmetic</code></td></tr>
+<tr data-anchor="type-none"><td>below threshold, error, timeout, oversize, or off</td><td>None</td><td>Today's changed highlight; no badge</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="type-order">No label hides, collapses, or reorders a section; badges carry text, never color alone.</p>
 <p data-anchor="type-async">Focus renders at once as today; labels arrive later, and a slow or missing label never blocks or shifts review controls.</p>
 <p data-anchor="type-base-change">When the reviewer changes the base through the range bar, the page drops all labels at once, re-diffs as today, and asks again for the new base.</p>
 <p data-anchor="type-unchanged">Unchanged sections and pages without <code>focus=changes</code> are never classified.</p>
@@ -80,37 +92,38 @@
 <section data-anchor="orphan">
 <h2>Orphaned comment location</h2>
 <p data-anchor="orphan-which">A thread is orphaned when its anchor no longer exists in the current spec; today it keeps its sidebar card and stored quote and shows no pin.</p>
-<p data-anchor="orphan-question">The server asks the contract's orphan-location question, <code>#orphan</code>, over the stored quote and up to 8 deterministic candidate anchors.</p>
+<p data-anchor="orphan-question">The server picks up to 8 current anchors whose text best matches the stored quote, then asks one Choice question over the quote and candidate texts: one candidate, or none.</p>
 <p data-anchor="orphan-hint">A confident candidate adds <code>Possibly moved to: &lt;section heading&gt;</code> to the orphaned thread's card, with <code>Go to</code>, which scrolls to and outlines that section.</p>
 <p data-anchor="orphan-no-move">The suggestion never re-attaches the thread, writes a spool event, or changes status on its own.</p>
-<p data-anchor="orphan-click" data-spec-tbd>TBD, human click: the contract allows only <code>Go to</code> navigation, while ANN-100 says re-anchoring needs a human click. Proposal: v1 ships <code>Go to</code> only and the agent still replies orphaned; a <code>Move comment here</code> button that writes a human re-anchor event is a later slice. Confirm, or ask for the button now.</p>
+<p data-anchor="orphan-click" data-spec-tbd>TBD, human click: the contract allows re-anchoring by an explicit human click. Proposal: v1 ships <code>Go to</code> only and the agent still replies orphaned, because a <code>Move comment here</code> button needs a new spool event type the watcher must learn. Confirm, or ask for the button now.</p>
 <p data-anchor="orphan-none">None, below threshold, or unavailable shows today's card only.</p>
 </section>
 
 <section data-anchor="records">
 <h2>Cache and judgment records</h2>
-<p data-anchor="cache-key">Answers are cached per head, section, and question-set version; head also covers the compared base and, for a dirty working copy, the served bytes.</p>
+<p data-anchor="cache-key">Answers are cached per source revision, section anchor, and question-set version. The revision is the compared base plus head, or the served bytes for a dirty working copy, so a new head or base classifies again and nothing else does.</p>
 <p data-anchor="cache-effect">A cached answer is reused without calling Jev again, so reload and repeat visits cost nothing.</p>
-<p data-anchor="record-fields">Every shown or withheld answer appends one judgment record with the contract's fields: model version, question-set version, source addresses, probabilities, confidence, threshold, and outcome.</p>
-<p data-anchor="record-where">Records are append-only JSONL on the box beside the spec's review spool, which stays out of Git.</p>
+<p data-anchor="record-fields">Every shown or withheld answer appends one judgment record in the contract's format, <code>#record</code>: addresses and revision, never source text or the key.</p>
+<p data-anchor="record-where">Records are append-only JSONL in the review server's state directory on the box, outside every spool and outside Git.</p>
 </section>
 
 <section data-anchor="calibration">
 <h2>Question sets and calibration</h2>
-<p data-anchor="qset-data">The change-type and orphan-location question sets are versioned data in this repository, with the contract's criteria, examples, and thresholds.</p>
-<p data-anchor="qset-labeled">Each set has a small labeled set drawn from this repository's spec history and review spools, at least 10 cases per label, including deleted-passage orphans.</p>
-<p data-anchor="qset-gate">A calibration command runs a set against real Jev and reports per-label precision at its threshold; a set below the contract's 0.9 gate stays off and its surface stays neutral.</p>
+<p data-anchor="qset-data">The change-type and orphan-location question sets are versioned data in this repository: instructions, the criteria above with examples, and a threshold.</p>
+<p data-anchor="qset-labeled">Each has a small labeled set from our own history: spec commits and past atomic versus material Finish calls for change type, and ANN-30 orphaned comments, including deleted passages, for location.</p>
+<p data-anchor="qset-gate">A calibration command runs a set against real Jev and reports per-label precision at its threshold; below 0.9 for any label, the set stays off and its surface stays neutral.</p>
 </section>
 
 <section data-spec-section="acceptance" data-acceptance-scope="jev-suggestions" data-anchor="acceptance">
 <h2>Acceptance criteria</h2>
 <p data-acceptance-criterion data-anchor="acceptance-types"><span data-acceptance-scenario>When a served spec change fixes a typo in one section and changes a rule in another, in Git focus with Jev on,</span> <span data-acceptance-observable>the rule's section shows Behavior with the changed highlight and the typo's section shows Cosmetic, dimmed and still readable.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-neutral"><span data-acceptance-scenario>When there is no key, a label is below threshold, Jev times out or errors, or the state is oversize,</span> <span data-acceptance-observable>that section renders exactly as Git focus does today, and review controls behave unchanged.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-order"><span data-acceptance-scenario>For any combination of labels,</span> <span data-acceptance-observable>every changed and unchanged section stays present, in source order, and readable at 4.5:1 contrast.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-base"><span data-acceptance-scenario>When the reviewer changes the base in the range bar,</span> <span data-acceptance-observable>old labels disappear immediately and the new base's labels replace them without a reload.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-orphan"><span data-acceptance-scenario>When a commented passage moves to a new section and its anchor is removed,</span> <span data-acceptance-observable>the orphaned thread's card shows <code>Possibly moved to:</code> that section, and <code>Go to</code> scrolls to and outlines it; a deleted passage shows today's card only.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-inert"><span data-acceptance-scenario>Across a review session with Jev on and no human click,</span> <span data-acceptance-observable>the spool, thread statuses, Finish eligibility, and spec bytes match a session with Jev off.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-cache"><span data-acceptance-scenario>When the same page, base, and head load a second time,</span> <span data-acceptance-observable>no new Jev call is made and the same labels show.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-record"><span data-acceptance-scenario>For every shown or withheld answer,</span> <span data-acceptance-observable>one judgment record carries every contract field, and no record, log, or response contains the key.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-record"><span data-acceptance-scenario>For every shown or withheld answer,</span> <span data-acceptance-observable>one judgment record carries every contract field, with no source text, and no page, record, log, or response contains the key.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-own-state"><span data-acceptance-scenario>When a client sends section text or any parameter beyond path and base,</span> <span data-acceptance-observable>the server ignores it and classifies only its own served file, Git, and spool.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-gate"><span data-acceptance-scenario>When calibration scores a set below 0.9 precision for any label,</span> <span data-acceptance-observable>that set reports off and its surface stays neutral.</span></p>
 </section>
