@@ -34,6 +34,10 @@ _verify_spec = importlib.util.spec_from_file_location("spec_chat_verify_review",
 _verify_module = importlib.util.module_from_spec(_verify_spec)
 assert _verify_spec.loader is not None
 _verify_spec.loader.exec_module(_verify_module)
+_serve_spec = importlib.util.spec_from_file_location("spec_chat_review_serve", SERVER)
+_serve_module = importlib.util.module_from_spec(_serve_spec)
+assert _serve_spec.loader is not None
+_serve_spec.loader.exec_module(_serve_module)
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
 SAFE_CURSOR_RE = re.compile(r"[^/\\]+\Z")
 PROJECT_SEGMENT_RE = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]{0,62}\Z")
@@ -51,6 +55,14 @@ class ProofError(LauncherError):
     pass
 
 
+def normalise_spec(value: Any) -> str:
+    """The server's one spec path rule, shared so host and server never disagree."""
+    try:
+        return _serve_module.normalise_spec(value)
+    except ValueError as exc:
+        raise LauncherError(f"resource spec must be a repository-relative *.spec.html path: {value}") from exc
+
+
 def now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -58,7 +70,7 @@ def now() -> str:
 def run_git(root: Path, *args: str, check: bool = True) -> str:
     try:
         return subprocess.check_output(
-            ("git", "-C", str(root), *args), text=True, stderr=subprocess.DEVNULL
+            ("git", "--literal-pathspecs", "-C", str(root), *args), text=True, stderr=subprocess.DEVNULL
         ).strip()
     except (OSError, subprocess.CalledProcessError) as exc:
         if check:
@@ -289,13 +301,8 @@ def parse_resource_spec(value: str, owner: str, checker: str, cursor_name: str,
     if not PROJECT_SEGMENT_RE.fullmatch(project):
         raise LauncherError(f"project id must be one path segment of letters, digits, '.', '_', or '-': {project}")
     top = resource_toplevel(Path(root_text))
-    spec = spec.replace("\\", "/")
-    spec_path = Path(spec)
-    if spec_path.is_absolute() or not spec.endswith(".spec.html"):
-        raise LauncherError("resource spec must be a repository-relative *.spec.html path")
-    if any(part in {"", ".", ".."} for part in spec_path.parts):
-        raise LauncherError("resource spec path escapes its repository")
-    spec_file = (top / spec_path).resolve()
+    spec = normalise_spec(spec)
+    spec_file = (top / spec).resolve()
     if not path_inside(spec_file, top, strict=True) or not spec_file.is_file():
         raise LauncherError("resource spec does not exist inside the worktree")
     narrow = resolve_collection(collection, top, spec_file)
@@ -418,16 +425,17 @@ def assign_path(existing: Sequence[Mapping[str, Any]], resource: dict[str, Any])
     """Fix a row's served path once; registering the same row id again is an upsert.
 
     The same slug, project, and spec keeps that row's id and path, whatever its new root,
-    and `replaces` names that one row. When a legacy row and a project row both match, the
-    project row is the upsert target and the legacy row stays.
+    and `replaces` names the rows it supersedes. A legacy row (no project) at the same root
+    is adopted: it takes the project, keeps its id and path, and absorbs a project row of the
+    same identity, so one root and spec never have two rows (two wakes, one moved base).
     A new row joins its project's form under the slug; a project new to the slug gets the
     plain form only when no other project holds rows under it.
     """
     slug, spec = resource["slug"], resource["spec"]
     same = [row for row in existing if same_row(row, resource)]
     if same:
-        row = next((row for row in same if row_project(row) is not None), same[0])
-        resource.update({"path": row_path(row), "id": row["id"], "replaces": row["id"]})
+        row = next((row for row in same if row_project(row) is None), same[0])
+        resource.update({"path": row_path(row), "id": row["id"], "replaces": [item["id"] for item in same]})
         return resource
     same_slug = [row for row in existing if row["slug"] == slug]
     own = [row for row in same_slug if owned_by(row, resource)]
@@ -456,11 +464,8 @@ def validate_shape(records: Sequence[Mapping[str, Any]]) -> None:
             raise LauncherError(f"invalid or reserved resource slug: {slug}")
         if not Path(record["root"]).is_absolute():
             raise LauncherError(f"resource root must be absolute: {rid}")
-        spec = record["spec"]
-        if spec.startswith("/") or not spec.endswith(".spec.html") or any(
-            part in {"", ".", ".."} for part in spec.split("/")
-        ):
-            raise LauncherError(f"resource spec path is invalid: {spec}")
+        if normalise_spec(record["spec"]) != record["spec"]:
+            raise LauncherError(f"resource spec path is invalid: {record['spec']}")
         if not SAFE_CURSOR_RE.fullmatch(record["cursor_name"]):
             raise LauncherError(f"invalid cursor name: {record['cursor_name']}")
         ids.add(rid)
@@ -485,12 +490,6 @@ def validate_row(record: Mapping[str, Any]) -> None:
     run_git(root, "rev-parse", "--verify", record["base"] + "^{commit}")
 
 
-def validate_records(records: Sequence[Mapping[str, Any]]) -> None:
-    validate_shape(records)
-    for record in records:
-        validate_row(record)
-
-
 def read_registry_document(path: Path) -> dict[str, Any]:
     document = read_toml(path, missing={"resource": []})
     if not isinstance(document, dict):
@@ -503,8 +502,8 @@ def read_registry_document(path: Path) -> dict[str, Any]:
     result = []
     for item in records:
         row = dict(item)
-        if isinstance(row.get("spec"), str):
-            row["spec"] = row["spec"].replace("\\", "/")
+        if isinstance(row.get("spec"), str) and row["spec"].strip():
+            row["spec"] = normalise_spec(row["spec"])
         result.append(row)
     validate_shape(result)
     process = document.get("process")
@@ -541,13 +540,68 @@ def prove_resource(public_url: str, resource: Mapping[str, Any]) -> dict[str, An
     }
 
 
+REVIEWED_LOCK_SECONDS = 30
+INDEX_LOCK_RETRY_SECONDS = 10
+
+
+@contextlib.contextmanager
+def root_lock(root: Path):
+    """Serialize `reviewed` commits in one worktree across processes and state dirs."""
+    git_dir = Path(run_git(root, "rev-parse", "--absolute-git-dir"))
+    descriptor = os.open(git_dir / "spec-chat-reviewed.lock", os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        deadline = time.monotonic() + REVIEWED_LOCK_SECONDS
+        while True:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() > deadline:
+                    raise LauncherError(f"another reviewed commit holds {root}; base unchanged")
+                time.sleep(0.05)
+        yield
+    finally:
+        os.close(descriptor)
+
+
+def git_retrying(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run git, retrying while another process (not ours: `root_lock` serializes those) holds index.lock."""
+    deadline = time.monotonic() + INDEX_LOCK_RETRY_SECONDS
+    while True:
+        result = subprocess.run(
+            ("git", "--literal-pathspecs", "-C", str(root), *args),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False,
+        )
+        if result.returncode == 0 or "index.lock" not in result.stderr or time.monotonic() > deadline:
+            return result
+        time.sleep(0.1)
+
+
+def spec_changed(root: Path, spec: str) -> bool:
+    """True when the spec's working tree differs from HEAD; a gitignored untracked spec is refused."""
+    if run_git(root, "ls-files", "--others", "--exclude-standard", "--", spec, check=False):
+        return True
+    tracked = run_git(root, "ls-files", "--", spec, check=False) or run_git(
+        root, "ls-tree", "--name-only", "HEAD", "--", spec, check=False
+    )
+    if not tracked:
+        raise LauncherError(f"spec {spec} is ignored by Git and cannot be committed; unignore it or commit it first")
+    # Worktree vs HEAD through Git's filters; a staged-only difference is not a review change.
+    result = subprocess.run(
+        ("git", "--literal-pathspecs", "-C", str(root), "diff", "--quiet", "HEAD", "--", spec),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+    )
+    if result.returncode not in (0, 1):
+        raise LauncherError(f"git diff failed in {root} for {spec}")
+    return result.returncode == 1
+
+
 def commit_reviewed_spec(root: Path, spec: str) -> None:
     """Commit only the spec; on failure put the owner's index entry for it back as it was."""
     before = run_git(root, "ls-files", "-s", "--", spec, check=False)
-    run_git(root, "add", "--", spec)
-    result = subprocess.run(
-        ("git", "-C", str(root), "commit", "-q", "-m", f"docs: human spec review of {spec}", "--", spec),
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False,
+    added = git_retrying(root, "add", "--", spec)
+    result = added if added.returncode else git_retrying(
+        root, "commit", "-q", "-m", f"docs: human spec review of {spec}", "--", spec
     )
     if result.returncode == 0:
         return
@@ -561,9 +615,10 @@ def commit_reviewed_spec(root: Path, spec: str) -> None:
 
 
 def reviewed(args: argparse.Namespace) -> int:
-    """Move one row's base to its last reviewed version: commit the spec if Git sees it changed.
+    """Move one row's base to its last reviewed version: commit the spec if it differs from HEAD.
 
-    Git runs outside the state lock; the row is written only if its root and spec are unchanged.
+    Git runs outside the state lock but under a per-root lock, so concurrent reviews of one
+    worktree commit in turn; the row is written only if its root and spec are unchanged.
     """
     state = state_dir(args)
     registry, _, _ = paths(state)
@@ -574,11 +629,11 @@ def reviewed(args: argparse.Namespace) -> int:
             raise LauncherError(f"unknown resource id: {args.id}")
         validate_row(record)
         root, spec = record["root"], record["spec"]
-    status = run_git(Path(root), "status", "--porcelain", "--untracked-files=all", "--", spec)
-    changed = bool(status)
-    if changed:
-        commit_reviewed_spec(Path(root), spec)
-    head = run_git(Path(root), "rev-parse", "--verify", "HEAD^{commit}")
+    with root_lock(Path(root)):
+        changed = spec_changed(Path(root), spec)
+        if changed:
+            commit_reviewed_spec(Path(root), spec)
+        head = run_git(Path(root), "rev-parse", "--verify", "HEAD^{commit}")
     with state_lock(state):
         records, process = registry_state(registry)
         record = next((item for item in records if item["id"] == args.id), None)
@@ -746,8 +801,16 @@ def print_urls(url: str, additions: list[dict[str, str]]) -> None:
 
 def register(args: argparse.Namespace) -> int:
     state = state_dir(args)
-    registry, log_path, _ = paths(state)
     parsed = parse_resources(args)
+    url, additions = register_locked(args, state, parsed)
+    # Wake checks call Herdr; they run after the state lock is released.
+    print_urls(url, additions)
+    return 0
+
+
+def register_locked(args: argparse.Namespace, state: Path,
+                    parsed: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+    registry, log_path, _ = paths(state)
     with state_lock(state):
         old_bytes = registry.read_bytes() if registry.exists() else None
         existing, process = registry_state(registry)
@@ -757,9 +820,13 @@ def register(args: argparse.Namespace) -> int:
         additions = [registry_record(item) for item in parsed]
         # Only the one row each upsert names is replaced; an id that merely collides with
         # another row stays in the candidate so validation refuses it instead of dropping it.
-        replaced = {item["replaces"] for item in parsed if "replaces" in item}
+        replaced = {rid for item in parsed for rid in item.get("replaces", ())}
         candidate = [row for row in existing if row["id"] not in replaced] + additions
-        validate_records(candidate)
+        # Shape is registry-wide; disk state only for the touched rows, so a torn-down
+        # sibling root never blocks another row's registration.
+        validate_shape(candidate)
+        for record in additions:
+            validate_row(record)
         child: subprocess.Popen[str] | None = None
         try:
             if process and process_owns_registry(process["pid"], registry):
@@ -768,8 +835,7 @@ def register(args: argparse.Namespace) -> int:
                 url = running_url(log_path, port, args)
                 for item in parsed:
                     prove_resource(url, item)
-                print_urls(url, additions)
-                return 0
+                return url, additions
 
             bind = bind_host(args)
             host = proof_host(args, bind)
@@ -797,8 +863,7 @@ def register(args: argparse.Namespace) -> int:
                 prove_resource(url, item)
             process = {"pid": child.pid, "port": port}
             write_registry(registry, candidate, process)
-            print_urls(url, additions)
-            return 0
+            return url, additions
         except BaseException:
             if child is not None and child.poll() is None:
                 with contextlib.suppress(OSError):

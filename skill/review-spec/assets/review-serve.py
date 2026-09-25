@@ -58,7 +58,7 @@ def _inside(path, parent, strict=False):
 
 def _git(root, *args, optional=False):
     result = subprocess.run(
-        ("git", "-C", str(root), *args),
+        ("git", "--literal-pathspecs", "-C", str(root), *args),
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
     )
@@ -73,7 +73,13 @@ def _repo_root(root):
     return Path(_git(root, "rev-parse", "--show-toplevel").decode().strip()).resolve()
 
 
-def _normalise_spec(value):
+def normalise_spec(value):
+    """The one spec path rule for host and server: a repository-relative `*.spec.html` path.
+
+    Backslashes become `/`; absolute paths and empty, `.`, or `..` segments are refused.
+    """
+    if not isinstance(value, str):
+        raise ValueError("invalid resource spec path")
     value = value.replace("\\", "/")
     parts = value.split("/")
     if value.startswith("/") or not value.endswith(".spec.html") or any(
@@ -122,7 +128,7 @@ def _resource_records(document, *, check_refs=False, trust=False):
                 raise ValueError("resource root is not a Git worktree: " + rid) from exc
             if root != top:
                 raise ValueError("resource root must be the Git worktree toplevel: " + rid)
-        spec = _normalise_spec(raw["spec"])
+        spec = normalise_spec(raw["spec"])
         spec_file = os.path.realpath(os.path.join(root, *spec.split("/")))
         if not trust and (not _inside(spec_file, narrow, strict=True) or not os.path.isfile(spec_file)):
             raise ValueError("resource spec is missing or outside its collection: " + rid)
@@ -609,52 +615,74 @@ li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywh
         if self.command != "HEAD":
             self.wfile.write(body)
 
-    def _asset_order(self):
-        """Mounts to try for a path: the referring spec page's row, then longest prefix first.
-
-        Rows of one slug can share a prefix but live in different roots; a spec page's
-        relative assets (.style, images) come from the root that served the page.
-        """
+    def _referer_path(self):
         referer = self.headers.get("Referer") if self.headers else None
-        page = (_decoded_path(urlparse(referer).path) or "").lstrip("/") if referer else ""
-
-        def rank(mount):
-            referring = bool(page) and mount.get("path") == page
-            return (not referring, -len(_mount_prefix(mount)))
-
-        return sorted(self.mounts, key=rank)
+        if not referer:
+            return ""
+        return (_decoded_path(urlparse(referer).path) or "").lstrip("/")
 
     def _resolve_path(self, path, *, spec_only=False):
+        """The mount serving a path: among mounts whose root holds the file, prefer the Referer.
+
+        Rows of one slug can share a prefix but live in different roots. A candidate must
+        contain the requested file; then the row whose page is the Referer wins, then a row
+        whose root holds the Referer's file (a stylesheet's own assets), then longest prefix.
+        """
         decoded = _decoded_path(path)
         if not decoded:
             return None, None, None
         if not decoded.startswith("/"):
             decoded = "/" + decoded
-        for mount in self._asset_order():
-            prefix = "/" + _mount_prefix(mount)
-            if not mount["slug"]:
-                relative = _safe_relative(decoded)
-            elif decoded.startswith(prefix):
-                relative = _safe_relative(decoded[len(prefix):])
-            else:
-                continue
-            if not relative:
-                continue
-            target_root = mount["root"] if mount["slug"] else mount["narrow_root"]
-            target = os.path.realpath(os.path.join(target_root, *relative.split("/")))
-            if not _inside(target, mount["narrow_root"]) or not os.path.isfile(target):
-                continue
-            if any(part.endswith(".review") for part in Path(target).parts):
-                continue
-            if spec_only:
-                if not relative.endswith(".spec.html"):
-                    continue
-                if mount.get("spec") and relative != mount["spec"]:
-                    continue
-            elif mount.get("spec") and relative.endswith(".spec.html") and relative != mount["spec"]:
-                continue
-            return mount, target, relative
-        return None, None, None
+        found = [hit for hit in (self._match(mount, decoded, spec_only) for mount in self.mounts) if hit]
+        if len(found) > 1:
+            page = self._referer_path()
+
+            def holds_referer(mount):
+                if not page or not mount["slug"]:
+                    return False
+                prefix = _mount_prefix(mount)
+                relative = _safe_relative(page[len(prefix):]) if page.startswith(prefix) else None
+                if not relative:
+                    return False
+                target = os.path.realpath(os.path.join(mount["root"], *relative.split("/")))
+                return _inside(target, mount["narrow_root"]) and os.path.isfile(target)
+
+            def rank(hit):
+                mount = hit[0]
+                return (
+                    not (bool(page) and mount.get("path") == page),
+                    not holds_referer(mount),
+                    -len(_mount_prefix(mount)),
+                )
+
+            found.sort(key=rank)
+        return found[0] if found else (None, None, None)
+
+    def _match(self, mount, decoded, spec_only):
+        """(mount, file, relative) when this mount serves the decoded path, else None."""
+        prefix = "/" + _mount_prefix(mount)
+        if not mount["slug"]:
+            relative = _safe_relative(decoded)
+        elif decoded.startswith(prefix):
+            relative = _safe_relative(decoded[len(prefix):])
+        else:
+            return None
+        if not relative:
+            return None
+        target_root = mount["root"] if mount["slug"] else mount["narrow_root"]
+        target = os.path.realpath(os.path.join(target_root, *relative.split("/")))
+        if not _inside(target, mount["narrow_root"]) or not os.path.isfile(target):
+            return None
+        if any(part.endswith(".review") for part in Path(target).parts):
+            return None
+        if spec_only:
+            if not relative.endswith(".spec.html"):
+                return None
+            if mount.get("spec") and relative != mount["spec"]:
+                return None
+        elif mount.get("spec") and relative.endswith(".spec.html") and relative != mount["spec"]:
+            return None
+        return mount, target, relative
 
     def _route_review(self, query):
         raw = query.get("dir", [""])[0]

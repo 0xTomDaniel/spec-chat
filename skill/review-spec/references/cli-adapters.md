@@ -46,6 +46,9 @@ scripts/review-host.py register --slug <lane-key> \
   --owner <owner-pane-id> --checker <checker> --cursor-name .cursor-<cli-or-session>
 ```
 
+For an existing row, `<base>` is that row's current `base` in `registry.toml`, never the lane start base: an upsert takes the base it is given, so passing the start base would discard the last reviewed version.
+Only the first registration of a new row uses the lane start base.
+
 Registration prints `wake=verified owner=<pane>` only when `herdr agent get` resolves that pane, and `wake=unavailable owner=<pane>` otherwise; registration never fails on wake.
 `wake=verified` selects `host-wake` and allows a final response.
 `wake=unavailable` selects `manual-resume`.

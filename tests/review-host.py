@@ -1,4 +1,7 @@
+import contextlib
+import fcntl
 import importlib.util
+import io
 import json
 import os
 import socket
@@ -611,7 +614,7 @@ cursor_name = ".cursor-test"
         self.assertEqual(self.git_head(self.repo), head)
         self.assertEqual(self.registry(state)["resource"][0]["base"], head)
 
-    def test_legacy_row_survives_when_a_project_row_also_matches(self):
+    def test_a_project_adopts_its_legacy_row_at_the_same_root(self):
         state = self.work / "state"
         aa, aa_base = self.make_repo("aa")
         other, other_base = self.make_repo("aa-other")
@@ -621,12 +624,214 @@ cursor_name = ".cursor-test"
         port = self.registry(state)["process"]["port"]
         again = self.register_from(state, "aa", aa, aa_base, ports=port)
         self.assertEqual(again.returncode, 0, again.stderr)
-        rows = {row["id"]: row for row in self.registry(state)["resource"]}
-        legacy = rows["spec:ann45::docs/specs/x.spec.html"]
-        self.assertEqual((legacy["root"], legacy.get("project")), (str(aa.resolve()), None))
-        project = rows["spec:ann45::aa/docs/specs/x.spec.html"]
-        self.assertEqual((project["root"], project["path"]), (str(aa.resolve()), "ann45/aa/docs/specs/x.spec.html"))
-        self.assertEqual(len(rows), 2)
+        rows = self.registry(state)["resource"]
+        # One row for this root and spec: the legacy row takes the project and keeps its path.
+        self.assertEqual([(r["id"], r["root"], r.get("project"), r["path"]) for r in rows],
+                         [("spec:ann45::docs/specs/x.spec.html", str(aa.resolve()), "aa", "ann45/docs/specs/x.spec.html")])
+        (aa / "docs/specs/x.spec.html").write_text("<title>aa</title><p>reviewed</p>\n", encoding="utf-8")
+        done = self.run_cli("reviewed", "--state-dir", str(state), "--id", rows[0]["id"], state=state)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual([r["base"] for r in self.registry(state)["resource"]], [self.git_head(aa)])
+
+    def test_host_wake_re_register_at_the_registry_base_keeps_it(self):
+        state = self.work / "state"
+        aa, aa_base = self.make_repo("aa")
+        first = self.register_from(state, "aa", aa, aa_base)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        rid = self.registry(state)["resource"][0]["id"]
+        (aa / "docs/specs/x.spec.html").write_text("<title>aa</title><p>reviewed</p>\n", encoding="utf-8")
+        done = self.run_cli("reviewed", "--state-dir", str(state), "--id", rid, state=state)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        port = self.registry(state)["process"]["port"]
+        # Each turn's host-wake register reads the row's current base, never the lane start base.
+        for _ in range(2):
+            row_base = next(r["base"] for r in self.registry(state)["resource"] if r["id"] == rid)
+            wake = self.register_from(state, "aa", aa, row_base, ports=port)
+            self.assertEqual(wake.returncode, 0, wake.stderr)
+            self.assertIn("wake=", wake.stdout)
+        rows = self.registry(state)["resource"]
+        self.assertEqual([(r["id"], r["base"]) for r in rows], [(rid, self.git_head(aa))])
+        self.assertNotEqual(rows[0]["base"], aa_base)
+        self.assertEqual(self.baseline(self.served_url(wake), rows[0]["path"])["base"], self.git_head(aa))
+
+    def test_concurrent_reviewed_in_one_root_both_commit(self):
+        state = self.work / "state"
+        aa, aa_base = self.make_repo("aa")
+        (aa / "docs/specs/y.spec.html").write_text("<title>y</title>\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(aa), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(aa), "commit", "-qm", "y"], check=True)
+        head = self.git_head(aa)
+        first = self.register_from(state, "aa", aa, head)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        port = self.registry(state)["process"]["port"]
+        second = self.register_from(state, "aa", aa, head, spec="docs/specs/y.spec.html", ports=port)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        ids = [r["id"] for r in self.registry(state)["resource"]]
+        for name in ("x", "y"):
+            (aa / f"docs/specs/{name}.spec.html").write_text(f"<title>{name}</title><p>reviewed</p>\n", encoding="utf-8")
+        env = os.environ.copy()
+        env.update({"PATH": path_without_herdr(), "PYTHONDONTWRITEBYTECODE": "1"})
+        for _ in range(3):
+            procs = [subprocess.Popen(["python3", str(LAUNCHER_PATH), "reviewed", "--state-dir", str(state), "--id", rid],
+                                      env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE) for rid in ids]
+            results = [(proc.returncode, proc.communicate(timeout=30)[1]) for proc in procs]
+            results = [(proc.returncode, err) for proc, (_, err) in zip(procs, results)]
+            for code, err in results:
+                self.assertEqual(code, 0, err)
+        log = subprocess.check_output(["git", "-C", str(aa), "log", "--format=%s", f"{head}..HEAD"], text=True).split("\n")
+        self.assertEqual(sorted(line for line in log if line),
+                         ["docs: human spec review of docs/specs/x.spec.html", "docs: human spec review of docs/specs/y.spec.html"])
+        status = subprocess.check_output(["git", "-C", str(aa), "status", "--porcelain"], text=True)
+        self.assertEqual(status, "")
+        self.assertEqual({r["base"] for r in self.registry(state)["resource"]}, {self.git_head(aa)})
+
+        # A held per-root lock makes reviewed wait; a foreign index.lock is retried, not fatal.
+        (aa / "docs/specs/x.spec.html").write_text("<title>x</title><p>again</p>\n", encoding="utf-8")
+        index_lock = aa / ".git/index.lock"
+        with review_host.root_lock(aa):
+            index_lock.write_text("", encoding="utf-8")
+            proc = subprocess.Popen(["python3", str(LAUNCHER_PATH), "reviewed", "--state-dir", str(state), "--id", ids[0]],
+                                    env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            time.sleep(1)
+            self.assertIsNone(proc.poll(), "reviewed waits for the root lock")
+        time.sleep(0.5)
+        self.assertIsNone(proc.poll(), "reviewed retries while index.lock is held")
+        index_lock.unlink()
+        _, err = proc.communicate(timeout=30)
+        self.assertEqual(proc.returncode, 0, err)
+        self.assertIn("x.spec.html", subprocess.check_output(["git", "-C", str(aa), "log", "-1", "--format=%s"], text=True))
+
+    def test_reviewed_staged_only_change_sets_head_and_ignored_spec_is_refused(self):
+        state = self.work / "state"
+        started = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        rid = self.registry(state)["resource"][0]["id"]
+        spec = "docs/specs/review.spec.html"
+        original = self.spec.read_bytes()
+        self.spec.write_text("<title>review</title><p>staged</p>\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.repo), "add", spec], check=True)
+        self.spec.write_bytes(original)
+        done = self.run_cli("reviewed", "--state-dir", str(state), "--id", rid, state=state)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotIn("committed", done.stdout)
+        self.assertEqual(self.git_head(self.repo), self.base)
+        self.assertEqual(self.registry(state)["resource"][0]["base"], self.base)
+
+        # An ignored, untracked spec cannot be committed: a clear refusal, base unmoved.
+        ignored = self.repo / "docs/specs/ignored.spec.html"
+        ignored.write_text("<title>ignored</title>\n", encoding="utf-8")
+        (self.repo / ".gitignore").write_text("ignored.spec.html\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.repo), "add", ".gitignore"], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "ignore", "--", ".gitignore"], check=True)
+        port = self.registry(state)["process"]["port"]
+        head = self.git_head(self.repo)
+        added = self.run_cli(*self.register_args(state, spec="ignored"), state=state, ports=port)
+        self.assertEqual(added.returncode, 0, added.stderr)
+        ignored_id = next(r["id"] for r in self.registry(state)["resource"] if r["spec"].endswith("ignored.spec.html"))
+        refused = self.run_cli("reviewed", "--state-dir", str(state), "--id", ignored_id, state=state)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn("ignored by Git", refused.stderr)
+        self.assertEqual(self.git_head(self.repo), head)
+        self.assertEqual(next(r["base"] for r in self.registry(state)["resource"] if r["id"] == ignored_id), self.base)
+
+    def test_reviewed_treats_spec_names_as_literal_paths(self):
+        state = self.work / "state"
+        aa, aa_base = self.make_repo("aa", spec="docs/specs/a[1].spec.html")
+        (aa / "docs/specs/a1.spec.html").write_text("<title>a1</title>\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(aa), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(aa), "commit", "-qm", "a1"], check=True)
+        head = self.git_head(aa)
+        first = self.register_from(state, "aa", aa, head, spec="docs/specs/a[1].spec.html")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        rid = self.registry(state)["resource"][0]["id"]
+        # Only the glob-matching sibling is dirty: the literal spec is unchanged, so no commit.
+        (aa / "docs/specs/a1.spec.html").write_text("<title>a1</title><p>other work</p>\n", encoding="utf-8")
+        done = self.run_cli("reviewed", "--state-dir", str(state), "--id", rid, state=state)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(self.git_head(aa), head)
+        (aa / "docs/specs/a[1].spec.html").write_text("<title>a</title><p>reviewed</p>\n", encoding="utf-8")
+        done = self.run_cli("reviewed", "--state-dir", str(state), "--id", rid, state=state)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        changed = subprocess.check_output(["git", "-C", str(aa), "show", "--name-only", "--format=", "HEAD"], text=True).split("\n")
+        self.assertEqual([line for line in changed if line], ["docs/specs/a[1].spec.html"])
+        self.assertIn(" M docs/specs/a1.spec.html", subprocess.check_output(["git", "-C", str(aa), "status", "--porcelain"], text=True))
+
+    def test_register_ignores_a_torn_down_sibling_root(self):
+        state = self.work / "state"
+        aa, aa_base = self.make_repo("aa")
+        sc, sc_base = self.make_repo("sc")
+        first = self.register_from(state, "aa", aa, aa_base)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        port = self.registry(state)["process"]["port"]
+        second = self.register_from(state, "sc", sc, sc_base, ports=port)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        subprocess.run(["rm", "-rf", str(sc)], check=True)
+        again = self.register_from(state, "aa", aa, aa_base, ports=port)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        (aa / "docs/specs/y.spec.html").write_text("<title>y</title>\n", encoding="utf-8")
+        added = self.register_from(state, "aa", aa, aa_base, spec="docs/specs/y.spec.html", ports=port)
+        self.assertEqual(added.returncode, 0, added.stderr)
+        self.assertEqual(sorted(r["project"] for r in self.registry(state)["resource"]), ["aa", "aa", "sc"])
+
+    def test_css_referenced_assets_come_from_a_root_that_holds_them_after_an_upsert(self):
+        state = self.work / "state"
+        aa, aa_base = self.make_repo("aa")
+        (aa / "docs/specs/y.spec.html").write_text("<title>aa y</title>\n", encoding="utf-8")
+        (aa / "docs/specs/.style/font.woff2").write_bytes(b"aa font")
+        first = self.register_from(state, "aa", aa, aa_base)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        port = self.registry(state)["process"]["port"]
+        added = self.register_from(state, "aa", aa, aa_base, spec="docs/specs/y.spec.html", ports=port)
+        self.assertEqual(added.returncode, 0, added.stderr)
+        other, other_base = self.make_repo("aa-recreated")
+        (other / "docs/specs/.style/font.woff2").write_bytes(b"recreated font")
+        (other / "docs/specs/.style/x-only.css").write_text("/* x */", encoding="utf-8")
+        (other / "docs/specs/.style/x.png").write_bytes(b"x image")
+        moved = self.register_from(state, "aa", other, other_base, ports=port)
+        self.assertEqual(moved.returncode, 0, moved.stderr)
+        url = self.served_url(moved) + "/ann45/docs/specs/.style/"
+
+        def get(name, referer):
+            req = urllib.request.Request(url + name, headers={"Referer": url + referer})
+            with urllib.request.urlopen(req, timeout=4) as response:
+                return response.read()
+
+        # Only the moved row's root holds the image: served whatever the stylesheet Referer.
+        self.assertEqual(get("x.png", "spec.css"), b"x image")
+        # Both roots hold the font: the root that holds the referring stylesheet wins.
+        self.assertEqual(get("font.woff2", "x-only.css"), b"recreated font")
+
+    def test_host_and_server_share_one_spec_path_rule(self):
+        server = review_host._serve_module
+        for value in ("docs\\specs\\x.spec.html", "docs/specs/x.spec.html"):
+            self.assertEqual(review_host.normalise_spec(value), server.normalise_spec(value))
+        for value in ("/abs/x.spec.html", "docs/../x.spec.html", "docs//x.spec.html", "docs/x.html"):
+            with self.assertRaises(ValueError):
+                server.normalise_spec(value)
+            with self.assertRaises(review_host.LauncherError):
+                review_host.normalise_spec(value)
+
+    def test_register_reports_wake_after_releasing_the_state_lock(self):
+        state = self.work / "state"
+        held = []
+
+        def probe(owner):
+            descriptor = os.open(state / ".state.lock", os.O_RDWR)
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                held.append(False)
+            except BlockingIOError:
+                held.append(True)
+            finally:
+                os.close(descriptor)
+            return "unavailable"
+
+        env = {"SPEC_CHAT_APPROVED_INGRESS_PORTS": str(self.port()), "PATH": path_without_herdr()}
+        self.states.append(state)
+        with mock.patch.dict(os.environ, env), mock.patch.object(review_host, "wake_status", probe), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(review_host.main(self.register_args(state)), 0)
+        self.assertEqual(held, [False])
 
     def test_reviewed_and_remove_ignore_a_torn_down_sibling_root(self):
         state = self.work / "state"
