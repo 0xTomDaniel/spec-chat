@@ -213,6 +213,37 @@ class BaselineRouteTest(unittest.TestCase):
         self.assertEqual(result["base"], self.base)
         self.assertIsNone(result["html"])
         self.assertIsNone(result["htmlBase"])
+        self.assertIsNone(result["htmlBaseDate"])
+
+    def test_baseline_includes_range_facts_for_a_dirty_worktree(self):
+        result = self.baseline("specs/focus.spec.html", "main")
+        head = subprocess.check_output(("git", "rev-parse", "HEAD"), cwd=self.repo, text=True).strip()
+        head_date = subprocess.check_output(("git", "show", "-s", "--format=%cs", head), cwd=self.repo, text=True).strip()
+        base_date = subprocess.check_output(("git", "show", "-s", "--format=%cs", self.base), cwd=self.repo, text=True).strip()
+
+        self.assertEqual(result["head"], head)
+        self.assertTrue(result["dirty"])
+        self.assertEqual(result["headDate"], head_date)
+        self.assertEqual(result["htmlBaseDate"], base_date)
+        self.assertLessEqual(len(result["commits"]), 20)
+        self.assertEqual(result["commits"][0]["id"], head)
+        self.assertEqual(result["commits"][0]["date"], head_date)
+        self.assertEqual(result["commits"][0]["subject"], "stack base")
+
+    def test_baseline_history_is_capped_and_option_like_base_is_rejected(self):
+        for index in range(22):
+            self.spec.write_text(f'<p data-anchor="rule">revision {index}</p>\n')
+            run("git", "add", str(self.spec), cwd=self.repo)
+            run("git", "commit", "-m", f"revision {index}", cwd=self.repo)
+
+        result = self.baseline("specs/focus.spec.html", "main")
+        self.assertEqual(len(result["commits"]), 20)
+        self.assertEqual(result["commits"][0]["subject"], "revision 21")
+        self.assertEqual(result["commits"][-1]["subject"], "revision 2")
+
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.baseline("specs/focus.spec.html", "--output=/tmp/unexpected")
+        self.assertEqual(error.exception.code, 400)
 
     def test_committed_new_file_is_new_when_absent_from_base(self):
         seeded = self.specs / "seeded.spec.html"
