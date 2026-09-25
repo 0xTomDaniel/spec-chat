@@ -14,27 +14,43 @@
 <h1 data-anchor="title">Jev review suggestions</h1>
 <nav data-anchor="breadcrumbs">docs / specs / jev-suggestions.spec.html</nav>
 <p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-100">ANN-100</a>.</p>
-<p data-anchor="context">Follows the shared Jev contract, annotateanything <code>docs/specs/jev-seam.spec.html#contract</code> (ANN-49, Jev agreement, at <code>ed95fc8</code>, pairs <code>pair-corpus</code>, <code>pair-coverage</code>, <code>pair-audience</code>, <code>pair-thread</code>): typed suggestions, unsure below threshold, Jev off note, errors show and retry, state changes only on a human click, written criteria learned by use, one judgment record, cache per source revision, text only, server-side key. This spec owns Spec Chat's questions, criteria, and display; Spec Chat reads only specs and review threads, with no tracker or evidence dependency, and shares no code or data with annotateanything. Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a> and <a href="./compared-range.spec.html#change-base">compared range</a>.</p>
+<p data-anchor="context">Follows the shared Jev contract, annotateanything <code>docs/specs/jev-seam.spec.html#contract</code> (ANN-49, at <code>ed95fc8</code>). This spec owns Spec Chat's questions and display. Spec Chat reads only specs and review threads, with no tracker or evidence dependency. Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a> and <a href="./compared-range.spec.html#change-base">compared range</a>.</p>
 </header>
 
 <section data-spec-section="user-stories" data-anchor="user-stories">
 <h2>User stories</h2>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-change-type">As a reviewer in Git focus, I see which changed sections are scope or behavior changes and which are cosmetic, so I read the material ones first.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-orphan">As a reviewer, an orphaned comment suggests where its passage probably moved, and one click moves it there; nothing moves unless I click.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-resolved">As a reviewer, an open thread whose section was revised shows when the new text looks like it resolves my comment in spirit, so I can confirm and resolve it without rereading every thread.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-corpus">As a reviewer, a changed clause that contradicts, overlaps, or oversteps another clause in this spec or another spec is flagged with a link to that clause, before anyone builds on it.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-coverage">As a reviewer, a user story that no acceptance criterion verifies, and a criterion that no story backs, are flagged, so gaps and orphan criteria surface while shaping.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-reading">As a reader, a reading view puts the clauses written for me first and dims the internals, so I get what the spec means for me without losing anything.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-neutral">As a reviewer, when Jev is off, unsure, or failing, a small note says so and the page otherwise works exactly as it does today.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-orphan">As a reviewer, an orphaned comment suggests where its passage moved, and one click moves it there.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-resolved">As a reviewer, an open thread whose section was revised shows when the new text looks like it resolves my comment, so I resolve it without rereading.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-corpus">As a reviewer, a changed clause that contradicts, overlaps, or oversteps another clause in this or another spec is flagged with a link to it.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-coverage">As a reviewer, a story no criterion verifies and a criterion no story backs are flagged while shaping.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-reading">As a reader, a reading view puts the clauses written for me first and dims the internals, hiding nothing.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-neutral">As a reviewer, when Jev is off, unsure, or failing, a small note says so and the page otherwise works as today.</p>
 <p data-user-story data-user-facing="false" data-anchor="story-record">As the operator, I can see for any suggestion which model, question set, and sources produced it, and with what confidence.</p>
 </section>
 
-<section data-anchor="flow">
-<h2>Where Jev runs</h2>
-<p data-anchor="flow-server-only">Only the review server calls Jev: OpenRouter model <code>typesafe/jev-1.13</code> through <code>POST /api/alpha/decisions</code>. The browser never sees the key or the provider.</p>
-<p data-anchor="flow-key">The server reads <code>OPENROUTER_API_KEY</code> from its environment, loaded from the box file at launch. The key never enters specs, spools, logs, judgment records, bundles, or pull requests.</p>
-<p data-anchor="flow-off">With no key, the server reports Jev off: the page shows one small <code>Jev off</code> note in focus and is otherwise today's page.</p>
-<p data-anchor="flow-own-state">The browser sends only the spec path, the compared base, and nothing else. The server builds every question from its own served file, local Git, and the spec's spool, so a public URL cannot submit arbitrary text for classification.</p>
+<section data-anchor="features">
+<h2>Suggestions</h2>
+<div class="table-scroll" data-anchor="features-table-scroll">
+<table data-anchor="features-table">
+<thead><tr><th>Suggestion</th><th>Asked for</th><th>Compared with</th><th>Labels that show</th><th>Shown as</th></tr></thead>
+<tbody>
+<tr data-anchor="feature-type"><td><a href="#change-type">Change type</a></td><td>Each changed root section in Git focus</td><td>Its text at the base</td><td>scope, behavioral, clarification, cosmetic</td><td>Badge and focus treatment</td></tr>
+<tr data-anchor="feature-orphan"><td><a href="#orphan">Orphan location</a></td><td>Each thread whose anchor is gone</td><td>Up to 8 current anchors that best match its stored quote</td><td>one candidate</td><td><code>Possibly moved to:</code> with <code>Go to</code> and <code>Move comment here</code> on its card</td></tr>
+<tr data-anchor="feature-resolved"><td>Resolved in spirit</td><td>Each open thread whose section changed since its newest human message</td><td>Its human messages, not agent replies</td><td>resolved in spirit</td><td><code>Looks resolved</code> on its card and pin</td></tr>
+<tr data-anchor="feature-corpus"><td>Draft checks</td><td>Each changed leaf clause in Git focus</td><td>Up to 8 best matches in the same spec, always its non-goals, and up to 8 in other served specs</td><td>contradicts, overlaps, oversteps</td><td>e.g. <code>Contradicts #non-goal-text</code> on the clause, linking there</td></tr>
+<tr data-anchor="feature-coverage"><td><a href="#coverage">Coverage</a></td><td>Every story and criterion, in any view</td><td>Every criterion or story in the same spec</td><td>verifies, counted per item</td><td><code>No criterion covers this</code> or <code>No story backs this</code></td></tr>
+<tr data-anchor="feature-reading"><td><a href="#reading">Reading view</a></td><td>Every leaf clause, while reading view is on</td><td>Its reader: someone who uses the result, not builds it</td><td>for you, internals</td><td>Order within the section and dimming</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="features-caption">These are the contract's pairs <code>pair-thread</code>, <code>pair-corpus</code>, <code>pair-coverage</code>, and <code>pair-audience</code>, plus change type and orphan location. Unlisted labels, such as unrelated or not addressed, show nothing.</p>
+</section>
+
+<section data-anchor="shared">
+<h2>Every suggestion</h2>
+<p data-anchor="flow-server-only">Only the review server calls Jev, OpenRouter <code>typesafe/jev-1.13</code> through <code>POST /api/alpha/decisions</code>, with <code>OPENROUTER_API_KEY</code> from its environment. The key never reaches the browser, a spec, spool, log, record, or pull request.</p>
+<p data-anchor="flow-own-state">The browser sends only the spec path and compared base. The server builds every question from its own served files, local Git, and the spool, so a public URL cannot submit text for classification.</p>
 <figure data-anchor="flow-figure">
 <div class="rail-wrap" data-anchor="flow-figure-scroll">
 <svg viewBox="0 0 780 290" style="min-width: 620px" role="img" aria-label="Swimlane. Browser: 1 focus renders as today, then calls GET /api/jev with path and base. Review server: 2 builds changed sections and threads from its own file, Git, and spool; on a cache hit it goes straight to 5; on a miss it posts to Jev. Jev: 4 returns a choice with probabilities. Review server: 5 applies thresholds, writes the judgment record, and caches. Browser: 6 shows badge and treatment, or stays neutral.">
@@ -70,134 +86,92 @@
 </div>
 <figcaption data-anchor="flow-figure-caption">One suggestion round: the page never waits for Jev, and the key never leaves the server.</figcaption>
 </figure>
-</section>
-
-<section data-anchor="change-type">
-<h2>Change type in Git focus</h2>
-<p data-anchor="type-sections">Each changed root section of the current focus comparison gets one Choice question over its base text and current text: scope, behavioral, clarification, or cosmetic.</p>
-<div class="table-scroll" data-anchor="type-table-scroll">
-<table data-anchor="type-table">
-<thead><tr><th>Answer</th><th>Criterion</th><th>Focus treatment and badge</th></tr></thead>
+<div class="table-scroll" data-anchor="states-table-scroll">
+<table data-anchor="states-table">
+<thead><tr><th>Answer</th><th>Item shows</th></tr></thead>
 <tbody>
-<tr data-anchor="type-scope"><td>scope, confident</td><td>Adds, removes, or moves a capability, surface, or non-goal</td><td>Changed highlight, strongest; badge <code>Scope</code></td></tr>
-<tr data-anchor="type-behavioral"><td>behavioral, confident</td><td>Alters what the result does: a rule, interface, edge case, or criterion</td><td>Changed highlight; badge <code>Behavior</code></td></tr>
-<tr data-anchor="type-clarification"><td>clarification, confident</td><td>Same behavior, meaning stated more precisely</td><td>Changed highlight, lighter; badge <code>Clarification</code></td></tr>
-<tr data-anchor="type-cosmetic"><td>cosmetic, confident</td><td>Wording, typo, order, or style with no change in meaning</td><td>Dimmed, still 4.5:1 readable; badge <code>Cosmetic</code></td></tr>
-<tr data-anchor="type-unsure"><td>below threshold</td><td>None</td><td>Today's changed highlight; small badge <code>Unsure</code>, never a best guess</td></tr>
-<tr data-anchor="type-none"><td>oversize or off</td><td>None</td><td>Today's changed highlight; no badge</td></tr>
-<tr data-anchor="type-error"><td>error or timeout</td><td>None</td><td>Today's changed highlight; small marker <code>Jev retrying</code>, then <code>Jev unavailable</code></td></tr>
+<tr data-anchor="state-label"><td>Confident label</td><td>The suggestion, as listed above</td></tr>
+<tr data-anchor="state-unsure"><td>Below threshold</td><td>Small <code>unsure</code>, never a best guess</td></tr>
+<tr data-anchor="state-error"><td>Error or timeout</td><td>Small <code>Jev retrying</code>; the server retries at 2, 4, and 8 seconds, then <code>Jev unavailable</code> until the next view</td></tr>
+<tr data-anchor="state-oversize"><td>Oversize state</td><td>Nothing</td></tr>
+<tr data-anchor="state-off"><td>No key</td><td>One page-level <code>Jev off</code> note</td></tr>
 </tbody>
 </table>
 </div>
-<p data-anchor="retry-rule">On error or timeout the server retries automatically with bounded backoff, at most 3 retries at 2, 4, and 8 seconds; the page asks again while any item is retrying.</p>
-<p data-anchor="retry-marker">The marker clears when the answer lands; after the last retry it reads <code>Jev unavailable</code> until the next view. The same marker applies to an orphaned card.</p>
-<p data-anchor="threshold-moderate">Each question set states a moderate starting threshold, so labels show often and <code>Unsure</code> is the exception.</p>
-<p data-anchor="type-order">No label hides, collapses, or reorders a section; badges carry text, never color alone.</p>
-<p data-anchor="type-async">Focus renders at once as today; labels arrive later, and a slow or missing label never blocks or shifts review controls.</p>
-<p data-anchor="type-base-change">When the reviewer changes the base through the range bar, the page drops all labels at once, re-diffs as today, and asks again for the new base.</p>
-<p data-anchor="type-unchanged">Unchanged sections and pages without <code>focus=changes</code> are never classified.</p>
+<p data-anchor="shared-never-act">No suggestion edits a spec, writes the spool, changes a thread, or affects Finish; only a human click on <code>Move comment here</code> writes.</p>
+<p data-anchor="shared-never-hide">Nothing is hidden; only reading view reorders; dimmed text stays 4.5:1 readable; badges carry text, not color alone.</p>
+<p data-anchor="type-async">The page renders at once as today and labels arrive later; a base change drops all labels and asks again.</p>
+<p data-anchor="cache-key">Answers are cached per revision, item, and question-set version; the revision is base plus head, or the served bytes when dirty, so only a new head, base, or version asks again.</p>
+<p data-anchor="record-fields">Every call, including each failed attempt, appends one contract <code>#record</code> to JSONL in the server's state directory, outside spools and Git, with addresses but no source text or key.</p>
+<p data-anchor="qset-data">Each suggestion has one versioned question set in this repository: instructions, criteria with examples, and a moderate starting threshold. It is on whenever a key exists and is tuned from judgment records and what reviewers do next; any change is a new version.</p>
+</section>
+
+<section data-anchor="change-type">
+<h2>Change type</h2>
+<div class="table-scroll" data-anchor="type-table-scroll">
+<table data-anchor="type-table">
+<thead><tr><th>Label</th><th>Criterion</th><th>Focus treatment and badge</th></tr></thead>
+<tbody>
+<tr data-anchor="type-scope"><td>scope</td><td>Adds, removes, or moves a capability, surface, or non-goal</td><td>Changed highlight, strongest; <code>Scope</code></td></tr>
+<tr data-anchor="type-behavioral"><td>behavioral</td><td>Alters what the result does: a rule, interface, edge case, or criterion</td><td>Changed highlight; <code>Behavior</code></td></tr>
+<tr data-anchor="type-clarification"><td>clarification</td><td>Same behavior, meaning stated more precisely</td><td>Changed highlight, lighter; <code>Clarification</code></td></tr>
+<tr data-anchor="type-cosmetic"><td>cosmetic</td><td>Wording, typo, order, or style with no change in meaning</td><td>Dimmed; <code>Cosmetic</code></td></tr>
+</tbody>
+</table>
+</div>
 </section>
 
 <section data-anchor="orphan">
-<h2>Orphaned comment location</h2>
-<p data-anchor="orphan-which">A thread is orphaned when its anchor no longer exists in the current spec; today it keeps its sidebar card and stored quote and shows no pin.</p>
-<p data-anchor="orphan-question">The server picks up to 8 current anchors whose text best matches the stored quote, then asks one Choice question over the quote and candidate texts: one candidate, or none.</p>
-<p data-anchor="orphan-hint">A confident candidate adds <code>Possibly moved to: &lt;section heading&gt;</code> to the orphaned thread's card, with <code>Go to</code>, which scrolls to and outlines that section, and <code>Move comment here</code>.</p>
-<p data-anchor="orphan-move">Clicking <code>Move comment here</code> appends one human <code>move</code> event naming the thread and the new anchor; the thread then pins to that section, keeping its messages, stored quote, and status.</p>
+<h2>Moving an orphaned comment</h2>
+<p data-anchor="orphan-move"><code>Move comment here</code> appends one human <code>move</code> event naming the thread and new anchor; the thread pins there with its messages, quote, and status unchanged.</p>
 <p data-anchor="orphan-move-agent">The agent reads a move at the next hand-off as the thread's new anchor and owes it no reply.</p>
-<p data-anchor="orphan-no-move">Without that click the suggestion never re-attaches the thread, writes a spool event, or changes status.</p>
-<p data-anchor="orphan-none">A below-threshold answer adds a small <code>Location unsure</code> note; none, oversize, or off shows today's card only.</p>
-</section>
-
-<section data-anchor="resolved">
-<h2>Open thread resolved in spirit</h2>
-<p data-anchor="resolved-pair">This is the contract's pair <code>agree(revised spec text, open review comment)</code>: labels <code>resolved in spirit</code>, <code>not addressed</code>, or <code>unsure</code>.</p>
-<p data-anchor="resolved-which">A thread is asked when it is open, pending or acknowledged, its anchor exists, and its anchored section's text differs from the spec at the thread's newest human message.</p>
-<p data-anchor="resolved-state">The question receives the thread's human messages, the section's text at that message, and its current text; agent replies are left out, so Jev judges the text, not the claim.</p>
-<p data-anchor="resolved-flag">A confident <code>resolved in spirit</code> adds a small <code>Looks resolved</code> label to the thread's card and pin; <code>not addressed</code> adds nothing, and below threshold adds <code>unsure</code>.</p>
-<p data-anchor="resolved-human">Resolving stays the existing human click; the label never resolves, reopens, or changes status, and never changes Finish eligibility.</p>
-<p data-anchor="resolved-trigger">A new head or base asks again; a new human reply makes the thread's comparison point move to that reply.</p>
-</section>
-
-<section data-anchor="corpus">
-<h2>Draft against its own and other specs</h2>
-<p data-anchor="corpus-pair">This is the contract's <code>pair-corpus</code>: labels <code>contradicts</code>, <code>overlaps</code>, <code>oversteps</code>, or <code>unrelated</code>, or <code>unsure</code>.</p>
-<p data-anchor="corpus-which">In Git focus, each changed clause or criterion, a changed anchored leaf block, is compared with other clauses and criteria in the same spec, including its non-goals and modular boundaries, and in the other specs of the served collection at head.</p>
-<p data-anchor="corpus-candidates">Deterministic code picks up to 8 same-spec and up to 8 other-spec clauses whose text best matches, always including the spec's own non-goals and any modular boundary that names the same surface; one question per pair.</p>
-<p data-anchor="corpus-flag">Each confident flag adds a small label on the changed clause, such as <code>Contradicts #non-goal-text</code> or <code>Contradicts compared-range#bar-flow</code>, linking to that clause; a clause may carry several, and below threshold adds <code>unsure</code>.</p>
-<p data-anchor="corpus-inert">Flags never edit either spec, never block Finish, and never change thread state.</p>
 </section>
 
 <section data-anchor="coverage">
-<h2>Stories and criteria cover each other</h2>
-<p data-anchor="coverage-pair">This is the contract's <code>pair-coverage</code>: each user story is paired with each acceptance criterion in the same spec: labels <code>verifies</code>, <code>unrelated</code>, or <code>unsure</code>.</p>
-<p data-anchor="coverage-story">A story with no confident <code>verifies</code> shows <code>No criterion covers this</code>; a criterion with none shows <code>No story backs this</code>.</p>
-<p data-anchor="coverage-unsure">If any of an item's pairs is unsure and none verifies, the item shows <code>unsure</code> instead of a gap.</p>
-<p data-anchor="coverage-when">Coverage runs on every HTTP-served spec that marks stories and criteria, in normal view and Git focus, and asks again on a new head.</p>
-<p data-anchor="coverage-inert">Coverage flags never edit the spec or block Finish.</p>
+<h2>Coverage</h2>
+<p data-anchor="coverage-story">An item with no confident verifies is a gap; if any of its pairs is unsure, it shows <code>unsure</code> instead.</p>
 </section>
 
 <section data-anchor="reading">
 <h2>Reading view</h2>
-<p data-anchor="reading-pair">This is the contract's <code>pair-audience</code>: each clause, an anchored leaf block, is labeled <code>for you</code> or <code>internals</code> for a reader who uses the result rather than builds it.</p>
-<p data-anchor="reading-toggle">A <code>Reading view</code> control on every HTTP-served spec turns it on and off; it is off by default, and turning it on turns Git focus off, and back.</p>
-<p data-anchor="reading-order">In reading view, within each section, <code>for you</code> clauses come first and <code>internals</code> follow, dimmed and still 4.5:1 readable; nothing is hidden and sections keep their order.</p>
-<p data-anchor="reading-neutral">A clause below threshold shows a small <code>unsure</code> and stays in place undimmed, as do failed or oversize clauses; turning reading view off restores source order exactly.</p>
-<p data-anchor="reading-comments">Comments, pins, and threads work unchanged in reading view, anchored to the same blocks.</p>
-</section>
-
-<section data-anchor="records">
-<h2>Cache and judgment records</h2>
-<p data-anchor="cache-key">Answers are cached per source revision, section anchor, thread id, or anchor pair, and question-set version. The revision is the compared base plus head, or the served bytes for a dirty working copy, so a new head or base classifies again and nothing else does.</p>
-<p data-anchor="cache-effect">A cached answer is reused without calling Jev again, so reload and repeat visits cost nothing.</p>
-<p data-anchor="record-fields">Every call appends one judgment record in the contract's format, <code>#record</code>, including each failed attempt with its attempt number: addresses and revision, never source text or the key.</p>
-<p data-anchor="record-where">Records are append-only JSONL in the review server's state directory on the box, outside every spool and outside Git.</p>
-</section>
-
-<section data-anchor="calibration">
-<h2>Question sets and learning by doing</h2>
-<p data-anchor="qset-data">The change-type, orphan-location, resolved-in-spirit, corpus, coverage, and audience question sets are versioned data in this repository: instructions, the criteria above with examples, and its stated threshold.</p>
-<p data-anchor="qset-on">Every set is on whenever a key is configured; there is no labeled set, calibration command, or precision gate.</p>
-<p data-anchor="qset-learn">Criteria, examples, and thresholds are tuned from use: judgment records and what the reviewer does next, such as ignoring a label, resolving, or moving. Any change is a new question-set version, which classifies again.</p>
+<p data-anchor="reading-toggle">A <code>Reading view</code> control on every HTTP-served spec is off by default and exclusive with Git focus.</p>
+<p data-anchor="reading-order">Within each section, <code>for you</code> clauses come first and <code>internals</code> follow, dimmed; unsure or failed clauses stay in place, undimmed.</p>
+<p data-anchor="reading-comments">Turning it off restores exact source order; comments and pins work unchanged throughout.</p>
 </section>
 
 <section data-spec-section="acceptance" data-acceptance-scope="jev-suggestions" data-anchor="acceptance">
 <h2>Acceptance criteria</h2>
-<p data-acceptance-criterion data-anchor="acceptance-types"><span data-acceptance-scenario>When a served spec change fixes a typo in one section and changes a rule in another, in Git focus with Jev on,</span> <span data-acceptance-observable>the rule's section shows Behavior with the changed highlight and the typo's section shows Cosmetic, dimmed and still readable.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-neutral"><span data-acceptance-scenario>When a label is below threshold, there is no key, or the state is oversize,</span> <span data-acceptance-observable>the section keeps today's changed highlight with, respectively, an <code>Unsure</code> badge, one page-level <code>Jev off</code> note, or nothing added, and review controls behave unchanged.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-order"><span data-acceptance-scenario>For any combination of labels,</span> <span data-acceptance-observable>every changed and unchanged section stays present, in source order, and readable at 4.5:1 contrast.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-retry"><span data-acceptance-scenario>When Jev errors or times out for a section,</span> <span data-acceptance-observable>that section keeps today's highlight with a <code>Jev retrying</code> marker, the server retries at most 3 times at 2, 4, and 8 seconds, and the marker clears when the label lands or reads <code>Jev unavailable</code> after the last retry.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-base"><span data-acceptance-scenario>When the reviewer changes the base in the range bar,</span> <span data-acceptance-observable>old labels disappear immediately and the new base's labels replace them without a reload.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-orphan"><span data-acceptance-scenario>When a commented passage moves to a new section and its anchor is removed,</span> <span data-acceptance-observable>the orphaned thread's card shows <code>Possibly moved to:</code> that section, and <code>Go to</code> scrolls to and outlines it; a deleted passage shows today's card only.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-move"><span data-acceptance-scenario>When the reviewer clicks <code>Move comment here</code>,</span> <span data-acceptance-observable>exactly one human <code>move</code> event is appended, the thread pins to the suggested section after reload with its messages, quote, and status unchanged, and the next hand-off needs no agent reply for it.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-resolved"><span data-acceptance-scenario>When one open thread's section was revised to do what its comment asked and another's was revised in an unrelated way,</span> <span data-acceptance-observable>the first thread's card and pin show <code>Looks resolved</code>, the second shows nothing, and both stay open until the human resolves them.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-corpus"><span data-acceptance-scenario>When a draft clause states the opposite of a clause in another served spec, and another draft clause restates one,</span> <span data-acceptance-observable>the first shows <code>Contradicts</code> and the second <code>Overlaps</code>, each linking to that other clause, and Finish stays available.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-self"><span data-acceptance-scenario>When a draft clause adds behavior its own spec lists as a non-goal,</span> <span data-acceptance-observable>it shows <code>Contradicts</code> linking to that non-goal.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-coverage"><span data-acceptance-scenario>When a spec has a story no criterion verifies and a criterion no story backs,</span> <span data-acceptance-observable>the story shows <code>No criterion covers this</code>, the criterion shows <code>No story backs this</code>, and adding a matching criterion or story clears each on the next head.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-reading"><span data-acceptance-scenario>When the reviewer turns on reading view,</span> <span data-acceptance-observable>within each section confident <code>for you</code> clauses come first and <code>internals</code> follow dimmed at 4.5:1 or better, every clause stays present, and turning it off restores the exact source order.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-inert"><span data-acceptance-scenario>Across a review session with Jev on, any flags or reading view, and no human move click,</span> <span data-acceptance-observable>the spool, thread statuses, Finish eligibility, and spec bytes match a session with Jev off.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-cache"><span data-acceptance-scenario>When the same page, base, and head load a second time,</span> <span data-acceptance-observable>no new Jev call is made and the same labels show.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-record"><span data-acceptance-scenario>For every shown or withheld answer,</span> <span data-acceptance-observable>one judgment record carries every contract field, with no source text, and no page, record, log, or response contains the key.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-own-state"><span data-acceptance-scenario>When a client sends section text or any parameter beyond path and base,</span> <span data-acceptance-observable>the server ignores it and classifies only its own served file, Git, and spool.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-types"><span data-acceptance-scenario>When a spec change fixes a typo in one section and changes a rule in another, in Git focus,</span> <span data-acceptance-observable>the rule shows <code>Behavior</code> highlighted and the typo shows <code>Cosmetic</code>, dimmed and readable.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-neutral"><span data-acceptance-scenario>When an answer is below threshold, fails, or there is no key,</span> <span data-acceptance-observable>the item shows <code>unsure</code>, <code>Jev retrying</code> then the label or <code>Jev unavailable</code> after 3 retries, or the page shows one <code>Jev off</code> note, and review controls work unchanged.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-base"><span data-acceptance-scenario>When the reviewer changes the base,</span> <span data-acceptance-observable>old labels disappear at once and the new base's labels replace them without a reload.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-orphan"><span data-acceptance-scenario>When a commented passage moves and its anchor is removed,</span> <span data-acceptance-observable>its card shows <code>Possibly moved to:</code> that section with <code>Go to</code>; a deleted passage shows today's card.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-move"><span data-acceptance-scenario>When the reviewer clicks <code>Move comment here</code>,</span> <span data-acceptance-observable>one <code>move</code> event is appended, the thread pins to that section after reload, and the next hand-off needs no reply for it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-resolved"><span data-acceptance-scenario>When one open thread's section is revised to do what it asked and another's is revised unrelatedly,</span> <span data-acceptance-observable>only the first shows <code>Looks resolved</code>, and both stay open.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-corpus"><span data-acceptance-scenario>When a draft clause adds a behavior its own spec lists as a non-goal, and another restates a clause of another served spec,</span> <span data-acceptance-observable>the first shows <code>Contradicts</code> and the second <code>Overlaps</code>, each linking to that clause.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-coverage"><span data-acceptance-scenario>When a spec has a story no criterion verifies and a criterion no story backs,</span> <span data-acceptance-observable>each shows its gap label, and adding the missing counterpart clears it on the next head.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-reading"><span data-acceptance-scenario>When the reviewer turns reading view on and off,</span> <span data-acceptance-observable><code>for you</code> clauses lead each section with <code>internals</code> dimmed after them, every clause stays present, and off restores exact source order.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-inert"><span data-acceptance-scenario>Across a session with any suggestions and no move click,</span> <span data-acceptance-observable>spool, thread statuses, Finish eligibility, and spec bytes match Jev off, and every item stays present and 4.5:1 readable.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-cache"><span data-acceptance-scenario>When the same page, base, and head load again,</span> <span data-acceptance-observable>no Jev call is made and the same labels show.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-record"><span data-acceptance-scenario>For every call,</span> <span data-acceptance-observable>one record carries every contract field and no source text, and no page, record, log, or response contains the key.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-own-state"><span data-acceptance-scenario>When a client sends text or parameters beyond path and base,</span> <span data-acceptance-observable>the server ignores them.</span></p>
 </section>
 
 <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
 <h2>Modular boundaries</h2>
-<p data-modular-boundary data-anchor="boundary-seam"><span data-boundary-responsibility>The review server's Jev seam owns questions, provider calls, thresholds, cache, and judgment records.</span> <span data-boundary-seam>Caller-facing seam: <code>GET /api/jev?path=&lt;spec&gt;&amp;base=&lt;id&gt;</code> returns on or off, and per changed root anchor, changed clause, story, criterion, orphaned thread id, and revised open thread id a label, flags, or candidate, none, unsure, retrying, or unavailable; <code>&amp;view=reading</code> returns per-clause audience labels.</span> <span data-boundary-dependency>Dependency direction: calls Jev on OpenRouter as an external provider and reads local Git, the served collection's specs, and the spool; no tracker or evidence source; nothing calls back into the runtime.</span> <span data-boundary-scope>Observable scope: the JSON response and judgment records, in single-root and registry modes.</span></p>
-<p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns badges, focus treatments, corpus and coverage flags, reading view, error markers, orphan hints, <code>Looks resolved</code> labels, and the human <code>move</code> event.</span> <span data-boundary-seam>Caller-facing seam: the rendered Git focus, orphaned thread cards, and the <code>move</code> event in the spool schema.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; consumes the seam route and holds no model, threshold, or key logic.</span> <span data-boundary-scope>Observable scope: what the reviewer sees in focus and on orphaned cards.</span></p>
-<p data-modular-boundary data-anchor="boundary-qsets"><span data-boundary-responsibility>Question sets own instructions, criteria, examples, and thresholds.</span> <span data-boundary-seam>Caller-facing seam: a question-set id and version.</span> <span data-boundary-dependency>Dependency direction: self-contained data read by the seam.</span> <span data-boundary-scope>Observable scope: the set version named in each judgment record.</span></p>
+<p data-modular-boundary data-anchor="boundary-seam"><span data-boundary-responsibility>The review server's Jev seam owns questions, provider calls, retries, thresholds, cache, and records.</span> <span data-boundary-seam>Caller-facing seam: <code>GET /api/jev?path=&lt;spec&gt;&amp;base=&lt;id&gt;[&amp;view=reading]</code>, returning on or off and one state per item.</span> <span data-boundary-dependency>Dependency direction: calls OpenRouter as an external provider; reads local Git, served specs, and the spool; nothing calls back.</span> <span data-boundary-scope>Observable scope: the JSON response and records, in single-root and registry modes.</span></p>
+<p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns every label, treatment, marker, reading view, and the <code>move</code> event.</span> <span data-boundary-seam>Caller-facing seam: the rendered page and the <code>move</code> event in the spool schema.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; consumes the seam route; no model, threshold, or key logic.</span> <span data-boundary-scope>Observable scope: what the reviewer sees.</span></p>
+<p data-modular-boundary data-anchor="boundary-qsets"><span data-boundary-responsibility>Question sets own instructions, criteria, examples, and thresholds.</span> <span data-boundary-seam>Caller-facing seam: a set id and version.</span> <span data-boundary-dependency>Dependency direction: self-contained data read by the seam.</span> <span data-boundary-scope>Observable scope: the version named in each record.</span></p>
 </section>
 
 <section data-anchor="proof">
 <h2>Proof</h2>
-<p data-anchor="proof-first-test">Smallest first failing test: a fake provider answer below threshold returns no label and appends a withheld record.</p>
-<p data-anchor="proof-evidence">Evidence: server tests behind a fake provider, runtime tests behind a fake route, one live smoke run per set against real Jev, and a QA bundle of Git focus and an orphaned card on a real spec change.</p>
+<p data-anchor="proof-first-test">First failing test: a fake provider answer below threshold returns unsure and appends an unsure record.</p>
+<p data-anchor="proof-evidence">Evidence: seam and runtime tests behind fakes, one live run per question set against real Jev, and a QA bundle on a real spec change.</p>
 </section>
 
 <section data-anchor="non-goals">
 <h2>Non-goals</h2>
-<p data-anchor="non-goal-text">Generated text of any kind (ANN-96), other providers, or budget rules.</p>
-<p data-anchor="non-goal-later">The contract's other pairs: stale proof and board flags (ANN-49). Comparing with specs outside the served collection.</p>
+<p data-anchor="non-goal-text">Generated text of any kind (ANN-96), other providers, budget rules, specs outside the served collection, and the contract's other pairs (ANN-49).</p>
 </section>
 
 </article>
