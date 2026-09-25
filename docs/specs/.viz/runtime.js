@@ -67,7 +67,7 @@ function httpTransport() {
     ready: Promise.resolve(true),
     async listEvents() {
       const r = await fetch('/api/events?dir=' + encodeURIComponent(dir));
-      return r.json();
+      return { events: await r.json(), wake: r.headers.get('X-Spec-Chat-Wake') || null };
     },
     async postEvent(body) {
       await fetch('/api/events?dir=' + encodeURIComponent(dir) + '&actor=human', { method: 'POST', body: JSON.stringify(body) });
@@ -918,6 +918,13 @@ function handoffObservation(events, nowMs) {
   if (events.some(event => event.actor === 'agent' && event.name > handoff.name)) return null;
   const createdAt = Date.parse(handoff.body.createdAt || '');
   return Number.isFinite(createdAt) && nowMs - createdAt >= 30000 ? 'queued' : 'waiting';
+}
+
+function handoffAgentText(observation, wake, last) {
+  if (observation && wake === 'failed') return '· wake failed; send a new chat message to resume';
+  if (observation === 'waiting' || (observation === 'queued' && wake === 'deferred')) return '· handed off, waiting for agent';
+  if (observation === 'queued') return '· automatic wake did not occur; send a new chat message to resume';
+  return last ? '· agent last event ' + new Date(last.body.createdAt).toLocaleTimeString() : '· no agent events yet';
 }
 
 function ingest(events) {
@@ -1779,17 +1786,12 @@ function toast(msg) {
 /* ---------------- loops ---------------- */
 async function refresh() {
   try {
-    ingest(await state.transport.listEvents());
+    const listed = await state.transport.listEvents();
+    const wake = Array.isArray(listed) ? null : listed.wake;
+    ingest(Array.isArray(listed) ? listed : listed.events);
     const agentEvents = state.events.filter(e => e.actor === 'agent');
-    const last = agentEvents[agentEvents.length - 1];
     const observation = handoffObservation(state.events, Date.now());
-    document.getElementById('hx-agent').textContent = observation === 'waiting'
-      ? '· handed off, waiting for agent'
-      : observation === 'queued'
-        ? '· automatic wake did not occur; send a new chat message to resume'
-        : last
-          ? '· agent last event ' + new Date(last.body.createdAt).toLocaleTimeString()
-          : '· no agent events yet';
+    document.getElementById('hx-agent').textContent = handoffAgentText(observation, wake, agentEvents[agentEvents.length - 1]);
     status('connected · ' + state.transport.label + ' · ' + state.threads.size + ' threads');
     if (location.hash.includes('hxdebug') && !state._beaconed) {
       state._beaconed = true;

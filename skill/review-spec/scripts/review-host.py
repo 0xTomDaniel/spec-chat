@@ -11,6 +11,7 @@ import ipaddress
 import json
 import os
 import re
+import shutil
 import signal
 import socket
 import subprocess
@@ -543,6 +544,26 @@ def running_url(log_path: Path, port: int, args: argparse.Namespace) -> str:
     return f"http://{host}:{port}"
 
 
+def wake_status(owner: str) -> str:
+    """Report whether Herdr resolves the owner pane; never prompts it."""
+    if not shutil.which("herdr") or not shutil.which("herdr-say"):
+        return "unavailable"
+    try:
+        result = subprocess.run(("herdr", "agent", "get", owner), text=True, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5)
+        agent = json.loads(result.stdout)["result"]["agent"] if result.returncode == 0 else {}
+    except (OSError, subprocess.TimeoutExpired, KeyError, TypeError, ValueError):
+        agent = {}
+    return "verified" if isinstance(agent, dict) and agent.get("pane_id") == owner else "unavailable"
+
+
+def print_urls(url: str, additions: list[dict[str, str]]) -> None:
+    print(f"review URL: {url}")
+    for item in additions:
+        owner = item["owner"]
+        print(f"{item['id']} URL: {url.rstrip('/')}{stable_path(item)} wake={wake_status(owner)} owner={owner}")
+
+
 def register(args: argparse.Namespace) -> int:
     state = state_dir(args)
     registry, log_path, _ = paths(state)
@@ -562,9 +583,7 @@ def register(args: argparse.Namespace) -> int:
                 url = running_url(log_path, port, args)
                 for item in parsed:
                     prove_resource(url, item)
-                print(f"review URL: {url}")
-                for item in additions:
-                    print(f"{item['id']} URL: {url.rstrip('/')}{stable_path(item)}")
+                print_urls(url, additions)
                 return 0
 
             bind = bind_host(args)
@@ -593,9 +612,7 @@ def register(args: argparse.Namespace) -> int:
                 prove_resource(url, item)
             process = {"pid": child.pid, "port": port}
             write_registry(registry, candidate, process)
-            print(f"review URL: {url}")
-            for item in additions:
-                print(f"{item['id']} URL: {url.rstrip('/')}{stable_path(item)}")
+            print_urls(url, additions)
             return 0
         except BaseException:
             if child is not None and child.poll() is None:

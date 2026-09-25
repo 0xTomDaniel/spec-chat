@@ -23,6 +23,14 @@ assert _spec.loader is not None
 _spec.loader.exec_module(review_host)
 
 
+_wake_spec = importlib.util.spec_from_file_location("review_host_wake", ROOT / "tests/review-host-wake.py")
+review_host_wake = importlib.util.module_from_spec(_wake_spec)
+assert _wake_spec.loader is not None
+_wake_spec.loader.exec_module(review_host_wake)
+FakeHerdr = review_host_wake.FakeHerdr
+path_without_herdr = review_host_wake.path_without_herdr
+
+
 def request(url, *, method="GET", body=None):
     try:
         with urllib.request.urlopen(urllib.request.Request(url, data=body, method=method), timeout=4) as response:
@@ -76,11 +84,12 @@ class ReviewHostTest(unittest.TestCase):
     def resource(self, project="review", spec="review"):
         return f"{project}={self.repo}:docs/specs/{spec}.spec.html@{self.base}"
 
-    def run_cli(self, *args, state=None, ports=None):
+    def run_cli(self, *args, state=None, ports=None, herdr=None):
         state = Path(state or self.work / "state")
         if state not in self.states:
             self.states.append(state)
         env = os.environ.copy()
+        env.update(herdr.env() if herdr else {"PATH": path_without_herdr()})
         env["SPEC_CHAT_APPROVED_INGRESS_PORTS"] = str(ports or self.port())
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         return subprocess.run(
@@ -127,6 +136,29 @@ class ReviewHostTest(unittest.TestCase):
         stopped = self.run_cli("stop", "--state-dir", str(state), state=state)
         self.assertEqual(stopped.returncode, 0, stopped.stderr)
         self.assertFalse(review_host.process_owns_registry(document["process"]["pid"], Path(state) / "registry.toml"))
+
+    def wake_lines(self, result):
+        return [line.split(" URL: ", 1)[1].split(" ", 1)[1] for line in result.stdout.splitlines()
+                if " URL: " in line and not line.startswith("review URL: ")]
+
+    def test_register_prints_wake_verified_only_when_herdr_resolves_owner(self):
+        herdr = FakeHerdr(self.work)
+        herdr.agent("owner")
+        state = self.work / "state"
+        verified = self.run_cli(*self.register_args(state), state=state, herdr=herdr)
+        self.assertEqual(verified.returncode, 0, verified.stderr)
+        self.assertEqual(self.wake_lines(verified), ["wake=verified owner=owner"])
+        herdr.agent("owner", None)
+        unresolved = self.run_cli(*self.register_args(state, spec="second"), state=state, herdr=herdr)
+        self.assertEqual(unresolved.returncode, 0, unresolved.stderr)
+        self.assertEqual(self.wake_lines(unresolved), ["wake=unavailable owner=owner"])
+        self.assertEqual(herdr.says(), [], "registration never prompts the owner")
+
+    def test_register_without_herdr_prints_wake_unavailable(self):
+        state = self.work / "state"
+        started = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        self.assertEqual(self.wake_lines(started), ["wake=unavailable owner=owner"])
 
     def test_register_adds_to_existing_server(self):
         state = self.work / "state"

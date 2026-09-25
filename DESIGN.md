@@ -10,7 +10,7 @@ Hard constraints: agent-agnostic/universal; plain files + CLI + agent skills ove
 
 ## v1 scope — ratified cut line (round 3, anti-overengineering pass)
 
-Joint position (Claude ↔ GPT-5.5): **v1 is a deliberately small local review loop.** A canonical `spec.html` using semantic islands; a committed dotdir runtime with vendored launch libraries (ECharts + Mermaid + house pin runtime — vendoring is load-bearing, NOT optional: CDN-only rendering makes visual meaning depend on network/corporate filters/CDN behavior exactly where fidelity matters); browser annotations written through an FSA directory handle into actor-segregated event spools; an explicit hand-off button; and bounded detection governed by turn-yielded, verified external-wake, or manual-resume control state.
+Joint position (Claude ↔ GPT-5.5): **v1 is a deliberately small local review loop.** A canonical `spec.html` using semantic islands; a committed dotdir runtime with vendored launch libraries (ECharts + Mermaid + house pin runtime — vendoring is load-bearing, NOT optional: CDN-only rendering makes visual meaning depend on network/corporate filters/CDN behavior exactly where fidelity matters); browser annotations written through an FSA directory handle into actor-segregated event spools; an explicit hand-off button; and bounded detection governed by turn-yielded, verified host-wake, or manual-resume control state.
 
 **Deferred until real usage proves the need (re-add triggers in parens):**
 - Derived `log.jsonl` + advisory locks — spool files are the log, `jq -s` over the dir (trigger: reviews at hundreds of events, or a second ordered-history consumer)
@@ -50,7 +50,7 @@ Every event carries the quote/context triple regardless of tier → orphan recov
 1. *Author*: in the CLI — "write a visual spec for X". Skill scaffolds dotdir if missing, writes `spec.html`, opens browser.
 2. *Connect*: open `spec.html` (`file://`) → page renders view-only → "Connect review folder" button → FSA directory picker selects an ancestor of the spec → Chromium's separate **Allow this site to edit files?** browser window grants write access → existing threads render, annotation enabled. The runtime names the browser-confirmation step and visibly waits because some shells place that window behind or beside the spec instead of layering it over the page. The handle is persisted to IndexedDB as a convenience. When write permission expires, **Resume review** regrants the persisted handle directly; **Choose different folder** is an explicit picker fallback for moved/wrong scopes and Chromium shells that fail to surface the direct permission prompt.
 3. *Annotate*: press `C` → hovering highlights anchored sections (anchor chip lights up) → click drops a pin + composer. Comments write to `review/human/` immediately (crash-safe) but sit as **drafts**.
-4. *Hand off*: button writes the hand-off event → the open yielded turn, verified host adapter, or later manual message activates the owner → statuses flip draft → acknowledged → replied; agent edits `spec.html`, page detects change (mtime poll via handle), re-renders with "updated by agent" badges on touched sections.
+4. *Hand off*: button writes the hand-off event → the open yielded turn, review host wake of the registry owner pane, or later manual message activates the owner → statuses flip draft → acknowledged → replied; agent edits `spec.html`, page detects change (mtime poll via handle), re-renders with "updated by agent" badges on touched sections.
 5. *Converge*: reply directly to an agent response, edit any still-unanswered human message through an append-only `supersedes` event, or ✓ Resolve. Selecting a thread highlights its associated page element; resolved threads collapse but remain browsable — the spec doubles as its own decision record.
 6. *Async*: no agent running? Annotate anyway (spool is durable); next `/review-spec` in the CLI drains pending batches immediately, then watches.
 
@@ -88,18 +88,17 @@ flowchart LR
   Review -->|spec edits and replies| Files[Durable files and Git]
   Local -->|spool writes and Git reads| Files
   Public[Public capability transport] -->|narrow HTTPS relay| Local
-  Monitor[Foreground handoff monitor] -->|read-only readiness| Files
-  Monitor -->|wake interface| Adapter[Optional host adapter]
-  Adapter -->|exact owner prompt| Review
+  Host[Long-lived review host] -->|read-only readiness| Files
+  Host -->|owner pane wake| Review
 ```
 
 - The shaping skill owns prompt intake, durable seed order, readable information-density optimization, visual-system selection, artifact coverage, fallback styling, completeness reconciliation, implementation-graph shaping, and orchestration through the issue and review interfaces.
 - The repository-selected issue skill owns tracker-specific create, read, replace-current-content, and link behavior; no tracker behavior enters the browser runtime, review transport, or event protocol.
 - The review skill owns review-surface preflight, capability migration, explicit control-state selection, exact batch processing, spec edits, replies, cursor advancement, and cold reconstruction from durable sources.
-- The foreground handoff monitor owns read-only detection and invokes one configured adapter once per unchanged batch; it never advances review state or runs an agent.
+- The long-lived review host owns read-only detection and invokes one owner-pane wake once per unchanged batch; it never advances review state or runs an agent.
 - One process-held local kernel lock permits a single control owner for each collection root and cursor; process exit releases it without a lease protocol.
 - Its user-owned absolute lock namespace is independent of caller environment variables.
-- An optional host adapter owns exact conversation reactivation only; Herdr is one adapter and is not a core dependency.
+- Herdr is an external provider used by the host when available; registration falls back to manual resume when it is unavailable.
 - The browser runtime owns annotation interaction, current event derivation, mobile controls, truthful status, and Git-focused presentation through the transport interface.
 - The local review transport owns narrow collection reads and writes plus read-only local Git baseline calculation; it never invokes an agent or mutates Git.
 - The public capability transport owns only an unguessable HTTPS relay to the narrow local origin; provider choice remains outside the core protocol.
@@ -148,8 +147,8 @@ review-wait docs/ --cursor-name .cursor-agent --timeout auto --max-events 20   #
 - In-session CLI inference throughout (subscription auth). Identical mechanism on Claude Code / Codex / pi.
 - A long raw watcher is invalid because detection does not own host wake.
 - `turn-yielded` keeps the same turn open and forbids final response.
-- `external-wake` uses a foreground host monitor and verified exact-identity adapter; the adapter wakes but never processes.
-- A second yielded or external control owner for the same collection and cursor fails visibly.
+- `host-wake` uses the long-lived review host and the registry row's exact owner pane; the host wakes but never processes.
+- A second yielded control owner for the same collection and cursor fails visibly.
 - `manual-resume` makes no wake claim and requires a new user message.
 - Detached agent processing is disabled because it can race the interactive owner.
 
@@ -191,7 +190,7 @@ Files remain the recovery contract, and every successful cycle externalizes agre
 Three terminal control states prevent detection from being confused with wake:
 
 - `turn-yielded`: a verified host yield keeps the authoring turn open; final response is forbidden.
-- `external-wake`: a foreground monitor observes readiness and a verified adapter prompts the exact owner identity; Herdr is the preferred available adapter, not a core dependency.
+- `host-wake`: the long-lived review host observes readiness and prompts the exact owner pane from the registry row.
 - `manual-resume`: automatic wake is absent and the user sends a new message; that turn begins with a zero-wait scan.
 
 A stopped or finalized turn cannot be reactivated by watcher output alone.
@@ -201,7 +200,7 @@ Cursor updates remain append-only and contain exactly the processed filenames.
 ## Spike plan (ordered by how much architecture each can still bend)
 
 1. ~~**FSA on `file://`**~~ — DONE (2026-07-03). Browser-side directory-handle grant + spool writes. ⚠️ Findings not yet recorded here — capture verdict on handle persistence across reopens, and whether `review serve` fallback is needed.
-2. **Parked detection loop** — the 2026-07-03 runs proved low-latency spool detection and in-turn processing, but did not prove that a live shell watcher can reactivate a finalized host conversation. TUR-835 reproduced that wake-ownership gap twice on 2026-09-01. Current control state therefore requires verified turn yield, verified external wake, or explicit manual resume.
+2. **Parked detection loop** — the 2026-07-03 runs proved low-latency spool detection and in-turn processing, but did not prove that a live shell watcher can reactivate a finalized host conversation. TUR-835 reproduced that wake-ownership gap twice on 2026-09-01. Current control state therefore requires verified turn yield, verified host wake (ANN-131: the review host prompts the registry owner pane), or explicit manual resume.
 3. **Round-trip edit fidelity** — ✅ **DONE (2026-07-03), PASS.** Island JSON (markLine) + prose edits landed first-try via exact string matching; the dialect's pretty-printed islands and one-sentence-per-line prose made match targets unambiguous; anchors untouched, diff clean.
 4. **Generation quality** — can a skill get the agent to author a correct spec.html first try (islands, data-anchor on every block, one-sentence-per-line) with prompt discipline alone? If output drifts immediately, the deferred linter's trigger fires pre-v1.
 5. **External-write visibility** — 🔶 harness ready: open in Chromium, pick the `*.review/` dir, run the generator + an agent cycle, confirm agent-written replies render without re-granting. Verdict pending a human at a browser.
@@ -215,7 +214,7 @@ Efficient path: one harness covers 2+3+5 (synthetic events → parked CLI → re
 
 ## Unresolved risks (flagged in review)
 1. FSA reliability on `file://` origins — needs a spike before anything else. (Mitigation path: `review serve`.)
-2. Host wake-adapter coverage outside verified yielded turns and Herdr.
+2. Host wake coverage when Herdr is unavailable.
 3. UX tolerance of the one-time "start live review mode" terminal step.
 
 ## Open questions
