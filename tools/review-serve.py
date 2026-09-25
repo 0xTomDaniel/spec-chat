@@ -573,6 +573,7 @@ li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywh
         except (OSError, subprocess.CalledProcessError):
             return self._json({"error": "invalid base"}, 400)
         review = target + ".review"
+        view = query.get("view", [""])[0]
         events = _read_spool_events(review, mount["narrow_root"])
         if events is None:
             return self._json({"error": "unsafe spool path"}, 400)
@@ -580,7 +581,7 @@ li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywh
         if service is None:
             service = self.server.jev = JevService()
         try:
-            return self._json(service.response(mount, target, relative, base, events))
+            return self._json(service.response(mount, target, relative, base, events, view))
         except (OSError, RuntimeError, ValueError):
             return self._json({"error": "jev unavailable"}, 503)
 

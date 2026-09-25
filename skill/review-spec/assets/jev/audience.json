@@ -1,0 +1,24 @@
+{
+  "id": "audience",
+  "version": 1,
+  "instructions": "Classify one leaf clause for a reading view. Choose for you when the clause is written for someone who uses the result. Choose internals when it explains implementation, authoring, review mechanics, or operation rather than the result itself.",
+  "labels": [
+    {
+      "name": "for you",
+      "description": "Written for someone who uses the result or needs to understand its user-visible behavior.",
+      "examples": [
+        "As a reviewer, I can see which commits the served spec compares.",
+        "The page dims internals in place while leaving clauses for readers clear."
+      ]
+    },
+    {
+      "name": "internals",
+      "description": "Explains implementation, authoring, review mechanics, or operation instead of the result for its user.",
+      "examples": [
+        "The server stores one judgment record for each question.",
+        "The browser sends the spec path and compared base to the review server."
+      ]
+    }
+  ],
+  "threshold": 0.6
+}
