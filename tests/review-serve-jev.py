@@ -1,6 +1,8 @@
 import importlib.util
 import json
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -25,6 +27,24 @@ class FakeProvider:
         if isinstance(value, BaseException):
             raise value
         return value
+
+
+class SlowProvider:
+    def __init__(self):
+        self.calls = 0
+        self.active = 0
+        self.max_active = 0
+        self.lock = threading.Lock()
+
+    def decide(self, payload):
+        with self.lock:
+            self.calls += 1
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+        time.sleep(0.03)
+        with self.lock:
+            self.active -= 1
+        return {"answers": {next(iter(payload["questions"])): {"choice": "behavioral", "confidence": 0.9}}}
 
 
 class JevSeamTest(unittest.TestCase):
@@ -62,6 +82,56 @@ class JevSeamTest(unittest.TestCase):
         self.assertEqual(first["record_id"], second["record_id"])
         self.assertEqual(len(provider.calls), 1)
 
+    def test_cache_key_uses_text_inputs_not_revision_or_addresses(self):
+        provider = FakeProvider({"answers": {"type": {"choice": "behavioral", "confidence": 0.9}}})
+        seam = jev.JevSeam(self.question_sets(), provider=provider, api_key="fake")
+        first = seam.ask({"kind": "type", "id": "rule", "state": {"after": "new"},
+                          "sources": ["old.spec#rule"], "revision": {"base": "a", "head": "b"}})
+        second = seam.ask({"kind": "type", "id": "rule", "state": {"after": "new"},
+                           "sources": ["new.spec#rule"], "revision": {"base": "c", "head": "d"}})
+        self.assertEqual(first["record_id"], second["record_id"])
+        self.assertEqual(len(provider.calls), 1)
+
+    def test_failed_and_off_records_are_retried(self):
+        provider = FakeProvider(RuntimeError("first"), RuntimeError("second"),
+                                {"answers": {"type": {"choice": "behavioral", "confidence": 0.9}}})
+        seam = jev.JevSeam(self.question_sets(), provider=provider, api_key="fake")
+        question = {"kind": "type", "state": {"after": "new"}, "sources": [], "revision": "head"}
+        failed = seam.ask(question)
+        recovered = seam.ask(question)
+        self.assertEqual(failed["outcome"], "unavailable")
+        self.assertEqual(recovered["outcome"], "shown")
+        self.assertEqual(len(provider.calls), 3)
+
+        off = jev.JevSeam(self.question_sets(), provider=provider, api_key="")
+        first_off = off.ask(question)
+        second_off = off.ask(question)
+        self.assertEqual(first_off["outcome"], "off")
+        self.assertEqual(second_off["outcome"], "off")
+        self.assertNotEqual(first_off["record_id"], second_off["record_id"])
+
+    def test_resolved_unrelated_is_not_displayed(self):
+        provider = FakeProvider({"answers": {"resolved": {"choice": "unrelated", "confidence": 0.9}}})
+        with tempfile.TemporaryDirectory() as directory:
+            service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
+            question = {"kind": "resolved", "id": "thread", "state": {}, "sources": [], "revision": "head"}
+            service.questions = lambda *args, **kwargs: [question]
+            result = service.response({}, "", "", "base", [])
+        self.assertEqual(result["items"][0]["state"], "none")
+        self.assertIsNone(result["items"][0]["label"])
+
+    def test_response_asks_uncached_questions_in_parallel(self):
+        provider = SlowProvider()
+        with tempfile.TemporaryDirectory() as directory:
+            service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
+            questions = [{"kind": "type", "id": str(index), "state": {"after": str(index)},
+                          "sources": [], "revision": "head"} for index in range(4)]
+            service.questions = lambda *args, **kwargs: questions
+            result = service.response({}, "", "", "base", [])
+        self.assertEqual(len(result["items"]), 4)
+        self.assertEqual(provider.calls, 4)
+        self.assertGreater(provider.max_active, 1)
+
     def test_coverage_builder_pairs_every_story_with_every_criterion(self):
         source = """
         <p data-user-story data-anchor="story-one">As a reviewer, I see the flag.</p>
@@ -76,6 +146,42 @@ class JevSeamTest(unittest.TestCase):
         })
         self.assertTrue(all(question["kind"] == "coverage" for question in questions))
         self.assertEqual(questions[0]["sources"], ["spec.html#story-one", "spec.html#criterion-one"])
+
+    def test_coverage_builder_emits_missing_side_questions(self):
+        stories = '<p data-user-story data-anchor="story-one">Story</p><p data-user-story data-anchor="story-two">Story</p>'
+        criteria = '<p data-acceptance-criterion data-anchor="criterion-one">Criterion</p>'
+        story_questions = jev.build_coverage_questions(stories, "spec.html", "base", "head")
+        criterion_questions = jev.build_coverage_questions(criteria, "spec.html", "base", "head")
+        self.assertEqual({(item["story"], item["criterion"]) for item in story_questions},
+                         {( "story-one", None), ("story-two", None)})
+        self.assertEqual({(item["story"], item["criterion"]) for item in criterion_questions},
+                         {(None, "criterion-one")})
+
+    def test_type_change_in_anchored_child_changes_section(self):
+        baseline = '<section data-anchor="root"><h2 data-anchor="heading">Same</h2><p data-anchor="clause">Before</p></section>'
+        current = baseline.replace("Before", "After")
+        questions = jev.build_type_questions(current, baseline, "spec.html", "base", "head")
+        self.assertEqual([question["id"] for question in questions], ["root"])
+        self.assertIn("After", questions[0]["state"]["after"])
+
+    def test_resolved_uses_text_at_newest_human_message(self):
+        before = '<section data-anchor="rules"><p data-anchor="clause">Requested behavior</p></section>'
+        current = '<section data-anchor="rules"><p data-anchor="clause">Implemented behavior</p></section>'
+        events = [{"name": "1-comment.json", "actor": "human", "body": {
+            "id": "u1", "event": "comment", "actor": "human", "anchorId": "rules",
+            "text": "Please implement the behavior",
+        }}]
+        questions = jev.build_resolved_questions(events, current, current, "spec.html", "base", "head",
+                                                  {"u1": before})
+        self.assertEqual([question["id"] for question in questions], ["u1"])
+        self.assertEqual(questions[0]["state"]["before"], "Requested behavior")
+
+    def test_anchor_parser_handles_void_and_implied_end_tags(self):
+        source = '<section data-anchor="one"><p data-anchor="first">First<br>text</p><p data-anchor="second">Second</p></section>'
+        anchors = jev.extract_anchors(source)
+        self.assertEqual(anchors["first"]["text"], "First text")
+        self.assertEqual(anchors["second"]["text"], "Second")
+        self.assertIn("First text Second", anchors["one"]["text"])
 
     def test_coverage_response_accepts_pair_answer_and_keeps_addresses_only(self):
         provider = FakeProvider({"answers": {"coverage": {"choice": "verifies", "confidence": 0.9}}})

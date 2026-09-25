@@ -14,6 +14,7 @@ assert.match(runtime, /hx-reading-active \[data-hx-audience="internals"\].*color
 assert.match(runtime, /color:#b9c0ca!important/, 'internals use a readable dark-theme color');
 assert.match(runtime, /clearGitFocusForReading/, 'reading view clears Git focus');
 assert.match(runtime, /delete el\.dataset\.hxAudience/, 'turning reading view off clears labels');
+assert.match(runtime, /item\.state !== 'label'|Jev unavailable/, 'reading view renders unsure and unavailable states');
 assert.doesNotMatch(runtime, /data-hx-audience="internals"[^}]*display\s*:\s*none/, 'reading view never hides internals');
 assert.doesNotMatch(runtime, /data-hx-audience="internals"[^}]*order\s*:/, 'reading view never reorders internals');
 

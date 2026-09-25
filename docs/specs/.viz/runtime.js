@@ -57,6 +57,7 @@ const state = {
   handoffPosting: false,
   range: { baseline: null, loading: false, pickerOpen: false },
   jev: { status: 'idle', items: [], base: null, request: 0 },
+  readingView: false,
   movingOrphans: new Set(),
 };
 
@@ -150,7 +151,8 @@ const JEV_TYPE_LABELS = {
 
 function jevParams(base) {
   const params = new URLSearchParams({ path: location.pathname.replace(/^\//, ''), base: String(base || '') });
-  if (new URLSearchParams(location.search).get('view') === 'reading') params.set('view', 'reading');
+  const readingParams = { view: 'reading' };
+  if ((typeof state !== 'undefined' && state.readingView) || new URLSearchParams(location.search).get('view') === 'reading') params.set('view', readingParams.view);
   return params;
 }
 
@@ -185,6 +187,8 @@ function clearJev() {
   state.jev.items = [];
   state.jev.base = null;
   renderJev();
+  renderPanel();
+  renderPins();
 }
 
 async function requestJev(base) {
@@ -194,7 +198,7 @@ async function requestJev(base) {
   state.jev.base = String(base);
   renderJev();
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
+  const timeout = setTimeout(() => controller.abort(), 120000);
   try {
     const result = await fetchJev(base, controller.signal);
     if (request !== state.jev.request) return;
@@ -429,14 +433,14 @@ async function loadRangeBar() {
  * markers without changing the review transport or thread model.
  */
 function coveragePair(item) {
-  if (item && item.story && item.criterion) return { story: String(item.story), criterion: String(item.criterion) };
+  if (item && item.story !== undefined && item.criterion !== undefined) {
+    return { story: item.story == null ? '' : String(item.story), criterion: item.criterion == null ? '' : String(item.criterion) };
+  }
   const id = String(item && item.id || '');
   const split = id.indexOf('::');
-  if (split > 0 && split < id.length - 2) return { story: id.slice(0, split), criterion: id.slice(split + 2) };
+  if (split >= 0 && (split > 0 || split < id.length - 2)) return { story: id.slice(0, split), criterion: id.slice(split + 2) };
   return null;
 }
-
-const jevState = { result: null, request: 0 };
 
 function coverageGapFlags(items) {
   const values = new Map();
@@ -461,6 +465,7 @@ function coverageGapFlags(items) {
     }
   }
   return [...values.values()].flatMap(value => {
+    if (!value.anchor) return [];
     if (value.verifies) return [];
     if (value.unsure) return [{ anchor: value.anchor, side: value.side, state: 'unsure', label: 'unsure' }];
     if (value.unavailable) return [{ anchor: value.anchor, side: value.side, state: 'unavailable', label: 'Jev unavailable' }];
@@ -483,7 +488,6 @@ function clearJevCoverage() {
 
 function renderJevCoverage(result) {
   clearJevCoverage();
-  jevState.result = result && result.jev === 'on' ? result : null;
   if (!result || result.jev !== 'on') return;
   for (const flag of coverageGapFlags(result.items)) {
     const holder = anchorElement(flag.anchor);
@@ -496,37 +500,6 @@ function renderJevCoverage(result) {
     const heading = holder.querySelector('h1,h2,h3,h4,h5,h6');
     (heading || holder).appendChild(note);
   }
-}
-
-async function loadJev(base) {
-  if (EMBED_REVIEW_DIR || !['http:', 'https:'].includes(location.protocol) || !base) return;
-  const request = ++jevState.request;
-  clearJevCoverage();
-  const params = new URLSearchParams({ path: location.pathname.replace(/^\//, ''), base: String(base) });
-  const view = new URLSearchParams(location.search).get('view');
-  if (view) params.set('view', view);
-  try {
-    const response = await fetch('/api/jev?' + params, { cache: 'no-store' });
-    if (!response.ok) throw new Error('Jev unavailable');
-    const result = await response.json();
-    if (request === jevState.request) renderJevCoverage(result);
-  } catch (_) {
-    if (request === jevState.request) jevState.result = null;
-  }
-}
-
-function installJevCoverageHooks() {
-  const originalRenderRangeBar = renderRangeBar;
-  const originalSelectRangeBase = selectRangeBase;
-  renderRangeBar = baseline => {
-    originalRenderRangeBar(baseline);
-    clearJevCoverage();
-    loadJev(baseline && baseline.base);
-  };
-  selectRangeBase = async value => {
-    clearJevCoverage();
-    return originalSelectRangeBase(value);
-  };
 }
 
 // Name the folder the user should grant: the first ancestor Chromium will accept
@@ -1166,12 +1139,15 @@ function goToJevTarget(target) {
 function renderJev() {
   document.querySelectorAll('.hx-jev-badge').forEach(el => el.remove());
   document.querySelectorAll('.hx-jev-corpus').forEach(el => el.remove());
+  document.querySelectorAll('.hx-jev-coverage').forEach(el => el.remove());
+  document.querySelectorAll('[data-hx-audience]').forEach(el => delete el.dataset.hxAudience);
   document.querySelectorAll('[data-hx-jev-type]').forEach(el => {
     delete el.dataset.hxJevType;
     delete el.dataset.hxJevState;
   });
   document.querySelectorAll('.hx-jev-note').forEach(el => el.remove());
   if (EMBED_REVIEW_DIR) return;
+  renderJevCoverage(state.jev.status === 'on' ? state.jev : null);
 
   if (state.jev.status === 'off' || state.jev.status === 'unavailable') {
     const note = document.createElement('p');
@@ -1182,16 +1158,32 @@ function renderJev() {
     else document.body.insertBefore(note, document.body.firstChild);
   }
 
+  const gitFocus = new URLSearchParams(location.search).get('focus') === 'changes' || document.body.classList.contains('hx-focus-active');
+  const reading = state.readingView || new URLSearchParams(location.search).get('view') === 'reading';
   for (const item of state.jev.items) {
     if (!item.id || item.state === 'none') continue;
     const holder = findAnchor(item.id);
-    if (!holder || item.kind !== 'type') continue;
+    if (!holder) continue;
+    if (reading) {
+      if (item.kind !== 'audience') continue;
+      const allowedAudience = item.label !== 'for you' && item.label !== 'internals' ? false : true;
+      if (item.state === 'label' && allowedAudience) {
+        holder.dataset.hxAudience = item.label;
+      }
+      const audienceLabel = jevDisplayLabel(item);
+      if (item.state !== 'label' || allowedAudience) {
+        appendJevMarker(holder, audienceLabel, item.state);
+      }
+      continue;
+    }
+    if (!gitFocus || item.kind !== 'type') continue;
     const label = jevDisplayLabel(item);
     if (!label) continue;
     holder.dataset.hxJevType = String(item.label || item.state).toLowerCase();
     holder.dataset.hxJevState = item.state;
     appendJevMarker(holder, label, item.state);
   }
+  if (!gitFocus) return;
   for (const flag of corpusFlags(state.jev.items)) {
     const holder = findAnchor(flag.anchor);
     if (holder) appendJevCorpusMarker(holder, flag);
@@ -1732,7 +1724,7 @@ function renderPanel() {
     const threadJevState = [orphanHint, resolvedHint].find(item => item && ['unsure', 'unavailable'].includes(item.state));
     d.innerHTML = '<div class="hx-thread-summary"><div class="hx-anchor">' + esc(label(b)) + '</div>' +
       '<span class="hx-pill" data-s="' + th.status + '">' + th.status + '</span>' +
-      (resolvedHint && resolvedHint.state === 'label' ? '<span class="hx-jev-thread-label">Looks resolved</span>' : '') +
+      (resolvedHint && resolvedHint.state === 'label' && resolvedHint.label === 'resolved in spirit' ? '<span class="hx-jev-thread-label">Looks resolved</span>' : '') +
       (threadJevState ? '<span class="hx-jev-thread-label" data-state="' + threadJevState.state + '">' + esc(jevDisplayLabel(threadJevState)) + '</span>' : '') +
       (th.status === 'resolved' ? '<button class="hx-disclosure" data-act="disclosure" aria-expanded="' + String(!collapsed) + '" aria-label="' + (collapsed ? 'Show' : 'Hide') + ' resolved thread">' + (collapsed ? '▸' : '▾') + '</button>' : '') + '</div>' +
       (collapsed ? '<div class="hx-thread-preview">' + esc(b.text || 'Resolved comment') + '</div>' : '');
@@ -1854,13 +1846,13 @@ async function moveOrphan(th, target) {
   const quote = original.quote || original.text || '';
   try {
     await state.transport.postEvent({
-      id: humanId('s'), event: 'status', respondsTo: th.id, threadId: th.id,
-      status: 'resolved', actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1,
-    });
-    await state.transport.postEvent({
       id: humanId('u'), event: 'comment', anchorId: target, target: null,
       quote, text: original.text || 'Moved comment', actor: 'human',
       createdAt: new Date().toISOString(), schemaVersion: 1,
+    });
+    await state.transport.postEvent({
+      id: humanId('s'), event: 'status', respondsTo: th.id, threadId: th.id,
+      status: 'resolved', actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1,
     });
     toast('Comment moved to #' + target);
     state.activeThread = null;
@@ -2057,7 +2049,7 @@ function renderPins() {
     const pin = document.createElement('button');
     pin.className = 'hx-pin' + (state.activeThread === th.id ? ' active' : '');
     pin.dataset.s = th.status;
-    const looksResolved = Boolean(jevItem('resolved', th.id) && jevItem('resolved', th.id).state === 'label');
+    const looksResolved = Boolean(jevItem('resolved', th.id) && jevItem('resolved', th.id).state === 'label' && jevItem('resolved', th.id).label === 'resolved in spirit');
     pin.textContent = '';
     const number = document.createElement('span');
     number.className = 'hx-pin-number';
@@ -2169,8 +2161,6 @@ async function watchSpec() {
   }
   if (m) state.specMtime = state.specMtime || m;
 }
-
-installJevCoverageHooks();
 
 /* ---------------- boot ---------------- */
 (async function boot() {
@@ -2307,7 +2297,7 @@ function startLoops() {
  * changes document order or removes clauses. Git focus and reading view are
  * mutually exclusive display modes.
  */
-const readingView = { active: false, loading: false };
+const readingView = { active: false };
 
 function readingAnchor(id) {
   const wanted = String(id || '');
@@ -2332,41 +2322,6 @@ function clearGitFocusForReading() {
   }
 }
 
-function readingParams() {
-  const params = new URLSearchParams({ path: location.pathname.replace(/^\//, ''), view: 'reading' });
-  const queryBase = new URLSearchParams(location.search).get('base');
-  const base = (state.range.baseline && state.range.baseline.base) || queryBase;
-  if (base) params.set('base', base);
-  return params;
-}
-
-function applyReadingAudience(items) {
-  clearReadingAudience();
-  for (const item of Array.isArray(items) ? items : []) {
-    if (!item || item.kind !== 'audience' || item.state !== 'label') continue;
-    if (item.label !== 'for you' && item.label !== 'internals') continue;
-    const anchor = readingAnchor(item.id || item.target);
-    if (anchor) anchor.dataset.hxAudience = item.label;
-  }
-}
-
-async function loadReadingAudience() {
-  if (readingView.loading || !['http:', 'https:'].includes(location.protocol)) return;
-  readingView.loading = true;
-  try {
-    const response = await fetch('/api/jev?' + readingParams().toString(), { cache: 'no-store' });
-    if (!response.ok) throw new Error('reading suggestions unavailable');
-    const result = await response.json();
-    applyReadingAudience(result && result.items);
-    if (result && result.jev === 'off') toast('Jev off');
-  } catch (_) {
-    clearReadingAudience();
-    toast('Jev unavailable');
-  } finally {
-    readingView.loading = false;
-  }
-}
-
 function setReadingView(on) {
   const next = Boolean(on);
   if (next === readingView.active && !next) {
@@ -2382,7 +2337,13 @@ function setReadingView(on) {
     button.textContent = next ? 'Reading view on' : 'Reading view';
   }
   if (!next) clearReadingAudience();
-  else loadReadingAudience();
+  state.readingView = next;
+  if (next) {
+    const base = (state.range.baseline && state.range.baseline.base) || new URLSearchParams(location.search).get('base');
+    if (base) requestJev(base);
+  } else {
+    renderJev();
+  }
 }
 
 function mountReadingView() {

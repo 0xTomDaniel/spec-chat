@@ -10,6 +10,7 @@ import re
 import subprocess
 import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
@@ -22,6 +23,41 @@ MODEL = "typesafe/jev-1.13"
 OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
 DEFAULT_THRESHOLD = 0.6
 DEFAULT_MAX_INPUT_TOKENS = 32000
+RETRYABLE_OUTCOMES = frozenset({"off", "unavailable"})
+VOID_ELEMENTS = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"})
+IMPLIED_ENDS = {
+    "li": {"li"}, "dt": {"dt", "dd"}, "dd": {"dt", "dd"},
+    "option": {"option", "optgroup"}, "thead": {"thead", "tbody", "tfoot"},
+    "tbody": {"tbody", "tfoot"}, "tfoot": {"tbody", "tfoot"},
+    "tr": {"tr"}, "td": {"td", "th"}, "th": {"td", "th"},
+    "h1": {"h1", "h2", "h3", "h4", "h5", "h6"},
+    "h2": {"h1", "h2", "h3", "h4", "h5", "h6"},
+    "h3": {"h1", "h2", "h3", "h4", "h5", "h6"},
+    "h4": {"h1", "h2", "h3", "h4", "h5", "h6"},
+    "h5": {"h1", "h2", "h3", "h4", "h5", "h6"},
+    "h6": {"h1", "h2", "h3", "h4", "h5", "h6"},
+}
+P_BLOCK_ELEMENTS = frozenset({"address", "article", "aside", "blockquote", "div", "dl", "fieldset", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "menu", "nav", "ol", "p", "pre", "section", "table", "ul"})
+BLOCK_TEXT_SEPARATORS = P_BLOCK_ELEMENTS | {"li", "dt", "dd", "tr", "td", "th"}
+
+
+def _close_implied(stack: list[Any], tag: str) -> None:
+    tag = tag.lower()
+    closers = set(IMPLIED_ENDS.get(tag, set()))
+    if tag in P_BLOCK_ELEMENTS:
+        closers.add("p")
+    if not closers:
+        return
+    while stack and stack[-1][0] in closers:
+        stack.pop()
+
+
+def _close_explicit(stack: list[Any], tag: str) -> None:
+    tag = tag.lower()
+    for index in range(len(stack) - 1, -1, -1):
+        if stack[index][0] == tag:
+            del stack[index:]
+            return
 
 MINIMAL_QUESTION_SETS = {
     "type": {
@@ -163,7 +199,9 @@ class JudgmentStore:
                 if isinstance(record, Mapping) and record.get("cache_key"):
                     record = dict(record)
                     self.records.append(record)
-                    self.by_key.setdefault(record["cache_key"], record)
+                    current = self.by_key.get(record["cache_key"])
+                    if current is None or current.get("outcome") in RETRYABLE_OUTCOMES:
+                        self.by_key[record["cache_key"]] = record
 
     def get(self, key: str) -> dict[str, Any] | None:
         with self.lock:
@@ -172,8 +210,9 @@ class JudgmentStore:
     def append(self, record: Mapping[str, Any]) -> dict[str, Any]:
         record = dict(record)
         with self.lock:
-            if record["cache_key"] in self.by_key:
-                return self.by_key[record["cache_key"]]
+            current = self.by_key.get(record["cache_key"])
+            if current is not None and current.get("outcome") not in RETRYABLE_OUTCOMES:
+                return current
             self.records.append(record)
             self.by_key[record["cache_key"]] = record
             if self.path:
@@ -243,7 +282,6 @@ class JevSeam:
         self.store = record_store or JudgmentStore()
         self.clock = clock
         self.max_input_tokens = max_input_tokens
-        self.lock = threading.RLock()
 
     def question_set(self, kind: str) -> QuestionSet:
         return self.question_sets.get(kind) or self.question_sets.get("default") or QuestionSet.from_mapping(MINIMAL_QUESTION_SETS["type"], "type")
@@ -267,63 +305,64 @@ class JevSeam:
     def ask(self, question: Mapping[str, Any]) -> dict[str, Any]:
         kind = str(question.get("kind", "type"))
         qset = self.question_set(kind)
-        inputs = {"kind": kind, "id": question.get("id"), "state": question.get("state"),
-                  "sources": question.get("sources", []), "revision": question.get("revision"),
+        inputs = {"state": question.get("state", {}),
+                  "criteria": question.get("criteria", {}),
                   "question_set": {"id": qset.id, "version": qset.version}}
         key = "sha256:" + hashlib.sha256(_canonical(inputs).encode("utf-8")).hexdigest()
-        with self.lock:
-            cached = self.store.get(key)
-            if cached:
-                return cached
-            criteria = qset.criteria()
-            dynamic = question.get("criteria")
-            if isinstance(dynamic, Mapping):
-                criteria = {str(k): str(v) for k, v in dynamic.items()}
-            payload = {"model": MODEL, "questions": {kind: {"criteria": criteria,
-                        "instructions": qset.instructions, "type": "choice"}},
-                       "state": _jsonable(question.get("state", {}))}
-            if (len(_canonical(payload)) + 3) // 4 > self.max_input_tokens:
-                return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
-                                    {"label": None, "probabilities": {}, "confidence": None}, "oversize")
-            if not self.api_key or self.provider is None:
-                return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
-                                    {"label": None, "probabilities": {}, "confidence": None}, "off")
-            answer = None
-            model = MODEL
-            attempts = 0
-            for _ in range(2):
-                attempts += 1
-                try:
-                    if hasattr(self.provider, "decide"):
-                        response = self.provider.decide(payload)
-                    else:
-                        response = self.provider(payload)
-                    label, confidence, probabilities, model = _parse_provider_answer(response, kind)
-                    answer = {"label": label, "probabilities": probabilities, "confidence": confidence}
-                    break
-                except Exception:
-                    continue
-            if answer is None:
-                return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
-                                    {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model)
-            outcome = "shown" if answer["confidence"] is not None and answer["confidence"] >= qset.threshold else "unsure"
-            return self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, outcome, model)
+        cached = self.store.get(key)
+        if cached and cached.get("outcome") not in RETRYABLE_OUTCOMES:
+            return cached
+        criteria = qset.criteria()
+        dynamic = question.get("criteria")
+        if isinstance(dynamic, Mapping):
+            criteria = {str(k): str(v) for k, v in dynamic.items()}
+        payload = {"model": MODEL, "questions": {kind: {"criteria": criteria,
+                    "instructions": qset.instructions, "type": "choice"}},
+                   "state": _jsonable(question.get("state", {}))}
+        if (len(_canonical(payload)) + 3) // 4 > self.max_input_tokens:
+            return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
+                                {"label": None, "probabilities": {}, "confidence": None}, "oversize")
+        if not self.api_key or self.provider is None:
+            return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
+                                {"label": None, "probabilities": {}, "confidence": None}, "off")
+        answer = None
+        model = MODEL
+        for _ in range(2):
+            try:
+                if hasattr(self.provider, "decide"):
+                    response = self.provider.decide(payload)
+                else:
+                    response = self.provider(payload)
+                label, confidence, probabilities, model = _parse_provider_answer(response, kind)
+                answer = {"label": label, "probabilities": probabilities, "confidence": confidence}
+                break
+            except Exception:
+                continue
+        if answer is None:
+            return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
+                                {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model)
+        outcome = "shown" if answer["confidence"] is not None and answer["confidence"] >= qset.threshold else "unsure"
+        return self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, outcome, model)
 
 
 class _AnchorParser(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
-        self.stack: list[tuple[str, str, bool]] = []
+        self.stack: list[tuple[str, str | None]] = []
         self.values: dict[str, dict[str, Any]] = {}
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]):
+        tag = tag.lower()
+        _close_implied(self.stack, tag)
+        if tag in BLOCK_TEXT_SEPARATORS and self.stack:
+            self.handle_data(" ")
         attrs = dict(attrs)
         anchor = attrs.get("data-anchor")
         if anchor:
-            parent = self.stack[-1][1] if self.stack else None
+            parent = next((item[1] for item in reversed(self.stack) if item[1]), None)
             value = self.values.setdefault(anchor, {
                 "text": [],
-                "section": tag.lower() == "section" or attrs.get("data-spec-section") is not None,
+                "section": tag == "section" or attrs.get("data-spec-section") is not None,
                 "story": "data-user-story" in attrs,
                 "criterion": "data-acceptance-criterion" in attrs,
                 "parent": parent,
@@ -332,21 +371,25 @@ class _AnchorParser(HTMLParser):
             })
             if parent and anchor not in self.values[parent].setdefault("children", []):
                 self.values[parent]["children"].append(anchor)
-            self.stack.append((tag, anchor, True))
-        elif self.stack:
-            self.stack.append((tag, self.stack[-1][1], False))
+            self.stack.append((tag, anchor))
+        elif tag not in VOID_ELEMENTS and self.stack:
+            self.stack.append((tag, self.stack[-1][1]))
+        elif tag == "br":
+            self.handle_data(" ")
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]):
         self.handle_starttag(tag, attrs)
         self.handle_endtag(tag)
 
     def handle_endtag(self, tag: str):
-        if self.stack:
-            self.stack.pop()
+        _close_explicit(self.stack, tag)
 
     def handle_data(self, data: str):
-        if self.stack:
-            self.values[self.stack[-1][1]]["text"].append(data)
+        seen = set()
+        for _, anchor in self.stack:
+            if anchor and anchor not in seen:
+                self.values[anchor]["text"].append(data)
+                seen.add(anchor)
 
 
 def extract_anchors(source: str | bytes | None) -> dict[str, dict[str, Any]]:
@@ -551,20 +594,26 @@ def build_orphan_questions(events: list[Mapping[str, Any]], current: str | bytes
 
 
 def build_resolved_questions(events: list[Mapping[str, Any]], current: str | bytes, baseline: str | bytes | None,
-                             path: str = "spec", base: str = "", revision: Any = "head") -> list[dict[str, Any]]:
+                             path: str = "spec", base: str = "", revision: Any = "head",
+                             message_sources: Mapping[str, str | bytes] | None = None) -> list[dict[str, Any]]:
     now, old = extract_anchors(current), extract_anchors(baseline)
-    changed = {key for key in now if old.get(key, {}).get("text", "") != now[key]["text"]}
     result = []
     for thread in _human_threads(events):
         anchor = thread.get("anchor")
-        if thread.get("status") == "resolved" or anchor not in changed:
+        if thread.get("status") == "resolved" or anchor not in now:
             continue
         human = [m for m in thread["messages"] if m.get("actor") == "human"]
         if not human:
             continue
+        newest = human[-1]
+        historical = message_sources.get(str(newest.get("id"))) if message_sources else None
+        prior = extract_anchors(historical) if historical else old
+        before = prior.get(anchor, {}).get("text", "")
+        if before == now[anchor]["text"]:
+            continue
         text = "\n".join(str(m.get("text") or m.get("quote") or "") for m in human)
         result.append(_question("resolved", str(thread["id"]),
-                                {"comment": text, "before": old.get(anchor, {}).get("text", ""), "after": now[anchor]["text"]},
+                                {"comment": text, "before": before, "after": now[anchor]["text"]},
                                 path, base, revision, anchor))
     return result
 
@@ -575,6 +624,24 @@ def build_coverage_questions(current: str | bytes, path: str = "spec", base: str
     stories = [(anchor, value) for anchor, value in anchors.items() if value.get("story")]
     criteria = [(anchor, value) for anchor, value in anchors.items() if value.get("criterion")]
     result = []
+    if stories and not criteria:
+        for story_anchor, story in stories:
+            result.append({
+                "kind": "coverage", "id": story_anchor + "::",
+                "state": {"story": {"anchor": story_anchor, "text": story["text"]}, "criterion": None},
+                "sources": [f"{path}#{story_anchor}"], "revision": {"base": base, "head": revision},
+                "target": story_anchor, "story": story_anchor, "criterion": None,
+            })
+        return result
+    if criteria and not stories:
+        for criterion_anchor, criterion in criteria:
+            result.append({
+                "kind": "coverage", "id": "::" + criterion_anchor,
+                "state": {"story": None, "criterion": {"anchor": criterion_anchor, "text": criterion["text"]}},
+                "sources": [f"{path}#{criterion_anchor}"], "revision": {"base": base, "head": revision},
+                "target": criterion_anchor, "story": None, "criterion": criterion_anchor,
+            })
+        return result
     for story_anchor, story in stories:
         for criterion_anchor, criterion in criteria:
             identifier = story_anchor + "::" + criterion_anchor
@@ -599,31 +666,37 @@ class _LeafAnchorParser(HTMLParser):
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
-        self.stack: list[str | None] = []
+        self.stack: list[tuple[str, str | None]] = []
         self.values: dict[str, dict[str, Any]] = {}
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]):
+        tag = tag.lower()
+        _close_implied(self.stack, tag)
+        if tag in BLOCK_TEXT_SEPARATORS and self.stack:
+            self.handle_data(" ")
         anchor = dict(attrs).get("data-anchor")
-        parent = next((item for item in reversed(self.stack) if item is not None), None)
+        parent = next((item[1] for item in reversed(self.stack) if item[1] is not None), None)
         if anchor:
             anchor = str(anchor)
             if parent and parent in self.values:
                 self.values[parent]["has_child"] = True
-            self.values.setdefault(anchor, {"text": [], "tag": tag.lower(), "has_child": False})
-            self.stack.append(anchor)
+            self.values.setdefault(anchor, {"text": [], "tag": tag, "has_child": False})
+            self.stack.append((tag, anchor))
             return
-        self.stack.append(self.stack[-1] if self.stack else None)
+        if tag not in VOID_ELEMENTS and self.stack:
+            self.stack.append((tag, self.stack[-1][1]))
+        elif tag == "br":
+            self.handle_data(" ")
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]):
         self.handle_starttag(tag, attrs)
         self.handle_endtag(tag)
 
     def handle_endtag(self, tag: str):
-        if self.stack:
-            self.stack.pop()
+        _close_explicit(self.stack, tag)
 
     def handle_data(self, data: str):
-        anchor = self.stack[-1] if self.stack else None
+        anchor = self.stack[-1][1] if self.stack else None
         if anchor and anchor in self.values:
             self.values[anchor]["text"].append(data)
 
@@ -709,6 +782,44 @@ class JevService:
                     continue
         return result
 
+    def _message_sources(self, root: str, relative: str, base: str,
+                         events: list[Mapping[str, Any]]) -> dict[str, bytes]:
+        result: dict[str, bytes] = {}
+        for thread in _human_threads(events):
+            human = [message for message in thread["messages"] if message.get("actor") == "human"]
+            if not human:
+                continue
+            message = human[-1]
+            identifier = message.get("id")
+            if not identifier:
+                continue
+            commit = message.get("commit")
+            revision = message.get("revision")
+            if isinstance(revision, Mapping):
+                commit = revision.get("head") or revision.get("commit") or revision.get("revision") or commit
+            elif isinstance(revision, str):
+                commit = revision
+            if not isinstance(commit, str) or not commit.strip():
+                created = message.get("createdAt")
+                if isinstance(created, str) and created.strip():
+                    try:
+                        commit = subprocess.check_output(
+                            ("git", "-C", root, "log", "-1", "--before=" + created,
+                             "--format=%H", "HEAD", "--", relative),
+                            stderr=subprocess.DEVNULL, text=True,
+                        ).strip()
+                    except (OSError, subprocess.CalledProcessError):
+                        commit = ""
+            if not isinstance(commit, str) or not commit.strip():
+                continue
+            try:
+                result[str(identifier)] = subprocess.check_output(
+                    ("git", "-C", root, "show", commit + ":" + relative), stderr=subprocess.DEVNULL,
+                )
+            except (OSError, subprocess.CalledProcessError):
+                continue
+        return result
+
     def questions(self, mount: Mapping[str, Any], target: str, relative: str, base: str,
                   events: list[Mapping[str, Any]], view: str = "", served_mounts: Any = None) -> list[dict[str, Any]]:
         if served_mounts is None and not isinstance(view, str):
@@ -724,9 +835,10 @@ class JevService:
             old = subprocess.check_output(("git", "-C", root, "show", base + ":" + rel), stderr=subprocess.DEVNULL)
         except (OSError, subprocess.CalledProcessError):
             old = None
+        message_sources = self._message_sources(root, rel, base, events)
         result = build_type_questions(current, old, relative, base, head)
         result.extend(build_orphan_questions(events, current, relative, base, head))
-        result.extend(build_resolved_questions(events, current, old, relative, base, head))
+        result.extend(build_resolved_questions(events, current, old, relative, base, head, message_sources))
         result.extend(build_coverage_questions(current, relative, base, head))
         result.extend(build_corpus_questions(current, old, relative, base, head,
                                              self._served_specs(served_mounts or [mount], target)))
@@ -740,15 +852,25 @@ class JevService:
             served_mounts, view = view, ""
         if not self.enabled:
             return {"jev": "off", "items": []}
+        questions = self.questions(mount, target, relative, base, events, view, served_mounts)
+
+        def answer(question):
+            if question["kind"] == "coverage" and (question.get("story") is None or question.get("criterion") is None):
+                return question, {"outcome": "shown", "answer": {"label": "unrelated"}, "record_id": None}
+            return question, self.seam.ask(question)
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            answers = list(pool.map(answer, questions))
         items = []
-        for question in self.questions(mount, target, relative, base, events, view, served_mounts):
-            record = self.seam.ask(question)
+        for question, record in answers:
             outcome = record.get("outcome")
             if outcome == "oversize":
                 continue
             answer = record.get("answer", {})
             label = answer.get("label") if isinstance(answer, Mapping) else None
             allowed = set(question.get("display_labels", question.get("criteria", {}))) or set(self.seam.question_set(question["kind"]).criteria())
+            if question["kind"] == "resolved":
+                allowed = {"resolved in spirit"}
             state = "label" if outcome == "shown" and label and label in allowed else ("unsure" if outcome == "unsure" else "unavailable")
             if outcome == "shown" and label and label not in allowed:
                 state = "none"

@@ -27,6 +27,13 @@ assert.deepEqual(coverageFlags([
   { kind: 'coverage', story: 'story', criterion: 'criterion', state: 'label', label: 'unrelated' },
 ]), [{ anchor: 'story', side: 'story', state: 'gap', label: 'No criterion covers this' },
     { anchor: 'criterion', side: 'criterion', state: 'gap', label: 'No story backs this' }]);
+assert.deepEqual(coverageFlags([
+  { kind: 'coverage', id: 'story-one::', state: 'label', label: 'unrelated' },
+  { kind: 'coverage', id: 'story-two::', state: 'label', label: 'unrelated' },
+  { kind: 'coverage', id: '::criterion-one', state: 'label', label: 'unrelated' },
+]), [{ anchor: 'story-one', side: 'story', state: 'gap', label: 'No criterion covers this' },
+    { anchor: 'story-two', side: 'story', state: 'gap', label: 'No criterion covers this' },
+    { anchor: 'criterion-one', side: 'criterion', state: 'gap', label: 'No story backs this' }]);
 assert.match(runtime, /No criterion covers this/);
 assert.match(runtime, /No story backs this/);
 

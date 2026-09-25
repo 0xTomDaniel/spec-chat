@@ -45,6 +45,14 @@ assert.deepEqual(answer, {
     { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2' },
   ],
 });
+assert.equal((runtime.match(/fetch\('\/api\/jev\?/g) || []).length, 1, 'all Jev display uses one request seam');
+assert.match(runtime, /120000/, 'Jev fetch allows a cold provider request to finish');
+assert.match(runtime, /resolvedHint\.label === 'resolved in spirit'/, 'unrelated resolved answers never display');
+assert.match(runtime, /if \(!gitFocus \|\| item\.kind !== 'type'\) continue/, 'type badges require Git focus');
+assert.match(runtime, /if \(!gitFocus\) return;/, 'corpus flags require Git focus');
+assert.doesNotMatch(runtime, /async function loadJev\(/, 'coverage shares the main Jev request');
+assert.doesNotMatch(runtime, /const jevState/, 'coverage shares the main Jev state');
+assert.match(runtime, /renderPanel\(\);\n  renderPins\(\);/, 'base changes clear thread and pin Jev displays');
 
 const moveStart = runtime.indexOf('async function moveOrphan(');
 const moveEnd = runtime.indexOf('\n\nconst chartInfoFor', moveStart);
@@ -65,11 +73,11 @@ const moveOrphan = Function('state', 'humanId', 'renderPanel', 'toast', 'refresh
 );
 await moveOrphan({ id: 'thread-1', ev: { body: { quote: 'old quote', text: 'Original note' } } }, 'new-section');
 assert.equal(posted.length, 2);
-assert.equal(posted[0].event, 'status');
-assert.equal(posted[0].status, 'resolved');
-assert.equal(posted[1].event, 'comment');
-assert.equal(posted[1].anchorId, 'new-section');
-assert.equal(posted[1].quote, 'old quote');
-assert.equal(posted[1].text, 'Original note');
+assert.equal(posted[0].event, 'comment');
+assert.equal(posted[0].anchorId, 'new-section');
+assert.equal(posted[0].quote, 'old quote');
+assert.equal(posted[0].text, 'Original note');
+assert.equal(posted[1].event, 'status');
+assert.equal(posted[1].status, 'resolved');
 
 console.log('runtime Jev contract tests passed');
