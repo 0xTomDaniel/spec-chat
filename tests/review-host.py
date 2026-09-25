@@ -101,8 +101,7 @@ class ReviewHostTest(unittest.TestCase):
 
     def register_args(self, state, project="review", slug="ann45", spec="review", **extra):
         args = [
-            "register", "--state-dir", str(state), "--bind", "127.0.0.1",
-            "--proof-host", "127.0.0.1", "--test-loopback", "--resource", self.resource(project, spec),
+            "register", "--state-dir", str(state), "--resource", self.resource(project, spec),
             "--owner", "owner", "--checker", "checker", "--cursor-name", ".cursor-test",
             "--slug", slug,
         ]
@@ -119,7 +118,9 @@ class ReviewHostTest(unittest.TestCase):
         started = self.run_cli(*self.register_args(state), state=state)
         self.assertEqual(started.returncode, 0, started.stderr)
         document = self.registry(state)
-        self.assertEqual(set(document["process"]), {"pid", "port"})
+        self.assertEqual(document["process"]["bind"], "127.0.0.1")
+        self.assertEqual(set(document["process"]), {"pid", "port", "bind"})
+        self.assertIn(f"ssh -L {document['process']['port']}:127.0.0.1:", started.stdout)
         self.assertEqual(len(document["resource"]), 1)
         resource = document["resource"][0]
         self.assertEqual(resource["slug"], "ann45")
@@ -277,6 +278,58 @@ finish_event = ""
         self.assertIn("http://", line)
         port = int(line.split("http://127.0.0.1:", 1)[1].split()[0])
         self.assertEqual(request(f"http://127.0.0.1:{port}/legacy/docs/specs/review.spec.html")[0], 200)
+
+    def test_private_default_needs_no_approved_ports(self):
+        state = self.work / "state"
+        self.states.append(state)
+        env = {**os.environ, "PATH": path_without_herdr(), "PYTHONDONTWRITEBYTECODE": "1"}
+        env.pop("SPEC_CHAT_APPROVED_INGRESS_PORTS", None)
+        env.pop("REVIEW_APPROVED_INGRESS_PORTS", None)
+        started = subprocess.run(["python3", str(LAUNCHER_PATH), *self.register_args(state)], cwd=ROOT, env=env,
+                                 text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=25)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        process = self.registry(state)["process"]
+        self.assertGreater(process["port"], 0)
+        self.assertTrue(self.url(started).endswith(f":{process['port']}"))
+
+    def test_public_loopback_is_rejected(self):
+        state = self.work / "state"
+        result = self.run_cli(*self.register_args(state), "--public", "127.0.0.1", state=state)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must not be loopback", result.stderr)
+        self.assertFalse((state / "registry.toml").exists())
+
+    def test_bind_choice_is_explicit_then_recorded(self):
+        def args(public=None, private=False):
+            return review_host.build_parser().parse_args(
+                ["register", "--resource", "x", "--owner", "o", "--checker", "c", "--cursor-name", ".c",
+                 *(["--public", public] if public else []), *(["--private"] if private else [])])
+        self.assertEqual(review_host.select_bind(args(), None), "127.0.0.1")
+        self.assertEqual(review_host.select_bind(args(), {"pid": 1, "port": 2}), "127.0.0.1")
+        self.assertEqual(review_host.select_bind(args(public="0.0.0.0"), None), "0.0.0.0")
+        recorded = {"pid": 1, "port": 2, "bind": "0.0.0.0"}
+        self.assertEqual(review_host.select_bind(args(), recorded), "0.0.0.0")
+        self.assertEqual(review_host.select_bind(args(private=True), recorded), "127.0.0.1")
+
+    def test_public_bind_warns_no_login(self):
+        with mock.patch("sys.stderr") as err, mock.patch("sys.stdout"):
+            review_host.print_access("http://203.0.113.9:45583", "0.0.0.0")
+        written = "".join(call.args[0] for call in err.write.call_args_list)
+        self.assertIn("has no login", written)
+
+    def test_live_legacy_process_is_reused_unchanged_and_bind_backfilled(self):
+        state = self.work / "state"
+        first = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        registry = state / "registry.toml"
+        process = self.registry(state)["process"]
+        registry.write_text(registry.read_text(encoding="utf-8").replace('bind = "127.0.0.1"\n', ""), encoding="utf-8")
+        self.assertNotIn("bind", self.registry(state)["process"])
+        again = self.run_cli(*self.register_args(state, spec="second"), "--public", "0.0.0.0", state=state,
+                             ports=process["port"])
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertIn("reused unchanged", again.stderr)
+        self.assertEqual(self.registry(state)["process"], {**process, "bind": "127.0.0.1"})
 
     def test_invalid_port_does_not_start_server(self):
         state = self.work / "invalid"
