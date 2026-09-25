@@ -13,7 +13,7 @@ STATE_KEYS = {
     "resolved": {"comment", "before", "after"},
     "corpus": {"before", "after", "target", "target_boundary"},
     "coverage": {"story", "criterion"},
-    "audience": {"clause", "reader"},
+    "audience": {"clause"},
 }
 
 
@@ -64,7 +64,7 @@ class JevQuestionSetTest(unittest.TestCase):
         spec.loader.exec_module(jev)
         source = (ROOT / "docs/specs/jev-suggestions.spec.html").read_text(encoding="utf-8")
         corpus = " ".join(" ".join(value["text"].split()) for value in jev.extract_anchors(source).values())
-        constants = {"someone who uses the result, not builds it"}
+        constants = set()
 
         def strings(value):
             if isinstance(value, str):
