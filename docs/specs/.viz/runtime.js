@@ -56,6 +56,8 @@ const state = {
   eventsRendered: false,
   handoffPosting: false,
   range: { baseline: null, loading: false, pickerOpen: false },
+  jev: { status: 'idle', items: [], base: null, request: 0 },
+  movingOrphans: new Set(),
 };
 
 /* ---------------- transports ---------------- */
@@ -139,6 +141,80 @@ function baselineParams(base) {
   return params;
 }
 
+const JEV_TYPE_LABELS = {
+  scope: 'Scope',
+  behavioral: 'Behavior',
+  clarification: 'Clarification',
+  cosmetic: 'Cosmetic',
+};
+
+function jevParams(base) {
+  const params = new URLSearchParams({ path: location.pathname.replace(/^\//, ''), base: String(base || '') });
+  if (new URLSearchParams(location.search).get('view') === 'reading') params.set('view', 'reading');
+  return params;
+}
+
+async function fetchJev(base, signal) {
+  const response = await fetch('/api/jev?' + jevParams(base), { signal });
+  if (!response.ok) throw new Error('Jev unavailable');
+  const result = await response.json();
+  return {
+    jev: result && result.jev === 'off' ? 'off' : 'on',
+    items: Array.isArray(result && result.items) ? result.items.filter(item => item && typeof item === 'object').map(item => ({
+      kind: String(item.kind || ''),
+      id: String(item.id || ''),
+      state: String(item.state || 'none'),
+      label: item.label == null ? null : String(item.label),
+      target: item.target == null ? null : String(item.target),
+      record: item.record == null ? null : String(item.record),
+    })) : [],
+  };
+}
+
+function jevItem(kind, id) {
+  return state.jev.items.find(item => item.kind === kind && item.id === String(id)) || null;
+}
+
+function findAnchor(anchorId) {
+  return [...document.querySelectorAll('[data-anchor]')].find(el => el.dataset.anchor === String(anchorId)) || null;
+}
+
+function clearJev() {
+  state.jev.request += 1;
+  state.jev.status = 'idle';
+  state.jev.items = [];
+  state.jev.base = null;
+  renderJev();
+}
+
+async function requestJev(base) {
+  if (!['http:', 'https:'].includes(location.protocol) || !base) return;
+  const request = ++state.jev.request;
+  state.jev.status = 'loading';
+  state.jev.base = String(base);
+  renderJev();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const result = await fetchJev(base, controller.signal);
+    if (request !== state.jev.request) return;
+    state.jev.status = result.jev === 'off' ? 'off' : 'on';
+    state.jev.items = result.items;
+    renderJev();
+    renderPanel();
+    renderPins();
+  } catch (_) {
+    if (request !== state.jev.request) return;
+    state.jev.status = 'unavailable';
+    state.jev.items = [];
+    renderJev();
+    renderPanel();
+    renderPins();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function markIssueFocus(currentText, baseline) {
   const parser = new DOMParser();
   const current = anchorSignatures(parser.parseFromString(currentText, 'text/html'));
@@ -182,6 +258,7 @@ async function applyIssueFocus() {
     const result = await fetchBaseline(requestedBase, true, controller.signal);
     state.range.baseline = result.baseline;
     renderRangeBar(result.baseline);
+    requestJev(result.baseline.base);
     markIssueFocus(result.currentText, result.baseline);
   } catch (error) {
     const copy = document.getElementById('hx-range-copy');
@@ -286,6 +363,7 @@ async function selectRangeBase(value) {
   setRangeError('');
   const apply = document.getElementById('hx-range-apply');
   if (apply) apply.disabled = true;
+  clearJev();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
   try {
@@ -294,6 +372,7 @@ async function selectRangeBase(value) {
     state.range.baseline = baseline;
     markIssueFocus(result.currentText, baseline);
     renderRangeBar(baseline);
+    requestJev(baseline.base || requested);
     const url = new URL(location.href);
     url.searchParams.set('focus', 'changes');
     url.searchParams.set('base', baseline.base || requested);
@@ -336,6 +415,7 @@ async function loadRangeBar() {
     const result = await fetchBaseline(null, false, controller.signal);
     state.range.baseline = result.baseline;
     renderRangeBar(result.baseline);
+    requestJev(result.baseline.base);
   } catch (error) {
     const copy = document.getElementById('hx-range-copy');
     if (copy) copy.textContent = 'Compared range unavailable.';
@@ -910,6 +990,65 @@ function ingest(events) {
   renderBadges();
 }
 
+function jevDisplayLabel(item) {
+  if (!item) return '';
+  if (item.state === 'unsure') return 'unsure';
+  if (item.state === 'unavailable') return 'Jev unavailable';
+  const raw = String(item.label || '').toLowerCase();
+  return JEV_TYPE_LABELS[raw] || item.label || '';
+}
+
+function appendJevMarker(holder, text, stateName) {
+  const marker = document.createElement('span');
+  marker.className = 'hx-jev-marker hx-jev-badge';
+  marker.dataset.state = stateName;
+  marker.textContent = text;
+  const heading = holder.querySelector('h1,h2,h3,h4,h5,h6') || holder;
+  heading.appendChild(marker);
+}
+
+function goToJevTarget(target) {
+  const value = String(target || '');
+  const hash = value.indexOf('#');
+  const path = hash < 0 ? '' : value.slice(0, hash);
+  const anchor = hash < 0 ? value : value.slice(hash + 1);
+  if (path && path !== location.pathname.replace(/^\//, '')) {
+    location.href = (path.startsWith('/') ? path : '/' + path) + (anchor ? '#' + anchor : '');
+    return;
+  }
+  scrollToJevAnchor(anchor || value);
+}
+
+function renderJev() {
+  document.querySelectorAll('.hx-jev-badge').forEach(el => el.remove());
+  document.querySelectorAll('[data-hx-jev-type]').forEach(el => {
+    delete el.dataset.hxJevType;
+    delete el.dataset.hxJevState;
+  });
+  document.querySelectorAll('.hx-jev-note').forEach(el => el.remove());
+  if (EMBED_REVIEW_DIR) return;
+
+  if (state.jev.status === 'off' || state.jev.status === 'unavailable') {
+    const note = document.createElement('p');
+    note.className = 'hx-jev-note';
+    note.textContent = state.jev.status === 'off' ? 'Jev off' : 'Jev unavailable';
+    const article = document.querySelector('article.spec');
+    if (article) article.parentNode.insertBefore(note, article);
+    else document.body.insertBefore(note, document.body.firstChild);
+  }
+
+  for (const item of state.jev.items) {
+    if (!item.id || item.state === 'none') continue;
+    const holder = findAnchor(item.id);
+    if (!holder || item.kind !== 'type') continue;
+    const label = jevDisplayLabel(item);
+    if (!label) continue;
+    holder.dataset.hxJevType = String(item.label || item.state).toLowerCase();
+    holder.dataset.hxJevState = item.state;
+    appendJevMarker(holder, label, item.state);
+  }
+}
+
 /* ---------------- UI ---------------- */
 // Document presentation applies only to standalone spec pages: an embedding host app
 // owns its own look, so embed mode ships the hx-* overlay CSS alone.
@@ -1078,6 +1217,25 @@ body.hx-comment [data-anchor] :is(button,input,select,textarea,label,a,summary){
 body.hx-comment [data-render-target]:hover{border:1.5px dashed #d98e04}
 body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-badge{font:600 9.5px system-ui;text-transform:uppercase;letter-spacing:.04em;color:#0e7264;background:#e3f2f0;border-radius:4px;padding:2px 7px;margin-left:8px;vertical-align:middle}
+.hx-jev-badge{font:700 10px/1 system-ui,sans-serif;text-transform:none;letter-spacing:0;border-radius:999px;padding:4px 8px;margin-left:8px;vertical-align:middle;white-space:nowrap}
+.hx-jev-badge[data-state=label]{color:#204a43;background:#d9eee9}
+.hx-jev-badge[data-state=unsure]{color:#78520a;background:#fff0c2}
+.hx-jev-badge[data-state=unavailable]{color:#7b2525;background:#f8dddd}
+.hx-jev-note{box-sizing:border-box;max-width:720px;margin:12px auto 0;padding:6px 10px;border:1px solid #e0c77a;border-radius:7px;background:#fff7d6;color:#6d4b05;font:600 12px/1.35 system-ui,sans-serif}
+[data-hx-jev-type=scope]{box-shadow:inset 4px 0 #b42318;background:rgba(180,35,24,.08)}
+[data-hx-jev-type=behavioral]{box-shadow:inset 3px 0 #b45309;background:rgba(180,83,9,.06)}
+[data-hx-jev-type=clarification]{box-shadow:inset 2px 0 #28756a;background:rgba(40,117,106,.045)}
+[data-hx-jev-type=cosmetic]{opacity:.78;filter:saturate(.72)}
+.hx-jev-target-flash{animation:hx-jev-flash 1.2s ease-out}
+@keyframes hx-jev-flash{0%{box-shadow:0 0 0 4px rgba(41,71,199,.42)}100%{box-shadow:0 0 0 14px rgba(41,71,199,0)}}
+.hx-jev-thread-label{flex:0 0 auto;color:#3d8c40;background:#e8f2e8;border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700;white-space:nowrap}
+.hx-jev-thread-label[data-state=unsure]{color:#78520a;background:#fff0c2}
+.hx-jev-thread-label[data-state=unavailable]{color:#7b2525;background:#f8dddd}
+.hx-orphan-hint{display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin:7px 0;padding:7px 8px;border-left:3px solid #b47308;background:#fff8e9;color:#76500a;font-size:11.5px;line-height:1.35}
+.hx-orphan-hint>span{flex:1 1 100%}
+.hx-orphan-hint .hx-btn{margin:0;font-size:10.5px;padding:4px 8px}
+.hx-pin-jev{position:absolute;left:calc(100% + 4px);top:50%;transform:translateY(-50%);width:max-content;max-width:120px;color:#3d8c40;background:#e8f2e8;border:1px solid #69a76b;border-radius:4px;padding:2px 4px;font:700 9px/1.1 system-ui,sans-serif;white-space:nowrap;pointer-events:none}
+body.hx-focus-active [data-hx-jev-type=cosmetic]{opacity:.7;filter:saturate(.6)}
 .hx-banner{position:fixed;top:0;left:0;right:0;background:#12897c;color:#fff;font:600 13px system-ui;padding:8px 16px;z-index:950;display:flex;gap:14px;align-items:center;justify-content:center}
 .hx-toast{position:fixed;bottom:76px;left:50%;transform:translateX(-50%);background:#22242a;color:#faf9f6;font:600 12.5px system-ui;border-radius:8px;padding:9px 16px;box-shadow:0 8px 28px rgba(30,30,40,.3);z-index:960;opacity:0;transition:opacity .25s;pointer-events:none}
 .hx-toast.show{opacity:1}
@@ -1105,6 +1263,9 @@ body.hx-panel-open{padding-right:0;overflow:hidden}
 .hx-handoff .hx-note{flex:1 1 auto}
 .hx-handoff .hx-btn{flex:1 1 auto;margin:0}
 .hx-pin{width:44px;height:44px;font-size:12px;touch-action:manipulation}
+.hx-pin-jev{left:auto;right:calc(100% + 4px);max-width:110px;text-align:right}
+.hx-jev-note{margin:8px 16px 0}
+.hx-jev-badge{font-size:9px;padding:4px 6px;margin-left:5px}
 .hx-banner{align-items:flex-start;flex-wrap:wrap;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;text-align:center}
 .hx-banner button{min-height:44px;padding:8px 12px;touch-action:manipulation}
 .hx-toast{bottom:calc(112px + env(safe-area-inset-bottom));max-width:calc(100vw - 24px);box-sizing:border-box;text-align:center}
@@ -1406,10 +1567,36 @@ function renderPanel() {
     const collapsed = resolvedThreadCollapsed(th, state.expandedResolved);
     const d = document.createElement('div');
     d.className = 'hx-thread' + (state.activeThread === th.id ? ' active' : '') + (collapsed ? ' resolved-collapsed' : '');
+    const resolvedHint = jevItem('resolved', th.id);
+    const orphanHint = jevItem('orphan', th.id);
+    const threadJevState = [orphanHint, resolvedHint].find(item => item && ['unsure', 'unavailable'].includes(item.state));
     d.innerHTML = '<div class="hx-thread-summary"><div class="hx-anchor">' + esc(label(b)) + '</div>' +
       '<span class="hx-pill" data-s="' + th.status + '">' + th.status + '</span>' +
+      (resolvedHint && resolvedHint.state === 'label' ? '<span class="hx-jev-thread-label">Looks resolved</span>' : '') +
+      (threadJevState ? '<span class="hx-jev-thread-label" data-state="' + threadJevState.state + '">' + esc(jevDisplayLabel(threadJevState)) + '</span>' : '') +
       (th.status === 'resolved' ? '<button class="hx-disclosure" data-act="disclosure" aria-expanded="' + String(!collapsed) + '" aria-label="' + (collapsed ? 'Show' : 'Hide') + ' resolved thread">' + (collapsed ? '▸' : '▾') + '</button>' : '') + '</div>' +
       (collapsed ? '<div class="hx-thread-preview">' + esc(b.text || 'Resolved comment') + '</div>' : '');
+    if (orphanHint && orphanHint.state === 'label' && orphanHint.target) {
+      const hint = document.createElement('div');
+      hint.className = 'hx-orphan-hint';
+      const copy = document.createElement('span');
+      copy.textContent = 'Possibly moved to: #' + orphanHint.target;
+      const go = document.createElement('button');
+      go.type = 'button';
+      go.className = 'hx-btn';
+      go.dataset.act = 'orphan-go';
+      go.textContent = 'Go to';
+      go.addEventListener('click', e => { e.stopPropagation(); goToJevTarget(orphanHint.target); });
+      const move = document.createElement('button');
+      move.type = 'button';
+      move.className = 'hx-btn pri';
+      move.dataset.act = 'orphan-move';
+      move.textContent = state.movingOrphans.has(th.id) ? 'Moving…' : 'Move comment here';
+      move.disabled = state.movingOrphans.has(th.id);
+      move.addEventListener('click', e => { e.stopPropagation(); moveOrphan(th, orphanHint.target); });
+      hint.append(copy, go, move);
+      d.appendChild(hint);
+    }
     if (!collapsed) {
       for (const message of th.messages) {
         const m = message.body;
@@ -1488,7 +1675,43 @@ function selectThread(th, scroll) {
 }
 
 function scrollToThread(b) {
-  document.querySelector('[data-anchor="' + b.anchorId + '"]')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  findAnchor(b.anchorId)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+function scrollToJevAnchor(anchorId) {
+  const holder = findAnchor(anchorId);
+  if (!holder) return;
+  holder.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  holder.classList.remove('hx-jev-target-flash');
+  requestAnimationFrame(() => holder.classList.add('hx-jev-target-flash'));
+}
+
+async function moveOrphan(th, target) {
+  if (!th || !target || state.movingOrphans.has(th.id)) return;
+  state.movingOrphans.add(th.id);
+  renderPanel();
+  const original = th.ev.body || {};
+  const quote = original.quote || original.text || '';
+  try {
+    await state.transport.postEvent({
+      id: humanId('s'), event: 'status', respondsTo: th.id, threadId: th.id,
+      status: 'resolved', actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1,
+    });
+    await state.transport.postEvent({
+      id: humanId('u'), event: 'comment', anchorId: target, target: null,
+      quote, text: original.text || 'Moved comment', actor: 'human',
+      createdAt: new Date().toISOString(), schemaVersion: 1,
+    });
+    toast('Comment moved to #' + target);
+    state.activeThread = null;
+    await refresh();
+  } catch (_) {
+    toast('Could not move comment');
+  } finally {
+    state.movingOrphans.delete(th.id);
+    renderPanel();
+    renderPins();
+  }
 }
 
 const chartInfoFor = b => {
@@ -1668,14 +1891,27 @@ function renderPins() {
   for (const th of state.threads.values()) {
     n++;
     const b = th.ev.body;
-    const holder = document.querySelector('[data-anchor="' + b.anchorId + '"]');
+    const holder = findAnchor(b.anchorId);
     if (!holder) continue;
     const pos = pinPos(b, holder);
     const pin = document.createElement('button');
     pin.className = 'hx-pin' + (state.activeThread === th.id ? ' active' : '');
     pin.dataset.s = th.status;
-    pin.textContent = n;
-    pin.title = label(b);
+    const looksResolved = Boolean(jevItem('resolved', th.id) && jevItem('resolved', th.id).state === 'label');
+    pin.textContent = '';
+    const number = document.createElement('span');
+    number.className = 'hx-pin-number';
+    number.textContent = n;
+    pin.appendChild(number);
+    if (looksResolved) {
+      pin.dataset.jev = 'resolved';
+      const marker = document.createElement('span');
+      marker.className = 'hx-pin-jev';
+      marker.textContent = 'Looks resolved';
+      pin.appendChild(marker);
+    }
+    pin.title = (looksResolved ? 'Looks resolved · ' : '') + label(b);
+    pin.setAttribute('aria-label', (looksResolved ? 'Looks resolved: ' : '') + label(b));
     pin.style.top = pos.top + 'px';
     const pinSize = window.matchMedia('(max-width: 640px)').matches ? 44 : 24;
     pin.style.left = Math.max(0, Math.min(pos.left, holder.clientWidth - pinSize)) + 'px';
