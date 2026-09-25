@@ -48,7 +48,7 @@ Shaping never marks implementation work In Progress or Done.
 
 ## Review shaping
 
-Material uncertainties become temporary anchored TBDs.
+Material uncertainties become temporary anchored TBDs marked `data-spec-tbd`; any value other than `later` is open, blocks Finish, and is highlighted in review. Mark a TBD deliberately left for a later slice `data-spec-tbd="later"`: it stays visible but neither blocks Finish nor is highlighted.
 Ask small dependency-aware batches in Spec Chat, resolve each answer into current spec and issue truth, and reconcile tickets after material changes.
 When resolving a review finding, prefer removing or deferring scope over adding spec text; keep v1 minimal.
 Finish each batch's behavior, acceptance, and necessary layout changes together before final browser inspection and ticket reconciliation; apply the authoring reference's proportional recheck rule to later corrections.
@@ -60,7 +60,7 @@ For remote or cross-machine review, block the shaping handoff until the direct p
 
 Finish shaping only when:
 
-- no draft, pending, acknowledged, unresolved, or material TBD work remains
+- no draft, pending, acknowledged, unresolved, or open TBD work remains; `data-spec-tbd="later"` does not block
 - issue, spec, applicable ADRs, stories, acceptance criteria, architecture, and implementation graph agree
 
 The processed Finish review hand-off is acceptance of the reviewed canonical spec and permits implementation dispatch under that spec. It is not implementation PR acceptance, merge approval, preproduction promotion, or live traffic approval. Those gates remain explicit.

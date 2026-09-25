@@ -55,6 +55,7 @@ const state = {
   loopsStarted: false,
   eventsRendered: false,
   handoffPosting: false,
+  lastTbd: null,         // open TBD marker focused by the last TBD open activation
   range: { baseline: null, loading: false, pickerOpen: false },
 };
 
@@ -879,6 +880,23 @@ function reviewHandoffState(threads, hasTbd = false) {
   return { drafts, finish, tbd, enabled: drafts > 0 || finish || tbd };
 }
 
+function isOpenTbd(value) {
+  return value !== 'later';
+}
+
+function openTbdMarkers(markers) {
+  return [...markers].filter(el => isOpenTbd(el.getAttribute('data-spec-tbd')));
+}
+
+function nextOpenTbd(open, last) {
+  if (!open.length) return null;
+  return open[(open.indexOf(last) + 1) % open.length];
+}
+
+function tbdBlock(el) {
+  return el.closest('[data-anchor]') || el;
+}
+
 function handoffObservation(events, nowMs) {
   let handoff = null;
   for (const event of events) if (event.actor === 'human' && event.body.event === 'handoff') handoff = event;
@@ -1077,6 +1095,7 @@ body.hx-comment [data-anchor] :is(button,input,select,textarea,label,a,summary){
 .hx-thread-ring{position:fixed;border:2px solid #d98e04;border-radius:5px;pointer-events:none;z-index:750;box-shadow:0 0 0 3px rgba(217,142,4,.18);transition:left .12s,top .12s,width .12s,height .12s}
 body.hx-comment [data-render-target]:hover{border:1.5px dashed #d98e04}
 body.hx-comment [data-render-target] canvas{cursor:copy!important}
+.hx-tbd-open{outline:2px solid #d98e04;outline-offset:4px;border-radius:3px;background:rgba(217,142,4,.08)}
 .hx-badge{font:600 9.5px system-ui;text-transform:uppercase;letter-spacing:.04em;color:#0e7264;background:#e3f2f0;border-radius:4px;padding:2px 7px;margin-left:8px;vertical-align:middle}
 .hx-banner{position:fixed;top:0;left:0;right:0;background:#12897c;color:#fff;font:600 13px system-ui;padding:8px 16px;z-index:950;display:flex;gap:14px;align-items:center;justify-content:center}
 .hx-toast{position:fixed;bottom:76px;left:50%;transform:translateX(-50%);background:#22242a;color:#faf9f6;font:600 12.5px system-ui;border-radius:8px;padding:9px 16px;box-shadow:0 8px 28px rgba(30,30,40,.3);z-index:960;opacity:0;transition:opacity .25s;pointer-events:none}
@@ -1464,8 +1483,10 @@ function renderPanel() {
     });
     wrap.appendChild(d);
   }
-  const handoffState = reviewHandoffState(state.threads, Boolean(document.querySelector('[data-spec-tbd]')));
+  const openTbds = openTbdMarkers(document.querySelectorAll('[data-spec-tbd]'));
+  const handoffState = reviewHandoffState(state.threads, openTbds.length > 0);
   const drafts = handoffState.drafts;
+  renderTbdHighlight(handoffState.tbd ? openTbds : []);
   document.getElementById('hx-drafts').textContent = handoffState.finish ? 'Review complete' : drafts + ' draft' + (drafts === 1 ? '' : 's');
   const desktopHandoff = document.getElementById('hx-handoff');
   desktopHandoff.disabled = !handoffState.enabled;
@@ -1702,9 +1723,9 @@ function renderBadges() {
 }
 
 async function handoff() {
-  const tbdEl = document.querySelector('[data-spec-tbd]');
-  const action = reviewHandoffState(state.threads, Boolean(tbdEl));
-  if (action.tbd) return jumpToTbd(tbdEl);
+  const openTbds = openTbdMarkers(document.querySelectorAll('[data-spec-tbd]'));
+  const action = reviewHandoffState(state.threads, openTbds.length > 0);
+  if (action.tbd) return jumpToTbd(state.lastTbd = nextOpenTbd(openTbds, state.lastTbd));
   if (state.handoffPosting || !action.enabled) return;
   state.handoffPosting = true;
   try {
@@ -1714,6 +1735,12 @@ async function handoff() {
   } finally {
     state.handoffPosting = false;
   }
+}
+
+function renderTbdHighlight(open) {
+  const blocks = new Set(open.map(tbdBlock));
+  document.querySelectorAll('.hx-tbd-open').forEach(el => { if (!blocks.has(el)) el.classList.remove('hx-tbd-open'); });
+  blocks.forEach(el => el.classList.add('hx-tbd-open'));
 }
 
 function jumpToTbd(el) {

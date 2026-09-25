@@ -43,7 +43,7 @@
       "eval_name": "finish-and-cold-recovery",
       "prompt": "The browser review is clean and the human selects Finish review.",
       "expectations": [
-        "Refuses finish while any data-spec-tbd or unresolved thread remains",
+        "Refuses finish while any open data-spec-tbd (value other than later) or unresolved thread remains",
         "Treats the existing empty hand-off as browser-review completion",
         "Stops the watcher and public transport after final reconciliation",
         "Does not infer implementation authorization, acceptance, merge, or deployment approval",

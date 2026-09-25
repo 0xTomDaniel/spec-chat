@@ -8,8 +8,8 @@ const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime
 const start = runtime.indexOf('function foldThreads(events)');
 const end = runtime.indexOf('\n\nfunction ingest(events)', start);
 assert.ok(start >= 0 && end > start, 'runtime exposes the pure thread-folding function');
-const model = Function(runtime.slice(start, end) + '; return { foldThreads, resolvedThreadCollapsed, threadReplyAction, reviewHandoffState, handoffObservation, commentModeShortcut, threadDockEntries, acknowledgedReplyCount };')();
-const { foldThreads, resolvedThreadCollapsed, threadReplyAction, reviewHandoffState, handoffObservation, commentModeShortcut, threadDockEntries, acknowledgedReplyCount } = model;
+const model = Function(runtime.slice(start, end) + '; return { foldThreads, resolvedThreadCollapsed, threadReplyAction, reviewHandoffState, handoffObservation, commentModeShortcut, threadDockEntries, acknowledgedReplyCount, isOpenTbd, openTbdMarkers, nextOpenTbd, tbdBlock };')();
+const { foldThreads, resolvedThreadCollapsed, threadReplyAction, reviewHandoffState, handoffObservation, commentModeShortcut, threadDockEntries, acknowledgedReplyCount, isOpenTbd, openTbdMarkers, nextOpenTbd, tbdBlock } = model;
 
 const event = (name, actor, body) => ({ name, actor, body: { actor, schemaVersion: 1, ...body } });
 const events = [
@@ -86,7 +86,26 @@ assert.deepEqual(reviewHandoffState(new Map([['resolved', { status: 'resolved' }
 assert.deepEqual(reviewHandoffState(new Map([['draft', { status: 'draft' }]]), true), { drafts: 1, finish: false, tbd: false, enabled: true }, 'drafts still hand off despite a TBD');
 assert.deepEqual(reviewHandoffState(new Map([['pending', { status: 'pending' }]]), true), { drafts: 0, finish: false, tbd: false, enabled: false }, 'unsettled threads stay disabled despite a TBD');
 assert.match(runtime, /handoffState\.tbd \? 'TBD open'/, 'handoff controls read TBD open when only a TBD blocks Finish');
-assert.match(runtime, /if \(action\.tbd\) return jumpToTbd\(tbdEl\);/, 'the TBD handoff jumps to the TBD before posting any event');
+const marker = value => ({ value, getAttribute: name => name === 'data-spec-tbd' ? value : null });
+assert.equal(isOpenTbd(''), true, 'a bare data-spec-tbd marker is open');
+assert.equal(isOpenTbd('open'), true, 'any value other than later is open');
+assert.equal(isOpenTbd('later'), false, 'data-spec-tbd="later" is not open');
+const bare = marker(''), later = marker('later'), named = marker('question'), later2 = marker('later');
+assert.deepEqual(openTbdMarkers([later, later2]), [], 'only later TBDs leave nothing open');
+assert.deepEqual(reviewHandoffState(new Map([['resolved', { status: 'resolved' }]]), openTbdMarkers([later, later2]).length > 0), { drafts: 0, finish: true, tbd: false, enabled: true }, 'later TBDs do not block spec acceptance');
+assert.deepEqual(openTbdMarkers([bare, later, named]), [bare, named], 'open TBDs keep document order and skip later markers');
+assert.equal(nextOpenTbd([bare, named], null), bare, 'first activation focuses the first open TBD');
+assert.equal(nextOpenTbd([bare, named], bare), named, 'next activation focuses the next open TBD in document order');
+assert.equal(nextOpenTbd([bare, named], named), bare, 'activation wraps after the last open TBD');
+assert.equal(nextOpenTbd([bare, named], later), bare, 'a stale or later last target restarts at the first open TBD');
+assert.equal(nextOpenTbd([], null), null, 'no open TBD yields no jump target');
+const block = { id: 'block' };
+assert.equal(tbdBlock({ closest: sel => sel === '[data-anchor]' ? block : null }), block, 'the highlighted block is the nearest anchored block');
+const loose = { closest: () => null };
+assert.equal(tbdBlock(loose), loose, 'an unanchored marker highlights itself');
+assert.match(runtime, /if \(action\.tbd\) return jumpToTbd\(/, 'the TBD handoff jumps to a TBD before posting any event');
+assert.equal((runtime.match(/const openTbds = openTbdMarkers\(document\.querySelectorAll\('\[data-spec-tbd\]'\)\);\n\s+const \w+ = reviewHandoffState\(state\.threads, openTbds\.length > 0\);/g) || []).length, 2, 'render and activation gate eligibility on open TBD markers only');
+assert.match(runtime, /\.hx-tbd-open\{/, 'open TBD blocks have a visible highlight style');
 
 const waitingHandoff = [event('300-handoff.json', 'human', { id: 'h-wait', event: 'handoff', createdAt: '2026-08-31T12:00:00.000Z' })];
 assert.equal(handoffObservation(waitingHandoff, Date.parse('2026-08-31T12:00:10.000Z')), 'waiting', 'a fresh unacknowledged hand-off is waiting');
