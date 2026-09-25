@@ -56,20 +56,15 @@ Register a lane's review resources with --slug <lane key>, where the lane key is
 8. **Reconcile to empty, then select one terminal control state.** Repeat the zero-wait scan and steps 2–7 until it exits 3, then choose exactly one:
 
    - `turn-yielded`: run `scripts/review-control.sh yielded <spec-root> .cursor-<cli-or-session> 3600 3` through a verified same-turn yield and keep this turn open. A final response is forbidden.
-   - `external-wake`: run `scripts/review-control.sh external <spec-root> .cursor-<cli-or-session> <owner-id> <owner-session> <adapter> [args...]` in a persistent foreground host-owned terminal. Final is allowed only after the adapter verifies the exact owner identity.
+   - `host-wake`: register the resource with `scripts/review-host.py register --owner <owner-pane-id> --cursor-name .cursor-<cli-or-session>`, using the lane record owner pane id, never an agent or tab name. Final is allowed only when registration printed `wake=verified owner=<pane>`; the review host then prompts that pane once per hand-off batch. `wake=unavailable` selects `manual-resume`.
    - `manual-resume`: run `scripts/review-control.sh manual`, return a final response that explicitly requires a new human chat message, and claim no automatic wake. Keep the same public server and checker alive while waiting. The new message resumes the checker against that public URL.
 
    `<spec-root>` is normally the repository's shared `docs/` collection root.
-   `review-control.sh` holds one local kernel lock per canonical collection root and cursor, so a second yielded or external owner fails visibly instead of racing the first.
+   `review-control.sh` holds one local kernel lock per canonical collection root and cursor, so a second yielded owner fails visibly instead of racing the first.
    A raw `watch-specs.sh` long wait is detection-only and now fails unless invoked by `review-control.sh`.
    A background shell, unified exec session, watcher PID, or returned tool session never proves host attachment.
-   Before any final response, transition out of `turn-yielded` into verified `external-wake` or explicit `manual-resume`.
+   Before any final response, transition out of `turn-yielded` into verified `host-wake` or explicit `manual-resume`.
    Detached Codex processing is disabled because it can race the interactive owner.
-
-   For Herdr, run the external monitor in its own visible Herdr pane with `scripts/wake-herdr.py` as the adapter.
-   Bind the exact owner pane as `<owner-id>` and its current Herdr `terminal_id` as `<owner-session>`.
-   The adapter validates both before using modal-safe Herdr prompt transport.
-   Herdr owns only wake; the reactivated authoring pane performs the zero-wait scan and batch transaction.
 
 ## The spec dialect (how to edit)
 
@@ -113,7 +108,7 @@ Full field-by-field reference for reading and writing the spool: `references/eve
 
 ## Per-CLI attachment
 
-The loop is identical on every CLI; only the verified wake adapter differs. Read `references/cli-adapters.md` before selecting `turn-yielded`, `external-wake`, or `manual-resume`.
+The loop is identical on every CLI. Read `references/cli-adapters.md` before selecting `turn-yielded`, `host-wake`, or `manual-resume`.
 
 ## Git-derived focus
 
@@ -173,8 +168,8 @@ runtime change; ordinary edits to a served spec do not require a restart.
 2. Start `assets/review-serve.py` when HTTP review is required. For remote review, use `scripts/review-host.py register` with the resource and lane slug; it binds the host interface on a free approved port. Verify the served runtime advertises the required capabilities and `/api/baseline` succeeds for the exact page and change-request base. Keep that server and URL through ordinary edits, rerunning exact served-byte and `/api/baseline` checks for the same base after each edit. Restart only for a root, collection, process, port, runtime, or ownership change, or when the server is dead.
 3. Present the verified review URL. Do not hand back a GitHub link or a loopback URL when the human is reviewing from another machine.
 4. On both an initial start and any resumed/reconnected turn, run `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 0 3`; drain, reply, and cursor each ready batch, then repeat until exit 3.
-5. After reconciliation is empty, establish `turn-yielded`, verified `external-wake`, or `manual-resume` through `scripts/review-control.sh`.
-6. State the selected control state truthfully. Never say watching, attached, or active after final unless `external-wake` is verified.
+5. After reconciliation is empty, establish `turn-yielded`, verified `host-wake` through `scripts/review-host.py register`, or `manual-resume` through `scripts/review-control.sh`.
+6. State the selected control state truthfully. Never say watching, attached, or active after final unless `host-wake` is verified.
 
 ## Mobile review contract
 

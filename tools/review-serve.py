@@ -11,10 +11,13 @@ import json
 import mimetypes
 import os
 import re
+import shutil
+import signal
 import socket
 import stat
 import subprocess
 import sys
+import threading
 import time
 import tomllib
 from html.parser import HTMLParser
@@ -26,6 +29,10 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
 SAFE_CURSOR_RE = re.compile(r"[^/\\]+\Z")
 EVENT_RE = re.compile(r"[A-Za-z0-9._-]{1,128}\Z")
+WAKE_POLL_SECONDS = 3
+WAKE_SAY_TIMEOUT_SECONDS = 10
+# Herdr typed the prompt but did not observe the pane react; retyping would duplicate it.
+TYPED_UNCONFIRMED_CODES = frozenset({"agent_prompt_stalled"})
 
 
 def parse_args(argv=None):
@@ -173,7 +180,7 @@ class MountState:
             info = os.stat(self.path)
         except OSError:
             return None
-        return info.st_mtime_ns, info.st_size
+        return info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns, info.st_size
 
     def snapshot(self):
         if not self.path:
@@ -340,6 +347,173 @@ def _write_event(review, root, actor, name, event):
             json.dump(event, stream)
 
 
+def _wake_batch(resource):
+    """Return the zero-wait scan batch: pending human names through the newest hand-off."""
+    review = resource["spec_file"] + ".review"
+    try:
+        names = sorted(name for name in os.listdir(os.path.join(review, "human")) if not name.startswith("."))
+    except OSError:
+        return ()
+    try:
+        with open(os.path.join(review, resource["cursor_name"]), encoding="utf-8") as stream:
+            consumed = set(stream.read().splitlines())
+    except FileNotFoundError:
+        consumed = set()
+    except (OSError, ValueError):
+        return ()
+    pending = [name for name in names if name not in consumed]
+    last = max((index for index, name in enumerate(pending) if "-handoff-" in name), default=-1)
+    return tuple(pending[:last + 1])
+
+
+class HerdrTimeout(Exception):
+    """The Herdr command outlived its timeout and its process group was killed."""
+
+
+def _herdr(*argv, timeout):
+    """Run one Herdr command: CompletedProcess, None when it cannot start, HerdrTimeout on timeout."""
+    try:
+        process = subprocess.Popen(
+            argv, text=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, start_new_session=True,
+        )
+    except OSError:
+        return None
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except OSError:
+            pass
+        process.communicate()
+        raise HerdrTimeout(argv[0]) from None
+    return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+
+
+def _herdr_error_code(text):
+    """Return the Herdr JSON error.code found in command output, or None."""
+    candidates = [text] + text.splitlines()
+    for candidate in candidates:
+        try:
+            code = json.loads(candidate)["error"]["code"]
+        except (KeyError, TypeError, ValueError):
+            continue
+        if isinstance(code, str):
+            return code
+    return None
+
+
+def herdr_owner_status(owner):
+    """Resolve an owner pane through Herdr: its agent_status, or None when unresolved."""
+    try:
+        result = _herdr("herdr", "agent", "get", owner, timeout=5)
+    except HerdrTimeout:
+        return None
+    if result is None or result.returncode:
+        return None
+    try:
+        agent = json.loads(result.stdout)["result"]["agent"]
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not isinstance(agent, dict) or agent.get("pane_id") != owner:
+        return None
+    return str(agent.get("agent_status") or "unknown")
+
+
+def herdr_installed():
+    return bool(shutil.which("herdr") and shutil.which("herdr-say"))
+
+
+class WakeController:
+    """Wake each registry row's owner pane once per unchanged hand-off batch."""
+
+    def __init__(self, server):
+        self.server = server
+        self.stop_event = threading.Event()
+        self.lock = threading.Lock()
+        self.states = {}
+        self.delivered = {}
+
+    def status(self, resource_id):
+        with self.lock:
+            return self.states.get(resource_id)
+
+    def _deliver(self, resource, batch):
+        if not herdr_installed():
+            return "unavailable"
+        owner = resource["owner"]
+        agent_status = herdr_owner_status(owner)
+        if agent_status is None:
+            return "failed"
+        if agent_status == "working":
+            return "deferred"
+        message = (
+            f"Spec Chat human spec review hand-off ready: spec {resource['spec_file']}, "
+            f"collection {resource['narrow_root']}, cursor {resource['cursor_name']}, {len(batch)} events. "
+            "Run the zero-wait scan, process the batch, then park."
+        )
+        try:
+            result = _herdr(
+                "herdr-say", "--kind", "command", "--artifact", resource["spec_file"], owner, message,
+                timeout=WAKE_SAY_TIMEOUT_SECONDS,
+            )
+        except HerdrTimeout:
+            return "sent"  # typed, delivery unconfirmed: never retype the same batch
+        if result is None:
+            return "failed"
+        if result.returncode in (0, 75):
+            return {0: "sent", 75: "deferred"}[result.returncode]
+        if _herdr_error_code(result.stderr or "") in TYPED_UNCONFIRMED_CODES:
+            return "sent"
+        return "failed"
+
+    def _poll_row(self, resource):
+        resource_id = resource["id"]
+        if not resource.get("owner") or not resource.get("cursor_name"):
+            return None
+        batch = _wake_batch(resource)
+        if not batch:
+            return None
+        identity = (resource["owner"], batch)
+        if self.delivered.get(resource_id) == identity:
+            return "sent"
+        state = self._deliver(resource, batch)
+        if state == "sent":
+            self.delivered[resource_id] = identity
+        return state
+
+    def poll(self):
+        states = {}
+        kept = set()
+        with self.lock:
+            previous = dict(self.states)
+        for resource in self.server.mount_state.snapshot():
+            resource_id = resource.get("id") if isinstance(resource, dict) else None
+            try:
+                state = self._poll_row(resource)
+            except Exception as exc:  # one bad row never stops wake for the others
+                print("review-serve: wake %s failed: %r" % (resource_id, exc), file=sys.stderr, flush=True)
+                kept.add(resource_id)
+                if resource_id in previous:
+                    states[resource_id] = previous[resource_id]
+                continue
+            if state is not None:
+                states[resource_id] = state
+        with self.lock:
+            self.states = states
+        for resource_id in set(self.delivered) - set(states) - kept:
+            del self.delivered[resource_id]
+
+    def run(self):
+        while not self.stop_event.is_set():
+            try:
+                self.poll()
+            except Exception as exc:  # keep waking other rows after an unexpected error
+                print("review-serve: wake poll failed: %s" % exc, file=sys.stderr, flush=True)
+            self.stop_event.wait(WAKE_POLL_SECONDS)
+
+
 class MountHandler(SimpleHTTPRequestHandler):
     server_version = "SpecChat/1"
     timeout = 2.0
@@ -359,11 +533,13 @@ class MountHandler(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
         return
 
-    def _json(self, value, code=200):
+    def _json(self, value, code=200, headers=None):
         body = json.dumps(value).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        for name, header in (headers or {}).items():
+            self.send_header(name, header)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
@@ -547,7 +723,9 @@ li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywh
         if events is None:
             return self._json({"error": "unsafe spool path"}, 400)
         events.sort(key=lambda event: event["name"])
-        return self._json(events)
+        wake = self.server.wake_controller.status(mount.get("id"))
+        headers = {"X-Spec-Chat-Wake": wake} if wake else None
+        return self._json(events, headers=headers)
 
     def _post_event(self, query):
         mount, review = self._route_review(query)
@@ -672,11 +850,16 @@ def main(argv=None):
         print("review-serve: %s" % exc, file=sys.stderr)
         return 2
     server.mount_state = state
+    server.wake_controller = WakeController(server)
+    wake_thread = threading.Thread(target=server.wake_controller.run, name="spec-chat-wake", daemon=True)
+    wake_thread.start()
     print("spec-chat review-serve on http://%s:%d" % (advertised_host(args), server.server_port), flush=True)
     print("review URL is public and is not a secret in any security sense or an authentication boundary; stop this process when review ends", flush=True)
     try:
         server.serve_forever()
     finally:
+        server.wake_controller.stop_event.set()
+        wake_thread.join(timeout=1)
         server.server_close()
     return 0
 

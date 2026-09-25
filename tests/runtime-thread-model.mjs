@@ -8,8 +8,8 @@ const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime
 const start = runtime.indexOf('function foldThreads(events)');
 const end = runtime.indexOf('\n\nfunction ingest(events)', start);
 assert.ok(start >= 0 && end > start, 'runtime exposes the pure thread-folding function');
-const model = Function(runtime.slice(start, end) + '; return { foldThreads, resolvedThreadCollapsed, threadReplyAction, reviewHandoffState, handoffObservation, commentModeShortcut, threadDockEntries, acknowledgedReplyCount, isOpenTbd, openTbdMarkers, nextOpenTbd, tbdBlock, tbdHighlightBlocks, advanceTbd, renderTbdHighlight };')();
-const { foldThreads, resolvedThreadCollapsed, threadReplyAction, reviewHandoffState, handoffObservation, commentModeShortcut, threadDockEntries, acknowledgedReplyCount, isOpenTbd, openTbdMarkers, nextOpenTbd, tbdBlock, tbdHighlightBlocks, advanceTbd, renderTbdHighlight } = model;
+const model = Function(runtime.slice(start, end) + '; return { foldThreads, resolvedThreadCollapsed, threadReplyAction, reviewHandoffState, handoffObservation, handoffAgentText, commentModeShortcut, threadDockEntries, acknowledgedReplyCount, isOpenTbd, openTbdMarkers, nextOpenTbd, tbdBlock, tbdHighlightBlocks, advanceTbd, renderTbdHighlight };')();
+const { foldThreads, resolvedThreadCollapsed, threadReplyAction, reviewHandoffState, handoffObservation, handoffAgentText, commentModeShortcut, threadDockEntries, acknowledgedReplyCount, isOpenTbd, openTbdMarkers, nextOpenTbd, tbdBlock, tbdHighlightBlocks, advanceTbd, renderTbdHighlight } = model;
 
 const event = (name, actor, body) => ({ name, actor, body: { actor, schemaVersion: 1, ...body } });
 const events = [
@@ -137,6 +137,15 @@ const waitingHandoff = [event('300-handoff.json', 'human', { id: 'h-wait', event
 assert.equal(handoffObservation(waitingHandoff, Date.parse('2026-08-31T12:00:10.000Z')), 'waiting', 'a fresh unacknowledged hand-off is waiting');
 assert.equal(handoffObservation(waitingHandoff, Date.parse('2026-08-31T12:00:31.000Z')), 'queued', 'an unacknowledged hand-off becomes truthfully queued after 30 seconds');
 assert.equal(handoffObservation([...waitingHandoff, event('310-reply.json', 'agent', { id: 'r-wait', event: 'reply', respondsTo: 'u-root', createdAt: '2026-08-31T12:00:12.000Z' })], Date.parse('2026-08-31T12:00:31.000Z')), null, 'a later agent event clears the waiting observation');
+const lastAgent = { body: { createdAt: '2026-08-31T12:00:12.000Z' } };
+assert.equal(handoffAgentText('waiting', null, null), '· handed off, waiting for agent', 'no host wake keeps the waiting message');
+assert.equal(handoffAgentText('queued', 'unavailable', null), '· automatic wake did not occur; send a new chat message to resume', 'unavailable wake keeps the existing timeout message');
+assert.equal(handoffAgentText('queued', 'sent', null), '· automatic wake did not occur; send a new chat message to resume', 'a delivered wake still times out truthfully');
+assert.equal(handoffAgentText('queued', 'deferred', null), '· handed off, waiting for agent', 'a deferred wake keeps waiting for the working owner');
+assert.equal(handoffAgentText('waiting', 'failed', null), '· wake failed; send a new chat message to resume', 'a failed host wake tells the reviewer to resume by chat');
+assert.equal(handoffAgentText('queued', 'failed', null), '· wake failed; send a new chat message to resume', 'a failed host wake outranks the timeout message');
+assert.equal(handoffAgentText(null, 'failed', null), '· no agent events yet', 'wake state never shows without a waiting hand-off');
+assert.match(handoffAgentText(null, null, lastAgent), /^· agent last event /, 'no hand-off shows the last agent event');
 
 assert.match(runtime, /\.hx-thread-dock\{/, 'collapsed review uses a compact conversation dock');
 assert.match(runtime, /\.hx-panel\{[^}]*display:none;/, 'the closed sidebar leaves document layout entirely');
