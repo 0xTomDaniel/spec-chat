@@ -187,7 +187,6 @@ class JudgmentStore:
 
     def __init__(self, path: str | Path | None = None):
         self.path = Path(path) if path else None
-        self.records: list[dict[str, Any]] = []
         self.by_key: dict[str, dict[str, Any]] = {}
         self.lock = threading.RLock()
         if self.path and self.path.is_file():
@@ -198,7 +197,6 @@ class JudgmentStore:
                     continue
                 if isinstance(record, Mapping) and record.get("cache_key"):
                     record = dict(record)
-                    self.records.append(record)
                     current = self.by_key.get(record["cache_key"])
                     if current is None or current.get("outcome") in RETRYABLE_OUTCOMES:
                         self.by_key[record["cache_key"]] = record
@@ -213,7 +211,6 @@ class JudgmentStore:
             current = self.by_key.get(record["cache_key"])
             if current is not None and current.get("outcome") not in RETRYABLE_OUTCOMES:
                 return current
-            self.records.append(record)
             self.by_key[record["cache_key"]] = record
             if self.path:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -385,6 +382,8 @@ class _AnchorParser(HTMLParser):
         _close_explicit(self.stack, tag)
 
     def handle_data(self, data: str):
+        if any(tag in {"script", "style"} for tag, _ in self.stack):
+            return
         seen = set()
         for _, anchor in self.stack:
             if anchor and anchor not in seen:
@@ -544,15 +543,21 @@ def _human_threads(events: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
     events = sorted(events, key=lambda item: str(item.get("name", "")))
     threads: dict[str, dict[str, Any]] = {}
     message_to_thread: dict[str, str] = {}
+    message_slots: dict[str, tuple[str, int]] = {}
     for event in events:
         body = event.get("body", event)
         actor = event.get("actor", body.get("actor")) if isinstance(body, Mapping) else None
         if not isinstance(body, Mapping):
             continue
+        if not isinstance(body.get("id"), str) or any(
+                field in body and not isinstance(body[field], str)
+                for field in ("threadId", "respondsTo", "anchorId", "supersedes")):
+            continue
         if body.get("event") == "comment" and actor == "human":
             thread = {"id": body.get("id"), "status": "pending", "messages": [body], "anchor": body.get("anchorId")}
             threads[thread["id"]] = thread
             message_to_thread[body.get("id")] = thread["id"]
+            message_slots[body["id"]] = (thread["id"], 0)
         elif body.get("event") in {"reply", "edit", "status"}:
             key = body.get("threadId") or message_to_thread.get(body.get("respondsTo"))
             if not key or key not in threads:
@@ -561,12 +566,17 @@ def _human_threads(events: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
             if body.get("event") == "status":
                 thread["status"] = body.get("status", thread["status"])
             elif body.get("event") == "edit" and actor == "human":
-                thread["messages"].append(body)
+                prior = message_slots.get(body.get("supersedes"))
+                if prior is None or prior[0] != key:
+                    continue
+                thread["messages"][prior[1]] = body
                 thread["anchor"] = body.get("anchorId", thread["anchor"])
                 thread["status"] = "pending"
                 message_to_thread[body.get("id")] = key
+                message_slots[body["id"]] = prior
             else:
                 thread["messages"].append(body)
+                message_slots[body["id"]] = (key, len(thread["messages"]) - 1)
                 if actor == "human":
                     thread["anchor"] = body.get("anchorId", thread["anchor"])
                     thread["status"] = "pending"
@@ -696,6 +706,8 @@ class _LeafAnchorParser(HTMLParser):
         _close_explicit(self.stack, tag)
 
     def handle_data(self, data: str):
+        if any(tag in {"script", "style"} for tag, _ in self.stack):
+            return
         anchor = self.stack[-1][1] if self.stack else None
         if anchor and anchor in self.values:
             self.values[anchor]["text"].append(data)
@@ -786,6 +798,8 @@ class JevService:
                          events: list[Mapping[str, Any]]) -> dict[str, bytes]:
         result: dict[str, bytes] = {}
         for thread in _human_threads(events):
+            if thread.get("status") == "resolved":
+                continue
             human = [message for message in thread["messages"] if message.get("actor") == "human"]
             if not human:
                 continue
@@ -793,28 +807,27 @@ class JevService:
             identifier = message.get("id")
             if not identifier:
                 continue
-            commit = message.get("commit")
-            revision = message.get("revision")
-            if isinstance(revision, Mapping):
-                commit = revision.get("head") or revision.get("commit") or revision.get("revision") or commit
-            elif isinstance(revision, str):
-                commit = revision
+            commit = ""
+            created = message.get("createdAt")
+            if isinstance(created, str) and re.fullmatch(
+                    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})",
+                    created):
+                try:
+                    commit = subprocess.check_output(
+                        ("git", "-C", root, "log", "-1", "--before=" + created,
+                         "--format=%H", "--end-of-options", "HEAD", "--", relative),
+                        stderr=subprocess.DEVNULL, text=True,
+                    ).strip()
+                except (OSError, subprocess.CalledProcessError):
+                    commit = ""
             if not isinstance(commit, str) or not commit.strip():
-                created = message.get("createdAt")
-                if isinstance(created, str) and created.strip():
-                    try:
-                        commit = subprocess.check_output(
-                            ("git", "-C", root, "log", "-1", "--before=" + created,
-                             "--format=%H", "HEAD", "--", relative),
-                            stderr=subprocess.DEVNULL, text=True,
-                        ).strip()
-                    except (OSError, subprocess.CalledProcessError):
-                        commit = ""
+                commit = base
             if not isinstance(commit, str) or not commit.strip():
                 continue
             try:
                 result[str(identifier)] = subprocess.check_output(
-                    ("git", "-C", root, "show", commit + ":" + relative), stderr=subprocess.DEVNULL,
+                    ("git", "-C", root, "show", "--end-of-options", commit + ":" + relative),
+                    stderr=subprocess.DEVNULL,
                 )
             except (OSError, subprocess.CalledProcessError):
                 continue
@@ -836,14 +849,21 @@ class JevService:
         except (OSError, subprocess.CalledProcessError):
             old = None
         message_sources = self._message_sources(root, rel, base, events)
-        result = build_type_questions(current, old, relative, base, head)
-        result.extend(build_orphan_questions(events, current, relative, base, head))
-        result.extend(build_resolved_questions(events, current, old, relative, base, head, message_sources))
-        result.extend(build_coverage_questions(current, relative, base, head))
-        result.extend(build_corpus_questions(current, old, relative, base, head,
-                                             self._served_specs(served_mounts or [mount], target)))
+        def build(kind: str, *args: Any) -> list[dict[str, Any]]:
+            try:
+                value = BUILDERS[kind](*args)
+                return value if isinstance(value, list) else []
+            except Exception:
+                return []
+
+        result = build("type", current, old, relative, base, head)
+        result.extend(build("orphan", events, current, relative, base, head))
+        result.extend(build("resolved", events, current, old, relative, base, head, message_sources))
+        result.extend(build("coverage", current, relative, base, head))
+        result.extend(build("corpus", current, old, relative, base, head,
+                            self._served_specs(served_mounts or [mount], target)))
         if view == "reading":
-            result.extend(BUILDERS["audience"](current, relative, base, head))
+            result.extend(build("audience", current, relative, base, head))
         return result
 
     def response(self, mount: Mapping[str, Any], target: str, relative: str, base: str,

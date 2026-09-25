@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import subprocess
 import tempfile
 import threading
 import time
@@ -61,8 +62,8 @@ class JevSeamTest(unittest.TestCase):
                                "sources": ["spec#rule"], "revision": "head"})
             self.assertEqual(result["outcome"], "unsure")
             self.assertEqual(len(provider.calls), 1)
-            self.assertEqual(len(store.records), 1)
-            encoded = json.dumps(store.records[0])
+            self.assertEqual(len(store.by_key), 1)
+            encoded = json.dumps(next(iter(store.by_key.values())))
             self.assertNotIn("secret text", encoded)
             self.assertNotIn("fake", encoded)
 
@@ -72,7 +73,7 @@ class JevSeamTest(unittest.TestCase):
         result = seam.ask({"kind": "type", "id": "rule", "state": {}, "sources": [], "revision": "head"})
         self.assertEqual(result["outcome"], "unavailable")
         self.assertEqual(len(provider.calls), 2)
-        self.assertEqual(len(seam.store.records), 1)
+        self.assertEqual(len(seam.store.by_key), 1)
 
     def test_same_question_uses_record_cache(self):
         provider = FakeProvider({"answers": {"type": {"choice": "behavioral", "confidence": 0.9}}})
@@ -176,12 +177,87 @@ class JevSeamTest(unittest.TestCase):
         self.assertEqual([question["id"] for question in questions], ["u1"])
         self.assertEqual(questions[0]["state"]["before"], "Requested behavior")
 
+    def test_edit_replaces_superseded_human_message(self):
+        current = '<section data-anchor="rules"><p data-anchor="clause">Implemented behavior</p></section>'
+        events = [
+            {"name": "1-comment.json", "actor": "human", "body": {
+                "id": "u1", "event": "comment", "actor": "human", "anchorId": "rules",
+                "text": "Please implement the old behavior",
+            }},
+            {"name": "2-edit.json", "actor": "human", "body": {
+                "id": "e1", "event": "edit", "actor": "human", "threadId": "u1",
+                "supersedes": "u1", "anchorId": "rules", "text": "Please implement the revised behavior",
+            }},
+        ]
+        questions = jev.build_resolved_questions(events, current, current, "spec.html", "base", "head",
+                                                  {"e1": '<section data-anchor="rules"><p data-anchor="clause">Requested behavior</p></section>'})
+        self.assertEqual(questions[0]["state"]["comment"], "Please implement the revised behavior")
+        self.assertNotIn("old behavior", questions[0]["state"]["comment"])
+
     def test_anchor_parser_handles_void_and_implied_end_tags(self):
         source = '<section data-anchor="one"><p data-anchor="first">First<br>text</p><p data-anchor="second">Second</p></section>'
         anchors = jev.extract_anchors(source)
         self.assertEqual(anchors["first"]["text"], "First text")
         self.assertEqual(anchors["second"]["text"], "Second")
         self.assertIn("First text Second", anchors["one"]["text"])
+
+    def test_anchor_parsers_ignore_script_and_style_text(self):
+        source = '<section data-anchor="one"><p data-anchor="clause">Before<script>secret()</script><style>.x{color:red}</style>After</p></section>'
+        self.assertEqual(jev.extract_anchors(source)["clause"]["text"], "BeforeAfter")
+        self.assertEqual(jev._audience_leaf_anchors(source)["clause"]["text"], "BeforeAfter")
+
+    def test_malformed_responds_to_is_skipped(self):
+        events = [
+            {"name": "1-comment.json", "actor": "human", "body": {
+                "id": "u1", "event": "comment", "actor": "human", "anchorId": "removed",
+                "text": "Please keep this",
+            }},
+            {"name": "2-reply.json", "actor": "human", "body": {
+                "id": "u2", "event": "reply", "actor": "human", "respondsTo": [1],
+                "threadId": "u1", "text": "malformed",
+            }},
+        ]
+        questions = jev.build_orphan_questions(events, '<p data-anchor="current">Current clause</p>')
+        self.assertEqual([question["id"] for question in questions], ["u1"])
+
+    def test_builder_failure_is_isolated_to_its_kind(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(("git", "-C", str(root), "init", "-q"), check=True)
+            spec = root / "spec.html"
+            spec.write_text('<section data-anchor="root">Before</section>\n', encoding="utf-8")
+            subprocess.run(("git", "-C", str(root), "add", "spec.html"), check=True)
+            subprocess.run(("git", "-C", str(root), "-c", "user.name=Test", "-c", "user.email=test@example.com",
+                            "commit", "-qm", "base"), check=True)
+            base = subprocess.check_output(("git", "-C", str(root), "rev-parse", "HEAD"), text=True).strip()
+            spec.write_text('<section data-anchor="root">After</section>\n', encoding="utf-8")
+            service = object.__new__(jev.JevService)
+            original = jev.BUILDERS["orphan"]
+            jev.BUILDERS["orphan"] = lambda *args: (_ for _ in ()).throw(TypeError("bad event"))
+            try:
+                questions = service.questions({"root": str(root)}, str(spec), "spec.html", base, [], "", [])
+            finally:
+                jev.BUILDERS["orphan"] = original
+            self.assertIn("type", {question["kind"] for question in questions})
+
+    def test_message_sources_ignore_browser_revision_and_use_base_fallback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(("git", "-C", str(root), "init", "-q"), check=True)
+            spec = root / "spec.html"
+            spec.write_text("<p data-anchor=\"rule\">Base text</p>\n", encoding="utf-8")
+            subprocess.run(("git", "-C", str(root), "add", "spec.html"), check=True)
+            subprocess.run(("git", "-C", str(root), "-c", "user.name=Test", "-c", "user.email=test@example.com",
+                            "commit", "-qm", "base"), check=True)
+            base = subprocess.check_output(("git", "-C", str(root), "rev-parse", "HEAD"), text=True).strip()
+            service = object.__new__(jev.JevService)
+            events = [{"name": "1-comment.json", "actor": "human", "body": {
+                "id": "u1", "event": "comment", "actor": "human", "anchorId": "rule",
+                "revision": "--output=PWNED", "commit": "--output=PWNED",
+            }}]
+            sources = service._message_sources(str(root), "spec.html", base, events)
+            self.assertEqual(sources["u1"], spec.read_bytes())
+            self.assertFalse((root / "PWNED:spec.html").exists())
 
     def test_coverage_response_accepts_pair_answer_and_keeps_addresses_only(self):
         provider = FakeProvider({"answers": {"coverage": {"choice": "verifies", "confidence": 0.9}}})

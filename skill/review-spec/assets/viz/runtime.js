@@ -151,8 +151,7 @@ const JEV_TYPE_LABELS = {
 
 function jevParams(base) {
   const params = new URLSearchParams({ path: location.pathname.replace(/^\//, ''), base: String(base || '') });
-  const readingParams = { view: 'reading' };
-  if ((typeof state !== 'undefined' && state.readingView) || new URLSearchParams(location.search).get('view') === 'reading') params.set('view', readingParams.view);
+  if (state.readingView) params.set('view', 'reading');
   return params;
 }
 
@@ -1078,15 +1077,30 @@ function jevDisplayLabel(item) {
 
 function corpusFlags(items) {
   const labels = { contradicts: 'Contradicts', overlaps: 'Overlaps', oversteps: 'Oversteps' };
-  return (Array.isArray(items) ? items : []).flatMap(item => {
-    if (!item || item.kind !== 'corpus' || !item.id) return [];
-    if (item.state === 'unsure') return [{ anchor: String(item.id), state: 'unsure', label: 'unsure', target: null }];
-    if (item.state !== 'label') return [];
+  const seenUnsure = new Set();
+  const seenUnavailable = new Set();
+  const result = [];
+  for (const item of Array.isArray(items) ? items : []) {
+    if (!item || item.kind !== 'corpus' || !item.id) continue;
+    const anchor = String(item.id);
+    if (item.state === 'unsure') {
+      if (seenUnsure.has(anchor)) continue;
+      seenUnsure.add(anchor);
+      result.push({ anchor, state: 'unsure', label: 'unsure', target: null });
+      continue;
+    }
+    if (item.state === 'unavailable') {
+      if (seenUnavailable.has(anchor)) continue;
+      seenUnavailable.add(anchor);
+      result.push({ anchor, state: 'unavailable', label: 'Jev unavailable', target: null });
+      continue;
+    }
+    if (item.state !== 'label') continue;
     const label = labels[String(item.label || '').toLowerCase()];
-    if (!label) return [];
-    return [{ anchor: String(item.id), state: 'label', label,
-      target: item.target == null ? null : String(item.target) }];
-  });
+    if (label) result.push({ anchor, state: 'label', label,
+      target: item.target == null ? null : String(item.target) });
+  }
+  return result;
 }
 
 function corpusTargetLink(target) {
@@ -1159,20 +1173,16 @@ function renderJev() {
   }
 
   const gitFocus = new URLSearchParams(location.search).get('focus') === 'changes' || document.body.classList.contains('hx-focus-active');
-  const reading = state.readingView || new URLSearchParams(location.search).get('view') === 'reading';
+  const reading = state.readingView;
   for (const item of state.jev.items) {
     if (!item.id || item.state === 'none') continue;
     const holder = findAnchor(item.id);
     if (!holder) continue;
     if (reading) {
       if (item.kind !== 'audience') continue;
-      const allowedAudience = item.label !== 'for you' && item.label !== 'internals' ? false : true;
-      if (item.state === 'label' && allowedAudience) {
-        holder.dataset.hxAudience = item.label;
-      }
-      const audienceLabel = jevDisplayLabel(item);
-      if (item.state !== 'label' || allowedAudience) {
-        appendJevMarker(holder, audienceLabel, item.state);
+      if (item.state === 'label' && item.label === 'internals') holder.dataset.hxAudience = 'internals';
+      if (item.state === 'unsure' || item.state === 'unavailable') {
+        appendJevMarker(holder, jevDisplayLabel(item), item.state);
       }
       continue;
     }
@@ -2298,11 +2308,6 @@ function startLoops() {
  * mutually exclusive display modes.
  */
 const readingView = { active: false };
-
-function readingAnchor(id) {
-  const wanted = String(id || '');
-  return [...document.querySelectorAll('[data-anchor]')].find(el => el.dataset.anchor === wanted) || null;
-}
 
 function clearReadingAudience() {
   document.querySelectorAll('[data-hx-audience]').forEach(el => delete el.dataset.hxAudience);

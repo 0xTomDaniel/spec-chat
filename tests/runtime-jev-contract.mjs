@@ -9,14 +9,15 @@ const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime
 const paramsStart = runtime.indexOf('function jevParams(');
 const paramsEnd = runtime.indexOf('\n\nasync function fetchJev(', paramsStart);
 assert.ok(paramsStart >= 0 && paramsEnd > paramsStart, 'runtime exposes Jev request parameters');
-const jevParams = Function('location', 'URLSearchParams', runtime.slice(paramsStart, paramsEnd) + '; return jevParams;')(
+const jevParams = Function('location', 'URLSearchParams', 'state', runtime.slice(paramsStart, paramsEnd) + '; return jevParams;')(
   { pathname: '/docs/specs/example.spec.html', search: '?view=reading&extra=ignored' },
   URLSearchParams,
+  { readingView: false },
 );
 const params = jevParams('base-123');
 assert.equal(params.get('path'), 'docs/specs/example.spec.html');
 assert.equal(params.get('base'), 'base-123');
-assert.equal(params.get('view'), 'reading');
+assert.equal(params.has('view'), false);
 assert.equal(params.has('extra'), false);
 
 const fetchStart = runtime.indexOf('async function fetchJev(');

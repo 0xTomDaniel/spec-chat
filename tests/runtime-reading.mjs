@@ -7,9 +7,10 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime.js'), 'utf8');
 
 assert.match(runtime, /id = 'hx-reading'/, 'HTTP pages expose a reading view toggle');
-assert.match(runtime, /view: 'reading'/, 'reading view requests the explicit route view');
+assert.match(runtime, /params\.set\('view', 'reading'\)/, 'reading view requests the explicit route view');
 assert.match(runtime, /item\.kind !== 'audience'/, 'runtime consumes only audience items for reading view');
-assert.match(runtime, /item\.label !== 'for you' && item\.label !== 'internals'/, 'unknown labels stay undimmed');
+assert.match(runtime, /item\.state === 'label' && item\.label === 'internals'/, 'internals are the only confident clauses dimmed');
+assert.doesNotMatch(runtime, /appendJevMarker\(holder, audienceLabel/, 'confident audience labels stay invisible');
 assert.match(runtime, /hx-reading-active \[data-hx-audience="internals"\].*color:#586069!important/s, 'internals use a readable light-theme color');
 assert.match(runtime, /color:#b9c0ca!important/, 'internals use a readable dark-theme color');
 assert.match(runtime, /clearGitFocusForReading/, 'reading view clears Git focus');
