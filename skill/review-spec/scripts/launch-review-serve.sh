@@ -134,5 +134,5 @@ if baseline.get("base") != expected_base:
 PY
 printf '%s\n' "$LINE"
 printf 'review-hosting=verified service=spec-chat approved-port=%s internal-vantage=host\n' "$SELECTED"
-printf '%s\n' 'review-handoff=allowed only after this secret URL, resource path, exact baseline, and internal proof are delivered'
+printf '%s\n' 'review-handoff=allowed only after this public URL, resource path, exact baseline, and internal proof are delivered; the URL is not a secret in any security sense or an authentication boundary'
 wait "$SERVER_PID"
