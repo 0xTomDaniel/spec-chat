@@ -198,7 +198,7 @@ finish_event = ""
         resource = review_host.parse_resource_spec(
             self.resource(), "owner", "checker", ".cursor-test", "ann45", None
         )
-        with mock.patch.object(review_host, "direct_request", return_value=(200, self.spec.read_bytes() + b"tampered")):
+        with mock.patch.object(review_host._verify_module, "verify", side_effect=ValueError("served spec bytes differ")):
             with self.assertRaises(review_host.ProofError):
                 review_host.prove_resource("http://127.0.0.1:9999", resource)
 
