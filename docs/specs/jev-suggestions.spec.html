@@ -14,13 +14,14 @@
 <h1 data-anchor="title">Jev review suggestions</h1>
 <nav data-anchor="breadcrumbs">docs / specs / jev-suggestions.spec.html</nav>
 <p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-100">ANN-100</a>.</p>
-<p data-anchor="context">Follows the shared Jev contract, annotateanything <code>docs/specs/jev-seam.spec.html#contract</code> (ANN-49, at <code>01ab630</code>): typed suggestions, never hide content, errors show and retry, state changes only on a human click, validated criteria, one judgment record, cache per source revision, text only, server-side key. This spec owns Spec Chat's questions, criteria, and display; no code or data is shared with annotateanything. Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a> and <a href="./compared-range.spec.html#change-base">compared range</a>.</p>
+<p data-anchor="context">Follows the shared Jev contract, annotateanything <code>docs/specs/jev-seam.spec.html#contract</code> (ANN-49, Jev agreement, at <code>3d6618d</code>): typed suggestions, unsure below threshold, Jev off note, errors show and retry, state changes only on a human click, validated criteria, one judgment record, cache per source revision, text only, server-side key. This spec owns Spec Chat's questions, criteria, and display; no code or data is shared with annotateanything. Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a> and <a href="./compared-range.spec.html#change-base">compared range</a>.</p>
 </header>
 
 <section data-spec-section="user-stories" data-anchor="user-stories">
 <h2>User stories</h2>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-change-type">As a reviewer in Git focus, I see which changed sections are scope or behavior changes and which are cosmetic, so I read the material ones first.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-orphan">As a reviewer, an orphaned comment suggests where its passage probably moved, and one click moves it there; nothing moves unless I click.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-resolved">As a reviewer, an open thread whose section was revised shows when the new text looks like it resolves my comment in spirit, so I can confirm and resolve it without rereading every thread.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-neutral">As a reviewer, when Jev is off, unsure, or failing, a small note says so and the page otherwise works exactly as it does today.</p>
 <p data-user-story data-user-facing="false" data-anchor="story-record">As the operator, I can see for any suggestion which model, question set, and sources produced it, and with what confidence.</p>
 </section>
@@ -33,7 +34,7 @@
 <p data-anchor="flow-own-state">The browser sends only the spec path, the compared base, and nothing else. The server builds every question from its own served file, local Git, and the spec's spool, so a public URL cannot submit arbitrary text for classification.</p>
 <figure data-anchor="flow-figure">
 <div class="rail-wrap" data-anchor="flow-figure-scroll">
-<svg viewBox="0 0 780 290" style="min-width: 620px" role="img" aria-label="Swimlane. Browser: 1 focus renders as today, then calls GET /api/jev with path and base. Review server: 2 builds changed sections and orphans from its own file, Git, and spool; on a cache hit it goes straight to 5; on a miss it posts to Jev. Jev: 4 returns a choice with probabilities. Review server: 5 applies thresholds, writes the judgment record, and caches. Browser: 6 shows badge and treatment, or stays neutral.">
+<svg viewBox="0 0 780 290" style="min-width: 620px" role="img" aria-label="Swimlane. Browser: 1 focus renders as today, then calls GET /api/jev with path and base. Review server: 2 builds changed sections and threads from its own file, Git, and spool; on a cache hit it goes straight to 5; on a miss it posts to Jev. Jev: 4 returns a choice with probabilities. Review server: 5 applies thresholds, writes the judgment record, and caches. Browser: 6 shows badge and treatment, or stays neutral.">
 <rect x="0" y="0" width="780" height="92" fill="#f4f6fb"></rect>
 <rect x="0" y="92" width="780" height="100" fill="#ffffff"></rect>
 <rect x="0" y="192" width="780" height="98" fill="#f4f6fb"></rect>
@@ -47,7 +48,7 @@
 <rect x="556" y="24" width="216" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
 <text x="568" y="51" fill="#171719" font-size="13">6 Badge, marker, or note</text>
 <rect x="160" y="120" width="200" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="172" y="147" fill="#171719" font-size="13">2 Sections and orphans</text>
+<text x="172" y="147" fill="#171719" font-size="13">2 Sections and threads</text>
 <rect x="500" y="120" width="200" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
 <text x="512" y="147" fill="#171719" font-size="13">5 Threshold, record, cache</text>
 <rect x="340" y="220" width="190" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
@@ -105,9 +106,19 @@
 <p data-anchor="orphan-none">A below-threshold answer adds a small <code>Location unsure</code> note; none, oversize, or off shows today's card only.</p>
 </section>
 
+<section data-anchor="resolved">
+<h2>Open thread resolved in spirit</h2>
+<p data-anchor="resolved-pair">This is the contract's pair <code>agree(revised spec text, open review comment)</code>: labels <code>resolved in spirit</code>, <code>not addressed</code>, or <code>unsure</code>.</p>
+<p data-anchor="resolved-which">A thread is asked when it is open, pending or acknowledged, its anchor exists, and its anchored section's text differs from the spec at the thread's newest human message.</p>
+<p data-anchor="resolved-state">The question receives the thread's human messages, the section's text at that message, and its current text; agent replies are left out, so Jev judges the text, not the claim.</p>
+<p data-anchor="resolved-flag">A confident <code>resolved in spirit</code> adds a small <code>Looks resolved</code> label to the thread's card and pin; <code>not addressed</code> adds nothing, and below threshold adds <code>unsure</code>.</p>
+<p data-anchor="resolved-human">Resolving stays the existing human click; the label never resolves, reopens, or changes status, and never changes Finish eligibility.</p>
+<p data-anchor="resolved-trigger">A new head or base asks again; a new human reply makes the thread's comparison point move to that reply.</p>
+</section>
+
 <section data-anchor="records">
 <h2>Cache and judgment records</h2>
-<p data-anchor="cache-key">Answers are cached per source revision, section anchor, and question-set version. The revision is the compared base plus head, or the served bytes for a dirty working copy, so a new head or base classifies again and nothing else does.</p>
+<p data-anchor="cache-key">Answers are cached per source revision, section anchor or thread id, and question-set version. The revision is the compared base plus head, or the served bytes for a dirty working copy, so a new head or base classifies again and nothing else does.</p>
 <p data-anchor="cache-effect">A cached answer is reused without calling Jev again, so reload and repeat visits cost nothing.</p>
 <p data-anchor="record-fields">Every call appends one judgment record in the contract's format, <code>#record</code>, including each failed attempt with its attempt number: addresses and revision, never source text or the key.</p>
 <p data-anchor="record-where">Records are append-only JSONL in the review server's state directory on the box, outside every spool and outside Git.</p>
@@ -115,8 +126,8 @@
 
 <section data-anchor="calibration">
 <h2>Question sets and calibration</h2>
-<p data-anchor="qset-data">The change-type and orphan-location question sets are versioned data in this repository: instructions, the criteria above with examples, and its stated threshold.</p>
-<p data-anchor="qset-labeled">Each has a small labeled set from our own history: spec commits and past atomic versus material Finish calls for change type, and ANN-30 orphaned comments, including deleted passages, for location.</p>
+<p data-anchor="qset-data">The change-type, orphan-location, and resolved-in-spirit question sets are versioned data in this repository: instructions, the criteria above with examples, and its stated threshold.</p>
+<p data-anchor="qset-labeled">Each has a small labeled set from our own history: spec commits and past atomic versus material Finish calls for change type, ANN-30 orphaned comments, including deleted passages, for location, and past threads the human resolved after an agent edit versus replied to again, for resolved in spirit.</p>
 <p data-anchor="qset-gate">A calibration command runs a set against real Jev and reports per-label precision across thresholds and picks the stated one; if no threshold reaches 0.9 for every label, the set stays off.</p>
 </section>
 
@@ -129,6 +140,7 @@
 <p data-acceptance-criterion data-anchor="acceptance-base"><span data-acceptance-scenario>When the reviewer changes the base in the range bar,</span> <span data-acceptance-observable>old labels disappear immediately and the new base's labels replace them without a reload.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-orphan"><span data-acceptance-scenario>When a commented passage moves to a new section and its anchor is removed,</span> <span data-acceptance-observable>the orphaned thread's card shows <code>Possibly moved to:</code> that section, and <code>Go to</code> scrolls to and outlines it; a deleted passage shows today's card only.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-move"><span data-acceptance-scenario>When the reviewer clicks <code>Move comment here</code>,</span> <span data-acceptance-observable>exactly one human <code>move</code> event is appended, the thread pins to the suggested section after reload with its messages, quote, and status unchanged, and the next hand-off needs no agent reply for it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-resolved"><span data-acceptance-scenario>When one open thread's section was revised to do what its comment asked and another's was revised in an unrelated way,</span> <span data-acceptance-observable>the first thread's card and pin show <code>Looks resolved</code>, the second shows nothing, and both stay open until the human resolves them.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-inert"><span data-acceptance-scenario>Across a review session with Jev on and no human click,</span> <span data-acceptance-observable>the spool, thread statuses, Finish eligibility, and spec bytes match a session with Jev off.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-cache"><span data-acceptance-scenario>When the same page, base, and head load a second time,</span> <span data-acceptance-observable>no new Jev call is made and the same labels show.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-record"><span data-acceptance-scenario>For every shown or withheld answer,</span> <span data-acceptance-observable>one judgment record carries every contract field, with no source text, and no page, record, log, or response contains the key.</span></p>
@@ -138,8 +150,8 @@
 
 <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
 <h2>Modular boundaries</h2>
-<p data-modular-boundary data-anchor="boundary-seam"><span data-boundary-responsibility>The review server's Jev seam owns questions, provider calls, thresholds, cache, and judgment records.</span> <span data-boundary-seam>Caller-facing seam: <code>GET /api/jev?path=&lt;spec&gt;&amp;base=&lt;id&gt;</code> returns on or off, and per changed root anchor and orphaned thread id a label or candidate, none, retrying, or unavailable.</span> <span data-boundary-dependency>Dependency direction: calls Jev on OpenRouter as an external provider and reads local Git and the spool; nothing calls back into the runtime.</span> <span data-boundary-scope>Observable scope: the JSON response and judgment records, in single-root and registry modes.</span></p>
-<p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns badges, focus treatments, error markers, orphan hints, and the human <code>move</code> event.</span> <span data-boundary-seam>Caller-facing seam: the rendered Git focus, orphaned thread cards, and the <code>move</code> event in the spool schema.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; consumes the seam route and holds no model, threshold, or key logic.</span> <span data-boundary-scope>Observable scope: what the reviewer sees in focus and on orphaned cards.</span></p>
+<p data-modular-boundary data-anchor="boundary-seam"><span data-boundary-responsibility>The review server's Jev seam owns questions, provider calls, thresholds, cache, and judgment records.</span> <span data-boundary-seam>Caller-facing seam: <code>GET /api/jev?path=&lt;spec&gt;&amp;base=&lt;id&gt;</code> returns on or off, and per changed root anchor, orphaned thread id, and revised open thread id a label or candidate, none, unsure, retrying, or unavailable.</span> <span data-boundary-dependency>Dependency direction: calls Jev on OpenRouter as an external provider and reads local Git and the spool; nothing calls back into the runtime.</span> <span data-boundary-scope>Observable scope: the JSON response and judgment records, in single-root and registry modes.</span></p>
+<p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns badges, focus treatments, error markers, orphan hints, <code>Looks resolved</code> labels, and the human <code>move</code> event.</span> <span data-boundary-seam>Caller-facing seam: the rendered Git focus, orphaned thread cards, and the <code>move</code> event in the spool schema.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; consumes the seam route and holds no model, threshold, or key logic.</span> <span data-boundary-scope>Observable scope: what the reviewer sees in focus and on orphaned cards.</span></p>
 <p data-modular-boundary data-anchor="boundary-qsets"><span data-boundary-responsibility>Question sets own criteria, examples, thresholds, labeled sets, and calibration results.</span> <span data-boundary-seam>Caller-facing seam: a question-set id and version, and the calibration command.</span> <span data-boundary-dependency>Dependency direction: self-contained data read by the seam.</span> <span data-boundary-scope>Observable scope: which sets are on and their measured precision.</span></p>
 </section>
 
@@ -152,7 +164,7 @@
 <section data-anchor="non-goals">
 <h2>Non-goals</h2>
 <p data-anchor="non-goal-text">Generated text of any kind (ANN-96), other providers, or budget rules.</p>
-<p data-anchor="non-goal-later">The contract's later slices: comment intent, proof coverage, staleness, traceability, and board urgency.</p>
+<p data-anchor="non-goal-later">The contract's other pairs: shaping checks and board flags (ANN-49).</p>
 </section>
 
 </article>
