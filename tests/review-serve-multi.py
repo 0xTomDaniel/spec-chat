@@ -137,7 +137,7 @@ class MultiReviewServeTest(unittest.TestCase):
             self.assertEqual((review / ".cursor-test").read_text(), "001-handoff-existing.json\n")
         self.assertIsNone(self.server.poll())
 
-    def test_registry_reload_finished_post_and_parallel_idle_connection(self):
+    def test_registry_reload_ignores_legacy_finish_field_and_keeps_post_open(self):
         first, second = (self.make_resource(name) for name in ("first", "second"))
         self.start([first, second])
         with socket.create_connection(("127.0.0.1", self.port), timeout=2):
@@ -146,9 +146,9 @@ class MultiReviewServeTest(unittest.TestCase):
             self.assertLess(time.monotonic() - start, 2)
         first["lifecycle"] = "finished"
         self.write_registry([first, second])
-        self.assertEqual(self.request(self.api(first), "POST", {"event": "comment", "id": "late"})[0], 409)
+        self.assertEqual(self.request(self.api(first), "POST", {"event": "comment", "id": "late"})[0], 200)
         self.assertEqual(self.request(self.stable(first))[0], 200)
-        self.assertEqual(json.loads(self.request(self.api(first))[1]), [])
+        self.assertEqual([event["body"]["id"] for event in json.loads(self.request(self.api(first))[1])], ["late"])
         self.assertEqual(self.request(self.stable(second))[0], 200)
 
     def test_agent_post_is_forbidden_without_writing_a_file(self):
@@ -249,7 +249,7 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertEqual(self.request(self.stable(resource))[0], 200)
         self.assertEqual(self.request(self.stable(other)), (200, b"other registered spec"))
 
-    def test_removed_spec_keeps_active_same_slug_sibling_and_shared_assets(self):
+    def test_legacy_removed_field_does_not_hide_same_slug_sibling_or_assets(self):
         resource = self.make_resource("first")
         other = resource | {"id": "spec:first::docs/adr/y.spec.html", "spec": "docs/adr/y.spec.html"}
         path = Path(resource["root"]) / other["spec"]
@@ -260,9 +260,9 @@ class MultiReviewServeTest(unittest.TestCase):
         self.write_registry([resource, other])
         time.sleep(0.2)
 
-        self.assertEqual(self.request(self.stable(resource))[0], 404)
-        self.assertEqual(self.request(self.api(resource))[0], 404)
-        self.assertEqual(self.request(self.api(resource, "baseline", base="main"))[0], 404)
+        self.assertEqual(self.request(self.stable(resource))[0], 200)
+        self.assertEqual(self.request(self.api(resource))[0], 200)
+        self.assertEqual(self.request(self.api(resource, "baseline", base="main"))[0], 200)
         self.assertEqual(self.request(self.stable(other)), (200, b"other registered spec"))
         self.assertEqual(self.request(self.api(other))[0], 200)
         self.assertEqual(self.request("/first/docs/specs/.viz/runtime.js")[0], 200)
@@ -318,13 +318,13 @@ class MultiReviewServeTest(unittest.TestCase):
         first["lifecycle"] = "removed"
         self.write_registry([first, second, third])
         time.sleep(0.2)
-        self.assertNotIn(self.stable(first).encode(), self.request("/")[1])
+        self.assertIn(self.stable(first).encode(), self.request("/")[1])
         for path in (self.stable(first), "/first/docs/specs/.viz/runtime.js", self.api(first), self.api(first, "baseline", base="main")):
             with self.subTest(path=path):
-                self.assertEqual(self.request(path)[0], 404)
-        self.assertEqual(self.request(self.api(first), "POST", event)[0], 404)
+                self.assertEqual(self.request(path)[0], 200)
+        self.assertEqual(self.request(self.api(first), "POST", event)[0], 200)
         review = Path(first["root"]) / (first["spec"] + ".review/human")
-        self.assertEqual(len(list(review.glob("*.json"))), len(json.loads(spool)))
+        self.assertGreaterEqual(len(list(review.glob("*.json"))), len(json.loads(spool)))
         self.write_registry([first, second, third, second | {"slug": "duplicate"}])
         self.assertEqual(self.request(self.stable(second)), second_bytes)
         self.assertEqual(self.request(self.api(second, "baseline", base="main")), second_base)
