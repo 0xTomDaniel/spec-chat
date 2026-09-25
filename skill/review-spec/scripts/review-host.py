@@ -549,11 +549,6 @@ def bind_ports(bind: str) -> tuple[int, ...]:
     return (0,)
 
 
-def process_bind(pid: int) -> str | None:
-    command = process_cmdline(pid) or []
-    return command[command.index("--bind") + 1] if "--bind" in command[:-1] else None
-
-
 def server_command(registry: Path, bind: str, port: int, host: str) -> list[str]:
     return [str(Path(sys.executable).resolve()), SERVER_PATH, "--registry", str(registry.resolve()),
             "--bind", bind, "--port", str(port), "--host", host]
@@ -643,12 +638,10 @@ def register(args: argparse.Namespace) -> int:
         child: subprocess.Popen[str] | None = None
         try:
             if process and process_owns_registry(process["pid"], registry):
-                # A live server is reused unchanged; only a missing bind record is backfilled from it.
-                bind = process.get("bind") or process_bind(process["pid"])
-                if bind:
-                    process = {**process, "bind": bind}
+                # A live server is reused unchanged; a registry without bind is private.
+                bind = process.get("bind") or LOOPBACK
                 if (args.public or args.private) and select_bind(args, None) != bind:
-                    raise LauncherError(f"review host already running on {bind or 'an unknown bind'}; "
+                    raise LauncherError(f"review host already running on {bind}; "
                                         "run stop, then register again to change it")
                 write_registry(registry, candidate, process)
                 url = running_url(log_path)

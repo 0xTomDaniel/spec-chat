@@ -335,7 +335,7 @@ finish_event = ""
         private = self.run_cli(*self.register_args(state, spec="second"), "--private", state=state,
                                ports=process["port"])
         self.assertEqual(private.returncode, 0, private.stderr)
-        self.assertEqual(self.registry(state)["process"], {**process, "bind": "127.0.0.1"})
+        self.assertEqual(self.registry(state)["process"], {"pid": process["pid"], "port": process["port"]})
         self.assertIn("ssh -L", private.stdout)
 
     def test_running_url_never_guesses_without_log(self):
