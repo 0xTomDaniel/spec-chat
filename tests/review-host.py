@@ -139,6 +139,58 @@ class ReviewHostTest(unittest.TestCase):
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertEqual(len(self.registry(state)["resource"]), 2)
 
+    def test_different_slugs_can_register_and_serve_the_same_spec(self):
+        state = self.work / "state"
+        first = self.run_cli(*self.register_args(state, slug="lane-one"), state=state)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        second = self.run_cli(*self.register_args(state, slug="lane-two"), state=state)
+        self.assertEqual(second.returncode, 0, second.stderr)
+
+        resources = self.registry(state)["resource"]
+        self.assertEqual({resource["id"] for resource in resources}, {
+            "spec:lane-one::docs/specs/review.spec.html",
+            "spec:lane-two::docs/specs/review.spec.html",
+        })
+        for slug in ("lane-one", "lane-two"):
+            url = next(line.split("review URL: ", 1)[1] for line in second.stdout.splitlines() if line.startswith("review URL: "))
+            self.assertEqual(request(url + f"/{slug}/docs/specs/review.spec.html"), (200, self.spec.read_bytes()))
+
+    def test_register_proves_committed_and_uncommitted_specs_absent_at_base(self):
+        state = self.work / "state"
+        committed = self.repo / "docs/specs/committed.spec.html"
+        committed.write_text("<!doctype html><title>committed</title><p>new</p>\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.repo), "add", str(committed)], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "add committed spec"], check=True)
+
+        started = self.run_cli(*self.register_args(state, project="committed", slug="committed", spec="committed"), state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+
+        working = self.repo / "docs/specs/working.spec.html"
+        working.write_text("<!doctype html><title>working</title><p>new</p>\n", encoding="utf-8")
+        restarted = self.run_cli(*self.register_args(state, project="working", slug="working", spec="working"), state=state)
+        self.assertEqual(restarted.returncode, 0, restarted.stderr)
+        url = next(line.split("review URL: ", 1)[1] for line in restarted.stdout.splitlines() if line.startswith("review URL: "))
+        for slug, spec in (("committed", "committed"), ("working", "working")):
+            query = urllib.parse.urlencode({"path": f"/{slug}/docs/specs/{spec}.spec.html", "base": self.base})
+            status, body = request(url + "/api/baseline?" + query)
+            self.assertEqual(status, 200)
+            baseline = json.loads(body)
+            self.assertIsNone(baseline["htmlBase"])
+            self.assertIsNone(baseline["html"])
+
+    def test_stop_then_register_replaces_resource_and_restarts_server(self):
+        state = self.work / "state"
+        first = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        stopped = self.run_cli("stop", "--state-dir", str(state), state=state)
+        self.assertEqual(stopped.returncode, 0, stopped.stderr)
+
+        restarted = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(restarted.returncode, 0, restarted.stderr)
+        self.assertEqual(len(self.registry(state)["resource"]), 1)
+        url = next(line.split("review URL: ", 1)[1] for line in restarted.stdout.splitlines() if line.startswith("review URL: "))
+        self.assertEqual(request(url + "/ann45/docs/specs/review.spec.html"), (200, self.spec.read_bytes()))
+
     def test_legacy_registry_loads_without_lifecycle_state(self):
         legacy = self.work / "legacy.toml"
         legacy.write_text(

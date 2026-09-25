@@ -83,7 +83,6 @@ def _resource_records(document, *, check_refs=False, trust=False):
     result = []
     ids = set()
     stable = set()
-    sources = set()
     slug_roots = {}
     for raw in records:
         if not isinstance(raw, dict):
@@ -124,8 +123,6 @@ def _resource_records(document, *, check_refs=False, trust=False):
         key = slug + "/" + spec
         if key in stable:
             raise ValueError("duplicate stable resource path: " + key)
-        if spec_file in sources:
-            raise ValueError("ambiguous resource source: " + spec_file)
         if slug in slug_roots and slug_roots[slug] != root:
             raise ValueError("ambiguous resource slug: " + slug)
         if not SAFE_CURSOR_RE.fullmatch(raw["cursor_name"]):
@@ -147,7 +144,6 @@ def _resource_records(document, *, check_refs=False, trust=False):
         })
         ids.add(rid)
         stable.add(key)
-        sources.add(spec_file)
         slug_roots[slug] = root
         result.append(resource)
     return result
@@ -488,7 +484,16 @@ li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywh
         if not mount:
             return self._json({"error": "bad path"}, 400)
         requested = query.get("base", [mount.get("base", "")])[0]
-        candidates = [requested] if requested else ["main", "master"]
+        candidates = [requested] if requested else []
+        if not candidates:
+            try:
+                candidates.append(subprocess.check_output(
+                    ("git", "-C", mount["root"], "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"),
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                ).strip())
+            except subprocess.CalledProcessError:
+                candidates.extend(("main", "master"))
         base_ref = next(
             (candidate for candidate in candidates if candidate and subprocess.run(
                 ("git", "-C", mount["root"], "rev-parse", "--verify", candidate + "^{commit}"),
@@ -499,18 +504,13 @@ li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywh
         if not base_ref:
             return self._json({"error": "no local base ref"}, 409)
         try:
-            base = _git(mount["root"], "rev-parse", "--verify", base_ref + "^{commit}").decode().strip()
+            command = ("rev-parse", "--verify", base_ref + "^{commit}") if requested else (
+                "merge-base", "HEAD", base_ref,
+            )
+            base = _git(mount["root"], *command).decode().strip()
             repo_relative = os.path.relpath(target, mount["root"]).replace(os.sep, "/")
             prior = _git(mount["root"], "show", base + ":" + repo_relative, optional=True)
             html_base = base if prior is not None else None
-            if prior is None:
-                history = _git(mount["root"], "rev-list", "--reverse", "HEAD", "--", repo_relative, optional=True)
-                seeds = history.decode().splitlines() if history else []
-                if seeds:
-                    seeded = _git(mount["root"], "show", seeds[0] + ":" + repo_relative, optional=True)
-                    if seeded is not None:
-                        prior = seeded
-                        html_base = seeds[0]
             return self._json({
                 "base": base,
                 "htmlBase": html_base,

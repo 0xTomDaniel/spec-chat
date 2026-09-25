@@ -62,7 +62,6 @@ Finish shaping only when:
 
 - no draft, pending, acknowledged, unresolved, or material TBD work remains
 - issue, spec, applicable ADRs, stories, acceptance criteria, architecture, and implementation graph agree
-- `spec-chat-review` has completed the browser review and stopped its public review server when remote review was used
 
 The processed Finish review hand-off is acceptance of the reviewed canonical spec and permits implementation dispatch under that spec. It is not implementation PR acceptance, merge approval, preproduction promotion, or live traffic approval. Those gates remain explicit.
 
