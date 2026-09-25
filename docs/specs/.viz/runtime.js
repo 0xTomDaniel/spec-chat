@@ -1234,6 +1234,7 @@ body.hx-focus-active [data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])
 body.hx-focus-active tr[data-hx-focus=unchanged]:not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *) > :is(td,th){position:relative}
 body.hx-focus-active tr[data-hx-focus=unchanged]:not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *) > :is(td,th)::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,calc(.5*var(--hx-veil,1)));pointer-events:none;z-index:2;-webkit-backdrop-filter:blur(calc(2.5px*var(--hx-veil,1)));backdrop-filter:blur(calc(2.5px*var(--hx-veil,1)))}
 body.hx-focus-active [data-hx-focus=unchanged] .hx-pin,body.hx-focus-active [data-hx-focus=unchanged] .hx-badge{opacity:1;filter:none;z-index:700}
+body.hx-focus-active [data-hx-focus=unchanged] .hx-jev-badge,body.hx-focus-active [data-hx-focus=unchanged] .hx-jev-corpus,body.hx-focus-active [data-hx-focus=unchanged] .hx-jev-coverage{position:relative;opacity:1;filter:none;z-index:700}
 .hx-focus-error{position:fixed;top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);max-width:calc(100vw - 24px);box-sizing:border-box;padding:8px 12px;border-radius:8px;background:#8b1a1a;color:#fff;font:600 12px system-ui;z-index:970;box-shadow:0 6px 20px rgba(30,30,40,.25)}
 @media(prefers-color-scheme:dark){
 body.hx-focus-active [data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])):not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *):not(tr):not(td):not(th):not(script):not(style)::after{background:rgba(0,0,0,calc(.6*var(--hx-veil,1)))}
@@ -2365,7 +2366,7 @@ function mountReadingView() {
   if (!toolbar) return;
   const style = document.createElement('style');
   style.textContent = `.hx-reading-active [data-hx-audience="internals"]{color:#586069!important}
-.hx-reading-active [data-hx-audience="internals"] :is(a,code,strong,em,span){color:inherit!important}
+.hx-reading-active [data-hx-audience="internals"] :is(a,code,strong,em,span):not(.hx-jev-badge,.hx-jev-corpus,.hx-jev-coverage){color:inherit!important}
 ` + (document.querySelector('link[rel~="stylesheet"][href*=".style/spec.css"]') ? '' :
     `@media(prefers-color-scheme:dark){.hx-reading-active [data-hx-audience="internals"]{color:#b9c0ca!important}}`);
   document.head.appendChild(style);

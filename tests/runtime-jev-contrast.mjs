@@ -117,6 +117,30 @@ for (const page of pages) {
   const reading = '.hx-reading-active [data-hx-audience="internals"]';
   const internals = hex(decl(page.rules, reading, 'color', page.dark));
   check(page.name + ': reading internals', internals, page.bg);
+  // Chips inside a dimmed internals clause keep their own color unless the inherit rule reaches them.
+  const inherit = page.rules.filter(r => r.sel.startsWith(reading + ' :is(') && r.decls.color === 'inherit');
+  assert.ok(inherit.length, 'reading view defines the internals inherit rule');
+  for (const sels of markers.filter(s => s[0] !== '.hx-jev-note')) {
+    const cls = sels[0].match(/^\.[\w-]+/)[0];
+    const reached = inherit.some(r => !new RegExp(':not\\([^)]*\\' + cls + '\\b').test(r.sel));
+    const fg = reached ? internals : hex(colorOf(page, sels, 'color'));
+    const bg = hex(colorOf(page, sels, 'background')) || page.bg;
+    check(page.name + ': ' + sels.at(-1) + ' in reading internals', fg, bg);
+  }
+  // Git focus veil over unchanged blocks; chips must be lifted above it like .hx-pin and .hx-badge.
+  const veilSel = 'body.hx-focus-active [data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])):not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *):not(tr):not(td):not(th):not(script):not(style)::after';
+  const veil = Number(String(decl(page.rules, veilSel, 'background', page.dark)).match(/calc\(([\d.]+)\*/)[1]);
+  assert.ok(veil > 0, 'focus veil alpha');
+  for (const sels of markers.filter(s => s[0] !== '.hx-jev-note')) {
+    const cls = sels[0].match(/^\.[\w-]+/)[0];
+    const lift = 'body.hx-focus-active [data-hx-focus=unchanged] ' + cls;
+    const lifted = decl(page.rules, lift, 'z-index', page.dark) === '700' && decl(page.rules, lift, 'position', page.dark) === 'relative' &&
+      decl(page.rules, lift, 'opacity', page.dark) === '1' && decl(page.rules, lift, 'filter', page.dark) === 'none';
+    const a = lifted ? 0 : veil;
+    const fg = hex(colorOf(page, sels, 'color'));
+    const bg = hex(colorOf(page, sels, 'background')) || page.bg;
+    check(page.name + ': ' + sels.at(-1) + ' under focus veil', mix([0, 0, 0], fg, a), mix([0, 0, 0], bg, a));
+  }
 }
 assert.deepEqual(failures, [], 'Jev text below 4.5:1');
 assert.doesNotMatch(runtime, /\[data-hx-jev-type=cosmetic\]\{[^}]*opacity/, 'cosmetic dimming never fades markers');
