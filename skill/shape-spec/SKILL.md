@@ -20,8 +20,8 @@ Create durable current truth before deep investigation.
 - `spec-chat-review` alone owns browser review, server startup and shutdown, spool transactions, transport, wake, recovery, and hosting verification.
 - A remote or cross-machine shaping handoff is blocked until `spec-chat-review` has a direct public `assets/review-serve.py` process serving the narrow collection, never the repository root, on a free approved ingress port discovered and probed by the host.
 - The host performs exact served-resource and `/api/baseline` checks internally before printing the public URL. The public URL is not a secret in any security sense. It is not an authentication boundary. Keep it out of Linear, pull requests, and other public durable records. After ordinary edits, the same server and URL remain alive; rerun both checks against the same selected base. Restart only for a root, collection, process, port, runtime, or ownership change, or when the server is dead. No second probe, tunnel, VPN, laptop setup, or reviewer-machine setup is part of the handoff.
-- The selected port must not be hard-coded. Collision safety, direct service ownership, public URL handling, and Finish review remain mandatory. Shape owns this blocking condition; `spec-chat-review` owns its mechanics.
-- Remote hosting lifecycle is defined by `skill/review-spec/SKILL.md`; Finish review remains the spool fact and does not manage host rows.
+- The selected port must not be hard-coded. Collision safety, direct service ownership, public URL handling, and spec acceptance remain mandatory. Shape owns this blocking condition; `spec-chat-review` owns its mechanics.
+- Remote hosting lifecycle is defined by `skill/review-spec/SKILL.md`; spec acceptance remains the spool fact and does not manage host rows.
 
 ## Shape
 
@@ -30,14 +30,14 @@ Create durable current truth before deep investigation.
 3. Deepen only from relevant code, tests, configuration, and change-request state. Resolve discoverable questions before asking the human. Keep the issue always-most-recent and remove stale prose or resolved TBDs.
 4. Keep every changed user outcome current in the target-declared story source or governing spec, including the guided-journey declaration defined by [references/authoring.md](references/authoring.md). Do not duplicate canonical story declarations into the issue or generated Markdown catalog. For cross-module behavior, reconcile stable responsibilities, seams, and dependency direction with the target-declared architecture source while keeping issue-specific detail in the spec.
 5. For every new spec or material restructure, read [references/authoring.md](references/authoring.md) completely before editing. Existing specs are not grandfathered. Before presenting a new or materially revised draft for browser review, run `python3 scripts/validate-style.py <repository> <spec-html> <exact-change-request-base>` and the authoring browser gate; stop on failure.
-6. Add `data-spec-contract="shaped-sections-v1"` to every new or materially revised governing article, then include exactly one visible `User stories`, `Acceptance criteria`, and `Modular boundaries` section from [references/authoring.md](references/authoring.md). Keep the exact Acceptance criteria heading. Scope may come from optional descriptive metadata, anchors, and surrounding source context; it is not an MVP-labelled heading. Every modular boundary names responsibility, caller-facing seam, dependency direction, and observable scope, including self-contained single-module specs. Run the validator as a structural gate, not only a style check.
+6. Add `data-spec-contract="shaped-sections-v1"` to every new or materially revised governing article, then include exactly one visible `User stories`, `Acceptance criteria`, and `Modular boundaries` section from [references/authoring.md](references/authoring.md), in that order. Keep the exact Acceptance criteria heading. Scope may come from optional descriptive metadata, anchors, and surrounding source context; it is not an MVP-labelled heading. Every modular boundary names responsibility, caller-facing seam, dependency direction, and observable scope, including self-contained single-module specs. Run the validator as a structural gate, not only a style check.
 7. Classify acceptance criteria as clear, gap, or not needed. Back clear criteria with identified rules, mark material gaps `data-spec-tbd`, and remove unnecessary criteria. A deferred criterion does not satisfy the governing Acceptance criteria section.
 8. Add an ADR only for a hard-to-reverse, surprising decision with a real tradeoff. For behavior changes, name the deep-module seam, smallest first failing test, and observable evidence; docs-only work skips this, while unsuitable tests require a narrow waiver and alternative proof.
 9. Before browser evidence or the first remote or cross-machine review handoff, use `spec-chat-review` to start the direct server for the narrow collection and verify the served resource and exact baseline. Keep that server and URL for the review lifetime. For a same-machine reviewer, use the supported local transport instead; no public server is required.
 
 ## Implementation graph
 
-Before finishing review, use the selected issue skill to reconcile implementation tickets:
+Before spec acceptance, use the selected issue skill to reconcile implementation tickets:
 
 - one independently assignable code outcome per ticket
 - exact governing spec anchors and observable completion evidence
@@ -48,7 +48,7 @@ Shaping never marks implementation work In Progress or Done.
 
 ## Review shaping
 
-Material uncertainties become temporary anchored TBDs.
+Material uncertainties become temporary anchored TBDs marked `data-spec-tbd`; any value other than `later` is open, blocks spec acceptance, and is highlighted in review. Mark a TBD deliberately left for a later slice `data-spec-tbd="later"`: it stays visible but neither blocks spec acceptance nor is highlighted.
 Ask small dependency-aware batches in Spec Chat, resolve each answer into current spec and issue truth, and reconcile tickets after material changes.
 When resolving a review finding, prefer removing or deferring scope over adding spec text; keep v1 minimal.
 Finish each batch's behavior, acceptance, and necessary layout changes together before final browser inspection and ticket reconciliation; apply the authoring reference's proportional recheck rule to later corrections.
@@ -60,10 +60,10 @@ For remote or cross-machine review, block the shaping handoff until the direct p
 
 Finish shaping only when:
 
-- no draft, pending, acknowledged, unresolved, or material TBD work remains
+- no draft, pending, acknowledged, unresolved, or open TBD work remains; `data-spec-tbd="later"` does not block
 - issue, spec, applicable ADRs, stories, acceptance criteria, architecture, and implementation graph agree
 
-The processed Finish review hand-off is acceptance of the reviewed canonical spec and permits implementation dispatch under that spec. It is not implementation PR acceptance, merge approval, preproduction promotion, or live traffic approval. Those gates remain explicit.
+The processed spec acceptance hand-off is human acceptance of the reviewed canonical spec and permits implementation dispatch under that spec. It is not implementation PR acceptance, merge approval, preproduction promotion, or live traffic approval. Those gates remain explicit.
 
 ## Burden
 

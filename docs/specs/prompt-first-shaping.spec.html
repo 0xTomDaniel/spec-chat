@@ -9,7 +9,7 @@
 <script defer src="./.viz/runtime.js"></script>
 </head>
 <body>
-<article class="spec" data-spec-version="1">
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
 
 <header data-anchor="header">
 <h1>Prompt-first shaping and portable handoffs</h1>
@@ -17,27 +17,30 @@
 <p data-anchor="status">Status: shaping contract under direct Spec Chat review.</p>
 </header>
 
-<section data-anchor="outcome" id="outcome">
-<h2>Outcome</h2>
-<p data-anchor="outcome-prompt">Every new work unit begins with a plain-language feature prompt.</p>
-<p data-anchor="outcome-durable">The workflow creates clean durable issue and spec surfaces immediately, then iterates on those surfaces instead of treating chat context as product truth.</p>
-<p data-anchor="outcome-review">The canonical HTML spec and its Spec Chat overlay are the only required human review surface for spec behavior.</p>
-<p data-anchor="outcome-portable">Correctness survives agent, session, CLI, and host replacement through plain files and cold reconstruction.</p>
-</section>
-
-<section data-anchor="user-stories" id="user-stories">
+<section data-spec-section="user-stories" data-anchor="user-stories" id="user-stories">
 <h2>User stories</h2>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-operator">As a product operator, I want a prompt to become clean durable issue and spec surfaces immediately so shaping survives a lost chat session.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-reviewer">As a reviewer, I want additions to remain clear while existing context recedes so the canonical spec itself explains the current issue-scoped change.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-mobile">As a reviewer away from the authoring machine, I want to comment and finish from an ordinary mobile browser using one secret link so review requires no SSH or separate account.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-mobile">As a reviewer away from the authoring machine, I want to comment and accept the spec from an ordinary mobile browser using one secret link so review requires no SSH or separate account.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-agent">As an authoring agent, I want hand-offs to wake the active shaping turn and durable files to support cold recovery so processing remains portable without a resident supervisor.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-implementer">As an implementer, I want current stories, modular seams, acceptance rules, decisions, and proof obligations to agree so implementation begins from one coherent contract.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-compatible-review">As a reviewer, I want the same required review capabilities in every repository so an old vendored runtime cannot silently remove controls, focus, or visuals.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-visual-quality">As a reviewer, I want a high-contrast visual contract with legible load-bearing artifacts so complex behavior is understood from the page rather than decoded from prose.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-guided-impact">As a feature author, I want every changed user-facing story to state whether the central guided journey extends so onboarding impact is explicit without forcing every feature into onboarding.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-tbd-later">As a reviewer, I want TBDs marked for a later slice to leave spec acceptance available and each open TBD to be highlighted and reachable from the blocked action so only real open questions stop spec acceptance.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-vocabulary">As a human reviewer, I want sending my review and accepting the spec to have distinct names so no one mistakes a reviewed batch for approval to deliver.</p>
 </section>
 
-<section data-anchor="modular-boundaries" id="modular-boundaries">
+<section data-spec-section="acceptance" data-acceptance-scope="traceability" data-anchor="acceptance" id="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-anchor="acceptance-scope-note">Criteria below cover spec acceptance TBD handling; other sections still carry their rules inline.</p>
+<p data-acceptance-criterion data-anchor="acceptance-tbd-later"><span data-acceptance-scenario>When every thread is resolved and every <code>data-spec-tbd</code> marker is <code>data-spec-tbd="later"</code>,</span> <span data-acceptance-observable>the action shows the spec acceptance label and writes the empty hand-off.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-vocabulary"><span data-acceptance-scenario>When current guidance, skills, adapters, specs, and the page in spec-chat, octo-lite, and annotateanything are read after the wording pass,</span> <span data-acceptance-observable>they say human spec review for sent hand-offs and spec acceptance for the delivery approval, the page shows Accept spec, and Finish review survives only in historical receipts and the formerly-called note.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-tbd-open-highlight"><span data-acceptance-scenario>When every thread is resolved and at least one open TBD remains,</span> <span data-acceptance-observable>the action reads TBD open, and every block holding an open TBD is visibly highlighted while later TBDs are not.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-tbd-open-jump"><span data-acceptance-scenario>When the human activates TBD open repeatedly with several open TBDs,</span> <span data-acceptance-observable>each activation scrolls to and focuses the next open TBD in document order, wrapping after the last, and no hand-off is written.</span></p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries" id="modular-boundaries">
 <h2>Modular boundaries</h2>
 <p data-anchor="modular-template-rule">A spec that spans multiple modules includes a concise Modular boundaries section naming responsibility, interface or seam, and dependency direction.</p>
 <p data-anchor="modular-template-level">The section stays architectural and omits classes, functions, files, and replaceable implementation detail.</p>
@@ -45,6 +48,7 @@
 <p data-anchor="modular-architecture-sync">The same stable responsibilities, interfaces or seams, and dependency direction remain current in the target-declared architecture source.</p>
 <p data-anchor="modular-architecture-detail">Issue-specific behavior and acceptance detail remain in the spec rather than being copied into architecture.</p>
 <p data-anchor="modular-guided-runtime">Guided-journey declarations do not invert runtime ownership: the central registry owns journey order, while feature modules own their targets and semantic success milestones.</p>
+<p data-modular-boundary data-anchor="boundary-finish-gate"><span data-boundary-responsibility>The review runtime owns spec acceptance eligibility and open-TBD highlighting.</span> <span data-boundary-seam>The caller-facing seam is the spec markup: each <code>data-spec-tbd</code> marker and its value.</span> <span data-boundary-dependency>Direction is self-contained: authoring writes markers, the runtime only reads them.</span> <span data-boundary-scope>Observable scope: the hand-off action label, its activation, and TBD block highlighting.</span></p>
 <script type="application/spec+json" data-render="chart" data-lib="echarts">
 {
   "tooltip": {
@@ -168,6 +172,14 @@
 <div data-render-target="chart"></div>
 </section>
 
+<section data-anchor="outcome" id="outcome">
+<h2>Outcome</h2>
+<p data-anchor="outcome-prompt">Every new work unit begins with a plain-language feature prompt.</p>
+<p data-anchor="outcome-durable">The workflow creates clean durable issue and spec surfaces immediately, then iterates on those surfaces instead of treating chat context as product truth.</p>
+<p data-anchor="outcome-review">The canonical HTML spec and its Spec Chat overlay are the only required human review surface for spec behavior.</p>
+<p data-anchor="outcome-portable">Correctness survives agent, session, CLI, and host replacement through plain files and cold reconstruction.</p>
+</section>
+
 <section data-anchor="source-ownership" id="source-ownership">
 <h2>Source ownership</h2>
 <p data-anchor="source-issue">The issue surface owns current high-level intent, desired outcome, acceptance criteria, non-goals, dependencies, and governing source links.</p>
@@ -249,7 +261,7 @@
         },
         {
           "id": "finish",
-          "name": "Finish review",
+          "name": "Spec acceptance",
           "x": 220,
           "y": 230
         },
@@ -333,7 +345,7 @@
 
 <section data-anchor="implementation-ticket-graph" id="implementation-ticket-graph">
 <h2>Implementation ticket graph</h2>
-<p data-anchor="ticket-graph-create">Before Finish review, the repository-selected issue skill creates or updates linked implementation tickets from current reviewed spec truth.</p>
+<p data-anchor="ticket-graph-create">Before spec acceptance, the repository-selected issue skill creates or updates linked implementation tickets from current reviewed spec truth.</p>
 <p data-anchor="ticket-graph-outcome">Each ticket owns one bounded independently assignable code outcome.</p>
 <p data-anchor="ticket-graph-links">Each ticket links exact governing spec anchors and names observable completion evidence.</p>
 <p data-anchor="ticket-graph-blockers">Tracker blocking relations express real dependency direction instead of prose ordering or ticket numbering.</p>
@@ -380,7 +392,7 @@
 <p data-anchor="grilling-surface">After the seed opens, shaping conversation occurs inside Spec Chat by default.</p>
 <p data-anchor="grilling-one-question">The agent may expose a small batch of internally orthogonal material questions so review stays dynamic and fast.</p>
 <p data-anchor="grilling-sequential">Questions whose answers could materially redirect one another remain sequential, and the agent never dumps the complete grill at once.</p>
-<p data-anchor="grilling-tbd">Each question appears as a temporary anchored TBD block marked with <code>data-spec-tbd</code> so Finish review cannot become eligible while material questions remain.</p>
+<p data-anchor="grilling-tbd">Each question appears as a temporary anchored TBD block marked with <code>data-spec-tbd</code> so spec acceptance cannot become eligible while material questions remain; only a question deliberately deferred to a later slice uses <code>data-spec-tbd="later"</code>.</p>
 <p data-anchor="grilling-answer">The human answers with an ordinary comment on that block.</p>
 <p data-anchor="grilling-resolve">The agent immediately replaces the TBD with the resulting current rule or removes it when no rule is needed.</p>
 <p data-anchor="grilling-issue-sync">The clean current issue is updated in the same batch when the answer changes its high-level scope or criteria.</p>
@@ -578,15 +590,20 @@
 </section>
 
 <section data-anchor="finish-review" id="finish-review">
-<h2>Finish review</h2>
-<p data-anchor="finish-ready">When no draft, pending, acknowledged, or unresolved work remains, the hand-off action becomes Finish review. If only open <code>data-spec-tbd</code> work remains, it reads TBD open and instead scrolls to and focuses the first open TBD.</p>
-<p data-anchor="finish-event">Finish review writes the existing hand-off event with an empty batch.</p>
+<h2>Human spec review and spec acceptance</h2>
+<p data-anchor="vocab-review">Human spec review: the human reviews changes and sends them from the page. Every sent hand-off, a comment batch or spec acceptance, is a human spec review and sets the last reviewed version.</p>
+<p data-anchor="vocab-acceptance">Spec acceptance: the human approval that permits delivery under the reviewed canonical spec. It is the no-draft action, formerly called Finish review.</p>
+<p data-anchor="vocab-label">The spec acceptance action is labelled Accept spec.</p>
+<p data-anchor="vocab-wording-only">The split is wording only across spec-chat, octo-lite, and annotateanything, one PR per repository: events, fields, anchors, and gates are unchanged, and historical receipts keep their recorded text.</p>
+<p data-anchor="finish-ready">When no draft, pending, acknowledged, or unresolved work remains, the hand-off action becomes spec acceptance. If only open TBD work remains, it reads TBD open, every block holding an open TBD is visibly highlighted, and each activation scrolls to and focuses the next open TBD in document order.</p>
+<p data-anchor="finish-tbd-later">A <code>data-spec-tbd</code> marker is open unless its value is <code>later</code>. <code>data-spec-tbd="later"</code> marks a TBD deliberately left for a later slice: it stays visible text but neither blocks spec acceptance nor is highlighted.</p>
+<p data-anchor="finish-event">Spec acceptance writes the existing hand-off event with an empty batch.</p>
 <p data-anchor="finish-agent">The parked agent interprets that empty hand-off as explicit completion of the browser review window.</p>
 <p data-anchor="finish-final-batch">The agent reconciles issue and spec, commits and pushes any final changes, advances the cursor, and closes the active wait.</p>
-<p data-anchor="finish-alignment">The issue, spec, applicable ADRs, user stories, acceptance criteria, architecture, TDD contract, and implementation ticket graph must describe the same current behavior before Finish review is eligible.</p>
+<p data-anchor="finish-alignment">The issue, spec, applicable ADRs, user stories, acceptance criteria, architecture, TDD contract, and implementation ticket graph must describe the same current behavior before spec acceptance is eligible.</p>
 <p data-anchor="finish-conditional">Absent ADRs, single-module work, docs-only work, and recorded test waivers are valid only when their stated conditions hold.</p>
-<p data-anchor="finish-narrow">Finish review means only that the human HTML review is complete and the applicable durable surfaces agree.</p>
-<p data-anchor="finish-not-acceptance">Finish review is not human acceptance of delivered software, implementation authorization, tracker lifecycle transition, merge approval, or deployment approval.</p>
+<p data-anchor="finish-narrow">Spec acceptance means the human accepts the reviewed canonical spec, the applicable durable surfaces agree, and delivery may start under it.</p>
+<p data-anchor="finish-not-acceptance">Spec acceptance is not human acceptance of delivered software, tracker lifecycle transition, merge approval, or deployment approval.</p>
 </section>
 
 <section data-anchor="mobile" id="mobile">
@@ -595,7 +612,7 @@
 <p data-anchor="mobile-http">Prompt-first shaping uses HTTP transport so the same review works on phones, tablets, and desktops.</p>
 <p data-anchor="mobile-target-first">Comment mode remains target-first on narrow screens: opening comment mode exposes the document, and selecting a target opens the full-viewport composer.</p>
 <p data-anchor="mobile-controls">Review controls keep at least 44 pixel touch targets, 16 pixel textarea text, dynamic viewport height, safe-area padding, and reduced-motion behavior.</p>
-<p data-anchor="mobile-handoff">The mobile toolbar retains draft-counted Hand off and gains the same Finish review transition.</p>
+<p data-anchor="mobile-handoff">The mobile toolbar retains draft-counted Hand off and gains the same spec acceptance transition.</p>
 <p data-anchor="mobile-focus">Issue focus and receded context remain legible and operable on narrow screens without shifting the spec sideways.</p>
 </section>
 
@@ -606,7 +623,7 @@
 <p data-anchor="public-review-warning">The shaping skill tells the human to treat the link as a secret and never publishes it into the issue or change request.</p>
 <p data-anchor="public-review-narrow-root">The public server exposes only the declared review collection and its event routes, never the repository root.</p>
 <p data-anchor="public-review-local-origin">The review server binds directly to an approved ingress port through the approved-port launcher, with no relay or tunnel.</p>
-<p data-anchor="public-review-close">Finishing or explicitly ending review closes the public transport and invalidates the capability URL.</p>
+<p data-anchor="public-review-close">Spec acceptance or explicitly ending review closes the public transport and invalidates the capability URL.</p>
 </section>
 
 <section data-anchor="review-surface-compatibility" id="review-surface-compatibility">
@@ -753,11 +770,11 @@
 <p data-anchor="tdd-thread-red">A thread-model test must first fail because the current UI withholds reply from a resolved thread.</p>
 <p data-anchor="tdd-thread-green">The same test passes when a resolved thread offers Reply and reopen and the existing human reply event derives draft status.</p>
 <p data-anchor="tdd-finish-red">A runtime test must first fail because the current no-draft hand-off remains disabled and cannot signal review completion.</p>
-<p data-anchor="tdd-finish-green">The finish test passes when a clean review emits the existing empty hand-off and an ineligible review cannot finish.</p>
+<p data-anchor="tdd-finish-green">The acceptance test passes when a clean review emits the existing empty hand-off and an ineligible review cannot reach spec acceptance.</p>
 <p data-anchor="tdd-handoff-red">A watcher attachment scenario must first demonstrate that returning a final response strands a later browser hand-off until another agent turn begins.</p>
 <p data-anchor="tdd-handoff-green">The same scenario passes when turn-yielded keeps the turn open, external-wake reactivates the exact owner, or manual-resume explicitly requires a new human message.</p>
 <p data-anchor="tdd-mobile">Existing mobile, FSA, thread-model, and review-script suites remain green.</p>
-<p data-anchor="tdd-visual">Browser evidence must verify focus readability, mobile target-first commenting, resolved-thread reopen, hand-off waiting state, and Finish review on a real rendered spec.</p>
+<p data-anchor="tdd-visual">Browser evidence must verify focus readability, mobile target-first commenting, resolved-thread reopen, hand-off waiting state, and spec acceptance on a real rendered spec.</p>
 </section>
 
 <section data-anchor="non-goals" id="non-goals">
@@ -773,7 +790,7 @@
 <h2>References</h2>
 <p data-anchor="reference-design">Product design history: <a href="https://github.com/0xTomDaniel/spec-chat/blob/70e22934dc418c7971fde5772a6d9fcc904e892f/DESIGN.md">DESIGN.md at the shaping baseline</a>.</p>
 <p data-anchor="reference-review-skill">Current review procedure baseline: <a href="https://github.com/varelaseb/spec-chat/blob/cae844f1b85ce39911ab9db7f6bb03c37d434bac/skill/review-spec/SKILL.md">skill/review-spec/SKILL.md at the mobile-review commit</a>.</p>
-<p data-anchor="reference-source-issues">Source issues: <a href="https://github.com/0xTomDaniel/spec-chat/issues/21">#21 Add prompt-first shaping and portable Spec Chat handoffs</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/22">#22 Prevent stale review capabilities in existing repositories</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/24">#24 Raise generated spec visual quality and contrast</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/26">#26 Generalize visual richness without lowering quality</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/28">#28 Make review wake ownership explicit and reliable</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/32">#32 Make implementation ticket graphs canonical in Spec Chat shaping</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/36">#36 Prevent material review edits from bypassing visual quality</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/38">#38 Require guided-journey declarations on changed user stories</a>.</p>
+<p data-anchor="reference-source-issues">Source issues: <a href="https://github.com/0xTomDaniel/spec-chat/issues/21">#21 Add prompt-first shaping and portable Spec Chat handoffs</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/22">#22 Prevent stale review capabilities in existing repositories</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/24">#24 Raise generated spec visual quality and contrast</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/26">#26 Generalize visual richness without lowering quality</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/28">#28 Make review wake ownership explicit and reliable</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/32">#32 Make implementation ticket graphs canonical in Spec Chat shaping</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/36">#36 Prevent material review edits from bypassing visual quality</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/38">#38 Require guided-journey declarations on changed user stories</a>; <a href="https://linear.app/annotateanything/issue/ANN-111">ANN-111 Later TBDs do not block spec acceptance; open TBD highlights its block; human spec review and spec acceptance vocabulary</a>.</p>
 <p data-anchor="reference-source-rule">Every later issue that materially changes this file is appended to the source-issues list, and unrelated issues are never added.</p>
 </section>
 

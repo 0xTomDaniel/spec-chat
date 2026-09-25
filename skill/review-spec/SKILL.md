@@ -83,7 +83,7 @@ Register a lane's review resources with --slug <lane key>, where the lane key is
 When a handed-off batch is material, `spec-chat-shape` becomes a required co-skill before the first file edit.
 Read its authoring reference, reassess the complete affected page, and run its browser gate before the material batch's review handoff or replies, using its proportional recheck rule for later local corrections.
 For each changed user-facing story, evaluate whether its guided-journey yes/no declaration is semantically correct; for yes, also evaluate the linked step, passive/required mode, and required-flow success milestone. Structural validation does not decide these meanings.
-For every new or materially revised governing HTML spec with `data-spec-contract="shaped-sections-v1"`, run the shaping validator before reply or handoff. It must find exactly one visible `User stories`, `Acceptance criteria`, and `Modular boundaries` section, with anchored observable acceptance and boundary fields. A validator failure blocks review.
+For every new or materially revised governing HTML spec with `data-spec-contract="shaped-sections-v1"`, run the shaping validator before reply or handoff. It must find exactly one visible `User stories`, `Acceptance criteria`, and `Modular boundaries` section, in that order, with anchored observable acceptance and boundary fields. A validator failure blocks review.
 Do not grandfather a weak existing page, preserve a poor layout merely to minimize the diff, or call a material expansion review-only.
 If `spec-chat-shape` is unavailable, leave the batch durable and stop before editing rather than silently using the review-only path.
 
@@ -105,7 +105,7 @@ A resolved thread remains expandable. When its latest message is from the agent,
 
 If a hand-off remains unacknowledged past the existing timeout, the browser states that automatic wake did not occur and instructs the human to send a new chat message to resume.
 
-When every thread is resolved and no material TBD remains, the no-draft action becomes **Finish review**. It writes the existing empty hand-off. Reconcile it, settle any final durable change, and advance the exact cursor. Finish review is the spool fact for browser review completion; host rows remain until lane teardown. It does not accept an implementation PR, approve a merge, promote to preproduction, or approve live traffic.
+When every thread is resolved and no open TBD remains (any `data-spec-tbd` whose value is not `later`), the no-draft action becomes **Accept spec**, spec acceptance (formerly called Finish review). It writes the existing empty hand-off. Reconcile it, settle any final durable change, and advance the exact cursor. Every sent hand-off, a comment batch or spec acceptance, is a human spec review. Spec acceptance is the spool fact for delivery approval under the reviewed canonical spec; host rows remain until lane teardown. It does not accept an implementation PR, approve a merge, promote to preproduction, or approve live traffic.
 
 ## Event schema
 
