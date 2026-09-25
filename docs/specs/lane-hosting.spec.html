@@ -40,13 +40,13 @@
 
 <section data-anchor="paths">
 <h2>Served paths</h2>
-<p data-anchor="paths-rule">A slug may hold several roots. The project that first registers under a slug is its primary; its specs keep <code>&lt;slug&gt;/&lt;spec&gt;</code>, unchanged. Each other project's root is served under <code>&lt;slug&gt;/&lt;project&gt;/</code>, spec pages and their relative assets alike, so the URL names the project only when needed.</p>
+<p data-anchor="paths-rule">A slug may hold several roots. A row's path is fixed when it is first registered: <code>&lt;slug&gt;/&lt;spec&gt;</code> while no other project holds rows under the slug, else <code>&lt;slug&gt;/&lt;project&gt;/&lt;spec&gt;</code>, spec pages and their relative assets alike, so the URL names the project only when needed.</p>
 <div class="table-scroll" data-anchor="paths-table-scroll">
 <table data-anchor="paths-table">
 <thead><tr><th>Row</th><th>Served path</th></tr></thead>
 <tbody>
-<tr data-anchor="paths-row-primary"><td>Primary project, or the only one</td><td><code>&lt;slug&gt;/&lt;spec&gt;</code></td></tr>
-<tr data-anchor="paths-row-other"><td>Any other project under the slug</td><td><code>&lt;slug&gt;/&lt;project&gt;/&lt;spec&gt;</code></td></tr>
+<tr data-anchor="paths-row-primary"><td>New row while no other project holds rows under the slug</td><td><code>&lt;slug&gt;/&lt;spec&gt;</code></td></tr>
+<tr data-anchor="paths-row-other"><td>New row while another project holds rows under the slug</td><td><code>&lt;slug&gt;/&lt;project&gt;/&lt;spec&gt;</code></td></tr>
 </tbody>
 </table>
 </div>
