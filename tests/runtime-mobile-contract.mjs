@@ -12,6 +12,8 @@ assert.match(runtime, /\.hx-panel\{[^}]*display:none;/, 'closed panel cannot wid
 assert.match(runtime, /\.hx-panel\.open\{display:flex;/, 'open panel restores layout and interaction');
 assert.match(runtime, /article\.spec pre\{white-space:pre-wrap;overflow-wrap:anywhere\}/, 'standalone doctrine and code blocks cannot widen mobile specs');
 assert.match(runtime, /Math\.max\(0, Math\.min\(pos\.left, holder\.clientWidth - pinSize\)\)/, 'mobile pins are clamped inside their anchored holder');
+assert.match(runtime, /\.hx-jev-badge\{display:inline-block;max-width:100%;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere\}/, 'mobile Jev markers wrap inside narrow anchors');
+assert.match(runtime, /if \(!gitFocus \|\| item\.kind !== 'type'\) continue/, 'Git focus keeps Jev type labels scoped to changed sections');
 assert.match(runtime, /\.hx-composer textarea\{min-height:120px;font-size:16px/, 'mobile composer avoids browser input zoom');
 assert.match(runtime, /\.hx-dock-open,\.hx-dock-thread\{width:44px;height:44px/, 'mobile conversation controls meet the touch target floor');
 assert.match(runtime, /openPanel\(!window\.matchMedia\('\(max-width: 640px\)'\)\.matches\)/, 'mobile comment mode exposes the document before target selection');

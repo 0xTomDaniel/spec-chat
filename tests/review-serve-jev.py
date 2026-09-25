@@ -239,7 +239,15 @@ class JevSeamTest(unittest.TestCase):
             }},
         ]
         questions = jev.build_orphan_questions(events, '<p data-anchor="current">Current clause</p>')
-        self.assertEqual([question["id"] for question in questions], ["u1"])
+        self.assertEqual(questions, [])
+
+    def test_deleted_orphan_without_overlap_has_no_question(self):
+        events = [{"name": "1-comment.json", "actor": "human", "body": {
+            "id": "deleted", "event": "comment", "actor": "human", "anchorId": "removed",
+            "quote": "This passage is deleted in the current head.",
+        }}]
+        questions = jev.build_orphan_questions(events, '<p data-anchor="today">Today\'s card.</p>')
+        self.assertEqual(questions, [])
 
     def test_non_string_event_is_skipped(self):
         events = [{"name": "1-invalid.json", "actor": "human", "body": {
@@ -266,20 +274,32 @@ class JevSeamTest(unittest.TestCase):
                 criteria = payload["questions"]["orphan"]["criteria"]
                 if criteria:
                     assert criteria["new-section"] == "Server retries once on timeout."
+                    assert "none" in criteria
                     choice = "new-section"
-                else:
-                    choice = "none"
                 return {"answers": {"orphan": {"choice": choice, "confidence": 0.9}}}
 
         provider = CandidateProvider()
         with tempfile.TemporaryDirectory() as directory:
             service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
             result = service.seam.ask(questions[0])
-            deleted = jev.build_orphan_questions(events, "<p>Today's card.</p>")
-            deleted_result = service.seam.ask(deleted[0])
         self.assertEqual(result["outcome"], "shown")
-        self.assertEqual(deleted_result["answer"]["label"], "none")
-        self.assertEqual(len(provider.calls), 2)
+        self.assertEqual(result["answer"]["label"], "new-section")
+        self.assertEqual(len(provider.calls), 1)
+
+    def test_orphan_none_answer_has_no_target_suggestion(self):
+        source = '<p data-anchor="new-section">Server retries once on timeout.</p>'
+        events = [{"name": "1-comment.json", "actor": "human", "body": {
+            "id": "u1", "event": "comment", "actor": "human", "anchorId": "old-section",
+            "quote": "retry once on timeout",
+        }}]
+        question = jev.build_orphan_questions(events, source)[0]
+        provider = FakeProvider({"answers": {"orphan": {"choice": "none", "confidence": 0.9}}})
+        with tempfile.TemporaryDirectory() as directory:
+            service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
+            service.questions = lambda *args: [question]
+            result = service.response({}, "", "", "", [], "")
+        self.assertEqual(result["items"], [{"kind": "orphan", "id": "u1", "state": "none",
+                                            "label": None, "target": None, "record": unittest.mock.ANY}])
 
     def test_orphan_uses_root_quote_after_human_reply(self):
         source = (

@@ -72,9 +72,10 @@ MINIMAL_QUESTION_SETS = {
         "threshold": DEFAULT_THRESHOLD,
     },
     "orphan": {
-        "id": "orphan", "version": 1,
-        "instructions": "Choose the current section that best matches the orphaned comment quote.",
-        "labels": [], "threshold": DEFAULT_THRESHOLD,
+        "id": "orphan", "version": 2,
+        "instructions": "Choose the current section that best matches the orphaned comment quote, or none when no section is credible.",
+        "labels": [{"name": "none", "description": "No current section is a credible location for the orphaned passage."}],
+        "threshold": DEFAULT_THRESHOLD,
     },
     "resolved": {
         "id": "resolved", "version": 1,
@@ -641,8 +642,12 @@ def build_orphan_questions(events: list[Mapping[str, Any]], current: str | bytes
         root = thread["messages"][0]
         quote = str(root.get("quote") or root.get("text") or "")
         wanted = set(re.findall(r"[a-z0-9]{3,}", quote.lower()))
-        candidates = sorted(anchors, key=lambda item: (-len(wanted & words[item]), item))[:8]
-        criteria = {item: str(anchors[item].get("text", ""))[:400] for item in candidates}
+        candidates = [item for item in sorted(anchors, key=lambda item: (-len(wanted & words[item]), item))
+                      if len(wanted & words[item]) >= 2][:8]
+        if not candidates:
+            continue
+        criteria = {"none": "No current section is a credible location for the orphaned passage."}
+        criteria.update({item: str(anchors[item].get("text", ""))[:400] for item in candidates})
         result.append(_question("orphan", str(thread["id"]), {"quote": quote, "candidates": candidates}, path, base, revision,
                                 criteria=criteria))
     return result
@@ -919,7 +924,11 @@ class JevService:
             allowed = set(question.get("display_labels", question.get("criteria", {}))) or set(self.seam.question_set(question["kind"]).criteria())
             if question["kind"] == "resolved":
                 allowed = {"resolved in spirit"}
-            state = "label" if outcome == "shown" and label and label in allowed else ("unsure" if outcome == "unsure" else "unavailable")
+            if question["kind"] == "orphan" and outcome == "shown" and label == "none":
+                state = "none"
+                label = None
+            else:
+                state = "label" if outcome == "shown" and label and label in allowed else ("unsure" if outcome == "unsure" else "unavailable")
             if outcome == "shown" and label and label not in allowed:
                 state = "none"
             target_anchor = question.get("target")

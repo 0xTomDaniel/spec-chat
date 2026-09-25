@@ -1428,6 +1428,7 @@ body.hx-panel-open{padding-right:0;overflow:hidden}
 .hx-pin-jev{left:auto;right:calc(100% + 4px);max-width:110px;text-align:right}
 .hx-jev-note{margin:8px 16px 0}
 .hx-jev-badge{font-size:9px;padding:4px 6px;margin-left:5px}
+.hx-jev-badge{display:inline-block;max-width:100%;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere}
 .hx-banner{align-items:flex-start;flex-wrap:wrap;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;text-align:center}
 .hx-banner button{min-height:44px;padding:8px 12px;touch-action:manipulation}
 .hx-toast{bottom:calc(112px + env(safe-area-inset-bottom));max-width:calc(100vw - 24px);box-sizing:border-box;text-align:center}

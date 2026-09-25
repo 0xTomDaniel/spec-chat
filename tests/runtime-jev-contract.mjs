@@ -49,6 +49,7 @@ assert.deepEqual(answer, {
 assert.equal((runtime.match(/fetch\('\/api\/jev\?/g) || []).length, 1, 'all Jev display uses one request seam');
 assert.match(runtime, /120000/, 'Jev fetch allows a cold provider request to finish');
 assert.match(runtime, /resolvedHint\.label === 'resolved in spirit'/, 'unrelated resolved answers never display');
+assert.match(runtime, /if \(!item\.id \|\| item\.state === 'none'\) continue/, 'explicit none answers render no suggestion');
 assert.match(runtime, /if \(!gitFocus \|\| item\.kind !== 'type'\) continue/, 'type badges require Git focus');
 assert.match(runtime, /if \(!gitFocus\) return;/, 'corpus flags require Git focus');
 assert.doesNotMatch(runtime, /async function loadJev\(/, 'coverage shares the main Jev request');
