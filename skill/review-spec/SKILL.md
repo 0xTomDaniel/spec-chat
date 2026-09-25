@@ -105,7 +105,7 @@ A resolved thread remains expandable. When its latest message is from the agent,
 
 If a hand-off remains unacknowledged past the existing timeout, the browser states that automatic wake did not occur and instructs the human to send a new chat message to resume.
 
-When every thread is resolved and no material TBD remains, the no-draft action becomes **Finish review**. It writes the existing empty hand-off. Reconcile it, settle any final durable change, and advance the exact cursor. Finish review is the spool fact for browser review completion; host rows remain until lane teardown. It does not accept an implementation PR, approve a merge, promote to preproduction, or approve live traffic.
+When every thread is resolved and no material TBD remains, the no-draft action becomes **Accept spec**, spec acceptance (formerly called Finish review). It writes the existing empty hand-off. Reconcile it, settle any final durable change, and advance the exact cursor. Every sent hand-off, a comment batch or spec acceptance, is a human spec review. Spec acceptance is the spool fact for delivery approval under the reviewed canonical spec; host rows remain until lane teardown. It does not accept an implementation PR, approve a merge, promote to preproduction, or approve live traffic.
 
 ## Event schema
 

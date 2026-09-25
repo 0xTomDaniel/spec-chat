@@ -57,9 +57,9 @@ these scope hints are optional and descriptive, and no MVP-labelled heading is r
 criterion cannot satisfy the governing Acceptance criteria section.
 
 A `data-spec-tbd` marker is open unless its value is `later`. Open TBDs block
-Finish and are highlighted in review. `data-spec-tbd="later"` marks a TBD
-deliberately left for a later slice: it stays visible text but neither blocks
-Finish nor is highlighted.
+spec acceptance and are highlighted in review. `data-spec-tbd="later"` marks a
+TBD deliberately left for a later slice: it stays visible text but neither
+blocks spec acceptance nor is highlighted.
 
 Every marked spec has one Modular boundaries section, including a self-contained
 single-module spec. Each anchored boundary names responsibility, the

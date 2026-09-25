@@ -20,8 +20,8 @@ Create durable current truth before deep investigation.
 - `spec-chat-review` alone owns browser review, server startup and shutdown, spool transactions, transport, wake, recovery, and hosting verification.
 - A remote or cross-machine shaping handoff is blocked until `spec-chat-review` has a direct public `assets/review-serve.py` process serving the narrow collection, never the repository root, on a free approved ingress port discovered and probed by the host.
 - The host performs exact served-resource and `/api/baseline` checks internally before printing the public URL. The public URL is not a secret in any security sense. It is not an authentication boundary. Keep it out of Linear, pull requests, and other public durable records. After ordinary edits, the same server and URL remain alive; rerun both checks against the same selected base. Restart only for a root, collection, process, port, runtime, or ownership change, or when the server is dead. No second probe, tunnel, VPN, laptop setup, or reviewer-machine setup is part of the handoff.
-- The selected port must not be hard-coded. Collision safety, direct service ownership, public URL handling, and Finish review remain mandatory. Shape owns this blocking condition; `spec-chat-review` owns its mechanics.
-- Remote hosting lifecycle is defined by `skill/review-spec/SKILL.md`; Finish review remains the spool fact and does not manage host rows.
+- The selected port must not be hard-coded. Collision safety, direct service ownership, public URL handling, and spec acceptance remain mandatory. Shape owns this blocking condition; `spec-chat-review` owns its mechanics.
+- Remote hosting lifecycle is defined by `skill/review-spec/SKILL.md`; spec acceptance remains the spool fact and does not manage host rows.
 
 ## Shape
 
@@ -48,7 +48,7 @@ Shaping never marks implementation work In Progress or Done.
 
 ## Review shaping
 
-Material uncertainties become temporary anchored TBDs marked `data-spec-tbd`; any value other than `later` is open, blocks Finish, and is highlighted in review. Mark a TBD deliberately left for a later slice `data-spec-tbd="later"`: it stays visible but neither blocks Finish nor is highlighted.
+Material uncertainties become temporary anchored TBDs marked `data-spec-tbd`; any value other than `later` is open, blocks spec acceptance, and is highlighted in review. Mark a TBD deliberately left for a later slice `data-spec-tbd="later"`: it stays visible but neither blocks spec acceptance nor is highlighted.
 Ask small dependency-aware batches in Spec Chat, resolve each answer into current spec and issue truth, and reconcile tickets after material changes.
 When resolving a review finding, prefer removing or deferring scope over adding spec text; keep v1 minimal.
 Finish each batch's behavior, acceptance, and necessary layout changes together before final browser inspection and ticket reconciliation; apply the authoring reference's proportional recheck rule to later corrections.
@@ -63,7 +63,7 @@ Finish shaping only when:
 - no draft, pending, acknowledged, unresolved, or open TBD work remains; `data-spec-tbd="later"` does not block
 - issue, spec, applicable ADRs, stories, acceptance criteria, architecture, and implementation graph agree
 
-The processed Finish review hand-off is acceptance of the reviewed canonical spec and permits implementation dispatch under that spec. It is not implementation PR acceptance, merge approval, preproduction promotion, or live traffic approval. Those gates remain explicit.
+The processed spec acceptance hand-off is human acceptance of the reviewed canonical spec and permits implementation dispatch under that spec. It is not implementation PR acceptance, merge approval, preproduction promotion, or live traffic approval. Those gates remain explicit.
 
 ## Burden
 

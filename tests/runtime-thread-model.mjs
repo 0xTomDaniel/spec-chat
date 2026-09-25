@@ -78,14 +78,14 @@ assert.equal(acknowledgedReplyCount(new Map([
 assert.equal(acknowledgedReplyCount(new Map([['replied', { status: 'draft' }], ['resolved', { status: 'resolved' }]])), 0, 'replied-to and resolved threads leave the unread count');
 
 assert.deepEqual(reviewHandoffState(new Map([['draft', { status: 'draft' }]])), { drafts: 1, finish: false, tbd: false, enabled: true }, 'drafts enable an ordinary hand-off');
-assert.deepEqual(reviewHandoffState(new Map([['pending', { status: 'pending' }], ['resolved', { status: 'resolved' }]])), { drafts: 0, finish: false, tbd: false, enabled: false }, 'unsettled threads cannot finish review');
-assert.deepEqual(reviewHandoffState(new Map([['resolved', { status: 'resolved' }]])), { drafts: 0, finish: true, tbd: false, enabled: true }, 'a clean resolved review enables Finish review');
-assert.deepEqual(reviewHandoffState(new Map()), { drafts: 0, finish: true, tbd: false, enabled: true }, 'a review with no threads may finish explicitly');
-assert.deepEqual(reviewHandoffState(new Map(), true), { drafts: 0, finish: false, tbd: true, enabled: true }, 'a material TBD blocks Finish review and enables the TBD jump');
+assert.deepEqual(reviewHandoffState(new Map([['pending', { status: 'pending' }], ['resolved', { status: 'resolved' }]])), { drafts: 0, finish: false, tbd: false, enabled: false }, 'unsettled threads cannot accept the spec');
+assert.deepEqual(reviewHandoffState(new Map([['resolved', { status: 'resolved' }]])), { drafts: 0, finish: true, tbd: false, enabled: true }, 'a clean resolved review enables Accept spec');
+assert.deepEqual(reviewHandoffState(new Map()), { drafts: 0, finish: true, tbd: false, enabled: true }, 'a review with no threads may accept the spec explicitly');
+assert.deepEqual(reviewHandoffState(new Map(), true), { drafts: 0, finish: false, tbd: true, enabled: true }, 'a material TBD blocks Accept spec and enables the TBD jump');
 assert.deepEqual(reviewHandoffState(new Map([['resolved', { status: 'resolved' }]]), true), { drafts: 0, finish: false, tbd: true, enabled: true }, 'a TBD alone blocks an otherwise resolved review');
 assert.deepEqual(reviewHandoffState(new Map([['draft', { status: 'draft' }]]), true), { drafts: 1, finish: false, tbd: false, enabled: true }, 'drafts still hand off despite a TBD');
 assert.deepEqual(reviewHandoffState(new Map([['pending', { status: 'pending' }]]), true), { drafts: 0, finish: false, tbd: false, enabled: false }, 'unsettled threads stay disabled despite a TBD');
-assert.match(runtime, /handoffState\.tbd \? 'TBD open'/, 'handoff controls read TBD open when only a TBD blocks Finish');
+assert.match(runtime, /handoffState\.tbd \? 'TBD open'/, 'handoff controls read TBD open when only a TBD blocks Accept spec');
 const marker = value => ({ value, getAttribute: name => name === 'data-spec-tbd' ? value : null });
 assert.equal(isOpenTbd(''), true, 'a bare data-spec-tbd marker is open');
 assert.equal(isOpenTbd('open'), true, 'any value other than later is open');
