@@ -22,7 +22,8 @@
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-change-type">As a reviewer in Git focus, I see which changed sections are scope or behavior changes and which are cosmetic, so I read the material ones first.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-orphan">As a reviewer, an orphaned comment suggests where its passage probably moved, and one click moves it there; nothing moves unless I click.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-resolved">As a reviewer, an open thread whose section was revised shows when the new text looks like it resolves my comment in spirit, so I can confirm and resolve it without rereading every thread.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-corpus">As a reviewer, a changed clause that contradicts, overlaps, or oversteps a clause in another spec is flagged with a link to that clause, before anyone builds on it.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-corpus">As a reviewer, a changed clause that contradicts, overlaps, or oversteps another clause in this spec or another spec is flagged with a link to that clause, before anyone builds on it.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-coverage">As a reviewer, a user story that no acceptance criterion verifies, and a criterion that no story backs, are flagged, so gaps and orphan criteria surface while shaping.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-reading">As a reader, a reading view puts the clauses written for me first and dims the internals, so I get what the spec means for me without losing anything.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-neutral">As a reviewer, when Jev is off, unsure, or failing, a small note says so and the page otherwise works exactly as it does today.</p>
 <p data-user-story data-user-facing="false" data-anchor="story-record">As the operator, I can see for any suggestion which model, question set, and sources produced it, and with what confidence.</p>
@@ -119,12 +120,21 @@
 </section>
 
 <section data-anchor="corpus">
-<h2>Draft against other specs</h2>
+<h2>Draft against its own and other specs</h2>
 <p data-anchor="corpus-pair">This is the contract's <code>pair-corpus</code>: labels <code>contradicts</code>, <code>overlaps</code>, <code>oversteps</code>, or <code>unrelated</code>, or <code>unsure</code>.</p>
-<p data-anchor="corpus-which">In Git focus, each changed clause or criterion, a changed anchored leaf block, is compared with clauses and criteria in the other specs of the served collection at head.</p>
-<p data-anchor="corpus-candidates">Deterministic code picks up to 8 other-spec clauses whose text best matches, always including any modular boundary that names the same surface; one question per pair.</p>
-<p data-anchor="corpus-flag">Each confident flag adds a small label on the changed clause, such as <code>Contradicts compared-range#bar-flow</code>, linking to that clause; a clause may carry several, and below threshold adds <code>unsure</code>.</p>
+<p data-anchor="corpus-which">In Git focus, each changed clause or criterion, a changed anchored leaf block, is compared with other clauses and criteria in the same spec, including its non-goals and modular boundaries, and in the other specs of the served collection at head.</p>
+<p data-anchor="corpus-candidates">Deterministic code picks up to 8 same-spec and up to 8 other-spec clauses whose text best matches, always including the spec's own non-goals and any modular boundary that names the same surface; one question per pair.</p>
+<p data-anchor="corpus-flag">Each confident flag adds a small label on the changed clause, such as <code>Contradicts #non-goal-text</code> or <code>Contradicts compared-range#bar-flow</code>, linking to that clause; a clause may carry several, and below threshold adds <code>unsure</code>.</p>
 <p data-anchor="corpus-inert">Flags never edit either spec, never block Finish, and never change thread state.</p>
+</section>
+
+<section data-anchor="coverage">
+<h2>Stories and criteria cover each other</h2>
+<p data-anchor="coverage-pair">Each user story is paired with each acceptance criterion in the same spec: labels <code>verifies</code>, <code>unrelated</code>, or <code>unsure</code>.</p>
+<p data-anchor="coverage-story">A story with no confident <code>verifies</code> shows <code>No criterion covers this</code>; a criterion with none shows <code>No story backs this</code>.</p>
+<p data-anchor="coverage-unsure">If any of an item's pairs is unsure and none verifies, the item shows <code>unsure</code> instead of a gap.</p>
+<p data-anchor="coverage-when">Coverage runs on every HTTP-served spec that marks stories and criteria, in normal view and Git focus, and asks again on a new head.</p>
+<p data-anchor="coverage-inert">Coverage flags never edit the spec or block Finish.</p>
 </section>
 
 <section data-anchor="reading">
@@ -146,7 +156,7 @@
 
 <section data-anchor="calibration">
 <h2>Question sets and learning by doing</h2>
-<p data-anchor="qset-data">The change-type, orphan-location, resolved-in-spirit, corpus, and audience question sets are versioned data in this repository: instructions, the criteria above with examples, and its stated threshold.</p>
+<p data-anchor="qset-data">The change-type, orphan-location, resolved-in-spirit, corpus, coverage, and audience question sets are versioned data in this repository: instructions, the criteria above with examples, and its stated threshold.</p>
 <p data-anchor="qset-on">Every set is on whenever a key is configured; there is no labeled set, calibration command, or precision gate.</p>
 <p data-anchor="qset-learn">Criteria, examples, and thresholds are tuned from use: judgment records and what the reviewer does next, such as ignoring a label, resolving, or moving. Any change is a new question-set version, which classifies again.</p>
 </section>
@@ -162,6 +172,8 @@
 <p data-acceptance-criterion data-anchor="acceptance-move"><span data-acceptance-scenario>When the reviewer clicks <code>Move comment here</code>,</span> <span data-acceptance-observable>exactly one human <code>move</code> event is appended, the thread pins to the suggested section after reload with its messages, quote, and status unchanged, and the next hand-off needs no agent reply for it.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-resolved"><span data-acceptance-scenario>When one open thread's section was revised to do what its comment asked and another's was revised in an unrelated way,</span> <span data-acceptance-observable>the first thread's card and pin show <code>Looks resolved</code>, the second shows nothing, and both stay open until the human resolves them.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-corpus"><span data-acceptance-scenario>When a draft clause states the opposite of a clause in another served spec, and another draft clause restates one,</span> <span data-acceptance-observable>the first shows <code>Contradicts</code> and the second <code>Overlaps</code>, each linking to that other clause, and Finish stays available.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-self"><span data-acceptance-scenario>When a draft clause adds behavior its own spec lists as a non-goal,</span> <span data-acceptance-observable>it shows <code>Contradicts</code> linking to that non-goal.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-coverage"><span data-acceptance-scenario>When a spec has a story no criterion verifies and a criterion no story backs,</span> <span data-acceptance-observable>the story shows <code>No criterion covers this</code>, the criterion shows <code>No story backs this</code>, and adding a matching criterion or story clears each on the next head.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-reading"><span data-acceptance-scenario>When the reviewer turns on reading view,</span> <span data-acceptance-observable>within each section confident <code>for you</code> clauses come first and <code>internals</code> follow dimmed at 4.5:1 or better, every clause stays present, and turning it off restores the exact source order.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-inert"><span data-acceptance-scenario>Across a review session with Jev on, any flags or reading view, and no human move click,</span> <span data-acceptance-observable>the spool, thread statuses, Finish eligibility, and spec bytes match a session with Jev off.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-cache"><span data-acceptance-scenario>When the same page, base, and head load a second time,</span> <span data-acceptance-observable>no new Jev call is made and the same labels show.</span></p>
@@ -171,8 +183,8 @@
 
 <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
 <h2>Modular boundaries</h2>
-<p data-modular-boundary data-anchor="boundary-seam"><span data-boundary-responsibility>The review server's Jev seam owns questions, provider calls, thresholds, cache, and judgment records.</span> <span data-boundary-seam>Caller-facing seam: <code>GET /api/jev?path=&lt;spec&gt;&amp;base=&lt;id&gt;</code> returns on or off, and per changed root anchor, changed clause, orphaned thread id, and revised open thread id a label, flags, or candidate, none, unsure, retrying, or unavailable; <code>&amp;view=reading</code> returns per-clause audience labels.</span> <span data-boundary-dependency>Dependency direction: calls Jev on OpenRouter as an external provider and reads local Git, the served collection's specs, and the spool; no tracker or evidence source; nothing calls back into the runtime.</span> <span data-boundary-scope>Observable scope: the JSON response and judgment records, in single-root and registry modes.</span></p>
-<p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns badges, focus treatments, corpus flags, reading view, error markers, orphan hints, <code>Looks resolved</code> labels, and the human <code>move</code> event.</span> <span data-boundary-seam>Caller-facing seam: the rendered Git focus, orphaned thread cards, and the <code>move</code> event in the spool schema.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; consumes the seam route and holds no model, threshold, or key logic.</span> <span data-boundary-scope>Observable scope: what the reviewer sees in focus and on orphaned cards.</span></p>
+<p data-modular-boundary data-anchor="boundary-seam"><span data-boundary-responsibility>The review server's Jev seam owns questions, provider calls, thresholds, cache, and judgment records.</span> <span data-boundary-seam>Caller-facing seam: <code>GET /api/jev?path=&lt;spec&gt;&amp;base=&lt;id&gt;</code> returns on or off, and per changed root anchor, changed clause, story, criterion, orphaned thread id, and revised open thread id a label, flags, or candidate, none, unsure, retrying, or unavailable; <code>&amp;view=reading</code> returns per-clause audience labels.</span> <span data-boundary-dependency>Dependency direction: calls Jev on OpenRouter as an external provider and reads local Git, the served collection's specs, and the spool; no tracker or evidence source; nothing calls back into the runtime.</span> <span data-boundary-scope>Observable scope: the JSON response and judgment records, in single-root and registry modes.</span></p>
+<p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns badges, focus treatments, corpus and coverage flags, reading view, error markers, orphan hints, <code>Looks resolved</code> labels, and the human <code>move</code> event.</span> <span data-boundary-seam>Caller-facing seam: the rendered Git focus, orphaned thread cards, and the <code>move</code> event in the spool schema.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; consumes the seam route and holds no model, threshold, or key logic.</span> <span data-boundary-scope>Observable scope: what the reviewer sees in focus and on orphaned cards.</span></p>
 <p data-modular-boundary data-anchor="boundary-qsets"><span data-boundary-responsibility>Question sets own instructions, criteria, examples, and thresholds.</span> <span data-boundary-seam>Caller-facing seam: a question-set id and version.</span> <span data-boundary-dependency>Dependency direction: self-contained data read by the seam.</span> <span data-boundary-scope>Observable scope: the set version named in each judgment record.</span></p>
 </section>
 
