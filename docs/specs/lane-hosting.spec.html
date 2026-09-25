@@ -13,13 +13,14 @@
 <header data-anchor="header">
 <h1 data-anchor="title">One lane slug across repositories</h1>
 <nav data-anchor="breadcrumbs">docs / specs / lane-hosting.spec.html</nav>
-<p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-119/kanban-shows-the-whole-fleet-not-one-repo">ANN-119</a>.</p>
+<p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-119/kanban-shows-the-whole-fleet-not-one-repo">ANN-119</a>, <a href="https://linear.app/annotateanything/issue/ANN-136">ANN-136</a> (review index).</p>
 <p data-anchor="context">Extends <code>skill/review-spec/SKILL.md</code>, Remote hosting lifecycle: a lane registers its specs under one lane slug, even when they live in several repositories.</p>
 </header>
 
 <section data-spec-section="user-stories" data-anchor="user-stories">
 <h2>User stories</h2>
 <p data-user-story data-user-facing="false" data-anchor="story-one-slug">As a lane owner whose specs span repositories, I register every spec under the lane slug, so everything that reads the lane slug finds them all.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-review-index">As a human reviewer, I open the review index and see each spec as one readable entry, its title, lane, and whether it changed since I last reviewed it, with the specs that need me first.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-stable-url">As a reviewer, a spec's review URL stays the same when the lane adds a spec from another repository.</p>
 </section>
 
@@ -30,11 +31,12 @@
 <p data-acceptance-criterion data-anchor="acceptance-same-project"><span data-acceptance-scenario>When a spec is registered again under the same row id (slug, project, and spec path), for example from a recreated worktree,</span> <span data-acceptance-observable>registration is an idempotent upsert: that one row is replaced with its new root and base, its path unchanged, nothing else moves, and no error is raised.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-remove"><span data-acceptance-scenario>When <code>aa</code>'s rows are removed and <code>sc</code>'s remain,</span> <span data-acceptance-observable><code>sc</code>'s specs keep <code>ann45/sc/&lt;spec&gt;</code>.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-review-state"><span data-acceptance-scenario>With two roots under one slug,</span> <span data-acceptance-observable>each spec's spool, cursor, baseline, and <a href="./compared-range.spec.html#last-reviewed">last reviewed version</a> belong to its own root, and host baseline checks pass for both.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-review-index"><span data-acceptance-scenario>Given registered rows whose specs differ from their row base, match it, and are absent at it,</span> <span data-acceptance-observable>the index shows each spec only as the <a href="#index-entry">entry lines</a> with no served path or identifier text, “Changed since you reviewed” specs first, then “Up to date”, each group by lane then title.</span></p>
 </section>
 
 <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
 <h2>Modular boundaries</h2>
-<p data-modular-boundary data-anchor="boundary-host"><span data-boundary-responsibility>The review host owns which root serves which path under a slug and records it as the row's <code>path</code>.</span> <span data-boundary-seam>Caller-facing seam: <code>review-host register</code> and the registry rows.</span> <span data-boundary-dependency>Dependency direction: self-contained; the review server reads the rows and never decides paths itself.</span> <span data-boundary-scope>Observable scope: registry rows, served URLs, and registration errors.</span></p>
+<p data-modular-boundary data-anchor="boundary-host"><span data-boundary-responsibility>The review host owns which root serves which path under a slug and records it as the row's <code>path</code>.</span> <span data-boundary-seam>Caller-facing seam: <code>review-host register</code> and the registry rows.</span> <span data-boundary-dependency>Dependency direction: self-contained; the review server reads the rows and never decides paths itself.</span> <span data-boundary-scope>Observable scope: registry rows, served URLs, the review index, and registration errors.</span></p>
 <p data-modular-boundary data-anchor="boundary-readers"><span data-boundary-responsibility>Registry readers such as a worklane board own nothing here; they take each row's <code>path</code> as its served path.</span> <span data-boundary-seam>Caller-facing seam: the row's <code>path</code>.</span> <span data-boundary-dependency>Dependency direction: external-provider; readers depend on the registry, never the reverse.</span> <span data-boundary-scope>Observable scope: links built from <code>path</code>.</span></p>
 </section>
 
@@ -53,6 +55,31 @@
 <p data-anchor="paths-project">The project is the resource's <code>PROJECT_ID</code> as given at registration, recorded in the row as <code>project</code>.</p>
 <p data-anchor="paths-primary-stays">Re-registering a row keeps its path. A new row gets the plain form only when no other project holds rows under the slug.</p>
 <p data-anchor="paths-field">Each registry row records its served path as <code>path</code>. Readers use it rather than rebuilding a path from <code>slug</code> and <code>spec</code>.</p>
+</section>
+
+<section data-anchor="index-entry">
+<h2>Review index</h2>
+<p data-anchor="index-entry-purpose">The review index at the server root lists each served spec as one entry built only from the row and the spec file it already serves.</p>
+<figure data-anchor="index-entry-mockup">
+<h3 data-anchor="index-entry-mockup-heading">One entry, rendered</h3>
+<div data-anchor="index-entry-mockup-card" style="max-width: 560px; margin: 16px auto; border: 1px solid var(--spec-hairline); border-radius: 12px; padding: 14px 18px; background: var(--spec-surface);">
+<p style="margin: 0; font-weight: 750; font-size: 17px; line-height: 1.35;"><a href="#index-entry-mockup">Annotate Anything - evidence review site</a></p>
+<p style="margin: 4px 0 0; font-size: 14px; color: var(--spec-muted);">ANN-134 · annotateanything</p>
+<p style="margin: 8px 0 0; font-size: 15px;"><strong>Changed since you reviewed</strong></p>
+</div>
+<figcaption data-anchor="index-entry-mockup-caption">The title is the link. The served path, slug, row id, and base commit leave the index.</figcaption>
+</figure>
+<div class="table-scroll" data-anchor="index-entry-table-scroll">
+<table data-anchor="index-entry-table">
+<thead><tr><th>Line</th><th>Existing source</th></tr></thead>
+<tbody>
+<tr data-anchor="index-entry-title"><td>Title, linking the spec's served path</td><td>The spec page's <code>&lt;title&gt;</code>, as today.</td></tr>
+<tr data-anchor="index-entry-lane"><td>Muted: lane · project</td><td>The row <code>slug</code> written as an issue key (<code>ann134</code> reads <code>ANN-134</code>) and the row <code>project</code>. Omitted for a spec served without a row.</td></tr>
+<tr data-anchor="index-entry-status"><td>Status in words</td><td>“Changed since you reviewed” when the spec differs from its row base by <a href="./compared-range.spec.html#last-reviewed">the last reviewed version rule</a>: in the row root, with <code>GIT_OPTIONAL_LOCKS=0</code>, <code>git rev-parse &lt;base&gt;:&lt;spec&gt;</code> differs from <code>git hash-object &lt;spec&gt;</code>, or the spec is absent at the base. Otherwise “Up to date”. No status for a spec served without a row, or when the compare fails.</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="index-entry-order">Order is a sort: “Changed since you reviewed” first, then “Up to date”, then specs without a status, each group by lane then title.</p>
 </section>
 
 </article>
