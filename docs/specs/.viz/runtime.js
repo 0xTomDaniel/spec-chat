@@ -2255,4 +2255,117 @@ function startLoops() {
   window.addEventListener('resize', () => { renderPins(); renderThreadHighlight(); });
 }
 
+/* ---------------- ANN-108 reading view ----------------
+ * This block owns the audience toggle and its HTTP-only Jev request. It never
+ * changes document order or removes clauses. Git focus and reading view are
+ * mutually exclusive display modes.
+ */
+const readingView = { active: false, loading: false };
+
+function readingAnchor(id) {
+  const wanted = String(id || '');
+  return [...document.querySelectorAll('[data-anchor]')].find(el => el.dataset.anchor === wanted) || null;
+}
+
+function clearReadingAudience() {
+  document.querySelectorAll('[data-hx-audience]').forEach(el => delete el.dataset.hxAudience);
+}
+
+function clearGitFocusForReading() {
+  document.body.classList.remove('hx-focus-active');
+  document.querySelectorAll('[data-hx-focus],[data-hx-focus-root]').forEach(el => {
+    delete el.dataset.hxFocus;
+    delete el.dataset.hxFocusRoot;
+  });
+  document.querySelectorAll('.hx-focus-error').forEach(el => el.remove());
+  const url = new URL(location.href);
+  if (url.searchParams.get('focus') === 'changes') {
+    url.searchParams.delete('focus');
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
+  }
+}
+
+function readingParams() {
+  const params = new URLSearchParams({ path: location.pathname.replace(/^\//, ''), view: 'reading' });
+  const queryBase = new URLSearchParams(location.search).get('base');
+  const base = (state.range.baseline && state.range.baseline.base) || queryBase;
+  if (base) params.set('base', base);
+  return params;
+}
+
+function applyReadingAudience(items) {
+  clearReadingAudience();
+  for (const item of Array.isArray(items) ? items : []) {
+    if (!item || item.kind !== 'audience' || item.state !== 'label') continue;
+    if (item.label !== 'for you' && item.label !== 'internals') continue;
+    const anchor = readingAnchor(item.id || item.target);
+    if (anchor) anchor.dataset.hxAudience = item.label;
+  }
+}
+
+async function loadReadingAudience() {
+  if (readingView.loading || !['http:', 'https:'].includes(location.protocol)) return;
+  readingView.loading = true;
+  try {
+    const response = await fetch('/api/jev?' + readingParams().toString(), { cache: 'no-store' });
+    if (!response.ok) throw new Error('reading suggestions unavailable');
+    const result = await response.json();
+    applyReadingAudience(result && result.items);
+    if (result && result.jev === 'off') toast('Jev off');
+  } catch (_) {
+    clearReadingAudience();
+    toast('Jev unavailable');
+  } finally {
+    readingView.loading = false;
+  }
+}
+
+function setReadingView(on) {
+  const next = Boolean(on);
+  if (next === readingView.active && !next) {
+    clearReadingAudience();
+    return;
+  }
+  if (next) clearGitFocusForReading();
+  readingView.active = next;
+  document.body.classList.toggle('hx-reading-active', next);
+  const button = document.getElementById('hx-reading');
+  if (button) {
+    button.setAttribute('aria-pressed', String(next));
+    button.textContent = next ? 'Reading view on' : 'Reading view';
+  }
+  if (!next) clearReadingAudience();
+  else loadReadingAudience();
+}
+
+function mountReadingView() {
+  if (EMBED_REVIEW_DIR || !['http:', 'https:'].includes(location.protocol) || document.getElementById('hx-reading')) return;
+  const toolbar = document.querySelector('.hx-toolbar');
+  if (!toolbar) return;
+  const style = document.createElement('style');
+  style.textContent = `.hx-reading-active [data-hx-audience="internals"]{color:#586069!important}
+.hx-reading-active [data-hx-audience="internals"] :is(a,code,strong,em,span){color:inherit!important}
+@media(prefers-color-scheme:dark){.hx-reading-active [data-hx-audience="internals"]{color:#b9c0ca!important}}`;
+  document.head.appendChild(style);
+  const button = document.createElement('button');
+  button.id = 'hx-reading';
+  button.type = 'button';
+  button.textContent = 'Reading view';
+  button.setAttribute('aria-pressed', 'false');
+  button.addEventListener('click', () => setReadingView(!readingView.active));
+  toolbar.insertBefore(button, document.getElementById('hx-status'));
+  document.body.classList.toggle('hx-reading-active', readingView.active);
+  const focusObserver = new MutationObserver(() => {
+    if (readingView.active && document.body.classList.contains('hx-focus-active')) setReadingView(false);
+  });
+  focusObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  Object.defineProperty(readingView, 'mounted', { value: true, configurable: true });
+}
+
+const readingClassObserver = new MutationObserver(() => {
+  if (readingView.mounted) document.body.classList.toggle('hx-reading-active', readingView.active);
+});
+readingClassObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+setTimeout(mountReadingView, 0);
+
 })();

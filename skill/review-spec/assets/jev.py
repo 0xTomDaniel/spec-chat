@@ -469,8 +469,67 @@ def build_coverage_questions(current: str | bytes, path: str = "spec", base: str
     return result
 
 
+class _LeafAnchorParser(HTMLParser):
+    """Collect text for anchored elements without anchored descendants."""
+
+    _containers = {"article", "div", "figure", "footer", "header", "main", "nav", "ol", "section", "table", "tbody", "thead", "tfoot", "ul"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.stack: list[str | None] = []
+        self.values: dict[str, dict[str, Any]] = {}
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]):
+        anchor = dict(attrs).get("data-anchor")
+        parent = next((item for item in reversed(self.stack) if item is not None), None)
+        if anchor:
+            anchor = str(anchor)
+            if parent and parent in self.values:
+                self.values[parent]["has_child"] = True
+            self.values.setdefault(anchor, {"text": [], "tag": tag.lower(), "has_child": False})
+            self.stack.append(anchor)
+            return
+        self.stack.append(self.stack[-1] if self.stack else None)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]):
+        self.handle_starttag(tag, attrs)
+        self.handle_endtag(tag)
+
+    def handle_endtag(self, tag: str):
+        if self.stack:
+            self.stack.pop()
+
+    def handle_data(self, data: str):
+        anchor = self.stack[-1] if self.stack else None
+        if anchor and anchor in self.values:
+            self.values[anchor]["text"].append(data)
+
+
+def _leaf_anchors(source: str | bytes | None) -> dict[str, dict[str, Any]]:
+    parser = _LeafAnchorParser()
+    parser.feed((source or b"").decode("utf-8", "replace") if isinstance(source, bytes) else (source or ""))
+    result = {}
+    for anchor, value in parser.values.items():
+        if value["has_child"] or value["tag"] in _LeafAnchorParser._containers:
+            continue
+        text = " ".join("".join(value["text"]).split())
+        if text:
+            result[anchor] = {"text": text, "tag": value["tag"]}
+    return result
+
+
+def build_audience_questions(current: str | bytes, path: str = "spec", base: str = "",
+                             revision: Any = "head") -> list[dict[str, Any]]:
+    result = []
+    for anchor, value in _leaf_anchors(current).items():
+        result.append(_question("audience", anchor,
+                                {"clause": value["text"], "reader": "someone who uses the result, not builds it"},
+                                path, base, revision, anchor))
+    return result
+
+
 BUILDERS = {"type": build_type_questions, "orphan": build_orphan_questions, "resolved": build_resolved_questions,
-            "coverage": build_coverage_questions}
+            "coverage": build_coverage_questions, "audience": build_audience_questions}
 
 
 def default_state_dir() -> Path:
@@ -492,7 +551,8 @@ class JevService:
     def enabled(self) -> bool:
         return bool(self.api_key) or self.provider is not None
 
-    def questions(self, mount: Mapping[str, Any], target: str, relative: str, base: str, events: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    def questions(self, mount: Mapping[str, Any], target: str, relative: str, base: str,
+                  events: list[Mapping[str, Any]], view: str = "") -> list[dict[str, Any]]:
         current = Path(target).read_bytes()
         root = mount["root"]
         rel = os.path.relpath(target, root).replace(os.sep, "/")
@@ -508,13 +568,16 @@ class JevService:
         result.extend(build_orphan_questions(events, current, relative, base, head))
         result.extend(build_resolved_questions(events, current, old, relative, base, head))
         result.extend(build_coverage_questions(current, relative, base, head))
+        if view == "reading":
+            result.extend(BUILDERS["audience"](current, relative, base, head))
         return result
 
-    def response(self, mount: Mapping[str, Any], target: str, relative: str, base: str, events: list[Mapping[str, Any]]) -> dict[str, Any]:
+    def response(self, mount: Mapping[str, Any], target: str, relative: str, base: str,
+                 events: list[Mapping[str, Any]], view: str = "") -> dict[str, Any]:
         if not self.enabled:
             return {"jev": "off", "items": []}
         items = []
-        for question in self.questions(mount, target, relative, base, events):
+        for question in self.questions(mount, target, relative, base, events, view):
             record = self.seam.ask(question)
             outcome = record.get("outcome")
             if outcome == "oversize":
@@ -536,5 +599,5 @@ class JevService:
 
 __all__ = ["BUILDERS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MODEL",
            "MINIMAL_QUESTION_SETS", "OPENROUTER_DECISIONS_URL", "OpenRouterProvider", "QuestionSet",
-           "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_type_questions", "extract_anchors",
+           "build_audience_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_type_questions", "extract_anchors",
            "load_question_sets"]
