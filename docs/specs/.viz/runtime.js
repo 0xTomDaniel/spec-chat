@@ -988,10 +988,12 @@ const CSS = `
 .hx-range-bar{margin:8px 16px 0;padding:8px}
 .hx-range-row{align-items:flex-start;flex-wrap:wrap;gap:6px}
 .hx-range-copy{flex:1 1 100%}
-.hx-range-change{min-height:40px}
+.hx-range-change{min-height:44px}
 .hx-range-picker{margin-top:6px}
 .hx-range-commits{max-height:none}
-.hx-range-commit{grid-template-columns:5.5em 6.5em minmax(0,1fr);padding:8px 6px;min-height:40px}
+.hx-range-commit{grid-template-columns:5.5em 6.5em minmax(0,1fr);padding:8px 6px;min-height:44px}
+.hx-range-form input,.hx-range-form button{min-height:44px}
+.hx-range-form input{font-size:16px}
 }
 @media(max-width:800px){
 .hx-range-bar{margin-top:64px}
