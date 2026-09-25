@@ -62,6 +62,29 @@ class JevSeamTest(unittest.TestCase):
         self.assertEqual(first["record_id"], second["record_id"])
         self.assertEqual(len(provider.calls), 1)
 
+    def test_corpus_questions_cover_changed_leaves_non_goals_and_other_specs(self):
+        baseline = """
+        <section data-anchor="rules"><p data-anchor="changed">The service reads review events.</p></section>
+        <section data-anchor="non-goals"><p data-anchor="non-goal-text">The service never writes review events.</p></section>
+        """
+        current = baseline.replace("reads review events", "writes review events")
+        other = """
+        <section data-anchor="other"><p data-anchor="same-surface" data-modular-boundary>The review service reads review events.</p></section>
+        """
+        questions = jev.build_corpus_questions(current, baseline, "docs/current.spec.html", "base", "head",
+                                               [{"path": "docs/other.spec.html", "source": other}])
+        targets = {question["target"] for question in questions}
+        self.assertIn("non-goal-text", targets)
+        self.assertIn("docs/other.spec.html#same-surface", targets)
+        changed = [question for question in questions if question["id"] == "changed"]
+        self.assertTrue(changed)
+        self.assertTrue(all(question["sources"][0].endswith("#changed") for question in changed))
+
+    def test_corpus_question_set_has_all_relationship_labels(self):
+        sets = jev.load_question_sets(ROOT / "skill" / "review-spec" / "assets" / "jev")
+        self.assertEqual(set(sets["corpus"].criteria()),
+                         {"contradicts", "overlaps", "oversteps", "unrelated", "unsure"})
+
 
 if __name__ == "__main__":
     unittest.main()

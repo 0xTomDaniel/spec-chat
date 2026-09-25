@@ -580,7 +580,7 @@ li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywh
         if service is None:
             service = self.server.jev = JevService()
         try:
-            return self._json(service.response(mount, target, relative, base, events))
+            return self._json(service.response(mount, target, relative, base, events, self.mounts))
         except (OSError, RuntimeError, ValueError):
             return self._json({"error": "jev unavailable"}, 503)
 

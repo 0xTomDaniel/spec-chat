@@ -310,7 +310,12 @@ class _AnchorParser(HTMLParser):
         attrs = dict(attrs)
         anchor = attrs.get("data-anchor")
         if anchor:
-            self.values.setdefault(anchor, {"text": [], "section": tag.lower() == "section" or attrs.get("data-spec-section") is not None})
+            parent = self.stack[-1][1] if self.stack else None
+            value = self.values.setdefault(anchor, {"text": [], "section": tag.lower() == "section" or attrs.get("data-spec-section") is not None,
+                                                     "parent": parent, "children": [],
+                                                     "boundary": "data-modular-boundary" in attrs})
+            if parent and anchor not in self.values[parent].setdefault("children", []):
+                self.values[parent]["children"].append(anchor)
             self.stack.append((tag, anchor, True))
         elif self.stack:
             self.stack.append((tag, self.stack[-1][1], False))
@@ -334,6 +339,120 @@ def extract_anchors(source: str | bytes | None) -> dict[str, dict[str, Any]]:
     for value in parser.values.values():
         value["text"] = " ".join("".join(value["text"]).split())
     return parser.values
+
+
+def _anchor_words(text: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]{3,}", text.lower()))
+
+
+def _leaf_anchors(anchors: Mapping[str, Mapping[str, Any]]) -> list[str]:
+    return [key for key, value in anchors.items() if not value.get("children")]
+
+
+def _match_score(source: str, target: str) -> tuple[int, int]:
+    source_words, target_words = _anchor_words(source), _anchor_words(target)
+    overlap = len(source_words & target_words)
+    union = len(source_words | target_words)
+    return overlap, int((overlap * 1000) / union) if union else 0
+
+
+def _candidate_sort(source: str, anchors: Mapping[str, Mapping[str, Any]], keys: list[str]) -> list[str]:
+    return sorted(keys, key=lambda key: (-_match_score(source, str(anchors[key].get("text", "")))[0],
+                                         -_match_score(source, str(anchors[key].get("text", "")))[1], key))
+
+
+def _served_spec_parts(value: Any) -> tuple[str, str] | None:
+    if isinstance(value, Mapping):
+        path = value.get("path", value.get("relative"))
+        source = value.get("source", value.get("text", value.get("html")))
+    elif isinstance(value, (tuple, list)) and len(value) >= 2:
+        path, source = value[0], value[1]
+    else:
+        return None
+    if not isinstance(path, str) or not path or source is None:
+        return None
+    if isinstance(source, bytes):
+        source = source.decode("utf-8", "replace")
+    if not isinstance(source, str):
+        return None
+    return path, source
+
+
+def _is_non_goal(anchor: str, anchors: Mapping[str, Mapping[str, Any]]) -> bool:
+    seen = set()
+    current = anchor
+    while current and current not in seen:
+        seen.add(current)
+        if "non-goal" in current.lower() or "nongoal" in current.lower():
+            return True
+        current = anchors.get(current, {}).get("parent")
+    return False
+
+
+def build_corpus_questions(current: str | bytes, baseline: str | bytes | None, path: str = "spec", base: str = "",
+                           revision: Any = "head", served_specs: Any = None) -> list[dict[str, Any]]:
+    """Build one corpus question for each changed leaf and candidate clause."""
+    now, old = extract_anchors(current), extract_anchors(baseline)
+    leaves = _leaf_anchors(now)
+    other_specs: list[tuple[str, dict[str, dict[str, Any]]]] = []
+    for raw in served_specs or []:
+        part = _served_spec_parts(raw)
+        if not part:
+            continue
+        other_path, source = part
+        if other_path == path:
+            continue
+        other_specs.append((other_path, extract_anchors(source)))
+
+    result = []
+    for anchor in leaves:
+        after = str(now[anchor].get("text", ""))
+        before = str(old.get(anchor, {}).get("text", ""))
+        if before == after:
+            continue
+
+        own_keys = [key for key in _leaf_anchors(now) if key != anchor]
+        own_ranked = _candidate_sort(after, now, own_keys)
+        non_goals = [key for key in own_ranked if _is_non_goal(key, now)]
+        own_keys = own_ranked[:8]
+        for key in non_goals:
+            if key not in own_keys:
+                own_keys.append(key)
+        for key in own_ranked:
+            if now[key].get("boundary") and key not in own_keys:
+                own_keys.append(key)
+        candidates: list[tuple[str, str, str, bool]] = [
+            (key, key, str(now[key].get("text", "")), bool(now[key].get("boundary")))
+            for key in own_keys
+        ]
+
+        cross: list[tuple[int, int, str, str, str, bool]] = []
+        for other_path, anchors in other_specs:
+            for key in _leaf_anchors(anchors):
+                text = str(anchors[key].get("text", ""))
+                overlap, ratio = _match_score(after, text)
+                cross.append((-overlap, -ratio, other_path, key, text, bool(anchors[key].get("boundary"))))
+        cross.sort()
+        selected = cross[:8]
+        # Same-surface modular boundaries remain candidates even when lexical
+        # ranking would otherwise put them just outside the cross-spec limit.
+        selected_keys = {(item[2], item[3]) for item in selected}
+        for item in cross:
+            if item[5] and (item[2], item[3]) not in selected_keys:
+                selected.append(item)
+                selected_keys.add((item[2], item[3]))
+        candidates.extend((key, other_path + "#" + key, text, boundary)
+                          for _, _, other_path, key, text, boundary in selected)
+
+        for candidate, target, target_text, boundary in candidates:
+            question = _question("corpus", anchor,
+                                 {"before": before, "after": after, "target": target_text,
+                                  "target_boundary": boundary},
+                                 path, base, revision, target)
+            question["sources"] = [path + "#" + anchor, target]
+            question["display_labels"] = ["contradicts", "overlaps", "oversteps"]
+            result.append(question)
+    return result
 
 
 def _question(kind: str, identifier: str, state: Mapping[str, Any], path: str, base: str, revision: Any,
@@ -434,7 +553,8 @@ def build_resolved_questions(events: list[Mapping[str, Any]], current: str | byt
     return result
 
 
-BUILDERS = {"type": build_type_questions, "orphan": build_orphan_questions, "resolved": build_resolved_questions}
+BUILDERS = {"type": build_type_questions, "orphan": build_orphan_questions, "resolved": build_resolved_questions,
+            "corpus": build_corpus_questions}
 
 
 def default_state_dir() -> Path:
@@ -456,7 +576,42 @@ class JevService:
     def enabled(self) -> bool:
         return bool(self.api_key) or self.provider is not None
 
-    def questions(self, mount: Mapping[str, Any], target: str, relative: str, base: str, events: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    def _served_specs(self, mounts: Any, current: str) -> list[dict[str, str]]:
+        result = []
+        seen = set()
+        for mount in mounts or []:
+            if not isinstance(mount, Mapping):
+                continue
+            files = []
+            if mount.get("spec"):
+                filename = mount.get("spec_file") or os.path.join(str(mount.get("root", "")), str(mount["spec"]))
+                files = [(str(mount["spec"]), filename)]
+            else:
+                root = mount.get("narrow_root") or mount.get("root")
+                if not root:
+                    continue
+                for directory, directories, names in os.walk(root, followlinks=False):
+                    directories[:] = sorted(name for name in directories if not name.startswith(".") and not name.endswith(".review"))
+                    for name in sorted(names):
+                        if name.startswith(".") or not name.endswith(".spec.html"):
+                            continue
+                        candidate = os.path.join(directory, name)
+                        files.append((os.path.relpath(candidate, root).replace(os.sep, "/"), candidate))
+            prefix = str(mount.get("slug", ""))
+            for relative, filename in files:
+                filename = os.path.realpath(filename)
+                if filename == os.path.realpath(current) or filename in seen or not os.path.isfile(filename):
+                    continue
+                seen.add(filename)
+                served_path = (prefix + "/" if prefix else "") + relative
+                try:
+                    result.append({"path": served_path, "source": Path(filename).read_bytes()})
+                except OSError:
+                    continue
+        return result
+
+    def questions(self, mount: Mapping[str, Any], target: str, relative: str, base: str,
+                  events: list[Mapping[str, Any]], served_mounts: Any = None) -> list[dict[str, Any]]:
         current = Path(target).read_bytes()
         root = mount["root"]
         rel = os.path.relpath(target, root).replace(os.sep, "/")
@@ -471,20 +626,23 @@ class JevService:
         result = build_type_questions(current, old, relative, base, head)
         result.extend(build_orphan_questions(events, current, relative, base, head))
         result.extend(build_resolved_questions(events, current, old, relative, base, head))
+        result.extend(build_corpus_questions(current, old, relative, base, head,
+                                             self._served_specs(served_mounts or [mount], target)))
         return result
 
-    def response(self, mount: Mapping[str, Any], target: str, relative: str, base: str, events: list[Mapping[str, Any]]) -> dict[str, Any]:
+    def response(self, mount: Mapping[str, Any], target: str, relative: str, base: str,
+                 events: list[Mapping[str, Any]], served_mounts: Any = None) -> dict[str, Any]:
         if not self.enabled:
             return {"jev": "off", "items": []}
         items = []
-        for question in self.questions(mount, target, relative, base, events):
+        for question in self.questions(mount, target, relative, base, events, served_mounts):
             record = self.seam.ask(question)
             outcome = record.get("outcome")
             if outcome == "oversize":
                 continue
             answer = record.get("answer", {})
             label = answer.get("label") if isinstance(answer, Mapping) else None
-            allowed = set(question.get("criteria", {})) or set(self.seam.question_set(question["kind"]).criteria())
+            allowed = set(question.get("display_labels", question.get("criteria", {}))) or set(self.seam.question_set(question["kind"]).criteria())
             state = "label" if outcome == "shown" and label and label in allowed else ("unsure" if outcome == "unsure" else "unavailable")
             if outcome == "shown" and label and label not in allowed:
                 state = "none"
@@ -499,5 +657,5 @@ class JevService:
 
 __all__ = ["BUILDERS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MODEL",
            "MINIMAL_QUESTION_SETS", "OPENROUTER_DECISIONS_URL", "OpenRouterProvider", "QuestionSet",
-           "build_orphan_questions", "build_resolved_questions", "build_type_questions", "extract_anchors",
+           "build_corpus_questions", "build_orphan_questions", "build_resolved_questions", "build_type_questions", "extract_anchors",
            "load_question_sets"]
