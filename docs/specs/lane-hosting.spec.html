@@ -50,7 +50,7 @@
 </tbody>
 </table>
 </div>
-<p data-anchor="paths-project">The project is the resource's <code>PROJECT_ID</code>, the part of its id before <code>::</code>. A project id is one path segment; one that equals a top-level directory name of the primary's collection is refused, so no path is ever ambiguous.</p>
+<p data-anchor="paths-project">The project is the resource's <code>PROJECT_ID</code> as given at registration, recorded in the row as <code>project</code>. A project id is one path segment; one that equals a top-level directory name of the primary's collection is refused, so no path is ever ambiguous.</p>
 <p data-anchor="paths-primary-stays">A row's path is fixed when it registers and never recomputed. A project gets the plain form only when no other project holds rows under the slug.</p>
 <p data-anchor="paths-field">Each registry row records its served path as <code>path</code>. Readers use it rather than rebuilding a path from <code>slug</code> and <code>spec</code>.</p>
 </section>

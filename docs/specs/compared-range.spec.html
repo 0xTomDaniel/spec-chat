@@ -81,7 +81,7 @@
 <p data-anchor="change-picker">Change base opens a picker listing up to 20 most recent commits reachable from head that changed this spec file, each with short id, date, and subject, and a field for pasting a commit id.</p>
 <p data-anchor="change-apply">Choosing a commit re-diffs in place through the same <code>/api/baseline</code> route, turns on change highlighting, and updates the bar.</p>
 <p data-anchor="change-url">The page then replaces its own URL with <code>?focus=changes&amp;base=&lt;full id&gt;</code> without reloading, so reload and a copied link keep the chosen range.</p>
-<p data-anchor="change-highlight-optin">Without <code>focus=changes</code> the bar still states the range and the spec renders at normal clarity until a base is chosen.</p>
+<p data-anchor="change-highlight-optin">Every HTTP page highlights its changes against the current base; <code>focus=changes</code> is no longer needed.</p>
 <p data-anchor="change-refused">A pasted value that does not resolve to a local commit shows an inline error and keeps the previous range and highlighting.</p>
 <p data-anchor="change-no-option">A base value beginning with <code>-</code> is refused, so no input is ever read as a Git option.</p>
 </section>
