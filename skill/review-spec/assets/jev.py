@@ -834,12 +834,45 @@ class _LeafAnchorParser(HTMLParser):
             self.values[anchor]["text"].append(data)
 
 
+# Shaped sections whose clauses are for you by structure, never asked (spec #reading-structural).
+AUDIENCE_STRUCTURAL_SECTIONS = frozenset({"user-stories", "modular-boundaries"})
+
+
+class _StructuralSectionParser(HTMLParser):
+    """Collect anchors inside shaped sections that are for you by structure."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.stack: list[tuple[str, bool]] = []
+        self.anchors: set[str] = set()
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]):
+        tag = tag.lower()
+        _close_implied(self.stack, tag)
+        values = dict(attrs)
+        inside = (bool(self.stack) and self.stack[-1][1]) or values.get("data-spec-section") in AUDIENCE_STRUCTURAL_SECTIONS
+        if inside and values.get("data-anchor"):
+            self.anchors.add(str(values["data-anchor"]))
+        if tag not in VOID_ELEMENTS:
+            self.stack.append((tag, inside))
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]):
+        self.handle_starttag(tag, attrs)
+        self.handle_endtag(tag)
+
+    def handle_endtag(self, tag: str):
+        _close_explicit(self.stack, tag)
+
+
 def _audience_leaf_anchors(source: str | bytes | None) -> dict[str, dict[str, Any]]:
+    text = (source or b"").decode("utf-8", "replace") if isinstance(source, bytes) else (source or "")
     parser = _LeafAnchorParser()
-    parser.feed((source or b"").decode("utf-8", "replace") if isinstance(source, bytes) else (source or ""))
+    parser.feed(text)
+    structural = _StructuralSectionParser()
+    structural.feed(text)
     result = {}
     for anchor, value in parser.values.items():
-        if value["has_child"] or value["tag"] in _LeafAnchorParser._containers:
+        if value["has_child"] or value["tag"] in _LeafAnchorParser._containers or anchor in structural.anchors:
             continue
         text = " ".join("".join(value["text"]).split())
         if text:
@@ -852,7 +885,7 @@ def build_audience_questions(current: str | bytes, path: str = "spec", base: str
     result = []
     for anchor, value in _audience_leaf_anchors(current).items():
         result.append(_question("audience", anchor,
-                                {"clause": value["text"], "reader": "someone who uses the result, not builds it"},
+                                {"clause": value["text"]},
                                 path, base, revision, anchor))
     return result
 
