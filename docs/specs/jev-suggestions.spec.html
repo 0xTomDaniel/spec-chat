@@ -14,7 +14,7 @@
 <h1 data-anchor="title">Jev review suggestions</h1>
 <nav data-anchor="breadcrumbs">docs / specs / jev-suggestions.spec.html</nav>
 <p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-100">ANN-100</a>.</p>
-<p data-anchor="context">Follows the shared Jev contract, annotateanything <code>docs/specs/jev-seam.spec.html#contract</code> (ANN-49, Jev agreement, at <code>2b6b529</code>, pairs <code>pair-corpus</code>, <code>pair-audience</code>, <code>pair-thread</code>): typed suggestions, unsure below threshold, Jev off note, errors show and retry, state changes only on a human click, written criteria learned by use, one judgment record, cache per source revision, text only, server-side key. This spec owns Spec Chat's questions, criteria, and display; Spec Chat reads only specs and review threads, with no tracker or evidence dependency, and shares no code or data with annotateanything. Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a> and <a href="./compared-range.spec.html#change-base">compared range</a>.</p>
+<p data-anchor="context">Follows the shared Jev contract, annotateanything <code>docs/specs/jev-seam.spec.html#contract</code> (ANN-49, Jev agreement, at <code>ed95fc8</code>, pairs <code>pair-corpus</code>, <code>pair-coverage</code>, <code>pair-audience</code>, <code>pair-thread</code>): typed suggestions, unsure below threshold, Jev off note, errors show and retry, state changes only on a human click, written criteria learned by use, one judgment record, cache per source revision, text only, server-side key. This spec owns Spec Chat's questions, criteria, and display; Spec Chat reads only specs and review threads, with no tracker or evidence dependency, and shares no code or data with annotateanything. Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a> and <a href="./compared-range.spec.html#change-base">compared range</a>.</p>
 </header>
 
 <section data-spec-section="user-stories" data-anchor="user-stories">
@@ -130,7 +130,7 @@
 
 <section data-anchor="coverage">
 <h2>Stories and criteria cover each other</h2>
-<p data-anchor="coverage-pair">Each user story is paired with each acceptance criterion in the same spec: labels <code>verifies</code>, <code>unrelated</code>, or <code>unsure</code>.</p>
+<p data-anchor="coverage-pair">This is the contract's <code>pair-coverage</code>: each user story is paired with each acceptance criterion in the same spec: labels <code>verifies</code>, <code>unrelated</code>, or <code>unsure</code>.</p>
 <p data-anchor="coverage-story">A story with no confident <code>verifies</code> shows <code>No criterion covers this</code>; a criterion with none shows <code>No story backs this</code>.</p>
 <p data-anchor="coverage-unsure">If any of an item's pairs is unsure and none verifies, the item shows <code>unsure</code> instead of a gap.</p>
 <p data-anchor="coverage-when">Coverage runs on every HTTP-served spec that marks stories and criteria, in normal view and Git focus, and asks again on a new head.</p>
