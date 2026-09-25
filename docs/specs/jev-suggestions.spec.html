@@ -14,7 +14,7 @@
 <h1 data-anchor="title">Jev review suggestions</h1>
 <nav data-anchor="breadcrumbs">docs / specs / jev-suggestions.spec.html</nav>
 <p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-100">ANN-100</a>.</p>
-<p data-anchor="context">Follows the shared Jev contract, annotateanything <code>docs/specs/jev-seam.spec.html#contract</code> (ANN-49, Jev agreement, at <code>bf1a0e9</code>, pairs <code>pair-corpus</code>, <code>pair-audience</code>, <code>pair-thread</code>): typed suggestions, unsure below threshold, Jev off note, errors show and retry, state changes only on a human click, validated criteria, one judgment record, cache per source revision, text only, server-side key. This spec owns Spec Chat's questions, criteria, and display; Spec Chat reads only specs and review threads, with no tracker or evidence dependency, and shares no code or data with annotateanything. Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a> and <a href="./compared-range.spec.html#change-base">compared range</a>.</p>
+<p data-anchor="context">Follows the shared Jev contract, annotateanything <code>docs/specs/jev-seam.spec.html#contract</code> (ANN-49, Jev agreement, at <code>bf1a0e9</code>, pairs <code>pair-corpus</code>, <code>pair-audience</code>, <code>pair-thread</code>): typed suggestions, unsure below threshold, Jev off note, errors show and retry, state changes only on a human click, one judgment record, cache per source revision, text only, server-side key. This spec owns Spec Chat's questions, criteria, and display, and does not use the contract's calibration gate (human, 2026-09-25: learn by doing); Spec Chat reads only specs and review threads, with no tracker or evidence dependency, and shares no code or data with annotateanything. Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a> and <a href="./compared-range.spec.html#change-base">compared range</a>.</p>
 </header>
 
 <section data-spec-section="user-stories" data-anchor="user-stories">
@@ -32,7 +32,7 @@
 <h2>Where Jev runs</h2>
 <p data-anchor="flow-server-only">Only the review server calls Jev: OpenRouter model <code>typesafe/jev-1.13</code> through <code>POST /api/alpha/decisions</code>. The browser never sees the key or the provider.</p>
 <p data-anchor="flow-key">The server reads <code>OPENROUTER_API_KEY</code> from its environment, loaded from the box file at launch. The key never enters specs, spools, logs, judgment records, bundles, or pull requests.</p>
-<p data-anchor="flow-off">With no key, or when a question set is off, the server reports Jev off: the page shows one small <code>Jev off</code> note in focus and is otherwise today's page.</p>
+<p data-anchor="flow-off">With no key, the server reports Jev off: the page shows one small <code>Jev off</code> note in focus and is otherwise today's page.</p>
 <p data-anchor="flow-own-state">The browser sends only the spec path, the compared base, and nothing else. The server builds every question from its own served file, local Git, and the spec's spool, so a public URL cannot submit arbitrary text for classification.</p>
 <figure data-anchor="flow-figure">
 <div class="rail-wrap" data-anchor="flow-figure-scroll">
@@ -90,7 +90,7 @@
 </div>
 <p data-anchor="retry-rule">On error or timeout the server retries automatically with bounded backoff, at most 3 retries at 2, 4, and 8 seconds; the page asks again while any item is retrying.</p>
 <p data-anchor="retry-marker">The marker clears when the answer lands; after the last retry it reads <code>Jev unavailable</code> until the next view. The same marker applies to an orphaned card.</p>
-<p data-anchor="threshold-moderate">Each question set states its threshold: the lowest one at which every label still meets the calibration gate, so labels show often and <code>Unsure</code> is the exception.</p>
+<p data-anchor="threshold-moderate">Each question set states a moderate starting threshold, so labels show often and <code>Unsure</code> is the exception.</p>
 <p data-anchor="type-order">No label hides, collapses, or reorders a section; badges carry text, never color alone.</p>
 <p data-anchor="type-async">Focus renders at once as today; labels arrive later, and a slow or missing label never blocks or shifts review controls.</p>
 <p data-anchor="type-base-change">When the reviewer changes the base through the range bar, the page drops all labels at once, re-diffs as today, and asks again for the new base.</p>
@@ -145,10 +145,10 @@
 </section>
 
 <section data-anchor="calibration">
-<h2>Question sets and calibration</h2>
+<h2>Question sets and learning by doing</h2>
 <p data-anchor="qset-data">The change-type, orphan-location, resolved-in-spirit, corpus, and audience question sets are versioned data in this repository: instructions, the criteria above with examples, and its stated threshold.</p>
-<p data-anchor="qset-labeled">Each has a small labeled set from our own history: spec commits and past atomic versus material Finish calls for change type, ANN-30 orphaned comments, including deleted passages, for location, and past threads the human resolved after an agent edit versus replied to again, for resolved in spirit, spec supersessions and conflicts in our spec history for corpus, and clauses past lean reviews cut or kept as reader-facing for audience.</p>
-<p data-anchor="qset-gate">A calibration command runs a set against real Jev and reports per-label precision across thresholds and picks the stated one; if no threshold reaches 0.9 for every label, the set stays off.</p>
+<p data-anchor="qset-on">Every set is on whenever a key is configured; there is no labeled set, calibration command, or precision gate.</p>
+<p data-anchor="qset-learn">Criteria, examples, and thresholds are tuned from use: judgment records and what the reviewer does next, such as ignoring a label, resolving, or moving. Any change is a new question-set version, which classifies again.</p>
 </section>
 
 <section data-spec-section="acceptance" data-acceptance-scope="jev-suggestions" data-anchor="acceptance">
@@ -167,20 +167,19 @@
 <p data-acceptance-criterion data-anchor="acceptance-cache"><span data-acceptance-scenario>When the same page, base, and head load a second time,</span> <span data-acceptance-observable>no new Jev call is made and the same labels show.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-record"><span data-acceptance-scenario>For every shown or withheld answer,</span> <span data-acceptance-observable>one judgment record carries every contract field, with no source text, and no page, record, log, or response contains the key.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-own-state"><span data-acceptance-scenario>When a client sends section text or any parameter beyond path and base,</span> <span data-acceptance-observable>the server ignores it and classifies only its own served file, Git, and spool.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-gate"><span data-acceptance-scenario>When calibration scores a set below 0.9 precision for any label,</span> <span data-acceptance-observable>that set reports off and its surface shows the <code>Jev off</code> note.</span></p>
 </section>
 
 <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
 <h2>Modular boundaries</h2>
 <p data-modular-boundary data-anchor="boundary-seam"><span data-boundary-responsibility>The review server's Jev seam owns questions, provider calls, thresholds, cache, and judgment records.</span> <span data-boundary-seam>Caller-facing seam: <code>GET /api/jev?path=&lt;spec&gt;&amp;base=&lt;id&gt;</code> returns on or off, and per changed root anchor, changed clause, orphaned thread id, and revised open thread id a label, flags, or candidate, none, unsure, retrying, or unavailable; <code>&amp;view=reading</code> returns per-clause audience labels.</span> <span data-boundary-dependency>Dependency direction: calls Jev on OpenRouter as an external provider and reads local Git, the served collection's specs, and the spool; no tracker or evidence source; nothing calls back into the runtime.</span> <span data-boundary-scope>Observable scope: the JSON response and judgment records, in single-root and registry modes.</span></p>
 <p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns badges, focus treatments, corpus flags, reading view, error markers, orphan hints, <code>Looks resolved</code> labels, and the human <code>move</code> event.</span> <span data-boundary-seam>Caller-facing seam: the rendered Git focus, orphaned thread cards, and the <code>move</code> event in the spool schema.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; consumes the seam route and holds no model, threshold, or key logic.</span> <span data-boundary-scope>Observable scope: what the reviewer sees in focus and on orphaned cards.</span></p>
-<p data-modular-boundary data-anchor="boundary-qsets"><span data-boundary-responsibility>Question sets own criteria, examples, thresholds, labeled sets, and calibration results.</span> <span data-boundary-seam>Caller-facing seam: a question-set id and version, and the calibration command.</span> <span data-boundary-dependency>Dependency direction: self-contained data read by the seam.</span> <span data-boundary-scope>Observable scope: which sets are on and their measured precision.</span></p>
+<p data-modular-boundary data-anchor="boundary-qsets"><span data-boundary-responsibility>Question sets own instructions, criteria, examples, and thresholds.</span> <span data-boundary-seam>Caller-facing seam: a question-set id and version.</span> <span data-boundary-dependency>Dependency direction: self-contained data read by the seam.</span> <span data-boundary-scope>Observable scope: the set version named in each judgment record.</span></p>
 </section>
 
 <section data-anchor="proof">
 <h2>Proof</h2>
 <p data-anchor="proof-first-test">Smallest first failing test: a fake provider answer below threshold returns no label and appends a withheld record.</p>
-<p data-anchor="proof-evidence">Evidence: server tests behind a fake provider, runtime tests behind a fake route, a calibration report per set against real Jev, and a QA bundle of Git focus and an orphaned card on a real spec change.</p>
+<p data-anchor="proof-evidence">Evidence: server tests behind a fake provider, runtime tests behind a fake route, one live smoke run per set against real Jev, and a QA bundle of Git focus and an orphaned card on a real spec change.</p>
 </section>
 
 <section data-anchor="non-goals">
