@@ -1103,6 +1103,45 @@ function jevDisplayLabel(item) {
   return JEV_TYPE_LABELS[raw] || item.label || '';
 }
 
+function corpusFlags(items) {
+  const labels = { contradicts: 'Contradicts', overlaps: 'Overlaps', oversteps: 'Oversteps' };
+  return (Array.isArray(items) ? items : []).flatMap(item => {
+    if (!item || item.kind !== 'corpus' || !item.id) return [];
+    if (item.state === 'unsure') return [{ anchor: String(item.id), state: 'unsure', label: 'unsure', target: null }];
+    if (item.state !== 'label') return [];
+    const label = labels[String(item.label || '').toLowerCase()];
+    if (!label) return [];
+    return [{ anchor: String(item.id), state: 'label', label,
+      target: item.target == null ? null : String(item.target) }];
+  });
+}
+
+function corpusTargetLink(target) {
+  const value = String(target || '').trim();
+  if (!value) return null;
+  const hash = value.indexOf('#');
+  const anchor = hash < 0 ? value : value.slice(hash + 1);
+  if (!anchor) return null;
+  const href = hash < 0 ? '#' + anchor : hash === 0 ? value :
+    (value.slice(0, hash).startsWith('/') ? value.slice(0, hash) : '/' + value.slice(0, hash)) + '#' + anchor;
+  return { text: hash < 0 ? '#' + anchor : value, href };
+}
+
+function appendJevCorpusMarker(holder, flag) {
+  const marker = document.createElement(flag.target ? 'a' : 'span');
+  marker.className = 'hx-jev-corpus';
+  marker.dataset.state = flag.state;
+  const target = corpusTargetLink(flag.target);
+  if (target && marker.tagName === 'A') {
+    marker.href = target.href;
+    marker.textContent = flag.label + ' ' + target.text;
+  } else {
+    marker.textContent = flag.label;
+  }
+  const heading = holder.querySelector('h1,h2,h3,h4,h5,h6') || holder;
+  heading.appendChild(marker);
+}
+
 function appendJevMarker(holder, text, stateName) {
   const marker = document.createElement('span');
   marker.className = 'hx-jev-marker hx-jev-badge';
@@ -1126,6 +1165,7 @@ function goToJevTarget(target) {
 
 function renderJev() {
   document.querySelectorAll('.hx-jev-badge').forEach(el => el.remove());
+  document.querySelectorAll('.hx-jev-corpus').forEach(el => el.remove());
   document.querySelectorAll('[data-hx-jev-type]').forEach(el => {
     delete el.dataset.hxJevType;
     delete el.dataset.hxJevState;
@@ -1151,6 +1191,10 @@ function renderJev() {
     holder.dataset.hxJevType = String(item.label || item.state).toLowerCase();
     holder.dataset.hxJevState = item.state;
     appendJevMarker(holder, label, item.state);
+  }
+  for (const flag of corpusFlags(state.jev.items)) {
+    const holder = findAnchor(flag.anchor);
+    if (holder) appendJevCorpusMarker(holder, flag);
   }
 }
 
@@ -1326,6 +1370,9 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-jev-badge[data-state=label]{color:#204a43;background:#d9eee9}
 .hx-jev-badge[data-state=unsure]{color:#78520a;background:#fff0c2}
 .hx-jev-badge[data-state=unavailable]{color:#7b2525;background:#f8dddd}
+.hx-jev-corpus{display:inline-block;margin-left:8px;color:#35405f;font:650 10px/1.3 system-ui,sans-serif;text-decoration:none;white-space:nowrap}
+.hx-jev-corpus[href]{text-decoration:underline;text-underline-offset:2px}
+.hx-jev-corpus[data-state=unsure]{color:#8b5c0b}
 .hx-jev-note{box-sizing:border-box;max-width:720px;margin:12px auto 0;padding:6px 10px;border:1px solid #e0c77a;border-radius:7px;background:#fff7d6;color:#6d4b05;font:600 12px/1.35 system-ui,sans-serif}
 [data-hx-jev-type=scope]{box-shadow:inset 4px 0 #b42318;background:rgba(180,35,24,.08)}
 [data-hx-jev-type=behavioral]{box-shadow:inset 3px 0 #b45309;background:rgba(180,83,9,.06)}
