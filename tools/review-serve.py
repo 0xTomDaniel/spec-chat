@@ -609,13 +609,28 @@ li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywh
         if self.command != "HEAD":
             self.wfile.write(body)
 
+    def _asset_order(self):
+        """Mounts to try for a path: the referring spec page's row, then longest prefix first.
+
+        Rows of one slug can share a prefix but live in different roots; a spec page's
+        relative assets (.style, images) come from the root that served the page.
+        """
+        referer = self.headers.get("Referer") if self.headers else None
+        page = (_decoded_path(urlparse(referer).path) or "").lstrip("/") if referer else ""
+
+        def rank(mount):
+            referring = bool(page) and mount.get("path") == page
+            return (not referring, -len(_mount_prefix(mount)))
+
+        return sorted(self.mounts, key=rank)
+
     def _resolve_path(self, path, *, spec_only=False):
         decoded = _decoded_path(path)
         if not decoded:
             return None, None, None
         if not decoded.startswith("/"):
             decoded = "/" + decoded
-        for mount in self.mounts:
+        for mount in self._asset_order():
             prefix = "/" + _mount_prefix(mount)
             if not mount["slug"]:
                 relative = _safe_relative(decoded)

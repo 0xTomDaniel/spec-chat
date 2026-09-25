@@ -555,6 +555,107 @@ cursor_name = ".cursor-test"
         self.assertEqual(cached, "")
         self.assertEqual(self.registry(state)["resource"][0]["base"], self.base)
 
+    def test_re_register_at_the_row_base_keeps_the_last_reviewed_version(self):
+        state = self.work / "state"
+        aa, aa_base = self.make_repo("aa")
+        first = self.register_from(state, "aa", aa, aa_base)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        row = self.registry(state)["resource"][0]
+        (aa / "docs/specs/x.spec.html").write_text("<title>aa</title><p>reviewed</p>\n", encoding="utf-8")
+        done = self.run_cli("reviewed", "--state-dir", str(state), "--id", row["id"], state=state)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        reviewed_base = self.registry(state)["resource"][0]["base"]
+        self.assertEqual(reviewed_base, self.git_head(aa))
+        stopped = self.run_cli("stop", "--state-dir", str(state), state=state)
+        self.assertEqual(stopped.returncode, 0, stopped.stderr)
+        again = self.register_from(state, "aa", aa, reviewed_base)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        rows = self.registry(state)["resource"]
+        self.assertEqual([(r["id"], r["base"]) for r in rows], [(row["id"], reviewed_base)])
+        self.assertEqual(self.baseline(self.served_url(again), row["path"])["base"], reviewed_base)
+
+    def test_relative_assets_follow_the_referring_rows_root_after_an_upsert(self):
+        state = self.work / "state"
+        aa, aa_base = self.make_repo("aa")
+        (aa / "docs/specs/y.spec.html").write_text("<title>aa y</title>\n", encoding="utf-8")
+        first = self.register_from(state, "aa", aa, aa_base)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        port = self.registry(state)["process"]["port"]
+        added = self.register_from(state, "aa", aa, aa_base, spec="docs/specs/y.spec.html", ports=port)
+        self.assertEqual(added.returncode, 0, added.stderr)
+        other, other_base = self.make_repo("aa-recreated")
+        moved = self.register_from(state, "aa", other, other_base, ports=port)
+        self.assertEqual(moved.returncode, 0, moved.stderr)
+        url = self.served_url(moved)
+        style = url + "/ann45/docs/specs/.style/spec.css"
+        for page, name in (("x", "aa-recreated"), ("y", "aa")):
+            referer = f"{url}/ann45/docs/specs/{page}.spec.html?focus=changes"
+            with urllib.request.urlopen(urllib.request.Request(style, headers={"Referer": referer}), timeout=4) as response:
+                self.assertEqual(response.read(), f"/* {name} */".encode(), page)
+
+    def test_reviewed_ignores_byte_differences_git_filters_away(self):
+        state = self.work / "state"
+        (self.repo / ".gitattributes").write_text("*.html text eol=crlf\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.repo), "add", ".gitattributes"], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "eol"], check=True)
+        self.spec.unlink()
+        subprocess.run(["git", "-C", str(self.repo), "checkout", "--", "docs/specs/review.spec.html"], check=True)
+        self.assertIn(b"\r\n", self.spec.read_bytes())
+        head = self.git_head(self.repo)
+        started = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        rid = self.registry(state)["resource"][0]["id"]
+        done = self.run_cli("reviewed", "--state-dir", str(state), "--id", rid, state=state)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotIn("committed", done.stdout)
+        self.assertEqual(self.git_head(self.repo), head)
+        self.assertEqual(self.registry(state)["resource"][0]["base"], head)
+
+    def test_legacy_row_survives_when_a_project_row_also_matches(self):
+        state = self.work / "state"
+        aa, aa_base = self.make_repo("aa")
+        other, other_base = self.make_repo("aa-other")
+        self.write_legacy_registry(state, aa, aa_base)
+        prefixed = self.register_from(state, "aa", other, other_base)
+        self.assertEqual(prefixed.returncode, 0, prefixed.stderr)
+        port = self.registry(state)["process"]["port"]
+        again = self.register_from(state, "aa", aa, aa_base, ports=port)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        rows = {row["id"]: row for row in self.registry(state)["resource"]}
+        legacy = rows["spec:ann45::docs/specs/x.spec.html"]
+        self.assertEqual((legacy["root"], legacy.get("project")), (str(aa.resolve()), None))
+        project = rows["spec:ann45::aa/docs/specs/x.spec.html"]
+        self.assertEqual((project["root"], project["path"]), (str(aa.resolve()), "ann45/aa/docs/specs/x.spec.html"))
+        self.assertEqual(len(rows), 2)
+
+    def test_reviewed_and_remove_ignore_a_torn_down_sibling_root(self):
+        state = self.work / "state"
+        aa, aa_base = self.make_repo("aa")
+        sc, sc_base = self.make_repo("sc")
+        first = self.register_from(state, "aa", aa, aa_base)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        second = self.register_from(state, "sc", sc, sc_base, ports=self.registry(state)["process"]["port"])
+        self.assertEqual(second.returncode, 0, second.stderr)
+        rows = {row["project"]: row for row in self.registry(state)["resource"]}
+        subprocess.run(["rm", "-rf", str(sc)], check=True)
+        (aa / "docs/specs/x.spec.html").write_text("<title>aa</title><p>reviewed</p>\n", encoding="utf-8")
+        done = self.run_cli("reviewed", "--state-dir", str(state), "--id", rows["aa"]["id"], state=state)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual({r["project"]: r["base"] for r in self.registry(state)["resource"]},
+                         {"aa": self.git_head(aa), "sc": sc_base})
+        gone = self.run_cli("reviewed", "--state-dir", str(state), "--id", rows["sc"]["id"], state=state)
+        self.assertNotEqual(gone.returncode, 0)
+        removed = self.run_cli("remove", "--state-dir", str(state), "--id", rows["sc"]["id"], state=state)
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        self.assertEqual([r["project"] for r in self.registry(state)["resource"]], ["aa"])
+
+    def test_registry_read_normalises_spec_separators_once(self):
+        state = self.work / "state"
+        self.write_legacy_registry(state, self.repo, self.base, spec="docs\\\\specs\\\\review.spec.html")
+        records, _ = review_host.registry_state(state / "registry.toml")
+        self.assertEqual(records[0]["spec"], "docs/specs/review.spec.html")
+        self.assertEqual(review_host.row_path(records[0]), "ann45/docs/specs/review.spec.html")
+
     def test_project_id_must_be_one_path_segment(self):
         for project in ("a/b", "..", "a b"):
             with self.subTest(project=project):

@@ -335,12 +335,21 @@ def row_project(record: Mapping[str, Any]) -> str | None:
     return None
 
 
+def primary_path(record: Mapping[str, Any]) -> str:
+    """The plain served form `<slug>/<spec>`."""
+    return f"{record['slug']}/{record['spec']}"
+
+
 def row_path(record: Mapping[str, Any]) -> str:
     """Served URL path without the leading slash; rows without `path` use the primary form."""
     path = record.get("path")
     if isinstance(path, str) and path:
         return path
-    return f"{record['slug']}/{record['spec'].replace(chr(92), '/')}"
+    return primary_path(record)
+
+
+def is_primary(record: Mapping[str, Any]) -> bool:
+    return row_path(record) == primary_path(record)
 
 
 def stable_path(resource: Mapping[str, Any]) -> str:
@@ -365,7 +374,8 @@ def path_rule_violation(records: Sequence[Mapping[str, Any]]) -> str | None:
         if "path" in record and (not isinstance(record["path"], str) or not record["path"]):
             return f"resource path is invalid: {record.get('id')}"
         key = row_path(record)
-        if key == f"{slug}/{spec}":
+        primary = is_primary(record)
+        if primary:
             primary_segments.setdefault(slug, set()).add(spec.split("/", 1)[0])
         elif project is not None and key == f"{slug}/{project}/{spec}" and PROJECT_SEGMENT_RE.fullmatch(project):
             prefixed_projects.setdefault(slug, set()).add(project)
@@ -374,7 +384,7 @@ def path_rule_violation(records: Sequence[Mapping[str, Any]]) -> str | None:
         if key in stable:
             return f"duplicate stable resource path: {key}"
         stable.add(key)
-        if project is not None and forms.setdefault((slug, project), key == f"{slug}/{spec}") != (key == f"{slug}/{spec}"):
+        if project is not None and forms.setdefault((slug, project), primary) != primary:
             return f"project has mixed served paths under slug {slug}: {project}"
     for slug, projects in prefixed_projects.items():
         clash = projects & primary_segments.get(slug, set())
@@ -399,7 +409,7 @@ def same_row(row: Mapping[str, Any], resource: Mapping[str, Any]) -> bool:
     """Row identity is slug, project, and spec."""
     return (
         row["slug"] == resource["slug"]
-        and row["spec"].replace("\\", "/") == resource["spec"]
+        and row["spec"] == resource["spec"]
         and owned_by(row, resource)
     )
 
@@ -407,7 +417,9 @@ def same_row(row: Mapping[str, Any], resource: Mapping[str, Any]) -> bool:
 def assign_path(existing: Sequence[Mapping[str, Any]], resource: dict[str, Any]) -> dict[str, Any]:
     """Fix a row's served path once; registering the same row id again is an upsert.
 
-    The same slug, project, and spec keeps that row's id and path, whatever its new root.
+    The same slug, project, and spec keeps that row's id and path, whatever its new root,
+    and `replaces` names that one row. When a legacy row and a project row both match, the
+    project row is the upsert target and the legacy row stays.
     A new row joins its project's form under the slug; a project new to the slug gets the
     plain form only when no other project holds rows under it.
     """
@@ -415,12 +427,12 @@ def assign_path(existing: Sequence[Mapping[str, Any]], resource: dict[str, Any])
     same = [row for row in existing if same_row(row, resource)]
     if same:
         row = next((row for row in same if row_project(row) is not None), same[0])
-        resource.update({"path": row_path(row), "id": row["id"]})
+        resource.update({"path": row_path(row), "id": row["id"], "replaces": row["id"]})
         return resource
     same_slug = [row for row in existing if row["slug"] == slug]
     own = [row for row in same_slug if owned_by(row, resource)]
     if own:
-        primary = any(row_path(row) == f"{slug}/{row['spec'].replace(chr(92), '/')}" for row in own)
+        primary = any(is_primary(row) for row in own)
     else:
         primary = not same_slug
     path = f"{slug}/{spec}" if primary else f"{slug}/{resource['project']}/{spec}"
@@ -428,7 +440,8 @@ def assign_path(existing: Sequence[Mapping[str, Any]], resource: dict[str, Any])
     return resource
 
 
-def validate_records(records: Sequence[Mapping[str, Any]]) -> None:
+def validate_shape(records: Sequence[Mapping[str, Any]]) -> None:
+    """Registry-wide rules that need no filesystem: fields, ids, slugs, specs, paths."""
     ids: set[str] = set()
     for record in records:
         required = ("id", "slug", "root", "narrow_root", "spec", "base", "owner", "checker", "cursor_name")
@@ -441,28 +454,41 @@ def validate_records(records: Sequence[Mapping[str, Any]]) -> None:
         slug = record["slug"]
         if not SLUG_RE.fullmatch(slug) or slug in {"api", "static"}:
             raise LauncherError(f"invalid or reserved resource slug: {slug}")
-        root = Path(record["root"])
-        if not root.is_absolute():
+        if not Path(record["root"]).is_absolute():
             raise LauncherError(f"resource root must be absolute: {rid}")
-        top = resource_toplevel(root)
-        if root.resolve() != top:
-            raise LauncherError(f"resource root must be worktree toplevel: {rid}")
-        narrow = Path(record["narrow_root"]).resolve()
-        if not narrow.is_dir() or not path_inside(narrow, top, strict=True):
-            raise LauncherError(f"resource collection is invalid: {rid}")
-        spec = record["spec"].replace("\\", "/")
-        if spec.startswith("/") or not spec.endswith(".spec.html"):
+        spec = record["spec"]
+        if spec.startswith("/") or not spec.endswith(".spec.html") or any(
+            part in {"", ".", ".."} for part in spec.split("/")
+        ):
             raise LauncherError(f"resource spec path is invalid: {spec}")
-        spec_file = (top / spec).resolve()
-        if not path_inside(spec_file, narrow, strict=True) or not spec_file.is_file():
-            raise LauncherError(f"resource spec is missing or outside its collection: {rid}")
-        run_git(root, "rev-parse", "--verify", record["base"] + "^{commit}")
         if not SAFE_CURSOR_RE.fullmatch(record["cursor_name"]):
             raise LauncherError(f"invalid cursor name: {record['cursor_name']}")
         ids.add(rid)
-    violation = path_rule_violation([dict(record, spec=record["spec"].replace("\\", "/")) for record in records])
+    violation = path_rule_violation(records)
     if violation:
         raise LauncherError(violation)
+
+
+def validate_row(record: Mapping[str, Any]) -> None:
+    """One row's root, collection, spec file, and base exist on disk."""
+    rid = record["id"]
+    root = Path(record["root"])
+    top = resource_toplevel(root)
+    if root.resolve() != top:
+        raise LauncherError(f"resource root must be worktree toplevel: {rid}")
+    narrow = Path(record["narrow_root"]).resolve()
+    if not narrow.is_dir() or not path_inside(narrow, top, strict=True):
+        raise LauncherError(f"resource collection is invalid: {rid}")
+    spec_file = (top / record["spec"]).resolve()
+    if not path_inside(spec_file, narrow, strict=True) or not spec_file.is_file():
+        raise LauncherError(f"resource spec is missing or outside its collection: {rid}")
+    run_git(root, "rev-parse", "--verify", record["base"] + "^{commit}")
+
+
+def validate_records(records: Sequence[Mapping[str, Any]]) -> None:
+    validate_shape(records)
+    for record in records:
+        validate_row(record)
 
 
 def read_registry_document(path: Path) -> dict[str, Any]:
@@ -474,8 +500,13 @@ def read_registry_document(path: Path) -> dict[str, Any]:
         raise LauncherError("registry resource entries must be an array")
     if any(not isinstance(item, dict) for item in records):
         raise LauncherError("registry resource entry must be a table")
-    result = [dict(item) for item in records]
-    validate_records(result)
+    result = []
+    for item in records:
+        row = dict(item)
+        if isinstance(row.get("spec"), str):
+            row["spec"] = row["spec"].replace("\\", "/")
+        result.append(row)
+    validate_shape(result)
     process = document.get("process")
     if process is not None:
         if not isinstance(process, dict) or not isinstance(process.get("pid"), int) or not isinstance(process.get("port"), int):
@@ -485,7 +516,7 @@ def read_registry_document(path: Path) -> dict[str, Any]:
 
 
 def write_registry(path: Path, records: Sequence[Mapping[str, Any]], process: Mapping[str, Any] | None = None) -> None:
-    validate_records(records)
+    """Write rows the caller has validated."""
     cleaned = [{key: record[key] for key in RESOURCE_FIELDS if key in record} for record in records]
     atomic_write(path, dump_registry(process, cleaned))
 
@@ -530,32 +561,34 @@ def commit_reviewed_spec(root: Path, spec: str) -> None:
 
 
 def reviewed(args: argparse.Namespace) -> int:
-    """Move one row's base to its last reviewed version: commit the spec if it differs from HEAD."""
+    """Move one row's base to its last reviewed version: commit the spec if Git sees it changed.
+
+    Git runs outside the state lock; the row is written only if its root and spec are unchanged.
+    """
     state = state_dir(args)
     registry, _, _ = paths(state)
     with state_lock(state):
-        records, process = registry_state(registry)
+        records, _ = registry_state(registry)
         record = next((item for item in records if item["id"] == args.id), None)
         if record is None:
             raise LauncherError(f"unknown resource id: {args.id}")
-        root = Path(record["root"])
-        spec = record["spec"].replace("\\", "/")
-        spec_file = root / spec
-        try:
-            committed = subprocess.run(
-                ("git", "-C", str(root), "show", f"HEAD:{spec}"),
-                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False,
-            )
-            changed = committed.returncode != 0 or committed.stdout != spec_file.read_bytes()
-        except OSError as exc:
-            raise LauncherError(f"cannot read spec: {spec_file}") from exc
-        if changed:
-            commit_reviewed_spec(root, spec)
-        record["base"] = run_git(root, "rev-parse", "--verify", "HEAD^{commit}")
+        validate_row(record)
+        root, spec = record["root"], record["spec"]
+    status = run_git(Path(root), "status", "--porcelain", "--untracked-files=all", "--", spec)
+    changed = bool(status)
+    if changed:
+        commit_reviewed_spec(Path(root), spec)
+    head = run_git(Path(root), "rev-parse", "--verify", "HEAD^{commit}")
+    with state_lock(state):
+        records, process = registry_state(registry)
+        record = next((item for item in records if item["id"] == args.id), None)
+        if record is None or (record["root"], record["spec"]) != (root, spec):
+            raise LauncherError(f"resource {args.id} changed during reviewed; run it again")
+        record["base"] = head
         record["updated_at"] = now()
         write_registry(registry, records, process)
-        print(f"{args.id}: base {record['base']}" + (" (committed)" if changed else ""))
-        return 0
+    print(f"{args.id}: base {head}" + (" (committed)" if changed else ""))
+    return 0
 
 
 def resource_flags(parser: argparse.ArgumentParser) -> None:
@@ -722,11 +755,10 @@ def register(args: argparse.Namespace) -> int:
         for item in parsed:
             seen.append(assign_path(seen, item))
         additions = [registry_record(item) for item in parsed]
-        # Only a row with the same identity is replaced; an id that merely collides with
+        # Only the one row each upsert names is replaced; an id that merely collides with
         # another row stays in the candidate so validation refuses it instead of dropping it.
-        candidate = [
-            row for row in existing if not any(same_row(row, item) for item in parsed)
-        ] + additions
+        replaced = {item["replaces"] for item in parsed if "replaces" in item}
+        candidate = [row for row in existing if row["id"] not in replaced] + additions
         validate_records(candidate)
         child: subprocess.Popen[str] | None = None
         try:
@@ -786,6 +818,7 @@ def remove(args: argparse.Namespace) -> int:
     registry, _, _ = paths(state)
     with state_lock(state):
         records, process = registry_state(registry)
+        # Shape was validated on read; no row's disk state is needed to drop one.
         remaining = [record for record in records if record["id"] != args.id]
         if len(remaining) == len(records):
             raise LauncherError(f"unknown resource id: {args.id}")
