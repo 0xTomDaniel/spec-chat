@@ -300,7 +300,7 @@ def parse_resource_spec(value: str, owner: str, checker: str, cursor_name: str,
         raise LauncherError(f"invalid or reserved resource slug: {selected_slug}")
     resolved_base = run_git(top, "rev-parse", "--verify", base + "^{commit}")
     return {
-        "id": f"spec:{project}::{spec}", "slug": selected_slug, "root": str(top),
+        "id": f"spec:{selected_slug}::{spec}", "slug": selected_slug, "root": str(top),
         "narrow_root": str(narrow), "spec": spec, "spec_file": str(spec_file),
         "base": base, "resolved_base_commit": resolved_base,
         "owner": owner.strip(), "checker": checker.strip(), "cursor_name": cursor_name,
@@ -325,7 +325,6 @@ def stable_path(resource: Mapping[str, Any]) -> str:
 def validate_records(records: Sequence[Mapping[str, Any]]) -> None:
     ids: set[str] = set()
     stable: set[str] = set()
-    sources: set[str] = set()
     slug_roots: dict[str, str] = {}
     for record in records:
         required = ("id", "slug", "root", "narrow_root", "spec", "base", "owner", "checker", "cursor_name")
@@ -356,9 +355,6 @@ def validate_records(records: Sequence[Mapping[str, Any]]) -> None:
         key = f"{slug}/{spec}"
         if key in stable:
             raise LauncherError(f"duplicate stable resource path: {key}")
-        source = str(spec_file)
-        if source in sources:
-            raise LauncherError(f"ambiguous resource source: {source}")
         if slug in slug_roots and slug_roots[slug] != str(root.resolve()):
             raise LauncherError(f"ambiguous resource slug: {slug}")
         run_git(root, "rev-parse", "--verify", record["base"] + "^{commit}")
@@ -366,7 +362,6 @@ def validate_records(records: Sequence[Mapping[str, Any]]) -> None:
             raise LauncherError(f"invalid cursor name: {record['cursor_name']}")
         ids.add(rid)
         stable.add(key)
-        sources.add(source)
         slug_roots[slug] = str(root.resolve())
 
 
@@ -551,12 +546,13 @@ def running_url(log_path: Path, port: int, args: argparse.Namespace) -> str:
 def register(args: argparse.Namespace) -> int:
     state = state_dir(args)
     registry, log_path, _ = paths(state)
-    additions = [registry_record(item) for item in parse_resources(args)]
     parsed = parse_resources(args)
+    additions = [registry_record(item) for item in parsed]
     with state_lock(state):
         old_bytes = registry.read_bytes() if registry.exists() else None
         existing, process = registry_state(registry)
-        candidate = existing + additions
+        replacement_ids = {item["id"] for item in additions}
+        candidate = [item for item in existing if item["id"] not in replacement_ids] + additions
         validate_records(candidate)
         child: subprocess.Popen[str] | None = None
         try:

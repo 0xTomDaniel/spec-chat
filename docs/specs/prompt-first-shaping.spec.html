@@ -368,7 +368,7 @@
 <p data-anchor="focus-local-git">The review server reads only the current local repository and never fetches, checks out, stages, commits, or writes Git state.</p>
 <p data-anchor="focus-no-octo">No focus behavior imports, invokes, expects, or mentions octo-lite or another orchestrator.</p>
 <p data-anchor="focus-base-override">An explicit review base resolves to the exact selected local commit, including a previously reviewed sibling branch, while automatic discovery alone uses a merge base.</p>
-<p data-anchor="focus-baseline-provenance">The baseline response retains the selected commit in <code>base</code> and identifies the actual HTML snapshot in <code>htmlBase</code>; a file absent from the selected base uses its stable first committed seed, or null when still uncommitted.</p>
+<p data-anchor="focus-baseline-provenance">The baseline response retains the selected commit in <code>base</code>; a file absent from the selected base is entirely new and returns null for both <code>htmlBase</code> and <code>html</code>.</p>
 <p data-anchor="focus-failure">If Git comparison cannot be calculated, focus mode fails visibly and renders the complete current spec without stale highlighting.</p>
 <p data-anchor="focus-removal">A removed behavior must be expressed by the resulting current rule or constraint, because a silent deletion with no current replacement cannot be reviewed in the current-spec highlighting model.</p>
 <p data-anchor="focus-no-other-diff">The first version requires no side-by-side viewer, removed-content tray, deletion ghost, or pull-request review.</p>
@@ -617,7 +617,7 @@
 <p data-anchor="compatibility-preserve">A target asset declaring every required capability remains untouched even when its implementation or pin differs from the bundle.</p>
 <p data-anchor="compatibility-pair">Runtime and server compatibility are checked together because Git focus requires both the browser behavior and the read-only baseline route.</p>
 <p data-anchor="compatibility-live-restart">A migrated running server is restarted on the same approved port before review continues.</p>
-<p data-anchor="compatibility-http-proof">Before browser evidence or a review handoff, the agent verifies served runtime capabilities and uses the read-only verifier to compare served spec bytes and baseline HTML with local files and Git, including seed-fallback provenance; these checks do not replace visual inspection.</p>
+<p data-anchor="compatibility-http-proof">Before browser evidence or a review handoff, the agent verifies served runtime capabilities and uses the read-only verifier to compare served spec bytes and baseline HTML with local files and Git, including new-file baselines; these checks do not replace visual inspection.</p>
 <p data-anchor="compatibility-visual-target">Every semantic visual island has a render target in the same parent, and a missing target blocks publication rather than silently producing prose-only output.</p>
 <p data-anchor="compatibility-failure">A failed migration or preflight is a visible review blocker.</p>
 <p data-anchor="compatibility-no-service">Preflight adds no service, registry, package dependency, background updater, or cross-repository control plane.</p>
@@ -744,7 +744,7 @@
 <p data-anchor="tdd-prompt-red">Before changing shaping instructions, a fresh agent scenario must show that the current skills do not create the prompt-first issue and spec seed or maintain the agreed burden boundary.</p>
 <p data-anchor="tdd-prompt-green">A different fresh agent scenario must run the same request against the new skill and produce the current issue, spec seed, and review handoff without adding excluded machinery.</p>
 <p data-anchor="tdd-focus-red">A runtime test must first fail because current Spec Chat cannot classify current anchored blocks against a Git baseline or render focus solely from that classification.</p>
-<p data-anchor="tdd-exact-baseline">A regression requests both the ref and commit of a sibling snapshot and verifies exact baseline bytes; source-verifier tests cover substituted baselines, wrong served pages, stable seed provenance, and uncommitted new files.</p>
+<p data-anchor="tdd-exact-baseline">A regression requests both the ref and commit of a sibling snapshot and verifies exact baseline bytes; source-verifier tests cover substituted baselines, wrong served pages, absent-at-base new specs, and uncommitted new files.</p>
 <p data-anchor="tdd-focus-green">The focus test passes for added, modified, unchanged, new-file, normal-view, and unavailable-baseline cases.</p>
 <p data-anchor="tdd-focus-boundary">The runtime test proves only outermost changed blocks receive the explicit focus boundary and that the new runtime capability migrates stale repository copies.</p>
 <p data-anchor="tdd-material-routing">Skill validation proves review-only is limited to questions and atomic corrections and material batches are routed through the complete shaping quality contract before editing.</p>

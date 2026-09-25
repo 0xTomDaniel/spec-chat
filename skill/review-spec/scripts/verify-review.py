@@ -57,12 +57,6 @@ def verify(repository, spec, review_url, requested_base):
 
     expected = git(repository, "show", base + ":" + relative, optional=True)
     html_base = base if expected is not None else None
-    if expected is None:
-        history = git(repository, "rev-list", "--reverse", "HEAD", "--", relative).decode().splitlines()
-        if history:
-            expected = git(repository, "show", history[0] + ":" + relative, optional=True)
-            if expected is not None:
-                html_base = history[0]
     if "htmlBase" not in result or result["htmlBase"] != html_base:
         raise ValueError("baseline HTML source differs from local Git; verify the server's exact-baseline capability")
     if "html" not in result or result["html"] != (expected.decode("utf-8") if expected is not None else None):
@@ -73,7 +67,7 @@ def verify(repository, spec, review_url, requested_base):
         "specSha256": hashlib.sha256(current).hexdigest(),
         "base": base,
         "htmlBase": html_base,
-        "source": "new" if html_base is None else "base" if html_base == base else "seed",
+        "source": "new" if html_base is None else "base",
         "result": "source-and-baseline-verified",
     }
 
