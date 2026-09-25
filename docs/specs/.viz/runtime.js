@@ -120,14 +120,14 @@ function commitDate(value) {
 }
 
 function rangeBarText(baseline) {
-  const base = baseline && (baseline.htmlBase || baseline.base);
+  const base = baseline && baseline.base;
   const head = baseline && baseline.head;
   const short = id => id ? String(id).slice(0, 7) : 'unknown';
   const date = value => {
     const text = String(value || '').slice(0, 10);
     return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : '';
   };
-  const baseDate = date(baseline && (baseline.htmlBaseDate || baseline.baseDate));
+  const baseDate = date(baseline && baseline.baseDate);
   const headDate = date(baseline && baseline.headDate);
   const headLabel = (baseline && baseline.dirty ? 'working copy of ' : '') + short(head);
   return 'Changes from ' + short(base) + (baseDate ? ' ' + baseDate : '') + ' to ' + headLabel + (headDate ? ' ' + headDate : '');
@@ -219,7 +219,7 @@ function renderRangePicker(baseline) {
     list.appendChild(empty);
     return;
   }
-  const selected = baseline.htmlBase || baseline.base;
+  const selected = baseline.base;
   for (const commit of commits) {
     if (!commit || !commit.id) continue;
     const button = document.createElement('button');
@@ -244,7 +244,7 @@ function renderRangeBar(baseline) {
   const bar = document.getElementById('hx-range-bar');
   const copy = document.getElementById('hx-range-copy');
   if (!bar || !copy || !baseline) return;
-  const base = baseline.htmlBase || baseline.base;
+  const base = baseline.base;
   const head = baseline.head;
   const baseId = document.createElement('span');
   baseId.className = 'hx-range-id';
@@ -257,7 +257,7 @@ function renderRangeBar(baseline) {
   copy.setAttribute('aria-label', rangeBarText(baseline));
   copy.replaceChildren(document.createTextNode('Changes from '));
   copy.append(baseId);
-  const baseDate = commitDate(baseline.htmlBaseDate || baseline.baseDate);
+  const baseDate = commitDate(baseline.baseDate);
   if (baseDate) copy.append(document.createTextNode(' ' + baseDate));
   copy.append(document.createTextNode(' to '));
   if (baseline.dirty) copy.append(document.createTextNode('working copy of '));

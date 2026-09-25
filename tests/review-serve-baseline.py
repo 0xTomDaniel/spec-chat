@@ -213,7 +213,7 @@ class BaselineRouteTest(unittest.TestCase):
         self.assertEqual(result["base"], self.base)
         self.assertIsNone(result["html"])
         self.assertIsNone(result["htmlBase"])
-        self.assertIsNone(result["htmlBaseDate"])
+        self.assertEqual(result["baseDate"], subprocess.check_output(("git", "show", "-s", "--format=%cs", self.base), cwd=self.repo, text=True).strip())
 
     def test_baseline_includes_range_facts_for_a_dirty_worktree(self):
         result = self.baseline("specs/focus.spec.html", "main")
@@ -224,7 +224,7 @@ class BaselineRouteTest(unittest.TestCase):
         self.assertEqual(result["head"], head)
         self.assertTrue(result["dirty"])
         self.assertEqual(result["headDate"], head_date)
-        self.assertEqual(result["htmlBaseDate"], base_date)
+        self.assertEqual(result["baseDate"], base_date)
         self.assertLessEqual(len(result["commits"]), 20)
         self.assertEqual(result["commits"][0]["id"], head)
         self.assertEqual(result["commits"][0]["date"], head_date)

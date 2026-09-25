@@ -131,7 +131,7 @@ class MultiReviewServeTest(unittest.TestCase):
                 self.assertEqual(baseline["head"], git(resource["root"], "rev-parse", "HEAD"))
                 self.assertTrue(baseline["dirty"])
                 self.assertRegex(baseline["headDate"], r"^\d{4}-\d{2}-\d{2}$")
-                self.assertRegex(baseline["htmlBaseDate"], r"^\d{4}-\d{2}-\d{2}$")
+                self.assertRegex(baseline["baseDate"], r"^\d{4}-\d{2}-\d{2}$")
                 self.assertLessEqual(len(baseline["commits"]), 20)
                 self.assertEqual(baseline["commits"][0]["id"], baseline["head"])
                 event = {"event": "comment", "id": resource["slug"], "text": resource["slug"]}
