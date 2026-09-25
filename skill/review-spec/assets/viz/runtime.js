@@ -159,8 +159,7 @@ function markIssueFocus(currentText, baseline) {
   for (const element of focused) {
     if (changedRoots.has(element.dataset.anchor)) element.dataset.hxFocusRoot = 'changed';
   }
-  // With nothing changed in the range the page reads clear; the range bar still states the range.
-  document.body.classList.toggle('hx-focus-active', focused.some(element => element.dataset.hxFocus === 'changed'));
+  document.body.classList.add('hx-focus-active');
 }
 
 async function fetchBaseline(base, includeCurrent = false, signal) {
@@ -176,7 +175,7 @@ async function fetchBaseline(base, includeCurrent = false, signal) {
 }
 
 async function applyIssueFocus() {
-  if (EMBED_REVIEW_DIR || !['http:', 'https:'].includes(location.protocol)) return;
+  if (EMBED_REVIEW_DIR || location.protocol === 'file:' || new URLSearchParams(location.search).get('focus') !== 'changes') return;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
   try {
@@ -188,7 +187,7 @@ async function applyIssueFocus() {
   } catch (error) {
     const copy = document.getElementById('hx-range-copy');
     if (copy) copy.textContent = 'Compared range unavailable.';
-    if (new URLSearchParams(location.search).get('focus') === 'changes') showFocusError();
+    showFocusError();
   } finally {
     clearTimeout(timeout);
   }
@@ -328,6 +327,22 @@ function mountRangeBar() {
   bar.addEventListener('keydown', event => {
     if (event.key === 'Escape') openRangePicker(false);
   });
+}
+
+async function loadRangeBar() {
+  if (EMBED_REVIEW_DIR || !['http:', 'https:'].includes(location.protocol)) return;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const result = await fetchBaseline(null, false, controller.signal);
+    state.range.baseline = result.baseline;
+    renderRangeBar(result.baseline);
+  } catch (error) {
+    const copy = document.getElementById('hx-range-copy');
+    if (copy) copy.textContent = 'Compared range unavailable.';
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 // Name the folder the user should grant: the first ancestor Chromium will accept
@@ -1802,7 +1817,8 @@ async function watchSpec() {
 (async function boot() {
   mountUI();
   const httpPage = !EMBED_REVIEW_DIR && ['http:', 'https:'].includes(location.protocol);
-  if (httpPage) applyIssueFocus();
+  if (httpPage && new URLSearchParams(location.search).get('focus') === 'changes') applyIssueFocus();
+  else if (httpPage) loadRangeBar();
   await hydrateIslands();
   adoptForeignCharts();
   // spec scripts can create/recreate charts at any time; rescan when canvases appear
