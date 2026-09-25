@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./.style/spec.css">
+<title>Jev review suggestions</title>
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Jev review suggestions</h1>
+<nav data-anchor="breadcrumbs">docs / specs / jev-suggestions.spec.html</nav>
+<p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-100">ANN-100</a>.</p>
+<p data-anchor="context">Governed by the Jev seam contract, annotateanything <code>docs/specs/jev-seam.spec.html</code> (ANN-49): its rules, label criteria, focus treatments, and calibration gate apply unchanged. This spec owns only how Spec Chat delivers them. Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a> and <a href="./compared-range.spec.html#change-base">compared range</a>.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-change-type">As a reviewer in Git focus, I see which changed sections are scope or behavior changes and which are cosmetic, so I read the material ones first.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-orphan">As a reviewer, an orphaned comment suggests where its passage probably moved, and nothing moves unless I click.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-neutral">As a reviewer, when Jev is off, unsure, or failing, the page looks and works exactly as it does today.</p>
+<p data-user-story data-user-facing="false" data-anchor="story-record">As the operator, I can see for any suggestion which model, question set, and sources produced it, and with what confidence.</p>
+</section>
+
+<section data-anchor="flow">
+<h2>Where Jev runs</h2>
+<p data-anchor="flow-server-only">Only the review server calls Jev: OpenRouter model <code>typesafe/jev-1.13</code> through <code>POST /api/alpha/decisions</code>. The browser never sees the key or the provider.</p>
+<p data-anchor="flow-key">The server reads <code>OPENROUTER_API_KEY</code> from its environment, loaded from the box file at launch. The key never enters specs, spools, logs, judgment records, bundles, or pull requests.</p>
+<p data-anchor="flow-off">With no key, the server reports Jev off and the page is exactly today's page.</p>
+<p data-anchor="flow-own-state">The browser sends only the spec path, the compared base, and nothing else. The server builds every question from its own served file, local Git, and the spec's spool, so a public URL cannot submit arbitrary text for classification.</p>
+<figure data-anchor="flow-figure">
+<div class="rail-wrap" data-anchor="flow-figure-scroll">
+<svg viewBox="0 0 780 290" style="min-width: 620px" role="img" aria-label="Swimlane. Browser: 1 focus renders as today, then calls GET /api/jev with path and base. Review server: 2 builds changed sections and orphans from its own file, Git, and spool; on a cache hit it goes straight to 5; on a miss it posts to Jev. Jev: 4 returns a choice with probabilities. Review server: 5 applies thresholds, writes the judgment record, and caches. Browser: 6 shows badge and treatment, or stays neutral.">
+<rect x="0" y="0" width="780" height="92" fill="#f4f6fb"></rect>
+<rect x="0" y="92" width="780" height="100" fill="#ffffff"></rect>
+<rect x="0" y="192" width="780" height="98" fill="#f4f6fb"></rect>
+<line x1="0" y1="92" x2="780" y2="92" stroke="#8a8f99"></line>
+<line x1="0" y1="192" x2="780" y2="192" stroke="#8a8f99"></line>
+<text x="12" y="50" fill="#171719" font-size="14" font-weight="700">Browser</text>
+<text x="12" y="146" fill="#171719" font-size="14" font-weight="700">Review server</text>
+<text x="12" y="246" fill="#171719" font-size="14" font-weight="700">Jev (OpenRouter)</text>
+<rect x="140" y="24" width="170" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
+<text x="152" y="51" fill="#171719" font-size="13">1 Focus renders as today</text>
+<rect x="580" y="24" width="190" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
+<text x="592" y="51" fill="#171719" font-size="13">6 Badge, or stays neutral</text>
+<rect x="160" y="120" width="200" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
+<text x="172" y="147" fill="#171719" font-size="13">2 Sections and orphans</text>
+<rect x="500" y="120" width="200" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
+<text x="512" y="147" fill="#171719" font-size="13">5 Threshold, record, cache</text>
+<rect x="340" y="220" width="170" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
+<text x="352" y="247" fill="#171719" font-size="13">4 Choice + probabilities</text>
+<path d="M225 68 L245 118" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
+<text x="240" y="90" fill="#171719" font-size="12">GET /api/jev path, base</text>
+<path d="M330 164 L385 218" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
+<text x="262" y="206" fill="#171719" font-size="12">3 miss: POST decisions</text>
+<path d="M360 142 L496 142" stroke="#171719" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#flow-arrow)"></path>
+<text x="388" y="136" fill="#171719" font-size="12">cache hit</text>
+<path d="M470 220 L540 166" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
+<path d="M630 120 L660 70" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
+<text x="652" y="100" fill="#171719" font-size="12">labels</text>
+<defs><marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#171719"></path></marker></defs>
+</svg>
+</div>
+<figcaption data-anchor="flow-figure-caption">One suggestion round: the page never waits for Jev, and the key never leaves the server.</figcaption>
+</figure>
+</section>
+
+<section data-anchor="change-type">
+<h2>Change type in Git focus</h2>
+<p data-anchor="type-sections">Each changed root section of the current focus comparison gets one change-type question over its base text and current text, as the contract's <code>#change-type</code> defines.</p>
+<p data-anchor="type-treatment">A confident label applies the contract's focus treatment and badge: Scope, Behavior, Clarification, or Cosmetic. Anything else leaves the section exactly as today.</p>
+<p data-anchor="type-async">Focus renders at once as today; labels arrive later, and a slow or missing label never blocks or shifts review controls.</p>
+<p data-anchor="type-base-change">When the reviewer changes the base through the range bar, the page drops all labels at once, re-diffs as today, and asks again for the new base.</p>
+<p data-anchor="type-unchanged">Unchanged sections and pages without <code>focus=changes</code> are never classified.</p>
+</section>
+
+<section data-anchor="orphan">
+<h2>Orphaned comment location</h2>
+<p data-anchor="orphan-which">A thread is orphaned when its anchor no longer exists in the current spec; today it keeps its sidebar card and stored quote and shows no pin.</p>
+<p data-anchor="orphan-question">The server asks the contract's orphan-location question, <code>#orphan</code>, over the stored quote and up to 8 deterministic candidate anchors.</p>
+<p data-anchor="orphan-hint">A confident candidate adds <code>Possibly moved to: &lt;section heading&gt;</code> to the orphaned thread's card, with <code>Go to</code>, which scrolls to and outlines that section.</p>
+<p data-anchor="orphan-no-move">The suggestion never re-attaches the thread, writes a spool event, or changes status on its own.</p>
+<p data-anchor="orphan-click" data-spec-tbd>TBD, human click: the contract allows only <code>Go to</code> navigation, while ANN-100 says re-anchoring needs a human click. Proposal: v1 ships <code>Go to</code> only and the agent still replies orphaned; a <code>Move comment here</code> button that writes a human re-anchor event is a later slice. Confirm, or ask for the button now.</p>
+<p data-anchor="orphan-none">None, below threshold, or unavailable shows today's card only.</p>
+</section>
+
+<section data-anchor="records">
+<h2>Cache and judgment records</h2>
+<p data-anchor="cache-key">Answers are cached per head, section, and question-set version; head also covers the compared base and, for a dirty working copy, the served bytes.</p>
+<p data-anchor="cache-effect">A cached answer is reused without calling Jev again, so reload and repeat visits cost nothing.</p>
+<p data-anchor="record-fields">Every shown or withheld answer appends one judgment record with the contract's fields: model version, question-set version, source addresses, probabilities, confidence, threshold, and outcome.</p>
+<p data-anchor="record-where">Records are append-only JSONL on the box beside the spec's review spool, which stays out of Git.</p>
+</section>
+
+<section data-anchor="calibration">
+<h2>Question sets and calibration</h2>
+<p data-anchor="qset-data">The change-type and orphan-location question sets are versioned data in this repository, with the contract's criteria, examples, and thresholds.</p>
+<p data-anchor="qset-labeled">Each set has a small labeled set drawn from this repository's spec history and review spools, at least 10 cases per label, including deleted-passage orphans.</p>
+<p data-anchor="qset-gate">A calibration command runs a set against real Jev and reports per-label precision at its threshold; a set below the contract's 0.9 gate stays off and its surface stays neutral.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="jev-suggestions" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-types"><span data-acceptance-scenario>When a served spec change fixes a typo in one section and changes a rule in another, in Git focus with Jev on,</span> <span data-acceptance-observable>the rule's section shows Behavior with the changed highlight and the typo's section shows Cosmetic, dimmed and still readable.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-neutral"><span data-acceptance-scenario>When there is no key, a label is below threshold, Jev times out or errors, or the state is oversize,</span> <span data-acceptance-observable>that section renders exactly as Git focus does today, and review controls behave unchanged.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-base"><span data-acceptance-scenario>When the reviewer changes the base in the range bar,</span> <span data-acceptance-observable>old labels disappear immediately and the new base's labels replace them without a reload.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-orphan"><span data-acceptance-scenario>When a commented passage moves to a new section and its anchor is removed,</span> <span data-acceptance-observable>the orphaned thread's card shows <code>Possibly moved to:</code> that section, and <code>Go to</code> scrolls to and outlines it; a deleted passage shows today's card only.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-inert"><span data-acceptance-scenario>Across a review session with Jev on and no human click,</span> <span data-acceptance-observable>the spool, thread statuses, Finish eligibility, and spec bytes match a session with Jev off.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-cache"><span data-acceptance-scenario>When the same page, base, and head load a second time,</span> <span data-acceptance-observable>no new Jev call is made and the same labels show.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-record"><span data-acceptance-scenario>For every shown or withheld answer,</span> <span data-acceptance-observable>one judgment record carries every contract field, and no record, log, or response contains the key.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-own-state"><span data-acceptance-scenario>When a client sends section text or any parameter beyond path and base,</span> <span data-acceptance-observable>the server ignores it and classifies only its own served file, Git, and spool.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-gate"><span data-acceptance-scenario>When calibration scores a set below 0.9 precision for any label,</span> <span data-acceptance-observable>that set reports off and its surface stays neutral.</span></p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-seam"><span data-boundary-responsibility>The review server's Jev seam owns questions, provider calls, thresholds, cache, and judgment records.</span> <span data-boundary-seam>Caller-facing seam: <code>GET /api/jev?path=&lt;spec&gt;&amp;base=&lt;id&gt;</code> returns on or off, a label or none per changed root anchor, and a candidate anchor or none per orphaned thread id.</span> <span data-boundary-dependency>Dependency direction: calls Jev on OpenRouter as an external provider and reads local Git and the spool; nothing calls back into the runtime.</span> <span data-boundary-scope>Observable scope: the JSON response and judgment records, in single-root and registry modes.</span></p>
+<p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns badges, focus treatments, and orphan hints.</span> <span data-boundary-seam>Caller-facing seam: the rendered Git focus and orphaned thread cards.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; consumes the seam route and holds no model, threshold, or key logic.</span> <span data-boundary-scope>Observable scope: what the reviewer sees in focus and on orphaned cards.</span></p>
+<p data-modular-boundary data-anchor="boundary-qsets"><span data-boundary-responsibility>Question sets own criteria, examples, thresholds, labeled sets, and calibration results.</span> <span data-boundary-seam>Caller-facing seam: a question-set id and version, and the calibration command.</span> <span data-boundary-dependency>Dependency direction: self-contained data read by the seam.</span> <span data-boundary-scope>Observable scope: which sets are on and their measured precision.</span></p>
+</section>
+
+<section data-anchor="proof">
+<h2>Proof</h2>
+<p data-anchor="proof-first-test">Smallest first failing test: a fake provider answer below threshold returns no label and appends a withheld record.</p>
+<p data-anchor="proof-evidence">Evidence: server tests behind a fake provider, runtime tests behind a fake route, a calibration report per set against real Jev, and a QA bundle of Git focus and an orphaned card on a real spec change.</p>
+</section>
+
+<section data-anchor="non-goals">
+<h2>Non-goals</h2>
+<p data-anchor="non-goal-text">Generated text of any kind (ANN-96), other providers, or budget rules.</p>
+<p data-anchor="non-goal-later">The contract's later slices: comment intent, proof coverage, staleness, traceability, and board urgency.</p>
+</section>
+
+</article>
+</body>
+</html>
