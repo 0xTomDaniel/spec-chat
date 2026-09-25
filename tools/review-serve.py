@@ -279,17 +279,19 @@ def _review_status(mount):
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env, timeout=5,
             )
         except (OSError, subprocess.SubprocessError):
-            return False, ""
-        return result.returncode == 0, result.stdout.decode(errors="replace").strip()
+            return None, ""
+        return result.returncode, result.stdout.decode(errors="replace").strip()
 
-    ok, commit = git("rev-parse", "--verify", "--quiet", base + "^{commit}")
-    if not ok:
+    code, commit = git("rev-parse", "--verify", "--quiet", base + "^{commit}")
+    if code != 0:
         return None
-    ok, current = git("hash-object", "--", mount["spec"])
-    if not ok:
+    code, current = git("hash-object", "--", mount["spec"])
+    if code != 0:
         return None
-    present, prior = git("rev-parse", "--verify", "--quiet", commit + ":" + mount["spec"])
-    return not present or prior != current
+    code, prior = git("rev-parse", "--verify", "--quiet", commit + ":" + mount["spec"])
+    if code is None:
+        return None
+    return code != 0 or prior != current
 
 
 def _lane_label(slug):
@@ -622,13 +624,16 @@ class MountHandler(SimpleHTTPRequestHandler):
 
         cards = []
         for lane, projects in sorted(lanes.items(), key=lane_order):
-            statuses = [status for specs in projects.values() for status, _, _ in specs]
+            statuses = [status for specs in projects.values() for status, _, _ in specs if status is not None]
             changed = sum(1 for status in statuses if status)
             if lane is None:
                 heading, count = "Other specs", "no status"
             else:
                 heading = _lane_label(lane)[0]
-                count = "%d of %d changed" % (changed, len(statuses)) if changed else "up to date"
+                count = (
+                    "%d of %d changed" % (changed, len(statuses)) if changed
+                    else "up to date" if statuses else "no status"
+                )
             parts = ['<section class="lane"><h2><span>%s</span><span class="count">%s</span></h2>' % (
                 html.escape(heading), count)]
             for project in sorted(projects):
