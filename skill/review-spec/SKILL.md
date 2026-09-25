@@ -83,7 +83,7 @@ Register a lane's review resources with --slug <lane key>, where the lane key is
 When a handed-off batch is material, `spec-chat-shape` becomes a required co-skill before the first file edit.
 Read its authoring reference, reassess the complete affected page, and run its browser gate before the material batch's review handoff or replies, using its proportional recheck rule for later local corrections.
 For each changed user-facing story, evaluate whether its guided-journey yes/no declaration is semantically correct; for yes, also evaluate the linked step, passive/required mode, and required-flow success milestone. Structural validation does not decide these meanings.
-For every new or materially revised governing HTML spec with `data-spec-contract="shaped-sections-v1"`, run the shaping validator before reply or handoff. It must find exactly one visible `User stories`, `Acceptance criteria`, and `Modular boundaries` section, with anchored observable acceptance and boundary fields. A validator failure blocks review.
+For every new or materially revised governing HTML spec with `data-spec-contract="shaped-sections-v1"`, run the shaping validator before reply or handoff. It must find exactly one visible `User stories`, `Acceptance criteria`, and `Modular boundaries` section, in that order, with anchored observable acceptance and boundary fields. A validator failure blocks review.
 Do not grandfather a weak existing page, preserve a poor layout merely to minimize the diff, or call a material expansion review-only.
 If `spec-chat-shape` is unavailable, leave the batch durable and stop before editing rather than silently using the review-only path.
 
