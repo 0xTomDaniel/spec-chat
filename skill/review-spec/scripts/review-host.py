@@ -329,8 +329,16 @@ def stable_path(resource: Mapping[str, Any]) -> str:
 
 
 def assign_path(rows: Sequence[Mapping[str, Any]], resource: dict[str, Any]) -> None:
-    """Re-registering a row id keeps its path; a new row is plain unless another project holds the slug."""
-    old = next((row for row in rows if row["id"] == resource["id"]), None)
+    """Re-registering a row id keeps its path; a new row is plain unless another project holds the slug.
+
+    A legacy row (no project) at the same slug, resolved root, and spec is the same row: it keeps its id and path.
+    """
+    old = next((row for row in rows if row["id"] == resource["id"]), None) or next(
+        (row for row in rows if not row.get("project") and row["slug"] == resource["slug"]
+         and Path(row["root"]).resolve() == Path(resource["root"]).resolve()
+         and row["spec"].replace("\\", "/") == resource["spec"]), None)
+    if old:
+        resource["id"] = old["id"]
     slug, project, spec = resource["slug"], resource["project"], resource["spec"]
     shared = any(row["slug"] == slug and row.get("project") != project for row in rows)
     resource["path"] = row_path(old) if old else (f"{slug}/{project}/{spec}" if shared else f"{slug}/{spec}")

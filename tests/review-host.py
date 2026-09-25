@@ -317,6 +317,48 @@ finish_event = ""
         self.assertEqual(request(url + "/ann45/docs/specs/review.spec.html"), (200, self.spec.read_bytes()))
         self.assertEqual(request(url + "/ann45/sc/docs/specs/second.spec.html"), (200, self.second_spec.read_bytes()))
 
+    def legacy_rows(self, state, root, specs):
+        state.mkdir(parents=True, exist_ok=True)
+        (state / "registry.toml").write_text("".join(
+            f"""[[resource]]
+id = "spec:ann45::docs/specs/{spec}.spec.html"
+slug = "ann45"
+root = "{root}"
+narrow_root = "{root / 'docs'}"
+spec = "docs/specs/{spec}.spec.html"
+base = "{self.base}"
+owner = "owner"
+checker = "checker"
+cursor_name = ".cursor-test"
+""" for spec in specs), encoding="utf-8")
+
+    def test_register_adopts_a_legacy_row_at_the_same_slug_root_and_spec(self):
+        state = self.work / "state"
+        self.legacy_rows(state, self.repo, ("review", "second"))
+        result = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = {row["id"]: row for row in self.registry(state)["resource"]}
+        self.assertEqual(set(rows), {"spec:ann45::docs/specs/review.spec.html",
+                                     "spec:ann45::docs/specs/second.spec.html"})
+        adopted = rows["spec:ann45::docs/specs/review.spec.html"]
+        self.assertEqual((adopted["project"], adopted["path"]), ("review", "ann45/docs/specs/review.spec.html"))
+        self.assertNotIn("project", rows["spec:ann45::docs/specs/second.spec.html"])
+        self.assertEqual(request(self.url(result) + "/ann45/docs/specs/review.spec.html"), (200, self.spec.read_bytes()))
+
+    def test_register_leaves_a_legacy_row_at_a_different_root_untouched(self):
+        state = self.work / "state"
+        other = self.work / "other"
+        subprocess.run(["git", "clone", "-q", str(self.repo), str(other)], check=True)
+        self.legacy_rows(state, other, ("review",))
+        legacy = self.registry(state)["resource"][0]
+        result = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = {row["id"]: row for row in self.registry(state)["resource"]}
+        self.assertEqual(rows[legacy["id"]], legacy)
+        added = rows["spec:ann45:review::docs/specs/review.spec.html"]
+        self.assertEqual((added["root"], added["path"]),
+                         (str(self.repo.resolve()), "ann45/review/docs/specs/review.spec.html"))
+
     def test_reviewed_commits_a_dirty_spec_and_page_defaults_to_the_row_base(self):
         state = self.work / "state"
         started = self.run_cli(*self.register_args(state), state=state)
