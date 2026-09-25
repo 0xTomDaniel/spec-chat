@@ -52,9 +52,9 @@
 <caption>Per-resource wake state while a batch waits, and what the page shows</caption>
 <thead><tr><th>Evidence</th><th>State</th><th>Host action</th><th>Page</th></tr></thead>
 <tbody>
-<tr data-anchor="wake-state-sent"><td><code>herdr-say</code> exit 0</td><td>sent</td><td>Nothing more for this batch</td><td>Waiting for agent, then the existing timeout message</td></tr>
+<tr data-anchor="wake-state-sent"><td><code>herdr-say</code> exit 0, or the prompt was typed but delivery is unconfirmed (<code>agent_prompt_stalled</code>, or the host timeout after sending)</td><td>sent</td><td>Nothing more for this batch</td><td>Waiting for agent, then the existing timeout message</td></tr>
 <tr data-anchor="wake-state-deferred"><td>Owner <code>agent_status</code> working, or <code>herdr-say</code> exit 75</td><td>deferred</td><td>Retry next poll</td><td>Waiting for agent</td></tr>
-<tr data-anchor="wake-state-failed"><td><code>herdr agent get</code> fails, or other <code>herdr-say</code> exit</td><td>failed</td><td>Retry next poll</td><td>Wake failed; send a new chat message to resume</td></tr>
+<tr data-anchor="wake-state-failed"><td><code>herdr agent get</code> fails, or Herdr refused or never sent the prompt</td><td>failed</td><td>Retry next poll</td><td>Wake failed; send a new chat message to resume</td></tr>
 <tr data-anchor="wake-state-unavailable"><td><code>herdr</code> or <code>herdr-say</code> not on the host PATH</td><td>unavailable</td><td>None</td><td>Existing timeout message</td></tr>
 </tbody>
 </table>

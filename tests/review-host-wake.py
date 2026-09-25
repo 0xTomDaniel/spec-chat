@@ -32,6 +32,8 @@ printf '{"result":{"agent":{"pane_id":"%s","terminal_id":"term-1","agent_status"
 """
 FAKE_SAY = """#!/bin/sh
 { for arg in "$@"; do printf '%s\\037' "$arg"; done; printf '\\n'; } >> "$FAKE_HERDR_DIR/say.log"
+[ -f "$FAKE_HERDR_DIR/say.err" ] && cat "$FAKE_HERDR_DIR/say.err" >&2
+[ -f "$FAKE_HERDR_DIR/say.sleep" ] && sleep "$(cat "$FAKE_HERDR_DIR/say.sleep")"
 exit "$(cat "$FAKE_HERDR_DIR/say.rc" 2>/dev/null || echo 0)"
 """
 
@@ -74,6 +76,12 @@ class FakeHerdr:
 
     def say_rc(self, code):
         (self.dir / "say.rc").write_text(str(code))
+
+    def say_err(self, text):
+        (self.dir / "say.err").write_text(text)
+
+    def say_sleep(self, seconds):
+        (self.dir / "say.sleep").write_text(str(seconds))
 
     def says(self):
         if not self.log.exists():
@@ -236,6 +244,50 @@ class WakeControllerTest(unittest.TestCase):
         self.controller.poll()
         self.assertEqual(len(self.herdr.says()), 3)
 
+    def test_stalled_prompt_counts_as_sent_and_is_never_retyped(self):
+        self.herdr.say_rc(1)
+        self.herdr.say_err('{"error":{"code":"agent_prompt_stalled","message":"no activity observed"}}\n')
+        self.event("100-handoff-a.json")
+        for _ in range(3):
+            self.controller.poll()
+        self.assertEqual(len(self.herdr.says()), 1)
+        self.assertEqual(self.status(), "sent")
+
+    def test_refused_prompt_error_stays_failed(self):
+        self.herdr.say_rc(1)
+        self.herdr.say_err('{"error":{"code":"agent_prompt_failed","message":"refused"}}\n')
+        self.event("100-handoff-a.json")
+        self.controller.poll()
+        self.controller.poll()
+        self.assertEqual(len(self.herdr.says()), 2)
+        self.assertEqual(self.status(), "failed")
+
+    def test_say_timeout_after_sending_counts_as_sent_and_is_never_retyped(self):
+        saved = serve.WAKE_SAY_TIMEOUT_SECONDS
+        serve.WAKE_SAY_TIMEOUT_SECONDS = 0.5
+        self.addCleanup(setattr, serve, "WAKE_SAY_TIMEOUT_SECONDS", saved)
+        self.herdr.say_sleep(5)
+        self.event("100-handoff-a.json")
+        started = time.monotonic()
+        self.controller.poll()
+        self.assertLess(time.monotonic() - started, 3, "timeout must kill the whole herdr-say process group")
+        self.controller.poll()
+        self.controller.poll()
+        self.assertEqual(len(self.herdr.says()), 1)
+        self.assertEqual(self.status(), "sent")
+
+    def test_bad_row_never_stops_wake_for_other_rows(self):
+        bad_cursor = dict(self.record, id="spec:bad::cursor", cursor_name=".cursor-bad")
+        Path(str(self.spec) + ".review/.cursor-bad").write_bytes(b"\xff\xfe\x00bad\n")
+        broken = dict(self.record, id="spec:bad::broken", spec_file=None)
+        self.controller.server.mount_state = serve.MountState([bad_cursor, broken, self.record])
+        self.event("100-handoff-a.json")
+        self.controller.poll()
+        self.assertEqual([argv[4] for argv in self.herdr.says()], ["w1:pOwner"])
+        self.assertEqual(self.status(), "sent")
+        self.controller.poll()
+        self.assertEqual(len(self.herdr.says()), 1)
+
     def test_without_herdr_nothing_is_sent_and_state_is_unavailable(self):
         self.use_env(installed=False)
         self.event("100-handoff-a.json")
@@ -258,6 +310,31 @@ class WakeControllerTest(unittest.TestCase):
         self.controller.server.mount_state = serve.MountState([])
         self.controller.poll()
         self.assertIsNone(self.status())
+
+
+class RegistryReloadTest(unittest.TestCase):
+    def test_same_size_same_mtime_rewrite_is_reloaded(self):
+        with tempfile.TemporaryDirectory(prefix="spec-chat-host-wake-reload-") as temp:
+            registry = Path(temp) / "registry.toml"
+
+            def body(owner):
+                return (
+                    "[[resource]]\n"
+                    f'id = "spec:wake::docs/wake.spec.html"\nslug = "wake"\nroot = "{temp}"\n'
+                    f'narrow_root = "{temp}/docs"\nspec = "docs/wake.spec.html"\nbase = "HEAD"\n'
+                    f'owner = "{owner}"\nchecker = "checker"\ncursor_name = ".cursor-owner"\n'
+                )
+            registry.write_text(body("w1:pAAAA"))
+            state = serve.MountState(serve._read_registry(str(registry), trust=True), str(registry))
+            self.assertEqual(state.snapshot()[0]["owner"], "w1:pAAAA")
+            before = os.stat(registry)
+            fresh = Path(temp) / "registry.toml.new"
+            fresh.write_text(body("w1:pBBBB"))
+            os.utime(fresh, ns=(before.st_atime_ns, before.st_mtime_ns))
+            os.replace(fresh, registry)
+            after = os.stat(registry)
+            self.assertEqual((after.st_size, after.st_mtime_ns), (before.st_size, before.st_mtime_ns))
+            self.assertEqual(state.snapshot()[0]["owner"], "w1:pBBBB")
 
 
 class WakeHeaderHttpTest(unittest.TestCase):
