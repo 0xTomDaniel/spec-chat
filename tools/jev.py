@@ -49,6 +49,16 @@ MINIMAL_QUESTION_SETS = {
         ],
         "threshold": DEFAULT_THRESHOLD,
     },
+    "coverage": {
+        "id": "coverage", "version": 1,
+        "instructions": "For one user story and one acceptance criterion, decide whether the criterion verifies the story.",
+        "labels": [
+            {"name": "verifies", "description": "The acceptance criterion directly verifies the user story."},
+            {"name": "unrelated", "description": "The acceptance criterion does not verify the user story."},
+            {"name": "unsure", "description": "There is not enough evidence to decide whether the criterion verifies the story."},
+        ],
+        "threshold": DEFAULT_THRESHOLD,
+    },
 }
 
 
@@ -310,7 +320,9 @@ class _AnchorParser(HTMLParser):
         attrs = dict(attrs)
         anchor = attrs.get("data-anchor")
         if anchor:
-            self.values.setdefault(anchor, {"text": [], "section": tag.lower() == "section" or attrs.get("data-spec-section") is not None})
+            self.values.setdefault(anchor, {"text": [], "section": tag.lower() == "section" or attrs.get("data-spec-section") is not None,
+                                            "story": "data-user-story" in attrs,
+                                            "criterion": "data-acceptance-criterion" in attrs})
             self.stack.append((tag, anchor, True))
         elif self.stack:
             self.stack.append((tag, self.stack[-1][1], False))
@@ -434,7 +446,31 @@ def build_resolved_questions(events: list[Mapping[str, Any]], current: str | byt
     return result
 
 
-BUILDERS = {"type": build_type_questions, "orphan": build_orphan_questions, "resolved": build_resolved_questions}
+def build_coverage_questions(current: str | bytes, path: str = "spec", base: str = "",
+                             revision: Any = "head") -> list[dict[str, Any]]:
+    anchors = extract_anchors(current)
+    stories = [(anchor, value) for anchor, value in anchors.items() if value.get("story")]
+    criteria = [(anchor, value) for anchor, value in anchors.items() if value.get("criterion")]
+    result = []
+    for story_anchor, story in stories:
+        for criterion_anchor, criterion in criteria:
+            identifier = story_anchor + "::" + criterion_anchor
+            result.append({
+                "kind": "coverage",
+                "id": identifier,
+                "state": {"story": {"anchor": story_anchor, "text": story["text"]},
+                          "criterion": {"anchor": criterion_anchor, "text": criterion["text"]}},
+                "sources": [f"{path}#{story_anchor}", f"{path}#{criterion_anchor}"],
+                "revision": {"base": base, "head": revision},
+                "target": story_anchor,
+                "story": story_anchor,
+                "criterion": criterion_anchor,
+            })
+    return result
+
+
+BUILDERS = {"type": build_type_questions, "orphan": build_orphan_questions, "resolved": build_resolved_questions,
+            "coverage": build_coverage_questions}
 
 
 def default_state_dir() -> Path:
@@ -471,6 +507,7 @@ class JevService:
         result = build_type_questions(current, old, relative, base, head)
         result.extend(build_orphan_questions(events, current, relative, base, head))
         result.extend(build_resolved_questions(events, current, old, relative, base, head))
+        result.extend(build_coverage_questions(current, relative, base, head))
         return result
 
     def response(self, mount: Mapping[str, Any], target: str, relative: str, base: str, events: list[Mapping[str, Any]]) -> dict[str, Any]:
@@ -499,5 +536,5 @@ class JevService:
 
 __all__ = ["BUILDERS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MODEL",
            "MINIMAL_QUESTION_SETS", "OPENROUTER_DECISIONS_URL", "OpenRouterProvider", "QuestionSet",
-           "build_orphan_questions", "build_resolved_questions", "build_type_questions", "extract_anchors",
+           "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_type_questions", "extract_anchors",
            "load_question_sets"]

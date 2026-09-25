@@ -424,6 +424,111 @@ async function loadRangeBar() {
   }
 }
 
+/* ---------------- Jev coverage ----------------
+ * Coverage stays in a separate block so other suggestion builders can add their
+ * markers without changing the review transport or thread model.
+ */
+function coveragePair(item) {
+  if (item && item.story && item.criterion) return { story: String(item.story), criterion: String(item.criterion) };
+  const id = String(item && item.id || '');
+  const split = id.indexOf('::');
+  if (split > 0 && split < id.length - 2) return { story: id.slice(0, split), criterion: id.slice(split + 2) };
+  return null;
+}
+
+const jevState = { result: null, request: 0 };
+
+function coverageGapFlags(items) {
+  const values = new Map();
+  const ensure = (anchor, side) => {
+    const key = side + ':' + anchor;
+    if (!values.has(key)) values.set(key, { anchor, side, verifies: false, unsure: false, unavailable: false });
+    return values.get(key);
+  };
+  for (const item of Array.isArray(items) ? items : []) {
+    if (!item || item.kind !== 'coverage') continue;
+    const pair = coveragePair(item);
+    if (!pair) continue;
+    const story = ensure(pair.story, 'story');
+    const criterion = ensure(pair.criterion, 'criterion');
+    const verifies = item.state === 'label' && item.label === 'verifies';
+    const unsure = item.state === 'unsure' || (item.state === 'label' && item.label === 'unsure');
+    const unavailable = item.state === 'unavailable';
+    for (const value of [story, criterion]) {
+      value.verifies ||= verifies;
+      value.unsure ||= unsure;
+      value.unavailable ||= unavailable;
+    }
+  }
+  return [...values.values()].flatMap(value => {
+    if (value.verifies) return [];
+    if (value.unsure) return [{ anchor: value.anchor, side: value.side, state: 'unsure', label: 'unsure' }];
+    if (value.unavailable) return [{ anchor: value.anchor, side: value.side, state: 'unavailable', label: 'Jev unavailable' }];
+    return [{ anchor: value.anchor, side: value.side, state: 'gap',
+      label: value.side === 'story' ? 'No criterion covers this' : 'No story backs this' }];
+  });
+}
+
+function coverageFlags(items) {
+  return coverageGapFlags(items);
+}
+
+function anchorElement(anchor) {
+  return [...document.querySelectorAll('[data-anchor]')].find(element => element.dataset.anchor === anchor) || null;
+}
+
+function clearJevCoverage() {
+  document.querySelectorAll('.hx-jev-coverage').forEach(element => element.remove());
+}
+
+function renderJevCoverage(result) {
+  clearJevCoverage();
+  jevState.result = result && result.jev === 'on' ? result : null;
+  if (!result || result.jev !== 'on') return;
+  for (const flag of coverageGapFlags(result.items)) {
+    const holder = anchorElement(flag.anchor);
+    if (!holder) continue;
+    const note = document.createElement('span');
+    note.className = 'hx-jev-coverage';
+    note.dataset.state = flag.state;
+    note.textContent = flag.label;
+    note.setAttribute('role', 'status');
+    const heading = holder.querySelector('h1,h2,h3,h4,h5,h6');
+    (heading || holder).appendChild(note);
+  }
+}
+
+async function loadJev(base) {
+  if (EMBED_REVIEW_DIR || !['http:', 'https:'].includes(location.protocol) || !base) return;
+  const request = ++jevState.request;
+  clearJevCoverage();
+  const params = new URLSearchParams({ path: location.pathname.replace(/^\//, ''), base: String(base) });
+  const view = new URLSearchParams(location.search).get('view');
+  if (view) params.set('view', view);
+  try {
+    const response = await fetch('/api/jev?' + params, { cache: 'no-store' });
+    if (!response.ok) throw new Error('Jev unavailable');
+    const result = await response.json();
+    if (request === jevState.request) renderJevCoverage(result);
+  } catch (_) {
+    if (request === jevState.request) jevState.result = null;
+  }
+}
+
+function installJevCoverageHooks() {
+  const originalRenderRangeBar = renderRangeBar;
+  const originalSelectRangeBase = selectRangeBase;
+  renderRangeBar = baseline => {
+    originalRenderRangeBar(baseline);
+    clearJevCoverage();
+    loadJev(baseline && baseline.base);
+  };
+  selectRangeBase = async value => {
+    clearJevCoverage();
+    return originalSelectRangeBase(value);
+  };
+}
+
 // Name the folder the user should grant: the first ancestor Chromium will accept
 // (it blocklists the home/Documents/Desktop/Downloads roots themselves).
 function suggestedGrant() {
@@ -1236,6 +1341,14 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-orphan-hint .hx-btn{margin:0;font-size:10.5px;padding:4px 8px}
 .hx-pin-jev{position:absolute;left:calc(100% + 4px);top:50%;transform:translateY(-50%);width:max-content;max-width:120px;color:#3d8c40;background:#e8f2e8;border:1px solid #69a76b;border-radius:4px;padding:2px 4px;font:700 9px/1.1 system-ui,sans-serif;white-space:nowrap;pointer-events:none}
 body.hx-focus-active [data-hx-jev-type=cosmetic]{opacity:.7;filter:saturate(.6)}
+.hx-jev-coverage{display:inline-block;margin-left:8px;padding:2px 6px;border:1px solid #b7c1d8;border-radius:4px;background:#f4f6fb;color:#35405f;font:650 10px/1.3 system-ui,sans-serif;vertical-align:middle}
+.hx-jev-coverage[data-state=unsure]{border-color:#c69b4d;background:#fff8e9;color:#8b5c0b}
+.hx-jev-coverage[data-state=unavailable]{border-color:#c98282;background:#fff1f1;color:#8b1a1a}
+@media(prefers-color-scheme:dark){
+.hx-jev-coverage{border-color:#596480;background:#242b45;color:#d9e0ff}
+.hx-jev-coverage[data-state=unsure]{border-color:#a77c32;background:#3c301d;color:#ffd98a}
+.hx-jev-coverage[data-state=unavailable]{border-color:#a65d5d;background:#3a2020;color:#ffb4b4}
+}
 .hx-banner{position:fixed;top:0;left:0;right:0;background:#12897c;color:#fff;font:600 13px system-ui;padding:8px 16px;z-index:950;display:flex;gap:14px;align-items:center;justify-content:center}
 .hx-toast{position:fixed;bottom:76px;left:50%;transform:translateX(-50%);background:#22242a;color:#faf9f6;font:600 12.5px system-ui;border-radius:8px;padding:9px 16px;box-shadow:0 8px 28px rgba(30,30,40,.3);z-index:960;opacity:0;transition:opacity .25s;pointer-events:none}
 .hx-toast.show{opacity:1}
@@ -2009,6 +2122,8 @@ async function watchSpec() {
   }
   if (m) state.specMtime = state.specMtime || m;
 }
+
+installJevCoverageHooks();
 
 /* ---------------- boot ---------------- */
 (async function boot() {

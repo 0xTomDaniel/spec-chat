@@ -1,0 +1,32 @@
+{
+  "id": "coverage",
+  "version": 1,
+  "instructions": "For one user story and one acceptance criterion, decide whether the criterion verifies the story. Choose verifies only when the criterion's observable result directly covers the story; choose unrelated when it does not; choose unsure when the text leaves the relationship unresolved.",
+  "labels": [
+    {
+      "name": "verifies",
+      "description": "The acceptance criterion directly verifies the user story.",
+      "examples": [
+        "A story asks for a gap flag and the criterion observes the exact gap label.",
+        "A story asks for a changed base to replace labels and the criterion observes old labels disappearing and new labels appearing."
+      ]
+    },
+    {
+      "name": "unrelated",
+      "description": "The acceptance criterion does not verify the user story.",
+      "examples": [
+        "A story asks for reading view dimming and the criterion only checks comment movement.",
+        "A story asks for records without source text and the criterion only checks a visual badge."
+      ]
+    },
+    {
+      "name": "unsure",
+      "description": "The text does not provide enough evidence to decide whether the criterion verifies the user story.",
+      "examples": [
+        "The story and criterion use related terms but leave the observable relationship implicit.",
+        "The criterion names a result without enough detail to tell whether it covers the story's scope."
+      ]
+    }
+  ],
+  "threshold": 0.6
+}
