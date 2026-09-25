@@ -8,8 +8,8 @@ const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime
 const start = runtime.indexOf('function foldThreads(events)');
 const end = runtime.indexOf('\n\nfunction ingest(events)', start);
 assert.ok(start >= 0 && end > start, 'runtime exposes the pure thread-folding function');
-const model = Function(runtime.slice(start, end) + '; return { foldThreads, resolvedThreadCollapsed, threadReplyAction, reviewHandoffState, handoffObservation, commentModeShortcut, threadDockEntries, acknowledgedReplyCount, isOpenTbd, openTbdMarkers, nextOpenTbd, tbdBlock };')();
-const { foldThreads, resolvedThreadCollapsed, threadReplyAction, reviewHandoffState, handoffObservation, commentModeShortcut, threadDockEntries, acknowledgedReplyCount, isOpenTbd, openTbdMarkers, nextOpenTbd, tbdBlock } = model;
+const model = Function(runtime.slice(start, end) + '; return { foldThreads, resolvedThreadCollapsed, threadReplyAction, reviewHandoffState, handoffObservation, commentModeShortcut, threadDockEntries, acknowledgedReplyCount, isOpenTbd, openTbdMarkers, nextOpenTbd, tbdBlock, tbdHighlightBlocks, advanceTbd, renderTbdHighlight };')();
+const { foldThreads, resolvedThreadCollapsed, threadReplyAction, reviewHandoffState, handoffObservation, commentModeShortcut, threadDockEntries, acknowledgedReplyCount, isOpenTbd, openTbdMarkers, nextOpenTbd, tbdBlock, tbdHighlightBlocks, advanceTbd, renderTbdHighlight } = model;
 
 const event = (name, actor, body) => ({ name, actor, body: { actor, schemaVersion: 1, ...body } });
 const events = [
@@ -86,7 +86,7 @@ assert.deepEqual(reviewHandoffState(new Map([['resolved', { status: 'resolved' }
 assert.deepEqual(reviewHandoffState(new Map([['draft', { status: 'draft' }]]), true), { drafts: 1, finish: false, tbd: false, enabled: true }, 'drafts still hand off despite a TBD');
 assert.deepEqual(reviewHandoffState(new Map([['pending', { status: 'pending' }]]), true), { drafts: 0, finish: false, tbd: false, enabled: false }, 'unsettled threads stay disabled despite a TBD');
 assert.match(runtime, /handoffState\.tbd \? 'TBD open'/, 'handoff controls read TBD open when only a TBD blocks Accept spec');
-const marker = value => ({ value, getAttribute: name => name === 'data-spec-tbd' ? value : null });
+const marker = value => ({ getAttribute: name => name === 'data-spec-tbd' ? value : null });
 assert.equal(isOpenTbd(''), true, 'a bare data-spec-tbd marker is open');
 assert.equal(isOpenTbd('open'), true, 'any value other than later is open');
 assert.equal(isOpenTbd('later'), false, 'data-spec-tbd="later" is not open');
@@ -103,9 +103,35 @@ const block = { id: 'block' };
 assert.equal(tbdBlock({ closest: sel => sel === '[data-anchor]' ? block : null }), block, 'the highlighted block is the nearest anchored block');
 const loose = { closest: () => null };
 assert.equal(tbdBlock(loose), loose, 'an unanchored marker highlights itself');
-assert.match(runtime, /if \(action\.tbd\) return jumpToTbd\(/, 'the TBD handoff jumps to a TBD before posting any event');
+const cycle = { lastTbd: null };
+assert.deepEqual([1, 2, 3, 4].map(() => advanceTbd(cycle, [bare, named])), [bare, named, bare, named], 'repeated activation cycles open TBDs in document order and wraps');
+assert.equal(cycle.lastTbd, named, 'activation records the focused TBD for the next cycle step');
+cycle.lastTbd = later;
+assert.equal(advanceTbd(cycle, openTbdMarkers([bare, later, named])), bare, 'a later TBD is never a cycle target');
+assert.match(runtime, /if \(action\.tbd\) return jumpToTbd\(advanceTbd\(state, openTbds\)\);/, 'the TBD handoff jumps to the next open TBD before posting any event');
+const classList = () => { const set = new Set(); return { set, add: c => set.add(c), remove: c => set.delete(c), contains: c => set.has(c) }; };
+const blockOf = () => { const el = { classList: classList() }; return el; };
+const openBlock = blockOf(), otherOpenBlock = blockOf(), laterBlock = blockOf();
+const inBlock = (b, value) => ({ ...marker(value), closest: sel => sel === '[data-anchor]' ? b : null });
+const openInBlock = inBlock(openBlock, ''), secondInBlock = inBlock(openBlock, 'q'), otherOpen = inBlock(otherOpenBlock, ''), laterIn = inBlock(laterBlock, 'later');
+const opens = openTbdMarkers([openInBlock, laterIn, secondInBlock, otherOpen]);
+const tbdState = { drafts: 0, finish: false, tbd: true, enabled: true };
+assert.deepEqual(tbdHighlightBlocks(tbdState, opens), [openBlock, otherOpenBlock], 'each block holding an open TBD is highlighted once; later blocks are not');
+assert.deepEqual(tbdHighlightBlocks({ drafts: 1, finish: false, tbd: false, enabled: true }, opens), [], 'no highlight unless TBD open is the action');
+const fakeRoot = blocks => ({ querySelectorAll: sel => sel === '.hx-tbd-open' ? blocks.filter(b => b.classList.contains('hx-tbd-open')) : [] });
+const allBlocks = [openBlock, otherOpenBlock, laterBlock];
+laterBlock.classList.add('hx-tbd-open');
+renderTbdHighlight(fakeRoot(allBlocks), tbdHighlightBlocks(tbdState, opens));
+assert.deepEqual(allBlocks.map(b => b.classList.contains('hx-tbd-open')), [true, true, false], 'render highlights only open TBD blocks and clears stale highlights');
+renderTbdHighlight(fakeRoot(allBlocks), tbdHighlightBlocks({ drafts: 1, finish: false, tbd: false, enabled: true }, opens));
+assert.deepEqual(allBlocks.map(b => b.classList.contains('hx-tbd-open')), [false, false, false], 'highlight clears when TBD open is no longer the action');
+assert.match(runtime, /renderTbdHighlight\(document, tbdHighlightBlocks\(handoffState, openTbds\)\);/, 'the panel renders the gated open TBD highlight');
 assert.equal((runtime.match(/const openTbds = openTbdMarkers\(document\.querySelectorAll\('\[data-spec-tbd\]'\)\);\n\s+const \w+ = reviewHandoffState\(state\.threads, openTbds\.length > 0\);/g) || []).length, 2, 'render and activation gate eligibility on open TBD markers only');
-assert.match(runtime, /\.hx-tbd-open\{/, 'open TBD blocks have a visible highlight style');
+const tbdCss = runtime.match(/\n\.hx-tbd-open\{([^}]*)\}/);
+assert.ok(tbdCss && /outline:/.test(tbdCss[1]), 'open TBD blocks have a visible outline highlight');
+assert.doesNotMatch(tbdCss[1], /background|border-radius/, 'the highlight does not restyle author block background or radius');
+assert.match(runtime, /body\.hx-focus-active \.hx-tbd-open\{position:relative;z-index:3\}/, 'under focus the highlighted block rises above an ancestor veil (z-index 2)');
+assert.match(runtime, /body\.hx-focus-active \.hx-tbd-open\[data-hx-focus=unchanged\]::after,body\.hx-focus-active tr\.hx-tbd-open\[data-hx-focus=unchanged\] > :is\(td,th\)::after\{display:none!important\}/, 'an unchanged highlighted block drops its own veil');
 
 const waitingHandoff = [event('300-handoff.json', 'human', { id: 'h-wait', event: 'handoff', createdAt: '2026-08-31T12:00:00.000Z' })];
 assert.equal(handoffObservation(waitingHandoff, Date.parse('2026-08-31T12:00:10.000Z')), 'waiting', 'a fresh unacknowledged hand-off is waiting');

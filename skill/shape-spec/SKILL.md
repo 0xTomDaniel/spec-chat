@@ -37,7 +37,7 @@ Create durable current truth before deep investigation.
 
 ## Implementation graph
 
-Before finishing review, use the selected issue skill to reconcile implementation tickets:
+Before spec acceptance, use the selected issue skill to reconcile implementation tickets:
 
 - one independently assignable code outcome per ticket
 - exact governing spec anchors and observable completion evidence

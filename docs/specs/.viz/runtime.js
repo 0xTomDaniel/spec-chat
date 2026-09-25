@@ -1,5 +1,5 @@
 // spec-chat runtime v0.1 — hydrates semantic islands and mounts the annotation layer.
-// spec-chat-capabilities: changed-root-focus custom-style-focus diff-visibility-control finish-review git-focus manual-resume-status mobile-pre-wrap mobile-review reopen-thread semantic-islands shared-style-ownership
+// spec-chat-capabilities: changed-root-focus custom-style-focus diff-visibility-control finish-review git-focus manual-resume-status mobile-pre-wrap mobile-review reopen-thread semantic-islands shared-style-ownership spec-acceptance tbd-later
 // Transports: FSA (file://, primary) | HTTP review-serve (http(s)://, secondary).
 // Same spools, same event schema either way. See DESIGN.md.
 // Classic script, NOT a module: browsers CORS-block module scripts on file:// pages,
@@ -897,6 +897,20 @@ function tbdBlock(el) {
   return el.closest('[data-anchor]') || el;
 }
 
+function tbdHighlightBlocks(handoffState, open) {
+  return handoffState.tbd ? [...new Set(open.map(tbdBlock))] : [];
+}
+
+function advanceTbd(st, open) {
+  return st.lastTbd = nextOpenTbd(open, st.lastTbd);
+}
+
+function renderTbdHighlight(root, blocks) {
+  const keep = new Set(blocks);
+  root.querySelectorAll('.hx-tbd-open').forEach(el => { if (!keep.has(el)) el.classList.remove('hx-tbd-open'); });
+  keep.forEach(el => el.classList.add('hx-tbd-open'));
+}
+
 function handoffObservation(events, nowMs) {
   let handoff = null;
   for (const event of events) if (event.actor === 'human' && event.body.event === 'handoff') handoff = event;
@@ -960,6 +974,8 @@ body.hx-focus-active [data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])
 body.hx-focus-active [data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])):not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *):not(tr):not(td):not(th):not(script):not(style)::after{content:"";position:absolute;inset:-3px;background:rgba(0,0,0,calc(.5*var(--hx-veil,1)));border-radius:inherit;pointer-events:none;z-index:2;-webkit-backdrop-filter:blur(calc(2.5px*var(--hx-veil,1)));backdrop-filter:blur(calc(2.5px*var(--hx-veil,1)))}
 body.hx-focus-active tr[data-hx-focus=unchanged]:not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *) > :is(td,th){position:relative}
 body.hx-focus-active tr[data-hx-focus=unchanged]:not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *) > :is(td,th)::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,calc(.5*var(--hx-veil,1)));pointer-events:none;z-index:2;-webkit-backdrop-filter:blur(calc(2.5px*var(--hx-veil,1)));backdrop-filter:blur(calc(2.5px*var(--hx-veil,1)))}
+body.hx-focus-active .hx-tbd-open{position:relative;z-index:3}
+body.hx-focus-active .hx-tbd-open[data-hx-focus=unchanged]::after,body.hx-focus-active tr.hx-tbd-open[data-hx-focus=unchanged] > :is(td,th)::after{display:none!important}
 body.hx-focus-active [data-hx-focus=unchanged] .hx-pin,body.hx-focus-active [data-hx-focus=unchanged] .hx-badge{opacity:1;filter:none;z-index:700}
 .hx-focus-error{position:fixed;top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);max-width:calc(100vw - 24px);box-sizing:border-box;padding:8px 12px;border-radius:8px;background:#8b1a1a;color:#fff;font:600 12px system-ui;z-index:970;box-shadow:0 6px 20px rgba(30,30,40,.25)}
 @media(prefers-color-scheme:dark){
@@ -1095,7 +1111,7 @@ body.hx-comment [data-anchor] :is(button,input,select,textarea,label,a,summary){
 .hx-thread-ring{position:fixed;border:2px solid #d98e04;border-radius:5px;pointer-events:none;z-index:750;box-shadow:0 0 0 3px rgba(217,142,4,.18);transition:left .12s,top .12s,width .12s,height .12s}
 body.hx-comment [data-render-target]:hover{border:1.5px dashed #d98e04}
 body.hx-comment [data-render-target] canvas{cursor:copy!important}
-.hx-tbd-open{outline:2px solid #d98e04;outline-offset:4px;border-radius:3px;background:rgba(217,142,4,.08)}
+.hx-tbd-open{outline:2px solid #d98e04;outline-offset:4px}
 .hx-badge{font:600 9.5px system-ui;text-transform:uppercase;letter-spacing:.04em;color:#0e7264;background:#e3f2f0;border-radius:4px;padding:2px 7px;margin-left:8px;vertical-align:middle}
 .hx-banner{position:fixed;top:0;left:0;right:0;background:#12897c;color:#fff;font:600 13px system-ui;padding:8px 16px;z-index:950;display:flex;gap:14px;align-items:center;justify-content:center}
 .hx-toast{position:fixed;bottom:76px;left:50%;transform:translateX(-50%);background:#22242a;color:#faf9f6;font:600 12.5px system-ui;border-radius:8px;padding:9px 16px;box-shadow:0 8px 28px rgba(30,30,40,.3);z-index:960;opacity:0;transition:opacity .25s;pointer-events:none}
@@ -1486,7 +1502,7 @@ function renderPanel() {
   const openTbds = openTbdMarkers(document.querySelectorAll('[data-spec-tbd]'));
   const handoffState = reviewHandoffState(state.threads, openTbds.length > 0);
   const drafts = handoffState.drafts;
-  renderTbdHighlight(handoffState.tbd ? openTbds : []);
+  renderTbdHighlight(document, tbdHighlightBlocks(handoffState, openTbds));
   document.getElementById('hx-drafts').textContent = handoffState.finish ? 'Ready to accept' : drafts + ' draft' + (drafts === 1 ? '' : 's');
   const desktopHandoff = document.getElementById('hx-handoff');
   desktopHandoff.disabled = !handoffState.enabled;
@@ -1725,22 +1741,16 @@ function renderBadges() {
 async function handoff() {
   const openTbds = openTbdMarkers(document.querySelectorAll('[data-spec-tbd]'));
   const action = reviewHandoffState(state.threads, openTbds.length > 0);
-  if (action.tbd) return jumpToTbd(state.lastTbd = nextOpenTbd(openTbds, state.lastTbd));
+  if (action.tbd) return jumpToTbd(advanceTbd(state, openTbds));
   if (state.handoffPosting || !action.enabled) return;
   state.handoffPosting = true;
   try {
     await state.transport.postEvent({ id: 'h' + Date.now().toString(36), event: 'handoff', anchorId: '', target: null, quote: null, text: 'batch from ' + state.transport.mode, actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
-    toast(action.finish ? 'Spec accepted' : 'Handed off ' + action.drafts + ' comment' + (action.drafts === 1 ? '' : 's') + ' — agent notified');
+    toast(action.finish ? 'Spec accepted' : 'Handed off ' + action.drafts + ' comment' + (action.drafts === 1 ? '' : 's') + ', agent notified');
     refresh();
   } finally {
     state.handoffPosting = false;
   }
-}
-
-function renderTbdHighlight(open) {
-  const blocks = new Set(open.map(tbdBlock));
-  document.querySelectorAll('.hx-tbd-open').forEach(el => { if (!blocks.has(el)) el.classList.remove('hx-tbd-open'); });
-  blocks.forEach(el => el.classList.add('hx-tbd-open'));
 }
 
 function jumpToTbd(el) {
