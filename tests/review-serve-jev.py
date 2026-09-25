@@ -5,6 +5,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -110,6 +111,26 @@ class JevSeamTest(unittest.TestCase):
         self.assertEqual(first_off["outcome"], "off")
         self.assertEqual(second_off["outcome"], "off")
         self.assertNotEqual(first_off["record_id"], second_off["record_id"])
+
+    def test_judgment_store_skips_corrupt_and_truncated_records(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "records.jsonl"
+            path.write_bytes(
+                b"not json\n"
+                b'{"cache_key":"valid","outcome":"shown"}\n'
+                b'{"cache_key":"truncated","outcome":"shown"\xe2'
+            )
+            store = jev.JudgmentStore(path)
+        self.assertEqual(set(store.by_key), {"valid"})
+
+    def test_judgment_store_treats_unreadable_state_as_empty(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "records.jsonl"
+            with patch.object(Path, "is_file", return_value=True), patch.object(
+                Path, "read_text", side_effect=OSError("unreadable state")
+            ):
+                store = jev.JudgmentStore(path)
+        self.assertEqual(store.by_key, {})
 
     def test_resolved_unrelated_is_not_displayed(self):
         provider = FakeProvider({"answers": {"resolved": {"choice": "unrelated", "confidence": 0.9}}})
@@ -259,6 +280,29 @@ class JevSeamTest(unittest.TestCase):
         self.assertEqual(result["outcome"], "shown")
         self.assertEqual(deleted_result["answer"]["label"], "none")
         self.assertEqual(len(provider.calls), 2)
+
+    def test_orphan_uses_root_quote_after_human_reply(self):
+        source = (
+            '<p data-anchor="retry">Server retries once on timeout.</p>'
+            '<p data-anchor="toolbar">The toolbar toggle stays visible.</p>'
+        )
+        events = [
+            {"name": "1-comment.json", "actor": "human", "body": {
+                "id": "u1", "event": "comment", "actor": "human", "anchorId": "old",
+                "quote": "Server retries once on timeout",
+            }},
+            {"name": "2-reply.json", "actor": "agent", "body": {
+                "id": "a1", "event": "reply", "actor": "agent", "threadId": "u1",
+                "text": "I will check this.",
+            }},
+            {"name": "3-reply.json", "actor": "human", "body": {
+                "id": "u2", "event": "reply", "actor": "human", "threadId": "u1",
+                "quote": None, "text": "Also check the toolbar toggle.",
+            }},
+        ]
+        questions = jev.build_orphan_questions(events, source)
+        self.assertEqual(questions[0]["state"]["quote"], "Server retries once on timeout")
+        self.assertEqual(questions[0]["state"]["candidates"][0], "retry")
 
     def test_served_specs_follow_index_collection(self):
         with tempfile.TemporaryDirectory() as directory:

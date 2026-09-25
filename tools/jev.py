@@ -189,8 +189,14 @@ class JudgmentStore:
         self.path = Path(path) if path else None
         self.by_key: dict[str, dict[str, Any]] = {}
         self.lock = threading.RLock()
-        if self.path and self.path.is_file():
-            for line in self.path.read_text(encoding="utf-8").splitlines():
+        if self.path:
+            try:
+                if not self.path.is_file():
+                    return
+                lines = self.path.read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError:
+                return
+            for line in lines:
                 try:
                     record = json.loads(line)
                 except (ValueError, TypeError):
@@ -632,8 +638,8 @@ def build_orphan_questions(events: list[Mapping[str, Any]], current: str | bytes
         anchor = thread.get("anchor")
         if not anchor or anchor in anchors or thread.get("status") == "resolved":
             continue
-        human = next((m for m in reversed(thread["messages"]) if m.get("actor") == "human"), thread["messages"][0])
-        quote = str(human.get("quote") or human.get("text") or "")
+        root = thread["messages"][0]
+        quote = str(root.get("quote") or root.get("text") or "")
         wanted = set(re.findall(r"[a-z0-9]{3,}", quote.lower()))
         candidates = sorted(anchors, key=lambda item: (-len(wanted & words[item]), item))[:8]
         criteria = {item: str(anchors[item].get("text", ""))[:400] for item in candidates}
