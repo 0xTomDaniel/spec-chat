@@ -357,6 +357,77 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertEqual(self.request(self.stable(second)), second_bytes)
         self.assertIsNone(self.server.poll())
 
+    def test_index_groups_lanes_projects_and_status_in_order(self):
+        """ANN-136 lane-hosting #acceptance-review-index."""
+        import html as html_lib
+        import re
+
+        board = self.make_resource("ann134") | {"project": "aa"}
+        repo = Path(board["root"])
+        Path(repo / board["spec"]).write_text("<title>Zeta board</title>changed\n")
+        fresh = board | {"id": "spec:ann134:aa::docs/specs/new.spec.html", "spec": "docs/specs/new.spec.html"}
+        (repo / fresh["spec"]).write_text("<title>Alpha fresh</title>\n")
+        tool = board | {"id": "spec:ann134:sc::docs/specs/domains/x.spec.html", "project": "sc"}
+        tool["path"] = "ann134/sc/" + tool["spec"]
+        steady = self.make_resource("ann119") | {"project": "sc"}
+        git(steady["root"], "checkout", "--", steady["spec"])
+        broken = self.make_resource("ann7") | {"project": "aa"}
+        git(broken["root"], "branch", "gone")
+        broken["base"] = "gone"
+        lost = self.make_resource("ann134b") | {"slug": "ann134", "project": "zz"}
+        lost["path"] = "ann134/zz/" + lost["spec"]
+        git(lost["root"], "branch", "gone")
+        lost["base"] = "gone"
+        self.start([steady, broken, board, fresh, tool, lost])
+        git(broken["root"], "branch", "-D", "gone")
+        git(lost["root"], "branch", "-D", "gone")
+
+        status, raw = self.request("/?focus=changes")
+        self.assertEqual(status, 200)
+        body = raw.decode()
+        self.assertIn('"GIT_OPTIONAL_LOCKS": "0"', SERVER.read_text())
+        # #index-entry-title: status sits on the right of its row, right aligned when wrapped.
+        self.assertRegex(body, r"\.status \{[^}]*margin-left: auto;[^}]*text-align: right;")
+        text = html_lib.unescape(re.sub(r"<style>.*?</style>|<[^>]+>", "\n", body, flags=re.S))
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        self.assertEqual(lines[:2], ["Spec Chat index", "Review index"])
+        self.assertEqual(lines[2:], [
+            "ANN-134", "3 of 3 changed",
+            "aa", "Alpha fresh", "Changed since you reviewed", "Zeta board", "Changed since you reviewed",
+            "sc", "Zeta board", "Changed since you reviewed",
+            "zz", "ann134b",
+            "ANN-7", "no status", "aa", "ann7",
+            "ANN-119", "up to date", "sc", "ann119", "Up to date",
+        ])
+        for leaked in ("docs/specs", "spec:", "main", "gone", "ann134/"):
+            self.assertNotIn(leaked, "\n".join(lines))
+        self.assertIn('href="/ann134/sc/docs/specs/domains/x.spec.html?focus=changes"', body)
+        self.assertIn('href="/ann134/docs/specs/new.spec.html?focus=changes"', body)
+
+    def test_status_is_none_when_any_git_call_fails(self):
+        """ANN-136 lane-hosting #index-entry-status: no status when the compare fails."""
+        import importlib.util
+        from unittest import mock
+
+        spec = importlib.util.spec_from_file_location("review_serve_under_test", SERVER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        mount = self.make_resource("ann9")
+        real = subprocess.run
+        self.assertTrue(module._review_status(mount))
+        for step in ("^{commit}", "hash-object", ":" + mount["spec"]):
+            for error in (subprocess.TimeoutExpired("git", 5), OSError("no git")):
+                with self.subTest(step=step, error=type(error).__name__):
+                    def run(args, *rest, **options):
+                        if any(step in arg for arg in args):
+                            raise error
+                        return real(args, *rest, **options)
+                    with mock.patch.object(module.subprocess, "run", run):
+                        self.assertIsNone(module._review_status(mount))
+        git(mount["root"], "rm", "-q", "--cached", mount["spec"])
+        git(mount["root"], "commit", "-q", "-m", "drop spec")
+        self.assertTrue(module._review_status(mount))
+
     def test_invalid_registries_exit_before_binding_or_printing_url(self):
         first, second = (self.make_resource(name) for name in ("first", "second"))
         invalid = [

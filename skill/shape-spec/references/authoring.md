@@ -22,7 +22,9 @@ that marker remain on the legacy path until an explicit migration.
 
 Every marked spec has exactly one visible, named section for each contract
 surface, in this order: `User stories`, `Acceptance criteria`, then
-`Modular boundaries`.
+`Modular boundaries`. Every acceptance criterion carries `data-story` naming one
+or more space-separated `data-user-story` anchors in the same spec, and every
+story is named by at least one criterion.
 
 ```html
 <article class="spec" data-spec-contract="shaped-sections-v1">
@@ -32,7 +34,7 @@ surface, in this order: `User stories`, `Acceptance criteria`, then
   </section>
   <section data-spec-section="acceptance" data-acceptance-scope="traceability" data-anchor="acceptance">
     <h2>Acceptance criteria</h2>
-    <p data-acceptance-criterion data-anchor="acceptance-name">
+    <p data-acceptance-criterion data-anchor="acceptance-name" data-story="story-name">
       <span data-acceptance-scenario>When ...</span>
       <span data-acceptance-observable>The page ...</span>
     </p>

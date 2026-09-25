@@ -87,7 +87,7 @@ class SpecParser(HTMLParser):
         if tag in {"h2", "h3"} and section:
             self._capture("heading", tag, depth, section)
         if "data-acceptance-criterion" in values:
-            criterion = {"anchor": anchor, "fields": {}, "tag": tag, "depth": depth, "has_tbd": "data-spec-tbd" in values}
+            criterion = {"anchor": anchor, "fields": {}, "tag": tag, "depth": depth, "has_tbd": "data-spec-tbd" in values, "stories": (values.get("data-story") or "").split()}
             if section:
                 section["criteria"].append(criterion)
             self.active_criteria.append(criterion)
@@ -279,6 +279,20 @@ def validate_shape_sections(parser):
                 return f"{label} acceptance criterion {criterion['anchor']} needs an observable scenario"
             if not criterion["fields"].get("observable"):
                 return f"{label} acceptance criterion {criterion['anchor']} needs an observable outcome"
+
+    story_anchors = {story["anchor"] for story in parser.stories}
+    claimed = set()
+    for acceptance in acceptance_sections:
+        for criterion in acceptance["criteria"]:
+            if not criterion["stories"]:
+                return f"acceptance criterion {criterion['anchor']} needs data-story naming its user stories"
+            unknown = [name for name in criterion["stories"] if name not in story_anchors]
+            if unknown:
+                return f"acceptance criterion {criterion['anchor']} names unknown story " + ", ".join(unknown)
+            claimed.update(criterion["stories"])
+    for story in parser.stories:
+        if story["anchor"] not in claimed:
+            return f"story {story['anchor']} is named by no acceptance criterion"
 
     modular_sections = [
         section for section in parser.sections
