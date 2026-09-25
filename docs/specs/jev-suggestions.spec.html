@@ -29,6 +29,30 @@
 <p data-user-story data-user-facing="false" data-anchor="story-record">As the operator, I can see for any suggestion which model, question set, and sources produced it, and with what confidence.</p>
 </section>
 
+<section data-spec-section="acceptance" data-acceptance-scope="jev-suggestions" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-types"><span data-acceptance-scenario>When a spec change fixes a typo in one section and changes a rule in another, in Git focus,</span> <span data-acceptance-observable>the rule shows <code>Behavior</code> highlighted and the typo shows <code>Cosmetic</code>, dimmed and readable.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-neutral"><span data-acceptance-scenario>When an answer is below threshold, fails twice, or there is no key,</span> <span data-acceptance-observable>the item shows <code>unsure</code> or <code>Jev unavailable</code>, or the page shows one <code>Jev off</code> note, and review controls work unchanged.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-base"><span data-acceptance-scenario>When the reviewer changes the base,</span> <span data-acceptance-observable>old labels disappear at once and the new base's labels replace them without a reload.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-orphan"><span data-acceptance-scenario>When a commented passage moves and its anchor is removed,</span> <span data-acceptance-observable>its card shows <code>Possibly moved to:</code> that section with <code>Go to</code>; a deleted passage shows today's card.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-move"><span data-acceptance-scenario>When the reviewer clicks <code>Move comment here</code>,</span> <span data-acceptance-observable>the orphaned thread is resolved and a draft comment at that section quotes the original, with no new event type.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-resolved"><span data-acceptance-scenario>When one open thread's section is revised to do what it asked and another's is revised unrelatedly,</span> <span data-acceptance-observable>only the first shows <code>Looks resolved</code>, and both stay open.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-corpus"><span data-acceptance-scenario>When a draft clause adds a behavior its own spec lists as a non-goal, and another restates a clause of another served spec,</span> <span data-acceptance-observable>the first shows <code>Contradicts</code> and the second <code>Overlaps</code>, each linking to that clause.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-coverage"><span data-acceptance-scenario>When a spec has a story no criterion verifies and a criterion no story backs,</span> <span data-acceptance-observable>each shows its gap label, and adding the missing counterpart clears it on the next head.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-reading"><span data-acceptance-scenario>When the reviewer turns reading view on,</span> <span data-acceptance-observable><code>internals</code> clauses are dimmed in place and readable, and no clause moves or hides.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-inert"><span data-acceptance-scenario>Across a session with any suggestions and no move click,</span> <span data-acceptance-observable>spool, thread statuses, Finish eligibility, and spec bytes match Jev off, and every item stays present and 4.5:1 readable.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-cache"><span data-acceptance-scenario>When the same page, base, and head load again,</span> <span data-acceptance-observable>no Jev call is made and the same labels show.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-record"><span data-acceptance-scenario>For every call,</span> <span data-acceptance-observable>one record carries every contract field and no source text, and no page, record, log, or response contains the key.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-own-state"><span data-acceptance-scenario>When a client sends text or parameters beyond path and base,</span> <span data-acceptance-observable>the server ignores them.</span></p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-seam"><span data-boundary-responsibility>The review server's Jev seam owns questions, provider calls, one retry, thresholds, and records, which serve as the cache.</span> <span data-boundary-seam>Caller-facing seam: <code>GET /api/jev?path=&lt;spec&gt;&amp;base=&lt;id&gt;[&amp;view=reading]</code>, returning on or off and one state per item.</span> <span data-boundary-dependency>Dependency direction: calls OpenRouter as an external provider; reads local Git, served specs, and the spool; nothing calls back.</span> <span data-boundary-scope>Observable scope: the JSON response and records, in single-root and registry modes.</span></p>
+<p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns every label, treatment, marker, reading view, and <code>Move comment here</code>.</span> <span data-boundary-seam>Caller-facing seam: the rendered page; spool writes use existing events only.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; consumes the seam route; no model, threshold, or key logic.</span> <span data-boundary-scope>Observable scope: what the reviewer sees.</span></p>
+<p data-modular-boundary data-anchor="boundary-qsets"><span data-boundary-responsibility>Question sets own instructions, criteria, examples, and thresholds.</span> <span data-boundary-seam>Caller-facing seam: a set id and version.</span> <span data-boundary-dependency>Dependency direction: self-contained data read by the seam.</span> <span data-boundary-scope>Observable scope: the version named in each record.</span></p>
+</section>
+
 <section data-anchor="features">
 <h2>Suggestions</h2>
 <div class="table-scroll" data-anchor="features-table-scroll">
@@ -40,7 +64,7 @@
 <tr data-anchor="feature-resolved"><td>Resolved in spirit</td><td>Each open thread whose section changed since its newest human message</td><td>Its human messages, not agent replies</td><td>resolved in spirit</td><td><code>Looks resolved</code> on its card and pin</td></tr>
 <tr data-anchor="feature-corpus"><td>Draft checks</td><td>Each changed leaf clause in Git focus</td><td>Up to 8 best matches in the same spec, always its non-goals, and up to 8 in other served specs</td><td>contradicts, overlaps, oversteps</td><td>e.g. <code>Contradicts #non-goal-text</code> on the clause, linking there</td></tr>
 <tr data-anchor="feature-coverage"><td><a href="#coverage">Coverage</a></td><td>Every story and criterion, in any view</td><td>Every criterion or story in the same spec</td><td>verifies, counted per item</td><td><code>No criterion covers this</code> or <code>No story backs this</code></td></tr>
-<tr data-anchor="feature-reading"><td><a href="#reading">Reading view</a></td><td>Every leaf clause, while reading view is on</td><td>Its reader: someone who uses the result, not builds it</td><td>for you, internals</td><td>Internals dimmed in place</td></tr>
+<tr data-anchor="feature-reading"><td><a href="#reading">Reading view</a></td><td>Every leaf clause, while reading view is on</td><td>What matters to a reader of the result, as defined below</td><td>for you, internals</td><td>Internals dimmed in place</td></tr>
 </tbody>
 </table>
 </div>
@@ -134,31 +158,8 @@
 <section data-anchor="reading">
 <h2>Reading view</h2>
 <p data-anchor="reading-toggle">A <code>Reading view</code> control on every HTTP-served spec is off by default and exclusive with Git focus.</p>
+<p data-anchor="reading-definition"><code>for you</code> is a clause that is user-facing or behavioral, what a user sees or what the result does, or architecture that is highly important: a hard-to-reverse boundary, a dependency direction, or a key interface. <code>internals</code> is everything else: implementation detail, mechanics, proofs, fixture or test detail, and minor structure.</p>
 <p data-anchor="reading-order"><code>internals</code> clauses are dimmed in place; <code>for you</code>, unsure, and failed clauses stay undimmed; comments and pins work unchanged.</p>
-</section>
-
-<section data-spec-section="acceptance" data-acceptance-scope="jev-suggestions" data-anchor="acceptance">
-<h2>Acceptance criteria</h2>
-<p data-acceptance-criterion data-anchor="acceptance-types"><span data-acceptance-scenario>When a spec change fixes a typo in one section and changes a rule in another, in Git focus,</span> <span data-acceptance-observable>the rule shows <code>Behavior</code> highlighted and the typo shows <code>Cosmetic</code>, dimmed and readable.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-neutral"><span data-acceptance-scenario>When an answer is below threshold, fails twice, or there is no key,</span> <span data-acceptance-observable>the item shows <code>unsure</code> or <code>Jev unavailable</code>, or the page shows one <code>Jev off</code> note, and review controls work unchanged.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-base"><span data-acceptance-scenario>When the reviewer changes the base,</span> <span data-acceptance-observable>old labels disappear at once and the new base's labels replace them without a reload.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-orphan"><span data-acceptance-scenario>When a commented passage moves and its anchor is removed,</span> <span data-acceptance-observable>its card shows <code>Possibly moved to:</code> that section with <code>Go to</code>; a deleted passage shows today's card.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-move"><span data-acceptance-scenario>When the reviewer clicks <code>Move comment here</code>,</span> <span data-acceptance-observable>the orphaned thread is resolved and a draft comment at that section quotes the original, with no new event type.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-resolved"><span data-acceptance-scenario>When one open thread's section is revised to do what it asked and another's is revised unrelatedly,</span> <span data-acceptance-observable>only the first shows <code>Looks resolved</code>, and both stay open.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-corpus"><span data-acceptance-scenario>When a draft clause adds a behavior its own spec lists as a non-goal, and another restates a clause of another served spec,</span> <span data-acceptance-observable>the first shows <code>Contradicts</code> and the second <code>Overlaps</code>, each linking to that clause.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-coverage"><span data-acceptance-scenario>When a spec has a story no criterion verifies and a criterion no story backs,</span> <span data-acceptance-observable>each shows its gap label, and adding the missing counterpart clears it on the next head.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-reading"><span data-acceptance-scenario>When the reviewer turns reading view on,</span> <span data-acceptance-observable><code>internals</code> clauses are dimmed in place and readable, and no clause moves or hides.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-inert"><span data-acceptance-scenario>Across a session with any suggestions and no move click,</span> <span data-acceptance-observable>spool, thread statuses, Finish eligibility, and spec bytes match Jev off, and every item stays present and 4.5:1 readable.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-cache"><span data-acceptance-scenario>When the same page, base, and head load again,</span> <span data-acceptance-observable>no Jev call is made and the same labels show.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-record"><span data-acceptance-scenario>For every call,</span> <span data-acceptance-observable>one record carries every contract field and no source text, and no page, record, log, or response contains the key.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-own-state"><span data-acceptance-scenario>When a client sends text or parameters beyond path and base,</span> <span data-acceptance-observable>the server ignores them.</span></p>
-</section>
-
-<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
-<h2>Modular boundaries</h2>
-<p data-modular-boundary data-anchor="boundary-seam"><span data-boundary-responsibility>The review server's Jev seam owns questions, provider calls, one retry, thresholds, and records, which serve as the cache.</span> <span data-boundary-seam>Caller-facing seam: <code>GET /api/jev?path=&lt;spec&gt;&amp;base=&lt;id&gt;[&amp;view=reading]</code>, returning on or off and one state per item.</span> <span data-boundary-dependency>Dependency direction: calls OpenRouter as an external provider; reads local Git, served specs, and the spool; nothing calls back.</span> <span data-boundary-scope>Observable scope: the JSON response and records, in single-root and registry modes.</span></p>
-<p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns every label, treatment, marker, reading view, and <code>Move comment here</code>.</span> <span data-boundary-seam>Caller-facing seam: the rendered page; spool writes use existing events only.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; consumes the seam route; no model, threshold, or key logic.</span> <span data-boundary-scope>Observable scope: what the reviewer sees.</span></p>
-<p data-modular-boundary data-anchor="boundary-qsets"><span data-boundary-responsibility>Question sets own instructions, criteria, examples, and thresholds.</span> <span data-boundary-seam>Caller-facing seam: a set id and version.</span> <span data-boundary-dependency>Dependency direction: self-contained data read by the seam.</span> <span data-boundary-scope>Observable scope: the version named in each record.</span></p>
 </section>
 
 <section data-anchor="proof">
