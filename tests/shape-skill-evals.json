@@ -149,6 +149,17 @@
         "Leaves journey order with the central registry and target or milestone ownership with the feature",
         "Uses review for semantic judgment and the existing validator only for structural presence and reference integrity"
       ]
+    },
+    {
+      "id": 13,
+      "eval_name": "no-tracker-plain-git",
+      "prompt": "Start shaping a feature in a repository whose target instructions name no issue tracker.",
+      "expectations": [
+        "Creates no issue and no implementation tickets and links none",
+        "Does not treat the missing tracker as a blocker",
+        "Creates the work branch and proceeds on plain git",
+        "Runs every other shaping step unchanged"
+      ]
     }
   ]
 }
