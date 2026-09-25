@@ -37,7 +37,7 @@ _verify_spec.loader.exec_module(_verify_module)
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
 SAFE_CURSOR_RE = re.compile(r"[^/\\]+\Z")
 RESOURCE_FIELDS = (
-    "id", "slug", "root", "narrow_root", "spec", "base", "owner", "checker",
+    "id", "slug", "project", "root", "narrow_root", "spec", "path", "base", "owner", "checker",
     "cursor_name", "registered_at", "updated_at",
 )
 
@@ -301,7 +301,7 @@ def parse_resource_spec(value: str, owner: str, checker: str, cursor_name: str,
         raise LauncherError(f"invalid or reserved resource slug: {selected_slug}")
     resolved_base = run_git(top, "rev-parse", "--verify", base + "^{commit}")
     return {
-        "id": f"spec:{selected_slug}::{spec}", "slug": selected_slug, "root": str(top),
+        "id": f"spec:{selected_slug}:{project}::{spec}", "slug": selected_slug, "project": project, "root": str(top),
         "narrow_root": str(narrow), "spec": spec, "spec_file": str(spec_file),
         "base": base, "resolved_base_commit": resolved_base,
         "owner": owner.strip(), "checker": checker.strip(), "cursor_name": cursor_name,
@@ -312,21 +312,33 @@ def registry_record(resource: Mapping[str, Any], registered_at: str | None = Non
     stamp = registered_at or now()
     result = {
         key: resource[key] for key in (
-            "id", "slug", "root", "narrow_root", "spec", "base", "owner", "checker", "cursor_name",
+            "id", "slug", "project", "root", "narrow_root", "spec", "path", "base", "owner", "checker",
+            "cursor_name",
         )
     }
     result.update({"registered_at": stamp, "updated_at": stamp})
     return result
 
 
+def row_path(record: Mapping[str, Any]) -> str:
+    return record.get("path") or f"{record['slug']}/{record['spec']}"
+
+
 def stable_path(resource: Mapping[str, Any]) -> str:
-    return f"/{resource['slug']}/{resource['spec']}"
+    return "/" + row_path(resource)
+
+
+def assign_path(rows: Sequence[Mapping[str, Any]], resource: dict[str, Any]) -> None:
+    """Re-registering a row id keeps its path; a new row is plain unless another project holds the slug."""
+    old = next((row for row in rows if row["id"] == resource["id"]), None)
+    slug, project, spec = resource["slug"], resource["project"], resource["spec"]
+    shared = any(row["slug"] == slug and row.get("project") != project for row in rows)
+    resource["path"] = row_path(old) if old else (f"{slug}/{project}/{spec}" if shared else f"{slug}/{spec}")
 
 
 def validate_records(records: Sequence[Mapping[str, Any]]) -> None:
     ids: set[str] = set()
     stable: set[str] = set()
-    slug_roots: dict[str, str] = {}
     for record in records:
         required = ("id", "slug", "root", "narrow_root", "spec", "base", "owner", "checker", "cursor_name")
         missing = [key for key in required if not isinstance(record.get(key), str) or not record[key].strip()]
@@ -353,17 +365,14 @@ def validate_records(records: Sequence[Mapping[str, Any]]) -> None:
         spec_file = (top / spec).resolve()
         if not path_inside(spec_file, narrow, strict=True) or not spec_file.is_file():
             raise LauncherError(f"resource spec is missing or outside its collection: {rid}")
-        key = f"{slug}/{spec}"
+        key = row_path(record)
         if key in stable:
             raise LauncherError(f"duplicate stable resource path: {key}")
-        if slug in slug_roots and slug_roots[slug] != str(root.resolve()):
-            raise LauncherError(f"ambiguous resource slug: {slug}")
         run_git(root, "rev-parse", "--verify", record["base"] + "^{commit}")
         if not SAFE_CURSOR_RE.fullmatch(record["cursor_name"]):
             raise LauncherError(f"invalid cursor name: {record['cursor_name']}")
         ids.add(rid)
         stable.add(key)
-        slug_roots[slug] = str(root.resolve())
 
 
 def read_registry_document(path: Path) -> dict[str, Any]:
@@ -568,10 +577,12 @@ def register(args: argparse.Namespace) -> int:
     state = state_dir(args)
     registry, log_path, _ = paths(state)
     parsed = parse_resources(args)
-    additions = [registry_record(item) for item in parsed]
     with state_lock(state):
         old_bytes = registry.read_bytes() if registry.exists() else None
         existing, process = registry_state(registry)
+        for index, item in enumerate(parsed):
+            assign_path(existing + parsed[:index], item)
+        additions = [registry_record(item) for item in parsed]
         replacement_ids = {item["id"] for item in additions}
         candidate = [item for item in existing if item["id"] not in replacement_ids] + additions
         validate_records(candidate)
@@ -641,6 +652,26 @@ def remove(args: argparse.Namespace) -> int:
         return 0
 
 
+def reviewed(args: argparse.Namespace) -> int:
+    """Human spec review: commit the spec if dirty, then set the row base to HEAD."""
+    state = state_dir(args)
+    registry, _, _ = paths(state)
+    with state_lock(state):
+        records, process = registry_state(registry)
+        record = next((item for item in records if item["id"] == args.id), None)
+        if record is None:
+            raise LauncherError(f"unknown resource id: {args.id}")
+        root, spec = Path(record["root"]), record["spec"]
+        if run_git(root, "status", "--porcelain", "--", spec):
+            run_git(root, "add", "--", spec)
+            run_git(root, "commit", "-q", "-m", f"docs: human spec review of {spec}", "--", spec)
+        record["base"] = run_git(root, "rev-parse", "HEAD")
+        record["updated_at"] = now()
+        write_registry(registry, records, process)
+        print(f"{args.id}: base {record['base']}")
+        return 0
+
+
 def stop(args: argparse.Namespace) -> int:
     state = state_dir(args)
     registry, _, _ = paths(state)
@@ -665,6 +696,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub = commands.add_parser("remove")
     sub.add_argument("--id", required=True)
     sub.add_argument("--state-dir", required=False)
+    sub = commands.add_parser("reviewed")
+    sub.add_argument("--id", required=True)
+    sub.add_argument("--state-dir", required=False)
     sub = commands.add_parser("stop")
     sub.add_argument("--state-dir", required=False)
     return parser
@@ -677,6 +711,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return register(args)
         if args.command == "remove":
             return remove(args)
+        if args.command == "reviewed":
+            return reviewed(args)
         return stop(args)
     except LauncherError as exc:
         print(f"review-host: error: {exc}", file=sys.stderr)

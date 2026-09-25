@@ -90,7 +90,6 @@ def _resource_records(document, *, check_refs=False, trust=False):
     result = []
     ids = set()
     stable = set()
-    slug_roots = {}
     for raw in records:
         if not isinstance(raw, dict):
             raise ValueError("registry resource entry must be a table")
@@ -127,11 +126,10 @@ def _resource_records(document, *, check_refs=False, trust=False):
         spec_file = os.path.realpath(os.path.join(root, *spec.split("/")))
         if not trust and (not _inside(spec_file, narrow, strict=True) or not os.path.isfile(spec_file)):
             raise ValueError("resource spec is missing or outside its collection: " + rid)
-        key = slug + "/" + spec
+        # The host records each row's served path; rows without one serve at <slug>/<spec>.
+        key = raw.get("path") or slug + "/" + spec
         if key in stable:
             raise ValueError("duplicate stable resource path: " + key)
-        if slug in slug_roots and slug_roots[slug] != root:
-            raise ValueError("ambiguous resource slug: " + slug)
         if not SAFE_CURSOR_RE.fullmatch(raw["cursor_name"]):
             raise ValueError("invalid cursor name: " + raw["cursor_name"])
         if check_refs:
@@ -148,10 +146,10 @@ def _resource_records(document, *, check_refs=False, trust=False):
             "narrow_root": narrow,
             "spec": spec,
             "spec_file": spec_file,
+            "path": key,
         })
         ids.add(rid)
         stable.add(key)
-        slug_roots[slug] = root
         result.append(resource)
     return result
 
@@ -233,6 +231,8 @@ def _safe_relative(value):
 
 
 def _mount_prefix(mount):
+    if mount.get("path"):
+        return mount["path"][:-len(mount["spec"])]
     return (mount["slug"] + "/") if mount["slug"] else ""
 
 

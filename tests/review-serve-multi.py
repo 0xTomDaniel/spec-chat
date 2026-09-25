@@ -362,7 +362,6 @@ class MultiReviewServeTest(unittest.TestCase):
         invalid = [
             [first, second | {"id": first["id"]}],
             [first, first | {"id": "spec:other::" + first["spec"]}],
-            [first, second | {"slug": "first"}],
             [first | {"spec": "docs/missing.spec.html"}],
             [first | {"base": "not-a-ref"}],
             [first | {"base": ""}],

@@ -180,8 +180,8 @@ class ReviewHostTest(unittest.TestCase):
 
         resources = self.registry(state)["resource"]
         self.assertEqual({resource["id"] for resource in resources}, {
-            "spec:lane-one::docs/specs/review.spec.html",
-            "spec:lane-two::docs/specs/review.spec.html",
+            "spec:lane-one:review::docs/specs/review.spec.html",
+            "spec:lane-two:review::docs/specs/review.spec.html",
         })
         for slug in ("lane-one", "lane-two"):
             url = next(line.split("review URL: ", 1)[1] for line in second.stdout.splitlines() if line.startswith("review URL: "))
@@ -278,6 +278,70 @@ finish_event = ""
         with mock.patch.object(review_host, "process_cmdline", return_value=["python", "other.py"]):
             self.assertFalse(review_host.process_owns_registry(os.getpid(), registry))
 
+    def url(self, result):
+        return next(line.split("review URL: ", 1)[1] for line in result.stdout.splitlines() if line.startswith("review URL: "))
+
+    def git(self, *args):
+        return subprocess.check_output(["git", "-C", str(self.repo), *args], text=True).strip()
+
+    def test_reregistering_a_row_id_replaces_only_that_row(self):
+        state = self.work / "state"
+        self.assertEqual(self.run_cli(*self.register_args(state), state=state).returncode, 0)
+        self.assertEqual(self.run_cli(*self.register_args(state, spec="second"), state=state).returncode, 0)
+        self.spec.write_text("<!doctype html><title>review</title><p>next</p>\n", encoding="utf-8")
+        self.git("commit", "-qam", "next")
+        args = self.register_args(state)
+        args[args.index("--resource") + 1] = f"review={self.repo}:docs/specs/review.spec.html@HEAD"
+        again = self.run_cli(*args, state=state)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        rows = {row["id"]: row for row in self.registry(state)["resource"]}
+        self.assertEqual(set(rows), {"spec:ann45:review::docs/specs/review.spec.html",
+                                     "spec:ann45:review::docs/specs/second.spec.html"})
+        self.assertEqual(rows["spec:ann45:review::docs/specs/review.spec.html"]["base"], "HEAD")
+        self.assertEqual(rows["spec:ann45:review::docs/specs/second.spec.html"]["base"], self.base)
+
+    def test_second_project_under_a_slug_serves_at_slug_project_spec(self):
+        state = self.work / "state"
+        other = self.work / "other"
+        subprocess.run(["git", "clone", "-q", str(self.repo), str(other)], check=True)
+        first = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        args = self.register_args(state, project="sc")
+        args[args.index("--resource") + 1] = f"sc={other}:docs/specs/second.spec.html@{self.base}"
+        second = self.run_cli(*args, state=state)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        rows = {row["project"]: row for row in self.registry(state)["resource"]}
+        self.assertEqual(rows["review"]["path"], "ann45/docs/specs/review.spec.html")
+        self.assertEqual(rows["sc"]["path"], "ann45/sc/docs/specs/second.spec.html")
+        url = self.url(second)
+        self.assertEqual(request(url + "/ann45/docs/specs/review.spec.html"), (200, self.spec.read_bytes()))
+        self.assertEqual(request(url + "/ann45/sc/docs/specs/second.spec.html"), (200, self.second_spec.read_bytes()))
+
+    def test_reviewed_commits_a_dirty_spec_and_page_defaults_to_the_row_base(self):
+        state = self.work / "state"
+        started = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        rid = self.registry(state)["resource"][0]["id"]
+        self.spec.write_text("<!doctype html><title>review</title><p>edited</p>\n", encoding="utf-8")
+        done = self.run_cli("reviewed", "--state-dir", str(state), "--id", rid, state=state)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        head = self.git("rev-parse", "HEAD")
+        self.assertNotEqual(head, self.base)
+        self.assertEqual(self.git("status", "--porcelain", "--", str(self.spec)), "")
+        self.assertEqual(self.registry(state)["resource"][0]["base"], head)
+        query = urllib.parse.urlencode({"path": "/ann45/docs/specs/review.spec.html"})
+        deadline = time.monotonic() + 3
+        while True:
+            status, body = request(self.url(started) + "/api/baseline?" + query)
+            if json.loads(body).get("base") == head or time.monotonic() > deadline:
+                break
+            time.sleep(0.05)
+        self.assertEqual((status, json.loads(body)["base"]), (200, head))
+        self.git("commit", "-q", "--allow-empty", "-m", "clean")
+        clean = self.run_cli("reviewed", "--state-dir", str(state), "--id", rid, state=state)
+        self.assertEqual(clean.returncode, 0, clean.stderr)
+        self.assertEqual(self.registry(state)["resource"][0]["base"], self.git("rev-parse", "HEAD"))
+
     def test_proof_rejects_wrong_bytes(self):
         resource = review_host.parse_resource_spec(
             self.resource(), "owner", "checker", ".cursor-test", "ann45", None
@@ -288,7 +352,7 @@ finish_event = ""
 
     def test_only_register_remove_stop_commands_exist(self):
         commands = set(review_host.build_parser()._subparsers._group_actions[0].choices)
-        self.assertEqual(commands, {"register", "remove", "stop"})
+        self.assertEqual(commands, {"register", "remove", "reviewed", "stop"})
 
 
 if __name__ == "__main__":

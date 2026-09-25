@@ -48,7 +48,30 @@ assert.deepEqual(
   'focus boundaries mark changed blocks beneath unchanged context and collapse nested changed descendants',
 );
 
-assert.match(runtime, /new URLSearchParams\(location\.search\)\.get\('focus'\) !== 'changes'/, 'focus activates only through the issue-focus URL');
+assert.match(runtime, /if \(httpPage\) applyIssueFocus\(\);/, 'every HTTP page applies change focus by default, no focus=changes needed');
+assert.doesNotMatch(runtime, /get\('focus'\) !== 'changes'\) return/, 'focus no longer requires the issue-focus URL');
+
+const markStart = runtime.indexOf('function markIssueFocus(');
+const markEnd = runtime.indexOf('\n\nasync function fetchBaseline(', markStart);
+assert.ok(markStart >= 0 && markEnd > markStart, 'runtime exposes issue focus marking');
+function plainOpen(classes) {
+  const elements = Object.keys(classes).map(anchor => ({ dataset: { anchor }, parentElement: null }));
+  const body = new Set(['hx-focus-active']);
+  const document = {
+    querySelectorAll: () => elements,
+    body: { classList: { toggle: (name, on) => (on ? body.add(name) : body.delete(name)) } },
+  };
+  const markIssueFocus = Function('document', 'DOMParser', 'anchorSignatures', 'classifyAnchorSignatures', 'changedRootAnchors',
+    runtime.slice(markStart, markEnd) + '; return markIssueFocus;')(
+    document, class { parseFromString() { return null; } }, () => null,
+    () => new Map(Object.entries(classes)), changedRootAnchors);
+  markIssueFocus('', { html: '' });
+  return { active: body.has('hx-focus-active'), elements };
+}
+const withChanges = plainOpen({ a: 'unchanged', b: 'changed' });
+assert.equal(withChanges.active, true, 'plain open with changes highlights them');
+assert.equal(withChanges.elements[1].dataset.hxFocusRoot, 'changed', 'plain open marks the changed root');
+assert.equal(plainOpen({ a: 'unchanged', b: 'unchanged' }).active, false, 'plain open of a clean spec renders clear, no veil');
 assert.match(runtime, /function ownAnchorSignature\(/, 'parent anchors compare their own heading and visual-island content');
 assert.doesNotMatch(runtime, /body\.hx-focus-active \[data-hx-focus=unchanged\]\{opacity:/, 'focus never dims pins through ancestor opacity');
 assert.doesNotMatch(runtime, /color-mix\(in srgb,currentColor/, 'focus recession never compounds inherited transparency');
