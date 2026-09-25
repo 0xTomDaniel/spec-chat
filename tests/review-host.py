@@ -2,6 +2,7 @@ import email.utils
 import importlib.util
 import json
 import os
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -328,13 +329,14 @@ finish_event = ""
         self.assertEqual(request(url + "/ann45/docs/specs/review.spec.html"), (200, self.spec.read_bytes()))
         self.assertEqual(request(url + "/ann45/sc/docs/specs/second.spec.html"), (200, self.second_spec.read_bytes()))
 
-    def legacy_rows(self, state, root, specs):
+    def legacy_rows(self, state, root, specs, project=None):
         state.mkdir(parents=True, exist_ok=True)
+        extra = "" if project is None else f'project = "{project}"\n'
         (state / "registry.toml").write_text("".join(
             f"""[[resource]]
 id = "spec:ann45::docs/specs/{spec}.spec.html"
 slug = "ann45"
-root = "{root}"
+{extra}root = "{root}"
 narrow_root = "{root / 'docs'}"
 spec = "docs/specs/{spec}.spec.html"
 base = "{self.base}"
@@ -367,6 +369,46 @@ cursor_name = ".cursor-test"
                                      "spec:ann45::docs/specs/second.spec.html"})
         adopted = rows["spec:ann45::docs/specs/review.spec.html"]
         self.assertEqual((adopted["project"], adopted["path"]), ("review", "ann45/docs/specs/review.spec.html"))
+
+    def test_adopted_row_reregistered_from_a_new_root_keeps_id_and_path(self):
+        state = self.work / "state"
+        self.legacy_rows(state, self.repo, ("review",))
+        first = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        rid = "spec:ann45::docs/specs/review.spec.html"
+        for name in ("clone-a", "clone-b"):
+            other = self.work / name
+            subprocess.run(["git", "clone", "-q", str(self.repo), str(other)], check=True)
+            args = self.register_args(state)
+            args[args.index("--resource") + 1] = f"review={other}:docs/specs/review.spec.html@{self.base}"
+            again = self.run_cli(*args, state=state)
+            self.assertEqual(again.returncode, 0, again.stderr)
+            rows = self.registry(state)["resource"]
+            self.assertEqual([row["id"] for row in rows], [rid])
+            self.assertEqual((rows[0]["project"], rows[0]["path"], rows[0]["root"]),
+                             ("review", "ann45/docs/specs/review.spec.html", str(other.resolve())))
+            if name == "clone-a":
+                shutil.rmtree(other)
+
+    def test_empty_string_project_row_is_treated_as_legacy(self):
+        state = self.work / "state"
+        self.legacy_rows(state, self.repo, ("review",), project="")
+        result = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = self.registry(state)["resource"]
+        self.assertEqual([row["id"] for row in rows], ["spec:ann45::docs/specs/review.spec.html"])
+        self.assertEqual((rows[0]["project"], rows[0]["path"]), ("review", "ann45/docs/specs/review.spec.html"))
+
+    def test_empty_string_project_row_at_a_different_root_is_untouched(self):
+        state = self.work / "state"
+        other = self.work / "other"
+        subprocess.run(["git", "clone", "-q", str(self.repo), str(other)], check=True)
+        self.legacy_rows(state, other, ("review",), project="")
+        result = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        ids = {row["id"] for row in self.registry(state)["resource"]}
+        self.assertEqual(ids, {"spec:ann45::docs/specs/review.spec.html",
+                               "spec:ann45:review::docs/specs/review.spec.html"})
 
     def test_register_leaves_a_legacy_row_at_a_different_root_untouched(self):
         state = self.work / "state"

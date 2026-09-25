@@ -331,13 +331,17 @@ def stable_path(resource: Mapping[str, Any]) -> str:
 def assign_path(rows: Sequence[Mapping[str, Any]], resource: dict[str, Any]) -> None:
     """Re-registering a row id keeps its path; a new row is plain unless another project holds the slug.
 
-    A row at the same slug, resolved root, and spec whose project is unset or equal (a legacy row, before or after
-    adoption) is the same row: it keeps its id and path.
+    A row at the same slug and spec is the same row, keeping its id and path, when it already carries this project
+    (an adopted legacy row, at any root) or carries no project and sits at the same resolved root (a legacy row).
     """
-    old = next((row for row in rows if row["id"] == resource["id"]), None) or next(
-        (row for row in rows if row.get("project") in (None, resource["project"]) and row["slug"] == resource["slug"]
-         and Path(row["root"]).resolve() == Path(resource["root"]).resolve()
-         and row["spec"].replace("\\", "/") == resource["spec"]), None)
+    def same(row: Mapping[str, Any]) -> bool:
+        if row["slug"] != resource["slug"] or row["spec"].replace("\\", "/") != resource["spec"]:
+            return False
+        if row.get("project") == resource["project"]:
+            return True
+        return not row.get("project") and Path(row["root"]).resolve() == Path(resource["root"]).resolve()
+
+    old = next((row for row in rows if row["id"] == resource["id"]), None) or next(filter(same, rows), None)
     if old:
         resource["id"] = old["id"]
     slug, project, spec = resource["slug"], resource["project"], resource["spec"]
@@ -345,14 +349,18 @@ def assign_path(rows: Sequence[Mapping[str, Any]], resource: dict[str, Any]) -> 
     resource["path"] = row_path(old) if old else (f"{slug}/{project}/{spec}" if shared else f"{slug}/{spec}")
 
 
+def require_fields(record: Mapping[str, Any]) -> None:
+    required = ("id", "slug", "root", "narrow_root", "spec", "base", "owner", "checker", "cursor_name")
+    missing = [key for key in required if not isinstance(record.get(key), str) or not record[key].strip()]
+    if missing:
+        raise LauncherError("resource missing required field: " + ", ".join(missing))
+
+
 def validate_records(records: Sequence[Mapping[str, Any]]) -> None:
     ids: set[str] = set()
     stable: set[str] = set()
     for record in records:
-        required = ("id", "slug", "root", "narrow_root", "spec", "base", "owner", "checker", "cursor_name")
-        missing = [key for key in required if not isinstance(record.get(key), str) or not record[key].strip()]
-        if missing:
-            raise LauncherError("resource missing required field: " + ", ".join(missing))
+        require_fields(record)
         rid = record["id"]
         if rid in ids:
             raise LauncherError(f"duplicate resource identity: {rid}")
@@ -384,7 +392,7 @@ def validate_records(records: Sequence[Mapping[str, Any]]) -> None:
         stable.add(key)
 
 
-def read_registry_document(path: Path) -> dict[str, Any]:
+def read_registry_document(path: Path, validate: bool = True) -> dict[str, Any]:
     document = read_toml(path, missing={"resource": []})
     if not isinstance(document, dict):
         raise LauncherError("registry must be a TOML table")
@@ -394,7 +402,11 @@ def read_registry_document(path: Path) -> dict[str, Any]:
     if any(not isinstance(item, dict) for item in records):
         raise LauncherError("registry resource entry must be a table")
     result = [dict(item) for item in records]
-    validate_records(result)
+    if validate:
+        validate_records(result)
+    else:
+        for record in result:
+            require_fields(record)
     process = document.get("process")
     if process is not None:
         if not isinstance(process, dict) or not isinstance(process.get("pid"), int) or not isinstance(process.get("port"), int):
@@ -546,8 +558,8 @@ def state_lock(state: Path):
         os.close(descriptor)
 
 
-def registry_state(path: Path) -> tuple[list[dict[str, Any]], dict[str, int] | None]:
-    document = read_registry_document(path)
+def registry_state(path: Path, validate: bool = True) -> tuple[list[dict[str, Any]], dict[str, int] | None]:
+    document = read_registry_document(path, validate)
     return document["resource"], document["process"]
 
 
@@ -588,7 +600,8 @@ def register(args: argparse.Namespace) -> int:
     parsed = parse_resources(args)
     with state_lock(state):
         old_bytes = registry.read_bytes() if registry.exists() else None
-        existing, process = registry_state(registry)
+        # Rows being replaced may point at a deleted root; only the resulting candidate set is validated.
+        existing, process = registry_state(registry, validate=False)
         for index, item in enumerate(parsed):
             assign_path(existing + parsed[:index], item)
         additions = [registry_record(item) for item in parsed]
