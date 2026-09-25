@@ -331,10 +331,11 @@ def stable_path(resource: Mapping[str, Any]) -> str:
 def assign_path(rows: Sequence[Mapping[str, Any]], resource: dict[str, Any]) -> None:
     """Re-registering a row id keeps its path; a new row is plain unless another project holds the slug.
 
-    A legacy row (no project) at the same slug, resolved root, and spec is the same row: it keeps its id and path.
+    A row at the same slug, resolved root, and spec whose project is unset or equal (a legacy row, before or after
+    adoption) is the same row: it keeps its id and path.
     """
     old = next((row for row in rows if row["id"] == resource["id"]), None) or next(
-        (row for row in rows if not row.get("project") and row["slug"] == resource["slug"]
+        (row for row in rows if row.get("project") in (None, resource["project"]) and row["slug"] == resource["slug"]
          and Path(row["root"]).resolve() == Path(resource["root"]).resolve()
          and row["spec"].replace("\\", "/") == resource["spec"]), None)
     if old:

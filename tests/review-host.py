@@ -356,6 +356,18 @@ cursor_name = ".cursor-test"
         self.assertNotIn("project", rows["spec:ann45::docs/specs/second.spec.html"])
         self.assertEqual(request(self.url(result) + "/ann45/docs/specs/review.spec.html"), (200, self.spec.read_bytes()))
 
+    def test_register_after_adoption_is_idempotent(self):
+        state = self.work / "state"
+        self.legacy_rows(state, self.repo, ("review", "second"))
+        for _ in range(2):
+            result = self.run_cli(*self.register_args(state), state=state)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        rows = {row["id"]: row for row in self.registry(state)["resource"]}
+        self.assertEqual(set(rows), {"spec:ann45::docs/specs/review.spec.html",
+                                     "spec:ann45::docs/specs/second.spec.html"})
+        adopted = rows["spec:ann45::docs/specs/review.spec.html"]
+        self.assertEqual((adopted["project"], adopted["path"]), ("review", "ann45/docs/specs/review.spec.html"))
+
     def test_register_leaves_a_legacy_row_at_a_different_root_untouched(self):
         state = self.work / "state"
         other = self.work / "other"
