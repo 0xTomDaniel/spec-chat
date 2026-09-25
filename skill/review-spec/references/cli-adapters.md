@@ -9,8 +9,8 @@ remote review is parked, the same public server, captured public URL, and
 checker remain alive. The public URL is not a secret in any security sense. It
 is not an authentication boundary. Keep it out of Linear, pull requests, and other public durable records. Empty spool, timeout, no draft, a final assistant
 response, and `manual-resume` are non-terminal for hosting. The only hosting
-terminal is the processed empty **Finish review** hand-off: the human selected
-Finish review, the agent consumed that hand-off, and the exact cursor advance
+terminal is the processed empty **spec acceptance** hand-off: the human selected
+Accept spec, the agent consumed that hand-off, and the exact cursor advance
 succeeded. A manual-resume owner must preserve the live URL and resume against
 it when the next human message arrives.
 
