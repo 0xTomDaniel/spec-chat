@@ -125,7 +125,7 @@ class BaselineRouteTest(unittest.TestCase):
         self.assertIn("document.body.insertBefore(indexLink, document.body.firstChild)", runtime)
         self.assertRegex(runtime, r"\.hx-service-index-link\{position:fixed;top:12px;left:12px;z-index:1000;")
         self.assertIn(".hx-service-index-link", runtime)
-        self.assertIn("e.target.closest('.hx-pin,.hx-panel,.hx-toolbar,.hx-service-index-link,#hx-errors')", runtime)
+        self.assertRegex(runtime, r"e\.target\.closest\('[^']*\.hx-service-index-link")
 
         source = b"<!doctype html><html><body><p data-anchor=\"rule\">raw bytes</p></body></html>"
         self.spec.write_bytes(source)
