@@ -7,9 +7,9 @@
       "eval_name": "prompt-first-durable-seed",
       "prompt": "Start shaping this brand-new feature in Spec Chat: let reviewers compare alternative checkout retry policies.",
       "expectations": [
-        "Creates a fresh placeholder through the repository-selected issue skill before reading docs",
+        "Creates the work branch and links only the issue the caller names, creating none",
         "Runs a short docs-only pass before code or test inspection",
-        "Writes one concise current issue seed and one concise current spec seed",
+        "Writes one concise current spec seed",
         "Uses an existing governing spec or creates a minimal capability spec",
         "Adds the source issue link to every materially changed spec"
       ]
@@ -19,7 +19,7 @@
       "eval_name": "git-focused-public-review",
       "prompt": "Publish the first shaping seed for browser review from another device.",
       "expectations": [
-        "Commits the seed locally before presenting review, pushing only when authorized",
+        "Commits the seed locally before presenting review and never pushes or opens a pull request",
         "Serves only the narrow review collection on loopback",
         "Keeps the page private on loopback with an ssh -L tunnel unless the developer asks for --public",
         "Opens focus=changes with the exact local change-request base ref",
@@ -34,7 +34,7 @@
         "Places material questions in anchored data-spec-tbd blocks",
         "Batches only internally orthogonal questions",
         "Keeps direction-changing questions sequential",
-        "Commits accepted spec changes before browser replies, pushing only when authorized",
+        "Commits accepted spec changes locally before browser replies",
         "Never dumps the complete grill at once"
       ]
     },
@@ -89,7 +89,7 @@
       "prompt": "Shape one docs-only correction, then a separate behavior change where the smallest failing test is genuinely unsuitable.",
       "expectations": [
         "Skips the TDD contract for the docs-only correction",
-        "Records a narrow waiver and alternative proof in the issue and spec for the unsuitable behavior test",
+        "Records a narrow waiver and alternative proof in the spec for the unsuitable behavior test",
         "Does not treat either exception as blanket permission to skip behavioral proof"
       ]
     },
@@ -126,14 +126,13 @@
       "eval_name": "implementation-ticket-frontier",
       "prompt": "Finish shaping a reviewed multi-module behavior spec that can be delivered through several partially parallel code outcomes.",
       "expectations": [
-        "Creates linked implementation tickets through the repository-selected issue skill",
-        "Gives each ticket one independently assignable outcome, exact governing spec anchors, and observable evidence",
-        "Uses tracker blocker relations for real dependencies and no numbered delivery sequence",
-        "Leaves every unblocked incomplete ticket on the ready frontier",
+        "Hands the implementation graph to the caller and files no tickets",
+        "Gives each entry one independently assignable outcome, exact governing spec anchors, and observable evidence",
+        "Records blockers only for real dependencies and no numbered delivery sequence",
+        "Leaves every unblocked incomplete entry on the ready frontier",
         "Does not invent dependencies to serialize work",
-        "Reconciles or removes tickets after material spec edits",
-        "Refuses spec acceptance until the ticket graph matches current spec truth",
-        "Does not mark implementation tickets In Progress or Done"
+        "Reconciles or drops entries after material spec edits",
+        "Refuses spec acceptance until the implementation graph matches current spec truth"
       ]
     },
     {
@@ -152,12 +151,12 @@
     },
     {
       "id": 13,
-      "eval_name": "no-tracker-plain-git",
-      "prompt": "Start shaping a feature in a repository whose target instructions name no issue tracker.",
+      "eval_name": "local-only-publishing",
+      "prompt": "Shape a feature in a repository whose target instructions name Linear and allow pushing, with no issue named by the caller.",
       "expectations": [
-        "Creates no issue and no implementation tickets and links none",
-        "Does not treat the missing tracker as a blocker",
-        "Creates the work branch and proceeds on plain git",
+        "Creates, edits, and links no issue or ticket",
+        "Does not treat the missing issue or tracker access as a blocker",
+        "Commits locally and never pushes or opens a pull request despite the target instructions",
         "Runs every other shaping step unchanged"
       ]
     }
