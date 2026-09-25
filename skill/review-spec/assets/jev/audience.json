@@ -1,6 +1,6 @@
 {
   "id": "audience",
-  "version": 2,
+  "version": 3,
   "instructions": "Classify one leaf clause for a reading view. Choose for you when the clause is written for someone who uses the result. Choose internals when it explains implementation, authoring, review mechanics, or operation rather than the result itself.",
   "labels": [
     {
@@ -9,14 +9,14 @@
       "examples": [
         {
           "input": {
-            "clause": "As a reviewer, a reading view dims the internals in place, so the clauses written for me stand out and nothing moves or hides.",
+            "clause": "As a reviewer away from the authoring machine, I want to comment and finish from an ordinary mobile browser using one secret link so review requires no SSH or separate account.",
             "reader": "someone who uses the result, not builds it"
           },
           "label": "for you"
         },
         {
           "input": {
-            "clause": "The revised section enables retry after a timeout and records the retry.",
+            "clause": "When the reviewer picks a listed commit, highlighting and bar reflect that base without a page reload, and the URL carries focus=changes&base=<full id>.",
             "reader": "someone who uses the result, not builds it"
           },
           "label": "for you"
@@ -29,14 +29,14 @@
       "examples": [
         {
           "input": {
-            "clause": "The server stores one judgment record for each question.",
+            "clause": "headDate, baseDate Commit dates of head and base as YYYY-MM-DD.",
             "reader": "someone who uses the result, not builds it"
           },
           "label": "internals"
         },
         {
           "input": {
-            "clause": "The browser sends only the spec path and compared base to the review server.",
+            "clause": "The implementation adds no generic supervisor or agent-launching server.",
             "reader": "someone who uses the result, not builds it"
           },
           "label": "internals"

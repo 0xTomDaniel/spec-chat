@@ -284,8 +284,36 @@ class JevSeamTest(unittest.TestCase):
             service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
             result = service.seam.ask(questions[0])
         self.assertEqual(result["outcome"], "shown")
-        self.assertEqual(result["answer"]["label"], questions[0]["state"]["candidates"][0])
+        self.assertEqual(result["answer"]["label"], "new-section")
         self.assertEqual(len(provider.calls), 1)
+
+    def test_orphan_record_holds_anchors_not_candidate_text(self):
+        source = ('<p data-anchor="new-section">Server retries once on timeout.</p>'
+                  '<p data-anchor="other-section">Timeout handling retries nothing once.</p>')
+        events = [{"name": "1-comment.json", "actor": "human", "body": {
+            "id": "u1", "event": "comment", "actor": "human", "anchorId": "old-section",
+            "quote": "retry once on timeout",
+        }}]
+        question = jev.build_orphan_questions(events, source)[0]
+        labels = question["state"]["candidates"]
+        self.assertEqual(len(labels), 2)
+        target = next(label for label, anchor in question["candidate_anchors"].items() if anchor == "new-section")
+        other = next(label for label in labels if label != target)
+        provider = FakeProvider({"answers": {"orphan": {"choice": target, "confidence": 0.8,
+                                                        "probabilities": {target: 0.8, other: 0.15, "none": 0.05}}}})
+        with tempfile.TemporaryDirectory() as directory:
+            service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
+            service.questions = lambda *args: [question]
+            result = service.response({}, "", "", "", [], "")
+            stored = (Path(directory) / "records.jsonl").read_text()
+        record = json.loads(stored.strip().splitlines()[-1])
+        self.assertEqual(record["answer"]["label"], "new-section")
+        self.assertEqual(record["answer"]["probabilities"], {"new-section": 0.8, "other-section": 0.15, "none": 0.05})
+        for text in labels + ["Server retries once on timeout", "Timeout handling retries nothing once", "retry once on timeout"]:
+            self.assertNotIn(text, stored)
+        self.assertEqual(result["items"][0]["state"], "label")
+        self.assertEqual(result["items"][0]["target"], "new-section")
+        self.assertEqual(result["items"][0]["label"], target)
 
     def test_provider_receives_structured_examples(self):
         sets = jev.load_question_sets(ROOT / "skill" / "review-spec" / "assets" / "jev")

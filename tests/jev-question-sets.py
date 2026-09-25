@@ -1,3 +1,4 @@
+import importlib.util
 import json
 import unittest
 from pathlib import Path
@@ -55,6 +56,34 @@ class JevQuestionSetTest(unittest.TestCase):
                             self.assertEqual(example["label"], label["name"])
                 self.assertNotIn("unsure", names)
                 self.assertEqual(len(names), len(set(names)))
+
+    def test_examples_reuse_no_text_of_the_spec_under_qa(self):
+        # The QA fixture reproduces this spec; examples drawn from it would score the fixture on itself.
+        spec = importlib.util.spec_from_file_location("jev_sets_test", ROOT / "tools" / "jev.py")
+        jev = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(jev)
+        source = (ROOT / "docs/specs/jev-suggestions.spec.html").read_text(encoding="utf-8")
+        corpus = " ".join(" ".join(value["text"].split()) for value in jev.extract_anchors(source).values())
+        constants = {"someone who uses the result, not builds it"}
+
+        def strings(value):
+            if isinstance(value, str):
+                yield " ".join(value.split()).removesuffix("...")
+            elif isinstance(value, dict):
+                for item in value.values():
+                    yield from strings(item)
+            elif isinstance(value, list):
+                for item in value:
+                    yield from strings(item)
+
+        for path in sorted(SETS.glob("*.json")):
+            data = json.loads(path.read_text(encoding="utf-8"))
+            for label in data["labels"]:
+                for example in label["examples"]:
+                    for text in strings(example["input"]):
+                        if len(text) >= 12 and text not in constants:
+                            with self.subTest(set=path.stem, text=text[:60]):
+                                self.assertNotIn(text, corpus)
 
 
 if __name__ == "__main__":

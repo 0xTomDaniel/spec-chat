@@ -1,6 +1,6 @@
 {
   "id": "resolved",
-  "version": 2,
+  "version": 3,
   "instructions": "Compare the human review messages with the before and after text for the changed section. Choose resolved in spirit only when the revised text implements what the human asked for. Choose unrelated when the section changed without addressing the request. Agent replies do not establish the request.",
   "labels": [
     {
@@ -9,17 +9,17 @@
       "examples": [
         {
           "input": {
-            "comment": "Please enable retry after a timeout.",
-            "before": "The revised section does not yet enable retry.",
-            "after": "The revised section enables retry after a timeout and records the retry."
+            "comment": "this is not helpful or of interest. We only want the split-style setup",
+            "before": "Single page Sidebar: Spec Chat row, Evidence row. Page: BB title bar with the project name and Open in Browser, then the embedded service filling the rest of the content area. Right panel: closed by default; Terminal starts there on request.",
+            "after": "Left pane Spec Chat page: embedded live index, or any spec reached from it."
           },
           "label": "resolved in spirit"
         },
         {
           "input": {
-            "comment": "Please keep this passage attached after the move.",
-            "before": "The server retries once on timeout and keeps the original comment quote.",
-            "after": "Move comment here resolves the orphaned thread and starts a new draft comment at the suggested section that quotes the original, using only existing events; the agent answers it like any comment."
+            "comment": "tbd open?",
+            "before": "A spec needs the human when its registry row's spec has changed since the row's base and its review is not Finished. TBD: the registry alone does not say this. Changed since base needs a read-only git diff --quiet <base> -- <spec> in the row's root; not Finished needs a read of the spec's .review/ spool for the processed empty Finish hand-off. Pick: the provider reads both, or spec-chat's registry records them.",
+            "after": "A spec needs the human when its file differs between the registry row's base and the row root's working tree: a read-only git diff --quiet <base> -- <spec> in the row's root. No spool is read. Processing a Finish hand-off advances that row's base to the Finished commit (spec-chat, skill/review-spec/SKILL.md, Remote hosting lifecycle), so a Finished spec stops differing. A row whose git read fails is not highlighted."
           },
           "label": "resolved in spirit"
         }
@@ -31,17 +31,17 @@
       "examples": [
         {
           "input": {
-            "comment": "Please preserve the cache rule.",
-            "before": "The revised section had the old cache rule.",
-            "after": "The revised section changes only the display color of the badge."
+            "comment": "this is not helpful or of interest. We only want the split-style setup",
+            "before": "Left rail Configured project name Project identity Spec Terminal Review The selected pane is chosen through BB host controls.",
+            "after": "Left rail Configured project name Project identity Spec Chat Terminal Evidence The selected pane is chosen through BB host controls and remains independently addressable."
           },
           "label": "unrelated"
         },
         {
           "input": {
-            "comment": "Please explain retry behavior.",
-            "before": "The flow figure shows the request path.",
-            "after": "The flow figure boxes are wider and a label moved."
+            "comment": "tbd open?",
+            "before": "A spec needs the human when its file differs between the registry row's base and the row root's working tree: a read-only git diff --quiet <base> -- <spec> in the row's root. No spool is read. Processing a Finish hand-off advances that row's base to the Finished commit (spec-chat, skill/review-spec/SKILL.md, Remote hosting lifecycle), so a Finished spec stops differing. A row whose git read fails is not highlighted.",
+            "after": "A spec needs the human when its file differs between the registry row's base and the row root's working tree: a read-only git diff --quiet <base> -- <spec> in the row's root. No spool is read. Processing a Finish hand-off first commits the exact reviewed spec bytes when the working tree differs from HEAD, and that commit, else HEAD, becomes the row's base (spec-chat, skill/review-spec/SKILL.md, Remote hosting lifecycle), so a Finished spec stops differing. A row whose git read fails is not highlighted."
           },
           "label": "unrelated"
         }

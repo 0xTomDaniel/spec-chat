@@ -1,6 +1,6 @@
 {
   "id": "orphan",
-  "version": 4,
+  "version": 5,
   "instructions": "Choose the one current anchor whose text best matches the orphaned human comment quote and its context. The candidates are deterministic current sections supplied with the question under readable labels. Choose none when no candidate is a credible move for the passage. Do not infer a new anchor or treat a deleted passage as moved.",
   "labels": [
     {
@@ -9,22 +9,30 @@
       "examples": [
         {
           "input": {
-            "quote": "The server retries once on timeout and keeps the original comment quote.",
+            "quote": "Workbench visual reference",
             "candidates": [
-              "Fixture review cases The server retries once on timeout and keeps the original...",
-              "The server retries once on timeout and keeps the original comment quote"
+              "Visual direction: the documented workbench UI reference uses a narrow icon...",
+              "Embedded service pages The annotateanything plugin adds two BB sidebar pages...",
+              "Completed foundation decision and receipt ANN-14 and ANN-15 completed the..."
             ]
           },
-          "label": "The server retries once on timeout and keeps the original comment quote"
+          "label": "Visual direction: the documented workbench UI reference uses a narrow icon..."
         },
         {
           "input": {
-            "quote": "Please keep this passage attached after the move.",
+            "quote": "Operator selects Terminal BB selects its native Terminal surface. The plugin performs no terminal action and changes no terminal input or session state. BB owns terminal loading and recovery.",
             "candidates": [
-              "Moving an orphaned comment Move comment here resolves the orphaned thread and..."
+              "Project and embedding contract The plugin consumes one local configuration...",
+              "Embedded service pages The annotateanything plugin adds two BB sidebar pages...",
+              "Modular boundaries Runtime dependency direction 01 / annotateanythingValidated...",
+              "Acceptance criteria Given one valid local project record, both pages show the...",
+              "Given one valid local project record, both pages show the same project name...",
+              "annotateanything plugin Responsibility: validate project settings, decide...",
+              "Independent embedded pages Spec Chat and Evidence remain separate configured...",
+              "Situation Observable behavior Recovery or ownership First visit to a configured..."
             ]
           },
-          "label": "Moving an orphaned comment Move comment here resolves the orphaned thread and..."
+          "label": "Situation Observable behavior Recovery or ownership First visit to a configured..."
         }
       ]
     },
@@ -34,18 +42,32 @@
       "examples": [
         {
           "input": {
-            "quote": "Obsidian quasar lattice vanished.",
+            "quote": "A supervisor is reconsidered only if the active-turn attachment still strands real hand-offs after this contract is implemented and tested.",
             "candidates": [
-              "Fixture review cases The server retries once on timeout and keeps the original..."
+              "Hand-off batch transaction The hand-off event defines the exact batch cutoff...",
+              "Implementation and proof contract Before changing shaping instructions, a fresh...",
+              "User stories As a product operator, I want a prompt to become clean durable...",
+              "Active review attachment In turn-yielded state, the authoring agent keeps its...",
+              "As an authoring agent, I want hand-offs to wake the active shaping turn and...",
+              "Review wake ownership Every open review is in exactly one terminal control...",
+              "Finish review When no draft, pending, acknowledged, unresolved, or...",
+              "Git-derived focus is the diff viewer The highlighted current spec is the..."
             ]
           },
           "label": "none"
         },
         {
           "input": {
-            "quote": "A deleted passage has no surviving subject.",
+            "quote": "Project section Creates and switches full project boxes. One configured project record; creation and switching are deferred.",
             "candidates": [
-              "Reading view A Reading view control on every HTTP-served spec is off by default..."
+              "Independent embedded pages Spec Chat and Evidence remain separate configured...",
+              "Situation Observable behavior Recovery or ownership First visit to a configured...",
+              "Page behavior on the pin Situation Observable behavior Recovery or ownership...",
+              "Situation Observable behavior Recovery or ownership First visit to a configured... (2)",
+              "Acceptance criteria Given one valid local project record, both pages show the...",
+              "Given one valid local project record, both pages show the same project name...",
+              "Project and embedding contract The plugin consumes one local configuration...",
+              "Embedded service pages The annotateanything plugin adds two BB sidebar pages..."
             ]
           },
           "label": "none"

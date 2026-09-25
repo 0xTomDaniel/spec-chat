@@ -1,6 +1,6 @@
 {
   "id": "type",
-  "version": 2,
+  "version": 3,
   "instructions": "Compare the base and current text for one changed root section. Choose the single label whose criterion best describes the change. Use scope when the change adds, removes, or moves a capability, surface, or non-goal. Use behavioral when the result or a rule changes. Use clarification when behavior stays the same and wording becomes more precise. Use cosmetic when meaning stays the same and only wording, order, or style changes.",
   "labels": [
     {
@@ -29,8 +29,8 @@
       "examples": [
         {
           "input": {
-            "before": "Fixture review cases The server retries once on timeout and keeps the original comment quote. This passage is deleted in the current head. The revised section does not yet enable retry. The revised section had the old cache rule. The draft only records a local note. As a reviewer, I need an entirely unrelated fixture outcome. The unrelated fixture outcome is observable.",
-            "after": "Fixture review cases The server retries once on timeout and keeps the original comment quote. The revised section enables retry after a timeout and records the retry. The revised section changes only the display color of the badge. The draft automatically writes tracker updates now. As a reviewer, I need an entirely unrelated fixture outcome. The unrelated fixture outcome is observable."
+            "before": "When no matching reply appears within the existing timeout, it reports that the hand-off is still queued and the review session may be disconnected.",
+            "after": "When no matching reply appears within the existing timeout, it reports that automatic wake did not occur and instructs the human to send a new chat message to resume."
           },
           "label": "behavioral"
         },
@@ -69,8 +69,8 @@
       "examples": [
         {
           "input": {
-            "before": "Fixture typo case The review server returns one suggestion roud.",
-            "after": "Fixture typo case The review server returns one suggestion round."
+            "before": "The page re-reads the lanes endpoint every 30 seconds and on an explicit Refresh control.",
+            "after": "The page re-reads /lanes every 30 seconds and on an explicit Refresh control."
           },
           "label": "cosmetic"
         },

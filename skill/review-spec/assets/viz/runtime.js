@@ -1161,7 +1161,7 @@ function renderJev() {
   });
   document.querySelectorAll('.hx-jev-note').forEach(el => el.remove());
   if (EMBED_REVIEW_DIR) return;
-  renderJevCoverage(state.jev.status === 'on' ? state.jev : null);
+  renderJevCoverage(state.jev.status === 'on' ? { jev: 'on', items: state.jev.items } : null);
 
   if (state.jev.status === 'off' || state.jev.status === 'unavailable') {
     const note = document.createElement('p');
@@ -1221,6 +1221,7 @@ article.spec header{border-color:#33363c}
 article.spec nav{color:#74767e}
 article.spec a{color:#34a899}
 [data-render-target]{border-color:#33363c;background:#1d2024}
+body [data-hx-jev-type=cosmetic]{color:#b9c0ca!important}
 }
 @media(max-width:640px){
 :where(body){padding-bottom:calc(112px + env(safe-area-inset-bottom))}
@@ -1372,24 +1373,24 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-jev-badge[data-state=label]{color:#204a43;background:#d9eee9}
 .hx-jev-badge[data-state=unsure]{color:#78520a;background:#fff0c2}
 .hx-jev-badge[data-state=unavailable]{color:#7b2525;background:#f8dddd}
-.hx-jev-corpus{display:inline-block;margin-left:8px;color:#35405f;font:650 10px/1.3 system-ui,sans-serif;text-decoration:none;white-space:nowrap}
+.hx-jev-corpus{display:inline-block;margin-left:8px;padding:1px 5px;border-radius:4px;background:#f4f6fb;color:#35405f;font:650 10px/1.3 system-ui,sans-serif;text-decoration:none;white-space:nowrap}
 .hx-jev-corpus[href]{text-decoration:underline;text-underline-offset:2px}
-.hx-jev-corpus[data-state=unsure]{color:#8b5c0b}
+.hx-jev-corpus[data-state=unsure]{background:#fff8e9;color:#8b5c0b}
 .hx-jev-note{box-sizing:border-box;max-width:720px;margin:12px auto 0;padding:6px 10px;border:1px solid #e0c77a;border-radius:7px;background:#fff7d6;color:#6d4b05;font:600 12px/1.35 system-ui,sans-serif}
 [data-hx-jev-type=scope]{box-shadow:inset 4px 0 #b42318;background:rgba(180,35,24,.08)}
 [data-hx-jev-type=behavioral]{box-shadow:inset 3px 0 #b45309;background:rgba(180,83,9,.06)}
 [data-hx-jev-type=clarification]{box-shadow:inset 2px 0 #28756a;background:rgba(40,117,106,.045)}
-[data-hx-jev-type=cosmetic]{opacity:.78;filter:saturate(.72)}
+[data-hx-jev-type=cosmetic]{color:#586069!important}
+[data-hx-jev-type=cosmetic] :is(h1,h2,h3,h4,h5,h6,p,li,td,th,blockquote,code,strong,em,a:not(.hx-jev-corpus)){color:inherit!important}
 .hx-jev-target-flash{animation:hx-jev-flash 1.2s ease-out}
 @keyframes hx-jev-flash{0%{box-shadow:0 0 0 4px rgba(41,71,199,.42)}100%{box-shadow:0 0 0 14px rgba(41,71,199,0)}}
-.hx-jev-thread-label{flex:0 0 auto;color:#3d8c40;background:#e8f2e8;border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700;white-space:nowrap}
+.hx-jev-thread-label{flex:0 0 auto;color:#2f6b32;background:#e8f2e8;border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700;white-space:nowrap}
 .hx-jev-thread-label[data-state=unsure]{color:#78520a;background:#fff0c2}
 .hx-jev-thread-label[data-state=unavailable]{color:#7b2525;background:#f8dddd}
 .hx-orphan-hint{display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin:7px 0;padding:7px 8px;border-left:3px solid #b47308;background:#fff8e9;color:#76500a;font-size:11.5px;line-height:1.35}
 .hx-orphan-hint>span{flex:1 1 100%}
 .hx-orphan-hint .hx-btn{margin:0;font-size:10.5px;padding:4px 8px}
-.hx-pin-jev{position:absolute;left:calc(100% + 4px);top:50%;transform:translateY(-50%);width:max-content;max-width:120px;color:#3d8c40;background:#e8f2e8;border:1px solid #69a76b;border-radius:4px;padding:2px 4px;font:700 9px/1.1 system-ui,sans-serif;white-space:nowrap;pointer-events:none}
-body.hx-focus-active [data-hx-jev-type=cosmetic]{opacity:.7;filter:saturate(.6)}
+.hx-pin-jev{position:absolute;left:calc(100% + 4px);top:50%;transform:translateY(-50%);width:max-content;max-width:120px;color:#2f6b32;background:#e8f2e8;border:1px solid #69a76b;border-radius:4px;padding:2px 4px;font:700 9px/1.1 system-ui,sans-serif;white-space:nowrap;pointer-events:none}
 .hx-jev-coverage{display:inline-block;margin-left:8px;padding:2px 6px;border:1px solid #b7c1d8;border-radius:4px;background:#f4f6fb;color:#35405f;font:650 10px/1.3 system-ui,sans-serif;vertical-align:middle}
 .hx-jev-coverage[data-state=unsure]{border-color:#c69b4d;background:#fff8e9;color:#8b5c0b}
 .hx-jev-coverage[data-state=unavailable]{border-color:#c98282;background:#fff1f1;color:#8b1a1a}
@@ -1407,7 +1408,7 @@ body.hx-focus-active [data-hx-jev-type=cosmetic]{opacity:.7;filter:saturate(.6)}
 .hx-toolbar button{min-height:44px;flex:1 1 auto;padding:8px 12px;touch-action:manipulation}
 .hx-mobile-handoff{display:block}
 .hx-toolbar .hx-status{flex:1 0 100%;min-width:0;padding:2px 8px 4px;overflow:hidden;text-align:center;text-overflow:ellipsis;white-space:nowrap}
-.hx-panel{width:100vw;height:100dvh;max-height:100dvh;border-left:0}
+.hx-panel{width:100vw;height:100dvh;max-height:100dvh;border-left:0;box-sizing:border-box;padding-bottom:calc(var(--hx-dock-space,0px) + 10px + env(safe-area-inset-bottom))}
 body.hx-panel-open{padding-right:0;overflow:hidden}
 .hx-panel-head{min-height:56px;padding:18px 16px 14px 60px}
 .hx-panel-toggle{top:6px;left:6px;width:44px;height:44px;touch-action:manipulation}
@@ -1522,6 +1523,8 @@ function mountUI() {
   bar.className = 'hx-toolbar';
   bar.innerHTML = '<button id="hx-mode" aria-pressed="false">✛ Comment (C)</button><button class="hx-mobile-handoff" id="hx-mobile-handoff" type="button" disabled>Hand off</button><button id="hx-connect" hidden>Connect review folder</button><button id="hx-repick" hidden>Choose different folder</button><span class="hx-status" id="hx-status">starting…</span>';
   document.body.appendChild(bar);
+  // The narrow sidebar ends above the fixed dock, so its last content stays reachable.
+  new ResizeObserver(() => document.documentElement.style.setProperty('--hx-dock-space', bar.offsetHeight + 'px')).observe(bar);
 
   const dock = document.createElement('nav');
   dock.className = 'hx-thread-dock';
@@ -1739,27 +1742,8 @@ function renderPanel() {
       (threadJevState ? '<span class="hx-jev-thread-label" data-state="' + threadJevState.state + '">' + esc(jevDisplayLabel(threadJevState)) + '</span>' : '') +
       (th.status === 'resolved' ? '<button class="hx-disclosure" data-act="disclosure" aria-expanded="' + String(!collapsed) + '" aria-label="' + (collapsed ? 'Show' : 'Hide') + ' resolved thread">' + (collapsed ? '▸' : '▾') + '</button>' : '') + '</div>' +
       (collapsed ? '<div class="hx-thread-preview">' + esc(b.text || 'Resolved comment') + '</div>' : '');
-    if (orphanHint && orphanHint.state === 'label' && orphanHint.target) {
-      const hint = document.createElement('div');
-      hint.className = 'hx-orphan-hint';
-      const copy = document.createElement('span');
-      copy.textContent = 'Possibly moved to: #' + orphanHint.target;
-      const go = document.createElement('button');
-      go.type = 'button';
-      go.className = 'hx-btn';
-      go.dataset.act = 'orphan-go';
-      go.textContent = 'Go to';
-      go.addEventListener('click', e => { e.stopPropagation(); goToJevTarget(orphanHint.target); });
-      const move = document.createElement('button');
-      move.type = 'button';
-      move.className = 'hx-btn pri';
-      move.dataset.act = 'orphan-move';
-      move.textContent = state.movingOrphans.has(th.id) ? 'Moving…' : 'Move comment here';
-      move.disabled = state.movingOrphans.has(th.id);
-      move.addEventListener('click', e => { e.stopPropagation(); moveOrphan(th, orphanHint.target); });
-      hint.append(copy, go, move);
-      d.appendChild(hint);
-    }
+    const hint = orphanHintElement(th, orphanHint);
+    if (hint) d.appendChild(hint);
     if (!collapsed) {
       for (const message of th.messages) {
         const m = message.body;
@@ -1847,6 +1831,32 @@ function scrollToJevAnchor(anchorId) {
   holder.scrollIntoView({ block: 'center', behavior: 'smooth' });
   holder.classList.remove('hx-jev-target-flash');
   requestAnimationFrame(() => holder.classList.add('hx-jev-target-flash'));
+}
+
+function orphanHintElement(th, orphanHint) {
+  if (!orphanHint || orphanHint.state !== 'label' || !orphanHint.target) return null;
+  const hint = document.createElement('div');
+  hint.className = 'hx-orphan-hint';
+  const copy = document.createElement('span');
+  copy.textContent = 'Possibly moved to: #' + orphanHint.target;
+  const go = document.createElement('button');
+  go.type = 'button';
+  go.className = 'hx-btn';
+  go.dataset.act = 'orphan-go';
+  go.textContent = 'Go to';
+  go.addEventListener('click', e => { e.stopPropagation(); goToJevTarget(orphanHint.target); });
+  hint.append(copy, go);
+  // A resolved thread was already moved or closed: offer no second move.
+  if (th.status === 'resolved') return hint;
+  const move = document.createElement('button');
+  move.type = 'button';
+  move.className = 'hx-btn pri';
+  move.dataset.act = 'orphan-move';
+  move.textContent = state.movingOrphans.has(th.id) ? 'Moving…' : 'Move comment here';
+  move.disabled = state.movingOrphans.has(th.id);
+  move.addEventListener('click', e => { e.stopPropagation(); moveOrphan(th, orphanHint.target); });
+  hint.append(move);
+  return hint;
 }
 
 async function moveOrphan(th, target) {
@@ -2356,7 +2366,8 @@ function mountReadingView() {
   const style = document.createElement('style');
   style.textContent = `.hx-reading-active [data-hx-audience="internals"]{color:#586069!important}
 .hx-reading-active [data-hx-audience="internals"] :is(a,code,strong,em,span){color:inherit!important}
-@media(prefers-color-scheme:dark){.hx-reading-active [data-hx-audience="internals"]{color:#b9c0ca!important}}`;
+` + (document.querySelector('link[rel~="stylesheet"][href*=".style/spec.css"]') ? '' :
+    `@media(prefers-color-scheme:dark){.hx-reading-active [data-hx-audience="internals"]{color:#b9c0ca!important}}`);
   document.head.appendChild(style);
   const button = document.createElement('button');
   button.id = 'hx-reading';

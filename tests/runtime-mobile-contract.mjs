@@ -8,6 +8,8 @@ const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime
 
 assert.match(runtime, /@media\(max-width:640px\)/, 'runtime defines a narrow review layout');
 assert.match(runtime, /\.hx-panel\{width:100vw;height:100dvh;max-height:100dvh/, 'mobile review uses a dynamic full-viewport sheet');
+assert.match(runtime, /@media\(max-width:640px\)\{[^]*\.hx-panel\{[^}]*box-sizing:border-box;padding-bottom:calc\(var\(--hx-dock-space,0px\) \+ 10px \+ env\(safe-area-inset-bottom\)\)/, 'mobile sidebar content ends above the fixed dock');
+assert.match(runtime, /new ResizeObserver\(\(\) => document\.documentElement\.style\.setProperty\('--hx-dock-space', bar\.offsetHeight \+ 'px'\)\)\.observe\(bar\)/, 'dock height tracks the rendered toolbar');
 assert.match(runtime, /\.hx-panel\{[^}]*display:none;/, 'closed panel cannot widen or intercept the mobile page');
 assert.match(runtime, /\.hx-panel\.open\{display:flex;/, 'open panel restores layout and interaction');
 assert.match(runtime, /article\.spec pre\{white-space:pre-wrap;overflow-wrap:anywhere\}/, 'standalone doctrine and code blocks cannot widen mobile specs');

@@ -315,6 +315,17 @@ def _parse_provider_answer(value: Mapping[str, Any], question_name: str) -> tupl
     return label.strip(), confidence, probabilities, model
 
 
+def _anchor_answer(answer: Mapping[str, Any], candidate_anchors: Mapping[str, Any]) -> dict[str, Any]:
+    """Records hold anchors, never source text: map readable candidate labels back to anchor ids."""
+    ids = {str(label): str(anchor) for label, anchor in candidate_anchors.items()}
+    ids["none"] = "none"
+    probabilities: dict[str, float] = {}
+    for label, value in answer.get("probabilities", {}).items():
+        if label in ids:
+            probabilities[ids[label]] = max(probabilities.get(ids[label], 0.0), value)
+    return {"label": ids.get(answer.get("label")), "probabilities": probabilities, "confidence": answer.get("confidence")}
+
+
 class JevSeam:
     def __init__(self, question_sets: Mapping[str, QuestionSet] | None = None, *, provider: Any = None,
                  api_key: str | None = None, record_store: JudgmentStore | None = None,
@@ -380,6 +391,8 @@ class JevSeam:
                     response = self.provider(payload)
                 label, confidence, probabilities, model = _parse_provider_answer(response, kind)
                 answer = {"label": label, "probabilities": probabilities, "confidence": confidence}
+                if isinstance(question.get("candidate_anchors"), Mapping):
+                    answer = _anchor_answer(answer, question["candidate_anchors"])
                 break
             except Exception:
                 continue
@@ -982,7 +995,10 @@ class JevService:
             allowed = set(question.get("display_labels", question.get("criteria", {}))) or set(self.seam.question_set(question["kind"]).criteria())
             if question["kind"] == "resolved":
                 allowed = {"resolved in spirit"}
-            if question["kind"] == "orphan" and outcome == "shown" and label == "none":
+            if question["kind"] == "orphan":
+                anchors = {str(anchor): str(name) for name, anchor in question.get("candidate_anchors", {}).items()}
+                allowed = set(anchors)
+            if question["kind"] == "orphan" and outcome == "shown" and label not in allowed:
                 state = "none"
                 label = None
             else:
@@ -991,7 +1007,7 @@ class JevService:
                 state = "none"
             target_anchor = question.get("target")
             if question["kind"] == "orphan" and state == "label":
-                target_anchor = question.get("candidate_anchors", {}).get(label)
+                target_anchor, label = label, anchors[label]
             items.append({"kind": question["kind"], "id": question["id"], "state": state,
                           "label": label if state == "label" else None,
                           "target": target_anchor, "record": record.get("record_id")})
