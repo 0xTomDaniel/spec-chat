@@ -43,14 +43,16 @@ class JevQuestionSetTest(unittest.TestCase):
                     examples = label["examples"]
                     self.assertGreaterEqual(len(examples), 2)
                     self.assertLessEqual(len(examples), 4)
-                    self.assertTrue(all(
-                        isinstance(example, dict)
-                        and isinstance(example.get("input"), dict)
-                        and isinstance(example.get("label"), str)
-                        and example["label"] == label["name"]
-                        and set(example["input"]) == STATE_KEYS[path.stem]
-                        for example in examples
-                    ))
+                    for example in examples:
+                        self.assertIsInstance(example, dict)
+                        self.assertIsInstance(example.get("input"), dict)
+                        self.assertIsInstance(example.get("label"), str)
+                        self.assertEqual(set(example["input"]), STATE_KEYS[path.stem])
+                        if path.stem == "orphan":
+                            self.assertIsInstance(example["input"]["candidates"], list)
+                            self.assertIn(example["label"], set(example["input"]["candidates"]) | {"none"})
+                        else:
+                            self.assertEqual(example["label"], label["name"])
                 self.assertNotIn("unsure", names)
                 self.assertEqual(len(names), len(set(names)))
 
