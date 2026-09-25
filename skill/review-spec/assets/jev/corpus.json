@@ -1,48 +1,104 @@
 {
   "id": "corpus",
-  "version": 1,
-  "instructions": "Compare the changed clause with the linked clause. Choose contradicts when the changed behavior conflicts with the target clause or its non-goal. Choose overlaps when both clauses describe the same behavior or surface. Choose oversteps when the changed clause adds a behavior beyond the target clause's stated boundary. Do not flag a merely related clause.",
+  "version": 2,
+  "instructions": "Compare the changed clause with the linked clause. Choose contradicts when the changed behavior conflicts with the target clause or its non-goal. Choose overlaps when both clauses describe the same behavior or surface. Choose oversteps when the changed clause adds a behavior beyond the target clause's stated boundary. Choose unrelated when the clauses share no behavior or boundary that needs a review flag. Do not flag a merely related clause.",
   "labels": [
     {
       "name": "contradicts",
       "description": "The changed clause conflicts with the target clause or with a non-goal in the same spec.",
       "examples": [
-        "A draft adds automatic tracker writes while the same spec lists tracker changes as a non-goal.",
-        "A changed clause allows agent spool writes while the review boundary says only human clicks write events."
+        {
+          "input": {
+            "before": "The draft only records a local note.",
+            "after": "The draft automatically writes tracker updates now.",
+            "target": "Tracker updates are not written.",
+            "target_boundary": false
+          },
+          "label": "contradicts"
+        },
+        {
+          "input": {
+            "before": "Only human clicks write spool events.",
+            "after": "The agent automatically writes a move event.",
+            "target": "Only a human click on Move comment here writes, using existing events.",
+            "target_boundary": false
+          },
+          "label": "contradicts"
+        }
       ]
     },
     {
       "name": "overlaps",
       "description": "The changed clause and target clause describe the same behavior, surface, or responsibility.",
       "examples": [
-        "A new suggestion clause restates a served spec's existing review-server behavior.",
-        "Two clauses both define the same cache key and record reuse rule."
+        {
+          "input": {
+            "before": "The server stores one judgment record for each question.",
+            "after": "The records are the cache.",
+            "target": "The records are the cache: each is keyed by a hash of its question inputs and set version.",
+            "target_boundary": false
+          },
+          "label": "overlaps"
+        },
+        {
+          "input": {
+            "before": "A confident flag adds a label.",
+            "after": "A confident flag adds a label on the changed clause.",
+            "target": "A confident flag adds a small label on the changed clause.",
+            "target_boundary": false
+          },
+          "label": "overlaps"
+        }
       ]
     },
     {
       "name": "oversteps",
       "description": "The changed clause extends beyond the target clause's stated scope or boundary without directly contradicting it.",
       "examples": [
-        "A clause expands a browser-only display rule into server-side provider policy.",
-        "A draft surface claims edits are automatic even though the target boundary permits only a human action."
+        {
+          "input": {
+            "before": "Reading view dims internal clauses in the browser.",
+            "after": "Reading view changes provider thresholds on the server.",
+            "target": "The browser runtime owns reading view and consumes the route.",
+            "target_boundary": true
+          },
+          "label": "oversteps"
+        },
+        {
+          "input": {
+            "before": "The route returns suggestion items.",
+            "after": "The route edits the spec when a label is confident.",
+            "target": "No suggestion edits a spec; only a human click writes.",
+            "target_boundary": true
+          },
+          "label": "oversteps"
+        }
       ]
     },
     {
       "name": "unrelated",
       "description": "The changed clause and target clause share no behavior or boundary that needs a review flag.",
       "examples": [
-        "A changed cache sentence is compared with a clause about mobile layout and does not touch its behavior.",
-        "A new comment display label is compared with an unrelated Git baseline rule."
-      ]
-    },
-    {
-      "name": "unsure",
-      "description": "The relationship cannot be determined confidently from the two clauses and their supplied context.",
-      "examples": [
-        "A terse changed clause and a broad target boundary use different terms with too little context to decide.",
-        "Two clauses mention review but provide no shared behavior or explicit boundary."
+        {
+          "input": {
+            "before": "The cache key includes the source revision.",
+            "after": "The cache key includes the source revision and set version.",
+            "target": "Mobile markers stay visible at narrow widths.",
+            "target_boundary": false
+          },
+          "label": "unrelated"
+        },
+        {
+          "input": {
+            "before": "The page shows a comment label.",
+            "after": "The page shows a comment label with text.",
+            "target": "The compared base determines the Git focus.",
+            "target_boundary": false
+          },
+          "label": "unrelated"
+        }
       ]
     }
   ],
-  "threshold": 0.6
+  "threshold": 0.4
 }

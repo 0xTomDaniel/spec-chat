@@ -1,24 +1,48 @@
 {
   "id": "audience",
-  "version": 1,
+  "version": 2,
   "instructions": "Classify one leaf clause for a reading view. Choose for you when the clause is written for someone who uses the result. Choose internals when it explains implementation, authoring, review mechanics, or operation rather than the result itself.",
   "labels": [
     {
       "name": "for you",
       "description": "Written for someone who uses the result or needs to understand its user-visible behavior.",
       "examples": [
-        "As a reviewer, I can see which commits the served spec compares.",
-        "The page dims internals in place while leaving clauses for readers clear."
+        {
+          "input": {
+            "clause": "As a reviewer, a reading view dims the internals in place, so the clauses written for me stand out and nothing moves or hides.",
+            "reader": "someone who uses the result, not builds it"
+          },
+          "label": "for you"
+        },
+        {
+          "input": {
+            "clause": "The revised section enables retry after a timeout and records the retry.",
+            "reader": "someone who uses the result, not builds it"
+          },
+          "label": "for you"
+        }
       ]
     },
     {
       "name": "internals",
       "description": "Explains implementation, authoring, review mechanics, or operation instead of the result for its user.",
       "examples": [
-        "The server stores one judgment record for each question.",
-        "The browser sends the spec path and compared base to the review server."
+        {
+          "input": {
+            "clause": "The server stores one judgment record for each question.",
+            "reader": "someone who uses the result, not builds it"
+          },
+          "label": "internals"
+        },
+        {
+          "input": {
+            "clause": "The browser sends only the spec path and compared base to the review server.",
+            "reader": "someone who uses the result, not builds it"
+          },
+          "label": "internals"
+        }
       ]
     }
   ],
-  "threshold": 0.6
+  "threshold": 0.4
 }

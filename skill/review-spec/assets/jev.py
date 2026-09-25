@@ -21,7 +21,7 @@ from urllib.request import Request, urlopen
 
 MODEL = "typesafe/jev-1.13"
 OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
-DEFAULT_THRESHOLD = 0.6
+DEFAULT_THRESHOLD = 0.4
 DEFAULT_MAX_INPUT_TOKENS = 32000
 RETRYABLE_OUTCOMES = frozenset({"off", "unavailable"})
 VOID_ELEMENTS = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"})
@@ -61,7 +61,7 @@ def _close_explicit(stack: list[Any], tag: str) -> None:
 
 MINIMAL_QUESTION_SETS = {
     "type": {
-        "id": "type", "version": 1,
+        "id": "type", "version": 2,
         "instructions": "Classify the kind of change in the compared text.",
         "labels": [
             {"name": "scope", "description": "Adds, removes, or moves a capability, surface, or non-goal."},
@@ -72,13 +72,13 @@ MINIMAL_QUESTION_SETS = {
         "threshold": DEFAULT_THRESHOLD,
     },
     "orphan": {
-        "id": "orphan", "version": 2,
+        "id": "orphan", "version": 3,
         "instructions": "Choose the current section that best matches the orphaned comment quote, or none when no section is credible.",
         "labels": [{"name": "none", "description": "No current section is a credible location for the orphaned passage."}],
         "threshold": DEFAULT_THRESHOLD,
     },
     "resolved": {
-        "id": "resolved", "version": 1,
+        "id": "resolved", "version": 2,
         "instructions": "Decide whether the revised section addresses the open comment in spirit.",
         "labels": [
             {"name": "resolved in spirit", "description": "The revised text does what the comment asked."},
@@ -87,12 +87,11 @@ MINIMAL_QUESTION_SETS = {
         "threshold": DEFAULT_THRESHOLD,
     },
     "coverage": {
-        "id": "coverage", "version": 1,
+        "id": "coverage", "version": 2,
         "instructions": "For one user story and one acceptance criterion, decide whether the criterion verifies the story.",
         "labels": [
             {"name": "verifies", "description": "The acceptance criterion directly verifies the user story."},
             {"name": "unrelated", "description": "The acceptance criterion does not verify the user story."},
-            {"name": "unsure", "description": "There is not enough evidence to decide whether the criterion verifies the story."},
         ],
         "threshold": DEFAULT_THRESHOLD,
     },
@@ -151,10 +150,50 @@ class QuestionSet:
                 name = label.get("name", label.get("id"))
                 if name:
                     description = str(label.get("description", ""))
-                    examples = label.get("examples", [])
-                    if isinstance(examples, list) and examples:
-                        description += " Examples: " + "; ".join(str(item) for item in examples)
                     result[str(name)] = description
+        return result
+
+    def examples(self) -> list[dict[str, Any]]:
+        """Return structured input and answer examples without flattening them."""
+        if not isinstance(self.labels, list):
+            return []
+        result = []
+        for label in self.labels:
+            if not isinstance(label, Mapping):
+                continue
+            name = label.get("name", label.get("id"))
+            examples = label.get("examples", [])
+            if not name or not isinstance(examples, list):
+                continue
+            for example in examples:
+                if not isinstance(example, Mapping):
+                    continue
+                value = example.get("input")
+                if not isinstance(value, Mapping):
+                    continue
+                result.append({"input": _jsonable(value), "label": str(example.get("label", name))})
+        return result
+
+    def criteria_payload(self) -> dict[str, Any]:
+        """Build Decisions API criteria with descriptions and pair examples."""
+        if not isinstance(self.labels, list):
+            return self.criteria()
+        result: dict[str, Any] = {}
+        for label in self.labels:
+            if not isinstance(label, Mapping):
+                continue
+            name = label.get("name", label.get("id"))
+            if not name:
+                continue
+            entry: dict[str, Any] = {"description": str(label.get("description", ""))}
+            examples = []
+            for example in label.get("examples", []):
+                if isinstance(example, Mapping) and isinstance(example.get("input"), Mapping):
+                    examples.append({"input": _jsonable(example["input"]),
+                                     "label": str(example.get("label", name))})
+            if examples:
+                entry["examples"] = examples
+            result[str(name)] = entry
         return result
 
     def to_dict(self) -> dict[str, Any]:
@@ -316,12 +355,14 @@ class JevSeam:
         cached = self.store.get(key)
         if cached and cached.get("outcome") not in RETRYABLE_OUTCOMES:
             return cached
-        criteria = qset.criteria()
+        criteria = qset.criteria_payload()
         dynamic = question.get("criteria")
         if isinstance(dynamic, Mapping):
             criteria = {str(k): str(v) for k, v in dynamic.items()}
+        examples = qset.examples()
+        instructions = {"question": qset.instructions, "examples": examples} if isinstance(dynamic, Mapping) and examples else qset.instructions
         payload = {"model": MODEL, "questions": {kind: {"criteria": criteria,
-                    "instructions": qset.instructions, "type": "choice"}},
+                    "instructions": instructions, "type": "choice"}},
                    "state": _jsonable(question.get("state", {}))}
         if (len(_canonical(payload)) + 3) // 4 > self.max_input_tokens:
             return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
@@ -647,9 +688,26 @@ def build_orphan_questions(events: list[Mapping[str, Any]], current: str | bytes
         if not candidates:
             continue
         criteria = {"none": "No current section is a credible location for the orphaned passage."}
-        criteria.update({item: str(anchors[item].get("text", ""))[:400] for item in candidates})
-        result.append(_question("orphan", str(thread["id"]), {"quote": quote, "candidates": candidates}, path, base, revision,
-                                criteria=criteria))
+        candidate_anchors: dict[str, str] = {}
+        used_labels = {"none"}
+        for item in candidates:
+            text = " ".join(str(anchors[item].get("text", "")).split())
+            label = text[:80].rsplit(" ", 1)[0] if len(text) > 80 else text
+            label = label.rstrip(" .,;:") or "Current section"
+            if len(text) > 80:
+                label += "..."
+            base_label = label
+            suffix = 2
+            while label in used_labels:
+                label = f"{base_label} ({suffix})"
+                suffix += 1
+            used_labels.add(label)
+            candidate_anchors[label] = item
+            criteria[label] = text
+        state = {"quote": quote, "candidates": list(candidate_anchors)}
+        question = _question("orphan", str(thread["id"]), state, path, base, revision, criteria=criteria)
+        question["candidate_anchors"] = candidate_anchors
+        result.append(question)
     return result
 
 
@@ -932,8 +990,8 @@ class JevService:
             if outcome == "shown" and label and label not in allowed:
                 state = "none"
             target_anchor = question.get("target")
-            if question["kind"] == "orphan" and state == "label" and label in question.get("criteria", {}):
-                target_anchor = label
+            if question["kind"] == "orphan" and state == "label":
+                target_anchor = question.get("candidate_anchors", {}).get(label)
             items.append({"kind": question["kind"], "id": question["id"], "state": state,
                           "label": label if state == "label" else None,
                           "target": target_anchor, "record": record.get("record_id")})

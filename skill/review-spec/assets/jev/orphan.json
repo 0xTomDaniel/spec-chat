@@ -1,25 +1,57 @@
 {
   "id": "orphan",
-  "version": 2,
-  "instructions": "Choose the one current anchor whose text best matches the orphaned human comment quote and its context. The candidates are deterministic current anchors supplied with the question. Choose none when no candidate is a credible move for the passage. Do not infer a new anchor or treat a deleted passage as moved.",
+  "version": 3,
+  "instructions": "Choose the one current anchor whose text best matches the orphaned human comment quote and its context. The candidates are deterministic current sections supplied with the question under readable labels. Choose none when no candidate is a credible move for the passage. Do not infer a new anchor or treat a deleted passage as moved.",
   "labels": [
     {
       "name": "candidate",
       "description": "One current anchor is a credible location for the orphaned passage because its section preserves the quoted subject and context.",
       "examples": [
-        "A comment on an old topology section can move to workbench-system.spec.html#topology after the canonical content moved there and the old anchor became a compatibility link. (annotateanything spec history)",
-        "A comment on the old delivery section can move to delivery-lifecycle.spec.html#delivery after the canonical content moved there and the old anchor remained as a compatibility link. (annotateanything spec history)",
-        "A comment quoting the Jev flow can move to the current flow or shared section when the ANN-100 spec reshaped its swimlane and retained the same server, provider, and cache subjects. (spec-chat ANN-100 history, 42ee440)"
+        {
+          "input": {
+            "quote": "The server retries once on timeout and keeps the original comment quote.",
+            "candidates": [
+              "Fixture review cases The server retries once on timeout and keeps the original...",
+              "The server retries once on timeout and keeps the original comment quote"
+            ]
+          },
+          "label": "candidate"
+        },
+        {
+          "input": {
+            "quote": "Please keep this passage attached after the move.",
+            "candidates": [
+              "Moving an orphaned comment Move comment here resolves the orphaned thread..."
+            ]
+          },
+          "label": "candidate"
+        }
       ]
     },
     {
       "name": "none",
       "description": "No current section is a credible location for the orphaned passage.",
       "examples": [
-        "A deleted passage has no current section sharing its quoted subject or context.",
-        "A current section shares only generic words with the quote, so the comment stays on today's card."
+        {
+          "input": {
+            "quote": "Obsidian quasar lattice vanished.",
+            "candidates": [
+              "Fixture review cases The server retries once on timeout and keeps the original..."
+            ]
+          },
+          "label": "none"
+        },
+        {
+          "input": {
+            "quote": "A deleted passage has no surviving subject.",
+            "candidates": [
+              "Reading view A Reading view control on every HTTP-served spec..."
+            ]
+          },
+          "label": "none"
+        }
       ]
     }
   ],
-  "threshold": 0.6
+  "threshold": 0.4
 }

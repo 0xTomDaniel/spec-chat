@@ -6,9 +6,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SETS = ROOT / "skill" / "review-spec" / "assets" / "jev"
 EXPECTED = {"type.json", "orphan.json", "resolved.json"}
+STATE_KEYS = {
+    "type": {"before", "after"},
+    "orphan": {"quote", "candidates"},
+    "resolved": {"comment", "before", "after"},
+    "corpus": {"before", "after", "target", "target_boundary"},
+    "coverage": {"story", "criterion"},
+    "audience": {"clause", "reader"},
+}
 
 
 class JevQuestionSetTest(unittest.TestCase):
+    def test_seam_copies_are_byte_identical(self):
+        self.assertEqual(
+            (ROOT / "tools/jev.py").read_bytes(),
+            (ROOT / "skill/review-spec/assets/jev.py").read_bytes(),
+        )
+
     def test_every_set_parses_and_has_descriptions_and_examples(self):
         paths = sorted(SETS.glob("*.json"))
         self.assertTrue(EXPECTED <= {path.name for path in paths})
@@ -18,8 +32,7 @@ class JevQuestionSetTest(unittest.TestCase):
                 self.assertEqual(data["id"], path.stem)
                 self.assertIsInstance(data["version"], int)
                 self.assertTrue(data["instructions"].strip())
-                self.assertGreaterEqual(data["threshold"], 0.5)
-                self.assertLessEqual(data["threshold"], 0.8)
+                self.assertEqual(data["threshold"], 0.4)
                 labels = data["labels"]
                 self.assertIsInstance(labels, list)
                 self.assertGreater(len(labels), 0)
@@ -30,7 +43,15 @@ class JevQuestionSetTest(unittest.TestCase):
                     examples = label["examples"]
                     self.assertGreaterEqual(len(examples), 2)
                     self.assertLessEqual(len(examples), 4)
-                    self.assertTrue(all(isinstance(example, str) and example.strip() for example in examples))
+                    self.assertTrue(all(
+                        isinstance(example, dict)
+                        and isinstance(example.get("input"), dict)
+                        and isinstance(example.get("label"), str)
+                        and example["label"] == label["name"]
+                        and set(example["input"]) == STATE_KEYS[path.stem]
+                        for example in examples
+                    ))
+                self.assertNotIn("unsure", names)
                 self.assertEqual(len(names), len(set(names)))
 
 

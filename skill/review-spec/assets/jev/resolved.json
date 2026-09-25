@@ -1,24 +1,52 @@
 {
   "id": "resolved",
-  "version": 1,
+  "version": 2,
   "instructions": "Compare the human review messages with the before and after text for the changed section. Choose resolved in spirit only when the revised text implements what the human asked for. Choose unrelated when the section changed without addressing the request. Agent replies do not establish the request.",
   "labels": [
     {
       "name": "resolved in spirit",
       "description": "The revised text does what the human comment asked, even if the wording or structure changed.",
       "examples": [
-        "The orphan interaction changed from Go to only to an explicit Move comment here action that resolves the thread and starts a quoted draft, answering the human request for a re-anchor click. (spec-chat ANN-100 history, 893c216 and 9453268)",
-        "The Jev contract replaced the calibration gate with sets enabled by a key and moderate thresholds tuned by use, answering the human decision to learn by doing. (annotateanything ANN-49 history, 93e0c80)"
+        {
+          "input": {
+            "comment": "Please enable retry after a timeout.",
+            "before": "The revised section does not yet enable retry.",
+            "after": "The revised section enables retry after a timeout and records the retry."
+          },
+          "label": "resolved in spirit"
+        },
+        {
+          "input": {
+            "comment": "Please keep this passage attached after the move.",
+            "before": "The server retries once on timeout and keeps the original comment quote.",
+            "after": "Move comment here resolves the orphaned thread and starts a new draft comment at the suggested section that quotes the original, using only existing events; the agent answers it like any comment."
+          },
+          "label": "resolved in spirit"
+        }
       ]
     },
     {
       "name": "unrelated",
       "description": "The revised text does not address the human comment, even though the section changed.",
       "examples": [
-        "A flow figure box was resized and a label repositioned while the human comment asked about retry behavior; the diagram edit leaves that request unanswered. (spec-chat ANN-100 history, 42ee440)",
-        "The compared-range picker shortened a label while the human comment concerned which commit fields the route returns; that wording edit does not address the data request. (spec-chat ANN-90 history, 88000ff)"
+        {
+          "input": {
+            "comment": "Please preserve the cache rule.",
+            "before": "The revised section had the old cache rule.",
+            "after": "The revised section changes only the display color of the badge."
+          },
+          "label": "unrelated"
+        },
+        {
+          "input": {
+            "comment": "Please explain retry behavior.",
+            "before": "The flow figure shows the request path.",
+            "after": "The flow figure boxes are wider and a label moved."
+          },
+          "label": "unrelated"
+        }
       ]
     }
   ],
-  "threshold": 0.6
+  "threshold": 0.4
 }

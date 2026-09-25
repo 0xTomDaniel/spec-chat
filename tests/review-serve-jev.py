@@ -273,9 +273,10 @@ class JevSeamTest(unittest.TestCase):
                 self.calls.append(payload)
                 criteria = payload["questions"]["orphan"]["criteria"]
                 if criteria:
-                    assert criteria["new-section"] == "Server retries once on timeout."
+                    candidate = next(item for item in criteria if item != "none")
+                    assert criteria[candidate] == "Server retries once on timeout."
                     assert "none" in criteria
-                    choice = "new-section"
+                    choice = candidate
                 return {"answers": {"orphan": {"choice": choice, "confidence": 0.9}}}
 
         provider = CandidateProvider()
@@ -283,8 +284,37 @@ class JevSeamTest(unittest.TestCase):
             service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
             result = service.seam.ask(questions[0])
         self.assertEqual(result["outcome"], "shown")
-        self.assertEqual(result["answer"]["label"], "new-section")
+        self.assertEqual(result["answer"]["label"], questions[0]["state"]["candidates"][0])
         self.assertEqual(len(provider.calls), 1)
+
+    def test_provider_receives_structured_examples(self):
+        sets = jev.load_question_sets(ROOT / "skill" / "review-spec" / "assets" / "jev")
+        provider = FakeProvider({"answers": {"type": {"choice": "behavioral", "confidence": 0.9}}})
+        seam = jev.JevSeam(sets, provider=provider, api_key="fake")
+        seam.ask({"kind": "type", "state": {"before": "old", "after": "new"}, "sources": [], "revision": "head"})
+        question = provider.calls[0]["questions"]["type"]
+        self.assertIsInstance(question["criteria"]["behavioral"], dict)
+        example = question["criteria"]["behavioral"]["examples"][0]
+        self.assertEqual(set(example), {"input", "label"})
+        self.assertIsInstance(example["input"], dict)
+        self.assertIn("before", example["input"])
+        self.assertIn("after", example["input"])
+
+    def test_orphan_readable_answer_maps_back_to_anchor(self):
+        source = '<p data-anchor="new-section">Server retries once on timeout.</p>'
+        events = [{"name": "1-comment.json", "actor": "human", "body": {
+            "id": "u1", "event": "comment", "actor": "human", "anchorId": "old-section",
+            "quote": "retry once on timeout",
+        }}]
+        question = jev.build_orphan_questions(events, source)[0]
+        label = question["state"]["candidates"][0]
+        provider = FakeProvider({"answers": {"orphan": {"choice": label, "confidence": 0.9}}})
+        with tempfile.TemporaryDirectory() as directory:
+            service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
+            service.questions = lambda *args: [question]
+            result = service.response({}, "", "", "", [], "")
+        self.assertEqual(result["items"][0]["label"], label)
+        self.assertEqual(result["items"][0]["target"], "new-section")
 
     def test_orphan_none_answer_has_no_target_suggestion(self):
         source = '<p data-anchor="new-section">Server retries once on timeout.</p>'
@@ -322,7 +352,7 @@ class JevSeamTest(unittest.TestCase):
         ]
         questions = jev.build_orphan_questions(events, source)
         self.assertEqual(questions[0]["state"]["quote"], "Server retries once on timeout")
-        self.assertEqual(questions[0]["state"]["candidates"][0], "retry")
+        self.assertEqual(questions[0]["state"]["candidates"][0], "Server retries once on timeout")
 
     def test_served_specs_follow_index_collection(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -426,7 +456,7 @@ class JevSeamTest(unittest.TestCase):
     def test_corpus_question_set_has_all_relationship_labels(self):
         sets = jev.load_question_sets(ROOT / "skill" / "review-spec" / "assets" / "jev")
         self.assertEqual(set(sets["corpus"].criteria()),
-                         {"contradicts", "overlaps", "oversteps", "unrelated", "unsure"})
+                         {"contradicts", "overlaps", "oversteps", "unrelated"})
 
 
 if __name__ == "__main__":

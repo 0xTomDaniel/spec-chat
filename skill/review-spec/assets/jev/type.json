@@ -1,40 +1,88 @@
 {
   "id": "type",
-  "version": 1,
+  "version": 2,
   "instructions": "Compare the base and current text for one changed root section. Choose the single label whose criterion best describes the change. Use scope when the change adds, removes, or moves a capability, surface, or non-goal. Use behavioral when the result or a rule changes. Use clarification when behavior stays the same and wording becomes more precise. Use cosmetic when meaning stays the same and only wording, order, or style changes.",
   "labels": [
     {
       "name": "scope",
       "description": "Adds, removes, or moves a capability, surface, or non-goal.",
       "examples": [
-        "Spec Chat grew from the first change-type and orphan slice to also cover resolved-in-spirit, corpus, coverage, and reading suggestions. (spec-chat ANN-100 history, 65b767f)",
-        "Review assist moved out of the shared Jev contract and became ANN-100 work shipped in Spec Chat, while the contract kept the reusable rules. (annotateanything ANN-49 history, 3d6618d)"
+        {
+          "input": {
+            "before": "Change type in Git focus.",
+            "after": "Change type in Git focus and reading view."
+          },
+          "label": "scope"
+        },
+        {
+          "input": {
+            "before": "The shared contract covers one pair.",
+            "after": "The shared contract covers corpus, coverage, and audience pairs."
+          },
+          "label": "scope"
+        }
       ]
     },
     {
       "name": "behavioral",
       "description": "Alters what the result does: a rule, interface, edge case, or criterion.",
       "examples": [
-        "A low-confidence answer now shows unsure, and a missing key shows one Jev off note instead of silently keeping the old state. (annotateanything ANN-49 history, 6378102)",
-        "Move comment here resolves the orphaned thread and starts a draft comment at the suggested section using existing events. (spec-chat ANN-100 history, 9453268)"
+        {
+          "input": {
+            "before": "Fixture review cases The server retries once on timeout and keeps the original comment quote. This passage is deleted in the current head. The revised section does not yet enable retry. The revised section had the old cache rule. The draft only records a local note. As a reviewer, I need an entirely unrelated fixture outcome. The unrelated fixture outcome is observable.",
+            "after": "Fixture review cases The server retries once on timeout and keeps the original comment quote. The revised section enables retry after a timeout and records the retry. The revised section changes only the display color of the badge. The draft automatically writes tracker updates now. As a reviewer, I need an entirely unrelated fixture outcome. The unrelated fixture outcome is observable."
+          },
+          "label": "behavioral"
+        },
+        {
+          "input": {
+            "before": "A confident label is shown.",
+            "after": "A low-confidence label becomes unsure."
+          },
+          "label": "behavioral"
+        }
       ]
     },
     {
       "name": "clarification",
       "description": "Keeps the behavior the same while stating its meaning more precisely.",
       "examples": [
-        "The change-type section was rewritten as one Choice question with explicit criteria for scope, behavioral, clarification, and cosmetic. (spec-chat ANN-100 history, 42ee440)",
-        "The Jev seam boundary wording was tightened to follow the decision that removed the calibration gate. (annotateanything ANN-49 history, 2b6b529)"
+        {
+          "input": {
+            "before": "Each changed root section gets one change-type question.",
+            "after": "Each changed root section gets one Choice question with scope, behavioral, clarification, and cosmetic criteria."
+          },
+          "label": "clarification"
+        },
+        {
+          "input": {
+            "before": "The seam follows the shared Jev contract.",
+            "after": "The seam follows the current retry, cache, and no-reorder contract."
+          },
+          "label": "clarification"
+        }
       ]
     },
     {
       "name": "cosmetic",
       "description": "Changes wording, order, or style without changing meaning.",
       "examples": [
-        "The flow figure widened two boxes and moved a label so the diagram fit without changing the request flow. (spec-chat ANN-100 history, 42ee440)",
-        "The compared-range picker label changed from lean review (current base) to lean review (base). (spec-chat ANN-90 history, 88000ff)"
+        {
+          "input": {
+            "before": "Fixture typo case The review server returns one suggestion roud.",
+            "after": "Fixture typo case The review server returns one suggestion round."
+          },
+          "label": "cosmetic"
+        },
+        {
+          "input": {
+            "before": "lean review (current base)",
+            "after": "lean review (base)"
+          },
+          "label": "cosmetic"
+        }
       ]
     }
   ],
-  "threshold": 0.6
+  "threshold": 0.4
 }
