@@ -194,44 +194,40 @@ class BaselineRouteTest(unittest.TestCase):
         self.assertIn("baseline rule", result["html"])
         self.assertNotIn("changed rule", result["html"])
 
+    def test_automatic_base_uses_merge_base_when_main_advances(self):
+        run("git", "add", ".", cwd=self.repo)
+        run("git", "commit", "-m", "feature change", cwd=self.repo)
+        run("git", "switch", "main", cwd=self.repo)
+        self.spec.write_text('<p data-anchor="rule">main newer rule</p>\n')
+        run("git", "add", str(self.spec), cwd=self.repo)
+        run("git", "commit", "-m", "advance main", cwd=self.repo)
+        run("git", "switch", "feature", cwd=self.repo)
+
+        result = self.baseline("specs/focus.spec.html")
+        self.assertEqual(result["base"], self.base)
+        self.assertIn("baseline rule", result["html"])
+        self.assertNotIn("main newer rule", result["html"])
+
     def test_new_file_has_no_baseline_html(self):
         result = self.baseline("specs/new.spec.html")
         self.assertEqual(result["base"], self.base)
         self.assertIsNone(result["html"])
         self.assertIsNone(result["htmlBase"])
 
-    def test_committed_new_file_uses_seed_when_absent_from_base(self):
+    def test_committed_new_file_is_new_when_absent_from_base(self):
         seeded = self.specs / "seeded.spec.html"
         seeded.write_text('<p data-anchor="seed">seeded baseline</p>\n')
         run("git", "add", str(seeded), cwd=self.repo)
-        run("git", "commit", "-m", "seed new spec", cwd=self.repo)
-        seed = subprocess.check_output(("git", "rev-parse", "HEAD"), cwd=self.repo, text=True).strip()
+        run("git", "commit", "-m", "new spec", cwd=self.repo)
         result = self.baseline("specs/seeded.spec.html", "main")
 
         self.assertEqual(result["base"], self.base)
-        self.assertIn("seeded baseline", result["html"])
-        self.assertEqual(result["htmlBase"], seed)
-
-    def test_committed_new_file_baseline_stays_at_seed_after_later_edit(self):
-        seeded = self.specs / "stable-seed.spec.html"
-        seeded.write_text('<p data-anchor="seed">seed version</p>\n')
-        run("git", "add", str(seeded), cwd=self.repo)
-        run("git", "commit", "-m", "seed stable spec", cwd=self.repo)
-        seed = subprocess.check_output(("git", "rev-parse", "HEAD"), cwd=self.repo, text=True).strip()
-        seeded.write_text('<p data-anchor="seed">later version</p>\n')
-        run("git", "add", str(seeded), cwd=self.repo)
-        run("git", "commit", "-m", "edit stable spec", cwd=self.repo)
-
-        result = self.baseline("specs/stable-seed.spec.html", "main")
-
-        self.assertEqual(result["base"], self.base)
-        self.assertIn("seed version", result["html"])
-        self.assertNotIn("later version", result["html"])
-        self.assertEqual(result["htmlBase"], seed)
-        checked = self.verify("specs/stable-seed.spec.html")
+        self.assertIsNone(result["htmlBase"])
+        self.assertIsNone(result["html"])
+        checked = self.verify("specs/seeded.spec.html")
         self.assertEqual(checked.returncode, 0, checked.stderr)
-        self.assertEqual(json.loads(checked.stdout)["source"], "seed")
-        self.assertEqual(json.loads(checked.stdout)["htmlBase"], seed)
+        self.assertEqual(json.loads(checked.stdout)["source"], "new")
+        self.assertIsNone(json.loads(checked.stdout)["htmlBase"])
 
     def test_explicit_sibling_snapshot_is_not_replaced_by_a_shared_ancestor(self):
         run("git", "add", ".", cwd=self.repo)
