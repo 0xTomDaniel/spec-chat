@@ -1,0 +1,48 @@
+{
+  "id": "corpus",
+  "version": 1,
+  "instructions": "Compare the changed clause with the linked clause. Choose contradicts when the changed behavior conflicts with the target clause or its non-goal. Choose overlaps when both clauses describe the same behavior or surface. Choose oversteps when the changed clause adds a behavior beyond the target clause's stated boundary. Do not flag a merely related clause.",
+  "labels": [
+    {
+      "name": "contradicts",
+      "description": "The changed clause conflicts with the target clause or with a non-goal in the same spec.",
+      "examples": [
+        "A draft adds automatic tracker writes while the same spec lists tracker changes as a non-goal.",
+        "A changed clause allows agent spool writes while the review boundary says only human clicks write events."
+      ]
+    },
+    {
+      "name": "overlaps",
+      "description": "The changed clause and target clause describe the same behavior, surface, or responsibility.",
+      "examples": [
+        "A new suggestion clause restates a served spec's existing review-server behavior.",
+        "Two clauses both define the same cache key and record reuse rule."
+      ]
+    },
+    {
+      "name": "oversteps",
+      "description": "The changed clause extends beyond the target clause's stated scope or boundary without directly contradicting it.",
+      "examples": [
+        "A clause expands a browser-only display rule into server-side provider policy.",
+        "A draft surface claims edits are automatic even though the target boundary permits only a human action."
+      ]
+    },
+    {
+      "name": "unrelated",
+      "description": "The changed clause and target clause share no behavior or boundary that needs a review flag.",
+      "examples": [
+        "A changed cache sentence is compared with a clause about mobile layout and does not touch its behavior.",
+        "A new comment display label is compared with an unrelated Git baseline rule."
+      ]
+    },
+    {
+      "name": "unsure",
+      "description": "The relationship cannot be determined confidently from the two clauses and their supplied context.",
+      "examples": [
+        "A terse changed clause and a broad target boundary use different terms with too little context to decide.",
+        "Two clauses mention review but provide no shared behavior or explicit boundary."
+      ]
+    }
+  ],
+  "threshold": 0.6
+}
