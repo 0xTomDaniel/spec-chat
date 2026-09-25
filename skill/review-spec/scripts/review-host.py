@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import fcntl
-import hashlib
+import importlib.util
 import ipaddress
 import json
 import os
@@ -18,9 +18,7 @@ import sys
 import tempfile
 import time
 import tomllib
-import urllib.error
 import urllib.parse
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -30,6 +28,11 @@ SCRIPT = Path(__file__).resolve()
 REPO = SCRIPT.parents[3]
 SERVER = SCRIPT.parents[1] / "assets" / "review-serve.py"
 SERVER_PATH = str(SERVER.resolve())
+VERIFY_SCRIPT = SCRIPT.parent / "verify-review.py"
+_verify_spec = importlib.util.spec_from_file_location("spec_chat_verify_review", VERIFY_SCRIPT)
+_verify_module = importlib.util.module_from_spec(_verify_spec)
+assert _verify_spec.loader is not None
+_verify_spec.loader.exec_module(_verify_module)
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
 SAFE_CURSOR_RE = re.compile(r"[^/\\]+\Z")
 RESOURCE_FIELDS = (
@@ -48,10 +51,6 @@ class ProofError(LauncherError):
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def sha256(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
 
 
 def run_git(root: Path, *args: str, check: bool = True) -> str:
@@ -396,44 +395,23 @@ def write_registry(path: Path, records: Sequence[Mapping[str, Any]], process: Ma
     atomic_write(path, dump_registry(process, cleaned))
 
 
-def direct_request(url: str) -> tuple[int, bytes]:
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    try:
-        with opener.open(urllib.request.Request(url, method="GET"), timeout=3) as response:
-            return response.status, response.read()
-    except urllib.error.HTTPError as exc:
-        return exc.code, exc.read()
-    except (OSError, urllib.error.URLError) as exc:
-        raise ProofError("public URL is unreachable") from exc
-
-
 def prove_resource(public_url: str, resource: Mapping[str, Any]) -> dict[str, Any]:
-    status, body = direct_request(public_url.rstrip("/") + urllib.parse.quote(stable_path(resource), safe="/"))
-    expected = Path(resource["spec_file"]).read_bytes()
-    if status != 200 or body != expected:
-        raise ProofError(f"served spec bytes differ for {resource['id']}")
-    query = urllib.parse.urlencode({"path": stable_path(resource).lstrip("/"), "base": resource["base"]})
-    baseline_status, baseline_body = direct_request(public_url.rstrip("/") + "/api/baseline?" + query)
-    if baseline_status != 200:
-        raise ProofError(f"baseline route returned HTTP {baseline_status} for {resource['id']}")
-    try:
-        baseline = json.loads(baseline_body)
-    except (TypeError, ValueError) as exc:
-        raise ProofError(f"baseline route returned invalid JSON for {resource['id']}") from exc
-    expected_commit = resource.get("resolved_base_commit") or run_git(
+    exact_base = resource.get("resolved_base_commit") or run_git(
         Path(resource["root"]), "rev-parse", "--verify", resource["base"] + "^{commit}"
     )
-    baseline_html = subprocess.run(
-        ("git", "-C", resource["root"], "show", expected_commit + ":" + resource["spec"]),
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-    ).stdout
-    if baseline.get("base") != expected_commit or baseline.get("htmlBase") != expected_commit:
-        raise ProofError(f"baseline route returned a different base for {resource['id']}")
-    if baseline.get("html") != baseline_html.decode("utf-8"):
-        raise ProofError(f"baseline route returned different bytes for {resource['id']}")
+    review_url = public_url.rstrip("/") + urllib.parse.quote(stable_path(resource), safe="/")
+    review_url += "?focus=changes&base=" + urllib.parse.quote(exact_base, safe="")
+    try:
+        facts = _verify_module.verify(
+            resource["root"], resource["spec_file"], review_url, resource["base"]
+        )
+    except (OSError, ValueError) as exc:
+        raise ProofError(f"review proof failed for {resource['id']}: {exc}") from exc
     return {
-        "http_status": status, "bytes_sha256": sha256(body),
-        "baseline_commit": expected_commit, "verified_at": now(),
+        "http_status": 200,
+        "bytes_sha256": facts["specSha256"],
+        "baseline_commit": facts["base"],
+        "verified_at": now(),
     }
 
 

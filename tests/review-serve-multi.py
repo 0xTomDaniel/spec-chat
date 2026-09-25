@@ -137,6 +137,25 @@ class MultiReviewServeTest(unittest.TestCase):
             self.assertEqual((review / ".cursor-test").read_text(), "001-handoff-existing.json\n")
         self.assertIsNone(self.server.poll())
 
+    def test_registry_baseline_uses_seed_for_spec_created_after_base(self):
+        resource = self.make_resource("first")
+        repo = Path(resource["root"])
+        spec = repo / "docs/specs/new.spec.html"
+        spec.write_text("<title>new</title>seed snapshot\n")
+        git(repo, "add", str(spec))
+        subprocess.run(("git", "-C", str(repo), "commit", "-m", "new spec"), check=True)
+        seed = git(repo, "rev-parse", "HEAD")
+        resource = resource | {
+            "id": "spec:first::docs/specs/new.spec.html",
+            "spec": "docs/specs/new.spec.html",
+        }
+        self.start([resource])
+        status, body = self.request(self.api(resource, "baseline", base="main"))
+        self.assertEqual(status, 200)
+        baseline = json.loads(body)
+        self.assertEqual(baseline["htmlBase"], seed)
+        self.assertEqual(baseline["html"], "<title>new</title>seed snapshot\n")
+
     def test_registry_reload_ignores_legacy_finish_field_and_keeps_post_open(self):
         first, second = (self.make_resource(name) for name in ("first", "second"))
         self.start([first, second])
