@@ -128,6 +128,12 @@ class MultiReviewServeTest(unittest.TestCase):
                 self.assertEqual(baseline["base"], git(resource["root"], "rev-parse", "main"))
                 self.assertEqual(baseline["htmlBase"], baseline["base"])
                 self.assertEqual(baseline["html"], f'<title>{resource["slug"]}</title>baseline {resource["slug"]}\n')
+                self.assertEqual(baseline["head"], git(resource["root"], "rev-parse", "HEAD"))
+                self.assertTrue(baseline["dirty"])
+                self.assertRegex(baseline["headDate"], r"^\d{4}-\d{2}-\d{2}$")
+                self.assertRegex(baseline["baseDate"], r"^\d{4}-\d{2}-\d{2}$")
+                self.assertLessEqual(len(baseline["commits"]), 20)
+                self.assertEqual(baseline["commits"][0]["id"], baseline["head"])
                 event = {"event": "comment", "id": resource["slug"], "text": resource["slug"]}
                 self.assertEqual(self.request(self.api(resource), "POST", event)[0], 200)
         for resource in resources:

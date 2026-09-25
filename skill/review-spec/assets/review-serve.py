@@ -484,6 +484,8 @@ li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywh
         if not mount:
             return self._json({"error": "bad path"}, 400)
         requested = query.get("base", [mount.get("base", "")])[0]
+        if requested.startswith("-"):
+            return self._json({"error": "invalid base"}, 400)
         candidates = [requested] if requested else []
         if not candidates:
             try:
@@ -511,10 +513,28 @@ li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywh
             repo_relative = os.path.relpath(target, mount["root"]).replace(os.sep, "/")
             prior = _git(mount["root"], "show", base + ":" + repo_relative, optional=True)
             html_base = base if prior is not None else None
+            head = _git(mount["root"], "rev-parse", "--verify", "HEAD^{commit}").decode().strip()
+            committed = _git(mount["root"], "show", head + ":" + repo_relative, optional=True)
+            dirty = committed is None or Path(target).read_bytes() != committed
+            head_date = _git(mount["root"], "show", "-s", "--format=%cs", head).decode().strip()
+            base_date = _git(mount["root"], "show", "-s", "--format=%cs", base).decode().strip()
+            history = _git(
+                mount["root"], "log", "--format=%H%x00%cs%x00%s", "-n", "20", head,
+                "--", repo_relative,
+            ).decode()
+            commits = []
+            for line in history.splitlines():
+                commit_id, date, subject = line.split("\x00", 2)
+                commits.append({"id": commit_id, "date": date, "subject": subject})
             return self._json({
                 "base": base,
                 "htmlBase": html_base,
                 "html": prior.decode("utf-8") if prior is not None else None,
+                "head": head,
+                "dirty": dirty,
+                "headDate": head_date,
+                "baseDate": base_date,
+                "commits": commits,
             })
         except (OSError, RuntimeError, UnicodeDecodeError):
             return self._json({"error": "git baseline unavailable"}, 409)
