@@ -436,6 +436,42 @@ def _served_spec_parts(value: Any) -> tuple[str, str] | None:
     return path, source
 
 
+def enumerate_served_specs(mounts: Any) -> list[tuple[str, str]]:
+    """Enumerate the same spec files exposed by the review index."""
+    if isinstance(mounts, Mapping):
+        mounts = [mounts]
+    result = []
+    for mount in mounts or []:
+        if not isinstance(mount, Mapping):
+            continue
+        if mount.get("spec"):
+            filename = mount.get("spec_file") or os.path.join(str(mount.get("root", "")), str(mount["spec"]))
+            result.append((str(mount["spec"]), str(filename)))
+            continue
+        narrow_root = mount.get("narrow_root")
+        if not narrow_root:
+            continue
+        for directory, directories, names in os.walk(narrow_root, followlinks=False):
+            directories[:] = sorted(
+                name for name in directories
+                if not name.startswith(".") and not name.endswith(".review")
+                and name.lower() not in {"evidence", "evidence-bundle", "evidence-bundles",
+                                         "fixture", "fixtures", "support", "supports"}
+            )
+            for name in sorted(names):
+                if name.startswith(".") or not name.endswith(".spec.html"):
+                    continue
+                path = os.path.join(directory, name)
+                try:
+                    inside = os.path.commonpath((os.path.realpath(path), os.path.realpath(narrow_root))) == os.path.realpath(narrow_root)
+                except ValueError:
+                    inside = False
+                if not inside or not os.path.isfile(path):
+                    continue
+                result.append((os.path.relpath(path, narrow_root).replace(os.sep, "/"), path))
+    return result
+
+
 def _is_non_goal(anchor: str, anchors: Mapping[str, Mapping[str, Any]]) -> bool:
     seen = set()
     current = anchor
@@ -519,7 +555,7 @@ def _question(kind: str, identifier: str, state: Mapping[str, Any], path: str, b
                 "sources": [f"{path}#{identifier}"], "revision": {"base": base, "head": revision}}
     if target is not None:
         question["target"] = target
-    if criteria:
+    if criteria is not None:
         question["criteria"] = dict(criteria)
     return question
 
@@ -553,12 +589,15 @@ def _human_threads(events: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
                 field in body and not isinstance(body[field], str)
                 for field in ("threadId", "respondsTo", "anchorId", "supersedes")):
             continue
-        if body.get("event") == "comment" and actor == "human":
+        event = body.get("event")
+        if not isinstance(event, str):
+            continue
+        if event == "comment" and actor == "human":
             thread = {"id": body.get("id"), "status": "pending", "messages": [body], "anchor": body.get("anchorId")}
             threads[thread["id"]] = thread
             message_to_thread[body.get("id")] = thread["id"]
             message_slots[body["id"]] = (thread["id"], 0)
-        elif body.get("event") in {"reply", "edit", "status"}:
+        elif event in {"reply", "edit", "status"}:
             key = body.get("threadId") or message_to_thread.get(body.get("respondsTo"))
             if not key or key not in threads:
                 continue
@@ -597,7 +636,7 @@ def build_orphan_questions(events: list[Mapping[str, Any]], current: str | bytes
         quote = str(human.get("quote") or human.get("text") or "")
         wanted = set(re.findall(r"[a-z0-9]{3,}", quote.lower()))
         candidates = sorted(anchors, key=lambda item: (-len(wanted & words[item]), item))[:8]
-        criteria = {item: "Current section candidate " + item for item in candidates}
+        criteria = {item: str(anchors[item].get("text", ""))[:400] for item in candidates}
         result.append(_question("orphan", str(thread["id"]), {"quote": quote, "candidates": candidates}, path, base, revision,
                                 criteria=criteria))
     return result
@@ -763,26 +802,9 @@ class JevService:
     def _served_specs(self, mounts: Any, current: str) -> list[dict[str, str]]:
         result = []
         seen = set()
-        for mount in mounts or []:
-            if not isinstance(mount, Mapping):
-                continue
-            files = []
-            if mount.get("spec"):
-                filename = mount.get("spec_file") or os.path.join(str(mount.get("root", "")), str(mount["spec"]))
-                files = [(str(mount["spec"]), filename)]
-            else:
-                root = mount.get("narrow_root") or mount.get("root")
-                if not root:
-                    continue
-                for directory, directories, names in os.walk(root, followlinks=False):
-                    directories[:] = sorted(name for name in directories if not name.startswith(".") and not name.endswith(".review"))
-                    for name in sorted(names):
-                        if name.startswith(".") or not name.endswith(".spec.html"):
-                            continue
-                        candidate = os.path.join(directory, name)
-                        files.append((os.path.relpath(candidate, root).replace(os.sep, "/"), candidate))
-            prefix = str(mount.get("slug", ""))
-            for relative, filename in files:
+        for mount in ([mounts] if isinstance(mounts, Mapping) else (mounts or [])):
+            prefix = str(mount.get("slug", "")) if isinstance(mount, Mapping) else ""
+            for relative, filename in enumerate_served_specs(mount):
                 filename = os.path.realpath(filename)
                 if filename == os.path.realpath(current) or filename in seen or not os.path.isfile(filename):
                     continue

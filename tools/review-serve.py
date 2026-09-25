@@ -23,13 +23,14 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 try:
-    from jev import JevService
+    from jev import JevService, enumerate_served_specs
 except ModuleNotFoundError:
     import importlib.util
     _jev_spec = importlib.util.spec_from_file_location("review_serve_jev", os.path.join(os.path.dirname(__file__), "jev.py"))
     _jev_module = importlib.util.module_from_spec(_jev_spec)
     _jev_spec.loader.exec_module(_jev_module)
     JevService = _jev_module.JevService
+    enumerate_served_specs = _jev_module.enumerate_served_specs
 
 
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
@@ -382,24 +383,7 @@ class MountHandler(SimpleHTTPRequestHandler):
         seen = set()
         query = urlparse(self.path).query
         for mount in self.mounts:
-            specs = []
-            if mount.get("spec"):
-                specs = [(mount["spec"], mount["spec_file"])]
-            else:
-                for directory, directories, names in os.walk(mount["narrow_root"], followlinks=False):
-                    directories[:] = sorted(
-                        name for name in directories
-                        if not name.startswith(".") and not name.endswith(".review")
-                        and name.lower() not in {"evidence", "evidence-bundle", "evidence-bundles", "fixture", "fixtures", "support", "supports"}
-                    )
-                    for name in sorted(names):
-                        if name.startswith(".") or not name.endswith(".spec.html"):
-                            continue
-                        path = os.path.join(directory, name)
-                        if not _inside(path, mount["narrow_root"]) or not os.path.isfile(path):
-                            continue
-                        relative = os.path.relpath(path, mount["narrow_root"]).replace(os.sep, "/")
-                        specs.append((relative, path))
+            specs = enumerate_served_specs(mount)
             for spec, path in specs:
                 stable = _mount_prefix(mount) + spec
                 if stable in seen:

@@ -220,6 +220,69 @@ class JevSeamTest(unittest.TestCase):
         questions = jev.build_orphan_questions(events, '<p data-anchor="current">Current clause</p>')
         self.assertEqual([question["id"] for question in questions], ["u1"])
 
+    def test_non_string_event_is_skipped(self):
+        events = [{"name": "1-invalid.json", "actor": "human", "body": {
+            "id": "u1", "event": [], "actor": "human", "anchorId": "removed",
+            "text": "Please keep this",
+        }}]
+        self.assertEqual(jev._human_threads(events), [])
+
+    def test_orphan_provider_receives_candidate_text(self):
+        source = '<p data-anchor="new-section">Server retries once on timeout.</p>'
+        events = [{"name": "1-comment.json", "actor": "human", "body": {
+            "id": "u1", "event": "comment", "actor": "human", "anchorId": "old-section",
+            "quote": "retry once on timeout",
+        }}]
+        questions = jev.build_orphan_questions(events, source)
+        self.assertEqual(len(questions), 1)
+
+        class CandidateProvider:
+            def __init__(self):
+                self.calls = []
+
+            def decide(self, payload):
+                self.calls.append(payload)
+                criteria = payload["questions"]["orphan"]["criteria"]
+                if criteria:
+                    assert criteria["new-section"] == "Server retries once on timeout."
+                    choice = "new-section"
+                else:
+                    choice = "none"
+                return {"answers": {"orphan": {"choice": choice, "confidence": 0.9}}}
+
+        provider = CandidateProvider()
+        with tempfile.TemporaryDirectory() as directory:
+            service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
+            result = service.seam.ask(questions[0])
+            deleted = jev.build_orphan_questions(events, "<p>Today's card.</p>")
+            deleted_result = service.seam.ask(deleted[0])
+        self.assertEqual(result["outcome"], "shown")
+        self.assertEqual(deleted_result["answer"]["label"], "none")
+        self.assertEqual(len(provider.calls), 2)
+
+    def test_served_specs_follow_index_collection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            narrow = root / "docs"
+            narrow.mkdir()
+            current = narrow / "current.spec.html"
+            current.write_text("current", encoding="utf-8")
+            (narrow / "kept.spec.html").write_text("kept", encoding="utf-8")
+            for folder in ("fixtures", "evidence", "support"):
+                excluded = narrow / folder
+                excluded.mkdir()
+                (excluded / "hidden.spec.html").write_text("hidden", encoding="utf-8")
+            outside = root / "outside"
+            outside.mkdir()
+            secret = outside / "secret.spec.html"
+            secret.write_text("secret", encoding="utf-8")
+            (narrow / "link.spec.html").symlink_to(secret)
+            service = object.__new__(jev.JevService)
+            mount = {"root": str(root), "narrow_root": str(narrow)}
+            served = service._served_specs([mount], str(current))
+            self.assertEqual({item["path"] for item in served}, {"kept.spec.html"})
+            self.assertNotIn("secret", {item["source"] for item in served})
+
     def test_builder_failure_is_isolated_to_its_kind(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

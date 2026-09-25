@@ -477,10 +477,6 @@ function coverageFlags(items) {
   return coverageGapFlags(items);
 }
 
-function anchorElement(anchor) {
-  return [...document.querySelectorAll('[data-anchor]')].find(element => element.dataset.anchor === anchor) || null;
-}
-
 function clearJevCoverage() {
   document.querySelectorAll('.hx-jev-coverage').forEach(element => element.remove());
 }
@@ -489,7 +485,7 @@ function renderJevCoverage(result) {
   clearJevCoverage();
   if (!result || result.jev !== 'on') return;
   for (const flag of coverageGapFlags(result.items)) {
-    const holder = anchorElement(flag.anchor);
+    const holder = findAnchor(flag.anchor);
     if (!holder) continue;
     const note = document.createElement('span');
     note.className = 'hx-jev-coverage';
@@ -1079,6 +1075,7 @@ function corpusFlags(items) {
   const labels = { contradicts: 'Contradicts', overlaps: 'Overlaps', oversteps: 'Oversteps' };
   const seenUnsure = new Set();
   const seenUnavailable = new Set();
+  const confident = new Set();
   const result = [];
   for (const item of Array.isArray(items) ? items : []) {
     if (!item || item.kind !== 'corpus' || !item.id) continue;
@@ -1097,10 +1094,13 @@ function corpusFlags(items) {
     }
     if (item.state !== 'label') continue;
     const label = labels[String(item.label || '').toLowerCase()];
-    if (label) result.push({ anchor, state: 'label', label,
-      target: item.target == null ? null : String(item.target) });
+    if (label) {
+      confident.add(anchor);
+      result.push({ anchor, state: 'label', label,
+        target: item.target == null ? null : String(item.target) });
+    }
   }
-  return result;
+  return result.filter(flag => flag.state !== 'unsure' || !confident.has(flag.anchor));
 }
 
 function corpusTargetLink(target) {
@@ -2307,8 +2307,6 @@ function startLoops() {
  * changes document order or removes clauses. Git focus and reading view are
  * mutually exclusive display modes.
  */
-const readingView = { active: false };
-
 function clearReadingAudience() {
   document.querySelectorAll('[data-hx-audience]').forEach(el => delete el.dataset.hxAudience);
 }
@@ -2329,12 +2327,12 @@ function clearGitFocusForReading() {
 
 function setReadingView(on) {
   const next = Boolean(on);
-  if (next === readingView.active && !next) {
+  if (next === state.readingView && !next) {
     clearReadingAudience();
     return;
   }
   if (next) clearGitFocusForReading();
-  readingView.active = next;
+  state.readingView = next;
   document.body.classList.toggle('hx-reading-active', next);
   const button = document.getElementById('hx-reading');
   if (button) {
@@ -2342,7 +2340,6 @@ function setReadingView(on) {
     button.textContent = next ? 'Reading view on' : 'Reading view';
   }
   if (!next) clearReadingAudience();
-  state.readingView = next;
   if (next) {
     const base = (state.range.baseline && state.range.baseline.base) || new URLSearchParams(location.search).get('base');
     if (base) requestJev(base);
@@ -2365,18 +2362,14 @@ function mountReadingView() {
   button.type = 'button';
   button.textContent = 'Reading view';
   button.setAttribute('aria-pressed', 'false');
-  button.addEventListener('click', () => setReadingView(!readingView.active));
+  button.addEventListener('click', () => setReadingView(!state.readingView));
   toolbar.insertBefore(button, document.getElementById('hx-status'));
-  document.body.classList.toggle('hx-reading-active', readingView.active);
-  const focusObserver = new MutationObserver(() => {
-    if (readingView.active && document.body.classList.contains('hx-focus-active')) setReadingView(false);
-  });
-  focusObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
-  Object.defineProperty(readingView, 'mounted', { value: true, configurable: true });
+  document.body.classList.toggle('hx-reading-active', state.readingView);
 }
 
 const readingClassObserver = new MutationObserver(() => {
-  if (readingView.mounted) document.body.classList.toggle('hx-reading-active', readingView.active);
+  if (state.readingView && document.body.classList.contains('hx-focus-active')) setReadingView(false);
+  else document.body.classList.toggle('hx-reading-active', state.readingView);
 });
 readingClassObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
 setTimeout(mountReadingView, 0);
