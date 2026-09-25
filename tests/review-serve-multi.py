@@ -369,6 +369,9 @@ class MultiReviewServeTest(unittest.TestCase):
             [first | {"owner": ""}],
             [first | {"cursor_name": ""}],
             [first | {"slug": "api"}],
+            [first | {"path": "first/other/" + first["spec"]}],
+            [first | {"path": "elsewhere/" + first["spec"]}],
+            [first | {"project": "first"}, second | {"slug": "first", "project": "first", "path": "first/first/" + second["spec"]}],
             [first | {"narrow_root": first["root"]}],
             [first | {"root": str(Path(first["root"]) / "docs"), "spec": "specs/domains/x.spec.html"}],
         ]
