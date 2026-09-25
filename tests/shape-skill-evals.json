@@ -22,7 +22,7 @@
         "Commits the seed locally before presenting review and never pushes or opens a pull request",
         "Serves only the narrow review collection on loopback",
         "Keeps the page private on loopback with an ssh -L tunnel unless the developer asks for --public",
-        "Opens focus=changes with the exact local change-request base ref",
+        "Opens focus=changes with the exact local review base ref",
         "Keeps the authoring turn parked on the collection watcher"
       ]
     },

@@ -108,7 +108,7 @@ Use one coherent system for type roles, surfaces, text, rules, semantic colors, 
 Color always has a text, position, or line-shape cue.
 Normal text and labels meet 4.5:1 contrast; large text and meaningful boundaries meet 3:1; muted text never relies on low opacity.
 
-Use only a shared spec stylesheet that already exists unchanged at the exact change-request base.
+Use only a shared spec stylesheet that already exists unchanged at the exact review base.
 If none exists, copy [../assets/style/spec.css](../assets/style/spec.css) unchanged to the target shared spec style directory and link it relatively.
 Do not invent a page-level palette, typography, background, surface, or geometry system during shaping, and do not put one in a spec-local `<style>` block.
 Inline styling is limited to artifact-local geometry and semantic marks that the shared system does not express.
