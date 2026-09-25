@@ -587,12 +587,13 @@ def registry_state(path: Path, validate: bool = True) -> tuple[list[dict[str, An
     return document["resource"], document["process"]
 
 
-def running_url(log_path: Path, port: int) -> str:
+def running_url(log_path: Path) -> str:
+    """The server prints its actual URL at start; without it the bind is unknown, so never guess."""
     if log_path.exists():
         match = re.search(r"spec-chat review-serve on (https?://\S+)", log_path.read_text(encoding="utf-8", errors="replace"))
         if match:
             return match.group(1).rstrip("/")
-    return f"http://{LOOPBACK}:{port}"
+    raise LauncherError("cannot read the running review URL from its log; run stop, then register again")
 
 
 def wake_status(owner: str) -> str:
@@ -646,10 +647,11 @@ def register(args: argparse.Namespace) -> int:
                 bind = process.get("bind") or process_bind(process["pid"])
                 if bind:
                     process = {**process, "bind": bind}
-                if args.public or args.private:
-                    print(f"review host already running on {bind or 'unknown bind'}; reused unchanged", file=sys.stderr)
+                if (args.public or args.private) and select_bind(args, None) != bind:
+                    raise LauncherError(f"review host already running on {bind or 'an unknown bind'}; "
+                                        "run stop, then register again to change it")
                 write_registry(registry, candidate, process)
-                url = running_url(log_path, process["port"])
+                url = running_url(log_path)
                 for item in parsed:
                     prove_resource(url, item)
                 print_access(url, bind)

@@ -81,7 +81,6 @@ Reached via adversarial design review: Claude (Fable 5) ↔ GPT-5.5 (xhigh), thr
 
 ```mermaid
 flowchart LR
-  Shape[Shaping skill] -->|issue interface| Issue[Repository-selected issue skill]
   Shape -->|review interface| Review[Review skill]
   Review -->|event protocol| Browser[Browser runtime]
   Browser -->|HTTP events and baseline reads| Local[Local review transport]
@@ -92,8 +91,8 @@ flowchart LR
   Host -->|owner pane wake| Review
 ```
 
-- The shaping skill owns prompt intake, durable seed order, readable information-density optimization, visual-system selection, artifact coverage, fallback styling, completeness reconciliation, implementation-graph shaping, and orchestration through the issue and review interfaces.
-- The repository-selected issue skill owns tracker-specific create, read, replace-current-content, and link behavior; no tracker behavior enters the browser runtime, review transport, or event protocol.
+- The shaping skill owns prompt intake, durable seed order, readable information-density optimization, visual-system selection, artifact coverage, fallback styling, completeness reconciliation, implementation-graph shaping, and orchestration through the review interface. It commits locally and links the issue its caller names; pushing, pull requests, and issue or ticket filing belong to the caller.
+- No tracker behavior enters Spec Chat: not the skills, browser runtime, review transport, or event protocol.
 - The review skill owns review-surface preflight, capability migration, explicit control-state selection, exact batch processing, spec edits, replies, cursor advancement, and cold reconstruction from durable sources.
 - The long-lived review host owns read-only detection and invokes one owner-pane wake once per unchanged batch; it never advances review state or runs an agent.
 - One process-held local kernel lock permits a single control owner for each collection root and cursor; process exit releases it without a lease protocol.

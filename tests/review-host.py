@@ -317,7 +317,7 @@ finish_event = ""
         written = "".join(call.args[0] for call in err.write.call_args_list)
         self.assertIn("has no login", written)
 
-    def test_live_legacy_process_is_reused_unchanged_and_bind_backfilled(self):
+    def test_live_host_keeps_its_bind_and_refuses_a_different_one(self):
         state = self.work / "state"
         first = self.run_cli(*self.register_args(state), state=state)
         self.assertEqual(first.returncode, 0, first.stderr)
@@ -325,11 +325,22 @@ finish_event = ""
         process = self.registry(state)["process"]
         registry.write_text(registry.read_text(encoding="utf-8").replace('bind = "127.0.0.1"\n', ""), encoding="utf-8")
         self.assertNotIn("bind", self.registry(state)["process"])
-        again = self.run_cli(*self.register_args(state, spec="second"), "--public", "0.0.0.0", state=state,
-                             ports=process["port"])
-        self.assertEqual(again.returncode, 0, again.stderr)
-        self.assertIn("reused unchanged", again.stderr)
+        before = registry.read_bytes()
+        public = self.run_cli(*self.register_args(state, spec="second"), "--public", "0.0.0.0", state=state,
+                              ports=process["port"])
+        self.assertNotEqual(public.returncode, 0)
+        self.assertIn("already running on 127.0.0.1", public.stderr)
+        self.assertIn("run stop", public.stderr)
+        self.assertEqual(registry.read_bytes(), before)
+        private = self.run_cli(*self.register_args(state, spec="second"), "--private", state=state,
+                               ports=process["port"])
+        self.assertEqual(private.returncode, 0, private.stderr)
         self.assertEqual(self.registry(state)["process"], {**process, "bind": "127.0.0.1"})
+        self.assertIn("ssh -L", private.stdout)
+
+    def test_running_url_never_guesses_without_log(self):
+        with self.assertRaises(review_host.LauncherError):
+            review_host.running_url(self.work / "missing.log")
 
     def test_invalid_port_does_not_start_server(self):
         state = self.work / "invalid"
