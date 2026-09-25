@@ -1,0 +1,24 @@
+{
+  "id": "resolved",
+  "version": 1,
+  "instructions": "Compare the human review messages with the before and after text for the changed section. Choose resolved in spirit only when the revised text implements what the human asked for. Choose unrelated when the section changed without addressing the request. Agent replies do not establish the request.",
+  "labels": [
+    {
+      "name": "resolved in spirit",
+      "description": "The revised text does what the human comment asked, even if the wording or structure changed.",
+      "examples": [
+        "The orphan interaction changed from Go to only to an explicit Move comment here action that resolves the thread and starts a quoted draft, answering the human request for a re-anchor click. (spec-chat ANN-100 history, 893c216 and 9453268)",
+        "The Jev contract replaced the calibration gate with sets enabled by a key and moderate thresholds tuned by use, answering the human decision to learn by doing. (annotateanything ANN-49 history, 93e0c80)"
+      ]
+    },
+    {
+      "name": "unrelated",
+      "description": "The revised text does not address the human comment, even though the section changed.",
+      "examples": [
+        "A flow figure box was resized and a label repositioned while the human comment asked about retry behavior; the diagram edit leaves that request unanswered. (spec-chat ANN-100 history, 42ee440)",
+        "The compared-range picker shortened a label while the human comment concerned which commit fields the route returns; that wording edit does not address the data request. (spec-chat ANN-90 history, 88000ff)"
+      ]
+    }
+  ],
+  "threshold": 0.6
+}

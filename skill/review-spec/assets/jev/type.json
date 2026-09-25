@@ -1,0 +1,40 @@
+{
+  "id": "type",
+  "version": 1,
+  "instructions": "Compare the base and current text for one changed root section. Choose the single label whose criterion best describes the change. Use scope when the change adds, removes, or moves a capability, surface, or non-goal. Use behavioral when the result or a rule changes. Use clarification when behavior stays the same and wording becomes more precise. Use cosmetic when meaning stays the same and only wording, order, or style changes.",
+  "labels": [
+    {
+      "name": "scope",
+      "description": "Adds, removes, or moves a capability, surface, or non-goal.",
+      "examples": [
+        "Spec Chat grew from the first change-type and orphan slice to also cover resolved-in-spirit, corpus, coverage, and reading suggestions. (spec-chat ANN-100 history, 65b767f)",
+        "Review assist moved out of the shared Jev contract and became ANN-100 work shipped in Spec Chat, while the contract kept the reusable rules. (annotateanything ANN-49 history, 3d6618d)"
+      ]
+    },
+    {
+      "name": "behavioral",
+      "description": "Alters what the result does: a rule, interface, edge case, or criterion.",
+      "examples": [
+        "A low-confidence answer now shows unsure, and a missing key shows one Jev off note instead of silently keeping the old state. (annotateanything ANN-49 history, 6378102)",
+        "Move comment here resolves the orphaned thread and starts a draft comment at the suggested section using existing events. (spec-chat ANN-100 history, 9453268)"
+      ]
+    },
+    {
+      "name": "clarification",
+      "description": "Keeps the behavior the same while stating its meaning more precisely.",
+      "examples": [
+        "The change-type section was rewritten as one Choice question with explicit criteria for scope, behavioral, clarification, and cosmetic. (spec-chat ANN-100 history, 42ee440)",
+        "The Jev seam boundary wording was tightened to follow the decision that removed the calibration gate. (annotateanything ANN-49 history, 2b6b529)"
+      ]
+    },
+    {
+      "name": "cosmetic",
+      "description": "Changes wording, order, or style without changing meaning.",
+      "examples": [
+        "The flow figure widened two boxes and moved a label so the diagram fit without changing the request flow. (spec-chat ANN-100 history, 42ee440)",
+        "The compared-range picker label changed from lean review (current base) to lean review (base). (spec-chat ANN-90 history, 88000ff)"
+      ]
+    }
+  ],
+  "threshold": 0.6
+}
