@@ -221,6 +221,21 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("stories=valid", result.stdout)
 
+    def test_rejects_marked_sections_out_of_order(self):
+        base = self.empty_base()
+        self.write_shaped_spec()
+        html = (
+            self.spec.read_text()
+            .replace('data-spec-section="user-stories"', 'data-spec-section="order-first"', 1)
+            .replace('data-spec-section="acceptance"', 'data-spec-section="user-stories"', 1)
+            .replace('data-spec-section="order-first"', 'data-spec-section="acceptance"', 1)
+        )
+        self.spec.write_text(html)
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("shaped spec sections must start", result.stderr)
+
     def test_unmarked_legacy_spec_remains_valid_without_section_backfill(self):
         self.write_spec()
         self.style.write_text("body { color: #111; }\n")

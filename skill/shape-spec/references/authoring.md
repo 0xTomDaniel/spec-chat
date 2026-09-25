@@ -21,7 +21,8 @@ New or materially revised governing specs opt into the structural contract with
 that marker remain on the legacy path until an explicit migration.
 
 Every marked spec has exactly one visible, named section for each contract
-surface:
+surface, in this order: `User stories`, `Acceptance criteria`, then
+`Modular boundaries`.
 
 ```html
 <article class="spec" data-spec-contract="shaped-sections-v1">

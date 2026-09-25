@@ -229,6 +229,12 @@ def validate_shape_sections(parser):
         return None
     if parser.contract != "shaped-sections-v1":
         return "unsupported data-spec-contract; use shaped-sections-v1"
+    if parser.sections:
+        section_depth = min(section["depth"] for section in parser.sections)
+        top_level_sections = [section for section in parser.sections if section["depth"] == section_depth]
+        expected_order = ("user-stories", "acceptance", "modular-boundaries")
+        if len(top_level_sections) >= 3 and tuple(section["kind"] for section in top_level_sections[:3]) != expected_order:
+            return "shaped spec sections must start with User stories, Acceptance criteria, Modular boundaries"
     user_sections = [
         section for section in parser.sections
         if section["kind"] == "user-stories" and has_heading(section, "User stories")
