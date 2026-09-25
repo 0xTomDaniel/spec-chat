@@ -7,7 +7,6 @@ from __future__ import annotations
 import argparse
 import contextlib
 import html
-import importlib.util
 import json
 import mimetypes
 import os
@@ -83,6 +82,7 @@ def _resource_records(document, *, check_refs=False, trust=False):
         raise ValueError("registry resource entries must be an array")
     result = []
     ids = set()
+    paths = set()
     for raw in records:
         if not isinstance(raw, dict):
             raise ValueError("registry resource entry must be a table")
@@ -129,25 +129,32 @@ def _resource_records(document, *, check_refs=False, trust=False):
             )
             if checked.returncode:
                 raise ValueError("resource base is unresolved: " + raw["base"])
+        # The review host decides and validates each row's served path; the server trusts it.
+        path = _row_path(raw, slug, spec)
+        if path in paths:
+            raise ValueError("duplicate stable resource path: " + path)
         resource = dict(raw)
         resource.update({
             "root": root,
             "narrow_root": narrow,
             "spec": spec,
             "spec_file": spec_file,
+            "path": path,
         })
         ids.add(rid)
+        paths.add(path)
         result.append(resource)
-    try:
-        host = _review_host()
-    except (OSError, RuntimeError) as exc:
-        raise ValueError(str(exc)) from exc
-    violation = host.path_rule_violation(result)
-    if violation:
-        raise ValueError(violation)
-    for resource in result:
-        resource["path"] = host.row_path(resource)
     return result
+
+
+def _row_path(raw, slug, spec):
+    """The row's recorded served path; rows written before `path` existed use `<slug>/<spec>`."""
+    path = raw.get("path")
+    if path is None:
+        return slug + "/" + spec
+    if not isinstance(path, str) or _safe_relative(path) != path or not path.startswith(slug + "/") or not path.endswith("/" + spec):
+        raise ValueError("resource path is invalid: " + raw["id"])
+    return path
 
 
 def _read_registry(path, *, check_refs=False, trust=False):
@@ -230,28 +237,6 @@ def _mount_prefix(mount):
     if mount.get("path"):
         return mount["path"][:-len(mount["spec"])]
     return (mount["slug"] + "/") if mount["slug"] else ""
-
-
-_REVIEW_HOST = []
-
-
-def _review_host():
-    """Load the review host that owns the served-path rule, beside the packaged or dogfood server."""
-    if not _REVIEW_HOST:
-        here = os.path.dirname(os.path.realpath(__file__))
-        for candidate in (
-            os.path.join(here, "..", "scripts", "review-host.py"),
-            os.path.join(here, "..", "skill", "review-spec", "scripts", "review-host.py"),
-        ):
-            if os.path.isfile(candidate):
-                spec = importlib.util.spec_from_file_location("spec_chat_review_host", candidate)
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                _REVIEW_HOST.append(module)
-                break
-        else:
-            raise RuntimeError("review host is unavailable")
-    return _REVIEW_HOST[0]
 
 
 def _page_title(path):

@@ -251,6 +251,7 @@ finish_event = ""
         resource = review_host.parse_resource_spec(
             self.resource(), "owner", "checker", ".cursor-test", "ann45", None
         )
+        review_host.assign_path([], resource)
         with mock.patch.object(review_host._verify_module, "verify", side_effect=ValueError("served spec bytes differ")):
             with self.assertRaises(review_host.ProofError):
                 review_host.prove_resource("http://127.0.0.1:9999", resource)
@@ -260,7 +261,7 @@ finish_event = ""
         path = repo / spec
         path.parent.mkdir(parents=True)
         path.write_text(f"<!doctype html><title>{name}</title><p data-anchor=\"a\">{name}</p>\n", encoding="utf-8")
-        (repo / "docs/specs/.style").mkdir()
+        (repo / "docs/specs/.style").mkdir(parents=True)
         (repo / "docs/specs/.style/spec.css").write_text(f"/* {name} */", encoding="utf-8")
         subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
         subprocess.run(["git", "-C", str(repo), "config", "user.email", "tests@example.invalid"], check=True)
@@ -425,6 +426,113 @@ finish_event = ""
         self.assertEqual(paths, ["ann45/docs/specs/y.spec.html", "ann45/sc/docs/specs/x.spec.html", "ann45/sc/docs/specs/y.spec.html"])
         self.assertEqual(request(url + "/ann45/sc/docs/specs/x.spec.html")[0], 200)
         self.assertEqual(request(url + "/ann45/docs/specs/x.spec.html")[0], 404)
+
+    def write_legacy_registry(self, state, repo, base, spec="docs/specs/x.spec.html", slug="ann45"):
+        state.mkdir(parents=True, exist_ok=True)
+        (state / "registry.toml").write_text(
+            f"""[[resource]]
+id = "spec:{slug}::{spec}"
+slug = "{slug}"
+root = "{repo.resolve()}"
+narrow_root = "{(repo / 'docs').resolve()}"
+spec = "{spec}"
+base = "{base}"
+owner = "owner"
+checker = "checker"
+cursor_name = ".cursor-test"
+""",
+            encoding="utf-8",
+        )
+
+    def test_legacy_row_is_not_taken_over_by_a_second_repo_with_the_same_spec_path(self):
+        state = self.work / "state"
+        aa, aa_base = self.make_repo("aa")
+        sc, sc_base = self.make_repo("sc")
+        self.write_legacy_registry(state, aa, aa_base)
+        added = self.register_from(state, "sc", sc, sc_base)
+        self.assertEqual(added.returncode, 0, added.stderr)
+        rows = {row["id"]: row for row in self.registry(state)["resource"]}
+        legacy = rows["spec:ann45::docs/specs/x.spec.html"]
+        self.assertEqual((legacy["root"], legacy.get("project")), (str(aa.resolve()), None))
+        self.assertEqual(rows["spec:ann45::sc/docs/specs/x.spec.html"]["path"], "ann45/sc/docs/specs/x.spec.html")
+        url = self.served_url(added)
+        self.assertEqual(request(url + "/ann45/docs/specs/x.spec.html"), (200, (aa / "docs/specs/x.spec.html").read_bytes()))
+
+        # The same root re-registering the legacy spec is its upsert: one row, path kept.
+        again = self.register_from(state, "aa", aa, aa_base, ports=self.registry(state)["process"]["port"])
+        self.assertEqual(again.returncode, 0, again.stderr)
+        rows = {row["id"]: row for row in self.registry(state)["resource"]}
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows["spec:ann45::docs/specs/x.spec.html"]["project"], "aa")
+
+    def test_prefixed_row_whose_id_matches_the_primary_cannot_delete_it(self):
+        state = self.work / "state"
+        aa, aa_base = self.make_repo("aa", spec="sc/docs/x.spec.html")
+        sc, sc_base = self.make_repo("sc", spec="docs/x.spec.html")
+        first = self.register_from(state, "aa", aa, aa_base, spec="sc/docs/x.spec.html")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        before = (state / "registry.toml").read_bytes()
+        port = self.registry(state)["process"]["port"]
+        clash = self.register_from(state, "sc", sc, sc_base, spec="docs/x.spec.html", ports=port)
+        self.assertNotEqual(clash.returncode, 0)
+        self.assertEqual((state / "registry.toml").read_bytes(), before, "the primary row survives unchanged")
+        self.assertEqual([row["project"] for row in self.registry(state)["resource"]], ["aa"])
+
+    def test_a_second_project_from_the_primary_root_gets_the_prefixed_form(self):
+        state = self.work / "state"
+        aa, aa_base = self.make_repo("aa")
+        (aa / "docs/specs/y.spec.html").write_text("<title>y</title>\n", encoding="utf-8")
+        first = self.register_from(state, "aa", aa, aa_base)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        port = self.registry(state)["process"]["port"]
+        other = self.register_from(state, "bb", aa, aa_base, spec="docs/specs/y.spec.html", ports=port)
+        self.assertEqual(other.returncode, 0, other.stderr)
+        rows = {row["project"]: row["path"] for row in self.registry(state)["resource"]}
+        self.assertEqual(rows, {"aa": "ann45/docs/specs/x.spec.html", "bb": "ann45/bb/docs/specs/y.spec.html"})
+
+    def test_reviewed_restores_the_owners_index_when_the_commit_fails(self):
+        state = self.work / "state"
+        started = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        rid = self.registry(state)["resource"][0]["id"]
+        hook = self.repo / ".git/hooks/pre-commit"
+        hook.write_text("#!/bin/sh\necho refused by hook >&2\nexit 1\n", encoding="utf-8")
+        hook.chmod(0o755)
+        spec = "docs/specs/review.spec.html"
+
+        def index_entry():
+            return subprocess.check_output(["git", "-C", str(self.repo), "ls-files", "-s", "--", spec], text=True)
+
+        # Owner staged one version and kept editing: the staged entry is put back as it was.
+        self.spec.write_text("<title>review</title><p>staged by owner</p>\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.repo), "add", spec], check=True)
+        staged = index_entry()
+        self.spec.write_text("<title>review</title><p>edited in review</p>\n", encoding="utf-8")
+        failed = self.run_cli("reviewed", "--state-dir", str(state), "--id", rid, state=state)
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertIn("refused by hook", failed.stderr)
+        self.assertEqual(index_entry(), staged)
+        self.assertEqual(self.git_head(self.repo), self.base)
+        self.assertEqual(self.registry(state)["resource"][0]["base"], self.base, "base unmoved")
+
+        # Nothing staged before: nothing staged after.
+        subprocess.run(["git", "-C", str(self.repo), "reset", "-q", "--", spec], check=True)
+        failed = self.run_cli("reviewed", "--state-dir", str(state), "--id", rid, state=state)
+        self.assertNotEqual(failed.returncode, 0)
+        cached = subprocess.check_output(["git", "-C", str(self.repo), "diff", "--cached", "--name-only"], text=True)
+        self.assertEqual(cached, "")
+        self.assertEqual(self.registry(state)["resource"][0]["base"], self.base)
+
+    def test_project_id_must_be_one_path_segment(self):
+        for project in ("a/b", "..", "a b"):
+            with self.subTest(project=project):
+                with self.assertRaisesRegex(review_host.LauncherError, "one path segment"):
+                    review_host.parse_resource_spec(
+                        self.resource(project), "owner", "checker", ".cursor-test", "ann45", None
+                    )
+        parsed = review_host.parse_resource_spec(self.resource(), "owner", "checker", ".cursor-test", "ann45", None)
+        self.assertNotIn("id", parsed)
+        self.assertNotIn("path", parsed)
 
     def test_only_register_remove_reviewed_stop_commands_exist(self):
         commands = set(review_host.build_parser()._subparsers._group_actions[0].choices)

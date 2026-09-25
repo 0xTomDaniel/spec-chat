@@ -285,6 +285,8 @@ def parse_resource_spec(value: str, owner: str, checker: str, cursor_name: str,
     base = base.strip()
     if not project or not base or not root_text or not spec:
         raise LauncherError("resource must name project, root, spec, and base")
+    if not PROJECT_SEGMENT_RE.fullmatch(project):
+        raise LauncherError(f"project id must be one path segment of letters, digits, '.', '_', or '-': {project}")
     top = resource_toplevel(Path(root_text))
     spec = spec.replace("\\", "/")
     spec_path = Path(spec)
@@ -301,8 +303,8 @@ def parse_resource_spec(value: str, owner: str, checker: str, cursor_name: str,
         raise LauncherError(f"invalid or reserved resource slug: {selected_slug}")
     resolved_base = run_git(top, "rev-parse", "--verify", base + "^{commit}")
     return {
-        "id": f"spec:{selected_slug}::{spec}", "slug": selected_slug, "project": project,
-        "root": str(top), "narrow_root": str(narrow), "spec": spec, "path": f"{selected_slug}/{spec}",
+        "slug": selected_slug, "project": project,
+        "root": str(top), "narrow_root": str(narrow), "spec": spec,
         "spec_file": str(spec_file),
         "base": base, "resolved_base_commit": resolved_base,
         "owner": owner.strip(), "checker": checker.strip(), "cursor_name": cursor_name,
@@ -380,13 +382,24 @@ def path_rule_violation(records: Sequence[Mapping[str, Any]]) -> str | None:
     return None
 
 
-def same_row(row: Mapping[str, Any], resource: Mapping[str, Any]) -> bool:
-    """Row identity is slug, project, and spec; a legacy row without project matches any project."""
+def same_root(row: Mapping[str, Any], resource: Mapping[str, Any]) -> bool:
+    return Path(row["root"]).resolve() == Path(resource["root"]).resolve()
+
+
+def owned_by(row: Mapping[str, Any], resource: Mapping[str, Any]) -> bool:
+    """A row belongs to the resource's project; a legacy row without project only when its root matches."""
     project = row_project(row)
+    if project is None:
+        return same_root(row, resource)
+    return project == resource["project"]
+
+
+def same_row(row: Mapping[str, Any], resource: Mapping[str, Any]) -> bool:
+    """Row identity is slug, project, and spec."""
     return (
         row["slug"] == resource["slug"]
         and row["spec"].replace("\\", "/") == resource["spec"]
-        and project in (None, resource["project"])
+        and owned_by(row, resource)
     )
 
 
@@ -394,24 +407,22 @@ def assign_path(existing: Sequence[Mapping[str, Any]], resource: dict[str, Any])
     """Fix a row's served path once; registering the same row id again is an upsert.
 
     The same slug, project, and spec keeps that row's id and path, whatever its new root.
-    A new row joins its project's form under the slug, else its root's, else is primary only if first.
+    A new row joins its project's form under the slug; a project new to the slug gets the
+    plain form only when no other project holds rows under it.
     """
-    slug, spec, project = resource["slug"], resource["spec"], resource["project"]
+    slug, spec = resource["slug"], resource["spec"]
     same = [row for row in existing if same_row(row, resource)]
     if same:
         row = next((row for row in same if row_project(row) is not None), same[0])
         resource.update({"path": row_path(row), "id": row["id"]})
         return resource
-    root = str(Path(resource["root"]).resolve())
     same_slug = [row for row in existing if row["slug"] == slug]
-    same_project = [row for row in same_slug if row_project(row) == project]
-    same_root = [row for row in same_slug if str(Path(row["root"]).resolve()) == root]
-    joined = same_project or same_root
-    if joined:
-        primary = any(row_path(row) == f"{slug}/{row['spec']}" for row in joined)
+    own = [row for row in same_slug if owned_by(row, resource)]
+    if own:
+        primary = any(row_path(row) == f"{slug}/{row['spec'].replace(chr(92), '/')}" for row in own)
     else:
         primary = not same_slug
-    path = f"{slug}/{spec}" if primary else f"{slug}/{project}/{spec}"
+    path = f"{slug}/{spec}" if primary else f"{slug}/{resource['project']}/{spec}"
     resource.update({"path": path, "id": f"spec:{slug}::{path[len(slug) + 1:]}"})
     return resource
 
@@ -498,6 +509,25 @@ def prove_resource(public_url: str, resource: Mapping[str, Any]) -> dict[str, An
     }
 
 
+def commit_reviewed_spec(root: Path, spec: str) -> None:
+    """Commit only the spec; on failure put the owner's index entry for it back as it was."""
+    before = run_git(root, "ls-files", "-s", "--", spec, check=False)
+    run_git(root, "add", "--", spec)
+    result = subprocess.run(
+        ("git", "-C", str(root), "commit", "-q", "-m", f"docs: human spec review of {spec}", "--", spec),
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False,
+    )
+    if result.returncode == 0:
+        return
+    if before:
+        mode, sha = before.split()[:2]
+        run_git(root, "update-index", "--cacheinfo", f"{mode},{sha},{spec}", check=False)
+    else:
+        run_git(root, "rm", "-q", "--cached", "--", spec, check=False)
+    detail = (result.stderr or result.stdout).strip() or f"exit {result.returncode}"
+    raise LauncherError(f"cannot commit reviewed spec {spec}; base unchanged: {detail}")
+
+
 def reviewed(args: argparse.Namespace) -> int:
     """Move one row's base to its last reviewed version: commit the spec if it differs from HEAD."""
     state = state_dir(args)
@@ -519,8 +549,7 @@ def reviewed(args: argparse.Namespace) -> int:
         except OSError as exc:
             raise LauncherError(f"cannot read spec: {spec_file}") from exc
         if changed:
-            run_git(root, "add", "--", spec)
-            run_git(root, "commit", "-q", "-m", f"docs: human spec review of {spec}", "--", spec)
+            commit_reviewed_spec(root, spec)
         record["base"] = run_git(root, "rev-parse", "--verify", "HEAD^{commit}")
         record["updated_at"] = now()
         write_registry(registry, records, process)
@@ -672,8 +701,11 @@ def register(args: argparse.Namespace) -> int:
         for item in parsed:
             seen.append(assign_path(seen, item))
         additions = [registry_record(item) for item in parsed]
-        replacement_ids = {item["id"] for item in additions}
-        candidate = [item for item in existing if item["id"] not in replacement_ids] + additions
+        # Only a row with the same identity is replaced; an id that merely collides with
+        # another row stays in the candidate so validation refuses it instead of dropping it.
+        candidate = [
+            row for row in existing if not any(same_row(row, item) for item in parsed)
+        ] + additions
         validate_records(candidate)
         child: subprocess.Popen[str] | None = None
         try:

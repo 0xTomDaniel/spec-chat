@@ -159,7 +159,8 @@ function markIssueFocus(currentText, baseline) {
   for (const element of focused) {
     if (changedRoots.has(element.dataset.anchor)) element.dataset.hxFocusRoot = 'changed';
   }
-  document.body.classList.add('hx-focus-active');
+  // With nothing changed in the range the page reads clear; the range bar still states the range.
+  document.body.classList.toggle('hx-focus-active', focused.some(element => element.dataset.hxFocus === 'changed'));
 }
 
 async function fetchBaseline(base, includeCurrent = false, signal) {

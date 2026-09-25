@@ -69,4 +69,33 @@ assert.match(runtime, /setProperty\('--hx-veil'/, 'the slider drives --hx-veil s
 assert.doesNotMatch(focusCss, /blur\(2\.5px\)/, 'no unscaled blur remains');
 assert.match(focusCss, /\[data-hx-focus=unchanged\] \.hx-pin[^}]*z-index:700/, 'pins remain above the veil');
 
+// Plain open with zero changed anchors renders clear; one changed anchor still veils the rest.
+const markStart = runtime.indexOf('function markIssueFocus(');
+const markEnd = runtime.indexOf('\n}\n', markStart) + 2;
+assert.ok(markStart >= 0 && markEnd > markStart, 'runtime exposes markIssueFocus');
+function focusPage(currentAnchors, baseAnchors) {
+  const classes = new Set();
+  const elements = Object.keys(currentAnchors).map(anchor => ({ dataset: { anchor }, parentElement: null }));
+  const fakeDocument = {
+    querySelectorAll: () => elements,
+    body: { classList: {
+      add: name => classes.add(name),
+      toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)),
+    } },
+  };
+  class FakeParser { parseFromString(text) { return text; } }
+  const signatures = text => new Map(Object.entries(JSON.parse(text)));
+  const mark = Function('document', 'DOMParser', 'anchorSignatures', 'classifyAnchorSignatures', 'changedRootAnchors',
+    runtime.slice(markStart, markEnd) + '; return markIssueFocus;')(
+    fakeDocument, FakeParser, signatures, classifyAnchorSignatures, changedRootAnchors);
+  mark(JSON.stringify(currentAnchors), { html: JSON.stringify(baseAnchors) });
+  return { veiled: classes.has('hx-focus-active'), elements };
+}
+const clean = focusPage({ a: '<p>a</p>', b: '<p>b</p>' }, { a: '<p>a</p>', b: '<p>b</p>' });
+assert.equal(clean.veiled, false, 'a clean spec plain open has no veil');
+assert.ok(clean.elements.every(element => element.dataset.hxFocus === 'unchanged'));
+const oneChanged = focusPage({ a: '<p>a</p>', b: '<p>b2</p>' }, { a: '<p>a</p>', b: '<p>b</p>' });
+assert.equal(oneChanged.veiled, true, 'one changed anchor still veils the rest');
+assert.deepEqual(oneChanged.elements.map(element => element.dataset.hxFocus), ['unchanged', 'changed']);
+
 console.log('runtime focus model tests passed');

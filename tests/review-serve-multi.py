@@ -83,10 +83,10 @@ class MultiReviewServeTest(unittest.TestCase):
         server.terminate()
         server.communicate(timeout=3)
 
-    def start(self, resources):
+    def start(self, resources, server=SERVER):
         self.write_registry(resources)
         self.server = subprocess.Popen(
-            (sys.executable, str(SERVER), "--registry", str(self.registry), "--bind", "127.0.0.1", "--port", "0"),
+            (sys.executable, str(server), "--registry", str(self.registry), "--bind", "127.0.0.1", "--port", "0"),
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
         self.addCleanup(self.stop, self.server)
@@ -357,6 +357,18 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertEqual(self.request(self.stable(second)), second_bytes)
         self.assertIsNone(self.server.poll())
 
+    def test_a_lone_target_repo_server_copy_serves_recorded_paths(self):
+        # The server trusts each row's recorded path; the host owns path validation.
+        lone = self.work / "target/tools/review-serve.py"
+        lone.parent.mkdir(parents=True)
+        lone.write_bytes(SERVER.read_bytes())
+        first, second = (self.make_resource(name) for name in ("first", "second"))
+        second = second | {"slug": "first", "project": "sc", "id": "spec:first::sc/" + second["spec"],
+                           "path": "first/sc/" + second["spec"]}
+        self.start([first | {"project": "aa", "path": "first/" + first["spec"]}, second], server=lone)
+        self.assertEqual(self.request("/first/" + first["spec"]), (200, b"<title>first</title>current first\n"))
+        self.assertEqual(self.request("/first/sc/" + second["spec"]), (200, b"<title>second</title>current second\n"))
+
     def test_invalid_registries_exit_before_binding_or_printing_url(self):
         first, second = (self.make_resource(name) for name in ("first", "second"))
         invalid = [
@@ -369,10 +381,9 @@ class MultiReviewServeTest(unittest.TestCase):
             [first | {"owner": ""}],
             [first | {"cursor_name": ""}],
             [first | {"slug": "api"}],
-            [first | {"path": "first/other/" + first["spec"]}],
             [first | {"path": "elsewhere/" + first["spec"]}],
-            [first | {"project": "first"}, second | {"slug": "first", "project": "first", "path": "first/first/" + second["spec"]}],
-            [first | {"project": "a"}, second | {"slug": "first", "project": "docs", "path": "first/docs/" + second["spec"]}],
+            [first | {"path": "first/../" + first["spec"]}],
+            [first, second | {"slug": "first", "id": "b", "path": first["slug"] + "/" + first["spec"]}],
             [first | {"narrow_root": first["root"]}],
             [first | {"root": str(Path(first["root"]) / "docs"), "spec": "specs/domains/x.spec.html"}],
         ]
