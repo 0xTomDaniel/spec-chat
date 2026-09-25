@@ -22,6 +22,7 @@ class SpecParser(HTMLParser):
         self.current_story = None
         self.stack = []
         self.sections = []
+        self.top_level_sections = []
         self.section_stack = []
         self.active_criteria = []
         self.active_boundaries = []
@@ -49,6 +50,7 @@ class SpecParser(HTMLParser):
         if tag == "link" and "stylesheet" in values.get("rel", "").split():
             self.stylesheets.append(values.get("href", ""))
         if tag == "section":
+            top_level = not self.section_stack
             section = {
                 "depth": depth,
                 "anchor": anchor,
@@ -60,6 +62,8 @@ class SpecParser(HTMLParser):
                 "has_tbd": False,
             }
             self.sections.append(section)
+            if top_level:
+                self.top_level_sections.append(section)
             self.section_stack.append(section)
         section = self._section()
         if section and "data-spec-tbd" in values:
@@ -230,10 +234,8 @@ def validate_shape_sections(parser):
     if parser.contract != "shaped-sections-v1":
         return "unsupported data-spec-contract; use shaped-sections-v1"
     if parser.sections:
-        section_depth = min(section["depth"] for section in parser.sections)
-        top_level_sections = [section for section in parser.sections if section["depth"] == section_depth]
         expected_order = ("user-stories", "acceptance", "modular-boundaries")
-        if len(top_level_sections) >= 3 and tuple(section["kind"] for section in top_level_sections[:3]) != expected_order:
+        if tuple(section["kind"] for section in parser.top_level_sections[:3]) != expected_order:
             return "shaped spec sections must start with User stories, Acceptance criteria, Modular boundaries"
     user_sections = [
         section for section in parser.sections

@@ -236,6 +236,24 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("shaped spec sections must start", result.stderr)
 
+    def test_rejects_marked_sections_nested_out_of_order(self):
+        base = self.empty_base()
+        self.write_shaped_spec()
+        html = self.spec.read_text()
+        sections = []
+        for anchor in ("user-stories", "acceptance", "modular-boundaries"):
+            start = html.index(f'<section data-spec-section="{anchor}"')
+            end = html.index("</section>", start) + len("</section>")
+            sections.append(html[start:end])
+        body_start = html.index('<section data-spec-section="user-stories"')
+        body_end = html.index("</article>")
+        wrapper = '<section data-anchor="wrapper">\n' + "\n".join(reversed(sections)) + "\n</section>\n"
+        self.spec.write_text(html[:body_start] + wrapper + html[body_end:])
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("shaped spec sections must start", result.stderr)
+
     def test_unmarked_legacy_spec_remains_valid_without_section_backfill(self):
         self.write_spec()
         self.style.write_text("body { color: #111; }\n")
