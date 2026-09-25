@@ -322,12 +322,15 @@ def registry_record(resource: Mapping[str, Any], registered_at: str | None = Non
     return result
 
 
-def row_project(record: Mapping[str, Any]) -> str:
-    """PROJECT_ID of a row; rows written before `project` existed carry it in their id."""
+def row_project(record: Mapping[str, Any]) -> str | None:
+    """PROJECT_ID of a row, or None for rows written before `project` existed.
+
+    Their ids are `spec:<slug>::<spec>`, which name the slug, not the project, so it is unknown.
+    """
     project = record.get("project")
     if isinstance(project, str) and project.strip():
         return project
-    return str(record["id"]).split("::", 1)[0].removeprefix("spec:")
+    return None
 
 
 def row_path(record: Mapping[str, Any]) -> str:
@@ -342,27 +345,74 @@ def stable_path(resource: Mapping[str, Any]) -> str:
     return "/" + row_path(resource)
 
 
+def path_rule_violation(records: Sequence[Mapping[str, Any]]) -> str | None:
+    """The one served-path rule shared by host and server; None when every row obeys it.
+
+    Rows need `slug`, `spec` (normalised), and optionally `project` and `path`. A row is
+    served at `<slug>/<spec>` or `<slug>/<project>/<spec>`; paths are unique; a project id
+    never equals a top-level directory of its slug's primary collection.
+    """
+    stable: set[str] = set()
+    primary_segments: dict[str, set[str]] = {}
+    prefixed_projects: dict[str, set[str]] = {}
+    for record in records:
+        slug, spec = record["slug"], record["spec"]
+        project = row_project(record)
+        key = row_path(record)
+        if key == f"{slug}/{spec}":
+            primary_segments.setdefault(slug, set()).add(spec.split("/", 1)[0])
+        elif project is not None and key == f"{slug}/{project}/{spec}" and PROJECT_SEGMENT_RE.fullmatch(project):
+            prefixed_projects.setdefault(slug, set()).add(project)
+        else:
+            return f"resource path is invalid: {record.get('id')}"
+        if key in stable:
+            return f"duplicate stable resource path: {key}"
+        stable.add(key)
+    for slug, projects in prefixed_projects.items():
+        clash = projects & primary_segments.get(slug, set())
+        if clash:
+            return f"project id collides with the primary collection path: {sorted(clash)[0]}"
+    return None
+
+
+def same_row(row: Mapping[str, Any], resource: Mapping[str, Any]) -> bool:
+    """Row identity is slug, project, and spec; a legacy row without project matches any project."""
+    project = row_project(row)
+    return (
+        row["slug"] == resource["slug"]
+        and row["spec"].replace("\\", "/") == resource["spec"]
+        and project in (None, resource["project"])
+    )
+
+
 def assign_path(existing: Sequence[Mapping[str, Any]], resource: dict[str, Any]) -> dict[str, Any]:
-    """Fix a new row's served path once: a root joins its slug's form, else primary only if first."""
-    slug, spec = resource["slug"], resource["spec"]
+    """Fix a row's served path once; registering the same row id again is an upsert.
+
+    The same slug, project, and spec keeps that row's id and path, whatever its new root.
+    A new row joins its project's form under the slug, else its root's, else is primary only if first.
+    """
+    slug, spec, project = resource["slug"], resource["spec"], resource["project"]
+    same = [row for row in existing if same_row(row, resource)]
+    if same:
+        row = next((row for row in same if row_project(row) is not None), same[0])
+        resource.update({"path": row_path(row), "id": row["id"]})
+        return resource
     root = str(Path(resource["root"]).resolve())
     same_slug = [row for row in existing if row["slug"] == slug]
+    same_project = [row for row in same_slug if row_project(row) == project]
     same_root = [row for row in same_slug if str(Path(row["root"]).resolve()) == root]
-    if same_root:
-        primary = any(row_path(row) == f"{slug}/{row['spec']}" for row in same_root)
+    joined = same_project or same_root
+    if joined:
+        primary = any(row_path(row) == f"{slug}/{row['spec']}" for row in joined)
     else:
         primary = not same_slug
-    path = f"{slug}/{spec}" if primary else f"{slug}/{resource['project']}/{spec}"
+    path = f"{slug}/{spec}" if primary else f"{slug}/{project}/{spec}"
     resource.update({"path": path, "id": f"spec:{slug}::{path[len(slug) + 1:]}"})
     return resource
 
 
 def validate_records(records: Sequence[Mapping[str, Any]]) -> None:
     ids: set[str] = set()
-    stable: set[str] = set()
-    project_roots: dict[tuple[str, str], str] = {}
-    primary_segments: dict[str, set[str]] = {}
-    prefixed_projects: dict[str, set[str]] = {}
     for record in records:
         required = ("id", "slug", "root", "narrow_root", "spec", "base", "owner", "checker", "cursor_name")
         missing = [key for key in required if not isinstance(record.get(key), str) or not record[key].strip()]
@@ -389,18 +439,6 @@ def validate_records(records: Sequence[Mapping[str, Any]]) -> None:
         spec_file = (top / spec).resolve()
         if not path_inside(spec_file, narrow, strict=True) or not spec_file.is_file():
             raise LauncherError(f"resource spec is missing or outside its collection: {rid}")
-        project = row_project(record)
-        key = row_path(record)
-        if key == f"{slug}/{spec}":
-            primary_segments.setdefault(slug, set()).add(spec.split("/", 1)[0])
-        elif key == f"{slug}/{project}/{spec}" and PROJECT_SEGMENT_RE.fullmatch(project):
-            prefixed_projects.setdefault(slug, set()).add(project)
-        else:
-            raise LauncherError(f"resource path is invalid: {rid}")
-        if key in stable:
-            raise LauncherError(f"duplicate stable resource path: {key}")
-        if project_roots.setdefault((slug, project), str(root.resolve())) != str(root.resolve()):
-            raise LauncherError(f"ambiguous resource slug: {slug}")
         reviewed = record.get("reviewed_sha256")
         if reviewed is not None and (not isinstance(reviewed, str) or not SHA256_RE.fullmatch(reviewed)):
             raise LauncherError(f"reviewed_sha256 is invalid: {rid}")
@@ -408,11 +446,9 @@ def validate_records(records: Sequence[Mapping[str, Any]]) -> None:
         if not SAFE_CURSOR_RE.fullmatch(record["cursor_name"]):
             raise LauncherError(f"invalid cursor name: {record['cursor_name']}")
         ids.add(rid)
-        stable.add(key)
-    for slug, projects in prefixed_projects.items():
-        clash = projects & primary_segments.get(slug, set())
-        if clash:
-            raise LauncherError(f"project id collides with the primary collection path: {sorted(clash)[0]}")
+    violation = path_rule_violation([dict(record, spec=record["spec"].replace("\\", "/")) for record in records])
+    if violation:
+        raise LauncherError(violation)
 
 
 def read_registry_document(path: Path) -> dict[str, Any]:
