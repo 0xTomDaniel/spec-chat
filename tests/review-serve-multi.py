@@ -372,6 +372,7 @@ class MultiReviewServeTest(unittest.TestCase):
             [first | {"path": "first/other/" + first["spec"]}],
             [first | {"path": "elsewhere/" + first["spec"]}],
             [first | {"project": "first"}, second | {"slug": "first", "project": "first", "path": "first/first/" + second["spec"]}],
+            [first | {"project": "a"}, second | {"slug": "first", "project": "docs", "path": "first/docs/" + second["spec"]}],
             [first | {"narrow_root": first["root"]}],
             [first | {"root": str(Path(first["root"]) / "docs"), "spec": "specs/domains/x.spec.html"}],
         ]

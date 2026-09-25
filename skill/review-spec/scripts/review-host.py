@@ -35,11 +35,10 @@ assert _verify_spec.loader is not None
 _verify_spec.loader.exec_module(_verify_module)
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
 SAFE_CURSOR_RE = re.compile(r"[^/\\]+\Z")
-SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 PROJECT_SEGMENT_RE = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]{0,62}\Z")
 RESOURCE_FIELDS = (
     "id", "slug", "project", "root", "narrow_root", "spec", "path", "base", "owner", "checker",
-    "cursor_name", "reviewed_sha256", "registered_at", "updated_at",
+    "cursor_name", "registered_at", "updated_at",
 )
 
 
@@ -349,15 +348,19 @@ def path_rule_violation(records: Sequence[Mapping[str, Any]]) -> str | None:
     """The one served-path rule shared by host and server; None when every row obeys it.
 
     Rows need `slug`, `spec` (normalised), and optionally `project` and `path`. A row is
-    served at `<slug>/<spec>` or `<slug>/<project>/<spec>`; paths are unique; a project id
-    never equals a top-level directory of its slug's primary collection.
+    served at `<slug>/<spec>` or `<slug>/<project>/<spec>`, one form per project under a
+    slug; paths are unique; a project id never equals a top-level directory of its slug's
+    primary collection.
     """
     stable: set[str] = set()
+    forms: dict[tuple[str, str], bool] = {}
     primary_segments: dict[str, set[str]] = {}
     prefixed_projects: dict[str, set[str]] = {}
     for record in records:
         slug, spec = record["slug"], record["spec"]
         project = row_project(record)
+        if "path" in record and (not isinstance(record["path"], str) or not record["path"]):
+            return f"resource path is invalid: {record.get('id')}"
         key = row_path(record)
         if key == f"{slug}/{spec}":
             primary_segments.setdefault(slug, set()).add(spec.split("/", 1)[0])
@@ -368,6 +371,8 @@ def path_rule_violation(records: Sequence[Mapping[str, Any]]) -> str | None:
         if key in stable:
             return f"duplicate stable resource path: {key}"
         stable.add(key)
+        if project is not None and forms.setdefault((slug, project), key == f"{slug}/{spec}") != (key == f"{slug}/{spec}"):
+            return f"project has mixed served paths under slug {slug}: {project}"
     for slug, projects in prefixed_projects.items():
         clash = projects & primary_segments.get(slug, set())
         if clash:
@@ -439,9 +444,6 @@ def validate_records(records: Sequence[Mapping[str, Any]]) -> None:
         spec_file = (top / spec).resolve()
         if not path_inside(spec_file, narrow, strict=True) or not spec_file.is_file():
             raise LauncherError(f"resource spec is missing or outside its collection: {rid}")
-        reviewed = record.get("reviewed_sha256")
-        if reviewed is not None and (not isinstance(reviewed, str) or not SHA256_RE.fullmatch(reviewed)):
-            raise LauncherError(f"reviewed_sha256 is invalid: {rid}")
         run_git(root, "rev-parse", "--verify", record["base"] + "^{commit}")
         if not SAFE_CURSOR_RE.fullmatch(record["cursor_name"]):
             raise LauncherError(f"invalid cursor name: {record['cursor_name']}")
@@ -496,21 +498,34 @@ def prove_resource(public_url: str, resource: Mapping[str, Any]) -> dict[str, An
     }
 
 
-def record_reviewed(registry: Path, spec_file: str, sha256: str) -> int:
-    """Record a spec's last reviewed SHA-256 on every row that serves that spec file."""
-    if not SHA256_RE.fullmatch(sha256):
-        raise LauncherError("reviewed SHA-256 is invalid")
-    target = Path(spec_file).resolve()
-    with state_lock(registry.parent):
+def reviewed(args: argparse.Namespace) -> int:
+    """Move one row's base to its last reviewed version: commit the spec if it differs from HEAD."""
+    state = state_dir(args)
+    registry, _, _ = paths(state)
+    with state_lock(state):
         records, process = registry_state(registry)
-        matched = 0
-        for record in records:
-            if (Path(record["root"]) / record["spec"]).resolve() == target:
-                record["reviewed_sha256"] = sha256
-                matched += 1
-        if matched:
-            write_registry(registry, records, process)
-        return matched
+        record = next((item for item in records if item["id"] == args.id), None)
+        if record is None:
+            raise LauncherError(f"unknown resource id: {args.id}")
+        root = Path(record["root"])
+        spec = record["spec"].replace("\\", "/")
+        spec_file = root / spec
+        try:
+            committed = subprocess.run(
+                ("git", "-C", str(root), "show", f"HEAD:{spec}"),
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False,
+            )
+            changed = committed.returncode != 0 or committed.stdout != spec_file.read_bytes()
+        except OSError as exc:
+            raise LauncherError(f"cannot read spec: {spec_file}") from exc
+        if changed:
+            run_git(root, "add", "--", spec)
+            run_git(root, "commit", "-q", "-m", f"docs: human spec review of {spec}", "--", spec)
+        record["base"] = run_git(root, "rev-parse", "--verify", "HEAD^{commit}")
+        record["updated_at"] = now()
+        write_registry(registry, records, process)
+        print(f"{args.id}: base {record['base']}" + (" (committed)" if changed else ""))
+        return 0
 
 
 def resource_flags(parser: argparse.ArgumentParser) -> None:
@@ -657,10 +672,6 @@ def register(args: argparse.Namespace) -> int:
         for item in parsed:
             seen.append(assign_path(seen, item))
         additions = [registry_record(item) for item in parsed]
-        previous = {item["id"]: item for item in existing}
-        for item in additions:
-            if "reviewed_sha256" in previous.get(item["id"], {}):
-                item["reviewed_sha256"] = previous[item["id"]]["reviewed_sha256"]
         replacement_ids = {item["id"] for item in additions}
         candidate = [item for item in existing if item["id"] not in replacement_ids] + additions
         validate_records(candidate)
@@ -758,6 +769,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub = commands.add_parser("remove")
     sub.add_argument("--id", required=True)
     sub.add_argument("--state-dir", required=False)
+    sub = commands.add_parser("reviewed", help="set a row's base to its last reviewed version")
+    sub.add_argument("--id", required=True)
+    sub.add_argument("--state-dir", required=False)
     sub = commands.add_parser("stop")
     sub.add_argument("--state-dir", required=False)
     return parser
@@ -770,6 +784,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return register(args)
         if args.command == "remove":
             return remove(args)
+        if args.command == "reviewed":
+            return reviewed(args)
         return stop(args)
     except LauncherError as exc:
         print(f"review-host: error: {exc}", file=sys.stderr)

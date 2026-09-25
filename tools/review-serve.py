@@ -5,9 +5,7 @@
 from __future__ import annotations
 
 import argparse
-import collections
 import contextlib
-import hashlib
 import html
 import importlib.util
 import json
@@ -19,7 +17,6 @@ import stat
 import subprocess
 import sys
 import time
-import threading
 import tomllib
 from html.parser import HTMLParser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -30,11 +27,6 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
 SAFE_CURSOR_RE = re.compile(r"[^/\\]+\Z")
 EVENT_RE = re.compile(r"[A-Za-z0-9._-]{1,128}\Z")
-SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
-PROJECT_SEGMENT_RE = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]{0,62}\Z")
-REVIEWED_HTML = "last-reviewed.html"
-REVIEWED_META = "last-reviewed.json"
-SERVED_VERSIONS = 8
 
 
 def parse_args(argv=None):
@@ -91,8 +83,6 @@ def _resource_records(document, *, check_refs=False, trust=False):
         raise ValueError("registry resource entries must be an array")
     result = []
     ids = set()
-    stable = set()
-    project_roots = {}
     for raw in records:
         if not isinstance(raw, dict):
             raise ValueError("registry resource entry must be a table")
@@ -129,18 +119,6 @@ def _resource_records(document, *, check_refs=False, trust=False):
         spec_file = os.path.realpath(os.path.join(root, *spec.split("/")))
         if not trust and (not _inside(spec_file, narrow, strict=True) or not os.path.isfile(spec_file)):
             raise ValueError("resource spec is missing or outside its collection: " + rid)
-        project = raw.get("project") if isinstance(raw.get("project"), str) and raw["project"].strip() else (
-            rid.split("::", 1)[0][len("spec:"):] if rid.startswith("spec:") else rid.split("::", 1)[0]
-        )
-        key = raw.get("path") or (slug + "/" + spec)
-        if not isinstance(key, str) or key not in (slug + "/" + spec, slug + "/" + project + "/" + spec) or (
-            key != slug + "/" + spec and not PROJECT_SEGMENT_RE.fullmatch(project)
-        ):
-            raise ValueError("resource path is invalid: " + rid)
-        if key in stable:
-            raise ValueError("duplicate stable resource path: " + key)
-        if project_roots.setdefault((slug, project), root) != root:
-            raise ValueError("ambiguous resource slug: " + slug)
         if not SAFE_CURSOR_RE.fullmatch(raw["cursor_name"]):
             raise ValueError("invalid cursor name: " + raw["cursor_name"])
         if check_refs:
@@ -157,11 +135,18 @@ def _resource_records(document, *, check_refs=False, trust=False):
             "narrow_root": narrow,
             "spec": spec,
             "spec_file": spec_file,
-            "path": key,
         })
         ids.add(rid)
-        stable.add(key)
         result.append(resource)
+    try:
+        host = _review_host()
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(str(exc)) from exc
+    violation = host.path_rule_violation(result)
+    if violation:
+        raise ValueError(violation)
+    for resource in result:
+        resource["path"] = host.row_path(resource)
     return result
 
 
@@ -251,7 +236,7 @@ _REVIEW_HOST = []
 
 
 def _review_host():
-    """Load the review host that owns registry writes, beside the packaged or dogfood server."""
+    """Load the review host that owns the served-path rule, beside the packaged or dogfood server."""
     if not _REVIEW_HOST:
         here = os.path.dirname(os.path.realpath(__file__))
         for candidate in (
@@ -327,7 +312,7 @@ def _own_viz_asset(path):
 @contextlib.contextmanager
 def _actor_directory(review, root, actor, create=False):
     relative = os.path.relpath(review, root)
-    parts = relative.split(os.sep) + ([actor] if actor else [])
+    parts = relative.split(os.sep) + [actor]
     if any(part in ("", ".", "..") for part in parts) or not _inside(review, root, strict=True):
         raise OSError("review path escapes collection")
     flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
@@ -378,36 +363,6 @@ def _write_event(review, root, actor, name, event):
         descriptor = os.open(name, flags, 0o600, dir_fd=directory)
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
             json.dump(event, stream)
-
-
-def _read_reviewed(review, root):
-    """Return ({sha256, at}, bytes) for a spool's last reviewed version, or (None, None)."""
-    try:
-        with _actor_directory(review, root, None) as directory:
-            flags = os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0)
-            with os.fdopen(os.open(REVIEWED_META, flags, dir_fd=directory), encoding="utf-8") as stream:
-                meta = json.load(stream)
-            with os.fdopen(os.open(REVIEWED_HTML, flags, dir_fd=directory), "rb") as stream:
-                body = stream.read()
-    except (OSError, ValueError):
-        return None, None
-    if not isinstance(meta, dict) or meta.get("sha256") != hashlib.sha256(body).hexdigest():
-        return None, None
-    return {"sha256": meta["sha256"], "at": str(meta.get("at") or "")}, body
-
-
-def _keep_reviewed(review, root, body):
-    """Keep exact reviewed bytes in the spool, bytes first so a reader never sees a torn pair."""
-    sha256 = hashlib.sha256(body).hexdigest()
-    meta = json.dumps({"sha256": sha256, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
-    with _actor_directory(review, root, None, create=True) as directory:
-        for name, data in ((REVIEWED_HTML, body), (REVIEWED_META, meta.encode("utf-8"))):
-            staged = ".%s.%d.tmp" % (name, time.time_ns())
-            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-            with os.fdopen(os.open(staged, flags, 0o600, dir_fd=directory), "wb") as stream:
-                stream.write(data)
-            os.replace(staged, name, src_dir_fd=directory, dst_dir_fd=directory)
-    return sha256
 
 
 class MountHandler(SimpleHTTPRequestHandler):
@@ -553,7 +508,6 @@ li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywh
         mount, target, _ = self._resolve_path(query.get("path", [""])[0], spec_only=True)
         if not mount:
             return self._json({"error": "bad path"}, 400)
-        reviewed, reviewed_bytes = _read_reviewed(target + ".review", mount["narrow_root"])
         requested = query.get("base", [mount.get("base", "")])[0]
         if requested.startswith("-"):
             return self._json({"error": "invalid base"}, 400)
@@ -597,7 +551,7 @@ li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywh
             for line in history.splitlines():
                 commit_id, date, subject = line.split("\x00", 2)
                 commits.append({"id": commit_id, "date": date, "subject": subject})
-            result = {
+            return self._json({
                 "base": base,
                 "htmlBase": html_base,
                 "html": prior.decode("utf-8") if prior is not None else None,
@@ -605,17 +559,8 @@ li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywh
                 "dirty": dirty,
                 "headDate": head_date,
                 "baseDate": base_date,
-                "reviewed": reviewed,
                 "commits": commits,
-            }
-            if reviewed and "base" not in query:
-                result.update({
-                    "base": "reviewed",
-                    "htmlBase": "reviewed",
-                    "html": reviewed_bytes.decode("utf-8"),
-                    "baseDate": reviewed["at"][:10] or None,
-                })
-            return self._json(result)
+            })
         except (OSError, RuntimeError, UnicodeDecodeError):
             return self._json({"error": "git baseline unavailable"}, 409)
 
@@ -646,44 +591,11 @@ li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywh
         if not isinstance(event_name, str) or not isinstance(event_id, str) or not EVENT_RE.fullmatch(event_name) or not EVENT_RE.fullmatch(event_id):
             return self._json({"error": "bad event name"}, 400)
         name = "%d-%s-%s.json" % (time.time_ns(), event_name, event_id)
-        if event_name == "handoff":
-            self._keep_reviewed(mount, review, event.get("specSha256"))
         try:
             _write_event(review, mount["narrow_root"], actor, name, event)
         except OSError:
             return self._json({"error": "unsafe spool path"}, 400)
         return self._json({"ok": True, "name": name})
-
-    def _keep_reviewed(self, mount, review, sha256):
-        """A human spec review keeps the bytes the page showed and records their SHA-256."""
-        if not isinstance(sha256, str) or not SHA256_RE.fullmatch(sha256):
-            return
-        spec_file = os.path.realpath(review[:-len(".review")])
-        with self.server.served_lock:
-            body = self.server.served.get(spec_file, {}).get(sha256)
-        if body is None:
-            with contextlib.suppress(OSError):
-                current = Path(spec_file).read_bytes()
-                body = current if hashlib.sha256(current).hexdigest() == sha256 else None
-        if body is None:
-            return
-        try:
-            _keep_reviewed(review, mount["narrow_root"], body)
-            if self.server.mount_state.path:
-                _review_host().record_reviewed(Path(self.server.mount_state.path), spec_file, sha256)
-        except Exception as exc:  # the hand-off itself must still land
-            print("review-serve: last reviewed version not recorded: %s" % exc, file=sys.stderr, flush=True)
-
-    def _remember_served(self, target, body):
-        if not target.endswith(".spec.html"):
-            return
-        sha256 = hashlib.sha256(body).hexdigest()
-        with self.server.served_lock:
-            versions = self.server.served.setdefault(os.path.realpath(target), collections.OrderedDict())
-            versions[sha256] = body
-            versions.move_to_end(sha256)
-            while len(versions) > SERVED_VERSIONS:
-                versions.popitem(last=False)
 
     def _send_file(self, path):
         handled, bundled = _own_viz_asset(path)
@@ -711,8 +623,6 @@ li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywh
         except OSError:
             self.send_error(404)
             return
-        if not handled and self.command == "GET":
-            self._remember_served(target, body)
         self.send_response(200)
         self.send_header("Content-Type", mimetypes.guess_type(target)[0] or "application/octet-stream")
         self.send_header("Content-Length", str(len(body)))
@@ -787,8 +697,6 @@ def main(argv=None):
         print("review-serve: %s" % exc, file=sys.stderr)
         return 2
     server.mount_state = state
-    server.served = {}
-    server.served_lock = threading.Lock()
     print("spec-chat review-serve on http://%s:%d" % (advertised_host(args), server.server_port), flush=True)
     print("review URL is public and is not a secret in any security sense or an authentication boundary; stop this process when review ends", flush=True)
     try:

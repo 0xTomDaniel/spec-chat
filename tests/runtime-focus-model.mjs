@@ -50,41 +50,7 @@ assert.deepEqual(
 
 assert.match(runtime, /if \(httpPage\) applyIssueFocus\(\);/, 'every HTTP page diffs, with or without focus=changes');
 assert.doesNotMatch(runtime, /function loadRangeBar\(/, 'no bar-only load path skips highlighting');
-
-function extract(name, next) {
-  const from = runtime.indexOf('function ' + name + '(');
-  const to = runtime.indexOf('\n\nfunction ' + next + '(', from);
-  assert.ok(from >= 0 && to > from, 'runtime exposes ' + name);
-  return runtime.slice(from, to);
-}
-const sha256Hex = Function(extract('sha256Hex', 'reviewedTime') + '; return sha256Hex;')();
-const { createHash } = await import('node:crypto');
-for (const size of [0, 1, 55, 56, 63, 64, 65, 1000, 150000]) {
-  const bytes = new Uint8Array(size).map((_, i) => (i * 131 + 7) & 255);
-  assert.equal(sha256Hex(bytes), createHash('sha256').update(bytes).digest('hex'), 'sha256Hex matches node for ' + size + ' bytes');
-}
-const rangeText = Function(
-  extract('reviewedTime', 'comparesLastReviewed') + '\n' + extract('comparesLastReviewed', 'rangeBarText') + '\n'
-  + extract('rangeBarText', 'baselineParams') + '; return { rangeBarText, reviewedTime };',
-)();
-const at = '2026-09-25T14:05:00Z';
-const local = new Date(at);
-const pad = n => String(n).padStart(2, '0');
-const stamp = local.getFullYear() + '-' + pad(local.getMonth() + 1) + '-' + pad(local.getDate()) + ' ' + pad(local.getHours()) + ':' + pad(local.getMinutes());
-assert.equal(rangeText.reviewedTime(at), stamp);
-assert.equal(
-  rangeText.rangeBarText({ base: 'reviewed', head: 'abcdef1234', headDate: '2026-09-25', dirty: false, reviewed: { sha256: 'x', at } }),
-  'Changes from last reviewed ' + stamp + ' to abcdef1 2026-09-25',
-  'bar names the last reviewed version and its time',
-);
-assert.equal(
-  rangeText.rangeBarText({ base: '1234567890', baseDate: '2026-09-01', head: 'abcdef1234', headDate: '2026-09-25', dirty: true, reviewed: { sha256: 'x', at } }),
-  'Changes from 1234567 2026-09-01 to working copy of abcdef1 2026-09-25',
-  'a picked commit keeps the commit bar',
-);
-assert.match(runtime, /if \(state\.range\.shownSha256\) review\.specSha256 = state\.range\.shownSha256;/, 'hand-offs carry the shown bytes SHA-256');
-assert.match(runtime, /if \(reviewed\) url\.searchParams\.delete\('base'\);/, 'choosing Last reviewed drops base from the URL');
-assert.match(runtime, /label\.textContent = 'Last reviewed';/, 'the picker lists Last reviewed');
+assert.doesNotMatch(runtime, /specSha256|last reviewed|Last reviewed/, 'the page keeps no reviewed bytes; the row base is the last reviewed version');
 assert.match(runtime, /function ownAnchorSignature\(/, 'parent anchors compare their own heading and visual-island content');
 assert.doesNotMatch(runtime, /body\.hx-focus-active \[data-hx-focus=unchanged\]\{opacity:/, 'focus never dims pins through ancestor opacity');
 assert.doesNotMatch(runtime, /color-mix\(in srgb,currentColor/, 'focus recession never compounds inherited transparency');

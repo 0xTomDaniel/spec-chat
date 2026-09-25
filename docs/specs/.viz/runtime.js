@@ -55,7 +55,7 @@ const state = {
   loopsStarted: false,
   eventsRendered: false,
   handoffPosting: false,
-  range: { baseline: null, loading: false, pickerOpen: false, shownSha256: null },
+  range: { baseline: null, loading: false, pickerOpen: false },
 };
 
 /* ---------------- transports ---------------- */
@@ -119,58 +119,6 @@ function commitDate(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : '';
 }
 
-// SHA-256 of exact bytes. Plain JS: review pages are often plain HTTP, where crypto.subtle is absent.
-function sha256Hex(bytes) {
-  const k = [];
-  const h = [];
-  const frac = x => (x - Math.floor(x)) * 0x100000000 >>> 0;
-  for (let n = 2, found = 0; found < 64; n++) {
-    let prime = true;
-    for (let d = 2; d * d <= n; d++) if (n % d === 0) { prime = false; break; }
-    if (!prime) continue;
-    if (found < 8) h.push(frac(Math.pow(n, 1 / 2)));
-    k.push(frac(Math.pow(n, 1 / 3)));
-    found++;
-  }
-  const length = bytes.length;
-  const padded = new Uint8Array(((length + 9 + 63) >> 6) << 6);
-  padded.set(bytes);
-  padded[length] = 0x80;
-  const view = new DataView(padded.buffer);
-  view.setUint32(padded.length - 8, Math.floor(length / 0x20000000));
-  view.setUint32(padded.length - 4, (length << 3) >>> 0);
-  const w = new Uint32Array(64);
-  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
-  for (let offset = 0; offset < padded.length; offset += 64) {
-    for (let i = 0; i < 16; i++) w[i] = view.getUint32(offset + i * 4);
-    for (let i = 16; i < 64; i++) {
-      const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
-      const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
-      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
-    }
-    let [a, b, c, d, e, f, g, hh] = h;
-    for (let i = 0; i < 64; i++) {
-      const t1 = (hh + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + k[i] + w[i]) >>> 0;
-      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
-      hh = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
-    }
-    h[0] = (h[0] + a) >>> 0; h[1] = (h[1] + b) >>> 0; h[2] = (h[2] + c) >>> 0; h[3] = (h[3] + d) >>> 0;
-    h[4] = (h[4] + e) >>> 0; h[5] = (h[5] + f) >>> 0; h[6] = (h[6] + g) >>> 0; h[7] = (h[7] + hh) >>> 0;
-  }
-  return h.map(x => x.toString(16).padStart(8, '0')).join('');
-}
-
-function reviewedTime(value) {
-  const date = new Date(String(value || ''));
-  if (Number.isNaN(date.getTime())) return '';
-  const pad = n => String(n).padStart(2, '0');
-  return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) + ' ' + pad(date.getHours()) + ':' + pad(date.getMinutes());
-}
-
-function comparesLastReviewed(baseline) {
-  return Boolean(baseline && baseline.reviewed && baseline.base === 'reviewed');
-}
-
 function rangeBarText(baseline) {
   const base = baseline && baseline.base;
   const head = baseline && baseline.head;
@@ -182,10 +130,6 @@ function rangeBarText(baseline) {
   const baseDate = date(baseline && baseline.baseDate);
   const headDate = date(baseline && baseline.headDate);
   const headLabel = (baseline && baseline.dirty ? 'working copy of ' : '') + short(head);
-  if (comparesLastReviewed(baseline)) {
-    const at = reviewedTime(baseline.reviewed.at);
-    return 'Changes from last reviewed' + (at ? ' ' + at : '') + ' to ' + headLabel + (headDate ? ' ' + headDate : '');
-  }
   return 'Changes from ' + short(base) + (baseDate ? ' ' + baseDate : '') + ' to ' + headLabel + (headDate ? ' ' + headDate : '');
 }
 
@@ -225,14 +169,10 @@ async function fetchBaseline(base, includeCurrent = false, signal) {
   const baselineResponse = responses[0];
   if (!baselineResponse.ok || (includeCurrent && !responses[1].ok)) throw new Error('Git baseline unavailable');
   const baseline = await baselineResponse.json();
-  if (!includeCurrent) return { baseline };
-  const bytes = new Uint8Array(await responses[1].arrayBuffer());
-  // The first read is the bytes this page shows; a human spec review hands off their SHA-256.
-  if (!state.range.shownSha256) state.range.shownSha256 = sha256Hex(bytes);
-  return { baseline, currentText: new TextDecoder().decode(bytes) };
+  if (includeCurrent) return { baseline, currentText: await responses[1].text() };
+  return { baseline };
 }
 
-// Every HTTP page diffs: an explicit base, else the last reviewed version, else the registry base.
 async function applyIssueFocus() {
   if (EMBED_REVIEW_DIR || !['http:', 'https:'].includes(location.protocol)) return;
   const controller = new AbortController();
@@ -272,7 +212,7 @@ function renderRangePicker(baseline) {
   if (!list) return;
   list.replaceChildren();
   const commits = Array.isArray(baseline && baseline.commits) ? baseline.commits.slice(0, 20) : [];
-  if (!commits.length && !(baseline && baseline.reviewed)) {
+  if (!commits.length) {
     const empty = document.createElement('p');
     empty.className = 'hx-range-empty';
     empty.textContent = 'No committed versions of this spec were found.';
@@ -280,20 +220,6 @@ function renderRangePicker(baseline) {
     return;
   }
   const selected = baseline.base;
-  if (baseline.reviewed) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'hx-range-commit hx-range-reviewed';
-    button.dataset.base = '';
-    if (comparesLastReviewed(baseline)) button.dataset.selected = 'true';
-    const label = document.createElement('strong');
-    label.textContent = 'Last reviewed';
-    const date = document.createElement('time');
-    date.textContent = reviewedTime(baseline.reviewed.at);
-    button.append(label, date);
-    button.addEventListener('click', () => selectRangeBase(null));
-    list.appendChild(button);
-  }
   for (const commit of commits) {
     if (!commit || !commit.id) continue;
     const button = document.createElement('button');
@@ -330,14 +256,9 @@ function renderRangeBar(baseline) {
   headId.textContent = shortCommit(head);
   copy.setAttribute('aria-label', rangeBarText(baseline));
   copy.replaceChildren(document.createTextNode('Changes from '));
-  if (comparesLastReviewed(baseline)) {
-    const at = reviewedTime(baseline.reviewed.at);
-    copy.append(document.createTextNode('last reviewed' + (at ? ' ' + at : '')));
-  } else {
-    copy.append(baseId);
-    const baseDate = commitDate(baseline.baseDate);
-    if (baseDate) copy.append(document.createTextNode(' ' + baseDate));
-  }
+  copy.append(baseId);
+  const baseDate = commitDate(baseline.baseDate);
+  if (baseDate) copy.append(document.createTextNode(' ' + baseDate));
   copy.append(document.createTextNode(' to '));
   if (baseline.dirty) copy.append(document.createTextNode('working copy of '));
   copy.append(headId);
@@ -356,12 +277,10 @@ function openRangePicker(open) {
   if (state.range.pickerOpen) setTimeout(() => document.getElementById('hx-range-input')?.focus(), 0);
 }
 
-// value null selects the last reviewed version: no base in the request or the URL.
 async function selectRangeBase(value) {
-  const reviewed = value === null;
-  const requested = reviewed ? null : String(value || '').trim();
-  if (!reviewed && !requested) return setRangeError('Enter a commit id.');
-  if (!reviewed && requested.startsWith('-')) return setRangeError('Commit ids cannot begin with “-”.');
+  const requested = String(value || '').trim();
+  if (!requested) return setRangeError('Enter a commit id.');
+  if (requested.startsWith('-')) return setRangeError('Commit ids cannot begin with “-”.');
   if (state.range.loading) return;
   state.range.loading = true;
   setRangeError('');
@@ -377,8 +296,7 @@ async function selectRangeBase(value) {
     renderRangeBar(baseline);
     const url = new URL(location.href);
     url.searchParams.set('focus', 'changes');
-    if (reviewed) url.searchParams.delete('base');
-    else url.searchParams.set('base', baseline.base || requested);
+    url.searchParams.set('base', baseline.base || requested);
     history.replaceState(null, '', url.pathname + url.search + url.hash);
     openRangePicker(false);
   } catch (error) {
@@ -1028,8 +946,6 @@ const CSS = `
 .hx-range-commit{display:grid;grid-template-columns:5.5em 6.5em minmax(0,1fr);gap:8px;align-items:baseline;width:100%;padding:6px 8px;border:1px solid transparent;border-radius:4px;background:transparent;color:#171719;text-align:left;font:12px/1.35 system-ui,sans-serif;cursor:pointer}
 .hx-range-commit:hover,.hx-range-commit[data-selected=true]{border-color:#167b68;background:#e7f3ef}
 .hx-range-commit strong{font:700 12px ui-monospace,SFMono-Regular,Menlo,monospace}
-.hx-range-commit.hx-range-reviewed{grid-template-columns:auto minmax(0,1fr)}
-.hx-range-reviewed strong{font-family:system-ui,sans-serif}
 .hx-range-commit time{color:#5a5a63;font-variant-numeric:tabular-nums}
 .hx-range-commit span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hx-range-empty{margin:0;padding:6px 8px;color:#5a5a63}
@@ -1776,9 +1692,7 @@ async function handoff() {
   if (state.handoffPosting || !action.enabled) return;
   state.handoffPosting = true;
   try {
-    const review = { id: 'h' + Date.now().toString(36), event: 'handoff', anchorId: '', target: null, quote: null, text: 'batch from ' + state.transport.mode, actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 };
-    if (state.range.shownSha256) review.specSha256 = state.range.shownSha256;
-    await state.transport.postEvent(review);
+    await state.transport.postEvent({ id: 'h' + Date.now().toString(36), event: 'handoff', anchorId: '', target: null, quote: null, text: 'batch from ' + state.transport.mode, actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
     toast(action.finish ? 'Review finished' : 'Handed off ' + action.drafts + ' comment' + (action.drafts === 1 ? '' : 's') + ' — agent notified');
     refresh();
   } finally {
