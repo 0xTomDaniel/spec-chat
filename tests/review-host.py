@@ -1,3 +1,4 @@
+import hashlib
 import importlib.util
 import json
 import os
@@ -8,6 +9,7 @@ import time
 import tomllib
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from unittest import mock
@@ -253,6 +255,150 @@ finish_event = ""
         with mock.patch.object(review_host._verify_module, "verify", side_effect=ValueError("served spec bytes differ")):
             with self.assertRaises(review_host.ProofError):
                 review_host.prove_resource("http://127.0.0.1:9999", resource)
+
+    def make_repo(self, name, spec="docs/specs/x.spec.html"):
+        repo = self.work / name
+        path = repo / spec
+        path.parent.mkdir(parents=True)
+        path.write_text(f"<!doctype html><title>{name}</title><p data-anchor=\"a\">{name}</p>\n", encoding="utf-8")
+        (repo / "docs/specs/.style").mkdir()
+        (repo / "docs/specs/.style/spec.css").write_text(f"/* {name} */", encoding="utf-8")
+        subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.email", "tests@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.name", "Spec Chat tests"], check=True)
+        subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-qm", "seed"], check=True)
+        base = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+        return repo, base
+
+    def register_from(self, state, project, repo, base, spec="docs/specs/x.spec.html", slug="ann45", ports=None):
+        return self.run_cli(
+            "register", "--state-dir", str(state), "--bind", "127.0.0.1", "--proof-host", "127.0.0.1",
+            "--test-loopback", "--resource", f"{project}={repo}:{spec}@{base}", "--owner", "owner",
+            "--checker", "checker", "--cursor-name", ".cursor-test", "--slug", slug, state=state, ports=ports,
+        )
+
+    @staticmethod
+    def served_url(result):
+        return next(line.split("review URL: ", 1)[1] for line in result.stdout.splitlines() if line.startswith("review URL: "))
+
+    def baseline(self, url, path, base=None):
+        params = {"path": path} | ({"base": base} if base else {})
+        status, body = request(url + "/api/baseline?" + urllib.parse.urlencode(params))
+        self.assertEqual(status, 200, body)
+        return json.loads(body)
+
+    def handoff(self, url, path, sha256):
+        event = {"event": "handoff", "id": "h" + str(time.time_ns()), "specSha256": sha256}
+        query = urllib.parse.urlencode({"dir": path + ".review", "actor": "human"})
+        return request(url + "/api/events?" + query, method="POST", body=json.dumps(event).encode())
+
+    def test_human_review_keeps_shown_bytes_and_records_reviewed_sha256(self):
+        state = self.work / "state"
+        started = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        url, page = self.served_url(started), "ann45/docs/specs/review.spec.html"
+
+        before = self.baseline(url, page)
+        self.assertIsNone(before["reviewed"])
+        self.assertEqual(before["base"], self.base, "with no review yet, the registry base is compared")
+
+        status, shown = request(url + "/" + page)
+        self.assertEqual(status, 200)
+        self.spec.write_text("<!doctype html><title>review</title><p>edited after load</p>\n", encoding="utf-8")
+        sha = hashlib.sha256(shown).hexdigest()
+        self.assertEqual(self.handoff(url, page, sha)[0], 200)
+
+        self.assertEqual((self.review / "last-reviewed.html").read_bytes(), shown)
+        self.assertEqual(self.registry(state)["resource"][0]["reviewed_sha256"], sha)
+        self.assertEqual(len(list((self.review / "human").glob("*-handoff-*.json"))), 1)
+
+        default = self.baseline(url, page)
+        self.assertEqual((default["base"], default["htmlBase"]), ("reviewed", "reviewed"))
+        self.assertEqual(default["html"], shown.decode())
+        self.assertEqual(default["reviewed"]["sha256"], sha)
+        self.assertRegex(default["reviewed"]["at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+        explicit = self.baseline(url, page, self.base)
+        self.assertEqual((explicit["base"], explicit["htmlBase"]), (self.base, self.base))
+        self.assertEqual(explicit["reviewed"]["sha256"], sha)
+
+        # Content, not a commit: a rebase that keeps the bytes compares equal; merged text shows as new.
+        self.spec.write_bytes(shown)
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-q", "--allow-empty", "-am", "rebased"], check=True)
+        self.assertEqual(self.baseline(url, page)["html"].encode(), self.spec.read_bytes())
+        self.spec.write_bytes(shown + b"<p>merged by others</p>\n")
+        self.assertNotIn("merged by others", self.baseline(url, page)["html"])
+
+        # An unknown SHA-256 still lands the hand-off but keeps the prior review.
+        self.assertEqual(self.handoff(url, page, "0" * 64)[0], 200)
+        self.assertEqual(self.registry(state)["resource"][0]["reviewed_sha256"], sha)
+
+        # Re-registering the same resource keeps the recorded review.
+        again = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertEqual(self.registry(state)["resource"][0]["reviewed_sha256"], sha)
+
+    def test_one_slug_holds_several_roots_with_fixed_paths(self):
+        state = self.work / "state"
+        aa, aa_base = self.make_repo("aa")
+        sc, sc_base = self.make_repo("sc")
+        first = self.register_from(state, "aa", aa, aa_base)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        port = self.registry(state)["process"]["port"]
+        second = self.register_from(state, "sc", sc, sc_base, ports=port)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        url = self.served_url(second)
+        self.assertIn("spec:ann45::sc/docs/specs/x.spec.html URL: " + url + "/ann45/sc/docs/specs/x.spec.html", second.stdout)
+
+        rows = {row["project"]: row for row in self.registry(state)["resource"]}
+        self.assertEqual(rows["aa"]["path"], "ann45/docs/specs/x.spec.html")
+        self.assertEqual(rows["sc"]["path"], "ann45/sc/docs/specs/x.spec.html")
+        for name, repo in (("aa", aa), ("sc", sc)):
+            path = rows[name]["path"]
+            self.assertEqual(request(url + "/" + path), (200, (repo / "docs/specs/x.spec.html").read_bytes()))
+            style = path.rsplit("/", 1)[0] + "/.style/spec.css"
+            self.assertEqual(request(url + "/" + style), (200, f"/* {name} */".encode()))
+            self.assertEqual(request(url + "/" + path.rsplit("/", 1)[0] + "/.viz/runtime.js")[0], 200)
+
+        # Review state belongs to each root.
+        for name, repo in (("aa", aa), ("sc", sc)):
+            path = rows[name]["path"]
+            shown = request(url + "/" + path)[1]
+            self.assertEqual(self.handoff(url, path, hashlib.sha256(shown).hexdigest())[0], 200)
+            spool = repo / "docs/specs/x.spec.html.review"
+            self.assertEqual((spool / "last-reviewed.html").read_bytes(), shown)
+            self.assertEqual(len(list((spool / "human").glob("*.json"))), 1)
+            self.assertEqual(self.baseline(url, path, rows[name]["base"])["base"], rows[name]["base"])
+            self.assertEqual(self.baseline(url, path)["html"].encode(), shown)
+        rows = {row["project"]: row for row in self.registry(state)["resource"]}
+        for name, repo in (("aa", aa), ("sc", sc)):
+            expected = hashlib.sha256((repo / "docs/specs/x.spec.html").read_bytes()).hexdigest()
+            self.assertEqual(rows[name]["reviewed_sha256"], expected)
+
+        # The same project from a second root stays ambiguous.
+        other, other_base = self.make_repo("aa-other")
+        refused = self.register_from(state, "aa", other, other_base, ports=port)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn("ambiguous resource slug", refused.stderr)
+
+        # A project named like the primary collection's top-level directory is refused.
+        docs, docs_base = self.make_repo("docs-project")
+        clash = self.register_from(state, "docs", docs, docs_base, ports=port)
+        self.assertNotEqual(clash.returncode, 0)
+        self.assertIn("collides", clash.stderr)
+
+        # Paths are fixed: removing the primary never moves the others.
+        removed = self.run_cli("remove", "--state-dir", str(state), "--id", rows["aa"]["id"], state=state)
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        added = self.register_from(state, "sc", sc, sc_base, spec="docs/specs/.style/../x.spec.html", ports=port)
+        self.assertNotEqual(added.returncode, 0)
+        (sc / "docs/specs/y.spec.html").write_text("<title>y</title>\n", encoding="utf-8")
+        added = self.register_from(state, "sc", sc, sc_base, spec="docs/specs/y.spec.html", ports=port)
+        self.assertEqual(added.returncode, 0, added.stderr)
+        paths = sorted(row["path"] for row in self.registry(state)["resource"])
+        self.assertEqual(paths, ["ann45/sc/docs/specs/x.spec.html", "ann45/sc/docs/specs/y.spec.html"])
+        self.assertEqual(request(url + "/ann45/sc/docs/specs/x.spec.html")[0], 200)
+        self.assertEqual(request(url + "/ann45/docs/specs/x.spec.html")[0], 404)
 
     def test_only_register_remove_stop_commands_exist(self):
         commands = set(review_host.build_parser()._subparsers._group_actions[0].choices)

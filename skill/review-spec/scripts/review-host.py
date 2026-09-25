@@ -35,9 +35,11 @@ assert _verify_spec.loader is not None
 _verify_spec.loader.exec_module(_verify_module)
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
 SAFE_CURSOR_RE = re.compile(r"[^/\\]+\Z")
+SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
+PROJECT_SEGMENT_RE = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]{0,62}\Z")
 RESOURCE_FIELDS = (
-    "id", "slug", "root", "narrow_root", "spec", "base", "owner", "checker",
-    "cursor_name", "registered_at", "updated_at",
+    "id", "slug", "project", "root", "narrow_root", "spec", "path", "base", "owner", "checker",
+    "cursor_name", "reviewed_sha256", "registered_at", "updated_at",
 )
 
 
@@ -300,8 +302,9 @@ def parse_resource_spec(value: str, owner: str, checker: str, cursor_name: str,
         raise LauncherError(f"invalid or reserved resource slug: {selected_slug}")
     resolved_base = run_git(top, "rev-parse", "--verify", base + "^{commit}")
     return {
-        "id": f"spec:{selected_slug}::{spec}", "slug": selected_slug, "root": str(top),
-        "narrow_root": str(narrow), "spec": spec, "spec_file": str(spec_file),
+        "id": f"spec:{selected_slug}::{spec}", "slug": selected_slug, "project": project,
+        "root": str(top), "narrow_root": str(narrow), "spec": spec, "path": f"{selected_slug}/{spec}",
+        "spec_file": str(spec_file),
         "base": base, "resolved_base_commit": resolved_base,
         "owner": owner.strip(), "checker": checker.strip(), "cursor_name": cursor_name,
     }
@@ -311,21 +314,55 @@ def registry_record(resource: Mapping[str, Any], registered_at: str | None = Non
     stamp = registered_at or now()
     result = {
         key: resource[key] for key in (
-            "id", "slug", "root", "narrow_root", "spec", "base", "owner", "checker", "cursor_name",
+            "id", "slug", "project", "root", "narrow_root", "spec", "path", "base", "owner", "checker",
+            "cursor_name",
         )
     }
     result.update({"registered_at": stamp, "updated_at": stamp})
     return result
 
 
+def row_project(record: Mapping[str, Any]) -> str:
+    """PROJECT_ID of a row; rows written before `project` existed carry it in their id."""
+    project = record.get("project")
+    if isinstance(project, str) and project.strip():
+        return project
+    return str(record["id"]).split("::", 1)[0].removeprefix("spec:")
+
+
+def row_path(record: Mapping[str, Any]) -> str:
+    """Served URL path without the leading slash; rows without `path` use the primary form."""
+    path = record.get("path")
+    if isinstance(path, str) and path:
+        return path
+    return f"{record['slug']}/{record['spec'].replace(chr(92), '/')}"
+
+
 def stable_path(resource: Mapping[str, Any]) -> str:
-    return f"/{resource['slug']}/{resource['spec']}"
+    return "/" + row_path(resource)
+
+
+def assign_path(existing: Sequence[Mapping[str, Any]], resource: dict[str, Any]) -> dict[str, Any]:
+    """Fix a new row's served path once: a root joins its slug's form, else primary only if first."""
+    slug, spec = resource["slug"], resource["spec"]
+    root = str(Path(resource["root"]).resolve())
+    same_slug = [row for row in existing if row["slug"] == slug]
+    same_root = [row for row in same_slug if str(Path(row["root"]).resolve()) == root]
+    if same_root:
+        primary = any(row_path(row) == f"{slug}/{row['spec']}" for row in same_root)
+    else:
+        primary = not same_slug
+    path = f"{slug}/{spec}" if primary else f"{slug}/{resource['project']}/{spec}"
+    resource.update({"path": path, "id": f"spec:{slug}::{path[len(slug) + 1:]}"})
+    return resource
 
 
 def validate_records(records: Sequence[Mapping[str, Any]]) -> None:
     ids: set[str] = set()
     stable: set[str] = set()
-    slug_roots: dict[str, str] = {}
+    project_roots: dict[tuple[str, str], str] = {}
+    primary_segments: dict[str, set[str]] = {}
+    prefixed_projects: dict[str, set[str]] = {}
     for record in records:
         required = ("id", "slug", "root", "narrow_root", "spec", "base", "owner", "checker", "cursor_name")
         missing = [key for key in required if not isinstance(record.get(key), str) or not record[key].strip()]
@@ -352,17 +389,30 @@ def validate_records(records: Sequence[Mapping[str, Any]]) -> None:
         spec_file = (top / spec).resolve()
         if not path_inside(spec_file, narrow, strict=True) or not spec_file.is_file():
             raise LauncherError(f"resource spec is missing or outside its collection: {rid}")
-        key = f"{slug}/{spec}"
+        project = row_project(record)
+        key = row_path(record)
+        if key == f"{slug}/{spec}":
+            primary_segments.setdefault(slug, set()).add(spec.split("/", 1)[0])
+        elif key == f"{slug}/{project}/{spec}" and PROJECT_SEGMENT_RE.fullmatch(project):
+            prefixed_projects.setdefault(slug, set()).add(project)
+        else:
+            raise LauncherError(f"resource path is invalid: {rid}")
         if key in stable:
             raise LauncherError(f"duplicate stable resource path: {key}")
-        if slug in slug_roots and slug_roots[slug] != str(root.resolve()):
+        if project_roots.setdefault((slug, project), str(root.resolve())) != str(root.resolve()):
             raise LauncherError(f"ambiguous resource slug: {slug}")
+        reviewed = record.get("reviewed_sha256")
+        if reviewed is not None and (not isinstance(reviewed, str) or not SHA256_RE.fullmatch(reviewed)):
+            raise LauncherError(f"reviewed_sha256 is invalid: {rid}")
         run_git(root, "rev-parse", "--verify", record["base"] + "^{commit}")
         if not SAFE_CURSOR_RE.fullmatch(record["cursor_name"]):
             raise LauncherError(f"invalid cursor name: {record['cursor_name']}")
         ids.add(rid)
         stable.add(key)
-        slug_roots[slug] = str(root.resolve())
+    for slug, projects in prefixed_projects.items():
+        clash = projects & primary_segments.get(slug, set())
+        if clash:
+            raise LauncherError(f"project id collides with the primary collection path: {sorted(clash)[0]}")
 
 
 def read_registry_document(path: Path) -> dict[str, Any]:
@@ -408,6 +458,23 @@ def prove_resource(public_url: str, resource: Mapping[str, Any]) -> dict[str, An
         "baseline_commit": facts["base"],
         "verified_at": now(),
     }
+
+
+def record_reviewed(registry: Path, spec_file: str, sha256: str) -> int:
+    """Record a spec's last reviewed SHA-256 on every row that serves that spec file."""
+    if not SHA256_RE.fullmatch(sha256):
+        raise LauncherError("reviewed SHA-256 is invalid")
+    target = Path(spec_file).resolve()
+    with state_lock(registry.parent):
+        records, process = registry_state(registry)
+        matched = 0
+        for record in records:
+            if (Path(record["root"]) / record["spec"]).resolve() == target:
+                record["reviewed_sha256"] = sha256
+                matched += 1
+        if matched:
+            write_registry(registry, records, process)
+        return matched
 
 
 def resource_flags(parser: argparse.ArgumentParser) -> None:
@@ -547,10 +614,17 @@ def register(args: argparse.Namespace) -> int:
     state = state_dir(args)
     registry, log_path, _ = paths(state)
     parsed = parse_resources(args)
-    additions = [registry_record(item) for item in parsed]
     with state_lock(state):
         old_bytes = registry.read_bytes() if registry.exists() else None
         existing, process = registry_state(registry)
+        seen: list[dict[str, Any]] = list(existing)
+        for item in parsed:
+            seen.append(assign_path(seen, item))
+        additions = [registry_record(item) for item in parsed]
+        previous = {item["id"]: item for item in existing}
+        for item in additions:
+            if "reviewed_sha256" in previous.get(item["id"], {}):
+                item["reviewed_sha256"] = previous[item["id"]]["reviewed_sha256"]
         replacement_ids = {item["id"] for item in additions}
         candidate = [item for item in existing if item["id"] not in replacement_ids] + additions
         validate_records(candidate)
