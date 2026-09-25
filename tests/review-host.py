@@ -1,6 +1,8 @@
+import email.utils
 import importlib.util
 import json
 import os
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -21,6 +23,14 @@ _spec = importlib.util.spec_from_file_location("review_host", LAUNCHER_PATH)
 review_host = importlib.util.module_from_spec(_spec)
 assert _spec.loader is not None
 _spec.loader.exec_module(review_host)
+
+
+_wake_spec = importlib.util.spec_from_file_location("review_host_wake", ROOT / "tests/review-host-wake.py")
+review_host_wake = importlib.util.module_from_spec(_wake_spec)
+assert _wake_spec.loader is not None
+_wake_spec.loader.exec_module(review_host_wake)
+FakeHerdr = review_host_wake.FakeHerdr
+path_without_herdr = review_host_wake.path_without_herdr
 
 
 def request(url, *, method="GET", body=None):
@@ -76,11 +86,12 @@ class ReviewHostTest(unittest.TestCase):
     def resource(self, project="review", spec="review"):
         return f"{project}={self.repo}:docs/specs/{spec}.spec.html@{self.base}"
 
-    def run_cli(self, *args, state=None, ports=None):
+    def run_cli(self, *args, state=None, ports=None, herdr=None):
         state = Path(state or self.work / "state")
         if state not in self.states:
             self.states.append(state)
         env = os.environ.copy()
+        env.update(herdr.env() if herdr else {"PATH": path_without_herdr()})
         env["SPEC_CHAT_APPROVED_INGRESS_PORTS"] = str(ports or self.port())
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         return subprocess.run(
@@ -128,6 +139,29 @@ class ReviewHostTest(unittest.TestCase):
         self.assertEqual(stopped.returncode, 0, stopped.stderr)
         self.assertFalse(review_host.process_owns_registry(document["process"]["pid"], Path(state) / "registry.toml"))
 
+    def wake_lines(self, result):
+        return [line.split(" URL: ", 1)[1].split(" ", 1)[1] for line in result.stdout.splitlines()
+                if " URL: " in line and not line.startswith("review URL: ")]
+
+    def test_register_prints_wake_verified_only_when_herdr_resolves_owner(self):
+        herdr = FakeHerdr(self.work)
+        herdr.agent("owner")
+        state = self.work / "state"
+        verified = self.run_cli(*self.register_args(state), state=state, herdr=herdr)
+        self.assertEqual(verified.returncode, 0, verified.stderr)
+        self.assertEqual(self.wake_lines(verified), ["wake=verified owner=owner"])
+        herdr.agent("owner", None)
+        unresolved = self.run_cli(*self.register_args(state, spec="second"), state=state, herdr=herdr)
+        self.assertEqual(unresolved.returncode, 0, unresolved.stderr)
+        self.assertEqual(self.wake_lines(unresolved), ["wake=unavailable owner=owner"])
+        self.assertEqual(herdr.says(), [], "registration never prompts the owner")
+
+    def test_register_without_herdr_prints_wake_unavailable(self):
+        state = self.work / "state"
+        started = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        self.assertEqual(self.wake_lines(started), ["wake=unavailable owner=owner"])
+
     def test_register_adds_to_existing_server(self):
         state = self.work / "state"
         first = self.run_cli(*self.register_args(state), state=state)
@@ -148,8 +182,8 @@ class ReviewHostTest(unittest.TestCase):
 
         resources = self.registry(state)["resource"]
         self.assertEqual({resource["id"] for resource in resources}, {
-            "spec:lane-one::docs/specs/review.spec.html",
-            "spec:lane-two::docs/specs/review.spec.html",
+            "spec:lane-one:review::docs/specs/review.spec.html",
+            "spec:lane-two:review::docs/specs/review.spec.html",
         })
         for slug in ("lane-one", "lane-two"):
             url = next(line.split("review URL: ", 1)[1] for line in second.stdout.splitlines() if line.startswith("review URL: "))
@@ -190,6 +224,16 @@ class ReviewHostTest(unittest.TestCase):
         self.assertEqual(len(self.registry(state)["resource"]), 1)
         url = next(line.split("review URL: ", 1)[1] for line in restarted.stdout.splitlines() if line.startswith("review URL: "))
         self.assertEqual(request(url + "/ann45/docs/specs/review.spec.html"), (200, self.spec.read_bytes()))
+
+    def test_head_on_a_served_spec_returns_last_modified_at_file_mtime(self):
+        state = self.work / "state"
+        started = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        head = urllib.request.Request(self.url(started) + "/ann45/docs/specs/review.spec.html", method="HEAD")
+        with urllib.request.urlopen(head, timeout=4) as response:
+            modified = response.headers.get("Last-Modified")
+        self.assertIsNotNone(modified)
+        self.assertEqual(email.utils.parsedate_to_datetime(modified).timestamp(), int(self.spec.stat().st_mtime))
 
     def test_legacy_registry_loads_without_lifecycle_state(self):
         legacy = self.work / "legacy.toml"
@@ -246,6 +290,165 @@ finish_event = ""
         with mock.patch.object(review_host, "process_cmdline", return_value=["python", "other.py"]):
             self.assertFalse(review_host.process_owns_registry(os.getpid(), registry))
 
+    def url(self, result):
+        return next(line.split("review URL: ", 1)[1] for line in result.stdout.splitlines() if line.startswith("review URL: "))
+
+    def git(self, *args):
+        return subprocess.check_output(["git", "-C", str(self.repo), *args], text=True).strip()
+
+    def test_reregistering_a_row_id_replaces_only_that_row(self):
+        state = self.work / "state"
+        self.assertEqual(self.run_cli(*self.register_args(state), state=state).returncode, 0)
+        self.assertEqual(self.run_cli(*self.register_args(state, spec="second"), state=state).returncode, 0)
+        self.spec.write_text("<!doctype html><title>review</title><p>next</p>\n", encoding="utf-8")
+        self.git("commit", "-qam", "next")
+        args = self.register_args(state)
+        args[args.index("--resource") + 1] = f"review={self.repo}:docs/specs/review.spec.html@HEAD"
+        again = self.run_cli(*args, state=state)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        rows = {row["id"]: row for row in self.registry(state)["resource"]}
+        self.assertEqual(set(rows), {"spec:ann45:review::docs/specs/review.spec.html",
+                                     "spec:ann45:review::docs/specs/second.spec.html"})
+        self.assertEqual(rows["spec:ann45:review::docs/specs/review.spec.html"]["base"], "HEAD")
+        self.assertEqual(rows["spec:ann45:review::docs/specs/second.spec.html"]["base"], self.base)
+
+    def test_second_project_under_a_slug_serves_at_slug_project_spec(self):
+        state = self.work / "state"
+        other = self.work / "other"
+        subprocess.run(["git", "clone", "-q", str(self.repo), str(other)], check=True)
+        first = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        args = self.register_args(state, project="sc")
+        args[args.index("--resource") + 1] = f"sc={other}:docs/specs/second.spec.html@{self.base}"
+        second = self.run_cli(*args, state=state)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        rows = {row["project"]: row for row in self.registry(state)["resource"]}
+        self.assertEqual(rows["review"]["path"], "ann45/docs/specs/review.spec.html")
+        self.assertEqual(rows["sc"]["path"], "ann45/sc/docs/specs/second.spec.html")
+        url = self.url(second)
+        self.assertEqual(request(url + "/ann45/docs/specs/review.spec.html"), (200, self.spec.read_bytes()))
+        self.assertEqual(request(url + "/ann45/sc/docs/specs/second.spec.html"), (200, self.second_spec.read_bytes()))
+
+    def legacy_rows(self, state, root, specs, project=None):
+        state.mkdir(parents=True, exist_ok=True)
+        extra = "" if project is None else f'project = "{project}"\n'
+        (state / "registry.toml").write_text("".join(
+            f"""[[resource]]
+id = "spec:ann45::docs/specs/{spec}.spec.html"
+slug = "ann45"
+{extra}root = "{root}"
+narrow_root = "{root / 'docs'}"
+spec = "docs/specs/{spec}.spec.html"
+base = "{self.base}"
+owner = "owner"
+checker = "checker"
+cursor_name = ".cursor-test"
+""" for spec in specs), encoding="utf-8")
+
+    def test_register_adopts_a_legacy_row_at_the_same_slug_root_and_spec(self):
+        state = self.work / "state"
+        self.legacy_rows(state, self.repo, ("review", "second"))
+        result = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = {row["id"]: row for row in self.registry(state)["resource"]}
+        self.assertEqual(set(rows), {"spec:ann45::docs/specs/review.spec.html",
+                                     "spec:ann45::docs/specs/second.spec.html"})
+        adopted = rows["spec:ann45::docs/specs/review.spec.html"]
+        self.assertEqual((adopted["project"], adopted["path"]), ("review", "ann45/docs/specs/review.spec.html"))
+        self.assertNotIn("project", rows["spec:ann45::docs/specs/second.spec.html"])
+        self.assertEqual(request(self.url(result) + "/ann45/docs/specs/review.spec.html"), (200, self.spec.read_bytes()))
+
+    def test_register_after_adoption_is_idempotent(self):
+        state = self.work / "state"
+        self.legacy_rows(state, self.repo, ("review", "second"))
+        for _ in range(2):
+            result = self.run_cli(*self.register_args(state), state=state)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        rows = {row["id"]: row for row in self.registry(state)["resource"]}
+        self.assertEqual(set(rows), {"spec:ann45::docs/specs/review.spec.html",
+                                     "spec:ann45::docs/specs/second.spec.html"})
+        adopted = rows["spec:ann45::docs/specs/review.spec.html"]
+        self.assertEqual((adopted["project"], adopted["path"]), ("review", "ann45/docs/specs/review.spec.html"))
+
+    def test_adopted_row_reregistered_from_a_new_root_keeps_id_and_path(self):
+        state = self.work / "state"
+        self.legacy_rows(state, self.repo, ("review",))
+        first = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        rid = "spec:ann45::docs/specs/review.spec.html"
+        for name in ("clone-a", "clone-b"):
+            other = self.work / name
+            subprocess.run(["git", "clone", "-q", str(self.repo), str(other)], check=True)
+            args = self.register_args(state)
+            args[args.index("--resource") + 1] = f"review={other}:docs/specs/review.spec.html@{self.base}"
+            again = self.run_cli(*args, state=state)
+            self.assertEqual(again.returncode, 0, again.stderr)
+            rows = self.registry(state)["resource"]
+            self.assertEqual([row["id"] for row in rows], [rid])
+            self.assertEqual((rows[0]["project"], rows[0]["path"], rows[0]["root"]),
+                             ("review", "ann45/docs/specs/review.spec.html", str(other.resolve())))
+            if name == "clone-a":
+                shutil.rmtree(other)
+
+    def test_empty_string_project_row_is_treated_as_legacy(self):
+        state = self.work / "state"
+        self.legacy_rows(state, self.repo, ("review",), project="")
+        result = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = self.registry(state)["resource"]
+        self.assertEqual([row["id"] for row in rows], ["spec:ann45::docs/specs/review.spec.html"])
+        self.assertEqual((rows[0]["project"], rows[0]["path"]), ("review", "ann45/docs/specs/review.spec.html"))
+
+    def test_empty_string_project_row_at_a_different_root_is_untouched(self):
+        state = self.work / "state"
+        other = self.work / "other"
+        subprocess.run(["git", "clone", "-q", str(self.repo), str(other)], check=True)
+        self.legacy_rows(state, other, ("review",), project="")
+        result = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        ids = {row["id"] for row in self.registry(state)["resource"]}
+        self.assertEqual(ids, {"spec:ann45::docs/specs/review.spec.html",
+                               "spec:ann45:review::docs/specs/review.spec.html"})
+
+    def test_register_leaves_a_legacy_row_at_a_different_root_untouched(self):
+        state = self.work / "state"
+        other = self.work / "other"
+        subprocess.run(["git", "clone", "-q", str(self.repo), str(other)], check=True)
+        self.legacy_rows(state, other, ("review",))
+        legacy = self.registry(state)["resource"][0]
+        result = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = {row["id"]: row for row in self.registry(state)["resource"]}
+        self.assertEqual(rows[legacy["id"]], legacy)
+        added = rows["spec:ann45:review::docs/specs/review.spec.html"]
+        self.assertEqual((added["root"], added["path"]),
+                         (str(self.repo.resolve()), "ann45/review/docs/specs/review.spec.html"))
+
+    def test_reviewed_commits_a_dirty_spec_and_page_defaults_to_the_row_base(self):
+        state = self.work / "state"
+        started = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        rid = self.registry(state)["resource"][0]["id"]
+        self.spec.write_text("<!doctype html><title>review</title><p>edited</p>\n", encoding="utf-8")
+        done = self.run_cli("reviewed", "--state-dir", str(state), "--id", rid, state=state)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        head = self.git("rev-parse", "HEAD")
+        self.assertNotEqual(head, self.base)
+        self.assertEqual(self.git("status", "--porcelain", "--", str(self.spec)), "")
+        self.assertEqual(self.registry(state)["resource"][0]["base"], head)
+        query = urllib.parse.urlencode({"path": "/ann45/docs/specs/review.spec.html"})
+        deadline = time.monotonic() + 3
+        while True:
+            status, body = request(self.url(started) + "/api/baseline?" + query)
+            if json.loads(body).get("base") == head or time.monotonic() > deadline:
+                break
+            time.sleep(0.05)
+        self.assertEqual((status, json.loads(body)["base"]), (200, head))
+        self.git("commit", "-q", "--allow-empty", "-m", "clean")
+        clean = self.run_cli("reviewed", "--state-dir", str(state), "--id", rid, state=state)
+        self.assertEqual(clean.returncode, 0, clean.stderr)
+        self.assertEqual(self.registry(state)["resource"][0]["base"], self.git("rev-parse", "HEAD"))
+
     def test_proof_rejects_wrong_bytes(self):
         resource = review_host.parse_resource_spec(
             self.resource(), "owner", "checker", ".cursor-test", "ann45", None
@@ -256,7 +459,7 @@ finish_event = ""
 
     def test_only_register_remove_stop_commands_exist(self):
         commands = set(review_host.build_parser()._subparsers._group_actions[0].choices)
-        self.assertEqual(commands, {"register", "remove", "stop"})
+        self.assertEqual(commands, {"register", "remove", "reviewed", "stop"})
 
 
 if __name__ == "__main__":

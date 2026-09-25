@@ -29,7 +29,7 @@ Register a lane's review resources with --slug <lane key>, where the lane key is
 
    Exit 0 prints tab-separated `<html-path> <human-event-filename>` rows for the first ready page; exit 3 means the backlog is empty. A ready result contains every unprocessed event through the newest completed hand-off, in filename/event order. Do not reuse, poll, or wait on a watcher/tool session cancelled with the prior turn, and do not start detached Codex processing automatically—the detached process could race the interactive thread.
 
-2. **Drain the reported batch.** Read each event file in the printed order. Rehydrate context from FILES — the current spec, the unresolved events, `<spec>.review/context.md` — not from what you remember of the chat. Chat history is never the review database; files are what survive compaction, session changes, CLI switches, and stopped turns. Fold each thread before acting: human `reply` events continue the existing conversation, and human `edit` events replace the message named by `supersedes`. Ignore superseded text.
+2. **Drain the reported batch.** Read each event file in the printed order. Rehydrate context from FILES — the current spec, the unresolved events, `<spec>.review/context.md` — not from what you remember of the chat. Chat history is never the review database; files are what survive compaction, session changes, CLI switches, and stopped turns. Fold each thread before acting: human `reply` events continue the existing conversation, and human `edit` events replace the message named by `supersedes`. Ignore superseded text. Each `handoff` event is a human spec review: for a hosted spec, run `scripts/review-host.py reviewed --id <resource id>` before editing; it commits the spec if dirty and sets the row `base` to that commit, else HEAD.
 
 3. **Classify before editing, then apply each comment** to the spec in place. Questions and atomic corrections that do not change behavior or information architecture remain review-only. A batch is material when it adds or changes a behavior cluster, user outcome, flow, state model, module boundary, acceptance family, spatial contract, or the page's information architecture. Before a material edit, load `spec-chat-shape` and apply its complete authoring and browser-quality contract to the affected spec. The existence or age of the spec never exempts it. If the current page cannot carry the new material with readable visual density, restructure it instead of appending prose, cards, or one catch-all diagram. An informational comment may use `change: "no spec change"`; answer through the channel without forcing an edit.
 
@@ -56,20 +56,15 @@ Register a lane's review resources with --slug <lane key>, where the lane key is
 8. **Reconcile to empty, then select one terminal control state.** Repeat the zero-wait scan and steps 2–7 until it exits 3, then choose exactly one:
 
    - `turn-yielded`: run `scripts/review-control.sh yielded <spec-root> .cursor-<cli-or-session> 3600 3` through a verified same-turn yield and keep this turn open. A final response is forbidden.
-   - `external-wake`: run `scripts/review-control.sh external <spec-root> .cursor-<cli-or-session> <owner-id> <owner-session> <adapter> [args...]` in a persistent foreground host-owned terminal. Final is allowed only after the adapter verifies the exact owner identity.
+   - `host-wake`: register the resource with `scripts/review-host.py register --owner <owner-pane-id> --cursor-name .cursor-<cli-or-session>`, using the lane record owner pane id, never an agent or tab name. Re-register an existing row with its current `base` from `registry.toml` as `@<row base>`, never the lane start base. Final is allowed only when registration printed `wake=verified owner=<pane>`; the review host then prompts that pane once per hand-off batch. `wake=unavailable` selects `manual-resume`.
    - `manual-resume`: run `scripts/review-control.sh manual`, return a final response that explicitly requires a new human chat message, and claim no automatic wake. Keep the same public server and checker alive while waiting. The new message resumes the checker against that public URL.
 
    `<spec-root>` is normally the repository's shared `docs/` collection root.
-   `review-control.sh` holds one local kernel lock per canonical collection root and cursor, so a second yielded or external owner fails visibly instead of racing the first.
+   `review-control.sh` holds one local kernel lock per canonical collection root and cursor, so a second yielded owner fails visibly instead of racing the first.
    A raw `watch-specs.sh` long wait is detection-only and now fails unless invoked by `review-control.sh`.
    A background shell, unified exec session, watcher PID, or returned tool session never proves host attachment.
-   Before any final response, transition out of `turn-yielded` into verified `external-wake` or explicit `manual-resume`.
+   Before any final response, transition out of `turn-yielded` into verified `host-wake` or explicit `manual-resume`.
    Detached Codex processing is disabled because it can race the interactive owner.
-
-   For Herdr, run the external monitor in its own visible Herdr pane with `scripts/wake-herdr.py` as the adapter.
-   Bind the exact owner pane as `<owner-id>` and its current Herdr `terminal_id` as `<owner-session>`.
-   The adapter validates both before using modal-safe Herdr prompt transport.
-   Herdr owns only wake; the reactivated authoring pane performs the zero-wait scan and batch transaction.
 
 ## The spec dialect (how to edit)
 
@@ -83,7 +78,7 @@ Register a lane's review resources with --slug <lane key>, where the lane key is
 When a handed-off batch is material, `spec-chat-shape` becomes a required co-skill before the first file edit.
 Read its authoring reference, reassess the complete affected page, and run its browser gate before the material batch's review handoff or replies, using its proportional recheck rule for later local corrections.
 For each changed user-facing story, evaluate whether its guided-journey yes/no declaration is semantically correct; for yes, also evaluate the linked step, passive/required mode, and required-flow success milestone. Structural validation does not decide these meanings.
-For every new or materially revised governing HTML spec with `data-spec-contract="shaped-sections-v1"`, run the shaping validator before reply or handoff. It must find exactly one visible `User stories`, `Acceptance criteria`, and `Modular boundaries` section, with anchored observable acceptance and boundary fields. A validator failure blocks review.
+For every new or materially revised governing HTML spec with `data-spec-contract="shaped-sections-v1"`, run the shaping validator before reply or handoff. It must find exactly one visible `User stories`, `Acceptance criteria`, and `Modular boundaries` section, in that order, with anchored observable acceptance and boundary fields. A validator failure blocks review.
 Do not grandfather a weak existing page, preserve a poor layout merely to minimize the diff, or call a material expansion review-only.
 If `spec-chat-shape` is unavailable, leave the batch durable and stop before editing rather than silently using the review-only path.
 
@@ -105,7 +100,7 @@ A resolved thread remains expandable. When its latest message is from the agent,
 
 If a hand-off remains unacknowledged past the existing timeout, the browser states that automatic wake did not occur and instructs the human to send a new chat message to resume.
 
-When every thread is resolved and no material TBD remains, the no-draft action becomes **Finish review**. It writes the existing empty hand-off. Reconcile it, settle any final durable change, and advance the exact cursor. Finish review is the spool fact for browser review completion; host rows remain until lane teardown. It does not accept an implementation PR, approve a merge, promote to preproduction, or approve live traffic.
+When every thread is resolved and no open TBD remains (any `data-spec-tbd` whose value is not `later`), the no-draft action becomes **Accept spec**, spec acceptance (formerly called Finish review). It writes the existing empty hand-off. Reconcile it, settle any final durable change, and advance the exact cursor. Every sent hand-off, a comment batch or spec acceptance, is a human spec review. Spec acceptance is the spool fact for delivery approval under the reviewed canonical spec; host rows remain until lane teardown. It does not accept an implementation PR, approve a merge, promote to preproduction, or approve live traffic.
 
 ## Event schema
 
@@ -113,7 +108,7 @@ Full field-by-field reference for reading and writing the spool: `references/eve
 
 ## Per-CLI attachment
 
-The loop is identical on every CLI; only the verified wake adapter differs. Read `references/cli-adapters.md` before selecting `turn-yielded`, `external-wake`, or `manual-resume`.
+The loop is identical on every CLI. Read `references/cli-adapters.md` before selecting `turn-yielded`, `host-wake`, or `manual-resume`.
 
 ## Git-derived focus
 
@@ -173,8 +168,8 @@ runtime change; ordinary edits to a served spec do not require a restart.
 2. Start `assets/review-serve.py` when HTTP review is required. For remote review, use `scripts/review-host.py register` with the resource and lane slug; it binds the host interface on a free approved port. Verify the served runtime advertises the required capabilities and `/api/baseline` succeeds for the exact page and change-request base. Keep that server and URL through ordinary edits, rerunning exact served-byte and `/api/baseline` checks for the same base after each edit. Restart only for a root, collection, process, port, runtime, or ownership change, or when the server is dead.
 3. Present the verified review URL. Do not hand back a GitHub link or a loopback URL when the human is reviewing from another machine.
 4. On both an initial start and any resumed/reconnected turn, run `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 0 3`; drain, reply, and cursor each ready batch, then repeat until exit 3.
-5. After reconciliation is empty, establish `turn-yielded`, verified `external-wake`, or `manual-resume` through `scripts/review-control.sh`.
-6. State the selected control state truthfully. Never say watching, attached, or active after final unless `external-wake` is verified.
+5. After reconciliation is empty, establish `turn-yielded`, verified `host-wake` through `scripts/review-host.py register`, or `manual-resume` through `scripts/review-control.sh`.
+6. State the selected control state truthfully. Never say watching, attached, or active after final unless `host-wake` is verified.
 
 ## Mobile review contract
 

@@ -40,7 +40,7 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
         link = f'<link rel="stylesheet" href="{href}">' if href else ""
         self.spec.write_text(f"<!doctype html><html><head>{link}{extra}{local}</head><body>{body}</body></html>\n")
 
-    def write_shaped_spec(self, story=DEFAULT_STORY, scope="traceability", current="", acceptance_heading="Acceptance criteria", acceptance_extra="", boundary_extra="", boundary_scope="Observable scope is this review"):
+    def write_shaped_spec(self, story=DEFAULT_STORY, scope="traceability", current="", acceptance_heading="Acceptance criteria", acceptance_extra=' data-story="story"', boundary_extra="", boundary_scope="Observable scope is this review"):
         current_attr = f' data-current-slice="{current}"' if current else ""
         body = f"""<article class=\"spec\" data-spec-contract=\"shaped-sections-v1\"{current_attr}>
 <section data-spec-section=\"user-stories\" data-anchor=\"user-stories\">
@@ -221,6 +221,39 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("stories=valid", result.stdout)
 
+    def test_rejects_marked_sections_out_of_order(self):
+        base = self.empty_base()
+        self.write_shaped_spec()
+        html = (
+            self.spec.read_text()
+            .replace('data-spec-section="user-stories"', 'data-spec-section="order-first"', 1)
+            .replace('data-spec-section="acceptance"', 'data-spec-section="user-stories"', 1)
+            .replace('data-spec-section="order-first"', 'data-spec-section="acceptance"', 1)
+        )
+        self.spec.write_text(html)
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("shaped spec sections must start", result.stderr)
+
+    def test_rejects_marked_sections_nested_out_of_order(self):
+        base = self.empty_base()
+        self.write_shaped_spec()
+        html = self.spec.read_text()
+        sections = []
+        for anchor in ("user-stories", "acceptance", "modular-boundaries"):
+            start = html.index(f'<section data-spec-section="{anchor}"')
+            end = html.index("</section>", start) + len("</section>")
+            sections.append(html[start:end])
+        body_start = html.index('<section data-spec-section="user-stories"')
+        body_end = html.index("</article>")
+        wrapper = '<section data-anchor="wrapper">\n' + "\n".join(reversed(sections)) + "\n</section>\n"
+        self.spec.write_text(html[:body_start] + wrapper + html[body_end:])
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("shaped spec sections must start", result.stderr)
+
     def test_unmarked_legacy_spec_remains_valid_without_section_backfill(self):
         self.write_spec()
         self.style.write_text("body { color: #111; }\n")
@@ -249,7 +282,7 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
 
     def test_rejects_marked_deferred_acceptance(self):
         base = self.empty_base()
-        self.write_shaped_spec(acceptance_extra=' data-spec-tbd="open"')
+        self.write_shaped_spec(acceptance_extra=' data-story="story" data-spec-tbd="open"')
         shutil.copy2(FALLBACK, self.style)
         result = self.validate(base)
         self.assertNotEqual(result.returncode, 0)
@@ -278,6 +311,39 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
         result = self.validate(base)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("needs observable scope", result.stderr)
+
+    def test_rejects_criterion_without_story_claim(self):
+        base = self.empty_base()
+        self.write_shaped_spec(acceptance_extra="")
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("acceptance-rule needs data-story", result.stderr)
+
+    def test_rejects_criterion_naming_unknown_story(self):
+        base = self.empty_base()
+        self.write_shaped_spec(acceptance_extra=' data-story="story missing"')
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("names unknown story missing", result.stderr)
+
+    def test_rejects_story_no_criterion_names(self):
+        base = self.empty_base()
+        extra = '<p data-user-story data-anchor="orphan" data-user-facing="false">Orphan</p>'
+        self.write_shaped_spec(story=DEFAULT_STORY + extra)
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("story orphan is named by no acceptance criterion", result.stderr)
+
+    def test_accepts_criterion_naming_several_stories(self):
+        base = self.empty_base()
+        extra = '<p data-user-story data-anchor="second" data-user-facing="false">Second</p>'
+        self.write_shaped_spec(story=DEFAULT_STORY + extra, acceptance_extra=' data-story="story  second"')
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_unchanged_legacy_spec_does_not_trigger_structural_backfill(self):
         self.write_spec(body="<p>Legacy outcome</p>")

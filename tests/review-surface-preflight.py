@@ -10,7 +10,7 @@ PREFLIGHT = ROOT / "skill" / "review-spec" / "scripts" / "preflight.py"
 BUNDLED_RUNTIME = ROOT / "skill" / "review-spec" / "assets" / "viz" / "runtime.js"
 BUNDLED_SERVER = ROOT / "skill" / "review-spec" / "assets" / "review-serve.py"
 
-RUNTIME_CAPABILITIES = "// spec-chat-capabilities: changed-root-focus custom-style-focus diff-visibility-control finish-review git-focus manual-resume-status mobile-pre-wrap mobile-review reopen-thread semantic-islands shared-style-ownership\n"
+RUNTIME_CAPABILITIES = "// spec-chat-capabilities: changed-root-focus custom-style-focus diff-visibility-control finish-review git-focus manual-resume-status mobile-pre-wrap mobile-review reopen-thread semantic-islands shared-style-ownership spec-acceptance tbd-later\n"
 SERVER_CAPABILITIES = "# spec-chat-capabilities: exact-baseline git-baseline narrow-review-root\n"
 
 
@@ -79,6 +79,17 @@ class ReviewSurfacePreflightTest(unittest.TestCase):
         self.runtime.write_text(
             "// spec-chat-capabilities: changed-root-focus finish-review git-focus manual-resume-status mobile-review reopen-thread semantic-islands\n"
         )
+        self.server.write_text(SERVER_CAPABILITIES)
+
+        result = self.run_preflight()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.runtime.read_bytes(), BUNDLED_RUNTIME.read_bytes())
+        self.assertIn("runtime=migrated", result.stdout)
+        self.assertIn("server=compatible", result.stdout)
+
+    def test_migrates_a_runtime_that_lacks_spec_acceptance_and_tbd_later(self):
+        self.runtime.write_text(RUNTIME_CAPABILITIES.replace(" spec-acceptance tbd-later", ""))
         self.server.write_text(SERVER_CAPABILITIES)
 
         result = self.run_preflight()

@@ -11,10 +11,13 @@ import json
 import mimetypes
 import os
 import re
+import shutil
+import signal
 import socket
 import stat
 import subprocess
 import sys
+import threading
 import time
 import tomllib
 from html.parser import HTMLParser
@@ -36,6 +39,10 @@ except ModuleNotFoundError:
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
 SAFE_CURSOR_RE = re.compile(r"[^/\\]+\Z")
 EVENT_RE = re.compile(r"[A-Za-z0-9._-]{1,128}\Z")
+WAKE_POLL_SECONDS = 3
+WAKE_SAY_TIMEOUT_SECONDS = 10
+# Herdr typed the prompt but did not observe the pane react; retyping would duplicate it.
+TYPED_UNCONFIRMED_CODES = frozenset({"agent_prompt_stalled"})
 
 
 def parse_args(argv=None):
@@ -93,7 +100,6 @@ def _resource_records(document, *, check_refs=False, trust=False):
     result = []
     ids = set()
     stable = set()
-    slug_roots = {}
     for raw in records:
         if not isinstance(raw, dict):
             raise ValueError("registry resource entry must be a table")
@@ -130,11 +136,10 @@ def _resource_records(document, *, check_refs=False, trust=False):
         spec_file = os.path.realpath(os.path.join(root, *spec.split("/")))
         if not trust and (not _inside(spec_file, narrow, strict=True) or not os.path.isfile(spec_file)):
             raise ValueError("resource spec is missing or outside its collection: " + rid)
-        key = slug + "/" + spec
+        # The host records each row's served path; rows without one serve at <slug>/<spec>.
+        key = raw.get("path") or slug + "/" + spec
         if key in stable:
             raise ValueError("duplicate stable resource path: " + key)
-        if slug in slug_roots and slug_roots[slug] != root:
-            raise ValueError("ambiguous resource slug: " + slug)
         if not SAFE_CURSOR_RE.fullmatch(raw["cursor_name"]):
             raise ValueError("invalid cursor name: " + raw["cursor_name"])
         if check_refs:
@@ -151,10 +156,10 @@ def _resource_records(document, *, check_refs=False, trust=False):
             "narrow_root": narrow,
             "spec": spec,
             "spec_file": spec_file,
+            "path": key,
         })
         ids.add(rid)
         stable.add(key)
-        slug_roots[slug] = root
         result.append(resource)
     return result
 
@@ -183,7 +188,7 @@ class MountState:
             info = os.stat(self.path)
         except OSError:
             return None
-        return info.st_mtime_ns, info.st_size
+        return info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns, info.st_size
 
     def snapshot(self):
         if not self.path:
@@ -236,6 +241,8 @@ def _safe_relative(value):
 
 
 def _mount_prefix(mount):
+    if mount.get("path"):
+        return mount["path"][:-len(mount["spec"])]
     return (mount["slug"] + "/") if mount["slug"] else ""
 
 
@@ -266,6 +273,42 @@ def _page_title(path):
         pass
     title = " ".join("".join(parser.parts).split())
     return title or os.path.splitext(os.path.basename(path))[0]
+
+
+def _review_status(mount):
+    """True when changed since the row base, False when equal, None without a row or on failure."""
+    base = mount.get("base") or ""
+    if not mount.get("slug") or not base or base.startswith("-"):
+        return None
+    env = dict(os.environ, **{"GIT_OPTIONAL_LOCKS": "0"})
+
+    def git(*args):
+        try:
+            result = subprocess.run(
+                ("git", "-C", mount["root"], *args),
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env, timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None, ""
+        return result.returncode, result.stdout.decode(errors="replace").strip()
+
+    code, commit = git("rev-parse", "--verify", "--quiet", base + "^{commit}")
+    if code != 0:
+        return None
+    code, current = git("hash-object", "--", mount["spec"])
+    if code != 0:
+        return None
+    code, prior = git("rev-parse", "--verify", "--quiet", commit + ":" + mount["spec"])
+    if code is None:
+        return None
+    return code != 0 or prior != current
+
+
+def _lane_label(slug):
+    match = re.fullmatch(r"([a-z]+)-?([0-9]+)", slug)
+    if not match:
+        return slug, (1, slug, 0)
+    return match.group(1).upper() + "-" + match.group(2), (0, match.group(1), int(match.group(2)))
 
 
 def _own_viz_asset(path):
@@ -350,6 +393,173 @@ def _write_event(review, root, actor, name, event):
             json.dump(event, stream)
 
 
+def _wake_batch(resource):
+    """Return the zero-wait scan batch: pending human names through the newest hand-off."""
+    review = resource["spec_file"] + ".review"
+    try:
+        names = sorted(name for name in os.listdir(os.path.join(review, "human")) if not name.startswith("."))
+    except OSError:
+        return ()
+    try:
+        with open(os.path.join(review, resource["cursor_name"]), encoding="utf-8") as stream:
+            consumed = set(stream.read().splitlines())
+    except FileNotFoundError:
+        consumed = set()
+    except (OSError, ValueError):
+        return ()
+    pending = [name for name in names if name not in consumed]
+    last = max((index for index, name in enumerate(pending) if "-handoff-" in name), default=-1)
+    return tuple(pending[:last + 1])
+
+
+class HerdrTimeout(Exception):
+    """The Herdr command outlived its timeout and its process group was killed."""
+
+
+def _herdr(*argv, timeout):
+    """Run one Herdr command: CompletedProcess, None when it cannot start, HerdrTimeout on timeout."""
+    try:
+        process = subprocess.Popen(
+            argv, text=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, start_new_session=True,
+        )
+    except OSError:
+        return None
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except OSError:
+            pass
+        process.communicate()
+        raise HerdrTimeout(argv[0]) from None
+    return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+
+
+def _herdr_error_code(text):
+    """Return the Herdr JSON error.code found in command output, or None."""
+    candidates = [text] + text.splitlines()
+    for candidate in candidates:
+        try:
+            code = json.loads(candidate)["error"]["code"]
+        except (KeyError, TypeError, ValueError):
+            continue
+        if isinstance(code, str):
+            return code
+    return None
+
+
+def herdr_owner_status(owner):
+    """Resolve an owner pane through Herdr: its agent_status, or None when unresolved."""
+    try:
+        result = _herdr("herdr", "agent", "get", owner, timeout=5)
+    except HerdrTimeout:
+        return None
+    if result is None or result.returncode:
+        return None
+    try:
+        agent = json.loads(result.stdout)["result"]["agent"]
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not isinstance(agent, dict) or agent.get("pane_id") != owner:
+        return None
+    return str(agent.get("agent_status") or "unknown")
+
+
+def herdr_installed():
+    return bool(shutil.which("herdr") and shutil.which("herdr-say"))
+
+
+class WakeController:
+    """Wake each registry row's owner pane once per unchanged hand-off batch."""
+
+    def __init__(self, server):
+        self.server = server
+        self.stop_event = threading.Event()
+        self.lock = threading.Lock()
+        self.states = {}
+        self.delivered = {}
+
+    def status(self, resource_id):
+        with self.lock:
+            return self.states.get(resource_id)
+
+    def _deliver(self, resource, batch):
+        if not herdr_installed():
+            return "unavailable"
+        owner = resource["owner"]
+        agent_status = herdr_owner_status(owner)
+        if agent_status is None:
+            return "failed"
+        if agent_status == "working":
+            return "deferred"
+        message = (
+            f"Spec Chat human spec review hand-off ready: spec {resource['spec_file']}, "
+            f"collection {resource['narrow_root']}, cursor {resource['cursor_name']}, {len(batch)} events. "
+            "Run the zero-wait scan, process the batch, then park."
+        )
+        try:
+            result = _herdr(
+                "herdr-say", "--kind", "command", "--artifact", resource["spec_file"], owner, message,
+                timeout=WAKE_SAY_TIMEOUT_SECONDS,
+            )
+        except HerdrTimeout:
+            return "sent"  # typed, delivery unconfirmed: never retype the same batch
+        if result is None:
+            return "failed"
+        if result.returncode in (0, 75):
+            return {0: "sent", 75: "deferred"}[result.returncode]
+        if _herdr_error_code(result.stderr or "") in TYPED_UNCONFIRMED_CODES:
+            return "sent"
+        return "failed"
+
+    def _poll_row(self, resource):
+        resource_id = resource["id"]
+        if not resource.get("owner") or not resource.get("cursor_name"):
+            return None
+        batch = _wake_batch(resource)
+        if not batch:
+            return None
+        identity = (resource["owner"], batch)
+        if self.delivered.get(resource_id) == identity:
+            return "sent"
+        state = self._deliver(resource, batch)
+        if state == "sent":
+            self.delivered[resource_id] = identity
+        return state
+
+    def poll(self):
+        states = {}
+        kept = set()
+        with self.lock:
+            previous = dict(self.states)
+        for resource in self.server.mount_state.snapshot():
+            resource_id = resource.get("id") if isinstance(resource, dict) else None
+            try:
+                state = self._poll_row(resource)
+            except Exception as exc:  # one bad row never stops wake for the others
+                print("review-serve: wake %s failed: %r" % (resource_id, exc), file=sys.stderr, flush=True)
+                kept.add(resource_id)
+                if resource_id in previous:
+                    states[resource_id] = previous[resource_id]
+                continue
+            if state is not None:
+                states[resource_id] = state
+        with self.lock:
+            self.states = states
+        for resource_id in set(self.delivered) - set(states) - kept:
+            del self.delivered[resource_id]
+
+    def run(self):
+        while not self.stop_event.is_set():
+            try:
+                self.poll()
+            except Exception as exc:  # keep waking other rows after an unexpected error
+                print("review-serve: wake poll failed: %s" % exc, file=sys.stderr, flush=True)
+            self.stop_event.wait(WAKE_POLL_SECONDS)
+
+
 class MountHandler(SimpleHTTPRequestHandler):
     server_version = "SpecChat/1"
     timeout = 2.0
@@ -369,46 +579,87 @@ class MountHandler(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
         return
 
-    def _json(self, value, code=200):
+    def _json(self, value, code=200, headers=None):
         body = json.dumps(value).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        for name, header in (headers or {}).items():
+            self.send_header(name, header)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
 
     def _index(self):
-        entries = []
+        lanes = {}
         seen = set()
         query = urlparse(self.path).query
         for mount in self.mounts:
             specs = enumerate_served_specs(mount)
+            row = bool(mount.get("slug") and mount.get("spec"))
+            lane = mount["slug"] if row else None
+            project = mount.get("project") or os.path.basename(mount["root"])
             for spec, path in specs:
                 stable = _mount_prefix(mount) + spec
                 if stable in seen:
                     continue
                 seen.add(stable)
-                entries.append(
-                    '<li><a href="%s">%s</a><span>%s</span></li>' % (
-                        html.escape(("/" if mount["slug"] else "") + quote(stable, safe="/") + (("?" + query) if query else ""), quote=True),
-                        html.escape(_page_title(path)),
-                        html.escape(stable),
-                    )
+                href = ("/" if mount["slug"] else "") + quote(stable, safe="/") + (("?" + query) if query else "")
+                status = _review_status(mount) if row else None
+                lanes.setdefault(lane, {}).setdefault(project, []).append((status, _page_title(path), href))
+
+        def lane_order(item):
+            lane, projects = item
+            if lane is None:
+                return (2,)
+            changed = any(status for specs in projects.values() for status, _, _ in specs)
+            return (0 if changed else 1, _lane_label(lane)[1])
+
+        cards = []
+        for lane, projects in sorted(lanes.items(), key=lane_order):
+            statuses = [status for specs in projects.values() for status, _, _ in specs if status is not None]
+            changed = sum(1 for status in statuses if status)
+            if lane is None:
+                heading, count = "Other specs", "no status"
+            else:
+                heading = _lane_label(lane)[0]
+                count = (
+                    "%d of %d changed" % (changed, len(statuses)) if changed
+                    else "up to date" if statuses else "no status"
                 )
-        listing = "\n".join(entries) or '<li class="empty">No Spec Chat spec pages are available.</li>'
+            parts = ['<section class="lane"><h2><span>%s</span><span class="count">%s</span></h2>' % (
+                html.escape(heading), count)]
+            for project in sorted(projects):
+                parts.append('<h3>%s</h3><ul>' % html.escape(project))
+                for status, title, href in sorted(projects[project], key=lambda spec: (not spec[0], spec[1].casefold(), spec[2])):
+                    badge = (
+                        '<span class="status changed">Changed since you reviewed</span>' if status
+                        else '<span class="status">Up to date</span>' if status is False else ""
+                    )
+                    parts.append('<li><a href="%s">%s</a>%s</li>' % (
+                        html.escape(href, quote=True), html.escape(title), badge))
+                parts.append('</ul>')
+            parts.append('</section>')
+            cards.append("".join(parts))
+        listing = "\n".join(cards) or '<p class="empty">No Spec Chat spec pages are available.</p>'
         body = ('''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Spec Chat index</title><style>
 :root { color-scheme: light; font-family: system-ui, sans-serif; background: #faf9f6; color: #22242a; }
-body { margin: 0; } main { box-sizing: border-box; max-width: 60rem; margin: 0 auto; padding: clamp(1.25rem, 4vw, 3rem); }
+body { margin: 0; } main { box-sizing: border-box; max-width: 80rem; margin: 0 auto; padding: clamp(1.25rem, 4vw, 3rem); }
 h1 { font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1.1; margin: 0 0 2rem; }
-ul { display: grid; gap: .75rem; list-style: none; margin: 0; padding: 0; }
-li { min-width: 0; background: #fff; border: 1px solid #e2e0d8; border-radius: .75rem; padding: .25rem 1rem 1rem; }
-li a { color: #087f73; display: flex; align-items: center; min-height: 44px; padding: .25rem 0; font-weight: 700; font-size: 1.05rem; line-height: 1.35; overflow-wrap: anywhere; }
-li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywhere; }
+nav { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%%, 300px), 1fr)); align-items: start; }
+.lane { min-width: 0; background: #fff; border: 1px solid #e2e0d8; border-radius: .75rem; padding: .75rem 1rem; }
+.lane h2 { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; margin: 0; font-size: 1.125rem; font-weight: 800; }
+.count { flex: none; color: #595e68; font-size: .8125rem; font-weight: 400; }
+h3 { margin: .625rem 0 .125rem; color: #595e68; font-size: .75rem; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; overflow-wrap: anywhere; }
+ul { list-style: none; margin: 0; padding: 0; }
+li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0 .75rem; padding-bottom: .25rem; border-top: 1px solid #e2e0d8; }
+li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-height: 44px; min-width: 0; font-weight: 650; font-size: .9375rem; line-height: 1.35; overflow-wrap: anywhere; }
+.status { flex: none; margin-left: auto; color: #595e68; font-size: .8125rem; text-align: right; }
+.status.changed { color: #8a4b00; font-weight: 750; padding: 1px .5rem; border: 1px solid currentColor; border-radius: 999px; }
 .empty { color: #595e68; padding: 1rem; }
-</style></head><body><main><h1>Review index</h1><nav aria-label="Spec Chat detail pages"><ul>%s</ul></nav></main></body></html>''' % listing).encode("utf-8")
+</style></head><body><main><h1>Review index</h1><nav aria-label="Spec Chat detail pages">%s</nav></main></body></html>''' % listing).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -540,7 +791,9 @@ li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywh
         if events is None:
             return self._json({"error": "unsafe spool path"}, 400)
         events.sort(key=lambda event: event["name"])
-        return self._json(events)
+        wake = self.server.wake_controller.status(mount.get("id"))
+        headers = {"X-Spec-Chat-Wake": wake} if wake else None
+        return self._json(events, headers=headers)
 
     def _jev(self, query):
         mount, target, relative = self._resolve_path(query.get("path", [""])[0], spec_only=True)
@@ -621,6 +874,7 @@ li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywh
         self.send_response(200)
         self.send_header("Content-Type", mimetypes.guess_type(target)[0] or "application/octet-stream")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Last-Modified", self.date_time_string(int(os.stat(target).st_mtime)))
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
@@ -695,11 +949,16 @@ def main(argv=None):
         return 2
     server.mount_state = state
     server.jev = JevService()
+    server.wake_controller = WakeController(server)
+    wake_thread = threading.Thread(target=server.wake_controller.run, name="spec-chat-wake", daemon=True)
+    wake_thread.start()
     print("spec-chat review-serve on http://%s:%d" % (advertised_host(args), server.server_port), flush=True)
     print("review URL is public and is not a secret in any security sense or an authentication boundary; stop this process when review ends", flush=True)
     try:
         server.serve_forever()
     finally:
+        server.wake_controller.stop_event.set()
+        wake_thread.join(timeout=1)
         server.server_close()
     return 0
 

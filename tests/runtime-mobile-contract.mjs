@@ -20,10 +20,10 @@ assert.match(runtime, /\.hx-composer textarea\{min-height:120px;font-size:16px/,
 assert.match(runtime, /\.hx-dock-open,\.hx-dock-thread\{width:44px;height:44px/, 'mobile conversation controls meet the touch target floor');
 assert.match(runtime, /openPanel\(!window\.matchMedia\('\(max-width: 640px\)'\)\.matches\)/, 'mobile comment mode exposes the document before target selection');
 assert.match(runtime, /class="hx-mobile-handoff" id="hx-mobile-handoff"/, 'mobile toolbar exposes handoff beside comment mode');
-assert.match(runtime, /mobileHandoff\.textContent = handoffState\.finish \? 'Finish review' : handoffState\.tbd \? 'TBD open' : drafts \? 'Hand off \(' \+ drafts \+ '\)' : 'Hand off'/, 'mobile handoff renders the current draft count or Finish review');
+assert.match(runtime, /mobileHandoff\.textContent = handoffState\.finish \? 'Accept spec' : handoffState\.tbd \? 'TBD open' : drafts \? 'Hand off \(' \+ drafts \+ '\)' : 'Hand off'/, 'mobile handoff renders the current draft count or Accept spec');
 assert.match(runtime, /e\.message === 'Script error\.' && !e\.filename && !e\.lineno && !e\.colno && !e\.error/, 'fully opaque browser errors do not raise a fatal review overlay');
 assert.match(runtime, /overlay\('error', e\.message/, 'attributable script errors remain visible');
-assert.match(runtime, /if \(state\.handoffPosting \|\| !action\.enabled\) return/, 'handoff and Finish review latch against duplicate submission');
+assert.match(runtime, /if \(state\.handoffPosting \|\| !action\.enabled\) return/, 'handoff and Accept spec latch against duplicate submission');
 assert.match(runtime, /hx-service-index-link/, 'HTTP detail pages expose a visible service index link');
 assert.ok(runtime.includes("new URL('/', location.href).href"), 'service index link resolves to the configured service root');
 assert.match(runtime, /Back to Spec Chat index/, 'service index link has an accessible visible label');

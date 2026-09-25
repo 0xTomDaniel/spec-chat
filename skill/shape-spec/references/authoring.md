@@ -21,7 +21,10 @@ New or materially revised governing specs opt into the structural contract with
 that marker remain on the legacy path until an explicit migration.
 
 Every marked spec has exactly one visible, named section for each contract
-surface:
+surface, in this order: `User stories`, `Acceptance criteria`, then
+`Modular boundaries`. Every acceptance criterion carries `data-story` naming one
+or more space-separated `data-user-story` anchors in the same spec, and every
+story is named by at least one criterion.
 
 ```html
 <article class="spec" data-spec-contract="shaped-sections-v1">
@@ -31,7 +34,7 @@ surface:
   </section>
   <section data-spec-section="acceptance" data-acceptance-scope="traceability" data-anchor="acceptance">
     <h2>Acceptance criteria</h2>
-    <p data-acceptance-criterion data-anchor="acceptance-name">
+    <p data-acceptance-criterion data-anchor="acceptance-name" data-story="story-name">
       <span data-acceptance-scenario>When ...</span>
       <span data-acceptance-observable>The page ...</span>
     </p>
@@ -55,6 +58,11 @@ requirements of the governing spec. Their scope is carried by the descriptive
 `data-acceptance-scope` when useful, anchors, and surrounding source context;
 these scope hints are optional and descriptive, and no MVP-labelled heading is required. A deferred or `data-spec-tbd`
 criterion cannot satisfy the governing Acceptance criteria section.
+
+A `data-spec-tbd` marker is open unless its value is `later`. Open TBDs block
+spec acceptance and are highlighted in review. `data-spec-tbd="later"` marks a
+TBD deliberately left for a later slice: it stays visible text but neither
+blocks spec acceptance nor is highlighted.
 
 Every marked spec has one Modular boundaries section, including a self-contained
 single-module spec. Each anchored boundary names responsibility, the

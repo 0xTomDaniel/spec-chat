@@ -1,6 +1,6 @@
 {
   "skill_name": "spec-chat-review",
-  "note": "Behavior evals. Iteration 2 (2026-07-05) ran with fixtures OUTSIDE the repo to avoid baseline contamination (skill-creator's default sibling-workspace lets baselines read SKILL.md/DESIGN.md). Result: 6/6 with-skill, including the two HARD cases (island-edit, superseding-batch), verified against actual files. On 2026-09-01 the wake-ownership regression reproduced a raw watcher surviving a closed turn without reactivation; the control-state fix binds long waits to yielded, external-wake, or manual-resume. A fresh Herdr external-wake scenario then scored true on all nine ownership decisions.",
+  "note": "Behavior evals. Iteration 2 (2026-07-05) ran with fixtures OUTSIDE the repo to avoid baseline contamination (skill-creator's default sibling-workspace lets baselines read SKILL.md/DESIGN.md). Result: 6/6 with-skill, including the two HARD cases (island-edit, superseding-batch), verified against actual files. On 2026-09-01 the wake-ownership regression reproduced a raw watcher surviving a closed turn without reactivation; the control-state fix binds long waits to yielded, external-wake, or manual-resume. A fresh Herdr external-wake scenario then scored true on all nine ownership decisions. ANN-131 (2026-09-25) replaced external-wake with host-wake; not yet re-scored.",
   "evals": [
     {
       "id": 1,
@@ -66,7 +66,7 @@
     {
       "id": 7,
       "eval_name": "stale-repository-review-surface",
-      "prompt": "Start review on an existing repository whose vendored Spec Chat runtime and server predate Git focus, Finish review, and thread reopen. The spec also contains a semantic chart island with no render target.",
+      "prompt": "Start review on an existing repository whose vendored Spec Chat runtime and server predate Git focus, spec acceptance, and thread reopen. The spec also contains a semantic chart island with no render target.",
       "expectations": [
         "Runs the bundled review-surface preflight before starting or resuming review",
         "Blocks publication until the missing render target is repaired",
@@ -82,9 +82,9 @@
       "prompt": "Start review, leave a watcher alive, then end the authoring turn before a later browser handoff arrives.",
       "expectations": [
         "Refuses to call a raw background watcher an active attachment",
-        "Selects exactly turn-yielded, verified external-wake, or manual-resume",
+        "Selects exactly turn-yielded, verified host-wake, or manual-resume",
         "Forbids final response while turn-yielded",
-        "Uses a foreground host-neutral monitor plus exact-identity Herdr adapter when Herdr wake is available",
+        "Uses the long-lived review host and exact registry owner pane when Herdr wake is available",
         "Rejects a second control owner for the same collection root and cursor with a local process-held lock",
         "Keeps all comment processing and cursor advancement in the reactivated owner pane",
         "Uses manual-resume with an explicit new-message instruction when no verified wake exists",

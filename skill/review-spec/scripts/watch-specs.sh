@@ -36,9 +36,9 @@ esac
 
 if [ "$TMO" -gt 0 ]; then
   case "${SPEC_CHAT_WATCH_OWNER:-}" in
-    turn-yielded | external-wake) ;;
+    turn-yielded) ;;
     *)
-      echo "watch-specs: detection-only raw long watcher cannot own review wake; use review-control.sh yielded, external, or manual" >&2
+      echo "watch-specs: detection-only raw long watcher cannot own review wake; use review-control.sh yielded or manual" >&2
       exit 2
       ;;
   esac

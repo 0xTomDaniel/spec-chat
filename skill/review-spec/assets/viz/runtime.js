@@ -1,5 +1,5 @@
 // spec-chat runtime v0.1 — hydrates semantic islands and mounts the annotation layer.
-// spec-chat-capabilities: changed-root-focus custom-style-focus diff-visibility-control finish-review git-focus manual-resume-status mobile-pre-wrap mobile-review reopen-thread semantic-islands shared-style-ownership
+// spec-chat-capabilities: changed-root-focus custom-style-focus diff-visibility-control finish-review git-focus manual-resume-status mobile-pre-wrap mobile-review reopen-thread semantic-islands shared-style-ownership spec-acceptance tbd-later
 // Transports: FSA (file://, primary) | HTTP review-serve (http(s)://, secondary).
 // Same spools, same event schema either way. See DESIGN.md.
 // Classic script, NOT a module: browsers CORS-block module scripts on file:// pages,
@@ -55,6 +55,7 @@ const state = {
   loopsStarted: false,
   eventsRendered: false,
   handoffPosting: false,
+  lastTbd: null,         // open TBD marker focused by the last TBD open activation
   range: { baseline: null, loading: false, pickerOpen: false },
   jev: { status: 'idle', items: [], base: null, request: 0 },
   readingView: false,
@@ -69,7 +70,7 @@ function httpTransport() {
     ready: Promise.resolve(true),
     async listEvents() {
       const r = await fetch('/api/events?dir=' + encodeURIComponent(dir));
-      return r.json();
+      return { events: await r.json(), wake: r.headers.get('X-Spec-Chat-Wake') || null };
     },
     async postEvent(body) {
       await fetch('/api/events?dir=' + encodeURIComponent(dir) + '&actor=human', { method: 'POST', body: JSON.stringify(body) });
@@ -237,7 +238,7 @@ function markIssueFocus(currentText, baseline) {
   for (const element of focused) {
     if (changedRoots.has(element.dataset.anchor)) element.dataset.hxFocusRoot = 'changed';
   }
-  document.body.classList.add('hx-focus-active');
+  document.body.classList.toggle('hx-focus-active', focused.some(element => element.dataset.hxFocus === 'changed'));
 }
 
 async function fetchBaseline(base, includeCurrent = false, signal) {
@@ -253,7 +254,7 @@ async function fetchBaseline(base, includeCurrent = false, signal) {
 }
 
 async function applyIssueFocus() {
-  if (EMBED_REVIEW_DIR || location.protocol === 'file:' || new URLSearchParams(location.search).get('focus') !== 'changes') return;
+  if (EMBED_REVIEW_DIR || location.protocol === 'file:') return;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
   try {
@@ -266,7 +267,7 @@ async function applyIssueFocus() {
   } catch (error) {
     const copy = document.getElementById('hx-range-copy');
     if (copy) copy.textContent = 'Compared range unavailable.';
-    showFocusError();
+    if (new URLSearchParams(location.search).get('focus') === 'changes') showFocusError();
   } finally {
     clearTimeout(timeout);
   }
@@ -408,23 +409,6 @@ function mountRangeBar() {
   bar.addEventListener('keydown', event => {
     if (event.key === 'Escape') openRangePicker(false);
   });
-}
-
-async function loadRangeBar() {
-  if (EMBED_REVIEW_DIR || !['http:', 'https:'].includes(location.protocol)) return;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
-  try {
-    const result = await fetchBaseline(null, false, controller.signal);
-    state.range.baseline = result.baseline;
-    renderRangeBar(result.baseline);
-    requestJev(result.baseline.base);
-  } catch (error) {
-    const copy = document.getElementById('hx-range-copy');
-    if (copy) copy.textContent = 'Compared range unavailable.';
-  } finally {
-    clearTimeout(timeout);
-  }
 }
 
 /* ---------------- Jev coverage ----------------
@@ -1032,6 +1016,37 @@ function reviewHandoffState(threads, hasTbd = false) {
   return { drafts, finish, tbd, enabled: drafts > 0 || finish || tbd };
 }
 
+function isOpenTbd(value) {
+  return value !== 'later';
+}
+
+function openTbdMarkers(markers) {
+  return [...markers].filter(el => isOpenTbd(el.getAttribute('data-spec-tbd')));
+}
+
+function nextOpenTbd(open, last) {
+  if (!open.length) return null;
+  return open[(open.indexOf(last) + 1) % open.length];
+}
+
+function tbdBlock(el) {
+  return el.closest('[data-anchor]') || el;
+}
+
+function tbdHighlightBlocks(handoffState, open) {
+  return handoffState.tbd ? [...new Set(open.map(tbdBlock))] : [];
+}
+
+function advanceTbd(st, open) {
+  return st.lastTbd = nextOpenTbd(open, st.lastTbd);
+}
+
+function renderTbdHighlight(root, blocks) {
+  const keep = new Set(blocks);
+  root.querySelectorAll('.hx-tbd-open').forEach(el => { if (!keep.has(el)) el.classList.remove('hx-tbd-open'); });
+  keep.forEach(el => el.classList.add('hx-tbd-open'));
+}
+
 function handoffObservation(events, nowMs) {
   let handoff = null;
   for (const event of events) if (event.actor === 'human' && event.body.event === 'handoff') handoff = event;
@@ -1039,6 +1054,13 @@ function handoffObservation(events, nowMs) {
   if (events.some(event => event.actor === 'agent' && event.name > handoff.name)) return null;
   const createdAt = Date.parse(handoff.body.createdAt || '');
   return Number.isFinite(createdAt) && nowMs - createdAt >= 30000 ? 'queued' : 'waiting';
+}
+
+function handoffAgentText(observation, wake, last) {
+  if (observation && wake === 'failed') return '· wake failed; send a new chat message to resume';
+  if (observation === 'waiting' || (observation === 'queued' && wake === 'deferred')) return '· handed off, waiting for agent';
+  if (observation === 'queued') return '· automatic wake did not occur; send a new chat message to resume';
+  return last ? '· agent last event ' + new Date(last.body.createdAt).toLocaleTimeString() : '· no agent events yet';
 }
 
 function ingest(events) {
@@ -1233,6 +1255,8 @@ body.hx-focus-active [data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])
 body.hx-focus-active [data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])):not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *):not(tr):not(td):not(th):not(script):not(style)::after{content:"";position:absolute;inset:-3px;background:rgba(0,0,0,calc(.5*var(--hx-veil,1)));border-radius:inherit;pointer-events:none;z-index:2;-webkit-backdrop-filter:blur(calc(2.5px*var(--hx-veil,1)));backdrop-filter:blur(calc(2.5px*var(--hx-veil,1)))}
 body.hx-focus-active tr[data-hx-focus=unchanged]:not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *) > :is(td,th){position:relative}
 body.hx-focus-active tr[data-hx-focus=unchanged]:not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *) > :is(td,th)::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,calc(.5*var(--hx-veil,1)));pointer-events:none;z-index:2;-webkit-backdrop-filter:blur(calc(2.5px*var(--hx-veil,1)));backdrop-filter:blur(calc(2.5px*var(--hx-veil,1)))}
+body.hx-focus-active .hx-tbd-open{position:relative;z-index:3}
+body.hx-focus-active .hx-tbd-open[data-hx-focus=unchanged]::after,body.hx-focus-active tr.hx-tbd-open[data-hx-focus=unchanged] > :is(td,th)::after{display:none!important}
 body.hx-focus-active [data-hx-focus=unchanged] .hx-pin,body.hx-focus-active [data-hx-focus=unchanged] .hx-badge{opacity:1;filter:none;z-index:700}
 body.hx-focus-active [data-hx-focus=unchanged] .hx-jev-badge,body.hx-focus-active [data-hx-focus=unchanged] .hx-jev-corpus,body.hx-focus-active [data-hx-focus=unchanged] .hx-jev-coverage{position:relative;opacity:1;filter:none;z-index:700}
 .hx-focus-error{position:fixed;top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);max-width:calc(100vw - 24px);box-sizing:border-box;padding:8px 12px;border-radius:8px;background:#8b1a1a;color:#fff;font:600 12px system-ui;z-index:970;box-shadow:0 6px 20px rgba(30,30,40,.25)}
@@ -1369,6 +1393,7 @@ body.hx-comment [data-anchor] :is(button,input,select,textarea,label,a,summary){
 .hx-thread-ring{position:fixed;border:2px solid #d98e04;border-radius:5px;pointer-events:none;z-index:750;box-shadow:0 0 0 3px rgba(217,142,4,.18);transition:left .12s,top .12s,width .12s,height .12s}
 body.hx-comment [data-render-target]:hover{border:1.5px dashed #d98e04}
 body.hx-comment [data-render-target] canvas{cursor:copy!important}
+.hx-tbd-open{outline:2px solid #d98e04;outline-offset:4px}
 .hx-badge{font:600 9.5px system-ui;text-transform:uppercase;letter-spacing:.04em;color:#0e7264;background:#e3f2f0;border-radius:4px;padding:2px 7px;margin-left:8px;vertical-align:middle}
 .hx-jev-badge{font:700 10px/1 system-ui,sans-serif;text-transform:none;letter-spacing:0;border-radius:999px;padding:4px 8px;margin-left:8px;vertical-align:middle;white-space:nowrap}
 .hx-jev-badge[data-state=label]{color:#204a43;background:#d9eee9}
@@ -1799,15 +1824,17 @@ function renderPanel() {
     });
     wrap.appendChild(d);
   }
-  const handoffState = reviewHandoffState(state.threads, Boolean(document.querySelector('[data-spec-tbd]')));
+  const openTbds = openTbdMarkers(document.querySelectorAll('[data-spec-tbd]'));
+  const handoffState = reviewHandoffState(state.threads, openTbds.length > 0);
   const drafts = handoffState.drafts;
-  document.getElementById('hx-drafts').textContent = handoffState.finish ? 'Review complete' : drafts + ' draft' + (drafts === 1 ? '' : 's');
+  renderTbdHighlight(document, tbdHighlightBlocks(handoffState, openTbds));
+  document.getElementById('hx-drafts').textContent = handoffState.finish ? 'Ready to accept' : drafts + ' draft' + (drafts === 1 ? '' : 's');
   const desktopHandoff = document.getElementById('hx-handoff');
   desktopHandoff.disabled = !handoffState.enabled;
-  desktopHandoff.textContent = handoffState.finish ? 'Finish review' : handoffState.tbd ? 'TBD open' : 'Hand off to agent →';
+  desktopHandoff.textContent = handoffState.finish ? 'Accept spec' : handoffState.tbd ? 'TBD open' : 'Hand off to agent →';
   const mobileHandoff = document.getElementById('hx-mobile-handoff');
   mobileHandoff.disabled = !handoffState.enabled;
-  mobileHandoff.textContent = handoffState.finish ? 'Finish review' : handoffState.tbd ? 'TBD open' : drafts ? 'Hand off (' + drafts + ')' : 'Hand off';
+  mobileHandoff.textContent = handoffState.finish ? 'Accept spec' : handoffState.tbd ? 'TBD open' : drafts ? 'Hand off (' + drafts + ')' : 'Hand off';
   renderThreadDock();
   renderThreadHighlight();
 }
@@ -2112,14 +2139,14 @@ function renderBadges() {
 }
 
 async function handoff() {
-  const tbdEl = document.querySelector('[data-spec-tbd]');
-  const action = reviewHandoffState(state.threads, Boolean(tbdEl));
-  if (action.tbd) return jumpToTbd(tbdEl);
+  const openTbds = openTbdMarkers(document.querySelectorAll('[data-spec-tbd]'));
+  const action = reviewHandoffState(state.threads, openTbds.length > 0);
+  if (action.tbd) return jumpToTbd(advanceTbd(state, openTbds));
   if (state.handoffPosting || !action.enabled) return;
   state.handoffPosting = true;
   try {
     await state.transport.postEvent({ id: 'h' + Date.now().toString(36), event: 'handoff', anchorId: '', target: null, quote: null, text: 'batch from ' + state.transport.mode, actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
-    toast(action.finish ? 'Review finished' : 'Handed off ' + action.drafts + ' comment' + (action.drafts === 1 ? '' : 's') + ' — agent notified');
+    toast(action.finish ? 'Spec accepted' : 'Handed off ' + action.drafts + ' comment' + (action.drafts === 1 ? '' : 's') + ', agent notified');
     refresh();
   } finally {
     state.handoffPosting = false;
@@ -2152,17 +2179,12 @@ function toast(msg) {
 /* ---------------- loops ---------------- */
 async function refresh() {
   try {
-    ingest(await state.transport.listEvents());
+    const listed = await state.transport.listEvents();
+    const wake = Array.isArray(listed) ? null : listed.wake;
+    ingest(Array.isArray(listed) ? listed : listed.events);
     const agentEvents = state.events.filter(e => e.actor === 'agent');
-    const last = agentEvents[agentEvents.length - 1];
     const observation = handoffObservation(state.events, Date.now());
-    document.getElementById('hx-agent').textContent = observation === 'waiting'
-      ? '· handed off, waiting for agent'
-      : observation === 'queued'
-        ? '· automatic wake did not occur; send a new chat message to resume'
-        : last
-          ? '· agent last event ' + new Date(last.body.createdAt).toLocaleTimeString()
-          : '· no agent events yet';
+    document.getElementById('hx-agent').textContent = handoffAgentText(observation, wake, agentEvents[agentEvents.length - 1]);
     status('connected · ' + state.transport.label + ' · ' + state.threads.size + ' threads');
     if (location.hash.includes('hxdebug') && !state._beaconed) {
       state._beaconed = true;
@@ -2188,8 +2210,7 @@ async function watchSpec() {
 (async function boot() {
   mountUI();
   const httpPage = !EMBED_REVIEW_DIR && ['http:', 'https:'].includes(location.protocol);
-  if (httpPage && new URLSearchParams(location.search).get('focus') === 'changes') applyIssueFocus();
-  else if (httpPage) loadRangeBar();
+  if (httpPage) applyIssueFocus();
   await hydrateIslands();
   adoptForeignCharts();
   // spec scripts can create/recreate charts at any time; rescan when canvases appear
