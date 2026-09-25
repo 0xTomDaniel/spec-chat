@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./.style/spec.css">
+<title>Review host wakes the owner pane</title>
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Review host wakes the owner pane</h1>
+<nav data-anchor="breadcrumbs">docs / specs / host-wake.spec.html</nav>
+<p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-131">ANN-131</a>.</p>
+<p data-anchor="context">Replaces the per-lane external monitor in <a href="./prompt-first-shaping.spec.html#wake-ownership">Review wake ownership</a>. The one long-lived review host already knows each resource's owner pane from its registry, so it wakes that pane itself.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-human-handoff">As a human reviewer, when I hand off a batch, the owning agent wakes without anyone having started a monitor for that lane.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-wake-failed">As a human reviewer, when the owner pane is gone, the page tells me wake failed so I resume by chat instead of waiting.</p>
+<p data-user-story data-user-facing="false" data-anchor="story-owner">As a lane owner, registering my spec with my pane id is the whole wake setup; I may end my turn and the next hand-off prompts my pane.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="host-wake" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-wake-once"><span data-acceptance-scenario>Given a registered resource whose owner pane is idle, when the human completes a hand-off,</span> <span data-acceptance-observable>the host runs <code>herdr-say</code> to that owner pane exactly once for that batch, within a few seconds, and never again while the batch is unchanged.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-next-batch"><span data-acceptance-scenario>When a later hand-off adds events, before or after the owner advances its cursor,</span> <span data-acceptance-observable>the host wakes the owner once for the new batch.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-defer"><span data-acceptance-scenario>When the owner pane is working, or <code>herdr-say</code> exits 75 because it is blocked,</span> <span data-acceptance-observable>the host sends nothing now and retries on each poll until one delivery succeeds.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-failed"><span data-acceptance-scenario>When <code>herdr agent get</code> fails for the owner pane, or delivery fails otherwise, while a hand-off waits,</span> <span data-acceptance-observable>the page shows <q>wake failed; send a new chat message to resume</q>, and the host keeps retrying so a re-registered owner is woken.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-no-herdr"><span data-acceptance-scenario>When Herdr is not installed on the host,</span> <span data-acceptance-observable>the host sends nothing, <code>register</code> prints <code>wake=unavailable</code>, and the page keeps the existing timeout message.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-register-report"><span data-acceptance-scenario>When <code>review-host register</code> succeeds,</span> <span data-acceptance-observable>it prints <code>wake=verified owner=&lt;pane&gt;</code> only when Herdr resolves that owner pane, and <code>wake=unavailable owner=&lt;pane&gt;</code> otherwise; registration never fails on wake.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-deleted"><span data-acceptance-scenario>After this change,</span> <span data-acceptance-observable><code>review-control.sh external</code>, <code>wake-herdr.py</code>, the adapter environment contract, and the Herdr monitor instructions no longer exist; <code>yielded</code> and <code>manual</code> are unchanged.</span></p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-host"><span data-boundary-responsibility>The review host owns detecting a complete hand-off batch per registered resource and waking that row's owner once per batch.</span> <span data-boundary-seam>Caller-facing seam: registry rows (<code>owner</code>, <code>cursor_name</code>, spec) in, one <code>herdr-say</code> per batch out, and the wake state on <code>/api/events</code>.</span> <span data-boundary-dependency>Dependency direction: external-provider; the host calls Herdr, and Herdr never calls the host.</span> <span data-boundary-scope>Observable scope: delivered prompts, <code>register</code> output, and the page wake message.</span></p>
+<p data-modular-boundary data-anchor="boundary-owner"><span data-boundary-responsibility>The woken owner owns everything after wake: zero-wait scan, batch transaction, replies, and cursor advance.</span> <span data-boundary-seam>Caller-facing seam: the wake prompt text and the existing spool and cursor files.</span> <span data-boundary-dependency>Dependency direction: self-contained; the host never reads comments, edits specs, writes the spool, or advances cursors.</span> <span data-boundary-scope>Observable scope: agent replies and cursor contents.</span></p>
+</section>
+
+<section data-anchor="wake-rule">
+<h2>Wake rule</h2>
+<p data-anchor="wake-rule-poll">The host polls every registered resource's spool every 3 seconds, in one background thread of the running review server.</p>
+<p data-anchor="wake-rule-batch">A batch is the resource's human events not in its cursor, through the newest completed hand-off, exactly as the zero-wait scan reports it. Its identity is that list of file names.</p>
+<p data-anchor="wake-rule-memory">Delivered batch identities live only in memory. After a host restart, a still-unprocessed batch is woken once more; a duplicate wake is harmless because the owner starts with a zero-wait scan.</p>
+<p data-anchor="wake-rule-message">The prompt names the spec path, collection root, cursor name, and event count, and tells the owner to run the zero-wait scan, process the batch, and park.</p>
+<div class="table-scroll" data-anchor="wake-states-scroll">
+<table data-anchor="wake-states">
+<caption>Per-resource wake state while a batch waits, and what the page shows</caption>
+<thead><tr><th>Evidence</th><th>State</th><th>Host action</th><th>Page</th></tr></thead>
+<tbody>
+<tr data-anchor="wake-state-sent"><td><code>herdr-say</code> exit 0</td><td>sent</td><td>Nothing more for this batch</td><td>Waiting for agent, then the existing timeout message</td></tr>
+<tr data-anchor="wake-state-deferred"><td>Owner <code>agent_status</code> working, or <code>herdr-say</code> exit 75</td><td>deferred</td><td>Retry next poll</td><td>Waiting for agent</td></tr>
+<tr data-anchor="wake-state-failed"><td><code>herdr agent get</code> fails, or other <code>herdr-say</code> exit</td><td>failed</td><td>Retry next poll</td><td>Wake failed; send a new chat message to resume</td></tr>
+<tr data-anchor="wake-state-unavailable"><td><code>herdr</code> or <code>herdr-say</code> not on the host PATH</td><td>unavailable</td><td>None</td><td>Existing timeout message</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section data-anchor="control-states">
+<h2>Control states</h2>
+<p data-anchor="control-host-wake">The external-wake state becomes host-wake: the resource is registered with the owner's Herdr pane id and <code>register</code> printed <code>wake=verified</code>. A final response is allowed.</p>
+<p data-anchor="control-others">Turn-yielded and manual-resume are unchanged. A registration that printed <code>wake=unavailable</code> selects manual-resume.</p>
+<p data-anchor="control-owner-source">The row's <code>owner</code> is the lane record owner pane id, never an agent or tab name.</p>
+</section>
+
+</article>
+</body>
+</html>
