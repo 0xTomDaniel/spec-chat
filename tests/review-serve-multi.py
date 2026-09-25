@@ -386,6 +386,8 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertEqual(status, 200)
         body = raw.decode()
         self.assertIn('"GIT_OPTIONAL_LOCKS": "0"', SERVER.read_text())
+        # #index-entry-title: status sits on the right of its row, right aligned when wrapped.
+        self.assertRegex(body, r"\.status \{[^}]*margin-left: auto;[^}]*text-align: right;")
         text = html_lib.unescape(re.sub(r"<style>.*?</style>|<[^>]+>", "\n", body, flags=re.S))
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         self.assertEqual(lines[:2], ["Spec Chat index", "Review index"])

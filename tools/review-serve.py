@@ -662,8 +662,8 @@ nav { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax
 h3 { margin: .625rem 0 .125rem; color: #595e68; font-size: .75rem; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; overflow-wrap: anywhere; }
 ul { list-style: none; margin: 0; padding: 0; }
 li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0 .75rem; padding-bottom: .25rem; border-top: 1px solid #e2e0d8; }
-li a { flex: 1 1 10rem; color: #087f73; display: flex; align-items: center; min-height: 44px; min-width: 0; font-weight: 650; font-size: .9375rem; line-height: 1.35; overflow-wrap: anywhere; }
-.status { flex: none; color: #595e68; font-size: .8125rem; }
+li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-height: 44px; min-width: 0; font-weight: 650; font-size: .9375rem; line-height: 1.35; overflow-wrap: anywhere; }
+.status { flex: none; margin-left: auto; color: #595e68; font-size: .8125rem; text-align: right; }
 .status.changed { color: #8a4b00; font-weight: 750; padding: 1px .5rem; border: 1px solid currentColor; border-radius: 999px; }
 .empty { color: #595e68; padding: 1rem; }
 </style></head><body><main><h1>Review index</h1><nav aria-label="Spec Chat detail pages">%s</nav></main></body></html>''' % listing).encode("utf-8")
