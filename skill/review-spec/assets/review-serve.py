@@ -471,7 +471,7 @@ def _read_resource_records(path):
     for raw in records:
         if not isinstance(raw, dict):
             raise RegistryError('registry resource entry must be a table')
-        required = ('id', 'slug', 'root', 'narrow_root', 'spec', 'base', 'owner', 'checker', 'lifecycle', 'cursor_name')
+        required = ('id', 'slug', 'root', 'narrow_root', 'spec', 'base', 'owner', 'checker', 'cursor_name')
         missing = [name for name in required if not isinstance(raw.get(name), str) or not raw[name].strip()]
         if missing:
             raise RegistryError('resource missing required field: %s' % ', '.join(missing))
@@ -529,11 +529,8 @@ def _read_resource_records(path):
             'narrow_root': narrow_root,
             'spec': spec,
             'spec_file': spec_file,
-            'lifecycle': resource.get('lifecycle', 'serving'),
             'base': base,
         })
-        if resource['lifecycle'] not in {'serving', 'parked', 'finished', 'removed'}:
-            raise RegistryError('invalid resource lifecycle: %s' % resource['lifecycle'])
         seen_ids.add(rid)
         slug_roots[slug] = root
         seen_stable.add(stable)
@@ -605,7 +602,7 @@ class MultiHandler(SimpleHTTPRequestHandler):
             self.wfile.write(body)
 
     def _resource_by_slug(self, slug):
-        return next((item for item in self.resources if item['slug'] == slug and item['lifecycle'] != 'removed'), None)
+        return next((item for item in self.resources if item['slug'] == slug), None)
 
     @staticmethod
     def _decoded_path(path):
@@ -625,7 +622,7 @@ class MultiHandler(SimpleHTTPRequestHandler):
         if any(part.endswith('.review') for part in parts[2:]):
             return None, None
         for resource in self.resources:
-            if resource['slug'] != parts[1] or resource['lifecycle'] == 'removed':
+            if resource['slug'] != parts[1]:
                 continue
             if relative.endswith('.spec.html') and relative != resource['spec']:
                 continue
@@ -641,7 +638,7 @@ class MultiHandler(SimpleHTTPRequestHandler):
         decoded = self._decoded_path(path) or ''
         route_parts = decoded.split('/')
         if len(route_parts) > 1 and not any(
-            resource['slug'] == route_parts[1] and resource['lifecycle'] != 'removed'
+            resource['slug'] == route_parts[1]
             for resource in self.resources
         ):
             self.send_error(404)
@@ -675,8 +672,6 @@ class MultiHandler(SimpleHTTPRequestHandler):
     def _index(self):
         entries = []
         for resource in self.resources:
-            if resource['lifecycle'] == 'removed':
-                continue
             href = '/' + quote(resource['slug'] + '/' + resource['spec'], safe='/')
             title = Handler._page_title(resource['spec_file'])
             entries.append('<li><a href="%s">%s</a><span>%s</span></li>' % (
@@ -701,18 +696,14 @@ class MultiHandler(SimpleHTTPRequestHandler):
         decoded = decoded.lstrip('/')
         for resource in self.resources:
             expected = resource['slug'] + '/' + resource['spec'] + '.review'
-            if decoded == expected and resource['lifecycle'] != 'removed':
+            if decoded == expected:
                 review = resource['spec_file'] + '.review'
                 if _inside(review, resource['narrow_root'], strict=True):
                     return resource, review
-            if decoded == expected and resource['lifecycle'] == 'removed':
-                return resource, None
         return None, None
 
     def _events(self, query):
         resource, directory = self._route_resource_dir(query)
-        if resource and resource['lifecycle'] == 'removed':
-            return self._json({'error': 'resource removed'}, 404)
         if not resource or not directory:
             return self._json({'error': 'bad dir'}, 400)
         events = _read_spool_events(directory, resource['narrow_root'])
@@ -731,8 +722,6 @@ class MultiHandler(SimpleHTTPRequestHandler):
                          if decoded == item['slug'] + '/' + item['spec']), None)
         if not resource:
             return self._json({'error': 'bad path'}, 400)
-        if resource['lifecycle'] == 'removed':
-            return self._json({'error': 'resource removed'}, 404)
         rel = resource['spec']
         requested = query.get('base', [resource.get('base', '')])[0]
         try:
@@ -776,8 +765,6 @@ class MultiHandler(SimpleHTTPRequestHandler):
         query = parse_qs(parsed.query)
         resource, directory = self._route_resource_dir(query)
         actor = query.get('actor', ['human'])[0]
-        if resource and resource['lifecycle'] == 'removed':
-            return self._json({'error': 'resource removed'}, 404)
         if not resource or not directory or actor not in ('human', 'agent'):
             return self._json({'error': 'bad dir or actor'}, 400)
         if actor == 'agent':
@@ -799,10 +786,8 @@ class MultiHandler(SimpleHTTPRequestHandler):
             except (OSError, RegistryError):
                 return self._json({'error': 'registry unavailable'}, 409)
             resource = next((item for item in fresh if item['id'] == resource['id']), None)
-            if not resource or resource['lifecycle'] == 'removed':
-                return self._json({'error': 'resource removed'}, 404)
-            if resource['lifecycle'] == 'finished':
-                return self._json({'error': 'resource finished'}, 409)
+            if not resource:
+                return self._json({'error': 'resource not registered'}, 404)
             directory = resource['spec_file'] + '.review'
             try:
                 _write_event(directory, resource['narrow_root'], actor, name, event)

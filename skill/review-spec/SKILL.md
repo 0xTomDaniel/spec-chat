@@ -17,55 +17,7 @@ Your job in review mode: reconcile hand-off batches, route material authoring th
 
 ## Remote hosting lifecycle
 
-For remote or cross-machine review, the public review server, its printed URL,
-and the watcher or checker are one review session. An empty spool means the
-session is parked and waiting, not that review ended. No timeout, empty scan,
-missing draft, manual-resume selection, or final assistant response ends the
-hosting session.
-
-Start the narrow collection through the approved-port launcher. It discovers
-approved ingress ports from `SPEC_CHAT_APPROVED_INGRESS_PORTS` or the host
-firewall rules, probes each candidate, binds directly to the first usable
-approved port, and fails when no usable port exists. The host needs no operator
-or reviewer-machine setup.
-
-```sh
-scripts/launch-review-serve.sh <narrow-collection> <spec-path> <exact-base>
-```
-
-The launcher never assumes a port. It captures the server's printed public URL
-and retains that exact value for the whole session. The URL is not a secret in
-any security sense or an authentication boundary. An
-unapproved or ephemeral port is invalid.
-
-Port collision safety is required: the launcher probes and reserves only a free
-approved port before starting the owned service process.
-
-Before handing the URL to a reviewer, the host verifies the exact served HTML
-bytes and `/api/baseline` against the selected exact Git base. These are
-internal host checks, not a second transport ceremony. Deliver the active
-public URL, resource path, and exact baseline only after those checks pass. The public URL is not a secret in any security sense or an authentication boundary. The
-URL stays out of Linear, pull requests, and other public durable records.
-
-The launcher owns the narrow server process, selected port, URL, and internal
-validation. The checker owns readiness and cursor advancement. After an edit to
-a served spec, keep the same server, URL, process, port, collection, and
-selected base alive. Rerun the exact served-byte check and `/api/baseline` for
-that same base. Restart only when the root, collection, process, port, runtime,
-or ownership changes, or when the server is dead.
-
-This launcher starts the Spec Chat service only. The annotateanything evidence
-service is a separate box-side service with its own launcher and lifecycle;
-never start, stop, or rebind it from here. Box hosting never requires, installs,
-or starts BB or any laptop component; BB on the laptop only opens the verified
-URL. Topology: `docs/specs/remote-handoff-proof.spec.html#topology`.
-
-Shutdown is allowed only after the human selects **Finish review**, or after a
-durable review-ended control records that same action. The observable terminal
-condition is a processed empty Finish review hand-off: the browser had no draft,
-pending, acknowledged, unresolved, or `data-spec-tbd` work, the agent consumed
-that hand-off, and the exact cursor advance succeeded. A zero-wait scan without
-that terminal hand-off is parked review and keeps hosting alive.
+Register a lane's review resources with --slug <lane key>, where the lane key is the issue key lowercased with the hyphen removed (ANN-45 -> ann45). They stay registered until lane teardown, and teardown deletes the row: review-host remove deletes it rather than keeping it as lifecycle removed.
 
 ## The loop
 
@@ -153,7 +105,7 @@ A resolved thread remains expandable. When its latest message is from the agent,
 
 If a hand-off remains unacknowledged past the existing timeout, the browser states that automatic wake did not occur and instructs the human to send a new chat message to resume.
 
-When every thread is resolved and no material TBD remains, the no-draft action becomes **Finish review**. It writes the existing empty hand-off. Reconcile it, settle any final durable change, and advance the exact cursor. The processed hand-off is human acceptance of the reviewed canonical spec, closes the browser review loop, and permits the shaping lane to stop its watcher, checker, and public review server and advance to implementation dispatch under that accepted spec. It does not accept an implementation PR, approve a merge, promote to preproduction, or approve live traffic. Preserve the exact baseline, cursor, Finish receipt, and source/head binding requirements.
+When every thread is resolved and no material TBD remains, the no-draft action becomes **Finish review**. It writes the existing empty hand-off. Reconcile it, settle any final durable change, and advance the exact cursor. Finish review is the spool fact for browser review completion; host rows remain until lane teardown. It does not accept an implementation PR, approve a merge, promote to preproduction, or approve live traffic.
 
 ## Event schema
 
@@ -189,7 +141,7 @@ Whichever transport is in play, host the spec with `assets/review-serve.py`.
 Do not substitute `python3 -m http.server` or another static file server: it serves the page but provides no annotation spool, no `/api/baseline`, no capability check, and no review URL contract, so the review layer silently never works.
 
 - **Local browser, same machine**: nothing to run; the page connects to the folder directly (file:// + FSA). Browser security does not reliably persist write permission. When an IndexedDB handle returns `prompt`, the runtime shows **Resume review** and requests write permission on the already-selected handle; **Choose different folder** remains a separate picker fallback for a moved tree, wrong prior scope, or Chromium shell that does not surface the regrant prompt. Chromium can follow the native directory picker with a separate **Allow this site to edit files?** browser window; the runtime must name that step and visibly wait for it because shells such as Arc may not layer it over the spec window. The grant accepts ANY ancestor folder of the spec — pick it in the dialog or drag it from Finder onto the page; the runtime walks down to the spec's folder itself and remembers the ancestor. Caveats: Chromium refuses grants on the top-level roots themselves (home, Documents, Desktop, Downloads — children beneath them are fine), so suggest a workspace/projects folder one level down; if the granted tree contains two same-named specs at matching sub-paths the runtime refuses to guess and asks for a narrower grant. The spec's exact path also lands on the clipboard when the picker opens (⌘⇧G + paste in the macOS panel). If the user wants zero prompts or uses Safari or Firefox, run `assets/review-serve.py` on loopback; the HTTP transport auto-connects.
-- **Remote browser**: use `scripts/review-host.py start` with one or more `--resource PROJECT_ID=ROOT:SPEC_PATH@BASE` entries for the narrow collection. It records `registry.toml`, `receipt.toml`, and `server.log` in the state directory, discovers approved ingress ports on the host, binds `assets/review-serve.py` directly to a free approved port, captures the printed URL, and performs internal exact-byte and `/api/baseline` checks. Use `park`, `resume`, `finish`, `remove`, and `stop` for the resource and process lifecycle. The legacy `scripts/launch-review-serve.sh` wrapper remains usable for one-resource sessions. Do not substitute an ephemeral port, fixed-port assumption, external probe, tunnel, VPN, or reviewer-machine setup. The URL is public and is not an authentication boundary; require no login, token, SSH, or proxy. Deliver the active URL, resource path, and exact baseline after host checks pass. Keep the same server, URL, and checker through review edits, empty scans, timeouts, and manual-resume. Stop them only after the processed empty Finish review hand-off described above.
+- **Remote browser**: use `scripts/review-host.py register` with one or more `--resource PROJECT_ID=ROOT:SPEC_PATH@BASE` entries and the lane `--slug`. It keeps one `registry.toml` with a `[process]` table and resource rows, discovers an approved port, binds `assets/review-serve.py`, and checks exact resource bytes plus `/api/baseline`. Use `remove` to delete a resource row and `stop` to stop the server. The URL is public and is not an authentication boundary; require no login, token, SSH, or proxy.
 
 ## Scaffolding spec-chat into a repo
 
@@ -210,15 +162,15 @@ It replaces only incompatible assets from the bundle, including vendored visual 
 Treat a preflight failure as a review blocker.
 Commit and push migrated assets before presenting a shaping review.
 If the server was already running when migration occurred, restart it through
-the launcher and rerun host checks before handoff. This is a runtime change;
-ordinary edits to a served spec do not require a restart.
+review-host stop/register and rerun host checks before handoff. This is a
+runtime change; ordinary edits to a served spec do not require a restart.
 
 **Exception — module-loading migration**: if an existing repo's runtime is loaded with `<script type="module">` (or its `runtime.js` still contains `import.meta.url`), it predates the classic-script fix and is broken on `file://` (browsers CORS-block module scripts there — the annotation layer silently never loads). On contact, replace the vendored `.viz/runtime.js` with this skill's copy and switch every page to a classic `<script defer>` tag using the correct relative path described above.
 
 ## Starting a review when asked
 
 1. Confirm the page exists, run `scripts/preflight.py`, and identify the shared collection root (normally the repository's `docs/` directory, not the page's immediate `docs/specs/`, `docs/specs/<domain>/`, or `docs/adr/` directory; use the narrowest common ancestor for a legacy or explicitly different layout).
-2. Start `assets/review-serve.py` when HTTP review is required. For remote review, start it only through `scripts/launch-review-serve.sh`, which binds the host interface on a free approved port. Verify the served runtime advertises the required capabilities and `/api/baseline` succeeds for the exact page and change-request base. Keep that server and URL through ordinary edits, rerunning exact served-byte and `/api/baseline` checks for the same base after each edit. Restart only for a root, collection, process, port, runtime, or ownership change, or when the server is dead.
+2. Start `assets/review-serve.py` when HTTP review is required. For remote review, use `scripts/review-host.py register` with the resource and lane slug; it binds the host interface on a free approved port. Verify the served runtime advertises the required capabilities and `/api/baseline` succeeds for the exact page and change-request base. Keep that server and URL through ordinary edits, rerunning exact served-byte and `/api/baseline` checks for the same base after each edit. Restart only for a root, collection, process, port, runtime, or ownership change, or when the server is dead.
 3. Present the verified review URL. Do not hand back a GitHub link or a loopback URL when the human is reviewing from another machine.
 4. On both an initial start and any resumed/reconnected turn, run `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 0 3`; drain, reply, and cursor each ready batch, then repeat until exit 3.
 5. After reconciliation is empty, establish `turn-yielded`, verified `external-wake`, or `manual-resume` through `scripts/review-control.sh`.
