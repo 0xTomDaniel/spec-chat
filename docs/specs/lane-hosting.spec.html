@@ -27,7 +27,7 @@
 <h2>Acceptance criteria</h2>
 <p data-acceptance-criterion data-anchor="acceptance-second-root"><span data-acceptance-scenario>Given slug <code>ann45</code> with project <code>aa</code> registered from one repository, when project <code>sc</code> registers <code>docs/specs/x.spec.html</code> from another,</span> <span data-acceptance-observable>registration succeeds, <code>aa</code>'s specs keep <code>ann45/&lt;spec&gt;</code>, and x is served at <code>ann45/sc/docs/specs/x.spec.html</code> with its own stylesheet and runtime.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-path-field"><span data-acceptance-scenario>After any registration,</span> <span data-acceptance-observable>every registry row carries <code>path</code> equal to the URL path its spec is served at, without the leading slash.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-same-project"><span data-acceptance-scenario>When project <code>aa</code> registers a spec from a new root under the same slug, such as a recreated worktree,</span> <span data-acceptance-observable>all of <code>aa</code>'s rows under the slug move to the new root with their ids and paths unchanged; if any of their specs is missing there, registration fails and nothing changes.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-same-project"><span data-acceptance-scenario>When a spec is registered again under the same row id (slug, project, and spec path), for example from a recreated worktree,</span> <span data-acceptance-observable>registration is an idempotent upsert: that one row is replaced with its new root and base, its path unchanged, nothing else moves, and no error is raised.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-remove"><span data-acceptance-scenario>When <code>aa</code>'s rows are removed and <code>sc</code>'s remain,</span> <span data-acceptance-observable><code>sc</code>'s specs keep <code>ann45/sc/&lt;spec&gt;</code>.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-review-state"><span data-acceptance-scenario>With two roots under one slug,</span> <span data-acceptance-observable>each spec's spool, cursor, baseline, and <a href="./compared-range.spec.html#last-reviewed">last reviewed version</a> belong to its own root, and host baseline checks pass for both.</span></p>
 </section>
@@ -40,7 +40,7 @@
 
 <section data-anchor="paths">
 <h2>Served paths</h2>
-<p data-anchor="paths-rule">A slug may hold several roots, one project per root; a project registering from a new root moves its rows there. The project that first registers under a slug is its primary; its specs keep <code>&lt;slug&gt;/&lt;spec&gt;</code>, unchanged. Each other project's root is served under <code>&lt;slug&gt;/&lt;project&gt;/</code>, spec pages and their relative assets alike, so the URL names the project only when needed.</p>
+<p data-anchor="paths-rule">A slug may hold several roots. The project that first registers under a slug is its primary; its specs keep <code>&lt;slug&gt;/&lt;spec&gt;</code>, unchanged. Each other project's root is served under <code>&lt;slug&gt;/&lt;project&gt;/</code>, spec pages and their relative assets alike, so the URL names the project only when needed.</p>
 <div class="table-scroll" data-anchor="paths-table-scroll">
 <table data-anchor="paths-table">
 <thead><tr><th>Row</th><th>Served path</th></tr></thead>
