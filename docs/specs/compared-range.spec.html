@@ -13,7 +13,7 @@
 <header data-anchor="header">
 <h1 data-anchor="title">Compared commit range</h1>
 <nav data-anchor="breadcrumbs">docs / specs / compared-range.spec.html</nav>
-<p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-90/spec-chat-show-and-change-the-compared-commit-range">ANN-90</a>.</p>
+<p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-90/spec-chat-show-and-change-the-compared-commit-range">ANN-90</a>, <a href="https://linear.app/annotateanything/issue/ANN-119/kanban-shows-the-whole-fleet-not-one-repo">ANN-119</a>.</p>
 <p data-anchor="context">Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a>: the page states which commits it compares and lets the reviewer change the base in place.</p>
 </header>
 
@@ -21,6 +21,27 @@
 <h2>User stories</h2>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-see-range">As a reviewer, I can see which commits the served spec compares, so I know what the highlighted changes mean.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-change-base">As a reviewer, I can pick an earlier commit of this spec or paste a commit id and see the page re-diff, without editing the URL.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-since-reviewed">As a reviewer, however I open a spec, I see what changed since I last reviewed it, including changes merged in by others.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="compared-range" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-bar"><span data-acceptance-scenario>When any spec is opened over HTTP, with or without <code>focus=changes</code>,</span> <span data-acceptance-observable>the page shows <code>Changes from &lt;base&gt; to &lt;head&gt;</code> with short ids and dates matching <code>base</code> and <code>head</code>, and <code>working copy of</code> when the file is dirty.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-pick"><span data-acceptance-scenario>When the reviewer picks a listed commit,</span> <span data-acceptance-observable>highlighting and bar reflect that base without a page reload, and the URL carries <code>focus=changes&amp;base=&lt;full id&gt;</code>.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-paste"><span data-acceptance-scenario>When the reviewer pastes a valid commit id,</span> <span data-acceptance-observable>the page re-diffs against it as if picked; an unknown or option-like value shows an inline error and the previous range stays.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-list"><span data-acceptance-scenario>When the picker opens,</span> <span data-acceptance-observable>it lists at most 20 commits that changed this spec, newest first, matching <code>git log</code> for that file from head.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-reviewed-kept"><span data-acceptance-scenario>When the reviewer sends a human spec review, comment batch or spec acceptance, from a page showing bytes X, even after the file changed on disk,</span> <span data-acceptance-observable>the spec's last reviewed version is X byte for byte and its registry row's <code>reviewed_sha256</code> is the SHA-256 of X.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-reviewed-default"><span data-acceptance-scenario>When a spec with a last reviewed version is opened with no <code>base</code> in the URL,</span> <span data-acceptance-observable>exactly the changes since that version are highlighted and the bar reads <code>Changes from last reviewed</code> with its time; with none yet, the changes since the registry row's <code>base</code> are highlighted.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-reviewed-merge"><span data-acceptance-scenario>After a rebase or merge,</span> <span data-acceptance-observable>spec text merged in by others is highlighted as new, and a rebase that leaves the spec bytes unchanged highlights nothing.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-reviewed-pick"><span data-acceptance-scenario>When the reviewer chooses Last reviewed in the picker after picking a commit,</span> <span data-acceptance-observable>the page re-diffs against the last reviewed version in place and the URL has no <code>base</code>.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-compat"><span data-acceptance-scenario>When the review host verifies a served resource,</span> <span data-acceptance-observable>its existing <code>base</code>, <code>htmlBase</code>, and <code>html</code> checks pass unchanged.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-mobile"><span data-acceptance-scenario>When the page is 375px wide,</span> <span data-acceptance-observable>bar and picker fit without horizontal page drift and cover no review control.</span></p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-server"><span data-boundary-responsibility>The review server owns range facts: resolved base, head, dirty state, dates, the spec's recent commits, and keeping the last reviewed version on each human spec review.</span> <span data-boundary-seam>Caller-facing seam: <code>GET /api/baseline?path=&lt;spec&gt;[&amp;base=&lt;id&gt;]</code> and its JSON fields.</span> <span data-boundary-dependency>Dependency direction: self-contained; the server reads local Git and writes only the spool and the review host's <code>reviewed_sha256</code>; nothing calls back into the runtime.</span> <span data-boundary-scope>Observable scope: baseline JSON, the kept bytes, and the registry field.</span></p>
+<p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns the bar, picker, in-place re-diff, URL replacement, and the shown bytes' SHA-256 on each hand-off.</span> <span data-boundary-seam>Caller-facing seam: the rendered bar and picker on every HTTP-served spec.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; the runtime consumes the baseline route and existing focus classification and holds no Git logic.</span> <span data-boundary-scope>Observable scope: bar text, picker entries, highlighting, URL, and inline errors.</span></p>
 </section>
 
 <section data-anchor="range-bar">
@@ -65,6 +86,14 @@
 <p data-anchor="change-no-option">A base value beginning with <code>-</code> is refused, so no input is ever read as a Git option.</p>
 </section>
 
+<section data-anchor="last-reviewed">
+<h2>Last reviewed version</h2>
+<p data-anchor="reviewed-define">A spec's last reviewed version is set by each human spec review: every hand-off the human sends from the page, a comment batch or spec acceptance. Each human spec review keeps the exact spec bytes the page showed. It is content, not a commit, so rebases and merges cannot break it. Spec acceptance stays the delivery gate; it does not define the base.</p>
+<p data-anchor="reviewed-keep">Each human spec review's hand-off carries the SHA-256 of the spec bytes the page is showing. The server keeps those bytes in the spec's <code>.review/</code> spool as its last reviewed version, even if the file changed after the page loaded, and the review host records the SHA-256 in the resource's registry row as <code>reviewed_sha256</code>.</p>
+<p data-anchor="reviewed-default">Opened with no <code>base</code> in the URL, from any entry (Kanban, the index, the sidebar, an old link), the page highlights the changes since the last reviewed version. With none yet, it highlights the changes since the base it defaults to today: the registry row's <code>base</code>, the target main the lane started from. Changes merged in by others differ from the reviewed bytes, so they show as new.</p>
+<p data-anchor="reviewed-bar">When the base is the last reviewed version, the bar reads <code>Changes from last reviewed &lt;YYYY-MM-DD HH:MM&gt; to &lt;head&gt;</code>. The picker lists Last reviewed first; choosing it drops <code>base</code> from the URL.</p>
+</section>
+
 <section data-anchor="baseline-response">
 <h2>Baseline response</h2>
 <p data-anchor="response-keep">Existing <code>base</code>, <code>htmlBase</code>, and <code>html</code> fields keep their meaning, so host baseline checks are unchanged.</p>
@@ -75,27 +104,12 @@
 <tr data-anchor="field-head"><td><code>head</code></td><td>Full id of the serving worktree's current commit.</td></tr>
 <tr data-anchor="field-dirty"><td><code>dirty</code></td><td>True when the spec file differs from <code>head</code>.</td></tr>
 <tr data-anchor="field-dates"><td><code>headDate</code>, <code>baseDate</code></td><td>Commit dates of <code>head</code> and <code>base</code> as <code>YYYY-MM-DD</code>.</td></tr>
+<tr data-anchor="field-reviewed"><td><code>reviewed</code></td><td><code>{sha256, at}</code> of the last reviewed version, or null. With no <code>base</code> requested and a last reviewed version kept, <code>htmlBase</code> is those bytes and <code>base</code> is <code>reviewed</code>.</td></tr>
 <tr data-anchor="field-commits"><td><code>commits</code></td><td>Up to 20 <code>{id, date, subject}</code> entries, newest first, for commits reachable from head that changed the spec file.</td></tr>
 </tbody>
 </table>
 </div>
-<p data-anchor="response-read-only">The route stays read-only over local Git, as <a href="./prompt-first-shaping.spec.html#focus-local-git">focus</a> requires.</p>
-</section>
-
-<section data-spec-section="acceptance" data-acceptance-scope="compared-range" data-anchor="acceptance">
-<h2>Acceptance criteria</h2>
-<p data-acceptance-criterion data-anchor="acceptance-bar"><span data-acceptance-scenario>When any spec is opened over HTTP, with or without <code>focus=changes</code>,</span> <span data-acceptance-observable>the page shows <code>Changes from &lt;base&gt; to &lt;head&gt;</code> with short ids and dates matching <code>base</code> and <code>head</code>, and <code>working copy of</code> when the file is dirty.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-pick"><span data-acceptance-scenario>When the reviewer picks a listed commit,</span> <span data-acceptance-observable>highlighting and bar reflect that base without a page reload, and the URL carries <code>focus=changes&amp;base=&lt;full id&gt;</code>.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-paste"><span data-acceptance-scenario>When the reviewer pastes a valid commit id,</span> <span data-acceptance-observable>the page re-diffs against it as if picked; an unknown or option-like value shows an inline error and the previous range stays.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-list"><span data-acceptance-scenario>When the picker opens,</span> <span data-acceptance-observable>it lists at most 20 commits that changed this spec, newest first, matching <code>git log</code> for that file from head.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-compat"><span data-acceptance-scenario>When the review host verifies a served resource,</span> <span data-acceptance-observable>its existing <code>base</code>, <code>htmlBase</code>, and <code>html</code> checks pass unchanged.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-mobile"><span data-acceptance-scenario>When the page is 375px wide,</span> <span data-acceptance-observable>bar and picker fit without horizontal page drift and cover no review control.</span></p>
-</section>
-
-<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
-<h2>Modular boundaries</h2>
-<p data-modular-boundary data-anchor="boundary-server"><span data-boundary-responsibility>The review server owns range facts: resolved base, head, dirty state, dates, and the spec's recent commits.</span> <span data-boundary-seam>Caller-facing seam: <code>GET /api/baseline?path=&lt;spec&gt;[&amp;base=&lt;id&gt;]</code> and its JSON fields.</span> <span data-boundary-dependency>Dependency direction: self-contained; the server reads local Git only and nothing calls back into the runtime.</span> <span data-boundary-scope>Observable scope: baseline JSON.</span></p>
-<p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns the bar, picker, in-place re-diff, and URL replacement.</span> <span data-boundary-seam>Caller-facing seam: the rendered bar and picker on every HTTP-served spec.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; the runtime consumes the baseline route and existing focus classification and holds no Git logic.</span> <span data-boundary-scope>Observable scope: bar text, picker entries, highlighting, URL, and inline errors.</span></p>
+<p data-anchor="response-read-only">The route stays read-only over local Git and the spool, as <a href="./prompt-first-shaping.spec.html#focus-local-git">focus</a> requires.</p>
 </section>
 
 <section data-anchor="non-goals">
