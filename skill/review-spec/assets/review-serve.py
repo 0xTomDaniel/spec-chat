@@ -779,6 +779,7 @@ li span { color: #595e68; display: block; font-size: .9rem; overflow-wrap: anywh
         self.send_response(200)
         self.send_header("Content-Type", mimetypes.guess_type(target)[0] or "application/octet-stream")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Last-Modified", self.date_time_string(int(os.stat(target).st_mtime)))
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)

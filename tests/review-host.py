@@ -1,3 +1,4 @@
+import email.utils
 import importlib.util
 import json
 import os
@@ -222,6 +223,16 @@ class ReviewHostTest(unittest.TestCase):
         self.assertEqual(len(self.registry(state)["resource"]), 1)
         url = next(line.split("review URL: ", 1)[1] for line in restarted.stdout.splitlines() if line.startswith("review URL: "))
         self.assertEqual(request(url + "/ann45/docs/specs/review.spec.html"), (200, self.spec.read_bytes()))
+
+    def test_head_on_a_served_spec_returns_last_modified_at_file_mtime(self):
+        state = self.work / "state"
+        started = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        head = urllib.request.Request(self.url(started) + "/ann45/docs/specs/review.spec.html", method="HEAD")
+        with urllib.request.urlopen(head, timeout=4) as response:
+            modified = response.headers.get("Last-Modified")
+        self.assertIsNotNone(modified)
+        self.assertEqual(email.utils.parsedate_to_datetime(modified).timestamp(), int(self.spec.stat().st_mtime))
 
     def test_legacy_registry_loads_without_lifecycle_state(self):
         legacy = self.work / "legacy.toml"
