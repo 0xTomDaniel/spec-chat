@@ -17,6 +17,8 @@ STATE_KEYS = {
     "scope": {"criterion"},
     "rule": {"rule", "spec"},
 }
+# Moderate start; rule raised so uncertain misses escalate to the fallback (ANN-309, rule v2).
+THRESHOLDS = {"rule": 0.7}
 
 
 class JevQuestionSetTest(unittest.TestCase):
@@ -35,7 +37,7 @@ class JevQuestionSetTest(unittest.TestCase):
                 self.assertEqual(data["id"], path.stem)
                 self.assertIsInstance(data["version"], int)
                 self.assertTrue(data["instructions"].strip())
-                self.assertEqual(data["threshold"], 0.4)
+                self.assertEqual(data["threshold"], THRESHOLDS.get(path.stem, 0.4))
                 labels = data["labels"]
                 self.assertIsInstance(labels, list)
                 self.assertGreater(len(labels), 0)
