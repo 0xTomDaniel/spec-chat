@@ -42,7 +42,7 @@ function mount({ css, code, selector, order }) {
   const pins = () => api.renderPins();
   (order === 'markers-first' ? [markers, pins] : [pins, markers, pins]).forEach(step => step());
   window.hxPlace = () => { document.querySelectorAll('.hx-jev-marker').forEach(api.placeJevMarker); api.renderPins(); };
-  return holders.filter(h => h.querySelectorAll('.hx-jev-marker').length === 1 && h.querySelector(':scope > .hx-pin')).length;
+  return { total: holders.length, ready: holders.filter(h => h.querySelectorAll('.hx-jev-marker').length === 1 && h.querySelector(':scope > .hx-pin')).length };
 }
 
 function measure(selector) {
@@ -78,16 +78,19 @@ const shots = process.env.PIN_MARKER_SHOTS;
 if (shots) mkdirSync(shots, { recursive: true });
 const browser = await chromium.launch();
 try {
-  // Criteria paragraphs, and table rows, whose marker sits in the row's last cell.
+  // Criteria paragraphs, and table rows, whose marker sits in the row's last cell. Counts come
+  // from the spec itself, so the test follows the accepted spec as it grows.
   const cases = [
-    { name: 'criterion', selector: '[data-acceptance-criterion]', count: 19, widths: [375, 560, 640, 800, 1280] },
-    { name: 'row', selector: 'tr[data-anchor]', count: 23, widths: [375, 560, 1280] },
+    { name: 'criterion', selector: '[data-acceptance-criterion]', widths: [375, 560, 640, 800, 1280] },
+    { name: 'row', selector: 'tr[data-anchor]', widths: [375, 560, 1280] },
   ];
-  for (const { name, selector, count, widths } of cases) for (const width of widths) for (const order of ['markers-first', 'pins-first']) {
+  for (const { name, selector, widths } of cases) for (const width of widths) for (const order of ['markers-first', 'pins-first']) {
     const page = await browser.newPage({ viewport: { width, height: 900 } });
     await page.goto('file://' + resolve(root, 'docs/specs/jev-suggestions.spec.html'));
     await page.setContent(spec, { waitUntil: 'load' });
-    assert.equal(await page.evaluate(mount, { css, code, selector, order }), count, `${width} px ${order}: all ${count} ${name} blocks carry one marker and a pin`);
+    const { total, ready } = await page.evaluate(mount, { css, code, selector, order });
+    assert.ok(total > 0, `spec has ${name} blocks`);
+    assert.equal(ready, total, `${width} px ${order}: all ${total} ${name} blocks carry one marker and a pin`);
     // A second placement (the runtime re-renders pins every 2 s and on resize) lands on the same spots.
     const first = await page.evaluate(measure, selector);
     await page.evaluate(() => window.hxPlace());
