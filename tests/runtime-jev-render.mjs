@@ -110,10 +110,12 @@ const suggestionItems = [
 // The real runtime state shape, as requestJev leaves it after a successful fetch.
 const state = { readingView: false, jev: { request: 1, status: 'on', base: 'b', items: suggestionItems } };
 const location = { search: '?focus=changes' };
+const composed = [];
+const openComposer = (...args) => composed.push(args);
 const { renderJev, jevNoteSources } = Function('document', 'window', 'state', 'location', 'URLSearchParams', 'EMBED_REVIEW_DIR', 'NodeFilter',
-  'requestAnimationFrame', 'cancelAnimationFrame', 'getComputedStyle', 'innerWidth', 'innerHeight',
+  'requestAnimationFrame', 'cancelAnimationFrame', 'getComputedStyle', 'innerWidth', 'innerHeight', 'openComposer',
   code + '; return { renderJev, jevNoteSources };')(document, window, state, location, URLSearchParams, null, {}, () => 0, () => {},
-  () => ({}), 1440, 900);
+  () => ({}), 1440, 900, openComposer);
 renderJev();
 
 const holder = anchor => article.querySelectorAll('[data-anchor]').find(e => e.dataset.anchor === anchor);
@@ -178,6 +180,36 @@ assert.deepEqual(popNotes(), [['coverage', 'No criterion covers this']]);
 marker('criterion-gap').fire('focus');
 assert.deepEqual(popNotes(), [['coverage', 'No story backs this']]);
 
+// #note-actions: one button per actionable note, none for Cosmetic, Clarification, unsure, or Jev unavailable.
+const noteButtons = anchor => {
+  marker(anchor).fire('focus');
+  return pop().querySelectorAll('.hx-jev-pop-note').map(n => [n.querySelector('.hx-jev-pop-text').textContent,
+    (n.querySelector('.hx-jev-pop-actions') || { children: [] }).children.map(b => b.textContent)]);
+};
+assert.deepEqual(noteButtons('rule'), [['Contradicts #non-goal-text', ['Ask agent to reconcile']], ['Behavior', ['Comment on this change']]]);
+assert.deepEqual(noteButtons('overstep'), [['Oversteps other#scope', ['Ask agent to reconcile']], ['Clarification', []]]);
+assert.deepEqual(noteButtons('crowded'), [['No criterion covers this', ['Ask for a criterion']], ['Scope', ['Comment on this change']], ['unsure', []]]);
+assert.deepEqual(noteButtons('criterion-gap'), [['No story backs this', ['Ask for a story']]]);
+assert.deepEqual(noteButtons('row'), [['Behavior', ['Comment on this change']]]);
+for (const a of ['typo', 'type-unsure', 'story-unsure', 'story-down', 'criterion-down']) {
+  assert.ok(noteButtons(a).every(([, buttons]) => buttons.length === 0), a + ' shows no button');
+}
+// #acceptance-note-draft: a click opens the existing composer at the note's element with the table's fixed text,
+// closes the popover, and writes nothing.
+const clickNote = (anchor, label) => {
+  marker(anchor).fire('focus');
+  pop().querySelectorAll('.hx-btn').find(b => b.textContent === label).fire('click');
+  assert.equal(pop().hidden, true, label + ' closes the popover');
+  return composed.pop();
+};
+assert.deepEqual(clickNote('rule', 'Ask agent to reconcile'), ['rule', null, null, 'Reconcile this clause with #non-goal-text.']);
+assert.deepEqual(clickNote('overstep', 'Ask agent to reconcile'), ['overstep', null, null, 'Reconcile this clause with other#scope.']);
+assert.deepEqual(clickNote('story-gap', 'Ask for a criterion'), ['story-gap', null, null, 'Add an acceptance criterion that verifies this story.']);
+assert.deepEqual(clickNote('criterion-gap', 'Ask for a story'), ['criterion-gap', null, null, 'Name or add the user story this criterion verifies.']);
+assert.deepEqual(clickNote('rule', 'Comment on this change'), ['rule', null, null, 'About this change: ']);
+assert.deepEqual(clickNote('crowded', 'Comment on this change'), ['crowded', null, null, 'About this change: ']);
+assert.equal(composed.length, 0);
+
 // A later note source (criterion evidence) joins first in the same marker and can color it.
 jevNoteSources.push(() => [{ anchor: 'typo', group: 'evidence', state: 'label', text: 'Stale', attention: true,
   actions: [{ label: 'Ask agent', run: () => {} }] }]);
@@ -204,6 +236,7 @@ assert.equal(holder('internals').dataset.hxAudience, 'internals');
 assert.equal(markersOf('internals').length, 0);
 marker('audience-unsure').fire('focus');
 assert.deepEqual(popNotes(), [['neutral', 'unsure']]);
+assert.equal(pop().querySelectorAll('.hx-jev-pop-actions').length, 0, 'reading view notes show no button');
 state.readingView = false;
 
 // Jev off: one page-level note, no markers.
