@@ -26,9 +26,9 @@ const spec = readFileSync(resolve(root, 'docs/specs/jev-suggestions.spec.html'),
   .replace(/<script[^>]*runtime\.js[^>]*><\/script>/, '')
   .replace('./.style/spec.css', 'file://' + resolve(root, 'docs/specs/.style/spec.css'));
 
-function mount({ css, code }) {
+function mount({ css, code, selector }) {
   document.head.insertAdjacentHTML('beforeend', '<style>' + css + '</style>');
-  const holders = [...document.querySelectorAll('[data-acceptance-criterion]')];
+  const holders = [...document.querySelectorAll(selector)];
   const state = { threads: new Map(), activeThread: null };
   const findAnchor = id => document.querySelector(`[data-anchor="${id}"]`);
   const stubs = { state, findAnchor, jevItem: () => null, label: () => 'thread', selectThread() {}, chartInfoFor: () => null, resolveElement: () => null };
@@ -38,7 +38,7 @@ function mount({ css, code }) {
     marker.className = 'hx-jev-marker';
     marker.dataset.attention = String(i % 3 === 0);
     marker.dataset.passed = String(i % 3 === 1);
-    holder.appendChild(marker);
+    (holder.tagName === 'TR' ? holder.lastElementChild : holder).appendChild(marker); // as mountJevMarker
     state.threads.set('t' + i, { id: 't' + i, status: 'pending', ev: { body: { anchorId: holder.dataset.anchor, target: null } } });
   });
   const place = () => { document.querySelectorAll('.hx-jev-marker').forEach(api.placeJevMarker); api.renderPins(); };
@@ -47,13 +47,13 @@ function mount({ css, code }) {
   return holders.length;
 }
 
-function measure() {
+function measure(selector) {
   const hit = (el, r) => { const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return Boolean(e && (e === el || el.contains(e))); };
   const meet = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
   const markers = [...document.querySelectorAll('.hx-jev-marker')];
-  return [...document.querySelectorAll('[data-acceptance-criterion]')].map(holder => {
-    holder.scrollIntoView({ block: 'center' });
-    const pin = holder.querySelector(':scope > .hx-pin'), marker = holder.querySelector(':scope > .hx-jev-marker');
+  return [...document.querySelectorAll(selector)].map(holder => {
+    const pin = holder.querySelector(':scope > .hx-pin'), marker = holder.querySelector('.hx-jev-marker');
+    marker.scrollIntoView({ block: 'center', inline: 'nearest' }); // a wide table scrolls sideways to its marker
     const p = pin.getBoundingClientRect(), m = marker.getBoundingClientRect(), h = holder.getBoundingClientRect();
     const pad = getComputedStyle(marker, '::before');
     const tap = { left: m.left + parseFloat(pad.left), right: m.right - parseFloat(pad.right), top: m.top + parseFloat(pad.top), bottom: m.bottom - parseFloat(pad.bottom) };
@@ -80,17 +80,22 @@ const shots = process.env.PIN_MARKER_SHOTS;
 if (shots) mkdirSync(shots, { recursive: true });
 const browser = await chromium.launch();
 try {
-  for (const width of [375, 560, 640, 800, 1280]) {
+  // Criteria paragraphs, and table rows, whose marker sits in the row's last cell.
+  const cases = [
+    { name: 'criterion', selector: '[data-acceptance-criterion]', count: 19, widths: [375, 560, 640, 800, 1280] },
+    { name: 'row', selector: 'tr[data-anchor]', count: 23, widths: [375, 560, 1280] },
+  ];
+  for (const { name, selector, count, widths } of cases) for (const width of widths) {
     const page = await browser.newPage({ viewport: { width, height: 900 } });
     await page.goto('file://' + resolve(root, 'docs/specs/jev-suggestions.spec.html'));
     await page.setContent(spec, { waitUntil: 'load' });
-    assert.equal(await page.evaluate(mount, { css, code }), 19, 'all 19 criteria carry a marker and a pin');
+    assert.equal(await page.evaluate(mount, { css, code, selector }), count, `all ${count} ${name} blocks carry a marker and a pin`);
     // A second placement (the runtime re-renders pins every 2 s and on resize) lands on the same spots.
-    const first = await page.evaluate(measure);
+    const first = await page.evaluate(measure, selector);
     await page.evaluate(() => window.hxPlace());
-    assert.deepEqual(await page.evaluate(measure), first, width + ' px: re-render is stable');
+    assert.deepEqual(await page.evaluate(measure, selector), first, width + ' px: re-render is stable');
     for (const r of first) {
-      const at = `${width} px ${r.anchor}: `;
+      const at = `${width} px ${name} ${r.anchor}: `;
       assert.ok(!r.pinOnText, at + 'pin covers no text');
       assert.ok(!r.markerOnText, at + 'marker covers no text');
       assert.ok(!r.pinOnMarker, at + 'pin covers no marker or marker tap pad');
@@ -98,7 +103,7 @@ try {
       assert.ok(r.pinTap, at + 'a tap on the pin hits the pin');
       assert.ok(r.markerTap, at + 'a tap on the marker hits the marker');
     }
-    if (shots) {
+    if (shots && name === 'criterion') {
       await page.evaluate(() => document.querySelector('[data-anchor="acceptance-cache"]').scrollIntoView({ block: 'center' }));
       await page.screenshot({ path: resolve(shots, `pin-marker-${width}.png`) });
     }

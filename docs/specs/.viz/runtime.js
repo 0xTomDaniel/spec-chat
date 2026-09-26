@@ -1747,8 +1747,8 @@ body.hx-panel-open .hx-thread-dock{opacity:0;transform:translateX(10px);pointer-
 [data-anchor]{position:relative}
 /* A block with a marker and a corner pin reserves a right column: marker on the first line, pin below it. */
 [data-anchor]:has(> .hx-pin[data-column]){padding-right:30px;min-height:calc(.5lh + 42px)}
-[data-anchor]:has(> .hx-pin[data-column]) > .hx-jev-marker{left:auto;right:0}
-tr[data-anchor]:has(> .hx-pin[data-column]) > :last-child{padding-right:30px;height:calc(.5lh + 42px)}
+[data-anchor]:has(> .hx-pin[data-column]) > .hx-jev-marker,.hx-pin[data-column]{left:auto;right:0}
+tr[data-anchor]:has(> .hx-pin[data-column]) > :has(> .hx-jev-marker){box-sizing:content-box;padding-right:30px;height:calc(.5lh + 42px)}
 body.hx-comment [data-anchor]{cursor:copy}
 body.hx-comment [data-anchor]:hover:not(:has(:is(h1,h2,h3,h4,h5,h6,p,li,ul,ol,table,tr,td,th,blockquote,pre,code,nav,figcaption,button,input,select,textarea,label,a,output,summary,svg,[data-render-target]):hover)){outline:2px dashed #d98e04;outline-offset:6px}
 body.hx-comment [data-anchor] :is(h1,h2,h3,h4,h5,h6,p,li,td,th,blockquote,pre,code,nav,figcaption,button,label,a,output,summary):hover{outline:1.5px dashed #d98e04;outline-offset:4px;border-radius:2px}
@@ -1835,7 +1835,7 @@ body.hx-panel-open{padding-right:0;overflow:hidden}
 .hx-handoff .hx-btn{flex:1 1 auto;margin:0}
 .hx-pin{width:44px;height:44px;font-size:12px;touch-action:manipulation}
 [data-anchor]:has(> .hx-pin[data-column]){padding-right:48px;min-height:calc(.5lh + 66px)}
-tr[data-anchor]:has(> .hx-pin[data-column]) > :last-child{padding-right:48px;height:calc(.5lh + 66px)}
+tr[data-anchor]:has(> .hx-pin[data-column]) > :has(> .hx-jev-marker){padding-right:48px;height:calc(.5lh + 66px)}
 .hx-pin-jev{left:auto;right:calc(100% + 4px);max-width:110px;text-align:right}
 .hx-jev-note{margin:8px 16px 0}
 .hx-jev-marker::before{inset:-14px 0 -14px -28px}
@@ -2484,12 +2484,12 @@ function pinPos(b, holder) {
 // Block corner, or, when the block has its own Jev marker, the block's reserved right column
 // directly below the marker's tap pad (its ::before), so the pin covers neither the marker nor text.
 function cornerPos(holder) {
-  const cell = holder.tagName === 'TR' ? holder.lastElementChild : holder; // mountJevMarker's cell
-  const marker = cell && cell.querySelector(':scope > .hx-jev-marker');
+  // A row's marker sits in a cell (mountJevMarker); the row's last child may be an earlier pin.
+  const marker = holder.querySelector(holder.tagName === 'TR' ? ':scope > * > .hx-jev-marker' : ':scope > .hx-jev-marker');
   if (!marker) return { top: 4, left: holder.clientWidth - 30 };
   const pad = parseFloat(getComputedStyle(marker, '::before').bottom) || 0;
   const top = marker.getBoundingClientRect().bottom - pad - holder.getBoundingClientRect().top - holder.clientTop;
-  return { column: true, top: Math.ceil(top), left: holder.clientWidth };
+  return { column: true, top: Math.ceil(top) }; // right edge by CSS, so a table's later reflow keeps it
 }
 
 function renderPins() {
@@ -2522,7 +2522,7 @@ function renderPins() {
     pin.style.top = pos.top + 'px';
     if (pos.column) pin.dataset.column = '';
     const pinSize = window.matchMedia('(max-width: 640px)').matches ? 44 : 24;
-    pin.style.left = Math.max(0, Math.min(pos.left, holder.clientWidth - pinSize)) + 'px';
+    if (!pos.column) pin.style.left = Math.max(0, Math.min(pos.left, holder.clientWidth - pinSize)) + 'px';
     pin.addEventListener('click', e => { e.stopPropagation(); selectThread(th, true); });
     holder.appendChild(pin);
   }
