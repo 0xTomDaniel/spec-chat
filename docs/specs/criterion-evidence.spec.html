@@ -13,11 +13,12 @@
 <header data-anchor="header">
 <h1 data-anchor="title">Evidence per criterion</h1>
 <nav data-anchor="breadcrumbs">docs / specs / criterion-evidence.spec.html</nav>
-<p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-206">ANN-206</a>, <a href="https://linear.app/annotateanything/issue/ANN-224">ANN-224</a>.</p>
+<p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-206">ANN-206</a>, <a href="https://linear.app/annotateanything/issue/ANN-224">ANN-224</a>, <a href="https://linear.app/annotateanything/issue/ANN-258">ANN-258</a>.</p>
+<p data-anchor="status-ann258">Status: ANN-258 touch (labels name QA) in review.</p>
 <p data-anchor="status-revision">Status: ANN-224 revision accepted by human spec acceptance relayed by operator w5:p2 (2026-09-26T04:41:06Z, "accept it") at <code>8bbd3ff</code>, including the fold-ins since the seed acceptance at <code>b83a6d8</code>; governing contract. Atomic correction directed by operator w5:p2 (2026-09-26, delete-first): the unwatched state was removed as unreachable, since every hosted row has an owner. Human-directed addition relayed by operator w5:p2 (2026-09-26): <a href="#place">Keeping the reader's place</a>.</p>
 <p data-anchor="status">Status: accepted for ANN-206 by human spec acceptance relayed by operator w5:p2 (2026-09-26T02:28:52Z, "accepted") at <code>4f2df71</code>; governing contract.</p>
 <p data-anchor="context">Each acceptance criterion on the spec page shows what its newest evidence proves about the text being read. The evidence read is owned by annotateanything <code>docs/specs/evidence-site.spec.html#criteria-read</code>; Spec Chat holds no annotateanything code and only renders the answer.</p>
-<p data-anchor="principle">In spec-driven development behavior changes only with a spec change, so a text-matched <code>Passed</code> is proof of what the spec promises now, and <code>Stale</code> on an unchanged-looking spec exposes unspecced behavior change.</p>
+<p data-anchor="principle">In spec-driven development behavior changes only with a spec change, so a text-matched <code>QA passed</code> is proof of what the spec promises now, and <code>QA stale</code> on an unchanged-looking spec exposes unspecced behavior change.</p>
 </header>
 
 <section data-spec-section="user-stories" data-anchor="user-stories">
@@ -25,8 +26,8 @@
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-proven">As a reviewer, each acceptance criterion tells me whether its newest evidence proves the text I am reading, so I know what is actually proven.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-open-proof">As a reviewer, one click on the evidence label in a criterion's marker popover opens its evidence, and a small link opens the whole bundle.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-branch">As a reviewer on a lane worktree or on main, evidence notes judge the text of the tree I am viewing.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-what-changed">As a reviewer, a <code>Stale</code> or reworded criterion shows me what changed between the proven text and the text I am reading, so I judge the gap without opening anything.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-reproof">As a reviewer, a <code>Stale</code> criterion offers one button that drafts a re-proof request; the request reaches the spec's owner, who acts on it.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-what-changed">As a reviewer, a <code>QA stale</code> or reworded criterion shows me what changed between the proven text and the text I am reading, so I judge the gap without opening anything.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-reproof">As a reviewer, a <code>QA stale</code> criterion offers one button that drafts a re-proof request; the request reaches the spec's owner, who acts on it.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-plugin">As a reviewer inside the BB plugin, evidence links open in the plugin's Proof page instead of a browser.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-place">As a reviewer, when a spec page reloads, including after I go to Proof and back with Spec alone in BB, it returns me to where I was reading.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-absent">As a reviewer, when the evidence service is down or not configured, the page works as today, with no evidence notes.</p>
@@ -34,17 +35,17 @@
 
 <section data-spec-section="acceptance" data-acceptance-scope="criterion-evidence" data-anchor="acceptance">
 <h2>Acceptance criteria</h2>
-<p data-acceptance-criterion data-anchor="acceptance-match" data-story="story-proven"><span data-acceptance-scenario>When a criterion's newest evidence whose proven text matches the criterion as read passed, and another's failed,</span> <span data-acceptance-observable>their marker popovers show <code>Passed</code> and <code>Failed</code>, each with <code>#&lt;PR&gt; · &lt;age&gt;</code>.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-reworded" data-story="story-proven"><span data-acceptance-scenario>When no evidence matches, the newest evidence passed, and Jev judges the text change cosmetic,</span> <span data-acceptance-observable>its marker popover shows <code>Passed · reworded</code>.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-stale" data-story="story-proven"><span data-acceptance-scenario>When no evidence matches and Jev judges the change material, is unsure, off, or unavailable, or the criterion has an uncommitted edit,</span> <span data-acceptance-observable>its marker popover shows <code>Stale</code> with the newest evidence's context and links, and its marker is colored.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-not-yet" data-story="story-proven"><span data-acceptance-scenario>When a criterion has no evidence,</span> <span data-acceptance-observable>its marker popover shows <code>Not yet</code> with no context and no links.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-match" data-story="story-proven"><span data-acceptance-scenario>When a criterion's newest evidence whose proven text matches the criterion as read passed, and another's failed,</span> <span data-acceptance-observable>their marker popovers show <code>QA passed</code> and <code>QA failed</code>, each with <code>#&lt;PR&gt; · &lt;age&gt;</code>.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-reworded" data-story="story-proven"><span data-acceptance-scenario>When no evidence matches, the newest evidence passed, and Jev judges the text change cosmetic,</span> <span data-acceptance-observable>its marker popover shows <code>QA passed · reworded</code>.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-stale" data-story="story-proven"><span data-acceptance-scenario>When no evidence matches and Jev judges the change material, is unsure, off, or unavailable, or the criterion has an uncommitted edit,</span> <span data-acceptance-observable>its marker popover shows <code>QA stale</code> with the newest evidence's context and links, and its marker is colored.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-not-yet" data-story="story-proven"><span data-acceptance-scenario>When a criterion has no evidence,</span> <span data-acceptance-observable>its marker popover shows <code>No QA yet</code> with no context and no links.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-main" data-story="story-proven"><span data-acceptance-scenario>When the picked evidence's tested commit is not on main, and another's is,</span> <span data-acceptance-observable>only the first adds <code>not on main</code> to its context.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-links" data-story="story-open-proof"><span data-acceptance-scenario>When the reviewer clicks the evidence label in a popover, then its bundle link,</span> <span data-acceptance-observable>the label opens the bundle page scrolled to that criterion with its artifact open large in place, not at the bundle top, and the link opens the bundle page at its top, both on the evidence service.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-branch" data-story="story-branch"><span data-acceptance-scenario>When a lane worktree rewords a criterion materially and main does not,</span> <span data-acceptance-observable>the lane's page shows <code>Stale</code> and main's page shows <code>Passed</code> for the same criterion ID.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-marker" data-story="story-proven"><span data-acceptance-scenario>When criteria show <code>Passed</code>, <code>Failed</code>, <code>Stale</code>, and <code>Not yet</code>, in light and in dark theme,</span> <span data-acceptance-observable>their markers are a green check, a colored <code>!</code>, a colored <code>!</code>, and a gray dot, each mark 3:1 readable, and hovering any of them opens its popover.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-diff" data-story="story-what-changed"><span data-acceptance-scenario>When a criterion shows <code>Stale</code>, <code>Passed · reworded</code>, or <code>Failed · reworded</code>,</span> <span data-acceptance-observable>its evidence note shows the proven text against the text as read as one inline diff, removed words struck through and added words underlined, and a matching <code>Passed</code> or <code>Failed</code> shows no diff.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-reproof-draft" data-story="story-reproof"><span data-acceptance-scenario>When the reviewer clicks <code>Ask for re-proof</code> on a <code>Stale</code> note,</span> <span data-acceptance-observable>the comment composer opens at that criterion with the <a href="#reproof-text">re-proof draft</a> filled in, and nothing is written until the reviewer sends it.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-reproof-only-stale" data-story="story-reproof"><span data-acceptance-scenario>When a note is <code>Passed</code>, <code>Failed</code>, reworded, or <code>Not yet</code>,</span> <span data-acceptance-observable>it shows no <code>Ask for re-proof</code> button.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-branch" data-story="story-branch"><span data-acceptance-scenario>When a lane worktree rewords a criterion materially and main does not,</span> <span data-acceptance-observable>the lane's page shows <code>QA stale</code> and main's page shows <code>QA passed</code> for the same criterion ID.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-marker" data-story="story-proven"><span data-acceptance-scenario>When criteria show <code>QA passed</code>, <code>QA failed</code>, <code>QA stale</code>, and <code>No QA yet</code>, in light and in dark theme,</span> <span data-acceptance-observable>their markers are a green check, a colored <code>!</code>, a colored <code>!</code>, and a gray dot, each mark 3:1 readable, and hovering any of them opens its popover.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-diff" data-story="story-what-changed"><span data-acceptance-scenario>When a criterion shows <code>QA stale</code>, <code>QA passed · reworded</code>, or <code>QA failed · reworded</code>,</span> <span data-acceptance-observable>its evidence note shows the proven text against the text as read as one inline diff, removed words struck through and added words underlined, and a matching <code>QA passed</code> or <code>QA failed</code> shows no diff.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-reproof-draft" data-story="story-reproof"><span data-acceptance-scenario>When the reviewer clicks <code>Ask for re-proof</code> on a <code>QA stale</code> note,</span> <span data-acceptance-observable>the comment composer opens at that criterion with the <a href="#reproof-text">re-proof draft</a> filled in, and nothing is written until the reviewer sends it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-reproof-only-stale" data-story="story-reproof"><span data-acceptance-scenario>When a note is <code>QA passed</code>, <code>QA failed</code>, reworded, or <code>No QA yet</code>,</span> <span data-acceptance-observable>it shows no <code>Ask for re-proof</code> button.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-reproof-owner" data-story="story-reproof"><span data-acceptance-scenario>When a sent re-proof request is handed off on a lane spec, and on a main spec,</span> <span data-acceptance-observable>the lane owner pane, and the operator pane, is woken with the batch like any comment.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-plugin-open" data-story="story-plugin"><span data-acceptance-scenario>When the page runs inside the BB plugin and the reviewer clicks an evidence label or <code>bundle</code>,</span> <span data-acceptance-observable>the plugin's Proof page opens on that bundle, at that criterion for the label, and no browser tab opens.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-plugin-outside" data-story="story-plugin"><span data-acceptance-scenario>When the same page runs in a browser tab, or in a frame whose host never announces itself,</span> <span data-acceptance-observable>evidence links open on the evidence service as today.</span></p>
@@ -68,10 +69,10 @@
 <h2>Evidence note</h2>
 <p data-anchor="chip-where">Every <code>data-acceptance-criterion</code> on an HTTP-served spec gets an evidence note, listed first in its <a href="./jev-suggestions.spec.html#markers">marker popover</a>, once evidence loads; a criterion with no other note gets a marker for it.</p>
 <p data-anchor="chip-parts">An evidence note is a state label in words, a muted context line, and a small <code>bundle</code> link.</p>
-<p data-anchor="chip-marker">The criterion's marker follows its evidence: <code>Passed</code> and <code>Passed · reworded</code> show a small green check, <code>Failed</code>, <code>Failed · reworded</code>, and <code>Stale</code> show the colored <code>!</code>, and <code>Not yet</code> stays the quiet gray dot. Check and <code>!</code> are glyph shapes, so state never rests on color alone, and each mark meets 3:1 against the page in light and dark themes. Precedence across a marker's notes is in <a href="./jev-suggestions.spec.html#markers-color">markers</a>.</p>
+<p data-anchor="chip-marker">The criterion's marker follows its evidence: <code>QA passed</code> and <code>QA passed · reworded</code> show a small green check, <code>QA failed</code>, <code>QA failed · reworded</code>, and <code>QA stale</code> show the colored <code>!</code>, and <code>No QA yet</code> stays the quiet gray dot. Check and <code>!</code> are glyph shapes, so state never rests on color alone, and each mark meets 3:1 against the page in light and dark themes. Precedence across a marker's notes is in <a href="./jev-suggestions.spec.html#markers-color">markers</a>.</p>
 <figure data-anchor="chip-figure">
 <div class="rail-wrap" data-anchor="chip-figure-scroll">
-<svg viewBox="0 0 760 200" style="min-width: 600px" role="img" aria-label="Two acceptance criteria with margin markers. The first marker is a green dot with a check glyph, for Passed. The second is a red dot with an exclamation glyph; its open popover shows Stale, context #58 · 9 d · not on main, and a bundle link.">
+<svg viewBox="0 0 760 200" style="min-width: 600px" role="img" aria-label="Two acceptance criteria with margin markers. The first marker is a green dot with a check glyph, for QA passed. The second is a red dot with an exclamation glyph; its open popover shows QA stale, context #58 · 9 d · not on main, and a bundle link.">
 <text x="12" y="34" fill="#171719" font-size="14">When the reviewer picks a listed commit, highlighting reflects that base.</text>
 <circle cx="600" cy="29" r="8" fill="#1a7f37"></circle>
 <path d="M596 29 L599 32 L604 26" stroke="#ffffff" stroke-width="2" fill="none"></path>
@@ -80,35 +81,36 @@
 <text x="596" y="74" fill="#ffffff" font-size="12" font-weight="700">!</text>
 <rect x="420" y="86" width="320" height="100" rx="6" fill="#ffffff" stroke="#303036" stroke-width="1.5"></rect>
 <text x="434" y="112" fill="#303036" font-size="12" font-weight="700">EVIDENCE</text>
-<text x="434" y="138" fill="#b42318" font-size="14" font-weight="700" text-decoration="underline">Stale</text>
+<text x="434" y="138" fill="#b42318" font-size="14" font-weight="700" text-decoration="underline">QA stale</text>
 <text x="484" y="138" fill="#303036" font-size="13">#58 · 9 d · not on main</text>
 <text x="434" y="168" fill="#2947c7" font-size="13" text-decoration="underline">bundle</text>
 </svg>
 </div>
-<figcaption data-anchor="chip-figure-caption">Evidence in the marker popover: the label opens the criterion's artifact, <code>bundle</code> opens the bundle page; <code>Passed</code> marks with a green check, <code>Failed</code> and <code>Stale</code> with a colored <code>!</code>.</figcaption>
+<figcaption data-anchor="chip-figure-caption">Evidence in the marker popover: the label opens the criterion's artifact, <code>bundle</code> opens the bundle page; <code>QA passed</code> marks with a green check, <code>QA failed</code> and <code>QA stale</code> with a colored <code>!</code>.</figcaption>
 </figure>
 <div class="table-scroll" data-anchor="states-table-scroll">
 <table data-anchor="states-table">
 <thead><tr><th>Evidence picked</th><th>Jev judgment</th><th>Label</th></tr></thead>
 <tbody>
-<tr data-anchor="state-passed"><td>Matching text, passed</td><td>Not asked</td><td><code>Passed</code></td></tr>
-<tr data-anchor="state-failed"><td>Matching text, failed</td><td>Not asked</td><td><code>Failed</code></td></tr>
-<tr data-anchor="state-reworded"><td>Newest, text differs</td><td>cosmetic</td><td><code>Passed · reworded</code> or <code>Failed · reworded</code></td></tr>
-<tr data-anchor="state-stale"><td>Newest, text differs, or criterion edited but uncommitted</td><td>material, unsure, off, or unavailable</td><td><code>Stale</code></td></tr>
-<tr data-anchor="state-not-yet"><td>None</td><td>Not asked</td><td><code>Not yet</code></td></tr>
+<tr data-anchor="state-passed"><td>Matching text, passed</td><td>Not asked</td><td><code>QA passed</code></td></tr>
+<tr data-anchor="state-failed"><td>Matching text, failed</td><td>Not asked</td><td><code>QA failed</code></td></tr>
+<tr data-anchor="state-reworded"><td>Newest, text differs</td><td>cosmetic</td><td><code>QA passed · reworded</code> or <code>QA failed · reworded</code></td></tr>
+<tr data-anchor="state-stale"><td>Newest, text differs, or criterion edited but uncommitted</td><td>material, unsure, off, or unavailable</td><td><code>QA stale</code></td></tr>
+<tr data-anchor="state-not-yet"><td>None</td><td>Not asked</td><td><code>No QA yet</code></td></tr>
 </tbody>
 </table>
 </div>
-<p data-anchor="chip-context">Every label but <code>Not yet</code> has context <code>#&lt;PR&gt; · &lt;age&gt;</code>, plus <code>not on main</code> when so; the label opens the bundle page at that criterion with its artifact open, through the <code>view</code> link <code>/criteria</code> returns, and <code>bundle</code> opens the bundle page at its top. <code>Not yet</code> has neither.</p>
+<p data-anchor="chip-labels">Every evidence label names QA, so it never reads as a Jev note in the same popover; labels stay one short line with no added box, rule, or heading.</p>
+<p data-anchor="chip-context">Every label but <code>No QA yet</code> has context <code>#&lt;PR&gt; · &lt;age&gt;</code>, plus <code>not on main</code> when so; the label opens the bundle page at that criterion with its artifact open, through the <code>view</code> link <code>/criteria</code> returns, and <code>bundle</code> opens the bundle page at its top. <code>No QA yet</code> has neither.</p>
 <p data-anchor="chip-age">Age is the capture time relative to now: minutes, hours, or days, as <code>5 m</code>, <code>3 h</code>, <code>2 d</code>.</p>
 <p data-anchor="chip-artifact">A picked evidence with no valid artifact still links its label; the bundle page then lands on the criterion with nothing opened.</p>
-<p data-anchor="chip-diff">A <code>Stale</code> or reworded note adds one inline diff line: the proven text from the evidence against the criterion text as read, word by word, removed words struck through and added words underlined, so the cue survives without color. The diff wraps inside the popover and never widens the page.</p>
+<p data-anchor="chip-diff">A <code>QA stale</code> or reworded note adds one inline diff line: the proven text from the evidence against the criterion text as read, word by word, removed words struck through and added words underlined, so the cue survives without color. The diff wraps inside the popover and never widens the page.</p>
 <p data-anchor="chip-never-act">Evidence notes never change a spec, the spool, a thread, or spec acceptance eligibility, and never hide or reorder content.</p>
 </section>
 
 <section data-anchor="reproof">
 <h2>Ask for re-proof</h2>
-<p data-anchor="reproof-button">Only a <code>Stale</code> note gets a <a href="./jev-suggestions.spec.html#note-actions">note button</a>, <code>Ask for re-proof</code>; it opens the comment composer at the criterion and writes nothing until the reviewer sends.</p>
+<p data-anchor="reproof-button">Only a <code>QA stale</code> note gets a <a href="./jev-suggestions.spec.html#note-actions">note button</a>, <code>Ask for re-proof</code>; it opens the comment composer at the criterion and writes nothing until the reviewer sends.</p>
 <p data-anchor="reproof-text">Draft text, fixed: <code>&lt;criterion anchor&gt; changed since its evidence (#&lt;PR&gt;, &lt;capture date&gt;): please recapture it.</code></p>
 <p data-anchor="reproof-route">A sent request is an ordinary comment: the hand-off wakes the host row's owner through <a href="./host-wake.spec.html#acceptance-wake-once">host wake</a>, and that owner runs a narrow Jev recapture of that criterion.</p>
 <p data-anchor="reproof-main-owner">A spec on main, outside any lane, is registered with the operator as owner, so its request reaches the operator, who starts a small re-proof lane.</p>
@@ -178,7 +180,7 @@
 <p data-anchor="read-config">The review server reads the evidence service's public base URL from <code>SPEC_CHAT_EVIDENCE_URL</code> in its environment; unset means no read and no evidence notes.</p>
 <p data-anchor="read-spec-id">The criterion ID is branch-free, <code>project/&lt;project-id&gt;::&lt;spec path&gt;#&lt;anchor&gt;</code>, as evidence records it; the project ID is the last path part of the served root's <code>origin</code> URL without <code>.git</code>, such as <code>spec-chat</code>.</p>
 <p data-anchor="read-commit">The viewed commit is the serving root's head, so a lane worktree and main each judge their own text.</p>
-<p data-anchor="read-uncommitted">A criterion whose served bytes differ from its bytes at head is marked uncommitted and shows <code>Stale</code>, because the evidence service judges committed text only.</p>
+<p data-anchor="read-uncommitted">A criterion whose served bytes differ from its bytes at head is marked uncommitted and shows <code>QA stale</code>, because the evidence service judges committed text only.</p>
 <p data-anchor="read-proven-text">Each entry passes through the picked evidence's proven text and <code>view</code> link, which <code>/criteria</code> gains for this revision (annotateanything <code>evidence-site#criteria-read</code>); the diff compares that text with the criterion as served.</p>
 <p data-anchor="read-links">The service's relative artifact and bundle paths are joined to <code>SPEC_CHAT_EVIDENCE_URL</code> before they reach the browser.</p>
 <p data-anchor="read-failure">A timeout, error, or non-JSON answer returns no entries; the server does not retry, and the next page load asks again.</p>
@@ -186,7 +188,7 @@
 
 <section data-anchor="proof">
 <h2>Proof</h2>
-<p data-anchor="proof-first-test">First failing test: the review server, given a fake evidence service answering one matching pass and one material mismatch, returns <code>Passed</code> and <code>Stale</code> entries with absolute links.</p>
+<p data-anchor="proof-first-test">First failing test: the review server, given a fake evidence service answering one matching pass and one material mismatch, returns <code>QA passed</code> and <code>QA stale</code> entries with absolute links.</p>
 <p data-anchor="proof-evidence">Evidence: server and runtime tests behind a fake evidence service, and a QA bundle driven by the Jev driver on a real spec served with the real evidence service.</p>
 </section>
 
