@@ -362,6 +362,8 @@ class JevSeam:
 
 # Shaped sections whose clauses are for you by structure, never asked (spec #reading-structural).
 AUDIENCE_STRUCTURAL_SECTIONS = frozenset({"user-stories", "modular-boundaries"})
+# Page header clauses and status or source issue sections: never asked nor compared (spec #corpus-meta).
+CORPUS_META_ANCHORS = frozenset({"status", "source-issues"})
 CONTAINER_TAGS = frozenset({"article", "div", "figure", "footer", "header", "main", "nav", "ol", "section", "table", "tbody", "thead", "tfoot", "ul"})
 
 
@@ -383,6 +385,8 @@ class _AnchorParser(HTMLParser):
         anchor = attrs.get("data-anchor")
         if anchor:
             parent = next((item[1] for item in reversed(self.stack) if item[1]), None)
+            meta = (tag == "header" or anchor in CORPUS_META_ANCHORS or anchor.endswith("-source-issues") or any(item[0] == "header" for item in self.stack)
+                    or bool(parent and self.values[parent]["meta"]))
             value = self.values.setdefault(anchor, {
                 "text": [],
                 "tag": tag,
@@ -392,6 +396,7 @@ class _AnchorParser(HTMLParser):
                 "parent": parent,
                 "children": [],
                 "structural": False,
+                "meta": meta,
             })
             value["structural"] = value["structural"] or structural
             if parent and anchor not in self.values[parent]["children"]:
@@ -433,7 +438,7 @@ def _anchor_words(text: str) -> set[str]:
 
 
 def _corpus_leaf_anchors(anchors: Mapping[str, Mapping[str, Any]]) -> list[str]:
-    return [key for key, value in anchors.items() if not value.get("children")]
+    return [key for key, value in anchors.items() if not value.get("children") and not value.get("meta")]
 
 
 def _match_score(source: str, target: str) -> tuple[int, int]:
@@ -556,7 +561,8 @@ def build_corpus_questions(current: str | bytes, baseline: str | bytes | None, p
             question = _question("corpus", anchor, {"before": before, "after": after, "target": target_text},
                                  path, base, revision, target)
             question["sources"] = [path + "#" + anchor, target]
-            question["display_labels"] = ["contradicts", "overlaps", "oversteps"]
+            # overlaps is still answered and recorded, but restating a clause is normal: it shows nothing.
+            question["display_labels"] = ["contradicts", "oversteps"]
             result.append(question)
     return result
 
@@ -862,10 +868,45 @@ class JevService:
     def enabled(self) -> bool:
         return bool(self.question_sets) and (bool(self.api_key) or self.provider is not None)
 
-    def _served_specs(self, mounts: Any, current: str) -> list[dict[str, str]]:
+    def _served_specs(self, mounts: Any, current: str, page: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
+        """Other specs (#corpus-others): the lane's own served specs as served, plus main's copy of every
+        other served spec path, once per project and path; another lane's served copy is never read."""
+        mounts = [mounts] if isinstance(mounts, Mapping) else list(mounts or [])
+        slug = str(page.get("slug", "")) if isinstance(page, Mapping) else ""
+        if not slug:
+            return self._as_served(mounts, current)
+        own = [mount for mount in mounts if isinstance(mount, Mapping) and mount.get("slug") == slug]
+        result = self._as_served(own, current)
+        projects: dict[str, str] = {}
+
+        def spec_key(mount: Mapping[str, Any], filename: str) -> tuple[str, str]:
+            root = str(mount.get("root", ""))
+            if root not in projects:
+                common = _git_read(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+                projects[root] = os.path.realpath(common.decode().strip() if common else root)
+            return projects[root], os.path.relpath(filename, root).replace(os.sep, "/")
+
+        seen = {spec_key(page, current)}
+        for mount in own:
+            seen.update(spec_key(mount, filename) for _, filename in enumerate_served_specs(mount))
+        for mount in mounts:
+            if not isinstance(mount, Mapping) or mount.get("slug") == slug:
+                continue
+            prefix = str(mount.get("slug", ""))
+            for relative, filename in enumerate_served_specs(mount):
+                key = spec_key(mount, filename)
+                if key in seen or key[1].startswith("../"):
+                    continue
+                seen.add(key)
+                source = _git_read(str(mount["root"]), "show", "--end-of-options", "origin/main:" + key[1])
+                if source is not None:
+                    result.append({"path": (prefix + "/" if prefix else "") + relative, "source": source})
+        return result
+
+    def _as_served(self, mounts: list[Any], current: str) -> list[dict[str, Any]]:
         result = []
         seen = set()
-        for mount in ([mounts] if isinstance(mounts, Mapping) else (mounts or [])):
+        for mount in mounts:
             prefix = str(mount.get("slug", "")) if isinstance(mount, Mapping) else ""
             for relative, filename in enumerate_served_specs(mount):
                 filename = os.path.realpath(filename)
@@ -944,7 +985,7 @@ class JevService:
         result.extend(build("resolved", events, current, old, relative, base, head, message_sources))
         result.extend(build("coverage", current, relative, base, head))
         result.extend(build("corpus", current, old, relative, base, head,
-                            self._served_specs(served_mounts or [mount], target)))
+                            self._served_specs(served_mounts or [mount], target, mount)))
         if view == "reading":
             result.extend(build("audience", current, relative, base, head))
         return result
