@@ -92,7 +92,7 @@ const code = [
   slice('async function requestEvidence(', '\n\nfunction markIssueFocus('),
   slice('function commitDate(', '\n\nfunction rangeBarText('),
 ].join('\n\n');
-const state = { readingView: false, jev: { request: 0, status: 'idle', base: null, items: [] }, evidence: { criteria: null, watched: true, hostOrigin: null } };
+const state = { readingView: false, jev: { request: 0, status: 'idle', base: null, items: [] }, evidence: { criteria: null, hostOrigin: null } };
 const location = { search: '', pathname: '/specs/demo.spec.html' };
 let answer = null;
 const fetches = [];
@@ -195,15 +195,6 @@ row('material').querySelector('.hx-btn').fire('click');
 const captured = new Date(Date.now() - 9 * 86400000 - 5000).toISOString().slice(0, 10);
 assert.deepEqual(composed, [['material', 'material changed since its evidence (#58, ' + captured + '): please recapture it.']]);
 assert.equal(fetches.length, 5, 'drafting writes nothing');
-// Watched: no warning. Unwatched: Stale says so and still drafts; other notes stay quiet.
-assert.equal(row('material').querySelector('.hx-jev-pop-warn'), null);
-state.evidence.watched = false;
-renderJev();
-assert.equal(row('material').querySelector('.hx-jev-pop-warn').textContent, 'No one is watching this spec; a re-proof request is saved as a note only.');
-assert.deepEqual(actionsOf('material'), ['Ask for re-proof']);
-assert.equal(row('passed').querySelector('.hx-jev-pop-warn'), null);
-state.evidence.watched = true;
-renderJev();
 
 // Plugin bridge: links behave as today until the parent frame announces itself; then clicks post IDs to that origin.
 const click = el => { let prevented = false; el.fire('click', { preventDefault() { prevented = true; } }); return prevented; };

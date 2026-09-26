@@ -220,25 +220,6 @@ class EvidenceRouteTest(unittest.TestCase):
             {"spec": ["project/spec-chat::" + SPEC], "commit": [lane_head]},
         ])
 
-    def watched(self, url, review_dir):
-        with urllib.request.urlopen(url + "/api/events?dir=" + review_dir, timeout=10) as response:
-            return response.headers.get("X-Spec-Chat-Watched")
-
-    def test_events_report_whether_the_row_has_an_owner(self):
-        root = self.dir / "repo"
-        repo(root, page(ok="Shows ok."))
-        row = {"id": "r", "slug": "lane", "root": str(root), "narrow_root": str(root / "docs"),
-               "spec": SPEC, "spec_file": str(root / SPEC), "base": "HEAD", "owner": "w1:pOwner"}
-        for mounts, review_dir, expected in (
-            ([row], "lane/" + SPEC + ".review", "yes"),
-            ([row | {"owner": ""}], "lane/" + SPEC + ".review", "no"),
-            ([serve._single_mount(root / "docs")], "specs/demo.spec.html.review", "yes"),
-        ):
-            with self.subTest(expected=expected, mount=mounts[0]["id"]):
-                url = self.review_server(mounts)
-                self.servers[-1].wake_controller = serve.WakeController(self.servers[-1])
-                self.assertEqual(self.watched(url, review_dir), expected)
-
     def test_bad_path_is_rejected_without_a_read(self):
         service = self.fake(body={"criteria": {}})
         url, _, _ = self.single(page(ok="Shows ok."))

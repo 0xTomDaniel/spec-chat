@@ -92,7 +92,6 @@ const markers = [
   [['.hx-jev-marker'], ['.hx-jev-marker', '.hx-jev-marker[data-attention=true]']],
   [['.hx-jev-marker'], ['.hx-jev-marker', '.hx-jev-marker[data-passed=true]']],
   [['.hx-jev-pop', '.hx-jev-pop-diff'], ['.hx-jev-pop']],
-  [['.hx-jev-pop', '.hx-jev-pop-warn'], ['.hx-jev-pop']],
 ];
 // Marker marks (gray dot, colored !, green check) read 3:1 against the page (criterion-evidence #chip-marker).
 const marks = [['.hx-jev-marker'], ['.hx-jev-marker', '.hx-jev-marker[data-attention=true]'], ['.hx-jev-marker', '.hx-jev-marker[data-passed=true]']];

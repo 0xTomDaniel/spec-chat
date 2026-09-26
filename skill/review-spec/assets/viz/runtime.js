@@ -58,8 +58,8 @@ const state = {
   lastTbd: null,         // open TBD marker focused by the last TBD open activation
   range: { baseline: null, loaded: null, loading: false, pickerOpen: false }, // loaded: anchor signatures of the page as served
   jev: { status: 'idle', items: [], base: null, request: 0 },
-  evidence: { criteria: null, watched: true, hostOrigin: null }, // criteria: anchor -> entry once /api/evidence answers, null shows nothing;
-  // watched: the host row names an owner (X-Spec-Chat-Watched); hostOrigin: the BB plugin frame that announced itself
+  evidence: { criteria: null, hostOrigin: null }, // criteria: anchor -> entry once /api/evidence answers, null shows nothing;
+  // hostOrigin: the BB plugin frame that announced itself
   readingView: false,
   movingOrphans: new Set(),
 };
@@ -72,7 +72,7 @@ function httpTransport() {
     ready: Promise.resolve(true),
     async listEvents() {
       const r = await fetch('/api/events?dir=' + encodeURIComponent(dir));
-      return { events: await r.json(), wake: r.headers.get('X-Spec-Chat-Wake') || null, watched: r.headers.get('X-Spec-Chat-Watched') !== 'no' };
+      return { events: await r.json(), wake: r.headers.get('X-Spec-Chat-Wake') || null };
     },
     async postEvent(body) {
       await fetch('/api/events?dir=' + encodeURIComponent(dir) + '&actor=human', { method: 'POST', body: JSON.stringify(body) });
@@ -1282,8 +1282,6 @@ function listenEvidenceHost() {
   });
 }
 
-const EVIDENCE_UNWATCHED = 'No one is watching this spec; a re-proof request is saved as a note only.';
-
 function evidenceNotes() {
   const criteria = state.evidence && state.evidence.criteria;
   if (!criteria) return [];
@@ -1308,7 +1306,6 @@ function evidenceNotes() {
         const date = commitDate(entry.capturedAt);
         const since = [pr, date].filter(Boolean).join(', ');
         note.actions = [jevDraftAction('Ask for re-proof', anchor + ' changed since its evidence' + (since ? ' (' + since + ')' : '') + ': please recapture it.')];
-        if (!state.evidence.watched) note.warning = EVIDENCE_UNWATCHED;
       }
     }
     notes.push(note);
@@ -1445,11 +1442,6 @@ function renderJevNote(note) {
       const word = diff.appendChild(document.createElement(part.op === 'del' ? 'del' : part.op === 'ins' ? 'ins' : 'span'));
       word.textContent = part.text;
     });
-  }
-  if (note.warning) {
-    const warning = row.appendChild(document.createElement('span'));
-    warning.className = 'hx-jev-pop-warn';
-    warning.textContent = note.warning;
   }
   const actions = Array.isArray(note.actions) ? note.actions.filter(action => action && action.label) : [];
   if (actions.length) {
@@ -1793,7 +1785,6 @@ a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
 .hx-jev-pop-diff{font-size:12px;color:#303036;overflow-wrap:anywhere}
 .hx-jev-pop-diff del{text-decoration:line-through;text-decoration-thickness:2px}
 .hx-jev-pop-diff ins{text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:2px}
-.hx-jev-pop-warn{font-size:12px;font-weight:600;color:#6d4b05;overflow-wrap:anywhere}
 .hx-jev-pop-actions{display:flex;flex-wrap:wrap;gap:4px}
 .hx-jev-pop-actions .hx-btn{margin:0;font-size:11.5px;padding:4px 8px;border-color:#2947c7;background:#ffffff;color:#2947c7}
 @media(prefers-color-scheme:dark){
@@ -1804,7 +1795,6 @@ a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
 .hx-jev-pop-meta{color:#b8bbc5}
 .hx-jev-pop-link{color:#aebcff}
 .hx-jev-pop-diff{color:#e8e7e2}
-.hx-jev-pop-warn{color:#f0c46a}
 .hx-jev-pop-actions .hx-btn{background:#17191d;border-color:#7d91ff;color:#aebcff}
 }
 .hx-jev-target-flash{animation:hx-jev-flash 1.2s ease-out}
@@ -2583,11 +2573,6 @@ async function refresh() {
   try {
     const listed = await state.transport.listEvents();
     const wake = Array.isArray(listed) ? null : listed.wake;
-    const watched = Array.isArray(listed) || listed.watched !== false;
-    if (watched !== state.evidence.watched) {
-      state.evidence.watched = watched;
-      if (state.evidence.criteria) renderJev();
-    }
     ingest(Array.isArray(listed) ? listed : listed.events);
     const agentEvents = state.events.filter(e => e.actor === 'agent');
     const observation = handoffObservation(state.events, Date.now());
