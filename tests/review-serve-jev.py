@@ -481,6 +481,36 @@ class JevSeamTest(unittest.TestCase):
         self.assertTrue(changed)
         self.assertTrue(all(question["sources"][0].endswith("#changed") for question in changed))
 
+    def test_corpus_candidates_stay_within_spec_cap(self):
+        def leaves(prefix, count, boundary_every):
+            return "".join(
+                f'<p data-anchor="{prefix}-{index}"{" data-modular-boundary" if index % boundary_every == 0 else ""}>'
+                f"Clause {prefix} {index} about review service events.</p>" for index in range(count))
+        own = ('<section data-anchor="rules">' + leaves("own", 20, 2) + '</section>'
+               '<section data-anchor="non-goals"><p data-anchor="non-goal-a">Never writes events.</p>'
+               '<p data-anchor="non-goal-b">Never polls.</p></section>')
+        baseline = own + '<p data-anchor="changed">The service reads review events.</p>'
+        current = own + '<p data-anchor="changed">The service writes review events.</p>'
+        others = [{"path": f"docs/other-{n}.spec.html",
+                   "source": '<section data-anchor="s">' + leaves(f"o{n}", 15, 1) + '</section>'} for n in range(3)]
+        questions = jev.build_corpus_questions(current, baseline, "docs/current.spec.html", "base", "head", others)
+        own_targets = [q["target"] for q in questions if "#" not in q["target"]]
+        cross_targets = [q["target"] for q in questions if "#" in q["target"]]
+        self.assertEqual({q["id"] for q in questions}, {"changed"})
+        self.assertLessEqual(len(own_targets), 8 + 2)
+        self.assertIn("non-goal-a", own_targets)
+        self.assertIn("non-goal-b", own_targets)
+        self.assertLessEqual(len(cross_targets), 8)
+        for question in questions:
+            self.assertEqual(set(question["state"]), {"before", "after", "target"})
+
+        fresh = jev.build_corpus_questions(current, None, "docs/current.spec.html", "base", "head", others)
+        per_leaf = {}
+        for question in fresh:
+            per_leaf[question["id"]] = per_leaf.get(question["id"], 0) + 1
+        self.assertTrue(per_leaf)
+        self.assertLessEqual(max(per_leaf.values()), 8 + 2 + 8)
+
     def test_corpus_question_set_has_all_relationship_labels(self):
         sets = jev.load_question_sets(ROOT / "skill" / "review-spec" / "assets" / "jev")
         self.assertEqual(set(sets["corpus"].criteria()),

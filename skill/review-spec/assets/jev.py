@@ -59,43 +59,6 @@ def _close_explicit(stack: list[Any], tag: str) -> None:
             del stack[index:]
             return
 
-MINIMAL_QUESTION_SETS = {
-    "type": {
-        "id": "type", "version": 2,
-        "instructions": "Classify the kind of change in the compared text.",
-        "labels": [
-            {"name": "scope", "description": "Adds, removes, or moves a capability, surface, or non-goal."},
-            {"name": "behavioral", "description": "Alters what the result does: a rule, interface, edge case, or criterion."},
-            {"name": "clarification", "description": "States the same behavior more precisely."},
-            {"name": "cosmetic", "description": "Changes wording, order, or style without changing meaning."},
-        ],
-        "threshold": DEFAULT_THRESHOLD,
-    },
-    "orphan": {
-        "id": "orphan", "version": 3,
-        "instructions": "Choose the current section that best matches the orphaned comment quote, or none when no section is credible.",
-        "labels": [{"name": "none", "description": "No current section is a credible location for the orphaned passage."}],
-        "threshold": DEFAULT_THRESHOLD,
-    },
-    "resolved": {
-        "id": "resolved", "version": 2,
-        "instructions": "Decide whether the revised section addresses the open comment in spirit.",
-        "labels": [
-            {"name": "resolved in spirit", "description": "The revised text does what the comment asked."},
-            {"name": "unrelated", "description": "The revised text does not address the comment."},
-        ],
-        "threshold": DEFAULT_THRESHOLD,
-    },
-    "coverage": {
-        "id": "coverage", "version": 2,
-        "instructions": "For one user story and one acceptance criterion, decide whether the criterion verifies the story.",
-        "labels": [
-            {"name": "verifies", "description": "The acceptance criterion directly verifies the user story."},
-            {"name": "unrelated", "description": "The acceptance criterion does not verify the user story."},
-        ],
-        "threshold": DEFAULT_THRESHOLD,
-    },
-}
 
 
 def _jsonable(value: Any) -> Any:
@@ -202,7 +165,7 @@ class QuestionSet:
 
 
 def load_question_sets(*directories: str | Path | None) -> dict[str, QuestionSet]:
-    result = {kind: QuestionSet.from_mapping(raw, kind) for kind, raw in MINIMAL_QUESTION_SETS.items()}
+    result: dict[str, QuestionSet] = {}
     here = Path(__file__).resolve().parent
     candidates = [Path(item) for item in directories if item]
     candidates.extend((here / "jev", here / "../skill/review-spec/assets/jev"))
@@ -287,32 +250,16 @@ class OpenRouterProvider:
 
 
 def _parse_provider_answer(value: Mapping[str, Any], question_name: str) -> tuple[str, float | None, dict[str, float], str]:
-    answers = value.get("answers", value)
-    if not isinstance(answers, Mapping):
-        raise RuntimeError("provider response has no answers")
-    answer = answers.get(question_name)
-    if not isinstance(answer, Mapping):
-        answer = next((item for item in answers.values() if isinstance(item, Mapping)), None)
-    if not isinstance(answer, Mapping):
-        raise RuntimeError("provider response has no typed answer")
-    label = answer.get("choice", answer.get("label", answer.get("class")))
-    probabilities = answer.get("probabilities", answer.get("probs", {}))
-    if not isinstance(probabilities, Mapping):
-        probabilities = {}
-    probabilities = {str(k): float(v) for k, v in probabilities.items() if isinstance(v, (int, float))}
-    confidence = answer.get("confidence", answer.get("score"))
-    if confidence is None and probabilities:
-        confidence = max(probabilities.values())
+    answer = value["answers"][question_name]
+    label = answer["choice"]
     if not isinstance(label, str) or not label.strip():
-        if probabilities:
-            label = max(probabilities, key=probabilities.get)
-        else:
-            raise RuntimeError("provider response has no label")
+        raise RuntimeError("provider response has no choice")
+    probabilities = {str(k): float(v) for k, v in answer.get("probabilities", {}).items()}
+    confidence = answer.get("confidence")
     confidence = None if confidence is None else float(confidence)
     if confidence is not None and (not math.isfinite(confidence) or not 0 <= confidence <= 1):
         raise RuntimeError("provider response has invalid confidence")
-    model = str(value.get("model", MODEL))
-    return label.strip(), confidence, probabilities, model
+    return label.strip(), confidence, probabilities, str(value.get("model", MODEL))
 
 
 def _anchor_answer(answer: Mapping[str, Any], candidate_anchors: Mapping[str, Any]) -> dict[str, Any]:
@@ -338,7 +285,7 @@ class JevSeam:
         self.max_input_tokens = max_input_tokens
 
     def question_set(self, kind: str) -> QuestionSet:
-        return self.question_sets.get(kind) or self.question_sets.get("default") or QuestionSet.from_mapping(MINIMAL_QUESTION_SETS["type"], "type")
+        return self.question_sets[kind]
 
     def _record(self, key: str, kind: str, qset: QuestionSet, sources: Any, revision: Any,
                 answer: Mapping[str, Any], outcome: str, model: str = MODEL) -> dict[str, Any]:
@@ -403,10 +350,17 @@ class JevSeam:
         return self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, outcome, model)
 
 
+# Shaped sections whose clauses are for you by structure, never asked (spec #reading-structural).
+AUDIENCE_STRUCTURAL_SECTIONS = frozenset({"user-stories", "modular-boundaries"})
+CONTAINER_TAGS = frozenset({"article", "div", "figure", "footer", "header", "main", "nav", "ol", "section", "table", "tbody", "thead", "tfoot", "ul"})
+
+
 class _AnchorParser(HTMLParser):
+    """Collect each anchor's text, tag, tree links, and flags in one pass."""
+
     def __init__(self):
         super().__init__(convert_charrefs=True)
-        self.stack: list[tuple[str, str | None]] = []
+        self.stack: list[tuple[str, str | None, bool]] = []
         self.values: dict[str, dict[str, Any]] = {}
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]):
@@ -415,24 +369,27 @@ class _AnchorParser(HTMLParser):
         if tag in BLOCK_TEXT_SEPARATORS and self.stack:
             self.handle_data(" ")
         attrs = dict(attrs)
+        structural = (bool(self.stack) and self.stack[-1][2]) or attrs.get("data-spec-section") in AUDIENCE_STRUCTURAL_SECTIONS
         anchor = attrs.get("data-anchor")
         if anchor:
             parent = next((item[1] for item in reversed(self.stack) if item[1]), None)
             value = self.values.setdefault(anchor, {
                 "text": [],
+                "tag": tag,
                 "section": tag == "section" or attrs.get("data-spec-section") is not None,
                 "story": "data-user-story" in attrs,
                 "criterion": "data-acceptance-criterion" in attrs,
                 "parent": parent,
                 "children": [],
-                "boundary": "data-modular-boundary" in attrs,
+                "structural": False,
             })
-            if parent and anchor not in self.values[parent].setdefault("children", []):
+            value["structural"] = value["structural"] or structural
+            if parent and anchor not in self.values[parent]["children"]:
                 self.values[parent]["children"].append(anchor)
-            self.stack.append((tag, anchor))
-        elif tag not in VOID_ELEMENTS and self.stack:
-            self.stack.append((tag, self.stack[-1][1]))
-        elif tag == "br":
+            self.stack.append((tag, anchor, structural))
+        elif tag not in VOID_ELEMENTS:
+            self.stack.append((tag, self.stack[-1][1] if self.stack else None, structural))
+        elif tag == "br" and self.stack:
             self.handle_data(" ")
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]):
@@ -443,10 +400,11 @@ class _AnchorParser(HTMLParser):
         _close_explicit(self.stack, tag)
 
     def handle_data(self, data: str):
-        if any(tag in {"script", "style"} for tag, _ in self.stack):
+        if any(item[0] in {"script", "style"} for item in self.stack):
             return
         seen = set()
-        for _, anchor in self.stack:
+        for item in self.stack:
+            anchor = item[1]
             if anchor and anchor not in seen:
                 self.values[anchor]["text"].append(data)
                 seen.add(anchor)
@@ -573,36 +531,19 @@ def build_corpus_questions(current: str | bytes, baseline: str | bytes | None, p
         for key in non_goals:
             if key not in own_keys:
                 own_keys.append(key)
-        for key in own_ranked:
-            if now[key].get("boundary") and key not in own_keys:
-                own_keys.append(key)
-        candidates: list[tuple[str, str, str, bool]] = [
-            (key, key, str(now[key].get("text", "")), bool(now[key].get("boundary")))
-            for key in own_keys
-        ]
+        candidates = [(key, str(now[key].get("text", ""))) for key in own_keys]
 
-        cross: list[tuple[int, int, str, str, str, bool]] = []
+        cross: list[tuple[int, int, str, str, str]] = []
         for other_path, anchors in other_specs:
             for key in _corpus_leaf_anchors(anchors):
                 text = str(anchors[key].get("text", ""))
                 overlap, ratio = _match_score(after, text)
-                cross.append((-overlap, -ratio, other_path, key, text, bool(anchors[key].get("boundary"))))
+                cross.append((-overlap, -ratio, other_path, key, text))
         cross.sort()
-        selected = cross[:8]
-        # Same-surface modular boundaries remain candidates even when lexical
-        # ranking would otherwise put them just outside the cross-spec limit.
-        selected_keys = {(item[2], item[3]) for item in selected}
-        for item in cross:
-            if item[5] and (item[2], item[3]) not in selected_keys:
-                selected.append(item)
-                selected_keys.add((item[2], item[3]))
-        candidates.extend((key, other_path + "#" + key, text, boundary)
-                          for _, _, other_path, key, text, boundary in selected)
+        candidates.extend((other_path + "#" + key, text) for _, _, other_path, key, text in cross[:8])
 
-        for candidate, target, target_text, boundary in candidates:
-            question = _question("corpus", anchor,
-                                 {"before": before, "after": after, "target": target_text,
-                                  "target_boundary": boundary},
+        for target, target_text in candidates:
+            question = _question("corpus", anchor, {"before": before, "after": after, "target": target_text},
                                  path, base, revision, target)
             question["sources"] = [path + "#" + anchor, target]
             question["display_labels"] = ["contradicts", "overlaps", "oversteps"]
@@ -790,93 +731,13 @@ def build_coverage_questions(current: str | bytes, path: str = "spec", base: str
     return result
 
 
-class _LeafAnchorParser(HTMLParser):
-    """Collect text for anchored elements without anchored descendants."""
-
-    _containers = {"article", "div", "figure", "footer", "header", "main", "nav", "ol", "section", "table", "tbody", "thead", "tfoot", "ul"}
-
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.stack: list[tuple[str, str | None]] = []
-        self.values: dict[str, dict[str, Any]] = {}
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]):
-        tag = tag.lower()
-        _close_implied(self.stack, tag)
-        if tag in BLOCK_TEXT_SEPARATORS and self.stack:
-            self.handle_data(" ")
-        anchor = dict(attrs).get("data-anchor")
-        parent = next((item[1] for item in reversed(self.stack) if item[1] is not None), None)
-        if anchor:
-            anchor = str(anchor)
-            if parent and parent in self.values:
-                self.values[parent]["has_child"] = True
-            self.values.setdefault(anchor, {"text": [], "tag": tag, "has_child": False})
-            self.stack.append((tag, anchor))
-            return
-        if tag not in VOID_ELEMENTS and self.stack:
-            self.stack.append((tag, self.stack[-1][1]))
-        elif tag == "br":
-            self.handle_data(" ")
-
-    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]):
-        self.handle_starttag(tag, attrs)
-        self.handle_endtag(tag)
-
-    def handle_endtag(self, tag: str):
-        _close_explicit(self.stack, tag)
-
-    def handle_data(self, data: str):
-        if any(tag in {"script", "style"} for tag, _ in self.stack):
-            return
-        anchor = self.stack[-1][1] if self.stack else None
-        if anchor and anchor in self.values:
-            self.values[anchor]["text"].append(data)
-
-
-# Shaped sections whose clauses are for you by structure, never asked (spec #reading-structural).
-AUDIENCE_STRUCTURAL_SECTIONS = frozenset({"user-stories", "modular-boundaries"})
-
-
-class _StructuralSectionParser(HTMLParser):
-    """Collect anchors inside shaped sections that are for you by structure."""
-
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.stack: list[tuple[str, bool]] = []
-        self.anchors: set[str] = set()
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]):
-        tag = tag.lower()
-        _close_implied(self.stack, tag)
-        values = dict(attrs)
-        inside = (bool(self.stack) and self.stack[-1][1]) or values.get("data-spec-section") in AUDIENCE_STRUCTURAL_SECTIONS
-        if inside and values.get("data-anchor"):
-            self.anchors.add(str(values["data-anchor"]))
-        if tag not in VOID_ELEMENTS:
-            self.stack.append((tag, inside))
-
-    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]):
-        self.handle_starttag(tag, attrs)
-        self.handle_endtag(tag)
-
-    def handle_endtag(self, tag: str):
-        _close_explicit(self.stack, tag)
-
-
 def _audience_leaf_anchors(source: str | bytes | None) -> dict[str, dict[str, Any]]:
-    text = (source or b"").decode("utf-8", "replace") if isinstance(source, bytes) else (source or "")
-    parser = _LeafAnchorParser()
-    parser.feed(text)
-    structural = _StructuralSectionParser()
-    structural.feed(text)
     result = {}
-    for anchor, value in parser.values.items():
-        if value["has_child"] or value["tag"] in _LeafAnchorParser._containers or anchor in structural.anchors:
+    for anchor, value in extract_anchors(source).items():
+        if value["children"] or value["tag"] in CONTAINER_TAGS or value["structural"]:
             continue
-        text = " ".join("".join(value["text"]).split())
-        if text:
-            result[anchor] = {"text": text, "tag": value["tag"]}
+        if value["text"]:
+            result[anchor] = {"text": value["text"], "tag": value["tag"]}
     return result
 
 
@@ -912,7 +773,7 @@ class JevService:
 
     @property
     def enabled(self) -> bool:
-        return bool(self.api_key) or self.provider is not None
+        return bool(self.question_sets) and (bool(self.api_key) or self.provider is not None)
 
     def _served_specs(self, mounts: Any, current: str) -> list[dict[str, str]]:
         result = []
@@ -972,8 +833,6 @@ class JevService:
 
     def questions(self, mount: Mapping[str, Any], target: str, relative: str, base: str,
                   events: list[Mapping[str, Any]], view: str = "", served_mounts: Any = None) -> list[dict[str, Any]]:
-        if served_mounts is None and not isinstance(view, str):
-            served_mounts, view = view, ""
         current = Path(target).read_bytes()
         root = mount["root"]
         rel = os.path.relpath(target, root).replace(os.sep, "/")
@@ -1005,11 +864,10 @@ class JevService:
 
     def response(self, mount: Mapping[str, Any], target: str, relative: str, base: str,
                  events: list[Mapping[str, Any]], view: str = "", served_mounts: Any = None) -> dict[str, Any]:
-        if served_mounts is None and not isinstance(view, str):
-            served_mounts, view = view, ""
         if not self.enabled:
             return {"jev": "off", "items": []}
-        questions = self.questions(mount, target, relative, base, events, view, served_mounts)
+        questions = [question for question in self.questions(mount, target, relative, base, events, view, served_mounts)
+                     if question["kind"] in self.seam.question_sets]
 
         def answer(question):
             if question["kind"] == "coverage" and (question.get("story") is None or question.get("criterion") is None):
@@ -1048,6 +906,6 @@ class JevService:
 
 
 __all__ = ["BUILDERS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MODEL",
-           "MINIMAL_QUESTION_SETS", "OPENROUTER_DECISIONS_URL", "OpenRouterProvider", "QuestionSet",
+           "OPENROUTER_DECISIONS_URL", "OpenRouterProvider", "QuestionSet",
            "build_audience_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_type_questions", "extract_anchors",
            "load_question_sets"]

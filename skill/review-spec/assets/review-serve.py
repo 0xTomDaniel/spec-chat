@@ -814,11 +814,8 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
         events = _read_spool_events(review, mount["narrow_root"])
         if events is None:
             return self._json({"error": "unsafe spool path"}, 400)
-        service = getattr(self.server, "jev", None)
-        if service is None:
-            service = self.server.jev = JevService()
         try:
-            return self._json(service.response(mount, target, relative, base, events, view, self.mounts))
+            return self._json(self.server.jev.response(mount, target, relative, base, events, view, self.mounts))
         except (OSError, RuntimeError, ValueError):
             return self._json({"error": "jev unavailable"}, 503)
 

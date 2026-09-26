@@ -11,7 +11,7 @@ STATE_KEYS = {
     "type": {"before", "after"},
     "orphan": {"quote", "candidates"},
     "resolved": {"comment", "before", "after"},
-    "corpus": {"before", "after", "target", "target_boundary"},
+    "corpus": {"before", "after", "target"},
     "coverage": {"story", "criterion"},
     "audience": {"clause"},
 }
