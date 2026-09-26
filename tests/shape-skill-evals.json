@@ -8,7 +8,7 @@
       "prompt": "Start shaping this brand-new feature in Spec Chat: let reviewers compare alternative checkout retry policies.",
       "expectations": [
         "Creates the work branch and links only the issue the caller names, creating none",
-        "Runs a short docs-only pass before code or test inspection",
+        "Runs a short docs-only pass, then commits, validates, hosts, and sends the review link before code or test inspection",
         "Writes one concise current spec seed",
         "Uses an existing governing spec or creates a minimal capability spec",
         "Adds the source issue link to every materially changed spec"
@@ -53,7 +53,7 @@
     {
       "id": 5,
       "eval_name": "targeted-post-seed-deepening",
-      "prompt": "The first docs-only seed is durable. Continue shaping before asking the operator questions.",
+      "prompt": "The first docs-only seed is linked for review. Continue shaping before asking the operator questions.",
       "expectations": [
         "Inspects only relevant code, tests, configuration, and current change-request state",
         "Answers discoverable questions from durable sources before asking the human",
@@ -102,8 +102,8 @@
         "Checks every relationship-bearing behavior cluster for its least-lossy artifact instead of using one token chart",
         "Copies the bundled high-contrast editorial stylesheet because the target has no proven spec style",
         "Uses system and state diagrams for topology and lifecycle while reserving ECharts for quantitative relationships",
-        "Runs rendered full-page and per-artifact browser inspection at desktop and mobile widths",
-        "Checks normal and Git-focus views for contrast, hierarchy, collisions, clipping, and review-control obstruction"
+        "Passes the structural validator and runs no agent browser screenshot pass before handoff",
+        "Leaves visual judgment of the rendered page to the human reviewer"
       ]
     },
     {
@@ -118,21 +118,17 @@
         "Uses complementary views only for distinct material dimensions and separates unrelated relationships",
         "Preserves the coherent target visual language because it satisfies invariant quality roles",
         "Treats the bundled editorial stylesheet as a fallback implementation rather than a universal aesthetic",
-        "Applies identical desktop, mobile, normal, and Git-focus browser gates to both visual systems"
+        "Applies the same structural validator to both visual systems and leaves visual judgment to the human reviewer"
       ]
     },
     {
       "id": 11,
-      "eval_name": "implementation-ticket-frontier",
+      "eval_name": "no-tickets-during-shaping",
       "prompt": "Finish shaping a reviewed multi-module behavior spec that can be delivered through several partially parallel code outcomes.",
       "expectations": [
-        "Hands the implementation graph to the caller and files no tickets",
-        "Gives each entry one independently assignable outcome, exact governing spec anchors, and observable evidence",
-        "Records blockers only for real dependencies and no numbered delivery sequence",
-        "Leaves every unblocked incomplete entry on the ready frontier",
-        "Does not invent dependencies to serialize work",
-        "Reconciles or drops entries after material spec edits",
-        "Refuses spec acceptance until the implementation graph matches current spec truth"
+        "Creates, hands off, and reconciles no implementation tickets or ticket graph",
+        "Leaves ticket creation to the delivery owner after spec acceptance",
+        "Does not gate spec acceptance on ticket scope"
       ]
     },
     {
