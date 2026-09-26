@@ -24,10 +24,12 @@ import tomllib
 from html.parser import HTMLParser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, quote, unquote, urlparse
+from urllib.error import URLError
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
+from urllib.request import urlopen
 
 try:
-    from jev import JevService, enumerate_served_specs
+    from jev import JevService, enumerate_served_specs, extract_anchors
 except ModuleNotFoundError:
     import importlib.util
     _jev_spec = importlib.util.spec_from_file_location("review_serve_jev", os.path.join(os.path.dirname(__file__), "jev.py"))
@@ -35,6 +37,7 @@ except ModuleNotFoundError:
     _jev_spec.loader.exec_module(_jev_module)
     JevService = _jev_module.JevService
     enumerate_served_specs = _jev_module.enumerate_served_specs
+    extract_anchors = _jev_module.extract_anchors
 
 
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
@@ -44,6 +47,8 @@ WAKE_POLL_SECONDS = 3
 WAKE_SAY_TIMEOUT_SECONDS = 10
 # Herdr typed the prompt but did not observe the pane react; retyping would duplicate it.
 TYPED_UNCONFIRMED_CODES = frozenset({"agent_prompt_stalled"})
+EVIDENCE_TIMEOUT_SECONDS = 30
+EVIDENCE_FIELDS = ("match", "verdict", "judgment", "pr", "capturedAt", "onMain", "artifact", "bundle")
 
 
 def parse_args(argv=None):
@@ -303,6 +308,49 @@ def _review_status(mount):
     if code is None:
         return None
     return code != 0 or prior != current
+
+
+def _project_id(root):
+    """Last path part of the root's origin URL without .git (criterion-evidence spec)."""
+    url = _git(root, "remote", "get-url", "origin", optional=True)
+    name = re.split(r"[/:]", (url or b"").decode("utf-8", "replace").strip().rstrip("/"))[-1]
+    return name[:-4] if name.endswith(".git") else name
+
+
+def _criterion_texts(source):
+    return {anchor: value["text"] for anchor, value in extract_anchors(source).items() if value["criterion"]}
+
+
+def _evidence_link(base, path):
+    """Join a service-relative path to the evidence base; anything else is no link."""
+    if not isinstance(path, str) or not path.startswith("/") or path.startswith("//"):
+        return None
+    return base.rstrip("/") + path
+
+
+def read_evidence(base, project, spec, commit, served, committed):
+    """One evidence read for one spec at one commit; None when unavailable."""
+    query = urlencode({"spec": "project/%s::%s" % (project, spec), "commit": commit})
+    try:
+        with urlopen(base.rstrip("/") + "/criteria?" + query, timeout=EVIDENCE_TIMEOUT_SECONDS) as response:
+            body = json.loads(response.read())
+    except (OSError, URLError, ValueError):
+        return None
+    criteria = body.get("criteria") if isinstance(body, dict) else None
+    if not isinstance(criteria, dict):
+        return None
+    current = _criterion_texts(served)
+    at_head = _criterion_texts(committed)
+    result = {}
+    for anchor, raw in criteria.items():
+        if anchor not in current or not isinstance(raw, dict):
+            continue
+        value = {field: raw.get(field) for field in EVIDENCE_FIELDS}
+        value["artifact"] = _evidence_link(base, value["artifact"])
+        value["bundle"] = _evidence_link(base, value["bundle"])
+        value["uncommitted"] = at_head.get(anchor) != current[anchor]
+        result[anchor] = value
+    return result
 
 
 _ROW_CACHE = {}
@@ -861,6 +909,25 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
         except (OSError, RuntimeError, ValueError):
             return self._json({"error": "jev unavailable"}, 503)
 
+    def _evidence(self, query):
+        """Criterion evidence for the viewed tree; reads only `path` (criterion-evidence spec)."""
+        mount, target, _ = self._resolve_path(query.get("path", [""])[0], spec_only=True)
+        if not mount:
+            return self._json({"error": "bad path"}, 400)
+        base = os.environ.get("SPEC_CHAT_EVIDENCE_URL", "").strip()
+        if not base:
+            return self._json({"criteria": None})
+        try:
+            spec = os.path.relpath(target, mount["root"]).replace(os.sep, "/")
+            head = _git(mount["root"], "rev-parse", "--verify", "HEAD^{commit}").decode().strip()
+            committed = _git(mount["root"], "show", head + ":" + spec, optional=True)
+            served = Path(target).read_bytes()
+        except (OSError, RuntimeError):
+            return self._json({"criteria": None})
+        project = _project_id(mount["root"])
+        criteria = read_evidence(base, project, spec, head, served, committed) if project else None
+        return self._json({"criteria": criteria})
+
     def _jev_board(self):
         """Worklane board facts from this host's own registry rows; takes no parameter."""
         try:
@@ -935,6 +1002,8 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
             return self._baseline(query)
         if parsed.path == "/api/jev":
             return self._jev(query)
+        if parsed.path == "/api/evidence":
+            return self._evidence(query)
         if parsed.path == "/api/jev/board":
             return self._jev_board()
         return self._send_file(parsed.path)

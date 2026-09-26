@@ -477,6 +477,9 @@ class JevSeamTest(unittest.TestCase):
         targets = {question["target"] for question in questions}
         self.assertIn("non-goal-text", targets)
         self.assertIn("docs/other.spec.html#same-surface", targets)
+        non_goal = {question["target"]: question["state"]["target_non_goal"] for question in questions}
+        self.assertTrue(non_goal["non-goal-text"])
+        self.assertFalse(non_goal["docs/other.spec.html#same-surface"])
         changed = [question for question in questions if question["id"] == "changed"]
         self.assertTrue(changed)
         self.assertTrue(all(question["sources"][0].endswith("#changed") for question in changed))
@@ -502,7 +505,8 @@ class JevSeamTest(unittest.TestCase):
         self.assertIn("non-goal-b", own_targets)
         self.assertLessEqual(len(cross_targets), 8)
         for question in questions:
-            self.assertEqual(set(question["state"]), {"before", "after", "target"})
+            self.assertEqual(set(question["state"]), {"before", "after", "target", "target_non_goal"})
+            self.assertEqual(question["state"]["target_non_goal"], question["target"].startswith("non-goal-"))
 
         fresh = jev.build_corpus_questions(current, None, "docs/current.spec.html", "base", "head", others)
         per_leaf = {}

@@ -79,11 +79,17 @@ const colorOf = (page, sels, prop) => {
   return value;
 };
 
+// Jev text never sits in the spec flow: it lives in the popover, the page note, or the marker glyph,
+// each on its own background. [foreground selectors, background selectors].
 const markers = [
-  ['.hx-jev-badge[data-state=label]'], ['.hx-jev-badge[data-state=unsure]'], ['.hx-jev-badge[data-state=unavailable]'],
-  ['.hx-jev-corpus'], ['.hx-jev-corpus', '.hx-jev-corpus[data-state=unsure]'],
-  ['.hx-jev-coverage'], ['.hx-jev-coverage', '.hx-jev-coverage[data-state=unsure]'], ['.hx-jev-coverage', '.hx-jev-coverage[data-state=unavailable]'],
-  ['.hx-jev-note'],
+  [['.hx-jev-pop', '.hx-jev-pop-text'], ['.hx-jev-pop']],
+  [['.hx-jev-pop', '.hx-jev-pop-text', '.hx-jev-pop-note[data-attention=true] .hx-jev-pop-text'], ['.hx-jev-pop']],
+  [['.hx-jev-pop', '.hx-jev-pop-text', '.hx-jev-pop-note[data-group=neutral] .hx-jev-pop-text'], ['.hx-jev-pop']],
+  [['.hx-jev-pop-actions .hx-btn'], ['.hx-jev-pop', '.hx-jev-pop-actions .hx-btn']],
+  [['.hx-jev-pop', '.hx-jev-pop-meta'], ['.hx-jev-pop']],
+  [['.hx-jev-pop', '.hx-jev-pop-meta', '.hx-jev-pop-link'], ['.hx-jev-pop']],
+  [['.hx-jev-note'], ['.hx-jev-note']],
+  [['.hx-jev-marker'], ['.hx-jev-marker', '.hx-jev-marker[data-attention=true]']],
 ];
 const panelLabels = [
   ['.hx-jev-thread-label'], ['.hx-jev-thread-label', '.hx-jev-thread-label[data-state=unsure]'],
@@ -99,13 +105,11 @@ for (const page of pages) {
   const cosmetic = hex(colorOf(page, ['body ' + COSMETIC, COSMETIC].reverse(), 'color')) || page.text;
   // Dimmed cosmetic clause text, composited through any opacity on the clause.
   check(page.name + ': cosmetic text', mix(cosmetic, page.bg, a), page.bg);
-  // Markers render in the page flow, including inside a dimmed cosmetic clause.
-  for (const sels of markers) {
-    const fg = hex(colorOf(page, sels, 'color'));
-    const bg = hex(colorOf(page, sels, 'background')) || page.bg;
-    assert.ok(fg, 'color for ' + sels.at(-1));
-    check(page.name + ': ' + sels.at(-1), fg, bg);
-    check(page.name + ': ' + sels.at(-1) + ' in cosmetic clause', mix(fg, page.bg, a), mix(bg, page.bg, a));
+  for (const [fgSels, bgSels] of markers) {
+    const fg = hex(colorOf(page, fgSels, 'color'));
+    const bg = hex(colorOf(page, bgSels, 'background'));
+    assert.ok(fg && bg, 'Jev text ' + fgSels.at(-1) + ' owns its colors');
+    check(page.name + ': ' + fgSels.at(-1), fg, bg);
   }
   for (const sels of panelLabels) {
     const fg = hex(colorOf(page, sels, 'color'));
@@ -117,30 +121,14 @@ for (const page of pages) {
   const reading = '.hx-reading-active [data-hx-audience="internals"]';
   const internals = hex(decl(page.rules, reading, 'color', page.dark));
   check(page.name + ': reading internals', internals, page.bg);
-  // Chips inside a dimmed internals clause keep their own color unless the inherit rule reaches them.
-  const inherit = page.rules.filter(r => r.sel.startsWith(reading + ' :is(') && r.decls.color === 'inherit');
-  assert.ok(inherit.length, 'reading view defines the internals inherit rule');
-  for (const sels of markers.filter(s => s[0] !== '.hx-jev-note')) {
-    const cls = sels[0].match(/^\.[\w-]+/)[0];
-    const reached = inherit.some(r => !new RegExp(':not\\([^)]*\\' + cls + '\\b').test(r.sel));
-    const fg = reached ? internals : hex(colorOf(page, sels, 'color'));
-    const bg = hex(colorOf(page, sels, 'background')) || page.bg;
-    check(page.name + ': ' + sels.at(-1) + ' in reading internals', fg, bg);
-  }
   // Git focus veil over unchanged blocks; chips must be lifted above it like .hx-pin and .hx-badge.
   const veilSel = 'body.hx-focus-active [data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])):not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *):not(tr):not(td):not(th):not(script):not(style)::after';
   const veil = Number(String(decl(page.rules, veilSel, 'background', page.dark)).match(/calc\(([\d.]+)\*/)[1]);
   assert.ok(veil > 0, 'focus veil alpha');
-  for (const sels of markers.filter(s => s[0] !== '.hx-jev-note')) {
-    const cls = sels[0].match(/^\.[\w-]+/)[0];
-    const lift = 'body.hx-focus-active [data-hx-focus=unchanged] ' + cls;
-    const lifted = decl(page.rules, lift, 'z-index', page.dark) === '700' && decl(page.rules, lift, 'position', page.dark) === 'relative' &&
-      decl(page.rules, lift, 'opacity', page.dark) === '1' && decl(page.rules, lift, 'filter', page.dark) === 'none';
-    const a = lifted ? 0 : veil;
-    const fg = hex(colorOf(page, sels, 'color'));
-    const bg = hex(colorOf(page, sels, 'background')) || page.bg;
-    check(page.name + ': ' + sels.at(-1) + ' under focus veil', mix([0, 0, 0], fg, a), mix([0, 0, 0], bg, a));
-  }
+  // The marker glyph is lifted above the veil like .hx-pin and .hx-badge.
+  const lift = 'body.hx-focus-active [data-hx-focus=unchanged] .hx-jev-marker';
+  assert.ok(decl(page.rules, lift, 'z-index', page.dark) === '700' && decl(page.rules, lift, 'opacity', page.dark) === '1' &&
+    decl(page.rules, lift, 'filter', page.dark) === 'none', 'Jev markers sit above the focus veil');
 }
 assert.deepEqual(failures, [], 'Jev text below 4.5:1');
 assert.doesNotMatch(runtime, /\[data-hx-jev-type=cosmetic\]\{[^}]*opacity/, 'cosmetic dimming never fades markers');

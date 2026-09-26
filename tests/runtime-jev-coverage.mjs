@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime.js'), 'utf8');
 const start = runtime.indexOf('function coveragePair(');
-const end = runtime.indexOf('\n\nfunction clearJevCoverage(', start);
+const end = runtime.indexOf('\n\n// Name the folder', start);
 assert.ok(start >= 0 && end > start, 'runtime exposes pure coverage aggregation');
 const { coverageGapFlags, coverageFlags } = Function(
   runtime.slice(start, end) + '; return { coverageGapFlags, coverageFlags };',

@@ -1,17 +1,18 @@
 {
   "id": "corpus",
-  "version": 4,
-  "instructions": "Compare the changed clause with the linked clause. Choose contradicts when the changed behavior conflicts with the target clause or its non-goal. Choose overlaps when both clauses describe the same behavior or surface. Choose oversteps when the changed clause adds a behavior beyond the target clause's stated boundary. Choose unrelated when the clauses share no behavior or boundary that needs a review flag. Do not flag a merely related clause.",
+  "version": 5,
+  "instructions": "Compare the changed clause with the linked clause. When target_non_goal is true, the target lists items its spec excludes: choose contradicts only when you can name the listed item the changed clause adds or requires, even when the wording matches; that is a conflict, not an overlap. If you cannot name one, choose unrelated. Otherwise choose contradicts when the changed behavior conflicts with the target clause. Choose overlaps when both clauses describe the same behavior or surface and the target is not a non-goal. Choose oversteps when the changed clause adds a behavior beyond the target clause's stated boundary. Choose unrelated when the clauses share no behavior or boundary that needs a review flag. Do not flag a merely related clause.",
   "labels": [
     {
       "name": "contradicts",
-      "description": "The changed clause conflicts with the target clause or with a non-goal in the same spec.",
+      "description": "The changed clause conflicts with the target clause, or adds or requires something a non-goal target excludes.",
       "examples": [
         {
           "input": {
             "before": "The base end is the commit whose spec bytes are compared, which is the selected base or, for a spec absent there, its first committed seed.",
             "after": "The base end is the selected base commit; a spec absent there is entirely new, as focus defines.",
-            "target": "The baseline response retains the selected commit in base and identifies the actual HTML snapshot in htmlBase; a file absent from the selected base uses its stable first committed seed, or null when still uncommitted."
+            "target": "The baseline response retains the selected commit in base and identifies the actual HTML snapshot in htmlBase; a file absent from the selected base uses its stable first committed seed, or null when still uncommitted.",
+            "target_non_goal": false
           },
           "label": "contradicts"
         },
@@ -19,7 +20,17 @@
           "input": {
             "before": "Only human clicks write spool events.",
             "after": "The agent automatically writes a move event.",
-            "target": "Only a human click on Move comment here writes, using existing events."
+            "target": "Only a human click on Move comment here writes, using existing events.",
+            "target_non_goal": false
+          },
+          "label": "contradicts"
+        },
+        {
+          "input": {
+            "before": "",
+            "after": "The report page exports every report as a CSV file on a nightly schedule.",
+            "target": "Bulk export, scheduled reports, or email digests.",
+            "target_non_goal": true
           },
           "label": "contradicts"
         }
@@ -27,13 +38,14 @@
     },
     {
       "name": "overlaps",
-      "description": "The changed clause and target clause describe the same behavior, surface, or responsibility.",
+      "description": "The changed clause and target clause describe the same behavior, surface, or responsibility, and the target is not a non-goal.",
       "examples": [
         {
           "input": {
             "before": "The server stores one judgment record for each question.",
             "after": "The records are the cache.",
-            "target": "The records are the cache: each is keyed by a hash of its question inputs and set version."
+            "target": "The records are the cache: each is keyed by a hash of its question inputs and set version.",
+            "target_non_goal": false
           },
           "label": "overlaps"
         },
@@ -41,7 +53,8 @@
           "input": {
             "before": "A confident flag adds a label.",
             "after": "A confident flag adds a label on the changed clause.",
-            "target": "A confident flag adds a small label on the changed clause."
+            "target": "A confident flag adds a small label on the changed clause.",
+            "target_non_goal": false
           },
           "label": "overlaps"
         }
@@ -55,7 +68,8 @@
           "input": {
             "before": "Reading view dims internal clauses in the browser.",
             "after": "Reading view changes provider thresholds on the server.",
-            "target": "The browser runtime owns reading view and consumes the route."
+            "target": "The browser runtime owns reading view and consumes the route.",
+            "target_non_goal": false
           },
           "label": "oversteps"
         },
@@ -63,7 +77,8 @@
           "input": {
             "before": "The route returns suggestion items.",
             "after": "The route edits the spec when a label is confident.",
-            "target": "No suggestion edits a spec; only a human click writes."
+            "target": "No suggestion edits a spec; only a human click writes.",
+            "target_non_goal": false
           },
           "label": "oversteps"
         }
@@ -77,7 +92,8 @@
           "input": {
             "before": "The cache key includes the source revision.",
             "after": "The cache key includes the source revision and set version.",
-            "target": "Mobile markers stay visible at narrow widths."
+            "target": "Mobile markers stay visible at narrow widths.",
+            "target_non_goal": false
           },
           "label": "unrelated"
         },
@@ -85,7 +101,17 @@
           "input": {
             "before": "The page shows a comment label.",
             "after": "The page shows a comment label with text.",
-            "target": "The compared base determines the Git focus."
+            "target": "The compared base determines the Git focus.",
+            "target_non_goal": false
+          },
+          "label": "unrelated"
+        },
+        {
+          "input": {
+            "before": "",
+            "after": "The report header shows the report's owner and its creation date.",
+            "target": "Changing a report's owner, comparing two arbitrary reports, or browsing archived reports.",
+            "target_non_goal": true
           },
           "label": "unrelated"
         }
