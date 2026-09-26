@@ -161,7 +161,7 @@
 <h2>Markers</h2>
 <p data-anchor="markers-quiet">Jev adds no section tint, bar, inline badge, or inline note; the spec text keeps its layout. Git focus's own change highlight and the dims of cosmetic changes and reading view stay.</p>
 <p data-anchor="markers-one">Each section or clause with any note gets one small marker in the right margin beside its first line, one per location however many notes it has.</p>
-<p data-anchor="markers-color">A marker is a quiet neutral dot, colored with a <code>!</code> glyph only when its notes include <code>Contradicts</code>, <code>Oversteps</code>, or an evidence <code>Stale</code>.</p>
+<p data-anchor="markers-color">A marker is a colored <code>!</code> when its notes include <code>Contradicts</code>, <code>Oversteps</code>, or evidence <code>Stale</code> or <code>Failed</code>; else a small green check when its evidence <code>Passed</code>; else a quiet neutral dot. The first that applies wins, and hover opens the popover for every kind.</p>
 <p data-anchor="markers-open">Hover or keyboard focus opens its popover, a tap opens it on touch, and moving away, Escape, or a tap elsewhere closes it; the popover never covers review controls.</p>
 <p data-anchor="markers-content">A popover lists, in this order, evidence (<a href="./criterion-evidence.spec.html#chip">criterion evidence</a>), conflicts, coverage, change type, and <code>unsure</code> or <code>Jev unavailable</code>, each note with its <a href="#note-actions">note button</a>.</p>
 <figure data-anchor="markers-figure">
