@@ -755,7 +755,7 @@ class MountHandler(SimpleHTTPRequestHandler):
   --ui-pass: #005c32; --ui-pass-soft: #e6efea;
   --ui-fail: #a5000f; --ui-fail-soft: #f6e6e7;
   --ui-attention: #b0540e; --ui-attention-soft: #faf4ef;
-  --ui-muted-soft: #eeeeee; --ui-muted-stripe: #8a8a8a;
+  --ui-muted-soft: #eeeeee;
   --ui-space-1: 4px; --ui-space-2: 8px; --ui-space-3: 12px; --ui-space-4: 16px; --ui-space-5: 24px; --ui-space-6: 32px;
   --ui-radius: 8px; --ui-radius-sm: 6px; --ui-radius-pill: 999px;
 }
@@ -766,8 +766,7 @@ h1 { margin: 0 0 var(--ui-space-5); font-size: var(--ui-text-lg); font-weight: 6
 .label { margin: 0 0 var(--ui-space-2); color: var(--ui-muted); font-size: var(--ui-text-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; overflow-wrap: anywhere; }
 .lanes { display: grid; gap: var(--ui-space-2); grid-template-columns: repeat(auto-fill, minmax(min(100%%, calc(72rem / 4 - var(--ui-space-6))), 1fr)); align-items: start; margin: 0 0 var(--ui-space-5); }
 .lane, .card { box-sizing: border-box; min-width: 0; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); padding: var(--ui-space-3) var(--ui-space-4); }
-.lane { border-left: var(--ui-space-1) solid var(--ui-border); }
-.lane.changed { border-left-color: var(--ui-attention); }
+.lane.changed { border-left: var(--ui-space-1) solid var(--ui-attention); }
 .lane-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--ui-space-2); margin: 0; }
 .key { font-weight: 600; }
 .count { flex: none; color: var(--ui-muted); font-size: var(--ui-text-xs); }

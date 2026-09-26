@@ -499,7 +499,7 @@ class MultiReviewServeTest(unittest.TestCase):
         "--ui-pass": "#005c32", "--ui-pass-soft": "#e6efea",
         "--ui-fail": "#a5000f", "--ui-fail-soft": "#f6e6e7",
         "--ui-attention": "#b0540e", "--ui-attention-soft": "#faf4ef",
-        "--ui-muted-soft": "#eeeeee", "--ui-muted-stripe": "#8a8a8a",
+        "--ui-muted-soft": "#eeeeee",
         "--ui-space-1": "4px", "--ui-space-2": "8px", "--ui-space-3": "12px",
         "--ui-space-4": "16px", "--ui-space-5": "24px", "--ui-space-6": "32px",
         "--ui-radius": "8px", "--ui-radius-sm": "6px", "--ui-radius-pill": "999px",
@@ -547,6 +547,11 @@ class MultiReviewServeTest(unittest.TestCase):
                              ("--ui-link", "--ui-surface"), ("--ui-attention", "--ui-attention-soft")):
             self.assertGreaterEqual(contrast(text, ground), 4.5, (text, ground))
         self.assertGreaterEqual(contrast("--ui-attention", "--ui-surface"), 3)
+        # Stripes at 3:1: only a changed lane draws a stripe; others keep the hairline edge.
+        stripes = re.findall(r"([^{}]*)\{[^}]*border-left(?:-color)?\s*:[^;}]*var\((--[\w-]+)\)", rules)
+        self.assertEqual([(sel.strip(), token) for sel, token in stripes], [(".lane.changed", "--ui-attention")])
+        for _, token in stripes:
+            self.assertGreaterEqual(contrast(token, "--ui-surface"), 3, token)
 
     def test_index_settles_specs_served_without_a_row_in_a_closed_disclosure(self):
         """ANN-230 lane-hosting #acceptance-index-sections: row-less specs go in one closed Settled (n)."""
