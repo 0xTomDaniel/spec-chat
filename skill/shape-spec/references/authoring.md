@@ -145,15 +145,6 @@ In the bundled system, `.sec-num` occupies a narrow marker column; put the title
 
 Use `.table-scroll` around a wide table and `.rail-wrap` around a rail so local horizontal scrolling stays inside the page.
 
-## Browser gate
-
-After the review skill verifies served bytes and baseline, inspect the complete rendered page and every artifact at desktop and mobile widths in normal and Git-focus modes before the first review handoff or a material batch's replies.
-Reject it until hierarchy and contrast are clear, changed material leads, unchanged context remains usable, nothing collides or clips, diagrams need no prose reconstruction, review controls obscure nothing, and mobile has no horizontal page drift.
-DOM presence or successful library initialization is not visual proof.
-Complete the batch before this pass and group discovered corrections before rechecking.
-For a local correction after a complete pass, inspect the affected area and nearby layout at the relevant widths and modes; repeat the full pass when shared styles, runtime, page structure, or unresolved findings make that necessary.
-Keep enough readable evidence for the checks performed; do not regenerate every full page, tile, and contact sheet after each small edit.
-
 ## Runtime
 
 Canonical `*.spec.html` uses HTML and the committed offline Spec Chat runtime, not a React application.

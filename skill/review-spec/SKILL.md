@@ -31,7 +31,7 @@ Register a lane's review resources with --slug <lane key>, where the lane key is
 
 2. **Drain the reported batch.** Read each event file in the printed order. Rehydrate context from FILES — the current spec, the unresolved events, `<spec>.review/context.md` — not from what you remember of the chat. Chat history is never the review database; files are what survive compaction, session changes, CLI switches, and stopped turns. Fold each thread before acting: human `reply` events continue the existing conversation, and human `edit` events replace the message named by `supersedes`. Ignore superseded text. Each `handoff` event is a human spec review: for a hosted spec, run `scripts/review-host.py reviewed --id <resource id>` before editing; it commits the spec if dirty and sets the row `base` to that commit, else HEAD.
 
-3. **Classify before editing, then apply each comment** to the spec in place. Questions and atomic corrections that do not change behavior or information architecture remain review-only. A batch is material when it adds or changes a behavior cluster, user outcome, flow, state model, module boundary, acceptance family, spatial contract, or the page's information architecture. Before a material edit, load `spec-chat-shape` and apply its complete authoring and browser-quality contract to the affected spec. The existence or age of the spec never exempts it. If the current page cannot carry the new material with readable visual density, restructure it instead of appending prose, cards, or one catch-all diagram. An informational comment may use `change: "no spec change"`; answer through the channel without forcing an edit.
+3. **Classify before editing, then apply each comment** to the spec in place. Questions and atomic corrections that do not change behavior or information architecture remain review-only. A batch is material when it adds or changes a behavior cluster, user outcome, flow, state model, module boundary, acceptance family, spatial contract, or the page's information architecture. Before a material edit, load `spec-chat-shape` and apply its complete authoring contract to the affected spec. The existence or age of the spec never exempts it. If the current page cannot carry the new material with readable visual density, restructure it instead of appending prose, cards, or one catch-all diagram. An informational comment may use `change: "no spec change"`; answer through the channel without forcing an edit.
 
 4. **Commit accepted spec changes before reply.** Commit every accepted spec change locally before the browser receives its reply or refreshed Git focus. Never push, open a pull request, or create an issue; publishing is the caller's. `spec-chat-shape` owns the seed order.
 
@@ -76,7 +76,7 @@ Register a lane's review resources with --slug <lane key>, where the lane key is
 
 `spec-chat-review` owns the conversation and spool transaction, not material authoring quality.
 When a handed-off batch is material, `spec-chat-shape` becomes a required co-skill before the first file edit.
-Read its authoring reference, reassess the complete affected page, and run its browser gate before the material batch's review handoff or replies, using its proportional recheck rule for later local corrections.
+Read its authoring reference and reassess the complete affected page before the material batch's replies; the human reviewer is the visual gate.
 For each changed user-facing story, evaluate whether its guided-journey yes/no declaration is semantically correct; for yes, also evaluate the linked step, passive/required mode, and required-flow success milestone. Structural validation does not decide these meanings.
 For every new or materially revised governing HTML spec with `data-spec-contract="shaped-sections-v1"`, run the shaping validator before reply or handoff. It must find exactly one visible `User stories`, `Acceptance criteria`, and `Modular boundaries` section, in that order, with anchored observable acceptance and boundary fields. A validator failure blocks review.
 Do not grandfather a weak existing page, preserve a poor layout merely to minimize the diff, or call a material expansion review-only.
@@ -116,13 +116,13 @@ Prompt-first shaping opens the HTTP page with `focus=changes&base=<exact-local-r
 
 When the selected base does not contain a spec, the baseline response keeps the selected commit in `base` and returns null for both `htmlBase` and `html`; the complete current spec is new.
 
-Before collecting HTTP browser evidence or handing off the review, verify the served source and comparison:
+Before handing off the review, verify the served source and comparison:
 
 ```sh
 python3 scripts/verify-review.py <repository> <spec-html> '<review-url>' <exact-review-base>
 ```
 
-The read-only check compares page bytes and baseline HTML with local files and Git, and fails on a substituted baseline or wrong served page. It does not replace visual inspection or require both changed and unchanged blocks. Reuse a verified host while its collection and owner remain unchanged; rerun the byte check after source or baseline changes.
+The read-only check compares page bytes and baseline HTML with local files and Git, and fails on a substituted baseline or wrong served page. It does not require both changed and unchanged blocks. Reuse a verified host while its collection and owner remain unchanged; rerun the byte check after source or baseline changes.
 
 The review server reads only local Git. It never fetches, checks out, stages, commits, or writes repository state. If no baseline is available, the browser shows a visible warning and the complete current spec without stale focus.
 
