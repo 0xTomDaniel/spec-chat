@@ -10,7 +10,7 @@ import re
 import subprocess
 import threading
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
@@ -808,10 +808,10 @@ def changed_leaf_clauses(current: str | bytes, baseline: str | bytes | None) -> 
 
 
 def build_board_conflict_questions(clauses: Mapping[str, list[Mapping[str, Any]]]) -> list[dict[str, Any]]:
-    """One corpus question per unordered pair of changed leaf clauses of two slugs (#jev-conflicts).
+    """One lane question per unordered pair of changed leaf clauses of two slugs (#cross-lane-pairs).
 
     clauses maps slug to its changed clauses: {path, anchor, before, after, base}. The lower slug's
-    clause is asked about, the other's is the target; each pair is asked once, never within a slug."""
+    clause is first (#cross-lane-question); each pair is asked once, never within a slug."""
     slugs = sorted(clauses)
     result = []
     for index, left in enumerate(slugs):
@@ -819,13 +819,19 @@ def build_board_conflict_questions(clauses: Mapping[str, list[Mapping[str, Any]]
             for a in clauses[left]:
                 for b in clauses[right]:
                     target = b["path"] + "#" + b["anchor"]
-                    question = _question("corpus", a["anchor"],
-                                         {"before": a["before"], "after": a["after"], "target": b["after"]},
+                    question = _question("lane", a["anchor"], {"first": a["after"], "second": b["after"]},
                                          a["path"], a["base"], "working-tree", target)
                     question["sources"] = [a["path"] + "#" + a["anchor"], target]
                     question["pair"] = (a["path"], b["path"])
+                    question["sides"] = ((left, a["path"], a["anchor"]), (right, b["path"], b["anchor"]))
                     result.append(question)
     return result
+
+
+# Cross-lane findings (#cross-lane-finding): answer to the mark on the first and on the second clause.
+LANE_FINDINGS = {"contradicts": ("contradicts", "contradicts"),
+                 "first oversteps second": ("oversteps", "overstepped by"),
+                 "second oversteps first": ("overstepped by", "oversteps")}
 
 
 def _confident_label(record: Mapping[str, Any] | None) -> str | None:
@@ -885,6 +891,10 @@ class JevService:
         self._board_idle = threading.Event()
         self._board_idle.set()
         self._board_thread: threading.Thread | None = None
+        # Misses asked after answering (#cross-lane-async), each in flight once across both routes.
+        self._asking_lock = threading.RLock()
+        self._asking: dict[str, Future] = {}
+        self._asker: ThreadPoolExecutor | None = None
 
     @property
     def enabled(self) -> bool:
@@ -1061,14 +1071,83 @@ class JevService:
                 answer, misses = self._board_from_records(rows)
                 self._board_answer = answer
                 if misses:
-                    with ThreadPoolExecutor(max_workers=BOARD_ASK_WORKERS) as pool:
-                        list(pool.map(self._ask_quietly, misses))
+                    wait(self._ask_later(misses))
                     self._board_answer, _ = self._board_from_records(rows)
             except Exception:
                 pass
             with self._board_lock:
                 if not self._board_wake.is_set():
                     self._board_idle.set()
+
+    def _ask_later(self, questions: list[dict[str, Any]]) -> list[Future]:
+        """Ask each question in the background, joining one already in flight."""
+        with self._asking_lock:
+            if self._asker is None:
+                self._asker = ThreadPoolExecutor(max_workers=BOARD_ASK_WORKERS, thread_name_prefix="spec-chat-jev-ask")
+            futures = []
+            for question in questions:
+                key = self.seam.key(question)
+                future = self._asking.get(key)
+                if future is None:
+                    future = self._asking[key] = self._asker.submit(self._ask_quietly, question)
+                    future.add_done_callback(lambda _, key=key: self._forget(key))
+                futures.append(future)
+            return futures
+
+    def _forget(self, key: str) -> None:
+        with self._asking_lock:
+            self._asking.pop(key, None)
+
+    def _held(self, question: Mapping[str, Any], misses: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+        # Any held record answers, unavailable included: reads never re-ask unchanged inputs.
+        key = self.seam.key(question)
+        record = self.seam.store.get(key)
+        if record is None:
+            misses.setdefault(key, dict(question))
+        return record
+
+    def _lane_questions(self, rows: Any) -> list[dict[str, Any]]:
+        """Cross-lane questions over every registry row's changed clauses (#cross-lane-clauses)."""
+        clauses: dict[str, list[dict[str, str]]] = {}
+        for row in rows or ():
+            if not isinstance(row, Mapping) or not row.get("slug") or not row.get("spec"):
+                continue
+            try:
+                clauses.setdefault(str(row["slug"]), []).extend(self._changed_clauses(row))
+            except Exception:
+                continue
+        return build_board_conflict_questions(clauses) if "lane" in self.seam.question_sets else []
+
+    def _lane_items(self, mount: Mapping[str, Any], rows: Any) -> list[dict[str, Any]]:
+        """`lane` items on this page's own clauses from held records; misses are asked after answering."""
+        if not mount.get("slug") or not mount.get("spec"):
+            return []
+        own = self._row_parts(mount)[2]
+        misses: dict[str, dict[str, Any]] = {}
+        items = []
+        for question in self._lane_questions(rows):
+            if own not in question["pair"]:
+                continue
+            record = self._held(question, misses)
+            label = _confident_label(record)
+            marks = LANE_FINDINGS.get(label) if label else None
+            if record is not None and marks is None:
+                continue
+            for index, (_, path, anchor) in enumerate(question["sides"]):
+                if path != own:
+                    continue
+                other = question["sides"][1 - index]
+                item = {"kind": "lane", "id": anchor, "state": "pending" if record is None else "label",
+                        "label": None if marks is None else marks[index], "side": ("first", "second")[index],
+                        "other": other[0], "target": other[1] + "#" + other[2],
+                        "record": None if record is None else record.get("record_id")}
+                if marks is not None:
+                    level = MARK_LEVELS["oversteps" if marks[index] == "overstepped by" else marks[index]]
+                    item["level"], item["agent_level"] = level["human"], level["agent"]
+                items.append(item)
+        if misses:
+            self._ask_later(list(misses.values()))
+        return items
 
     def _ask_quietly(self, question: Mapping[str, Any]) -> None:
         try:
@@ -1082,15 +1161,9 @@ class JevService:
         misses: dict[str, dict[str, Any]] = {}
 
         def held(question: Mapping[str, Any]) -> dict[str, Any] | None:
-            # Any held record answers, unavailable included: board reads never re-ask unchanged inputs.
-            key = self.seam.key(question)
-            record = self.seam.store.get(key)
-            if record is None:
-                misses.setdefault(key, dict(question))
-            return record
+            return self._held(question, misses)
 
         answer_rows = []
-        clauses: dict[str, list[dict[str, str]]] = {}
         for row in rows:
             try:
                 questions = self._material_questions(row) if "type" in sets else None
@@ -1098,15 +1171,8 @@ class JevService:
                 questions = None
             answer_rows.append({"id": str(row.get("id", "")),
                                 "material": "unknown" if questions is None else material([held(q) for q in questions])})
-            try:
-                clauses.setdefault(str(row["slug"]), []).extend(self._changed_clauses(row))
-            except Exception:
-                continue
-        pairs = set()
-        if "corpus" in sets:
-            for question in build_board_conflict_questions(clauses):
-                if _confident_label(held(question)) == "contradicts":
-                    pairs.add(question["pair"])
+        pairs = {question["pair"] for question in self._lane_questions(rows)
+                 if _confident_label(held(question)) in LANE_FINDINGS}
         answer = {"jev": "on", "rows": answer_rows, "conflicts": [{"a": a, "b": b} for a, b in sorted(pairs)]}
         return answer, list(misses.values())
 
@@ -1153,6 +1219,7 @@ class JevService:
             if state == "label" and question["kind"] != "orphan" and label in MARK_LEVELS:
                 item["level"], item["agent_level"] = MARK_LEVELS[label]["human"], MARK_LEVELS[label]["agent"]
             items.append(item)
+        items.extend(self._lane_items(mount, served_mounts))
         return {"jev": "on", "items": items, "levels": dict(MARK_LEVELS)}
 
 
