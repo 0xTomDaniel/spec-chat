@@ -91,7 +91,7 @@
 <h2>Last reviewed version</h2>
 <p data-anchor="reviewed-define">A spec's last reviewed version is a commit, set by each human spec review: every hand-off the human sends from the page, a comment batch or spec acceptance.</p>
 <p data-anchor="reviewed-keep">Processing a human spec review runs <code>review-host reviewed</code> for the spec: it commits the spec when it is dirty, then sets the resource's registry row <code>base</code> to that commit, else to HEAD.</p>
-<p data-anchor="reviewed-default">Opened with no <code>base</code> in the URL, the page compares against the registry row's <code>base</code>: the last reviewed version, or before any human spec review, the base the lane registered.</p>
+<p data-anchor="reviewed-default">Opened with no <code>base</code> in the URL, the page compares against the registry row's <code>base</code>: the last reviewed version, or before any human spec review, the base the lane registered. <code>review-host register</code> records that base as the full commit id it resolves to, so a branch name given at registration never moves the row. Decided by the operator, 2026-09-26 (ANN-178).</p>
 </section>
 
 <section data-anchor="baseline-response">
