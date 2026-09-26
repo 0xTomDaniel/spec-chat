@@ -1575,7 +1575,8 @@ function closeJevPopover() {
 }
 
 // Desktop: beside the marker, below or above, never over the toolbar, dock, or open panel.
-// Its box is measured with every note sentence shown and kept, so a hover sentence fills room already placed.
+// Its box is measured with every note sentence shown and that room is kept. Above the marker it is anchored by
+// its bottom edge, so the unhovered box hugs the marker and a hover sentence grows it upward into the kept room.
 // Narrow screens: CSS makes it a sheet above the toolbar.
 function placeJevPopover() {
   const pop = jevPopoverState.element;
@@ -1583,6 +1584,7 @@ function placeJevPopover() {
   if (!pop || !marker || pop.hidden) return;
   pop.style.left = '';
   pop.style.top = '';
+  pop.style.bottom = '';
   pop.style.width = '';
   if (window.matchMedia('(max-width: 640px)').matches) return;
   const anchor = marker.getBoundingClientRect();
@@ -1601,7 +1603,8 @@ function placeJevPopover() {
   const candidates = [anchor.bottom + 8, anchor.top - 8 - height];
   const top = candidates.find(value => fits(value) && !covers(value)) ?? candidates.find(fits) ?? Math.max(8, candidates[0]);
   pop.style.left = Math.round(left) + 'px';
-  pop.style.top = Math.round(top) + 'px';
+  if (top === candidates[1]) pop.style.bottom = Math.round(innerHeight - anchor.top + 8) + 'px';
+  else pop.style.top = Math.round(top) + 'px';
   pop.style.width = width + 'px';
 }
 
