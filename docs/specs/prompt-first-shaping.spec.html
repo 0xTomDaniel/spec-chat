@@ -32,7 +32,7 @@
 <section data-spec-section="acceptance" data-acceptance-scope="traceability" data-anchor="acceptance" id="acceptance">
 <h2>Acceptance criteria</h2>
 <p data-acceptance-criterion data-anchor="acceptance-tbd-later" data-story="story-tbd-later"><span data-acceptance-scenario>When every thread is resolved and every <code>data-spec-tbd</code> marker is <code>data-spec-tbd="later"</code>,</span> <span data-acceptance-observable>the action shows the spec acceptance label and writes the empty hand-off.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-vocabulary" data-story="story-vocabulary"><span data-acceptance-scenario>When current guidance, skills, adapters, specs, and the page in spec-chat, octo-lite, and annotateanything are read after the wording pass,</span> <span data-acceptance-observable>they say human spec review for sent hand-offs and spec acceptance for the delivery approval, the page shows Accept spec, and Finish review survives only in historical receipts and the formerly-called note.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-vocabulary" data-story="story-vocabulary"><span data-acceptance-scenario>When current guidance, skills, adapters, specs, and the page in Spec Chat are read after the wording pass,</span> <span data-acceptance-observable>they say human spec review for sent hand-offs and spec acceptance for the delivery approval, the page shows Accept spec, and Finish review survives only in historical receipts and the formerly-called note.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-tbd-open-highlight" data-story="story-tbd-later"><span data-acceptance-scenario>When every thread is resolved and at least one open TBD remains,</span> <span data-acceptance-observable>the action reads TBD open, and every block holding an open TBD is visibly highlighted while later TBDs are not.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-tbd-open-jump" data-story="story-tbd-later"><span data-acceptance-scenario>When the human activates TBD open repeatedly with several open TBDs,</span> <span data-acceptance-observable>each activation scrolls to and focuses the next open TBD in document order, wrapping after the last, and no hand-off is written.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-seed-durable" data-story="story-operator"><span data-acceptance-scenario>When a feature prompt starts shaping,</span> <span data-acceptance-observable>the first spec seed is committed locally, validated, hosted, and its review link sent before code, tests, or configuration are inspected; the caller files the issue, pushes, and opens the draft change request in parallel, never before the link.</span></p>
@@ -384,7 +384,7 @@
 <p data-anchor="focus-commit-discipline">The shaping skill commits and pushes every accepted spec change before presenting the refreshed focus view, so the Git-derived review state remains durable and reproducible.</p>
 <p data-anchor="focus-http">Prompt-first shaping uses the existing HTTP review transport on desktop and mobile because a browser file page cannot inspect Git.</p>
 <p data-anchor="focus-local-git">The review server reads only the current local repository and never fetches, checks out, stages, commits, or writes Git state.</p>
-<p data-anchor="focus-no-octo">No focus behavior imports, invokes, expects, or mentions octo-lite or another orchestrator.</p>
+<p data-anchor="focus-no-octo">No focus behavior imports, invokes, expects, or mentions an orchestrator.</p>
 <p data-anchor="focus-base-override">An explicit review base resolves to the exact selected local commit, including a previously reviewed sibling branch, while automatic discovery alone uses a merge base.</p>
 <p data-anchor="focus-baseline-provenance">The baseline response retains the selected commit in <code>base</code>; a file absent from the selected base is entirely new and returns null for both <code>htmlBase</code> and <code>html</code>.</p>
 <p data-anchor="focus-failure">If Git comparison cannot be calculated, focus mode fails visibly and renders the complete current spec without stale highlighting.</p>
@@ -600,7 +600,7 @@
 <p data-anchor="vocab-review">Human spec review: the human reviews changes and sends them from the page. Every sent hand-off, a comment batch or spec acceptance, is a human spec review and sets the last reviewed version.</p>
 <p data-anchor="vocab-acceptance">Spec acceptance: the human approval that permits delivery under the reviewed canonical spec. It is the no-draft action, formerly called Finish review.</p>
 <p data-anchor="vocab-label">The spec acceptance action is labelled Accept spec.</p>
-<p data-anchor="vocab-wording-only">The split is wording only across spec-chat, octo-lite, and annotateanything, one PR per repository: events, fields, anchors, and gates are unchanged, and historical receipts keep their recorded text.</p>
+<p data-anchor="vocab-wording-only">The split is wording only in Spec Chat: events, fields, anchors, and gates are unchanged, and historical receipts keep their recorded text.</p>
 <p data-anchor="finish-ready">When no draft, pending, acknowledged, or unresolved work remains, the hand-off action becomes spec acceptance. If only open TBD work remains, it reads TBD open, every block holding an open TBD is visibly highlighted, and each activation scrolls to and focuses the next open TBD in document order.</p>
 <p data-anchor="finish-tbd-later">A <code>data-spec-tbd</code> marker is open unless its value is <code>later</code>. <code>data-spec-tbd="later"</code> marks a TBD deliberately left for a later slice: it stays visible text but neither blocks spec acceptance nor is highlighted.</p>
 <p data-anchor="finish-event">Spec acceptance writes the existing hand-off event with an empty batch.</p>
@@ -749,7 +749,7 @@
 <p data-anchor="skill-invariants">Skill instructions preserve contract invariants while leaving room for context-sensitive tactics and visual variation.</p>
 <p data-anchor="skill-progressive-detail">Conditional authoring detail lives in the single reference so the entry skill remains concise.</p>
 <p data-anchor="skill-evals-location">Evaluation fixtures live with repository tests and are not installed as agent instructions.</p>
-<p data-anchor="skill-no-octo">No Spec Chat skill depends on octo-lite, another workflow package, or an external orchestrator.</p>
+<p data-anchor="skill-no-octo">No Spec Chat skill depends on an orchestrator or another workflow package.</p>
 <p data-anchor="skill-consumer">Other workflows may consume Spec Chat skills as downstream callers without becoming required by Spec Chat.</p>
 </section>
 

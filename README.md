@@ -32,7 +32,7 @@ A rerun changes nothing. `--undo` removes only what earlier runs added (recorded
 
 Canonical contract: [remote hosting lifecycle](skill/review-spec/SKILL.md#remote-hosting-lifecycle).
 
-- The box hosts two independent services only: Spec Chat review (this repo) and annotateanything evidence (peer repo).
+- The box hosts two independent services only: Spec Chat review (this repo) and the evidence provider named in its `providers/evidence.toml` ([Providers](docs/specs/review-service.spec.html#providers)).
 - Each service has its own launcher, process, approved-port discovery, collision-safe binding, narrow root, public URL, exact served-byte check, and baseline check. Starting, failing, or stopping one never touches the other.
 - A lane runs only `skill/review-spec/scripts/review-host.py register --slug <lane-key> --owner <pane> <spec path>`, repeating the spec path for more specs. A plain spec path infers project, root, and base from Git; `--base <ref>` overrides the base; the `PROJECT_ID=ROOT:SPEC_PATH@BASE` form still works. It names no exposure. It checks exact spec bytes and `/api/baseline` on the box before printing the URL.
 - Box setup, by the box owner and outside any lane: `--public <host>`, `--private`, and `--proof-host <host>`, each once, through `scripts/install-spec-chat`. Approved ports come from `SPEC_CHAT_APPROVED_INGRESS_PORTS` or readable host firewall rules. The service listens on loopback by default (reach it with `ssh -L`); public binds an approved port with a no-login warning, and the registry keeps that choice across restarts. `review-host.py --state-dir` names a separate, isolated service for tests or deliberate isolation; lanes do not pass it.
