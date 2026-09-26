@@ -142,7 +142,7 @@ class EvidenceRouteTest(unittest.TestCase):
             "moved": entry(match=False, judgment="material", pr=61, onMain=False,
                            artifact=base + "/bundles/b2/artifacts/m.png", bundle=base + "/bundles/b2",
                            proven="Shows old.", view=base + "/bundles/b2#criterion=moved", uncommitted=False),
-        }})
+        }, "levels": serve.MARK_LEVELS})
         self.assertEqual(len(service.requests), 1)
         request = urlparse(service.requests[0])
         self.assertEqual(request.path, "/ev/criteria")
@@ -182,20 +182,20 @@ class EvidenceRouteTest(unittest.TestCase):
         url, _, _ = self.single(page(ok="Shows ok."))
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("SPEC_CHAT_EVIDENCE_URL", None)
-            self.assertEqual(self.evidence(url), {"criteria": None})
+            self.assertEqual(self.evidence(url), {"criteria": None, "levels": serve.MARK_LEVELS})
         for service in (self.fake(status=500, body={"criteria": {"ok": entry()}}),
                         self.fake(raw=b"<html>"), self.fake(body=["list"])):
             with patch.dict(os.environ, {"SPEC_CHAT_EVIDENCE_URL": service.url}):
-                self.assertEqual(self.evidence(url), {"criteria": None})
+                self.assertEqual(self.evidence(url), {"criteria": None, "levels": serve.MARK_LEVELS})
             self.assertEqual(len(service.requests), 1)
         with patch.dict(os.environ, {"SPEC_CHAT_EVIDENCE_URL": "http://127.0.0.1:9/"}):
-            self.assertEqual(self.evidence(url), {"criteria": None})
+            self.assertEqual(self.evidence(url), {"criteria": None, "levels": serve.MARK_LEVELS})
 
     def test_parameters_beyond_path_are_ignored(self):
         service = self.fake(body={"criteria": {}})
         url, _, head = self.single(page(ok="Shows ok."))
         with patch.dict(os.environ, {"SPEC_CHAT_EVIDENCE_URL": service.url}):
-            self.assertEqual(self.evidence(url), {"criteria": {}})
+            self.assertEqual(self.evidence(url), {"criteria": {}, "levels": serve.MARK_LEVELS})
             self.evidence(url, extra="&commit=deadbeef&spec=project/x::y&base=HEAD~1&url=http://evil")
         self.assertEqual(service.requests[0], service.requests[1])
         self.assertIn("commit=" + head, service.requests[1])
