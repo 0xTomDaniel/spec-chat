@@ -1,0 +1,38 @@
+# Full suite in a clean environment: no other box tool, no provider file (review-service #acceptance-ci-alone).
+name: test
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: /tmp/pw-browsers
+      PLAYWRIGHT_CORE: /tmp/pw/node_modules/playwright-core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Browser for runtime-pin-marker
+        run: |
+          npm install --no-save --prefix /tmp/pw playwright-core
+          /tmp/pw/node_modules/.bin/playwright-core install --with-deps chromium
+      - name: Tests
+        run: |
+          export HOME="$RUNNER_TEMP/home"
+          unset XDG_STATE_HOME XDG_CONFIG_HOME
+          mkdir -p "$HOME"
+          fail=0
+          for f in tests/*.py tests/*.sh tests/*.mjs; do
+            case "$f" in
+              *.py) run="python3 $f" ;;
+              *.sh) run="sh $f" ;;
+              *.mjs) run="node $f" ;;
+            esac
+            echo "::group::$f"
+            if $run; then echo "ok $f"; else echo "::error::$f failed"; fail=1; fi
+            echo "::endgroup::"
+          done
+          exit $fail
