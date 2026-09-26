@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./.style/spec.css">
+<title>Project-wide rules at shaping</title>
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Project-wide rules at shaping</h1>
+<nav data-anchor="breadcrumbs">docs / specs / project-rules.spec.html</nav>
+<p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-272">ANN-272</a>.</p>
+<p data-anchor="status">Status: accepted for ANN-272 by human spec acceptance relayed by operator w5:p2 (2026-09-26T20:14:32Z, "accept spec") at <code>9180d4b</code>; governing contract.</p>
+<p data-anchor="status-decisions">Human decisions relayed by operator w5:p2 (2026-09-26): the mark word is the home spec file name, for now (<a href="#mark-word">mark word</a>); the agent read is the existing <code>/api/jev</code> JSON, one command (<a href="#agent-read-same">agent read</a>); a miss is answered in the spec, never in a thread (<a href="#mark-clear">clearing a mark</a>); no scope mark, a general LLM settles unsure scope (<a href="#q-fallback">fallback</a>); a bootstrap warm-up and one reconcile offer (<a href="#bootstrap">bootstrap</a>), run by Spec Chat alone in its own first run, never in a peer's setup, with a published onboarding status naming no peer (<a href="#bootstrap-status">status</a>). Later the same day: an unsure rule check also goes to the general LLM, so only a clear miss shows (<a href="#q-fallback">fallback</a>), and a check escalated to the LLM and still waiting shows a pending wheel; plain Jev checks show nothing while pending (<a href="#pending">pending</a>). Then, corrected: every important mark is solved before hand-off, by a spec fix, a reason line, or a thread; a pass stops for a natural reason, never a cap; warnings are listed in the hand-off; marks never block <code>Accept spec</code> (<a href="#agent-once">agent rule</a>). Later: marks carry a <code>level</code> from ANN-258's single levels table and the agent keys on it; the read prints compact text, not raw JSON, with <code>--anchor</code> for detail (<a href="#agent-read-same">agent read</a>).</p>
+<p data-anchor="context">Some acceptance criteria apply to every feature, such as <q>every change to what a user sees or does adds its onboarding section</q>. They live in one spec that shaping never reads, so they get missed. This spec lets Jev find them and check a spec under shaping against them. Extends <a href="./jev-suggestions.spec.html">Jev review suggestions</a>: its seam, records, cache, markers, popovers, and note buttons apply unchanged, and marks are one-word notes as its <a href="./jev-suggestions.spec.html#neutral-questions">one-word questions</a> and <a href="./jev-suggestions.spec.html#neutral-questions-rule">unsure note style</a> define (ANN-258, spec accepted at <code>82bdd34</code>, delivering on PR #83).</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-home">As a spec author, I write a rule that applies to every feature once, in plain words, in its home spec, and Spec Chat treats it as project-wide with nothing else to maintain or remember.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-miss">As a reviewer of a spec under shaping, a project-wide rule the spec triggers but does not cover shows one compact mark linking the rule, and it clears once the spec either covers the rule or says in one line why it does not apply.</p>
+<p data-user-story data-user-facing="false" data-anchor="story-agent">As the shaping agent, I read every Jev check on my spec as compact text without a browser, solve every important mark, and hand off the review link naming the rules checked and listing the warnings I did not act on.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-bootstrap">As a reviewer on a project new to Spec Chat, I am offered once to reconcile the existing specs that miss project rules.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="project-rules" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-derive" data-story="story-home"><span data-acceptance-scenario>When one served spec has a criterion that applies to every feature and another that applies only to its own feature,</span> <span data-acceptance-observable>only the first is a project-wide rule, and no tag, list, side file, or Spec Chat state names it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-reword" data-story="story-home"><span data-acceptance-scenario>When a rule's criterion is reworded to apply to one feature, or deleted,</span> <span data-acceptance-observable>on the next load no spec shows a mark for it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-cache" data-story="story-home"><span data-acceptance-scenario>When a criterion's text is unchanged across heads, lanes, and specs that read it, and when the records are deleted,</span> <span data-acceptance-observable>its scope is asked once and reused, and after deletion the same rules are rebuilt from the specs alone.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-fallback" data-story="story-home story-miss"><span data-acceptance-scenario>When Jev is below threshold on a criterion's scope, or on whether a spec misses a rule,</span> <span data-acceptance-observable>the same question goes once to the general LLM, its answer decides and is recorded and reused, and the page shows only a clear <code>missed</code> note or nothing, never an unsure rule or scope mark.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-miss" data-story="story-miss"><span data-acceptance-scenario>When a spec under shaping adds a change to what a user sees and has no onboarding criterion, while <code>onboarding.spec.html</code> holds the onboarding rule,</span> <span data-acceptance-observable>its Acceptance criteria heading shows one marker whose popover lists <code>onboarding?</code> linking that rule, with <code>Ask to cover</code>.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-pending" data-story="story-miss"><span data-acceptance-scenario>When a rule check, or the scope of a rule it needs, has escalated from Jev to the LLM and the LLM has not answered,</span> <span data-acceptance-observable>the spot where the mark would appear shows a small rotating wheel with <q>checking onboarding…</q> on hover, which becomes the <code>onboarding?</code> note or nothing without a reload; while only plain Jev checks are pending the spot shows nothing; with reduced motion the wheel does not rotate.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-clear" data-story="story-miss"><span data-acceptance-scenario>When the spec then adds a criterion that covers the rule, or one plain line such as <q>Onboarding: not needed, this changes no screen</q>,</span> <span data-acceptance-observable>the <code>onboarding?</code> note is gone on the next load; a thread alone never clears it, and a spec that does not trigger the rule never shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-ask" data-story="story-miss"><span data-acceptance-scenario>When the reviewer clicks <code>Ask to cover</code>,</span> <span data-acceptance-observable>the comment composer opens at the Acceptance criteria heading with the draft <q>Cover &lt;link to rule&gt; with a criterion, or add one line saying why it does not apply.</q>, and nothing is written until the reviewer sends.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-agent-read" data-story="story-agent"><span data-acceptance-scenario>When the shaping agent reads its spec's Jev checks from the box,</span> <span data-acceptance-observable>one command prints compact text, not raw JSON: one line per important mark with anchor, kind, level, and link target; one line of warning counts by kind; the rules checked; pending count; or <code>off</code>. With <code>--anchor &lt;id&gt;</code> it prints full detail for that anchor only.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-skill" data-story="story-agent"><span data-acceptance-scenario>When the shaping skill registers a spec for review,</span> <span data-acceptance-observable>it hands off the review link only once every important mark ends in exactly one of a spec fix, a reason line in the spec, or a thread for the human, and the hand-off message names the rules checked and starts with <q>N warnings not acted on:</q> and the same counts by kind the read prints.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-refix" data-story="story-agent"><span data-acceptance-scenario>When the agent's fix for an important mark raises a new important mark on the same clause,</span> <span data-acceptance-observable>the agent opens a thread for the human on that clause instead of editing it again.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-advice" data-story="story-agent story-miss"><span data-acceptance-scenario>When a spec still has Jev marks, including a <code>missed</code> note, as the human reviews it,</span> <span data-acceptance-observable><code>Accept spec</code> proceeds unchanged, and no spec edit exists only to change a Jev answer or its confidence.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-warm" data-story="story-bootstrap"><span data-acceptance-scenario>When a project is registered with the review service for the first time, with no other tool installed,</span> <span data-acceptance-observable><code>register</code> returns without waiting, a background warm-up classifies every criterion and checks every spec in parallel, and later pages reuse its records without new calls, and the onboarding status file shows the rules classified and N specs to reconcile.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-offer" data-story="story-bootstrap"><span data-acceptance-scenario>When the warm-up finds N existing specs that miss a rule, and the reviewer opens a page of that project,</span> <span data-acceptance-observable>the page shows <q>N existing specs miss project rules: reconcile?</q> once; <code>Reconcile</code> opens the composer with one draft listing each spec and its missed rules with links, nothing is written until the reviewer sends, and after it is sent or dismissed it never shows again for that project.</span></p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-seam"><span data-boundary-responsibility>The review server's Jev seam owns the scope and rule-check questions, the general LLM fallback, the warm-up, the onboarding status, their records, and the cache.</span> <span data-boundary-seam>Caller-facing seam: the existing <code>GET /api/jev</code> response, gaining items of kind <code>rule</code>, a <code>pending</code> state, a <code>level</code> on every mark, the rules checked, and the one-time offer; the onboarding status file for readers outside Spec Chat.</span> <span data-boundary-dependency>Dependency direction: external-provider; calls Jev and the general LLM through OpenRouter, and reads the served specs as the draft checks do; nothing calls back.</span> <span data-boundary-scope>Observable scope: the JSON response, records, and status file.</span></p>
+<p data-modular-boundary data-anchor="boundary-page"><span data-boundary-responsibility>The browser runtime owns the <code>&lt;word&gt;?</code> notes, the pending wheel, the <code>Ask to cover</code> button, and the one-time offer.</span> <span data-boundary-seam>Caller-facing seam: the rendered page; writes only through the existing comment composer.</span> <span data-boundary-dependency>Dependency direction: self-contained; consumes the seam route.</span> <span data-boundary-scope>Observable scope: what the reviewer sees.</span></p>
+<p data-modular-boundary data-anchor="boundary-skill"><span data-boundary-responsibility>The shaping skill owns reading and resolving the checks before handing off the link.</span> <span data-boundary-seam>Caller-facing seam: one read command over the running review server, printing compact text, with <code>--anchor</code> for one anchor's detail.</span> <span data-boundary-dependency>Dependency direction: self-contained; the skill calls the server, and the server never calls the skill.</span> <span data-boundary-scope>Observable scope: commits and the hand-off message.</span></p>
+</section>
+
+<section data-anchor="questions">
+<h2>Two questions</h2>
+<div class="table-scroll" data-anchor="questions-scroll">
+<table data-anchor="questions-table">
+<caption>Both are Jev questions under the <a href="./jev-suggestions.spec.html#shared">Every suggestion</a> rules: one question set each, one record per call, records as cache.</caption>
+<thead><tr><th>Question</th><th>Asked for</th><th>Sees</th><th>Labels</th><th>Cache key</th></tr></thead>
+<tbody>
+<tr data-anchor="q-scope"><td>Scope: <q>does this apply to every feature?</q></td><td>Every acceptance criterion of every served spec, and of main's copy of every other spec path, as the <a href="./jev-suggestions.spec.html#corpus">draft checks</a> choose other specs</td><td>The criterion text only</td><td>every feature, this feature</td><td>Criterion text and set version</td></tr>
+<tr data-anchor="q-rule"><td>Rule check: <q>does this spec trigger the rule and not cover it?</q></td><td>Each project-wide rule from another spec, on a spec that differs from its compared base, and on every spec at <a href="#bootstrap">warm-up</a></td><td>The rule text and the spec's text</td><td>missed, covered, not triggered</td><td>Rule text, spec text, and set version</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="q-fallback">An answer below threshold, to either question, sends the same question once to a general LLM through OpenRouter, the model named in that question set; its answer decides and is recorded with the same key. If that call fails, the item shows <code>Jev unavailable</code> as <a href="./jev-suggestions.spec.html#shared">every suggestion</a> defines, and is asked again on the next load.</p>
+<p data-anchor="q-rule-def">A project-wide rule is a criterion whose decided scope is <code>every feature</code>. A spec is never checked against its own criteria.</p>
+<p data-anchor="q-legacy">A spec without <code>data-acceptance-criterion</code> clauses holds no rules.</p>
+<p data-anchor="q-disposable">The records are derived and disposable: they hold no project knowledge, and deleting them costs only recomputation from the specs.</p>
+</section>
+
+<section data-anchor="marks">
+<h2>Marks</h2>
+<div class="table-scroll" data-anchor="marks-scroll">
+<table data-anchor="marks-table">
+<thead><tr><th>Answer</th><th>Where</th><th>Note</th><th>Hover sentence</th><th>Button</th></tr></thead>
+<tbody>
+<tr data-anchor="mark-miss"><td>Rule check <code>missed</code>, <a href="./jev-suggestions.spec.html#level-important">important</a></td><td>The Acceptance criteria heading of the spec under shaping</td><td><code>&lt;word&gt;?</code> linking the rule</td><td>This spec may need &lt;rule&gt; from &lt;home spec&gt;</td><td><code>Ask to cover</code></td></tr>
+<tr data-anchor="mark-pending"><td>Escalated to the LLM and not yet answered: the rule check, or the scope of its rule</td><td>Same</td><td>A small rotating wheel</td><td>checking &lt;word&gt;…</td><td>None</td></tr>
+<tr data-anchor="mark-none"><td>Plain Jev pending, any scope answer, <code>covered</code>, <code>not triggered</code>, after the LLM if needed</td><td>None</td><td>Nothing</td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="mark-style">A <code>missed</code> note is one word with its sentence on hover as its accessible name, as <a href="./jev-suggestions.spec.html#neutral-questions-rule">the one-word note style</a> defines, but not muted; it is a clear miss.</p>
+<section data-anchor="pending">
+<h3>Pending</h3>
+<p data-anchor="pending-rule">Only an escalated question waiting on the LLM shows the wheel, in the marker's place, the same size and calm neutral color, with no text beside it; plain Jev questions are fast and show nothing while pending, so the page stays clean.</p>
+<p data-anchor="pending-poll">A <code>pending</code> item says whether it has escalated. While any item is <code>pending</code>, the page asks <code>/api/jev</code> again and swaps the wheel for the answer in place; the spec text never moves.</p>
+<p data-anchor="pending-motion">With reduced motion, the wheel is a still glyph; the hover sentence is its accessible name.</p>
+<p data-anchor="pending-any">Every Spec Chat Jev mark whose question escalates to the LLM shows this wheel while pending.</p>
+</section>
+<p data-anchor="mark-word">The word is the home spec's file name without <code>.spec.html</code>, e.g. <code>onboarding?</code>; fixed, never generated.</p>
+<p data-anchor="mark-order">Rule notes list after coverage in the <a href="./jev-suggestions.spec.html#markers-content">popover order</a>, one per rule, and the marker stays neutral.</p>
+<p data-anchor="mark-clear">A miss is answered in the spec: a criterion that covers the rule, or one plain line saying why it does not apply. The next rule check reads it and the note clears; threads play no part.</p>
+</section>
+
+<section data-anchor="agent-read">
+<h2>Agent read</h2>
+<p data-anchor="agent-read-same">The command reads the <code>/api/jev</code> response for the spec and base the review link serves, from the running server, so the agent and the page see one answer from one cache, and prints only a compact summary so the agent's context stays small.</p>
+<pre data-anchor="agent-read-example">important  acceptance       rule        important  onboarding.spec.html#acceptance-onboarding
+important  save-rule        contradicts important  #non-goal-offline
+warnings   type 3, reader 2
+rules      onboarding.spec.html#acceptance-onboarding
+pending    0</pre>
+<p data-anchor="agent-read-order">The shaping skill step runs after <code>review-host register</code> and before the link is sent: wait until no item is <code>pending</code>, read, solve every important mark, commit, and read again after each fix; then send the link.</p>
+<ol data-anchor="agent-once">
+<li data-anchor="agent-once-levels">The agent keys on each item's <code>level</code> field, <code>important</code> or <code>warning</code>, set from the single <a href="./jev-suggestions.spec.html#markers-levels">mark levels table</a> (ANN-258) that also colors the page; it keeps no list of kinds of its own. A rule miss is <a href="./jev-suggestions.spec.html#level-important">important</a>.</li>
+<li data-anchor="agent-once-solved">Each important mark ends in exactly one of: fixed in the spec; a reason line in the spec, such as <q>Onboarding: not needed, this changes no screen</q>; or a thread for the human when it is bigger than a simple edit, which counts as solved for hand-off.</li>
+<li data-anchor="agent-once-other">Fixes follow the reconcile rule in <a href="../../skill/shape-spec/SKILL.md">shape-spec</a>.</li>
+<li data-anchor="agent-once-stop">The pass stops naturally, with no cap: if a fix raises a new important mark on the same clause, the agent opens a thread instead of fixing again.</li>
+<li data-anchor="agent-once-warnings">Warnings are read, not acted on, and never hidden: the hand-off message starts with <q>N warnings not acted on:</q> and the read's counts by kind, e.g. <q>5 warnings not acted on: type 3, reader 2</q>.</li>
+<li data-anchor="agent-once-advice">For the human, marks are advice: none blocks <code>Accept spec</code>, and the agent never edits a spec just to raise Jev's confidence.</li>
+</ol>
+<p data-anchor="agent-read-rules">The hand-off message names the rules checked, as home spec and anchor, for visibility only; it asks nothing of the human.</p>
+<p data-anchor="agent-read-off">With Jev off, the read says <code>off</code> and the skill sends the link at once.</p>
+</section>
+
+<section data-anchor="bootstrap">
+<h2>Bootstrap</h2>
+<div class="table-scroll" data-anchor="bootstrap-scroll">
+<table data-anchor="bootstrap-table">
+<thead><tr><th>When</th><th>Scope asked for</th><th>Rule check asked for</th><th>Shown</th></tr></thead>
+<tbody>
+<tr data-anchor="bootstrap-first"><td>First registration of a project, in the background</td><td>Every criterion of main's copy of every spec in its collection, in parallel</td><td>Every such spec</td><td>One offer, once</td></tr>
+<tr data-anchor="bootstrap-after"><td>Afterwards</td><td>New or changed criterion text only, since records answer the rest</td><td>Specs under review only</td><td>Rule notes on those specs</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="bootstrap-offer">The offer is one page note on that project's next review page after warm-up; <code>Reconcile</code> drafts one comment through the existing reconcile flow, <code>Reconcile each spec with its missed rules:</code> then one line per spec, <code>&lt;spec&gt; &lt;word&gt;? &lt;rule link&gt;</code>; the agent answers it per the reconcile rule.</p>
+<p data-anchor="bootstrap-home">The bootstrap is part of Spec Chat's onboarding, its own first run: the first <code>review-host register</code> of a project starts it, and Spec Chat alone runs it end to end. No peer's setup starts, waits for, or completes it.</p>
+<p data-anchor="bootstrap-status">Spec Chat publishes its onboarding status per project as one JSON file in the server's state directory: warm-up state, criteria classified, rules found, N specs to reconcile, and whether the offer was sent or dismissed. Anyone may read it; it names no peer and is derived like the records.</p>
+<p data-anchor="bootstrap-once">Sending or dismissing the offer is recorded in that file; with N zero, or Jev off, no offer shows.</p>
+</section>
+
+<section data-anchor="proof">
+<h2>Proof</h2>
+<p data-anchor="proof-first">First failing test: with a fake provider answering <code>every feature</code> for one criterion of spec A and <code>missed</code> for spec B, <code>/api/jev</code> for B returns one <code>rule</code> item targeting A's criterion.</p>
+<p data-anchor="proof-evidence">Evidence: seam and runtime tests behind fakes, one live run per new question set, and a QA bundle on a real spec with a real project-wide rule, including a first registration.</p>
+</section>
+
+<section data-anchor="non-goals">
+<h2>Non-goals</h2>
+<p data-anchor="non-goal-list">Tags, rule lists, side files, or Spec Chat state holding project knowledge; rules from outside the served specs; generated mark text; a scope mark or an unsure rule mark; clearing a miss by thread; checking specs not under review after bootstrap; any bootstrap step in a peer's setup.</p>
+</section>
+
+</article>
+</body>
+</html>
