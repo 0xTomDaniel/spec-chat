@@ -36,7 +36,7 @@ _verify_spec.loader.exec_module(_verify_module)
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
 SAFE_CURSOR_RE = re.compile(r"[^/\\]+\Z")
 PROCESS_FIELDS = ("pid", "port", "bind", "host", "url")
-DEFAULT_CURSOR = ".cursor-codex"
+DEFAULT_CURSOR = ".cursor-owner"
 RESOURCE_FIELDS = (
     "id", "slug", "project", "root", "narrow_root", "spec", "path", "base", "accepted", "owner", "checker",
     "cursor_name", "registered_at", "updated_at",

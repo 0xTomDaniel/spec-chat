@@ -110,15 +110,13 @@ def review_first_spec(spec: Path, state: Path, visibility: list[str]) -> str:
     rel = spec.relative_to(top).as_posix()
     origin = subprocess.run(["git", "-C", str(top), "remote", "get-url", "origin"], text=True, capture_output=True)
     name = origin.stdout.strip().rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1] if origin.returncode == 0 else top.name
-    project = re.sub(r"[^a-z0-9-]+", "-", name.removesuffix(".git").lower()).strip("-")[:63] or "spec"
-    head = git(top, "rev-parse", "HEAD")
-    command = [sys.executable, str(HOST), "register", "--resource", f"{project}={top}:{rel}@{head}",
-               "--owner", ONBOARDING_OWNER, "--checker", ONBOARDING_OWNER, "--cursor-name", ".cursor-onboarding",
-               "--slug", project, *visibility]
+    slug = re.sub(r"[^a-z0-9-]+", "-", name.removesuffix(".git").lower()).strip("-")[:63] or "spec"
+    command = [sys.executable, str(HOST), "register", "--slug", slug, "--owner", ONBOARDING_OWNER,
+               "--base", "HEAD", str(spec), *visibility]
     if subprocess.run(command).returncode:
         raise InstallError("review-host register failed")
     rows = read_toml(state / "hosting/default/registry.toml").get("resource", [])
-    row = next((r for r in rows if r.get("root") == str(top) and r.get("spec") == rel and r.get("slug") == project), None)
+    row = next((r for r in rows if r.get("root") == str(top) and r.get("spec") == rel and r.get("slug") == slug), None)
     if row is None:
         raise InstallError("registered spec not found in the review service registry")
     return row["id"]
