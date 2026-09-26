@@ -18,6 +18,16 @@ Visual HTML specs you annotate in the browser; a coding agent addresses the anno
 
 Agent-agnostic across Claude Code / Codex / pi · plain files + CLI + skills over MCP/hooks/inference services · all inference through the CLI session, except optional Jev typed suggestions called by the review server and off without a key ([jev-suggestions](docs/specs/jev-suggestions.spec.html)) · tiny HTTP file transport only when the browser cannot share the filesystem (loopback on one machine, box-side public service for remote review) · no alt-tabbing to the terminal to trigger the agent.
 
+## Install and onboarding
+
+One entry point, `scripts/install-spec-chat`:
+
+1. `scripts/install-spec-chat` links the skills (`spec-chat-shape`, `spec-chat-review`) into `~/.claude/skills` and `~/.codex/skills`, and publishes `$XDG_STATE_HOME/spec-chat/onboarding.toml` with `status = "pending"`.
+2. `scripts/install-spec-chat --specs <spec folder> --review <first .spec.html>` installs the page runtime (`.viz`) and style (`.style`) into the spec folder, starts or joins the box's review service with that spec, prints its URL, and sets `status = "done"`.
+3. Box setup, by the box owner, once: add `--public <host>`, `--private`, or `--proof-host <host>` to step 2. Lanes never pass them.
+
+A rerun changes nothing. `--undo` removes only what earlier runs added (recorded in `$XDG_STATE_HOME/spec-chat/install.toml`).
+
 ## Remote hosting
 
 Canonical contract: [remote hosting lifecycle](skill/review-spec/SKILL.md#remote-hosting-lifecycle).

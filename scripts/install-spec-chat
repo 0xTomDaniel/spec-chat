@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+"""Spec Chat's one install and onboarding entry point.
+
+Links the skills, installs the page runtime and style into a named spec folder,
+sets up the box's review service through review-host.py, and publishes
+$XDG_STATE_HOME/spec-chat/onboarding.toml. A rerun changes nothing; --undo
+removes only what an earlier run added (recorded in install.toml).
+"""
+
+from __future__ import annotations
+
+import argparse
+import filecmp
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tomllib
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+HOST = ROOT / "skill/review-spec/scripts/review-host.py"
+SKILLS = {"spec-chat-shape": ROOT / "skill/shape-spec", "spec-chat-review": ROOT / "skill/review-spec"}
+SKILL_DIRS = (".claude/skills", ".codex/skills")
+ASSETS = {".viz": ROOT / "skill/review-spec/assets/viz", ".style": ROOT / "skill/shape-spec/assets/style"}
+DOC = (ROOT / "README.md").as_uri() + "#install-and-onboarding"
+ONBOARDING_OWNER = "install-spec-chat"
+
+
+class InstallError(Exception):
+    pass
+
+
+def state_root() -> Path:
+    return Path(os.environ.get("XDG_STATE_HOME") or "~/.local/state").expanduser() / "spec-chat"
+
+
+def toml_list(values: list[str]) -> str:
+    return "[" + ", ".join('"' + v.replace("\\", "\\\\").replace('"', '\\"') + '"' for v in values) + "]"
+
+
+def write_if_changed(path: Path, text: str) -> None:
+    if path.exists() and path.read_text(encoding="utf-8") == text:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def read_toml(path: Path) -> dict:
+    try:
+        return tomllib.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+
+
+def write_manifest(path: Path, manifest: dict[str, list[str]]) -> None:
+    write_if_changed(path, "".join(f"{key} = {toml_list(manifest[key])}\n" for key in ("links", "copies", "resources")))
+
+
+def same_tree(a: Path, b: Path) -> bool:
+    cmp = filecmp.dircmp(a, b)
+    if cmp.left_only or cmp.right_only or cmp.funny_files:
+        return False
+    if filecmp.cmpfiles(a, b, cmp.common_files, shallow=False)[1:] != ([], []):
+        return False
+    return all(same_tree(a / d, b / d) for d in cmp.common_dirs)
+
+
+def link(source: Path, target: Path, added: list[str]) -> None:
+    if target.is_symlink() and not target.exists():
+        target.unlink()  # a dangling link belongs to nobody
+    if target.is_symlink() and target.resolve() == source.resolve():
+        return
+    if target.exists() or target.is_symlink():
+        raise InstallError(f"refusing to replace: {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.symlink_to(source)
+    added.append(str(target))
+
+
+def copy_assets(specs: Path, added: list[str]) -> None:
+    if not specs.is_dir():
+        raise InstallError(f"spec folder does not exist: {specs}")
+    for name, source in ASSETS.items():
+        target = specs / name
+        if target.exists():
+            if not same_tree(source, target):
+                print(f"kept existing {target}; review preflight owns runtime migration")
+            continue
+        shutil.copytree(source, target)
+        added.append(str(target))
+
+
+def git(cwd: Path, *args: str) -> str:
+    result = subprocess.run(["git", "-C", str(cwd), *args], text=True, capture_output=True)
+    if result.returncode:
+        raise InstallError(result.stderr.strip() or f"git {' '.join(args)} failed")
+    return result.stdout.strip()
+
+
+def review_first_spec(spec: Path, state: Path, visibility: list[str]) -> str:
+    """Register the first spec with the box's review service; return its row id."""
+    spec = spec.resolve()
+    if not spec.is_file() or not spec.name.endswith(".spec.html"):
+        raise InstallError(f"--review needs an existing *.spec.html file: {spec}")
+    top = Path(git(spec.parent, "rev-parse", "--show-toplevel")).resolve()
+    rel = spec.relative_to(top).as_posix()
+    origin = subprocess.run(["git", "-C", str(top), "remote", "get-url", "origin"], text=True, capture_output=True)
+    name = origin.stdout.strip().rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1] if origin.returncode == 0 else top.name
+    project = re.sub(r"[^a-z0-9-]+", "-", name.removesuffix(".git").lower()).strip("-")[:63] or "spec"
+    head = git(top, "rev-parse", "HEAD")
+    command = [sys.executable, str(HOST), "register", "--resource", f"{project}={top}:{rel}@{head}",
+               "--owner", ONBOARDING_OWNER, "--checker", ONBOARDING_OWNER, "--cursor-name", ".cursor-onboarding",
+               "--slug", project, *visibility]
+    if subprocess.run(command).returncode:
+        raise InstallError("review-host register failed")
+    rows = read_toml(state / "hosting/default/registry.toml").get("resource", [])
+    row = next((r for r in rows if r.get("root") == str(top) and r.get("spec") == rel and r.get("slug") == project), None)
+    if row is None:
+        raise InstallError("registered spec not found in the review service registry")
+    return row["id"]
+
+
+def install(args: argparse.Namespace, prefix: Path, state: Path) -> None:
+    manifest_path, onboarding_path = state / "install.toml", state / "onboarding.toml"
+    old = read_toml(manifest_path)
+    manifest = {key: list(old.get(key, [])) for key in ("links", "copies", "resources")}
+    try:
+        for name, source in SKILLS.items():
+            for base in SKILL_DIRS:
+                link(source, prefix / base / name, manifest["links"])
+        if args.specs:
+            copy_assets(Path(args.specs).expanduser().resolve(), manifest["copies"])
+        done = read_toml(onboarding_path).get("status") == "done"
+        visibility = (["--public", args.public] if args.public else ["--private"] if args.private else [])
+        visibility += ["--proof-host", args.proof_host] if args.proof_host else []
+        if visibility and not args.review:
+            raise InstallError("--public, --private, and --proof-host need --review <spec>")
+        if args.review and (not done or visibility):
+            rid = review_first_spec(Path(args.review).expanduser(), state, visibility)
+            if rid not in manifest["resources"]:
+                manifest["resources"].append(rid)
+            done = True
+    finally:
+        if any(manifest.values()):
+            write_manifest(manifest_path, manifest)
+    status = "done" if done else "pending"
+    write_if_changed(onboarding_path, f'status = "{status}"\ndoc = {toml_list([DOC])[1:-1]}\n')
+    print(f"spec-chat onboarding {status}: {onboarding_path}")
+    if status == "pending":
+        print("next: install-spec-chat --specs <spec folder> --review <first .spec.html>")
+
+
+def undo(state: Path) -> None:
+    manifest_path = state / "install.toml"
+    manifest = read_toml(manifest_path)
+    sources = {str(s.resolve()) for s in SKILLS.values()}
+    for item in manifest.get("links", []):
+        path = Path(item)
+        if path.is_symlink() and (not path.exists() or str(path.resolve()) in sources):
+            path.unlink()
+    for item in manifest.get("copies", []):
+        path = Path(item)
+        source = ASSETS.get(path.name)
+        if source and path.is_dir() and same_tree(source, path):
+            shutil.rmtree(path)
+        elif path.exists():
+            print(f"left changed {path}")
+    for rid in manifest.get("resources", []):
+        subprocess.run([sys.executable, str(HOST), "remove", "--id", rid], stdout=subprocess.DEVNULL)
+    for path in (state / "onboarding.toml", manifest_path):
+        path.unlink(missing_ok=True)
+    print("spec-chat install undone")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="install-spec-chat", description=__doc__.splitlines()[0])
+    parser.add_argument("--prefix", default=str(Path.home()), help="home for skill links (default: $HOME)")
+    parser.add_argument("--specs", metavar="DIR", help="spec folder that gets the page runtime (.viz) and style (.style)")
+    parser.add_argument("--review", metavar="SPEC", help="first *.spec.html to review through the box's service")
+    visibility = parser.add_mutually_exclusive_group()
+    visibility.add_argument("--public", metavar="HOST", help="box setup: serve review publicly on HOST (no login)")
+    visibility.add_argument("--private", action="store_true", help="box setup: return review to loopback")
+    parser.add_argument("--proof-host", help="box setup: public proof host for a wildcard bind")
+    parser.add_argument("--undo", action="store_true", help="remove only what earlier runs added")
+    args = parser.parse_args(argv)
+    prefix, state = Path(args.prefix).expanduser().resolve(), state_root()
+    try:
+        undo(state) if args.undo else install(args, prefix, state)
+    except InstallError as exc:
+        print(f"install-spec-chat: error: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
