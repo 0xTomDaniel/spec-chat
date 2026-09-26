@@ -6,7 +6,7 @@
 
 Specs authored as **visual HTML documents** (charts, diagrams, math, animation — not just prose) that humans annotate in the browser; a coding agent (Claude Code, Codex CLI, pi.dev) addresses annotations and edits the spec in place as agreements are reached. Discussion happens *on* the visualization instead of in chat prose.
 
-Hard constraints: agent-agnostic/universal; plain files + CLI + agent skills over MCP/hooks/servers; all inference through the coding CLI session (subscription auth, no separate billing); no alt-tabbing back to the terminal to trigger the agent.
+Hard constraints: agent-agnostic/universal; plain files + CLI + agent skills over MCP/hooks/servers; all inference through the coding CLI session (subscription auth, no separate billing), except optional server-side Jev typed suggestions, off without a key (ANN-100, `docs/specs/jev-suggestions.spec.html`); no alt-tabbing back to the terminal to trigger the agent.
 
 ## v1 scope — ratified cut line (round 3, anti-overengineering pass)
 

@@ -83,6 +83,7 @@ node "$ROOT/tests/runtime-thread-model.mjs"
 node "$ROOT/tests/runtime-focus-model.mjs"
 node "$ROOT/tests/runtime-fsa-transport.mjs"
 node "$ROOT/tests/runtime-mobile-contract.mjs"
+node "$ROOT/tests/runtime-jev-contract.mjs"
 (cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/review-serve-baseline.py)
 (cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/review-serve-multi.py)
 (cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/review-surface-preflight.py)

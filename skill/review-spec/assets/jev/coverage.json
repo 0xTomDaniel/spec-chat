@@ -1,0 +1,72 @@
+{
+  "id": "coverage",
+  "version": 3,
+  "instructions": "For one user story and one acceptance criterion, decide whether the criterion verifies the story. Choose verifies only when the criterion's observable result directly covers the story. Choose unrelated when it does not or when one side is missing.",
+  "labels": [
+    {
+      "name": "verifies",
+      "description": "The acceptance criterion directly verifies the user story.",
+      "examples": [
+        {
+          "input": {
+            "story": {
+              "anchor": "story-see-range",
+              "text": "As a reviewer, I can see which commits the served spec compares, so I know what the highlighted changes mean."
+            },
+            "criterion": {
+              "anchor": "acceptance-bar",
+              "text": "When any spec is opened over HTTP, with or without focus=changes, the page shows Changes from <base> to <head> with short ids and dates matching base and head, and working copy of when the file is dirty."
+            }
+          },
+          "label": "verifies"
+        },
+        {
+          "input": {
+            "story": {
+              "anchor": "story-change-base",
+              "text": "As a reviewer, I can pick an earlier commit of this spec or paste a commit id and see the page re-diff, without editing the URL."
+            },
+            "criterion": {
+              "anchor": "acceptance-pick",
+              "text": "When the reviewer picks a listed commit, highlighting and bar reflect that base without a page reload, and the URL carries focus=changes&base=<full id>."
+            }
+          },
+          "label": "verifies"
+        }
+      ]
+    },
+    {
+      "name": "unrelated",
+      "description": "The acceptance criterion does not verify the user story, or one side has no matching text.",
+      "examples": [
+        {
+          "input": {
+            "story": {
+              "anchor": "story-change-base",
+              "text": "As a reviewer, I can pick an earlier commit of this spec or paste a commit id and see the page re-diff, without editing the URL."
+            },
+            "criterion": {
+              "anchor": "acceptance-compat",
+              "text": "When the review host verifies a served resource, its existing base, htmlBase, and html checks pass unchanged."
+            }
+          },
+          "label": "unrelated"
+        },
+        {
+          "input": {
+            "story": {
+              "anchor": "story-see-range",
+              "text": "As a reviewer, I can see which commits the served spec compares, so I know what the highlighted changes mean."
+            },
+            "criterion": {
+              "anchor": "acceptance-paste",
+              "text": "When the reviewer pastes a valid commit id, the page re-diffs against it as if picked; an unknown or option-like value shows an inline error and the previous range stays."
+            }
+          },
+          "label": "unrelated"
+        }
+      ]
+    }
+  ],
+  "threshold": 0.4
+}

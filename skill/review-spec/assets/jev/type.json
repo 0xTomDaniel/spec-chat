@@ -1,0 +1,88 @@
+{
+  "id": "type",
+  "version": 3,
+  "instructions": "Compare the base and current text for one changed root section. Choose the single label whose criterion best describes the change. Use scope when the change adds, removes, or moves a capability, surface, or non-goal. Use behavioral when the result or a rule changes. Use clarification when behavior stays the same and wording becomes more precise. Use cosmetic when meaning stays the same and only wording, order, or style changes.",
+  "labels": [
+    {
+      "name": "scope",
+      "description": "Adds, removes, or moves a capability, surface, or non-goal.",
+      "examples": [
+        {
+          "input": {
+            "before": "Change type in Git focus.",
+            "after": "Change type in Git focus and reading view."
+          },
+          "label": "scope"
+        },
+        {
+          "input": {
+            "before": "The shared contract covers one pair.",
+            "after": "The shared contract covers corpus, coverage, and audience pairs."
+          },
+          "label": "scope"
+        }
+      ]
+    },
+    {
+      "name": "behavioral",
+      "description": "Alters what the result does: a rule, interface, edge case, or criterion.",
+      "examples": [
+        {
+          "input": {
+            "before": "When no matching reply appears within the existing timeout, it reports that the hand-off is still queued and the review session may be disconnected.",
+            "after": "When no matching reply appears within the existing timeout, it reports that automatic wake did not occur and instructs the human to send a new chat message to resume."
+          },
+          "label": "behavioral"
+        },
+        {
+          "input": {
+            "before": "A confident label is shown.",
+            "after": "A low-confidence label becomes unsure."
+          },
+          "label": "behavioral"
+        }
+      ]
+    },
+    {
+      "name": "clarification",
+      "description": "Keeps the behavior the same while stating its meaning more precisely.",
+      "examples": [
+        {
+          "input": {
+            "before": "Each changed root section gets one change-type question.",
+            "after": "Each changed root section gets one Choice question with scope, behavioral, clarification, and cosmetic criteria."
+          },
+          "label": "clarification"
+        },
+        {
+          "input": {
+            "before": "The seam follows the shared Jev contract.",
+            "after": "The seam follows the current retry, cache, and no-reorder contract."
+          },
+          "label": "clarification"
+        }
+      ]
+    },
+    {
+      "name": "cosmetic",
+      "description": "Changes wording, order, or style without changing meaning.",
+      "examples": [
+        {
+          "input": {
+            "before": "The page re-reads the lanes endpoint every 30 seconds and on an explicit Refresh control.",
+            "after": "The page re-reads /lanes every 30 seconds and on an explicit Refresh control."
+          },
+          "label": "cosmetic"
+        },
+        {
+          "input": {
+            "before": "lean review (current base)",
+            "after": "lean review (base)"
+          },
+          "label": "cosmetic"
+        }
+      ]
+    }
+  ],
+  "threshold": 0.4
+}
