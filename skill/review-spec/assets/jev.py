@@ -976,6 +976,37 @@ def _commit(root: str, ref: str) -> str | None:
     return value.decode().strip() if value else None
 
 
+EXCLUDED_COLLECTION_DIRS = frozenset({"evidence", "evidence-bundle", "evidence-bundles", "fixture", "fixtures",
+                                      "support", "supports"})
+ONBOARDING_DIR = "onboarding"
+OFFER_ACTIONS = frozenset({"sent", "dismissed"})
+
+
+def _main_commit(root: str) -> str | None:
+    """Main's commit for a project: origin/main, else a local main (#bootstrap-table)."""
+    return next((commit for commit in (_commit(root, ref) for ref in ("origin/main", "main")) if commit), None)
+
+
+def _collection_paths(root: str, commit: str, collection: str) -> list[str]:
+    """Repo-relative spec paths in main's tree under one collection, as the review index would list them."""
+    listing = _git_read(root, "ls-tree", "-r", "-z", "--name-only", "--end-of-options", commit, "--",
+                        collection if collection not in ("", ".") else ".")
+    result = []
+    for name in (listing or b"").decode("utf-8", "replace").split("\0"):
+        parts = name.split("/")
+        if not name.endswith(SPEC_SUFFIX) or parts[-1].startswith("."):
+            continue
+        if any(part.startswith(".") or part.endswith(".review") or part.lower() in EXCLUDED_COLLECTION_DIRS
+               for part in parts[:-1]):
+            continue
+        result.append(name)
+    return result
+
+
+def _status_file_name(project: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]", "_", project).lstrip(".") + ".json"
+
+
 def default_state_dir() -> Path:
     root = os.environ.get("XDG_STATE_HOME")
     return Path(root) / "spec-chat" / "jev" if root else Path.home() / ".local" / "state" / "spec-chat" / "jev"
@@ -987,7 +1018,8 @@ class JevService:
         self.api_key = (api_key if api_key is not None else os.environ.get("OPENROUTER_API_KEY", "")).strip()
         self.provider = provider
         self.question_sets = load_question_sets(*(question_dirs or []))
-        path = Path(state_dir) / "records.jsonl" if state_dir else default_state_dir() / "records.jsonl"
+        self.state_dir = Path(state_dir) if state_dir else default_state_dir()
+        path = self.state_dir / "records.jsonl"
         self.seam = JevSeam(self.question_sets, provider=provider, api_key=self.api_key,
                             record_store=JudgmentStore(path))
 
@@ -1004,6 +1036,10 @@ class JevService:
         self._rule_pool = ThreadPoolExecutor(max_workers=RULE_ASK_WORKERS, thread_name_prefix="spec-chat-jev-rule")
         self._rule_lock = threading.Lock()
         self._rule_inflight: set[str] = set()
+
+        # Bootstrap (project-rules #bootstrap): one background warm-up per project, its status file on disk.
+        self._status_lock = threading.Lock()
+        self._warm_started: set[str] = set()
 
     @property
     def enabled(self) -> bool:
@@ -1308,6 +1344,134 @@ class JevService:
         except Exception:
             return [], []
 
+    def status_path(self, project: str) -> Path:
+        return self.state_dir / ONBOARDING_DIR / _status_file_name(project)
+
+    def onboarding_status(self, project: str) -> dict[str, Any] | None:
+        """The published onboarding status for one project (#bootstrap-status); None before the first warm-up."""
+        try:
+            value = json.loads(self.status_path(project).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        return value if isinstance(value, dict) else None
+
+    def _write_status(self, project: str, status: Mapping[str, Any]) -> None:
+        path = self.status_path(project)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name("." + path.name + "." + uuid.uuid4().hex + ".tmp")
+        temporary.write_text(json.dumps(_jsonable(status), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        os.replace(temporary, path)
+
+    def warm(self, rows: Any) -> list[str]:
+        """Start the warm-up for each registered project not yet warmed; never waits (#bootstrap-once).
+
+        A project is warmed once: a done status is never redone. A failed or interrupted warm-up is started
+        again on the next server start. With Jev off nothing runs and nothing is written, so no offer shows."""
+        if not self.enabled:
+            return []
+        projects: dict[str, list[Mapping[str, Any]]] = {}
+        for row in rows or []:
+            if isinstance(row, Mapping) and row.get("project") and row.get("root"):
+                projects.setdefault(str(row["project"]), []).append(row)
+        started = []
+        for project, members in projects.items():
+            status: dict[str, Any] = {"project": project, "state": "running",
+                                      "started_at": _now(), "criteria_classified": 0, "rules": [],
+                                      "specs_to_reconcile": 0, "reconcile": [], "offer": None}
+            with self._status_lock:
+                if project in self._warm_started:
+                    continue
+                self._warm_started.add(project)
+                if (self.onboarding_status(project) or {}).get("state") == "done":
+                    continue
+                self._write_status(project, status)
+            threading.Thread(target=self._warm_project, args=(project, members, status), daemon=True,
+                             name="spec-chat-jev-warm").start()
+            started.append(project)
+        return started
+
+    def _main_specs(self, rows: list[Mapping[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+        """Main's copy of every spec in the project's collections, once per repo-relative path."""
+        root = str(rows[0]["root"])
+        commit = _main_commit(root)
+        if not commit:
+            raise RuntimeError("project has no main")
+        paths: list[str] = []
+        for row in rows:
+            narrow = str(row.get("narrow_root") or row["root"])
+            collection = os.path.relpath(narrow, str(row["root"])).replace(os.sep, "/")
+            if collection.startswith("../"):
+                continue
+            paths.extend(path for path in _collection_paths(root, commit, collection) if path not in paths)
+        specs = []
+        for path in paths:
+            source = _git_read(root, "show", "--end-of-options", commit + ":" + path)
+            if source is not None:
+                specs.append({"path": path, "source": source})
+        return commit, specs
+
+    def _ask_or_none(self, question: Mapping[str, Any]) -> dict[str, Any] | None:
+        try:
+            return self.seam.ask(question)
+        except Exception:
+            return None
+
+    def _warm_project(self, project: str, rows: list[Mapping[str, Any]], status: dict[str, Any]) -> None:
+        """Classify every criterion and check every spec of main in parallel, then publish the status
+        (#bootstrap-table). Answers are ordinary records, so later pages reuse them without new calls."""
+        try:
+            commit, specs = self._main_specs(rows)
+            scopes = build_scope_questions(specs)
+            with ThreadPoolExecutor(max_workers=RULE_ASK_WORKERS, thread_name_prefix="spec-chat-jev-warm") as pool:
+                labels = [_confident_label(record) for record in pool.map(self._ask_or_none, scopes)]
+                rules = [scope for scope, label in zip(scopes, labels) if label == RULE_SCOPE]
+                checks = []
+                for spec in specs:
+                    mark = rule_mark_anchor(spec["source"])
+                    if mark is None:
+                        continue
+                    for scope in rules:
+                        if scope["target"].split("#", 1)[0] != spec["path"]:
+                            checks.append((spec["path"], scope,
+                                           build_rule_question(scope, spec["source"], spec["path"], commit, commit, mark)))
+                answers = list(pool.map(self._ask_or_none, [check[2] for check in checks]))
+            missed: dict[str, list[dict[str, str]]] = {}
+            for (path, scope, _), record in zip(checks, answers):
+                if _confident_label(record) == RULE_MISSED:
+                    missed.setdefault(path, []).append({"target": scope["target"], "word": scope["word"]})
+            status.update({
+                "state": "done", "main": commit,
+                "criteria_classified": sum(label is not None for label in labels),
+                "rules": sorted(scope["target"] for scope in rules),
+                "specs_to_reconcile": len(missed),
+                "reconcile": [{"spec": path, "rules": missed[path]} for path in sorted(missed)],
+            })
+        except Exception as exc:
+            status.update({"state": "failed", "error": str(exc) or type(exc).__name__})
+        status["finished_at"] = _now()
+        with self._status_lock:
+            self._write_status(project, status)
+
+    def offer(self, project: Any) -> dict[str, Any] | None:
+        """The one-time reconcile offer (#bootstrap-offer): after warm-up, N above zero, never sent or dismissed."""
+        status = self.onboarding_status(str(project)) if project else None
+        if not status or status.get("state") != "done" or status.get("offer") or not status.get("specs_to_reconcile"):
+            return None
+        return {"count": status["specs_to_reconcile"], "specs": status.get("reconcile", [])}
+
+    def record_offer(self, project: Any, action: str) -> bool:
+        """Record the offer sent or dismissed in the status file; the first record stands."""
+        if action not in OFFER_ACTIONS or not project:
+            return False
+        with self._status_lock:
+            status = self.onboarding_status(str(project))
+            if not status or status.get("state") != "done":
+                return False
+            if not status.get("offer"):
+                status.update({"offer": action, "offer_at": _now()})
+                self._write_status(str(project), status)
+        return True
+
     def response(self, mount: Mapping[str, Any], target: str, relative: str, base: str,
                  events: list[Mapping[str, Any]], view: str = "", served_mounts: Any = None) -> dict[str, Any]:
         if not self.enabled:
@@ -1349,7 +1513,7 @@ class JevService:
             items.append({"kind": question["kind"], "id": question["id"], "state": state,
                           "label": label if state == "label" else None,
                           "target": target_anchor, "record": record.get("record_id")})
-        return {"jev": "on", "items": items + rule_items, "rules": rules}
+        return {"jev": "on", "items": items + rule_items, "rules": rules, "offer": self.offer(mount.get("project"))}
 
 
 __all__ = ["BUILDERS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MODEL",

@@ -188,6 +188,7 @@ class MountState:
         self.path = os.path.realpath(path) if path else None
         self.records = tuple(records)
         self.signature = self._signature() if self.path else None
+        self.on_change = None  # called with the new rows after each registry reload
 
     def _signature(self):
         try:
@@ -208,6 +209,11 @@ class MountState:
             return self.records
         self.records = tuple(records)
         self.signature = signature
+        if self.on_change:
+            try:
+                self.on_change(self.records)
+            except Exception as exc:  # a failed warm-up start never fails the request that reloaded rows
+                print("review-serve: registry change hook failed: %r" % exc, file=sys.stderr, flush=True)
         return self.records
 
 
@@ -943,6 +949,22 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
         except (OSError, RuntimeError, ValueError):
             return self._json({"error": "jev unavailable"}, 503)
 
+    def _post_offer(self, query, body):
+        """Record the page's one-time reconcile offer sent or dismissed (project-rules #bootstrap-offer)."""
+        mount, _, _ = self._resolve_path(query.get("path", [""])[0], spec_only=True)
+        if not mount:
+            return self._json({"error": "bad path"}, 400)
+        try:
+            action = json.loads(body).get("offer")
+        except (ValueError, AttributeError):
+            return self._json({"error": "bad json"}, 400)
+        if action not in ("sent", "dismissed"):
+            return self._json({"error": "offer must be sent or dismissed"}, 400)
+        try:
+            return self._json({"ok": self.server.jev.record_offer(mount.get("project"), action)})
+        except OSError:
+            return self._json({"error": "jev unavailable"}, 503)
+
     def _post_event(self, query, body):
         mount, review = self._route_review(query)
         actor = query.get("actor", ["human"])[0]
@@ -1025,6 +1047,8 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
         except ValueError:
             return self.send_error(400)
         parsed = urlparse(self.path)
+        if parsed.path == "/api/jev/offer":
+            return self._post_offer(parse_qs(parsed.query), body)
         if parsed.path != "/api/events":
             return self._json({"error": "not found"}, 404)
         return self._post_event(parse_qs(parsed.query), body)
@@ -1077,6 +1101,9 @@ def main(argv=None):
         return 2
     server.mount_state = state
     server.jev = JevService()
+    # Bootstrap (project-rules #bootstrap-home): a project's first registration starts its warm-up here.
+    state.on_change = server.jev.warm
+    server.jev.warm(state.records)
     server.wake_controller = WakeController(server)
     wake_thread = threading.Thread(target=server.wake_controller.run, name="spec-chat-wake", daemon=True)
     wake_thread.start()
