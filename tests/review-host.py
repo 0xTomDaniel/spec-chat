@@ -32,6 +32,19 @@ _wake_spec.loader.exec_module(review_host_wake)
 FakeWaker = review_host_wake.FakeWaker
 
 
+def outbound_address():
+    """A concrete non-loopback address of this machine, for public-bind proofs; skip without one."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        try:
+            probe.connect(("192.0.2.1", 80))
+            address = probe.getsockname()[0]
+        except OSError:
+            address = ""
+    if not address or address.startswith("127."):
+        raise unittest.SkipTest("no non-loopback address for a public bind")
+    return address
+
+
 def request(url, *, method="GET", body=None):
     try:
         with urllib.request.urlopen(urllib.request.Request(url, data=body, method=method), timeout=4) as response:
@@ -334,7 +347,7 @@ finish_event = ""
         written = "".join(call.args[0] for call in err.write.call_args_list)
         self.assertIn("has no login", written)
 
-    def test_live_host_keeps_its_bind_and_refuses_a_different_one(self):
+    def test_live_host_keeps_its_bind_and_restarts_on_a_different_one(self):
         state = self.work / "state"
         first = self.run_cli(*self.register_args(state), state=state)
         self.assertEqual(first.returncode, 0, first.stderr)
@@ -342,18 +355,30 @@ finish_event = ""
         process = self.registry(state)["process"]
         registry.write_text(registry.read_text(encoding="utf-8").replace('bind = "127.0.0.1"\n', ""), encoding="utf-8")
         self.assertNotIn("bind", self.registry(state)["process"])
-        before = registry.read_bytes()
-        public = self.run_cli(*self.register_args(state, spec="second"), "--public", "0.0.0.0", state=state,
-                              ports=process["port"])
-        self.assertNotEqual(public.returncode, 0)
-        self.assertIn("already running on 127.0.0.1", public.stderr)
-        self.assertIn("run stop", public.stderr)
-        self.assertEqual(registry.read_bytes(), before)
         private = self.run_cli(*self.register_args(state, spec="second"), "--private", state=state,
                                ports=process["port"])
         self.assertEqual(private.returncode, 0, private.stderr)
         self.assertEqual(self.registry(state)["process"], {k: v for k, v in process.items() if k != "bind"})
         self.assertIn("ssh -L", private.stdout)
+        proof = outbound_address()
+        public = self.run_cli(*self.register_args(state, spec="second"), "--public", "0.0.0.0", "--proof-host", proof,
+                              state=state, ports=process["port"])
+        self.assertEqual(public.returncode, 0, public.stderr)
+        moved = self.registry(state)["process"]
+        self.assertEqual((moved["bind"], moved["host"], moved["port"]), ("0.0.0.0", proof, process["port"]))
+        self.assertNotEqual(moved["pid"], process["pid"])
+        self.assertFalse(review_host.process_owns_registry(process["pid"], registry))
+        self.assertEqual(len(self.registry(state)["resource"]), 2)
+        self.assertIn("has no login", public.stderr)
+        back = self.run_cli(*self.register_args(state), "--private", state=state, ports=self.port())
+        self.assertEqual(back.returncode, 0, back.stderr)
+        home = self.registry(state)["process"]
+        self.assertEqual((home["bind"], home["port"]), ("127.0.0.1", process["port"]))
+
+    def test_empty_xdg_state_home_is_unset(self):
+        args = review_host.build_parser().parse_args(["stop"])
+        with mock.patch.dict(os.environ, {"XDG_STATE_HOME": "", "HOME": str(self.work)}):
+            self.assertEqual(review_host.state_dir(args), (self.work / ".local/state/spec-chat/hosting/default").resolve())
 
     def test_running_url_never_guesses_without_log(self):
         with self.assertRaises(review_host.LauncherError):

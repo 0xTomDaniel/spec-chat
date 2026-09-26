@@ -68,7 +68,7 @@ By the box owner, once, outside any lane: `--public <host>` (listen there on an 
 8. **Reconcile to empty, then select one terminal control state.** Repeat the zero-wait scan and steps 2–7 until it exits 3, then choose exactly one:
 
    - `turn-yielded`: run `scripts/review-control.sh yielded <spec-root> .cursor-owner 3600 3` through a verified same-turn yield and keep this turn open. A final response is forbidden.
-   - `host-wake`: register the spec with the lane command, using the owner pane id, never an agent or tab name. Re-register an existing row with its current `base` from `registry.toml` as `--base <row base>`, never the lane start base. Final is allowed only when registration printed `wake=verified owner=<pane>`; the review host then prompts that pane once per hand-off batch. `wake=unavailable` selects `manual-resume`.
+   - `host-wake`: register the spec with the lane command, using the owner pane id, never an agent or tab name. Pass no `--base`: re-registering an existing row keeps its recorded base. Final is allowed only when registration printed `wake=verified owner=<pane>`; the review host then prompts that pane once per hand-off batch. `wake=unavailable` selects `manual-resume`.
    - `manual-resume`: run `scripts/review-control.sh manual`, return a final response that explicitly requires a new human chat message, and claim no automatic wake. Keep the same review server and checker alive while waiting. The new message resumes the checker against that URL.
 
    `<spec-root>` is normally the repository's shared `docs/` collection root.

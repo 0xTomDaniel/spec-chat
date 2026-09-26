@@ -220,6 +220,22 @@ def process_owns_registry(pid: Any, registry: Path) -> bool:
     return True
 
 
+def process_exited(pid: int) -> bool:
+    """Every thread gone or a zombie: only then are its sockets closed (its cmdline empties earlier in exit)."""
+    try:
+        tasks = list(Path(f"/proc/{pid}/task").iterdir())
+    except OSError:
+        return True
+    for task in tasks:
+        try:
+            stat = (task / "stat").read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if stat.rpartition(")")[2].split()[:1] not in (["Z"], ["X"]):
+            return False
+    return True
+
+
 def stop_process(pid: int, registry: Path) -> None:
     if not process_owns_registry(pid, registry):
         raise LauncherError("registry process is not running under the recorded review server")
@@ -229,7 +245,7 @@ def stop_process(pid: int, registry: Path) -> None:
         return
     deadline = time.monotonic() + 3
     while time.monotonic() < deadline:
-        if not process_owns_registry(pid, registry):
+        if process_exited(pid):
             return
         time.sleep(0.05)
     raise LauncherError("review server did not stop after SIGTERM")
@@ -602,12 +618,18 @@ def bind_ports(bind: str) -> tuple[int, ...]:
 
 
 def start_plan(args: argparse.Namespace, process: Mapping[str, Any] | None) -> tuple[str, str, int | None]:
-    """Bind, proof host, and recorded port to try first; a service on its recorded bind keeps its host and port."""
+    """Bind, proof host, and recorded port to try first; a service on its recorded bind keeps its host and port.
+
+    A changed bind keeps the recorded port only where that bind may take it: any port on loopback, else an
+    approved one."""
     recorded = process or {}
     bind = select_bind(args, process)
     same = (recorded.get("bind") or LOOPBACK) == bind
     host = recorded.get("host") if same and not args.proof_host else None
-    return bind, host or proof_host(args, bind), recorded.get("port") if same else None
+    port = recorded.get("port")
+    if port and not same and not is_loopback(bind) and port not in approved_ports():
+        port = None
+    return bind, host or proof_host(args, bind), port
 
 
 def select_start_port(bind: str, recorded: int | None) -> int:
@@ -625,7 +647,7 @@ def server_command(registry: Path, bind: str, port: int, host: str) -> list[str]
 def state_dir(args: argparse.Namespace) -> Path:
     if args.state_dir:
         return Path(args.state_dir).expanduser().resolve()
-    base = Path(os.environ.get("XDG_STATE_HOME", "~/.local/state")).expanduser()
+    base = Path(os.environ.get("XDG_STATE_HOME") or "~/.local/state").expanduser()
     return (base / "spec-chat" / "hosting" / "default").resolve()
 
 
@@ -722,12 +744,15 @@ def register(args: argparse.Namespace) -> int:
         validate_records(candidate)
         child: subprocess.Popen[str] | None = None
         try:
-            if process and process_owns_registry(process["pid"], registry):
-                # A live server is reused unchanged; a registry without bind is private.
-                bind = process.get("bind") or LOOPBACK
-                if (args.public or args.private) and select_bind(args, None) != bind:
-                    raise LauncherError(f"review host already running on {bind}; "
-                                        "run stop, then register again to change it")
+            live = process and process_owns_registry(process["pid"], registry)
+            # A registry without bind is private. An explicit different visibility restarts the live server,
+            # planned first so a bad bind or proof host leaves it running.
+            bind, plan = (process or {}).get("bind") or LOOPBACK, None
+            if live and (args.public or args.private) and select_bind(args, None) != bind:
+                plan = start_plan(args, process)
+                stop_process(process["pid"], registry)
+                live = False
+            if live:
                 url = process.get("url") or running_url(log_path)
                 process = {**process, "url": url}
                 write_registry(registry, candidate, process)
@@ -737,7 +762,7 @@ def register(args: argparse.Namespace) -> int:
                 print_urls(url, additions, state)
                 return 0
 
-            bind, host, recorded_port = start_plan(args, process)
+            bind, host, recorded_port = plan or start_plan(args, process)
             port = select_start_port(bind, recorded_port)
             write_registry(registry, candidate)
             command = server_command(registry, bind, port, host)

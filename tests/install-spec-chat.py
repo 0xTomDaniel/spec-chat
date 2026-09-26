@@ -1,6 +1,7 @@
 """Fresh-install test of Spec Chat's onboarding (acceptance-onboarding)."""
 
 import os
+import socket
 import subprocess
 import tempfile
 import tomllib
@@ -88,6 +89,35 @@ class InstallSpecChatTest(unittest.TestCase):
         self.assertTrue(self.spec.is_file())
         registry = tomllib.loads((self.state / "spec-chat/hosting/default/registry.toml").read_text())
         self.assertEqual(registry.get("resource", []), [])
+
+    def test_box_setup_moves_a_live_private_service_to_public(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            try:
+                probe.connect(("192.0.2.1", 80))
+                proof = probe.getsockname()[0]
+            except OSError:
+                proof = ""
+        if not proof or proof.startswith("127."):
+            self.skipTest("no non-loopback address for a public bind")
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+        self.env["SPEC_CHAT_APPROVED_INGRESS_PORTS"] = str(port)
+        registry = self.state / "spec-chat/hosting/default/registry.toml"
+        private = self.run_install("--specs", str(self.specs), "--review", str(self.spec))
+        self.assertIn("ssh -L", private.stdout)
+        before = tomllib.loads(registry.read_text())
+        self.assertEqual((before["process"]["bind"], before["process"]["port"]), ("127.0.0.1", port))
+        public = self.run_install("--specs", str(self.specs), "--review", str(self.spec),
+                                  "--public", "0.0.0.0", "--proof-host", proof)
+        self.assertIn(f"review URL: http://{proof}:{port}", public.stdout)
+        self.assertIn("has no login", public.stderr)
+        after = tomllib.loads(registry.read_text())
+        self.assertEqual((after["process"]["bind"], after["process"]["port"]), ("0.0.0.0", port))
+        self.assertNotEqual(after["process"]["pid"], before["process"]["pid"])
+        stamps = ("registered_at", "updated_at")
+        rows = [[{k: v for k, v in r.items() if k not in stamps} for r in d["resource"]] for d in (before, after)]
+        self.assertEqual(rows[1], rows[0])
 
 
 if __name__ == "__main__":
