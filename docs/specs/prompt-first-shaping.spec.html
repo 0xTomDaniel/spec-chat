@@ -635,10 +635,10 @@
 <section data-anchor="review-surface-compatibility" id="review-surface-compatibility">
 <h2>Review surface compatibility</h2>
 <p data-anchor="compatibility-seam">The review-surface preflight is the single seam that verifies a target spec, browser runtime, and local transport before review opens.</p>
-<p data-anchor="compatibility-capabilities">Compatibility is determined from explicit capabilities required by the current bundled runtime and server rather than global skill freshness, file age, or an external registry.</p>
-<p data-anchor="compatibility-migrate">When a target copy lacks a required capability, preflight replaces that incompatible asset from the current self-contained skill bundle before the server starts.</p>
+<p data-anchor="compatibility-capabilities">Compatibility is checked for the target runtime only, from explicit capabilities required by the current bundled runtime rather than global skill freshness, file age, or an external registry.</p>
+<p data-anchor="compatibility-migrate">When the target runtime lacks a required capability, preflight replaces it from the current self-contained skill bundle before the server starts; the review server is always the skill's own bundled <code>assets/review-serve.py</code>, so it is never copied into the target.</p>
 <p data-anchor="compatibility-preserve">A target asset declaring every required capability remains untouched even when its implementation or pin differs from the bundle.</p>
-<p data-anchor="compatibility-pair">Runtime and server compatibility are checked together because Git focus requires both the browser behavior and the read-only baseline route.</p>
+<p data-anchor="compatibility-pair">Git focus needs both the bundled server's read-only baseline route and the target runtime's browser behavior.</p>
 <p data-anchor="compatibility-live-restart">A migrated running server is restarted on the same approved port before review continues.</p>
 <p data-anchor="compatibility-http-proof">Before browser evidence or a review handoff, the agent verifies served runtime capabilities and uses the read-only verifier to compare served spec bytes and baseline HTML with local files and Git, including new-file baselines; these checks do not replace visual inspection.</p>
 <p data-anchor="compatibility-visual-target">Every semantic visual island has a render target in the same parent, and a missing target blocks publication rather than silently producing prose-only output.</p>
