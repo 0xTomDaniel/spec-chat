@@ -1823,6 +1823,7 @@ body.hx-panel-open{padding-right:0;overflow:hidden}
 .hx-panel-gear{top:6px;right:8px;width:44px;height:44px;touch-action:manipulation}
 .hx-thread-dock{top:calc(8px + env(safe-area-inset-top));right:8px;padding:4px}
 .hx-service-index-link{top:calc(8px + env(safe-area-inset-top));left:8px;max-width:calc(100vw - 68px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body.hx-panel-open .hx-service-index-link{display:none}
 .hx-dock-open,.hx-dock-thread{width:44px;height:44px;touch-action:manipulation}
 .hx-dock-threads{max-height:calc(100dvh - 68px)}
 .hx-threads{padding:12px;overscroll-behavior:contain}

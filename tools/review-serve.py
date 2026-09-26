@@ -710,14 +710,12 @@ class MountHandler(SimpleHTTPRequestHandler):
         def project_rows(projects):
             parts = []
             for project in sorted(projects):
-                parts.append('<h4>%s</h4><ul>' % html.escape(project))
+                parts.append('<p class="label">%s</p><ul>' % html.escape(project))
                 for status, title, href in sorted(projects[project], key=lambda spec: (not spec[0], spec[1].casefold(), spec[2])):
-                    badge = (
-                        '<span class="status changed">Changed since you reviewed</span>' if status
-                        else '<span class="status">Up to date</span>' if status is False else ""
-                    )
+                    # The lane count says up to date; a row's only status word is its Changed pill.
+                    pill = '<span class="pill">Changed</span>' if status else ""
                     parts.append('<li><a href="%s">%s</a>%s</li>' % (
-                        html.escape(href, quote=True), html.escape(title), badge))
+                        html.escape(href, quote=True), html.escape(title), pill))
                 parts.append('</ul>')
             return "".join(parts)
 
@@ -727,36 +725,56 @@ class MountHandler(SimpleHTTPRequestHandler):
             changed = sum(1 for status in statuses if status)
             count = (
                 "%d of %d changed" % (changed, len(statuses)) if changed
-                else "up to date" if statuses else "no status"
+                else "Up to date" if statuses else "No status"
             )
-            cards.append('<section class="lane"><h3><span>%s</span><span class="count">%s</span></h3>%s</section>' % (
-                html.escape(_lane_label(lane)[0]), count, project_rows(projects)))
+            key = html.escape(_lane_label(lane)[0])
+            cards.append('<section class="lane%s" aria-label="%s"><p class="lane-head"><span class="key">%s</span><span class="count">%s</span></p>%s</section>' % (
+                " changed" if changed else "", key, key, count, project_rows(projects)))
         listing = ""
         if cards:
-            listing += '<h2>In progress</h2><nav aria-label="Spec Chat detail pages">%s</nav>' % "\n".join(cards)
+            listing += '<p class="label">In progress</p><nav class="lanes" aria-label="Spec Chat detail pages">%s</nav>' % "\n".join(cards)
         if settled:
-            listing += '<details class="settled"><summary>Settled (%d)</summary>%s</details>' % (
+            listing += '<details class="settled"><summary>Settled (%d)</summary><div class="card">%s</div></details>' % (
                 sum(len(specs) for specs in settled.values()), project_rows(settled))
         listing = listing or '<p class="empty">No Spec Chat spec pages are available.</p>'
         body = ('''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Spec Chat index</title><style>
-:root { color-scheme: light; font-family: system-ui, sans-serif; background: #faf9f6; color: #22242a; }
-body { margin: 0; } main { box-sizing: border-box; max-width: 80rem; margin: 0 auto; padding: clamp(1.25rem, 4vw, 3rem); }
-h1 { font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1.1; margin: 0 0 2rem; }
-nav { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%%, 300px), 1fr)); align-items: start; }
-.lane { min-width: 0; background: #fff; border: 1px solid #e2e0d8; border-radius: .75rem; padding: .75rem 1rem; }
-h2, summary { margin: 0 0 1rem; font-size: 1.25rem; font-weight: 800; }
-.settled { margin-top: 1.5rem; } summary { cursor: pointer; margin: 0; }
-.lane h3 { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; margin: 0; font-size: 1.125rem; font-weight: 800; }
-.count { flex: none; color: #595e68; font-size: .8125rem; font-weight: 400; }
-h4 { margin: .625rem 0 .125rem; color: #595e68; font-size: .75rem; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; overflow-wrap: anywhere; }
+/* ui tokens */
+:root {
+  --ui-font: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ui-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --ui-text-xs: 12px; --ui-text-sm: 14px; --ui-text-md: 16px; --ui-text-lg: 20px;
+  --ui-page: #ffffff; --ui-surface: #ffffff; --ui-ink: #333333; --ui-muted: #525252; --ui-border: #dfdfdf;
+  --ui-link: #333333; --ui-focus: #262626; --ui-action: #262626;
+  --ui-pass: #005c32; --ui-pass-soft: #e6efea;
+  --ui-fail: #a5000f; --ui-fail-soft: #f6e6e7;
+  --ui-attention: #b0540e; --ui-attention-soft: #faf4ef;
+  --ui-muted-soft: #eeeeee;
+  --ui-space-1: 4px; --ui-space-2: 8px; --ui-space-3: 12px; --ui-space-4: 16px; --ui-space-5: 24px; --ui-space-6: 32px;
+  --ui-radius: 8px; --ui-radius-sm: 6px; --ui-radius-pill: 999px;
+}
+html { color-scheme: light; }
+body { margin: 0; background: var(--ui-page); color: var(--ui-ink); font-family: var(--ui-font); font-size: var(--ui-text-sm); font-weight: 400; line-height: 1.4; }
+main { box-sizing: border-box; max-width: 72rem; margin: 0 auto; padding: var(--ui-space-6); }
+h1 { margin: 0 0 var(--ui-space-5); font-size: var(--ui-text-lg); font-weight: 600; line-height: 1.2; }
+.label { margin: 0 0 var(--ui-space-2); color: var(--ui-muted); font-size: var(--ui-text-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; overflow-wrap: anywhere; }
+.lanes { display: grid; gap: var(--ui-space-2); grid-template-columns: repeat(auto-fill, minmax(min(100%%, calc(72rem / 4 - var(--ui-space-6))), 1fr)); align-items: start; margin: 0 0 var(--ui-space-5); }
+.lane, .card { box-sizing: border-box; min-width: 0; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); padding: var(--ui-space-3) var(--ui-space-4); }
+.lane.changed { border-left: var(--ui-space-1) solid var(--ui-attention); }
+.lane-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--ui-space-2); margin: 0; }
+.key { font-weight: 600; }
+.count { flex: none; color: var(--ui-muted); font-size: var(--ui-text-xs); }
+.lane .label, .card ul + .label { margin: var(--ui-space-3) 0 var(--ui-space-1); }
 ul { list-style: none; margin: 0; padding: 0; }
-li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0 .75rem; padding-bottom: .25rem; border-top: 1px solid #e2e0d8; }
-li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-height: 44px; min-width: 0; font-weight: 650; font-size: .9375rem; line-height: 1.35; overflow-wrap: anywhere; }
-.status { flex: none; margin-left: auto; color: #595e68; font-size: .8125rem; text-align: right; }
-.status.changed { color: #8a4b00; font-weight: 750; padding: 1px .5rem; border: 1px solid currentColor; border-radius: 999px; }
-.empty { color: #595e68; padding: 1rem; }
+li { display: flex; align-items: center; gap: var(--ui-space-3); padding: var(--ui-space-2) 0; border-top: 1px solid var(--ui-border); }
+li a { flex: 1 1 auto; min-width: 0; color: var(--ui-link); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+li a:hover, li a:focus-visible { text-decoration: underline; }
+a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; border-radius: var(--ui-radius-sm); }
+.pill { flex: none; margin-left: auto; padding: 0 var(--ui-space-2); line-height: 1.6; border-radius: var(--ui-radius-pill); background: var(--ui-attention-soft); color: var(--ui-attention); font-size: var(--ui-text-xs); font-weight: 600; }
+.settled summary { cursor: pointer; margin: 0 0 var(--ui-space-2); font-size: var(--ui-text-md); font-weight: 600; }
+.empty { color: var(--ui-muted); }
+@media (max-width: 640px) { main { padding: var(--ui-space-4); } }
 </style></head><body><main><h1>Review index</h1>%s</main></body></html>''' % listing).encode("utf-8")
         self._send_body(body, "text/html; charset=utf-8")
 
