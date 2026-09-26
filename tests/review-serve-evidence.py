@@ -232,7 +232,7 @@ class EvidenceRouteTest(unittest.TestCase):
         for mounts, review_dir, expected in (
             ([row], "lane/" + SPEC + ".review", "yes"),
             ([row | {"owner": ""}], "lane/" + SPEC + ".review", "no"),
-            ([serve._single_mount(root / "docs")], "specs/demo.spec.html.review", "no"),
+            ([serve._single_mount(root / "docs")], "specs/demo.spec.html.review", "yes"),
         ):
             with self.subTest(expected=expected, mount=mounts[0]["id"]):
                 url = self.review_server(mounts)

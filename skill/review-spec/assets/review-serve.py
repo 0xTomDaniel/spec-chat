@@ -883,8 +883,9 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
             return self._json({"error": "unsafe spool path"}, 400)
         events.sort(key=lambda event: event["name"])
         wake = self.server.wake_controller.status(mount.get("id"))
-        # A row with no owner is unwatched: a hand-off there wakes no one (criterion-evidence spec).
-        headers = {"X-Spec-Chat-Watched": "yes" if mount.get("owner") else "no"}
+        # Only a host row with an empty owner is unwatched; single-root has no row (criterion-evidence spec).
+        unwatched = "owner" in mount and not mount["owner"]
+        headers = {"X-Spec-Chat-Watched": "no" if unwatched else "yes"}
         if wake:
             headers["X-Spec-Chat-Wake"] = wake
         return self._json(events, headers=headers)
