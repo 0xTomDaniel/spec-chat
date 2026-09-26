@@ -3,7 +3,7 @@
   "version": 1,
   "instructions": "Read one acceptance criterion from a product spec. Choose every feature when the criterion states a rule that applies to every feature or every change of some kind across the project, such as every change to what a user sees, every new endpoint, or every stored field, whatever feature is being built. Choose this feature when the criterion describes the behavior of one feature, page, command, or component, even when it uses words like every or all inside that feature.",
   "threshold": 0.4,
-  "fallback": {"model": "openai/gpt-5-mini"},
+  "fallback": {"model": "anthropic/claude-sonnet-5"},
   "labels": [
     {
       "name": "every feature",
