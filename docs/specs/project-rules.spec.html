@@ -99,6 +99,7 @@
 <p data-anchor="agent-read-same">The read returns the <code>/api/jev</code> response for the spec and base the review link serves, from the running server, so the agent and the page see one answer from one cache.</p>
 <p data-anchor="agent-read-order">The shaping skill step runs once, after <code>review-host register</code> and before the link is sent: wait until no item is <code>pending</code>, read, handle each mark once, commit, and send the link.</p>
 <ol data-anchor="agent-once">
+<li data-anchor="agent-once-levels">The agent handles only <em>important</em> marks, a rule miss among them, and reads <em>warnings</em> without acting on them, by the mark levels in <a href="./jev-suggestions.spec.html">Jev review suggestions</a> (ANN-258).</li>
 <li data-anchor="agent-once-miss">A rule miss gets a criterion that covers the rule, or one plain line saying why it does not apply.</li>
 <li data-anchor="agent-once-other">Other marks follow the reconcile rule in <a href="../../skill/shape-spec/SKILL.md">shape-spec</a>.</li>
 <li data-anchor="agent-once-stop">The pass stops when every mark read has been handled once; there is no second read and no round cap. Marks caused by its own edits go to the human in review.</li>
