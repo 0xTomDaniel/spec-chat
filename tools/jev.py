@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import os
+import queue
 import re
 import subprocess
 import threading
@@ -303,15 +304,24 @@ class JevSeam:
             "time": self.clock(),
         })
 
-    def ask(self, question: Mapping[str, Any]) -> dict[str, Any]:
-        kind = str(question.get("kind", "type"))
-        qset = self.question_set(kind)
+    def key(self, question: Mapping[str, Any]) -> str:
+        qset = self.question_set(str(question.get("kind", "type")))
         inputs = {"state": question.get("state", {}),
                   "criteria": question.get("criteria", {}),
                   "question_set": {"id": qset.id, "version": qset.version}}
-        key = "sha256:" + hashlib.sha256(_canonical(inputs).encode("utf-8")).hexdigest()
-        cached = self.store.get(key)
-        if cached and cached.get("outcome") not in RETRYABLE_OUTCOMES:
+        return "sha256:" + hashlib.sha256(_canonical(inputs).encode("utf-8")).hexdigest()
+
+    def cached(self, question: Mapping[str, Any]) -> dict[str, Any] | None:
+        """The record already held for this question, never asking."""
+        record = self.store.get(self.key(question))
+        return record if record and record.get("outcome") not in RETRYABLE_OUTCOMES else None
+
+    def ask(self, question: Mapping[str, Any]) -> dict[str, Any]:
+        kind = str(question.get("kind", "type"))
+        qset = self.question_set(kind)
+        key = self.key(question)
+        cached = self.cached(question)
+        if cached:
             return cached
         criteria = qset.criteria_payload()
         dynamic = question.get("criteria")
@@ -756,6 +766,78 @@ BUILDERS = {"type": build_type_questions, "orphan": build_orphan_questions, "res
             "corpus": build_corpus_questions}
 
 
+# Board route (worklane-provider #jev-board): change type answers that quiet the review highlight.
+MATERIAL_NO = frozenset({"cosmetic", "clarification"})
+MATERIAL_YES = frozenset({"scope", "behavioral"})
+BOARD_ASK_WORKERS = 4
+
+
+def changed_leaf_clauses(current: str | bytes, baseline: str | bytes | None) -> list[tuple[str, str, str]]:
+    """(anchor, before, after) for each leaf clause whose text differs from the baseline."""
+    now, old = extract_anchors(current), extract_anchors(baseline)
+    result = []
+    for anchor in _corpus_leaf_anchors(now):
+        before, after = str(old.get(anchor, {}).get("text", "")), str(now[anchor].get("text", ""))
+        if before != after:
+            result.append((anchor, before, after))
+    return result
+
+
+def build_board_conflict_questions(clauses: Mapping[str, list[Mapping[str, Any]]]) -> list[dict[str, Any]]:
+    """One corpus question per unordered pair of changed leaf clauses of two slugs (#jev-conflicts).
+
+    clauses maps slug to its changed clauses: {path, anchor, before, after, base}. The lower slug's
+    clause is asked about, the other's is the target; each pair is asked once, never within a slug."""
+    slugs = sorted(clauses)
+    result = []
+    for index, left in enumerate(slugs):
+        for right in slugs[index + 1:]:
+            for a in clauses[left]:
+                for b in clauses[right]:
+                    target = b["path"] + "#" + b["anchor"]
+                    question = _question("corpus", a["anchor"],
+                                         {"before": a["before"], "after": a["after"], "target": b["after"]},
+                                         a["path"], a["base"], "working-tree", target)
+                    question["sources"] = [a["path"] + "#" + a["anchor"], target]
+                    question["pair"] = (a["path"], b["path"])
+                    result.append(question)
+    return result
+
+
+def _confident_label(record: Mapping[str, Any] | None) -> str | None:
+    if not record or record.get("outcome") != "shown":
+        return None
+    answer = record.get("answer")
+    label = answer.get("label") if isinstance(answer, Mapping) else None
+    return label if isinstance(label, str) else None
+
+
+def material(records: list[Mapping[str, Any] | None]) -> str:
+    """#jev-material: yes on any confident scope or behavioral, no only when every answer is a
+    confident cosmetic or clarification, unknown otherwise (unsure, unavailable, unanswered, off)."""
+    labels = [_confident_label(record) for record in records]
+    if any(label in MATERIAL_YES for label in labels):
+        return "yes"
+    return "no" if all(label in MATERIAL_NO for label in labels) else "unknown"
+
+
+def _git_read(root: str, *args: str) -> bytes | None:
+    """Read-only local Git lookup; None on any failure."""
+    try:
+        result = subprocess.run(("git", "-C", root, *args), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                env=dict(os.environ, GIT_OPTIONAL_LOCKS="0"), timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout if result.returncode == 0 else None
+
+
+def _commit(root: str, ref: str) -> str | None:
+    if not ref or ref.startswith("-"):
+        return None
+    value = _git_read(root, "rev-parse", "--verify", "--quiet", "--end-of-options", ref + "^{commit}")
+    return value.decode().strip() if value else None
+
+
 def default_state_dir() -> Path:
     root = os.environ.get("XDG_STATE_HOME")
     return Path(root) / "spec-chat" / "jev" if root else Path.home() / ".local" / "state" / "spec-chat" / "jev"
@@ -770,6 +852,11 @@ class JevService:
         path = Path(state_dir) / "records.jsonl" if state_dir else default_state_dir() / "records.jsonl"
         self.seam = JevSeam(self.question_sets, provider=provider, api_key=self.api_key,
                             record_store=JudgmentStore(path))
+
+        self._asks: queue.Queue = queue.Queue()
+        self._asking: set[str] = set()
+        self._asking_lock = threading.Lock()
+        self._askers: list[threading.Thread] = []
 
     @property
     def enabled(self) -> bool:
@@ -862,6 +949,94 @@ class JevService:
             result.extend(build("audience", current, relative, base, head))
         return result
 
+    def _row_parts(self, row: Mapping[str, Any]) -> tuple[str, str, str, bytes]:
+        root, spec = str(row["root"]), str(row["spec"])
+        path = row.get("path") or str(row["slug"]) + "/" + spec
+        current = Path(row.get("spec_file") or os.path.join(root, *spec.split("/"))).read_bytes()
+        return root, spec, str(path), current
+
+    def _material_questions(self, row: Mapping[str, Any]) -> list[dict[str, Any]]:
+        """Change type questions for every root section changed since the row base (#jev-material)."""
+        root, spec, path, current = self._row_parts(row)
+        base = _commit(root, str(row.get("base", "")))
+        if base is None:
+            raise ValueError("row base is not a commit")
+        head = _commit(root, "HEAD") or "working-tree"
+        return build_type_questions(current, _git_read(root, "show", base + ":" + spec), path, base, head)
+
+    def _changed_clauses(self, row: Mapping[str, Any]) -> list[dict[str, str]]:
+        """Changed leaf clauses against target main, the row root's origin/HEAD as last fetched."""
+        root, spec, path, current = self._row_parts(row)
+        base = _commit(root, "refs/remotes/origin/HEAD")
+        if base is None:
+            return []
+        old = _git_read(root, "show", base + ":" + spec)
+        return [{"path": path, "anchor": anchor, "before": before, "after": after, "base": base}
+                for anchor, before, after in changed_leaf_clauses(current, old)]
+
+    def board(self, rows: Any) -> dict[str, Any]:
+        """GET /api/jev/board (#jev-board-answer): answer from held records at once, then ask the misses."""
+        if not self.enabled:
+            return {"jev": "off", "rows": [], "conflicts": []}
+        rows = [row for row in rows or () if isinstance(row, Mapping) and row.get("slug") and row.get("spec")]
+        sets = self.seam.question_sets
+        misses: list[dict[str, Any]] = []
+
+        def held(question: Mapping[str, Any]) -> dict[str, Any] | None:
+            # Any held record answers, unavailable included: board reads never re-ask unchanged inputs.
+            record = self.seam.store.get(self.seam.key(question))
+            if record is None:
+                misses.append(dict(question))
+            return record
+
+        answer_rows = []
+        clauses: dict[str, list[dict[str, str]]] = {}
+        for row in rows:
+            try:
+                questions = self._material_questions(row) if "type" in sets else None
+            except Exception:
+                questions = None
+            answer_rows.append({"id": str(row.get("id", "")),
+                                "material": "unknown" if questions is None else material([held(q) for q in questions])})
+            try:
+                clauses.setdefault(str(row["slug"]), []).extend(self._changed_clauses(row))
+            except Exception:
+                continue
+        pairs = set()
+        if "corpus" in sets:
+            for question in build_board_conflict_questions(clauses):
+                if _confident_label(held(question)) == "contradicts":
+                    pairs.add(question["pair"])
+        self._ask_later(misses)
+        return {"jev": "on", "rows": answer_rows,
+                "conflicts": [{"a": a, "b": b} for a, b in sorted(pairs)]}
+
+    def _ask_later(self, questions: list[dict[str, Any]]) -> None:
+        """Queue unanswered questions once each for background daemon askers; never waits."""
+        with self._asking_lock:
+            for question in questions:
+                key = self.seam.key(question)
+                if key in self._asking:
+                    continue
+                self._asking.add(key)
+                self._asks.put((key, question))
+            while self._asks.qsize() and len(self._askers) < BOARD_ASK_WORKERS:
+                thread = threading.Thread(target=self._asker, name="spec-chat-jev-board", daemon=True)
+                self._askers.append(thread)
+                thread.start()
+
+    def _asker(self) -> None:
+        while True:
+            key, question = self._asks.get()
+            try:
+                self.seam.ask(question)
+            except Exception:
+                pass
+            finally:
+                with self._asking_lock:
+                    self._asking.discard(key)
+                self._asks.task_done()
+
     def response(self, mount: Mapping[str, Any], target: str, relative: str, base: str,
                  events: list[Mapping[str, Any]], view: str = "", served_mounts: Any = None) -> dict[str, Any]:
         if not self.enabled:
@@ -907,5 +1082,5 @@ class JevService:
 
 __all__ = ["BUILDERS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MODEL",
            "OPENROUTER_DECISIONS_URL", "OpenRouterProvider", "QuestionSet",
-           "build_audience_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_type_questions", "extract_anchors",
-           "load_question_sets"]
+           "build_audience_questions", "build_board_conflict_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_type_questions", "changed_leaf_clauses", "extract_anchors",
+           "load_question_sets", "material"]
