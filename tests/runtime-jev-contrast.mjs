@@ -90,7 +90,12 @@ const markers = [
   [['.hx-jev-pop', '.hx-jev-pop-meta', '.hx-jev-pop-link'], ['.hx-jev-pop']],
   [['.hx-jev-note'], ['.hx-jev-note']],
   [['.hx-jev-marker'], ['.hx-jev-marker', '.hx-jev-marker[data-attention=true]']],
+  [['.hx-jev-marker'], ['.hx-jev-marker', '.hx-jev-marker[data-passed=true]']],
+  [['.hx-jev-pop', '.hx-jev-pop-diff'], ['.hx-jev-pop']],
+  [['.hx-jev-pop', '.hx-jev-pop-warn'], ['.hx-jev-pop']],
 ];
+// Marker marks (gray dot, colored !, green check) read 3:1 against the page (criterion-evidence #chip-marker).
+const marks = [['.hx-jev-marker'], ['.hx-jev-marker', '.hx-jev-marker[data-attention=true]'], ['.hx-jev-marker', '.hx-jev-marker[data-passed=true]']];
 const panelLabels = [
   ['.hx-jev-thread-label'], ['.hx-jev-thread-label', '.hx-jev-thread-label[data-state=unsure]'],
   ['.hx-jev-thread-label', '.hx-jev-thread-label[data-state=unavailable]'], ['.hx-pin-jev'], ['.hx-orphan-hint'],
@@ -110,6 +115,10 @@ for (const page of pages) {
     const bg = hex(colorOf(page, bgSels, 'background'));
     assert.ok(fg && bg, 'Jev text ' + fgSels.at(-1) + ' owns its colors');
     check(page.name + ': ' + fgSels.at(-1), fg, bg);
+  }
+  for (const sels of marks) {
+    const r = ratio(hex(colorOf(page, sels, 'background')), page.bg);
+    if (r < 3) failures.push(page.name + ': mark ' + sels.at(-1) + ' ' + r.toFixed(2));
   }
   for (const sels of panelLabels) {
     const fg = hex(colorOf(page, sels, 'color'));

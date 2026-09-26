@@ -58,7 +58,8 @@ const state = {
   lastTbd: null,         // open TBD marker focused by the last TBD open activation
   range: { baseline: null, loaded: null, loading: false, pickerOpen: false }, // loaded: anchor signatures of the page as served
   jev: { status: 'idle', items: [], base: null, request: 0 },
-  evidence: { criteria: null }, // anchor -> evidence entry once /api/evidence answers; null shows nothing
+  evidence: { criteria: null, watched: true, hostOrigin: null }, // criteria: anchor -> entry once /api/evidence answers, null shows nothing;
+  // watched: the host row names an owner (X-Spec-Chat-Watched); hostOrigin: the BB plugin frame that announced itself
   readingView: false,
   movingOrphans: new Set(),
 };
@@ -71,7 +72,7 @@ function httpTransport() {
     ready: Promise.resolve(true),
     async listEvents() {
       const r = await fetch('/api/events?dir=' + encodeURIComponent(dir));
-      return { events: await r.json(), wake: r.headers.get('X-Spec-Chat-Wake') || null };
+      return { events: await r.json(), wake: r.headers.get('X-Spec-Chat-Wake') || null, watched: r.headers.get('X-Spec-Chat-Watched') !== 'no' };
     },
     async postEvent(body) {
       await fetch('/api/events?dir=' + encodeURIComponent(dir) + '&actor=human', { method: 'POST', body: JSON.stringify(body) });
@@ -1210,6 +1211,79 @@ function evidenceAge(capturedAt, now = Date.now()) {
   return Math.floor(minutes / 1440) + ' d';
 }
 
+// The criterion as read: its own text, without nested anchors or runtime overlays, whitespace collapsed as the server reads it.
+function evidenceReadText(element) {
+  const parts = [];
+  const walk = node => {
+    for (const child of node.childNodes) {
+      if (child.nodeType === 3) parts.push(child.nodeValue);
+      else if (child.nodeType === 1 && !child.matches('[data-anchor],.hx-jev-marker,.hx-pin,.hx-badge,script,style')) walk(child);
+    }
+  };
+  walk(element);
+  return parts.join('').split(/\s+/).filter(Boolean).join(' ');
+}
+
+// Word diff of the proven text against the text as read: [{ op: 'same' | 'del' | 'ins', text }].
+function evidenceDiff(proven, read) {
+  const a = String(proven).split(/\s+/).filter(Boolean);
+  const b = String(read).split(/\s+/).filter(Boolean);
+  const lcs = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) lcs[i][j] = a[i] === b[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+  }
+  const parts = [];
+  const push = (op, word) => {
+    const last = parts[parts.length - 1];
+    if (last && last.op === op) last.text += ' ' + word;
+    else parts.push({ op, text: word });
+  };
+  let i = 0, j = 0;
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i] === b[j]) { push('same', a[i]); i++; j++; }
+    else if (i < a.length && (j === b.length || lcs[i + 1][j] >= lcs[i][j + 1])) push('del', a[i++]);
+    else push('ins', b[j++]);
+  }
+  return parts;
+}
+
+// Plugin bridge (criterion-evidence #plugin-bridge): IDs, never URLs, read from the service's bundle page address.
+function evidenceBundleId(url) {
+  try {
+    const parts = new URL(url).pathname.split('/');
+    const at = parts.lastIndexOf('bundles');
+    return at >= 0 && parts[at + 1] ? decodeURIComponent(parts[at + 1]) : null;
+  } catch (_) { return null; }
+}
+
+function evidenceCriterionKey(url) {
+  try {
+    const match = /^#criterion=(.+)$/.exec(new URL(url).hash);
+    return match ? decodeURIComponent(match[1]) : null;
+  } catch (_) { return null; }
+}
+
+function evidenceOpen(bundle, criterion) {
+  if (!bundle) return null;
+  return () => {
+    if (!state.evidence.hostOrigin) return false;
+    window.parent.postMessage(criterion ? { type: 'spec-chat-open-evidence', bundle, criterion } : { type: 'spec-chat-open-evidence', bundle }, state.evidence.hostOrigin);
+    return true;
+  };
+}
+
+function listenEvidenceHost() {
+  if (window.parent === window) return;
+  window.addEventListener('message', event => {
+    const data = event.data;
+    if (event.source !== window.parent || !event.origin || event.origin === 'null') return;
+    if (!data || data.type !== 'spec-chat-host' || !Array.isArray(data.opens) || !data.opens.includes('evidence')) return;
+    state.evidence.hostOrigin = event.origin;
+  });
+}
+
+const EVIDENCE_UNWATCHED = 'No one is watching this spec; a re-proof request is saved as a note only.';
+
 function evidenceNotes() {
   const criteria = state.evidence && state.evidence.criteria;
   if (!criteria) return [];
@@ -1219,12 +1293,23 @@ function evidenceNotes() {
     if (!anchor) continue;
     const entry = Object.prototype.hasOwnProperty.call(criteria, anchor) && criteria[anchor] && typeof criteria[anchor] === 'object' ? criteria[anchor] : null;
     const text = evidenceLabel(entry);
-    const note = { anchor, group: 'evidence', state: text === 'Not yet' ? 'none' : 'label', text, attention: text === 'Stale' };
+    const note = { anchor, group: 'evidence', state: text === 'Not yet' ? 'none' : 'label', text, attention: text === 'Stale' || text.startsWith('Failed'),
+      passed: text.startsWith('Passed') };
     if (entry) {
-      const context = [Number.isInteger(entry.pr) ? '#' + entry.pr : '', evidenceAge(entry.capturedAt), entry.onMain === false ? 'not on main' : '']
-        .filter(Boolean).join(' \u00b7 ');
-      Object.assign(note, { href: typeof entry.artifact === 'string' ? entry.artifact : null, external: true, context,
-        link: typeof entry.bundle === 'string' ? { text: 'bundle', href: entry.bundle } : null });
+      const pr = Number.isInteger(entry.pr) ? '#' + entry.pr : '';
+      const context = [pr, evidenceAge(entry.capturedAt), entry.onMain === false ? 'not on main' : ''].filter(Boolean).join(' · ');
+      const view = typeof entry.view === 'string' ? entry.view : null;
+      const bundle = typeof entry.bundle === 'string' ? entry.bundle : null;
+      const bundleId = evidenceBundleId(view) || evidenceBundleId(bundle);
+      Object.assign(note, { href: view, external: true, context, open: evidenceOpen(bundleId, evidenceCriterionKey(view)),
+        link: bundle ? { text: 'bundle', href: bundle, open: evidenceOpen(bundleId, null) } : null });
+      if (text !== 'Passed' && text !== 'Failed' && typeof entry.proven === 'string') note.diff = evidenceDiff(entry.proven, evidenceReadText(element));
+      if (text === 'Stale') {
+        const date = commitDate(entry.capturedAt);
+        const since = [pr, date].filter(Boolean).join(', ');
+        note.actions = [jevDraftAction('Ask for re-proof', anchor + ' changed since its evidence' + (since ? ' (' + since + ')' : '') + ': please recapture it.')];
+        if (!state.evidence.watched) note.warning = EVIDENCE_UNWATCHED;
+      }
     }
     notes.push(note);
   }
@@ -1251,7 +1336,9 @@ function mountJevMarker(holder, notes) {
   const marker = document.createElement('button');
   marker.type = 'button';
   marker.className = 'hx-jev-marker';
-  marker.dataset.attention = String(notes.some(note => note.attention));
+  const attention = notes.some(note => note.attention);
+  marker.dataset.attention = String(attention);
+  marker.dataset.passed = String(!attention && notes.some(note => note.group === 'evidence' && note.passed));
   marker.setAttribute('aria-label', 'Jev notes: ' + notes.map(note => note.text).join('; '));
   marker.setAttribute('aria-haspopup', 'dialog');
   marker.setAttribute('aria-expanded', 'false');
@@ -1333,6 +1420,7 @@ function renderJevNote(note) {
   text.className = 'hx-jev-pop-text';
   if (note.href) text.href = note.href;
   if (note.href && note.external) { text.target = '_blank'; text.rel = 'noopener'; }
+  if (note.href && note.open) text.addEventListener('click', event => { if (note.open()) event.preventDefault(); });
   text.textContent = note.text;
   row.appendChild(text);
   if (note.context || (note.link && note.link.href)) {
@@ -1345,8 +1433,23 @@ function renderJevNote(note) {
       link.href = note.link.href;
       if (note.external) { link.target = '_blank'; link.rel = 'noopener'; }
       link.textContent = note.link.text;
+      if (note.link.open) link.addEventListener('click', event => { if (note.link.open()) event.preventDefault(); });
     }
     row.appendChild(meta);
+  }
+  if (Array.isArray(note.diff) && note.diff.length) {
+    const diff = row.appendChild(document.createElement('span'));
+    diff.className = 'hx-jev-pop-diff';
+    note.diff.forEach((part, index) => {
+      if (index) diff.appendChild(document.createElement('span')).textContent = ' ';
+      const word = diff.appendChild(document.createElement(part.op === 'del' ? 'del' : part.op === 'ins' ? 'ins' : 'span'));
+      word.textContent = part.text;
+    });
+  }
+  if (note.warning) {
+    const warning = row.appendChild(document.createElement('span'));
+    warning.className = 'hx-jev-pop-warn';
+    warning.textContent = note.warning;
   }
   const actions = Array.isArray(note.actions) ? note.actions.filter(action => action && action.label) : [];
   if (actions.length) {
@@ -1668,10 +1771,12 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-jev-note{box-sizing:border-box;max-width:720px;margin:12px auto 0;padding:6px 10px;border:1px solid #e0c77a;border-radius:7px;background:#fff7d6;color:#6d4b05;font:600 12px/1.35 system-ui,sans-serif}
 [data-hx-jev-type=cosmetic]{color:#586069!important}
 [data-hx-jev-type=cosmetic] :is(h1,h2,h3,h4,h5,h6,p,li,td,th,blockquote,code,strong,em,a){color:inherit!important}
-.hx-jev-marker{position:absolute;top:.35em;left:calc(100% + 10px);z-index:640;box-sizing:border-box;width:10px;height:10px;margin:0;padding:0;border:0;border-radius:50%;background:#8a8f99;color:#ffffff;cursor:pointer;display:grid;place-items:center;font:800 10px/1 system-ui,sans-serif}
+.hx-jev-marker{position:absolute;top:.35em;left:calc(100% + 10px);z-index:640;box-sizing:border-box;width:10px;height:10px;margin:0;padding:0;border:0;border-radius:50%;background:#767b85;color:#ffffff;cursor:pointer;display:grid;place-items:center;font:800 10px/1 system-ui,sans-serif}
 .hx-jev-marker::before{content:"";position:absolute;inset:-10px 0 -10px -16px}
-.hx-jev-marker[data-attention=true]{width:14px;height:14px;background:#b42318}
+.hx-jev-marker[data-attention=true]{width:14px;height:14px;background:#d1242f}
 .hx-jev-marker[data-attention=true]::after{content:"!"}
+.hx-jev-marker[data-passed=true]{width:14px;height:14px;background:#1a7f37}
+.hx-jev-marker[data-passed=true]::after{content:"\\2713"}
 .hx-jev-marker[data-inset=true]{left:auto;right:0}
 .hx-jev-marker:hover,.hx-jev-marker[aria-expanded=true]{box-shadow:0 0 0 3px rgba(41,71,199,.22)}
 .hx-jev-marker:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}
@@ -1685,16 +1790,21 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
 .hx-jev-pop-meta{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;font-size:12px;color:#5a5a63;overflow-wrap:anywhere}
 .hx-jev-pop-link{color:#2947c7;text-decoration:underline;text-underline-offset:2px}
+.hx-jev-pop-diff{font-size:12px;color:#303036;overflow-wrap:anywhere}
+.hx-jev-pop-diff del{text-decoration:line-through;text-decoration-thickness:2px}
+.hx-jev-pop-diff ins{text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:2px}
+.hx-jev-pop-warn{font-size:12px;font-weight:600;color:#6d4b05;overflow-wrap:anywhere}
 .hx-jev-pop-actions{display:flex;flex-wrap:wrap;gap:4px}
 .hx-jev-pop-actions .hx-btn{margin:0;font-size:11.5px;padding:4px 8px;border-color:#2947c7;background:#ffffff;color:#2947c7}
 @media(prefers-color-scheme:dark){
-.hx-jev-marker{background:#9aa0ab}
 .hx-jev-pop{border-color:#5b5f68;background:#24272c;color:#e8e7e2}
 .hx-jev-pop-text{color:#e8e7e2}
 .hx-jev-pop-note[data-attention=true] .hx-jev-pop-text{color:#ffb4ab}
 .hx-jev-pop-note[data-group=neutral] .hx-jev-pop-text{color:#b8bbc5}
 .hx-jev-pop-meta{color:#b8bbc5}
 .hx-jev-pop-link{color:#aebcff}
+.hx-jev-pop-diff{color:#e8e7e2}
+.hx-jev-pop-warn{color:#f0c46a}
 .hx-jev-pop-actions .hx-btn{background:#17191d;border-color:#7d91ff;color:#aebcff}
 }
 .hx-jev-target-flash{animation:hx-jev-flash 1.2s ease-out}
@@ -2473,6 +2583,11 @@ async function refresh() {
   try {
     const listed = await state.transport.listEvents();
     const wake = Array.isArray(listed) ? null : listed.wake;
+    const watched = Array.isArray(listed) || listed.watched !== false;
+    if (watched !== state.evidence.watched) {
+      state.evidence.watched = watched;
+      if (state.evidence.criteria) renderJev();
+    }
     ingest(Array.isArray(listed) ? listed : listed.events);
     const agentEvents = state.events.filter(e => e.actor === 'agent');
     const observation = handoffObservation(state.events, Date.now());
@@ -2505,7 +2620,7 @@ async function watchSpec() {
   if (httpPage) state.range.loaded = anchorSignatures(document);
   mountUI();
   if (httpPage) applyIssueFocus();
-  if (httpPage) requestEvidence();
+  if (httpPage) { listenEvidenceHost(); requestEvidence(); }
   await hydrateIslands();
   adoptForeignCharts();
   // spec scripts can create/recreate charts at any time; rescan when canvases appear
