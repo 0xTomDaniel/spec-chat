@@ -181,6 +181,12 @@ function jevItem(kind, id) {
   return state.jev.items.find(item => item.kind === kind && item.id === String(id)) || null;
 }
 
+// Jev's resolved-in-spirit hint, shown only while the thread is open; once resolved its own indicator replaces it.
+function looksResolved(th) {
+  const hint = jevItem('resolved', th.id);
+  return Boolean(th.status !== 'resolved' && hint && hint.state === 'label' && hint.label === 'resolved in spirit');
+}
+
 function findAnchor(anchorId) {
   return [...document.querySelectorAll('[data-anchor]')].find(el => el.dataset.anchor === String(anchorId)) || null;
 }
@@ -1032,6 +1038,22 @@ function advanceTbd(st, open) {
   return st.lastTbd = nextOpenTbd(open, st.lastTbd);
 }
 
+// Open TBDs and the addressed anchor share one highlight; the addressed one keeps it while it is the address.
+function renderHighlight() {
+  const openTbds = openTbdMarkers(document.querySelectorAll('[data-spec-tbd]'));
+  const handoffState = reviewHandoffState(state.threads, openTbds.length > 0);
+  const addressed = addressPlace();
+  renderTbdHighlight(document, tbdHighlightBlocks(handoffState, openTbds).concat(addressed ? [findAnchor(addressed.anchor)] : []));
+  return handoffState;
+}
+
+// Arrival at an anchor (a conflict link on this or another spec, or Go to) scrolls to it and highlights it as an open TBD is.
+function arriveAtAddress() {
+  renderHighlight();
+  const addressed = addressPlace();
+  if (addressed) findAnchor(addressed.anchor).scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
 function renderTbdHighlight(root, blocks) {
   const keep = new Set(blocks);
   root.querySelectorAll('.hx-tbd-open').forEach(el => { if (!keep.has(el)) el.classList.remove('hx-tbd-open'); });
@@ -1837,8 +1859,6 @@ a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
 .hx-jev-pop-diff{color:#e8e7e2}
 .hx-jev-pop-actions .hx-btn{background:#17191d;border-color:#7d91ff;color:#aebcff}
 }
-.hx-jev-target-flash{animation:hx-jev-flash 1.2s ease-out}
-@keyframes hx-jev-flash{0%{box-shadow:0 0 0 4px rgba(41,71,199,.42)}100%{box-shadow:0 0 0 14px rgba(41,71,199,0)}}
 .hx-jev-thread-label{flex:0 0 auto;color:#2f6b32;background:#e8f2e8;border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700;white-space:nowrap}
 .hx-jev-thread-label[data-state=unsure]{color:#78520a;background:#fff0c2}
 .hx-jev-thread-label[data-state=unavailable]{color:#7b2525;background:#f8dddd}
@@ -2183,13 +2203,13 @@ function renderPanel() {
     const collapsed = resolvedThreadCollapsed(th, state.expandedResolved);
     const d = document.createElement('div');
     d.className = 'hx-thread' + (state.activeThread === th.id ? ' active' : '') + (collapsed ? ' resolved-collapsed' : '');
-    const resolvedHint = jevItem('resolved', th.id);
+    // A resolved thread shows its own resolved indicator, never a resolved-in-spirit Jev label.
+    const resolvedHint = th.status === 'resolved' ? null : jevItem('resolved', th.id);
     const orphanHint = jevItem('orphan', th.id);
-    const looksResolved = Boolean(resolvedHint && resolvedHint.state === 'label' && resolvedHint.label === 'resolved in spirit');
     const threadJevState = [orphanHint, resolvedHint].find(item => item && ['unsure', 'unavailable'].includes(item.state));
     d.innerHTML = '<div class="hx-thread-summary"><div class="hx-anchor">' + esc(label(b)) + '</div>' +
       '<span class="hx-pill" data-s="' + th.status + '">' + th.status + '</span>' +
-      (looksResolved ? '<span class="hx-jev-thread-label">Looks resolved</span>' : '') +
+      (looksResolved(th) ? '<span class="hx-jev-thread-label">Looks resolved</span>' : '') +
       (threadJevState ? '<span class="hx-jev-thread-label" data-state="' + threadJevState.state + '">' + esc(jevDisplayLabel(threadJevState)) + '</span>' : '') +
       (th.status === 'resolved' ? '<button class="hx-disclosure" data-act="disclosure" aria-expanded="' + String(!collapsed) + '" aria-label="' + (collapsed ? 'Show' : 'Hide') + ' resolved thread">' + (collapsed ? '▸' : '▾') + '</button>' : '') + '</div>' +
       (collapsed ? '<div class="hx-thread-preview">' + esc(b.text || 'Resolved comment') + '</div>' : '');
@@ -2221,11 +2241,11 @@ function renderPanel() {
         reply.addEventListener('click', e => { e.stopPropagation(); startReply(th, replyAction.message); });
         d.appendChild(reply);
       }
-      for (const action of threadResolveButtons(th, looksResolved)) {
+      if (th.status === 'acknowledged') {
         const resolve = document.createElement('button');
         resolve.className = 'hx-btn';
-        resolve.dataset.act = action.act;
-        resolve.textContent = action.label;
+        resolve.dataset.act = 'resolve';
+        resolve.textContent = '✓ Resolve';
         resolve.addEventListener('click', e => { e.stopPropagation(); resolveThread(th); });
         d.appendChild(resolve);
       }
@@ -2243,10 +2263,17 @@ function renderPanel() {
     });
     wrap.appendChild(d);
   }
-  const openTbds = openTbdMarkers(document.querySelectorAll('[data-spec-tbd]'));
-  const handoffState = reviewHandoffState(state.threads, openTbds.length > 0);
+  const hinted = threads.filter(looksResolved);
+  if (hinted.length) {
+    const all = document.createElement('button');
+    all.className = 'hx-btn';
+    all.dataset.act = 'resolve-all';
+    all.textContent = 'Resolve all (' + hinted.length + ')';
+    all.addEventListener('click', e => { e.stopPropagation(); resolveThreads(hinted); });
+    wrap.appendChild(all);
+  }
+  const handoffState = renderHighlight();
   const drafts = handoffState.drafts;
-  renderTbdHighlight(document, tbdHighlightBlocks(handoffState, openTbds));
   document.getElementById('hx-drafts').textContent = handoffState.finish ? 'Ready to accept' : drafts + ' draft' + (drafts === 1 ? '' : 's');
   const desktopHandoff = document.getElementById('hx-handoff');
   desktopHandoff.disabled = !handoffState.enabled;
@@ -2258,19 +2285,18 @@ function renderPanel() {
   renderThreadHighlight();
 }
 
-// A Looks resolved card's Resolve thread and the card's own resolve control share one path.
-function threadResolveButtons(th, looksResolved) {
-  const buttons = [];
-  if (looksResolved && th.status !== 'resolved') buttons.push({ act: 'jev-resolve', label: 'Resolve thread' });
-  if (th.status === 'acknowledged') buttons.push({ act: 'resolve', label: '✓ Resolve' });
-  return buttons;
-}
-
-async function resolveThread(th) {
-  await state.transport.postEvent({ id: humanId('s'), event: 'status', respondsTo: th.id, threadId: th.id, status: 'resolved', actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
-  state.expandedResolved.delete(th.id);
+// A card's own resolve control and Resolve all post the same resolve event.
+async function resolveThreads(threads) {
+  for (const th of threads) {
+    await state.transport.postEvent({ id: humanId('s'), event: 'status', respondsTo: th.id, threadId: th.id, status: 'resolved', actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
+    state.expandedResolved.delete(th.id);
+  }
   toast('Resolved');
   refresh();
+}
+
+function resolveThread(th) {
+  return resolveThreads([th]);
 }
 
 function selectThread(th, scroll) {
@@ -2288,11 +2314,8 @@ function scrollToThread(b) {
 }
 
 function scrollToJevAnchor(anchorId) {
-  const holder = findAnchor(anchorId);
-  if (!holder) return;
-  holder.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  holder.classList.remove('hx-jev-target-flash');
-  requestAnimationFrame(() => holder.classList.add('hx-jev-target-flash'));
+  if (location.hash.slice(1) === encodeURIComponent(anchorId)) arriveAtAddress();
+  else location.hash = encodeURIComponent(anchorId);
 }
 
 function orphanHintElement(th, orphanHint) {
@@ -2542,21 +2565,21 @@ function renderPins() {
     const pin = document.createElement('button');
     pin.className = 'hx-pin' + (state.activeThread === th.id ? ' active' : '');
     pin.dataset.s = th.status;
-    const looksResolved = Boolean(jevItem('resolved', th.id) && jevItem('resolved', th.id).state === 'label' && jevItem('resolved', th.id).label === 'resolved in spirit');
+    const hinted = looksResolved(th);
     pin.textContent = '';
     const number = document.createElement('span');
     number.className = 'hx-pin-number';
     number.textContent = n;
     pin.appendChild(number);
-    if (looksResolved) {
+    if (hinted) {
       pin.dataset.jev = 'resolved';
       const marker = document.createElement('span');
       marker.className = 'hx-pin-jev';
       marker.textContent = 'Looks resolved';
       pin.appendChild(marker);
     }
-    pin.title = (looksResolved ? 'Looks resolved · ' : '') + label(b);
-    pin.setAttribute('aria-label', (looksResolved ? 'Looks resolved: ' : '') + label(b));
+    pin.title = (hinted ? 'Looks resolved · ' : '') + label(b);
+    pin.setAttribute('aria-label', (hinted ? 'Looks resolved: ' : '') + label(b));
     pin.style.top = pos.top + 'px';
     if (pos.column) pin.dataset.column = '';
     const pinSize = window.matchMedia('(max-width: 640px)').matches ? 44 : 24;
@@ -2725,6 +2748,8 @@ function keepPlace() {
   await hydrateIslands();
   adoptForeignCharts();
   restorePlace();
+  renderHighlight();
+  window.addEventListener('hashchange', arriveAtAddress);
   // spec scripts can create/recreate charts at any time; rescan when canvases appear
   let adoptTimer = null;
   new MutationObserver(muts => {
