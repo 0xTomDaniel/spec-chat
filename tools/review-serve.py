@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import html
 import json
 import mimetypes
@@ -580,9 +581,30 @@ class MountHandler(SimpleHTTPRequestHandler):
         super().setup()
         self.connection.settimeout(self.timeout)
 
-    def end_headers(self):
-        self.send_header("Cache-Control", "no-cache")
+    def end_headers(self, cache_control="no-cache"):
+        self.send_header("Cache-Control", cache_control)
         super().end_headers()
+
+    def _send_body(self, body, content_type, *, immutable=False, headers=None):
+        if immutable:
+            validator, cache_control = {}, "public, max-age=31536000, immutable"
+        else:
+            etag = '"%s"' % hashlib.sha256(body).hexdigest()
+            validator, cache_control = {"ETag": etag}, "no-cache"
+            tags = [tag.strip() for tag in self.headers.get("If-None-Match", "").split(",")]
+            if etag in tags or "W/" + etag in tags or "*" in tags:
+                self.send_response(304)
+                self.send_header("ETag", etag)
+                self.end_headers()
+                return
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        for name, header in {**validator, **(headers or {})}.items():
+            self.send_header(name, header)
+        self.end_headers(cache_control)
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def log_message(self, fmt, *args):
         return
@@ -685,12 +707,7 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
 .status.changed { color: #8a4b00; font-weight: 750; padding: 1px .5rem; border: 1px solid currentColor; border-radius: 999px; }
 .empty { color: #595e68; padding: 1rem; }
 </style></head><body><main><h1>Review index</h1><nav aria-label="Spec Chat detail pages">%s</nav></main></body></html>''' % listing).encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        if self.command != "HEAD":
-            self.wfile.write(body)
+        self._send_body(body, "text/html; charset=utf-8")
 
     def _resolve_path(self, path, *, spec_only=False):
         decoded = _decoded_path(path)
@@ -845,6 +862,7 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
 
     def _send_file(self, path):
         handled, bundled = _own_viz_asset(path)
+        vendor = False
         if handled:
             decoded = _decoded_path(path) or ""
             parts = decoded.split("/")
@@ -859,6 +877,7 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
                 self.send_error(404)
                 return
             target = bundled
+            vendor = bool(bundled) and parts[parts.index(".viz") + 1] == "vendor"
         else:
             _, target, _ = self._resolve_path(path)
         if not target:
@@ -869,13 +888,10 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
         except OSError:
             self.send_error(404)
             return
-        self.send_response(200)
-        self.send_header("Content-Type", mimetypes.guess_type(target)[0] or "application/octet-stream")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Last-Modified", self.date_time_string(int(os.stat(target).st_mtime)))
-        self.end_headers()
-        if self.command != "HEAD":
-            self.wfile.write(body)
+        self._send_body(
+            body, mimetypes.guess_type(target)[0] or "application/octet-stream", immutable=vendor,
+            headers={"Last-Modified": self.date_time_string(int(os.stat(target).st_mtime))},
+        )
 
     def do_GET(self):
         parsed = urlparse(self.path)
