@@ -983,7 +983,8 @@ class JevService:
         misses: list[dict[str, Any]] = []
 
         def held(question: Mapping[str, Any]) -> dict[str, Any] | None:
-            record = self.seam.cached(question)
+            # Any held record answers, unavailable included: board reads never re-ask unchanged inputs.
+            record = self.seam.store.get(self.seam.key(question))
             if record is None:
                 misses.append(dict(question))
             return record

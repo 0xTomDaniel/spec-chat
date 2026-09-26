@@ -140,6 +140,25 @@ class BoardTest(unittest.TestCase):
         self.assertEqual(len(provider.calls), 1)
         self.assertEqual(service.board(rows)["rows"][0]["material"], "no")
 
+    def test_unavailable_record_is_reused_until_inputs_change(self):
+        def failing(kind, state):
+            raise OSError("jev down")
+
+        rows = self.one_row()
+        service, provider = self.service(failing)
+        _, second = self.settle(service, rows)
+        self.assertEqual(second["rows"][0]["material"], "unknown")
+        service._asks.join()
+        asked = len(provider.calls)
+        self.assertEqual(asked, 2)  # each question asked once, never re-asked by the second read
+        service.board(rows)
+        service._asks.join()
+        self.assertEqual(len(provider.calls), asked)  # same key: no provider call
+        Path(rows[0]["spec_file"]).write_text(section("Newer words."), encoding="utf-8")
+        service.board(rows)
+        service._asks.join()
+        self.assertGreater(len(provider.calls), asked)  # new head asks again
+
     def test_off_without_key(self):
         service = jev.JevService(state_dir=self.dir / "state", api_key="")
         self.assertEqual(service.board(self.one_row()), {"jev": "off", "rows": [], "conflicts": []})
