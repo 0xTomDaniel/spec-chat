@@ -819,6 +819,13 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
         except (OSError, RuntimeError, ValueError):
             return self._json({"error": "jev unavailable"}, 503)
 
+    def _jev_board(self):
+        """Worklane board facts from this host's own registry rows; takes no parameter."""
+        try:
+            return self._json(self.server.jev.board(self.mounts))
+        except (OSError, RuntimeError, ValueError):
+            return self._json({"error": "jev unavailable"}, 503)
+
     def _post_event(self, query):
         mount, review = self._route_review(query)
         actor = query.get("actor", ["human"])[0]
@@ -887,6 +894,8 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
             return self._baseline(query)
         if parsed.path == "/api/jev":
             return self._jev(query)
+        if parsed.path == "/api/jev/board":
+            return self._jev_board()
         return self._send_file(parsed.path)
 
     def do_HEAD(self):
