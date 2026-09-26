@@ -428,6 +428,36 @@ class MultiReviewServeTest(unittest.TestCase):
         git(mount["root"], "commit", "-q", "-m", "drop spec")
         self.assertTrue(module._review_status(mount))
 
+    def test_index_row_rereads_only_on_new_file_identity_or_base(self):
+        """ANN-181 lane-hosting #index-entry-cost."""
+        import importlib.util
+        import os
+        from unittest import mock
+
+        spec = importlib.util.spec_from_file_location("review_serve_cache", SERVER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        mount = self.make_resource("ann181")
+        path = str(Path(mount["root"]) / mount["spec"])
+        calls = []
+        status, title = module._review_status, module._page_title
+        with mock.patch.object(module, "_review_status", lambda m: calls.append("git") or status(m)), \
+                mock.patch.object(module, "_page_title", lambda p: calls.append("title") or title(p)):
+            row = module._index_row(mount, path, True)
+            self.assertEqual(row, (True, "ann181"))
+            self.assertEqual(module._index_row(mount, path, True), row)
+            self.assertEqual(calls, ["git", "title"])
+            Path(path).write_text("<title>Renamed</title>x\n")
+            self.assertEqual(module._index_row(mount, path, True), (True, "Renamed"))
+            self.assertEqual(len(calls), 4)
+            head = git(mount["root"], "commit", "-qam", "reviewed") or git(mount["root"], "rev-parse", "HEAD")
+            self.assertEqual(module._index_row(mount | {"base": head}, path, True), (False, "Renamed"))
+            self.assertEqual(len(calls), 6)
+            info = os.stat(path)
+            os.utime(path, ns=(info.st_atime_ns, info.st_mtime_ns + 1))
+            module._index_row(mount | {"base": head}, path, True)
+            self.assertEqual(len(calls), 8)
+
     def test_invalid_registries_exit_before_binding_or_printing_url(self):
         first, second = (self.make_resource(name) for name in ("first", "second"))
         invalid = [
