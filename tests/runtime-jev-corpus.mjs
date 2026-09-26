@@ -10,7 +10,7 @@ assert.equal(runtime, otherRuntime, 'runtime copies stay byte-identical');
 
 const flagsStart = runtime.indexOf('function corpusFlags(');
 const targetStart = runtime.indexOf('function corpusTargetLink(', flagsStart);
-const targetEnd = runtime.indexOf('\n\nfunction appendJevCorpusMarker(', targetStart);
+const targetEnd = runtime.indexOf('\n\nfunction goToJevTarget(', targetStart);
 assert.ok(flagsStart >= 0 && targetStart > flagsStart && targetEnd > targetStart, 'runtime exposes corpus helpers');
 const { corpusFlags } = Function(runtime.slice(flagsStart, targetStart) + '; return { corpusFlags };')();
 const { corpusTargetLink } = Function(runtime.slice(targetStart, targetEnd) + '; return { corpusTargetLink };')();
@@ -37,7 +37,6 @@ assert.deepEqual(corpusTargetLink('compared-range#bar-flow'), {
   text: 'compared-range#bar-flow', href: '/compared-range#bar-flow',
 });
 assert.equal(corpusTargetLink(''), null);
-assert.match(runtime, /hx-jev-corpus/);
 assert.match(runtime, /Contradicts/);
 assert.match(runtime, /Overlaps/);
 assert.match(runtime, /Oversteps/);

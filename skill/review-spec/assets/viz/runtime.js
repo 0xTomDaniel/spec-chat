@@ -461,26 +461,6 @@ function coverageFlags(items) {
   return coverageGapFlags(items);
 }
 
-function clearJevCoverage() {
-  document.querySelectorAll('.hx-jev-coverage').forEach(element => element.remove());
-}
-
-function renderJevCoverage(result) {
-  clearJevCoverage();
-  if (!result || result.jev !== 'on') return;
-  for (const flag of coverageGapFlags(result.items)) {
-    const holder = findAnchor(flag.anchor);
-    if (!holder) continue;
-    const note = document.createElement('span');
-    note.className = 'hx-jev-coverage';
-    note.dataset.state = flag.state;
-    note.textContent = flag.label;
-    note.setAttribute('role', 'status');
-    const heading = holder.querySelector('h1,h2,h3,h4,h5,h6');
-    (heading || holder).appendChild(note);
-  }
-}
-
 // Name the folder the user should grant: the first ancestor Chromium will accept
 // (it blocklists the home/Documents/Desktop/Downloads roots themselves).
 function suggestedGrant() {
@@ -906,7 +886,7 @@ function resolveSvgPath(holder, key) {
 }
 
 function onDocClick(e) {
-  if (!state.commentMode || e.target.closest('.hx-pin,.hx-panel,.hx-toolbar,.hx-range-bar,.hx-service-index-link,#hx-errors')) return;
+  if (!state.commentMode || e.target.closest('.hx-pin,.hx-jev-marker,.hx-jev-pop,.hx-panel,.hx-toolbar,.hx-range-bar,.hx-service-index-link,#hx-errors')) return;
   const holder = holderOf(e.target);
   if (!holder) return;
   if (e.target.tagName === 'CANVAS') return; // canvas clicks are the chart's business: marks via chart events, blanks via zrender
@@ -1136,30 +1116,6 @@ function corpusTargetLink(target) {
   return { text: hash < 0 ? '#' + anchor : value, href };
 }
 
-function appendJevCorpusMarker(holder, flag) {
-  const marker = document.createElement(flag.target ? 'a' : 'span');
-  marker.className = 'hx-jev-corpus';
-  marker.dataset.state = flag.state;
-  const target = corpusTargetLink(flag.target);
-  if (target && marker.tagName === 'A') {
-    marker.href = target.href;
-    marker.textContent = flag.label + ' ' + target.text;
-  } else {
-    marker.textContent = flag.label;
-  }
-  const heading = holder.querySelector('h1,h2,h3,h4,h5,h6') || holder;
-  heading.appendChild(marker);
-}
-
-function appendJevMarker(holder, text, stateName) {
-  const marker = document.createElement('span');
-  marker.className = 'hx-jev-marker hx-jev-badge';
-  marker.dataset.state = stateName;
-  marker.textContent = text;
-  const heading = holder.querySelector('h1,h2,h3,h4,h5,h6') || holder;
-  heading.appendChild(marker);
-}
-
 function goToJevTarget(target) {
   const value = String(target || '');
   const hash = value.indexOf('#');
@@ -1172,18 +1128,258 @@ function goToJevTarget(target) {
   scrollToJevAnchor(anchor || value);
 }
 
-function renderJev() {
-  document.querySelectorAll('.hx-jev-badge').forEach(el => el.remove());
-  document.querySelectorAll('.hx-jev-corpus').forEach(el => el.remove());
-  document.querySelectorAll('.hx-jev-coverage').forEach(el => el.remove());
-  document.querySelectorAll('[data-hx-audience]').forEach(el => delete el.dataset.hxAudience);
-  document.querySelectorAll('[data-hx-jev-type]').forEach(el => {
-    delete el.dataset.hxJevType;
-    delete el.dataset.hxJevState;
+/* ---------------- Jev markers ----------------
+ * Jev never changes spec layout: each noted anchor gets one margin marker, and
+ * one shared popover lists that anchor's notes. A note source returns
+ * { anchor, group, state, text, href, attention, actions }; criterion evidence
+ * adds a source and note buttons add actions, without touching placement.
+ */
+const JEV_NOTE_GROUPS = ['evidence', 'conflict', 'coverage', 'type', 'neutral'];
+const JEV_ATTENTION_LABELS = new Set(['Contradicts', 'Oversteps']);
+const jevNoteSources = [jevSuggestionNotes];
+const jevPopoverState = { element: null, marker: null, closeTimer: 0, wired: false };
+
+function jevGitFocus() {
+  return new URLSearchParams(location.search).get('focus') === 'changes' || document.body.classList.contains('hx-focus-active');
+}
+
+function jevNeutralNote(anchor, stateName) {
+  return { anchor, group: 'neutral', state: stateName, text: stateName === 'unsure' ? 'unsure' : 'Jev unavailable' };
+}
+
+function jevSuggestionNotes() {
+  if (state.jev.status !== 'on') return [];
+  const notes = [];
+  for (const flag of coverageGapFlags(state.jev.items)) {
+    notes.push(flag.state === 'gap' ? { anchor: flag.anchor, group: 'coverage', state: 'label', text: flag.label } : jevNeutralNote(flag.anchor, flag.state));
+  }
+  const neutral = item => item.state === 'unsure' || item.state === 'unavailable';
+  if (state.readingView) {
+    for (const item of state.jev.items) {
+      if (item.kind === 'audience' && item.id && neutral(item)) notes.push(jevNeutralNote(item.id, item.state));
+    }
+    return notes;
+  }
+  if (!jevGitFocus()) return notes;
+  for (const flag of corpusFlags(state.jev.items)) {
+    if (flag.state !== 'label') { notes.push(jevNeutralNote(flag.anchor, flag.state)); continue; }
+    const link = corpusTargetLink(flag.target);
+    notes.push({ anchor: flag.anchor, group: 'conflict', state: 'label', text: flag.label + (link ? ' ' + link.text : ''),
+      href: link ? link.href : null, attention: JEV_ATTENTION_LABELS.has(flag.label) });
+  }
+  for (const item of state.jev.items) {
+    if (item.kind !== 'type' || !item.id) continue;
+    if (neutral(item)) notes.push(jevNeutralNote(item.id, item.state));
+    else if (item.state === 'label' && jevDisplayLabel(item)) notes.push({ anchor: item.id, group: 'type', state: 'label', text: jevDisplayLabel(item) });
+  }
+  return notes;
+}
+
+function jevNotesByAnchor() {
+  const byAnchor = new Map();
+  for (const source of jevNoteSources) {
+    for (const note of source() || []) {
+      if (!note || !note.anchor || !note.text || !JEV_NOTE_GROUPS.includes(note.group)) continue;
+      const anchor = String(note.anchor);
+      const notes = byAnchor.get(anchor) || [];
+      if (note.group === 'neutral' && notes.some(other => other.group === 'neutral' && other.text === note.text)) continue;
+      notes.push(note);
+      byAnchor.set(anchor, notes);
+    }
+  }
+  for (const notes of byAnchor.values()) notes.sort((a, b) => JEV_NOTE_GROUPS.indexOf(a.group) - JEV_NOTE_GROUPS.indexOf(b.group));
+  return byAnchor;
+}
+
+function mountJevMarker(holder, notes) {
+  const marker = document.createElement('button');
+  marker.type = 'button';
+  marker.className = 'hx-jev-marker';
+  marker.dataset.attention = String(notes.some(note => note.attention));
+  marker.setAttribute('aria-label', 'Jev notes: ' + notes.map(note => note.text).join('; '));
+  marker.setAttribute('aria-haspopup', 'dialog');
+  marker.setAttribute('aria-expanded', 'false');
+  marker.jevNotes = notes;
+  marker.addEventListener('mouseenter', () => openJevPopover(marker));
+  marker.addEventListener('mouseleave', scheduleJevPopoverClose);
+  marker.addEventListener('focus', () => openJevPopover(marker));
+  marker.addEventListener('blur', event => { if (!jevPopoverKeeps(event.relatedTarget)) closeJevPopover(); });
+  marker.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); openJevPopover(marker); });
+  // Rows cannot hold a positioned child; the marker sits inside the row's last cell.
+  (holder.tagName === 'TR' ? holder.lastElementChild || holder : holder).appendChild(marker);
+  placeJevMarker(marker);
+  wireJevPopover();
+  return marker;
+}
+
+// Center the marker on the first rendered line of its anchor, without moving any text. It sits in
+// the right margin, or just inside the column edge for rows and wherever the margin cannot hold it.
+function placeJevMarker(marker) {
+  const holder = marker.closest('[data-anchor]');
+  const parent = marker.offsetParent;
+  if (!holder || !parent || !document.createTreeWalker) return;
+  marker.dataset.inset = String(holder.tagName === 'TR');
+  if (marker.getBoundingClientRect().right > document.documentElement.clientWidth) marker.dataset.inset = 'true';
+  const walker = document.createTreeWalker(holder, NodeFilter.SHOW_TEXT, {
+    acceptNode: node => node.nodeValue.trim() && !node.parentElement.closest('.hx-jev-marker,.hx-pin,.hx-badge,script,style') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP,
   });
-  document.querySelectorAll('.hx-jev-note').forEach(el => el.remove());
+  const text = walker.nextNode();
+  if (!text) return;
+  const range = document.createRange();
+  const start = text.nodeValue.search(/\S/);
+  range.setStart(text, start);
+  range.setEnd(text, start + 1);
+  const line = range.getClientRects()[0];
+  if (!line) return;
+  const top = line.top + line.height / 2 - parent.getBoundingClientRect().top - parent.clientTop - marker.offsetHeight / 2;
+  marker.style.top = Math.round(top) + 'px';
+}
+
+function jevPopoverKeeps(target) {
+  const pop = jevPopoverState.element;
+  return Boolean(target && (target === jevPopoverState.marker || (pop && pop.contains(target))));
+}
+
+function scheduleJevPopoverClose() {
+  clearTimeout(jevPopoverState.closeTimer);
+  jevPopoverState.closeTimer = setTimeout(() => {
+    const pop = jevPopoverState.element;
+    const marker = jevPopoverState.marker;
+    if (!marker || marker.matches(':hover') || (pop && pop.matches(':hover'))) return;
+    if (jevPopoverKeeps(document.activeElement)) return;
+    closeJevPopover();
+  }, 160);
+}
+
+function jevPopoverElement() {
+  if (jevPopoverState.element) return jevPopoverState.element;
+  const pop = document.createElement('div');
+  pop.className = 'hx-jev-pop';
+  pop.id = 'hx-jev-pop';
+  pop.setAttribute('role', 'dialog');
+  pop.setAttribute('aria-label', 'Jev notes');
+  pop.hidden = true;
+  pop.addEventListener('mouseenter', () => clearTimeout(jevPopoverState.closeTimer));
+  pop.addEventListener('mouseleave', scheduleJevPopoverClose);
+  pop.addEventListener('focusout', event => { if (!jevPopoverKeeps(event.relatedTarget) && !pop.matches(':hover')) closeJevPopover(); });
+  document.body.appendChild(pop);
+  jevPopoverState.element = pop;
+  return pop;
+}
+
+function renderJevNote(note) {
+  const row = document.createElement('li');
+  row.className = 'hx-jev-pop-note';
+  row.dataset.group = note.group;
+  row.dataset.state = note.state || 'label';
+  row.dataset.attention = String(Boolean(note.attention));
+  const text = document.createElement(note.href ? 'a' : 'span');
+  text.className = 'hx-jev-pop-text';
+  if (note.href) text.href = note.href;
+  text.textContent = note.text;
+  row.appendChild(text);
+  const actions = Array.isArray(note.actions) ? note.actions.filter(action => action && action.label) : [];
+  if (actions.length) {
+    const slot = document.createElement('div');
+    slot.className = 'hx-jev-pop-actions';
+    for (const action of actions) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'hx-btn';
+      button.textContent = action.label;
+      button.addEventListener('click', event => { event.stopPropagation(); if (action.run) action.run(note); });
+      slot.appendChild(button);
+    }
+    row.appendChild(slot);
+  }
+  return row;
+}
+
+function openJevPopover(marker) {
+  clearTimeout(jevPopoverState.closeTimer);
+  const pop = jevPopoverElement();
+  if (jevPopoverState.marker !== marker) {
+    if (jevPopoverState.marker) jevPopoverState.marker.setAttribute('aria-expanded', 'false');
+    const list = document.createElement('ul');
+    list.className = 'hx-jev-pop-notes';
+    for (const note of marker.jevNotes || []) list.appendChild(renderJevNote(note));
+    pop.replaceChildren(list);
+    jevPopoverState.marker = marker;
+  }
+  marker.setAttribute('aria-expanded', 'true');
+  marker.setAttribute('aria-controls', pop.id);
+  pop.hidden = false;
+  placeJevPopover();
+}
+
+function closeJevPopover() {
+  clearTimeout(jevPopoverState.closeTimer);
+  const pop = jevPopoverState.element;
+  if (jevPopoverState.marker) jevPopoverState.marker.setAttribute('aria-expanded', 'false');
+  jevPopoverState.marker = null;
+  if (pop) {
+    pop.hidden = true;
+    pop.replaceChildren();
+  }
+}
+
+// Desktop: beside the marker, below or above, never over the toolbar, dock, or open panel.
+// Narrow screens: CSS makes it a sheet above the toolbar.
+function placeJevPopover() {
+  const pop = jevPopoverState.element;
+  const marker = jevPopoverState.marker;
+  if (!pop || !marker || pop.hidden) return;
+  pop.style.left = '';
+  pop.style.top = '';
+  if (window.matchMedia('(max-width: 640px)').matches) return;
+  const anchor = marker.getBoundingClientRect();
+  if (!marker.isConnected || anchor.bottom < 0 || anchor.top > innerHeight) { closeJevPopover(); return; }
+  const controls = [...document.querySelectorAll('.hx-toolbar,.hx-thread-dock,.hx-panel.open,.hx-service-index-link,.hx-banner')]
+    .filter(control => getComputedStyle(control).visibility !== 'hidden' && getComputedStyle(control).opacity !== '0')
+    .map(control => control.getBoundingClientRect()).filter(rect => rect.width && rect.height);
+  const width = pop.offsetWidth;
+  const height = pop.offsetHeight;
+  const panel = document.querySelector('.hx-panel.open');
+  const rightLimit = innerWidth - 8 - (panel ? panel.getBoundingClientRect().width : 0);
+  const left = Math.max(8, Math.min(anchor.right - width, rightLimit - width));
+  const covers = top => controls.some(rect => left < rect.right && left + width > rect.left && top < rect.bottom && top + height > rect.top);
+  const fits = top => top >= 8 && top + height <= innerHeight - 8;
+  const candidates = [anchor.bottom + 8, anchor.top - 8 - height];
+  const top = candidates.find(value => fits(value) && !covers(value)) ?? candidates.find(fits) ?? Math.max(8, candidates[0]);
+  pop.style.left = Math.round(left) + 'px';
+  pop.style.top = Math.round(top) + 'px';
+}
+
+function wireJevPopover() {
+  if (jevPopoverState.wired) return;
+  jevPopoverState.wired = true;
+  document.addEventListener('pointerdown', event => {
+    if (jevPopoverState.marker && !jevPopoverKeeps(event.target)) closeJevPopover();
+  }, true);
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || !jevPopoverState.marker) return;
+    const marker = jevPopoverState.marker;
+    const inside = jevPopoverState.element.contains(document.activeElement);
+    closeJevPopover();
+    if (inside) marker.focus({ preventScroll: true });
+  });
+  let frame = 0;
+  document.addEventListener('scroll', () => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(placeJevPopover);
+  }, true);
+  window.addEventListener('resize', () => {
+    document.querySelectorAll('.hx-jev-marker').forEach(placeJevMarker);
+    placeJevPopover();
+  });
+}
+
+function renderJev() {
+  closeJevPopover();
+  document.querySelectorAll('.hx-jev-marker,.hx-jev-note').forEach(el => el.remove());
+  document.querySelectorAll('[data-hx-audience]').forEach(el => delete el.dataset.hxAudience);
+  document.querySelectorAll('[data-hx-jev-type]').forEach(el => delete el.dataset.hxJevType);
   if (EMBED_REVIEW_DIR) return;
-  renderJevCoverage(state.jev.status === 'on' ? { jev: 'on', items: state.jev.items } : null);
 
   if (state.jev.status === 'off' || state.jev.status === 'unavailable') {
     const note = document.createElement('p');
@@ -1194,31 +1390,22 @@ function renderJev() {
     else document.body.insertBefore(note, document.body.firstChild);
   }
 
-  const gitFocus = new URLSearchParams(location.search).get('focus') === 'changes' || document.body.classList.contains('hx-focus-active');
-  const reading = state.readingView;
+  // Dims are the only in-text Jev display: reading view internals and Git focus cosmetic changes.
+  const gitFocus = jevGitFocus();
   for (const item of state.jev.items) {
-    if (!item.id || item.state === 'none') continue;
+    if (!item.id || item.state !== 'label') continue;
     const holder = findAnchor(item.id);
     if (!holder) continue;
-    if (reading) {
+    if (state.readingView) {
       if (item.kind !== 'audience') continue;
       if (item.state === 'label' && item.label === 'internals') holder.dataset.hxAudience = 'internals';
-      if (item.state === 'unsure' || item.state === 'unavailable') {
-        appendJevMarker(holder, jevDisplayLabel(item), item.state);
-      }
-      continue;
+    } else if (gitFocus && item.kind === 'type' && String(item.label).toLowerCase() === 'cosmetic') {
+      holder.dataset.hxJevType = 'cosmetic';
     }
-    if (!gitFocus || item.kind !== 'type') continue;
-    const label = jevDisplayLabel(item);
-    if (!label) continue;
-    holder.dataset.hxJevType = String(item.label || item.state).toLowerCase();
-    holder.dataset.hxJevState = item.state;
-    appendJevMarker(holder, label, item.state);
   }
-  if (!gitFocus) return;
-  for (const flag of corpusFlags(state.jev.items)) {
-    const holder = findAnchor(flag.anchor);
-    if (holder) appendJevCorpusMarker(holder, flag);
+  for (const [anchor, notes] of jevNotesByAnchor()) {
+    const holder = findAnchor(anchor);
+    if (holder) mountJevMarker(holder, notes);
   }
 }
 
@@ -1258,7 +1445,7 @@ body.hx-focus-active tr[data-hx-focus=unchanged]:not([data-hx-focus=unchanged]:n
 body.hx-focus-active .hx-tbd-open{position:relative;z-index:3}
 body.hx-focus-active .hx-tbd-open[data-hx-focus=unchanged]::after,body.hx-focus-active tr.hx-tbd-open[data-hx-focus=unchanged] > :is(td,th)::after{display:none!important}
 body.hx-focus-active [data-hx-focus=unchanged] .hx-pin,body.hx-focus-active [data-hx-focus=unchanged] .hx-badge{opacity:1;filter:none;z-index:700}
-body.hx-focus-active [data-hx-focus=unchanged] .hx-jev-badge,body.hx-focus-active [data-hx-focus=unchanged] .hx-jev-corpus,body.hx-focus-active [data-hx-focus=unchanged] .hx-jev-coverage{position:relative;opacity:1;filter:none;z-index:700}
+body.hx-focus-active [data-hx-focus=unchanged] .hx-jev-marker{opacity:1;filter:none;z-index:700}
 .hx-focus-error{position:fixed;top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);max-width:calc(100vw - 24px);box-sizing:border-box;padding:8px 12px;border-radius:8px;background:#8b1a1a;color:#fff;font:600 12px system-ui;z-index:970;box-shadow:0 6px 20px rgba(30,30,40,.25)}
 @media(prefers-color-scheme:dark){
 body.hx-focus-active [data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])):not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *):not(tr):not(td):not(th):not(script):not(style)::after{background:rgba(0,0,0,calc(.6*var(--hx-veil,1)))}
@@ -1395,19 +1582,34 @@ body.hx-comment [data-render-target]:hover{border:1.5px dashed #d98e04}
 body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-tbd-open{outline:2px solid #d98e04;outline-offset:4px}
 .hx-badge{font:600 9.5px system-ui;text-transform:uppercase;letter-spacing:.04em;color:#0e7264;background:#e3f2f0;border-radius:4px;padding:2px 7px;margin-left:8px;vertical-align:middle}
-.hx-jev-badge{font:700 10px/1 system-ui,sans-serif;text-transform:none;letter-spacing:0;border-radius:999px;padding:4px 8px;margin-left:8px;vertical-align:middle;white-space:nowrap}
-.hx-jev-badge[data-state=label]{color:#204a43;background:#d9eee9}
-.hx-jev-badge[data-state=unsure]{color:#78520a;background:#fff0c2}
-.hx-jev-badge[data-state=unavailable]{color:#7b2525;background:#f8dddd}
-.hx-jev-corpus{display:inline-block;margin-left:8px;padding:1px 5px;border-radius:4px;background:#f4f6fb;color:#35405f;font:650 10px/1.3 system-ui,sans-serif;text-decoration:none;white-space:nowrap}
-.hx-jev-corpus[href]{text-decoration:underline;text-underline-offset:2px}
-.hx-jev-corpus[data-state=unsure]{background:#fff8e9;color:#8b5c0b}
 .hx-jev-note{box-sizing:border-box;max-width:720px;margin:12px auto 0;padding:6px 10px;border:1px solid #e0c77a;border-radius:7px;background:#fff7d6;color:#6d4b05;font:600 12px/1.35 system-ui,sans-serif}
-[data-hx-jev-type=scope]{box-shadow:inset 4px 0 #b42318;background:rgba(180,35,24,.08)}
-[data-hx-jev-type=behavioral]{box-shadow:inset 3px 0 #b45309;background:rgba(180,83,9,.06)}
-[data-hx-jev-type=clarification]{box-shadow:inset 2px 0 #28756a;background:rgba(40,117,106,.045)}
 [data-hx-jev-type=cosmetic]{color:#586069!important}
-[data-hx-jev-type=cosmetic] :is(h1,h2,h3,h4,h5,h6,p,li,td,th,blockquote,code,strong,em,a:not(.hx-jev-corpus)){color:inherit!important}
+[data-hx-jev-type=cosmetic] :is(h1,h2,h3,h4,h5,h6,p,li,td,th,blockquote,code,strong,em,a){color:inherit!important}
+.hx-jev-marker{position:absolute;top:.35em;left:calc(100% + 10px);z-index:640;box-sizing:border-box;width:10px;height:10px;margin:0;padding:0;border:0;border-radius:50%;background:#8a8f99;color:#ffffff;cursor:pointer;display:grid;place-items:center;font:800 10px/1 system-ui,sans-serif}
+.hx-jev-marker::before{content:"";position:absolute;inset:-10px 0 -10px -16px}
+.hx-jev-marker[data-attention=true]{width:14px;height:14px;background:#b42318}
+.hx-jev-marker[data-attention=true]::after{content:"!"}
+.hx-jev-marker[data-inset=true]{left:auto;right:0}
+.hx-jev-marker:hover,.hx-jev-marker[aria-expanded=true]{box-shadow:0 0 0 3px rgba(41,71,199,.22)}
+.hx-jev-marker:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}
+.hx-jev-pop{position:fixed;z-index:880;box-sizing:border-box;width:max-content;min-width:180px;max-width:min(340px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;padding:8px 10px;border:1px solid #303036;border-radius:8px;background:#ffffff;color:#303036;box-shadow:0 8px 28px rgba(30,30,40,.18);font:13px/1.4 system-ui,sans-serif}
+.hx-jev-pop[hidden]{display:none}
+.hx-jev-pop-notes{margin:0;padding:0;list-style:none;display:grid;gap:6px}
+.hx-jev-pop-note{display:grid;gap:4px}
+.hx-jev-pop-text{font-weight:700;color:#303036;overflow-wrap:anywhere}
+.hx-jev-pop-note[data-attention=true] .hx-jev-pop-text{color:#b42318}
+.hx-jev-pop-note[data-group=neutral] .hx-jev-pop-text{font-weight:600;color:#5a5a63}
+a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
+.hx-jev-pop-actions{display:flex;flex-wrap:wrap;gap:4px}
+.hx-jev-pop-actions .hx-btn{margin:0;font-size:11.5px;padding:4px 8px;border-color:#2947c7;background:#ffffff;color:#2947c7}
+@media(prefers-color-scheme:dark){
+.hx-jev-marker{background:#9aa0ab}
+.hx-jev-pop{border-color:#5b5f68;background:#24272c;color:#e8e7e2}
+.hx-jev-pop-text{color:#e8e7e2}
+.hx-jev-pop-note[data-attention=true] .hx-jev-pop-text{color:#ffb4ab}
+.hx-jev-pop-note[data-group=neutral] .hx-jev-pop-text{color:#b8bbc5}
+.hx-jev-pop-actions .hx-btn{background:#17191d;border-color:#7d91ff;color:#aebcff}
+}
 .hx-jev-target-flash{animation:hx-jev-flash 1.2s ease-out}
 @keyframes hx-jev-flash{0%{box-shadow:0 0 0 4px rgba(41,71,199,.42)}100%{box-shadow:0 0 0 14px rgba(41,71,199,0)}}
 .hx-jev-thread-label{flex:0 0 auto;color:#2f6b32;background:#e8f2e8;border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700;white-space:nowrap}
@@ -1417,14 +1619,6 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-orphan-hint>span{flex:1 1 100%}
 .hx-orphan-hint .hx-btn{margin:0;font-size:10.5px;padding:4px 8px}
 .hx-pin-jev{position:absolute;left:calc(100% + 4px);top:50%;transform:translateY(-50%);width:max-content;max-width:120px;color:#2f6b32;background:#e8f2e8;border:1px solid #69a76b;border-radius:4px;padding:2px 4px;font:700 9px/1.1 system-ui,sans-serif;white-space:nowrap;pointer-events:none}
-.hx-jev-coverage{display:inline-block;margin-left:8px;padding:2px 6px;border:1px solid #b7c1d8;border-radius:4px;background:#f4f6fb;color:#35405f;font:650 10px/1.3 system-ui,sans-serif;vertical-align:middle}
-.hx-jev-coverage[data-state=unsure]{border-color:#c69b4d;background:#fff8e9;color:#8b5c0b}
-.hx-jev-coverage[data-state=unavailable]{border-color:#c98282;background:#fff1f1;color:#8b1a1a}
-@media(prefers-color-scheme:dark){
-.hx-jev-coverage{border-color:#596480;background:#242b45;color:#d9e0ff}
-.hx-jev-coverage[data-state=unsure]{border-color:#a77c32;background:#3c301d;color:#ffd98a}
-.hx-jev-coverage[data-state=unavailable]{border-color:#a65d5d;background:#3a2020;color:#ffb4b4}
-}
 .hx-banner{position:fixed;top:0;left:0;right:0;background:#12897c;color:#fff;font:600 13px system-ui;padding:8px 16px;z-index:950;display:flex;gap:14px;align-items:center;justify-content:center}
 .hx-toast{position:fixed;bottom:76px;left:50%;transform:translateX(-50%);background:#22242a;color:#faf9f6;font:600 12.5px system-ui;border-radius:8px;padding:9px 16px;box-shadow:0 8px 28px rgba(30,30,40,.3);z-index:960;opacity:0;transition:opacity .25s;pointer-events:none}
 .hx-toast.show{opacity:1}
@@ -1454,8 +1648,9 @@ body.hx-panel-open{padding-right:0;overflow:hidden}
 .hx-pin{width:44px;height:44px;font-size:12px;touch-action:manipulation}
 .hx-pin-jev{left:auto;right:calc(100% + 4px);max-width:110px;text-align:right}
 .hx-jev-note{margin:8px 16px 0}
-.hx-jev-badge{font-size:9px;padding:4px 6px;margin-left:5px}
-.hx-jev-badge{display:inline-block;max-width:100%;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere}
+.hx-jev-marker::before{inset:-14px 0 -14px -28px}
+.hx-jev-pop{left:12px;right:12px;top:auto;bottom:calc(10px + var(--hx-dock-space,64px) + 8px + env(safe-area-inset-bottom));width:auto;max-width:none;max-height:40dvh;padding:10px 12px}
+.hx-jev-pop-actions .hx-btn{min-height:44px}
 .hx-banner{align-items:flex-start;flex-wrap:wrap;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;text-align:center}
 .hx-banner button{min-height:44px;padding:8px 12px;touch-action:manipulation}
 .hx-toast{bottom:calc(112px + env(safe-area-inset-bottom));max-width:calc(100vw - 24px);box-sizing:border-box;text-align:center}
@@ -1579,7 +1774,7 @@ function mountUI() {
   const INTERACTIVE = 'button, input, select, textarea, label, a, summary, [role="button"], [role="link"]';
   const suspend = e => {
     if (!state.commentMode) return;
-    if (e.target.closest && e.target.closest('.hx-pin,.hx-panel,.hx-thread-dock,.hx-toolbar,.hx-range-bar,.hx-service-index-link,#hx-errors')) return;
+    if (e.target.closest && e.target.closest('.hx-pin,.hx-jev-marker,.hx-jev-pop,.hx-panel,.hx-thread-dock,.hx-toolbar,.hx-range-bar,.hx-service-index-link,#hx-errors')) return;
     if (e.target.tagName === 'CANVAS') return;
     if (!holderOf(e.target)) return;
     // native drag/toggle on controls dies here; elsewhere only spec-script handlers die (selection survives)
@@ -1603,7 +1798,7 @@ function mountUI() {
   document.addEventListener('pointermove', e => {
     const t = e.target;
     let box = null;
-    if (state.commentMode && t instanceof Element && !t.closest('.hx-pin,.hx-panel,.hx-thread-dock,.hx-toolbar,.hx-range-bar')) {
+    if (state.commentMode && t instanceof Element && !t.closest('.hx-pin,.hx-jev-marker,.hx-jev-pop,.hx-panel,.hx-thread-dock,.hx-toolbar,.hx-range-bar')) {
       const svg = t.closest && t.closest('[data-anchor] svg');
       if (svg && t !== svg) box = t.getBoundingClientRect();
       else if (!svg && t.closest && t.closest(INTERACTIVE) && holderOf(t)) box = t.closest(INTERACTIVE).getBoundingClientRect();
@@ -2387,7 +2582,7 @@ function mountReadingView() {
   if (!toolbar) return;
   const style = document.createElement('style');
   style.textContent = `.hx-reading-active [data-hx-audience="internals"]{color:#586069!important}
-.hx-reading-active [data-hx-audience="internals"] :is(a,code,strong,em,span):not(.hx-jev-badge,.hx-jev-corpus,.hx-jev-coverage){color:inherit!important}
+.hx-reading-active [data-hx-audience="internals"] :is(a,code,strong,em,span){color:inherit!important}
 ` + (document.querySelector('link[rel~="stylesheet"][href*=".style/spec.css"]') ? '' :
     `@media(prefers-color-scheme:dark){.hx-reading-active [data-hx-audience="internals"]{color:#b9c0ca!important}}`);
   document.head.appendChild(style);
