@@ -213,6 +213,16 @@ class ReviewHostTest(unittest.TestCase):
             self.assertIsNone(baseline["htmlBase"])
             self.assertIsNone(baseline["html"])
 
+    def test_stop_succeeds_when_a_registered_spec_is_gone(self):
+        state = self.work / "state"
+        started = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        pid = self.registry(state)["process"]["pid"]
+        self.spec.unlink()
+        stopped = self.run_cli("stop", "--state-dir", str(state), state=state)
+        self.assertEqual(stopped.returncode, 0, stopped.stderr)
+        self.assertFalse(review_host.process_owns_registry(pid, Path(state) / "registry.toml"))
+
     def test_stop_then_register_replaces_resource_and_restarts_server(self):
         state = self.work / "state"
         first = self.run_cli(*self.register_args(state), state=state)

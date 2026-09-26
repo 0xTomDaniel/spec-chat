@@ -731,7 +731,8 @@ def stop(args: argparse.Namespace) -> int:
     state = state_dir(args)
     registry, _, _ = paths(state)
     with state_lock(state):
-        _, process = registry_state(registry)
+        # Stop reads only [process]; resource rows may point at specs gone from their checkout.
+        _, process = registry_state(registry, validate=False)
         if not process:
             raise LauncherError("registry has no running process")
         stop_process(process["pid"], registry)
