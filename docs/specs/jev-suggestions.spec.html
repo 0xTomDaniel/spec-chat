@@ -13,7 +13,8 @@
 <header data-anchor="header">
 <h1 data-anchor="title">Jev review suggestions</h1>
 <nav data-anchor="breadcrumbs">docs / specs / jev-suggestions.spec.html</nav>
-<p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-100">ANN-100</a>, <a href="https://linear.app/annotateanything/issue/ANN-206">ANN-206</a>.</p>
+<p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-100">ANN-100</a>, <a href="https://linear.app/annotateanything/issue/ANN-206">ANN-206</a>, <a href="https://linear.app/annotateanything/issue/ANN-224">ANN-224</a>.</p>
+<p data-anchor="status-ann224">Status: ANN-224 touch (<code>Ask for re-proof</code> row, Passed check marker) accepted by human spec acceptance (hand-off <code>hmuhw9498</code>, 2026-09-26T04:32:58Z) at <code>bf6d5f1</code>.</p>
 <p data-anchor="status">Status: accepted for ANN-206 by human spec acceptance relayed by operator w5:p2 (2026-09-26T02:28:52Z, "accepted") at <code>4f2df71</code>; governing contract.</p>
 <p data-anchor="context">Follows the shared Jev contract, annotateanything <code>docs/specs/jev-seam.spec.html#contract</code> (ANN-49, human-accepted at <code>3cdd123</code>; since <code>ed95fc8</code> only its retry, cache, and no-reorder rules changed, to match this spec). This spec owns Spec Chat's questions and display. Jev questions read only specs and review threads, with no tracker or evidence dependency. Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a> and <a href="./compared-range.spec.html#change-base">compared range</a>.</p>
 </header>
@@ -161,7 +162,7 @@
 <h2>Markers</h2>
 <p data-anchor="markers-quiet">Jev adds no section tint, bar, inline badge, or inline note; the spec text keeps its layout. Git focus's own change highlight and the dims of cosmetic changes and reading view stay.</p>
 <p data-anchor="markers-one">Each section or clause with any note gets one small marker in the right margin beside its first line, one per location however many notes it has.</p>
-<p data-anchor="markers-color">A marker is a quiet neutral dot, colored with a <code>!</code> glyph only when its notes include <code>Contradicts</code>, <code>Oversteps</code>, or an evidence <code>Stale</code>.</p>
+<p data-anchor="markers-color">A marker is a colored <code>!</code> when its notes include <code>Contradicts</code>, <code>Oversteps</code>, or evidence <code>Stale</code> or <code>Failed</code>; else a small green check when its evidence <code>Passed</code>; else a quiet neutral dot. The first that applies wins, and hover opens the popover for every kind.</p>
 <p data-anchor="markers-open">Hover or keyboard focus opens its popover, a tap opens it on touch, and moving away, Escape, or a tap elsewhere closes it; the popover never covers review controls.</p>
 <p data-anchor="markers-content">A popover lists, in this order, evidence (<a href="./criterion-evidence.spec.html#chip">criterion evidence</a>), conflicts, coverage, change type, and <code>unsure</code> or <code>Jev unavailable</code>, each note with its <a href="#note-actions">note button</a>.</p>
 <figure data-anchor="markers-figure">
@@ -205,6 +206,7 @@
 <tr data-anchor="note-story"><td><code>No story backs this</code></td><td><code>Ask for a story</code></td><td>Draft on the criterion: <code>Name or add the user story this criterion verifies.</code></td></tr>
 <tr data-anchor="note-resolve"><td><code>Looks resolved</code></td><td><code>Resolve thread</code></td><td>Resolves the thread with the existing resolve event</td></tr>
 <tr data-anchor="note-move"><td><code>Possibly moved to:</code></td><td><code>Move comment here</code></td><td>As <a href="#orphan">Moving an orphaned comment</a> defines</td></tr>
+<tr data-anchor="note-reproof"><td>Evidence <code>Stale</code></td><td><code>Ask for re-proof</code></td><td>As <a href="./criterion-evidence.spec.html#reproof">Ask for re-proof</a> defines</td></tr>
 <tr data-anchor="note-change"><td><code>Scope</code>, <code>Behavior</code></td><td><code>Comment on this change</code></td><td>Draft on the section: <code>About this change: </code></td></tr>
 <tr data-anchor="note-none"><td><code>Cosmetic</code>, <code>Clarification</code>, reading view, <code>unsure</code>, <code>Jev unavailable</code>, <code>Jev off</code></td><td>None</td><td>None</td></tr>
 </tbody>
