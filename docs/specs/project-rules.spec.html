@@ -43,14 +43,14 @@
 <h2>Modular boundaries</h2>
 <p data-modular-boundary data-anchor="boundary-seam"><span data-boundary-responsibility>The review server's Jev seam owns the scope and rule-check questions, their records, and the cache.</span> <span data-boundary-seam>Caller-facing seam: the existing <code>GET /api/jev</code> response, gaining items of kind <code>scope</code> and <code>rule</code>.</span> <span data-boundary-dependency>Dependency direction: external-provider; calls Jev and reads the served specs as the draft checks do; nothing calls back.</span> <span data-boundary-scope>Observable scope: the JSON response and records.</span></p>
 <p data-modular-boundary data-anchor="boundary-page"><span data-boundary-responsibility>The browser runtime owns the <code>rule?</code> and <code>&lt;word&gt;?</code> notes and the <code>Ask to cover</code> button.</span> <span data-boundary-seam>Caller-facing seam: the rendered page; writes only through the existing comment composer.</span> <span data-boundary-dependency>Dependency direction: self-contained; consumes the seam route.</span> <span data-boundary-scope>Observable scope: what the reviewer sees.</span></p>
-<p data-modular-boundary data-anchor="boundary-skill"><span data-boundary-responsibility>The shaping skill owns reading and resolving the checks before handing off the link.</span> <span data-boundary-seam>Caller-facing seam: one read command over the running review server.</span> <span data-boundary-dependency>Dependency direction: the skill calls the server; the server never calls the skill.</span> <span data-boundary-scope>Observable scope: commits and threads before the review link is sent.</span></p>
+<p data-modular-boundary data-anchor="boundary-skill"><span data-boundary-responsibility>The shaping skill owns reading and resolving the checks before handing off the link.</span> <span data-boundary-seam>Caller-facing seam: one read command over the running review server.</span> <span data-boundary-dependency>Dependency direction: self-contained; the skill calls the server, and the server never calls the skill.</span> <span data-boundary-scope>Observable scope: commits and threads before the review link is sent.</span></p>
 </section>
 
 <section data-anchor="questions">
 <h2>Two questions</h2>
 <div class="table-scroll" data-anchor="questions-scroll">
 <table data-anchor="questions-table">
-<caption>Both are Jev questions under the <a href="./jev-suggestions.spec.html#every">Every suggestion</a> rules: one question set each, one record per call, records as cache.</caption>
+<caption>Both are Jev questions under the <a href="./jev-suggestions.spec.html#shared">Every suggestion</a> rules: one question set each, one record per call, records as cache.</caption>
 <thead><tr><th>Question</th><th>Asked for</th><th>Jev sees</th><th>Labels</th><th>Cache key</th></tr></thead>
 <tbody>
 <tr data-anchor="q-scope"><td>Scope: <q>does this apply to every feature?</q></td><td>Every acceptance criterion of every served spec, and of main's copy of every other spec path, as the <a href="./jev-suggestions.spec.html#corpus">draft checks</a> choose other specs</td><td>The criterion text only</td><td>every feature, this feature</td><td>Criterion text and set version</td></tr>
