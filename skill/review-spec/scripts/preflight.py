@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify and, when required, migrate one repository's Spec Chat surface."""
+"""Verify and, when required, migrate one repository's Spec Chat runtime and visuals."""
 
 from collections import Counter
 from html.parser import HTMLParser
@@ -171,22 +171,19 @@ def main(argv):
     skill = Path(__file__).resolve().parents[1]
     bundled_viz = skill / "assets" / "viz"
     bundled_runtime = bundled_viz / "runtime.js"
-    bundled_server = skill / "assets" / "review-serve.py"
     target_runtime = runtime_path(spec)
     if target_runtime is None:
         return fail("spec must reference exactly one repository-relative runtime.js")
     target_viz = target_runtime.parent
-    target_server = repository / "tools" / "review-serve.py"
 
-    asset_paths = [target_viz, target_runtime, target_server]
+    asset_paths = [target_viz, target_runtime]
     if target_viz.exists():
         asset_paths.extend(target_viz.rglob("*"))
     if any(not path_stays_inside(path, repository) for path in asset_paths):
         return fail("asset path escapes the target repository")
 
     required_runtime = capabilities(bundled_runtime)
-    required_server = capabilities(bundled_server)
-    if not required_runtime or not required_server:
+    if not required_runtime:
         return fail("bundled Spec Chat assets do not declare required capabilities")
 
     runtime_state = "compatible"
@@ -194,13 +191,7 @@ def main(argv):
         copy_tree(bundled_viz, target_viz)
         runtime_state = "migrated"
 
-    server_state = "compatible"
-    if not required_server.issubset(capabilities(target_server)):
-        target_server.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(bundled_server, target_server)
-        server_state = "migrated"
-
-    print(f"runtime={runtime_state} server={server_state} visuals=valid")
+    print(f"runtime={runtime_state} visuals=valid")
     return 0
 
 
