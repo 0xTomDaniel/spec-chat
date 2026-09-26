@@ -21,7 +21,7 @@ const slice = (from, to) => {
 };
 const css = ['FOCUS_CSS', 'CSS'].map(name => new Function('return ' + slice(`const ${name} = \``, '`;').replace(/^const \w+ = /, '').replace(/;$/, ''))()).join('\n');
 assert.match(css, /\.hx-jev-marker\{position:absolute/, 'runtime overlay CSS extracted');
-const code = ['mountJevMarker', 'placeJevMarker', 'pinPos', 'cornerPos', 'renderPins'].map(name => slice(`function ${name}(`, '\n}\n')).join('\n');
+const code = ['looksResolved', 'mountJevMarker', 'placeJevMarker', 'pinPos', 'cornerPos', 'renderPins'].map(name => slice(`function ${name}(`, '\n}\n')).join('\n');
 const spec = readFileSync(resolve(root, 'docs/specs/jev-suggestions.spec.html'), 'utf8')
   .replace(/<script[^>]*runtime\.js[^>]*><\/script>/, '')
   .replace('./.style/spec.css', 'file://' + resolve(root, 'docs/specs/.style/spec.css'));
