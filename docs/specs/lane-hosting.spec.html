@@ -83,6 +83,7 @@
 </table>
 </div>
 <p data-anchor="index-entry-order">Order is a sort: lanes with any changed spec first, then the rest, each by issue number, then Other specs; projects by name; within a project, changed specs first, then by title. The served path, slug, row id, and base commit leave the index.</p>
+<p data-anchor="index-entry-cost">Each spec row's title and status are kept per served spec file, keyed by the file's identity (device, inode, size, modification time) and, for status, the row base; a row base is a commit id, so an unchanged key means an unchanged row. Only a new or changed key rereads the title or reruns the git compare. Decided by the operator, 2026-09-26 (ANN-178): the index loads warm in under 200 ms and renders exactly as uncached.</p>
 </section>
 
 </article>
