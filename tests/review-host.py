@@ -117,7 +117,7 @@ class ReviewHostTest(unittest.TestCase):
         self.assertEqual(started.returncode, 0, started.stderr)
         document = self.registry(state)
         self.assertEqual(document["process"]["bind"], "127.0.0.1")
-        self.assertEqual(set(document["process"]), {"pid", "port", "bind"})
+        self.assertEqual(set(document["process"]), {"pid", "port", "bind", "host", "url"})
         self.assertIn(f"ssh -L {document['process']['port']}:127.0.0.1:", started.stdout)
         self.assertEqual(len(document["resource"]), 1)
         resource = document["resource"][0]
@@ -352,7 +352,7 @@ finish_event = ""
         private = self.run_cli(*self.register_args(state, spec="second"), "--private", state=state,
                                ports=process["port"])
         self.assertEqual(private.returncode, 0, private.stderr)
-        self.assertEqual(self.registry(state)["process"], {"pid": process["pid"], "port": process["port"]})
+        self.assertEqual(self.registry(state)["process"], {k: v for k, v in process.items() if k != "bind"})
         self.assertIn("ssh -L", private.stdout)
 
     def test_running_url_never_guesses_without_log(self):
@@ -551,6 +551,134 @@ cursor_name = ".cursor-test"
         row = self.registry(state)["resource"][0]
         self.assertEqual((row["accepted"], row["base"]), (False, self.git("rev-parse", "HEAD")))
         self.assertEqual({key: row[key] for key in untouched}, untouched)
+
+    def test_process_url_is_the_printed_url_on_start_and_join(self):
+        """review-service #published: [process] url equals the printed review URL."""
+        state = self.work / "state"
+        first = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        process = self.registry(state)["process"]
+        self.assertEqual(process["url"], self.url(first))
+        self.assertEqual(process["host"], "127.0.0.1")
+        joined = self.run_cli(*self.register_args(state, spec="second"), state=state)
+        self.assertEqual(joined.returncode, 0, joined.stderr)
+        self.assertEqual(self.url(joined), self.url(first))
+        self.assertEqual(self.registry(state)["process"], process)
+
+    def lane_env(self):
+        xdg = self.work / "xdg"
+        default = xdg / "spec-chat/hosting/default"
+        if default not in self.states:
+            self.states.append(default)
+        return {"XDG_STATE_HOME": str(xdg)}, default
+
+    def run_lane(self, *args, env=None, ports=None):
+        """The lane command: no --state-dir, host, port, bind, or visibility flag."""
+        full = os.environ.copy()
+        full.update({"PATH": path_without_herdr(), "PYTHONDONTWRITEBYTECODE": "1", **(env or {})})
+        full["SPEC_CHAT_APPROVED_INGRESS_PORTS"] = str(ports or self.port())
+        return subprocess.run(["python3", str(LAUNCHER_PATH), "register", *args], cwd=ROOT, env=full, text=True,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=25)
+
+    def test_lane_command_joins_the_default_service(self):
+        """review-service acceptance-join and acceptance-published: stable location, same URL for every lane."""
+        env, default = self.lane_env()
+        first = self.run_lane("--slug", "lane-one", "--owner", "p1", str(self.spec), env=env)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertIn("ssh -L", first.stdout)
+        second = self.run_lane("--slug", "lane-two", "--owner", "p2", str(self.second_spec), env=env)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(self.url(second), self.url(first))
+        document = self.registry(default)
+        self.assertEqual(document["process"]["url"], self.url(first))
+        self.assertEqual({row["slug"] for row in document["resource"]}, {"lane-one", "lane-two"})
+        self.assertEqual(request(self.url(second) + "/lane-two/docs/specs/second.spec.html"),
+                         (200, self.second_spec.read_bytes()))
+
+    def test_dead_service_restarts_on_its_recorded_port_else_another(self):
+        """review-service acceptance-restart."""
+        env, default = self.lane_env()
+        first = self.run_lane("--slug", "lane", "--owner", "p1", str(self.spec), env=env)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        recorded = self.registry(default)["process"]
+        self.assertEqual(self.run_cli("stop", "--state-dir", str(default), state=default).returncode, 0)
+        again = self.run_lane("--slug", "lane", "--owner", "p1", str(self.spec), env=env)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertEqual(self.url(again), recorded["url"])
+        restarted = self.registry(default)["process"]
+        self.assertNotEqual(restarted["pid"], recorded["pid"])
+        self.assertEqual({k: restarted[k] for k in ("port", "bind", "host")},
+                         {k: recorded[k] for k in ("port", "bind", "host")})
+        self.assertEqual(self.run_cli("stop", "--state-dir", str(default), state=default).returncode, 0)
+        with socket.socket() as holder:
+            holder.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            holder.bind(("127.0.0.1", recorded["port"]))
+            holder.listen()
+            moved = self.run_lane("--slug", "lane", "--owner", "p1", str(self.spec), env=env)
+            self.assertEqual(moved.returncode, 0, moved.stderr)
+        process = self.registry(default)["process"]
+        self.assertNotEqual(process["port"], recorded["port"])
+        self.assertEqual(process["url"], self.url(moved))
+
+    def test_restart_keeps_the_recorded_public_bind_and_proof_host(self):
+        args = review_host.build_parser().parse_args(["register", "--owner", "o", "x.spec.html"])
+        recorded = {"pid": 1, "port": 2, "bind": "0.0.0.0", "host": "203.0.113.9", "url": "http://203.0.113.9:2"}
+        self.assertEqual(review_host.start_plan(args, recorded)[:2], ("0.0.0.0", "203.0.113.9"))
+        proof = review_host.build_parser().parse_args(["register", "--owner", "o", "--proof-host", "198.51.100.4",
+                                                       "x.spec.html"])
+        self.assertEqual(review_host.start_plan(proof, recorded)[:2], ("0.0.0.0", "198.51.100.4"))
+
+    def branch_repo(self, origin="https://example.invalid/org/example.git"):
+        """main has the seed; feature adds one commit, so the merge base with main is the seed."""
+        if origin:
+            self.git("remote", "add", "origin", origin)
+        self.git("checkout", "-q", "-b", "feature")
+        self.spec.write_text("<!doctype html><title>review</title><p>feature</p>\n", encoding="utf-8")
+        self.git("commit", "-qam", "feature")
+
+    def test_plain_spec_path_infers_project_root_and_base(self):
+        """review-service acceptance-plain-path."""
+        self.branch_repo()
+        env, default = self.lane_env()
+        nested = self.repo / "docs"
+        plain = self.run_lane("--slug", "lane", "--owner", "p1", str(nested / "specs/../specs/review.spec.html"), env=env)
+        self.assertEqual(plain.returncode, 0, plain.stderr)
+        row = self.registry(default)["resource"][0]
+        self.assertEqual((row["project"], row["root"], row["spec"], row["base"]),
+                         ("example", str(self.repo.resolve()), "docs/specs/review.spec.html", self.base))
+        self.assertEqual((row["owner"], row["checker"]), ("p1", "p1"))
+        head = self.git("rev-parse", "HEAD")
+        based = self.run_lane("--slug", "lane", "--owner", "p1", "--base", "feature", str(self.spec), env=env)
+        self.assertEqual(based.returncode, 0, based.stderr)
+        self.assertEqual([r["base"] for r in self.registry(default)["resource"]], [head])
+
+    def test_plain_spec_path_prefers_origin_head_and_falls_back_to_the_directory_name(self):
+        self.branch_repo(origin="git@example.invalid:org/other-name.git")
+        self.git("update-ref", "refs/remotes/origin/main", self.base)
+        self.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+        self.git("checkout", "-q", "main")
+        self.git("commit", "-q", "--allow-empty", "-m", "main moves")
+        self.git("checkout", "-q", "feature")
+        self.git("merge", "-q", "--no-edit", "main")
+        record = review_host.plain_resource(str(self.spec), None)
+        self.assertEqual((record[0], record[3]), ("other-name", self.base))
+        self.git("remote", "remove", "origin")
+        record = review_host.plain_resource(str(self.spec), None)
+        self.assertEqual((record[0], record[3]), ("repo", self.git("rev-parse", "main")))
+
+    def test_plain_reregister_keeps_the_reviewed_row_base(self):
+        env, default = self.lane_env()
+        first = self.run_lane("--slug", "lane", "--owner", "p1", str(self.spec), env=env)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        rid = self.registry(default)["resource"][0]["id"]
+        self.spec.write_text("<!doctype html><title>review</title><p>reviewed</p>\n", encoding="utf-8")
+        reviewed = self.run_cli("reviewed", "--state-dir", str(default), "--id", rid, state=default)
+        self.assertEqual(reviewed.returncode, 0, reviewed.stderr)
+        head = self.git("rev-parse", "HEAD")
+        again = self.run_lane("--slug", "lane", "--owner", "p2", str(self.spec), env=env)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        row = self.registry(default)["resource"][0]
+        self.assertEqual((row["base"], row["owner"]), (head, "p2"))
 
     def test_proof_rejects_wrong_bytes(self):
         resource = review_host.parse_resource_spec(

@@ -35,6 +35,8 @@ assert _verify_spec.loader is not None
 _verify_spec.loader.exec_module(_verify_module)
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
 SAFE_CURSOR_RE = re.compile(r"[^/\\]+\Z")
+PROCESS_FIELDS = ("pid", "port", "bind", "host", "url")
+DEFAULT_CURSOR = ".cursor-codex"
 RESOURCE_FIELDS = (
     "id", "slug", "project", "root", "narrow_root", "spec", "path", "base", "accepted", "owner", "checker",
     "cursor_name", "registered_at", "updated_at",
@@ -105,7 +107,7 @@ def dump_registry(process: Mapping[str, Any] | None, records: Sequence[Mapping[s
     lines: list[str] = []
     if process is not None:
         lines.append("[process]")
-        for key in ("pid", "port", "bind"):
+        for key in PROCESS_FIELDS:
             if key in process:
                 lines.append(f"{key} = {toml_value(process[key])}")
         if records:
@@ -268,18 +270,50 @@ def resolve_collection(value: str | None, top: Path, spec_file: Path) -> Path:
     return collection
 
 
+def git_project(top: Path) -> str:
+    """The last path part of origin without .git, else the worktree directory name."""
+    origin = run_git(top, "remote", "get-url", "origin", check=False).rstrip("/")
+    name = re.split(r"[/:]", origin)[-1].removesuffix(".git") if origin else ""
+    return name or top.name
+
+
+def default_base(top: Path) -> str:
+    """The merge base of HEAD with the default branch: origin/HEAD, else main."""
+    for ref in ("origin/HEAD", "main"):
+        base = run_git(top, "merge-base", "HEAD", ref, check=False)
+        if base:
+            return base
+    raise LauncherError(f"cannot infer a base in {top}: no origin/HEAD or main; pass --base <ref>")
+
+
+def plain_resource(value: str, base: str | None) -> tuple[str, str, str, str]:
+    """A plain spec path: (project, root, spec, base) inferred from its Git worktree."""
+    spec_file = Path(value).expanduser().resolve()
+    if not spec_file.is_file():
+        raise LauncherError(f"spec path does not exist: {value}")
+    top = resource_toplevel(spec_file.parent)
+    if not path_inside(spec_file, top, strict=True):
+        raise LauncherError(f"spec path is outside its worktree: {value}")
+    return git_project(top), str(top), spec_file.relative_to(top).as_posix(), base or default_base(top)
+
+
 def parse_resource_spec(value: str, owner: str, checker: str, cursor_name: str,
                         slug: str | None = None, collection: str | None = None) -> dict[str, Any]:
-    if not owner.strip() or not checker.strip() or not cursor_name.strip():
-        raise LauncherError("--owner, --checker, and --cursor-name are required")
-    if not SAFE_CURSOR_RE.fullmatch(cursor_name) or cursor_name in {".", ".."}:
-        raise LauncherError("cursor name must be a single file name")
     try:
         project, rest = value.split("=", 1)
         root_text, base = rest.rsplit("@", 1)
         root_text, spec = root_text.split(":", 1)
     except ValueError as exc:
         raise LauncherError("resource must be PROJECT_ID=ROOT:SPEC_PATH@BASE") from exc
+    return build_resource(project, root_text, spec, base, owner, checker, cursor_name, slug, collection)
+
+
+def build_resource(project: str, root_text: str, spec: str, base: str, owner: str, checker: str, cursor_name: str,
+                   slug: str | None = None, collection: str | None = None) -> dict[str, Any]:
+    if not owner.strip() or not checker.strip() or not cursor_name.strip():
+        raise LauncherError("--owner, --checker, and --cursor-name are required")
+    if not SAFE_CURSOR_RE.fullmatch(cursor_name) or cursor_name in {".", ".."}:
+        raise LauncherError("cursor name must be a single file name")
     project = project.strip()
     base = base.strip()
     if not project or not base or not root_text or not spec:
@@ -413,7 +447,8 @@ def read_registry_document(path: Path, validate: bool = True) -> dict[str, Any]:
         bind = process.get("bind")
         if bind is not None and not isinstance(bind, str):
             raise LauncherError("registry process bind must be a string")
-        process = {"pid": process["pid"], "port": process["port"], **({"bind": bind} if bind else {})}
+        extra = {key: process[key] for key in ("host", "url") if isinstance(process.get(key), str) and process[key]}
+        process = {"pid": process["pid"], "port": process["port"], **({"bind": bind} if bind else {}), **extra}
     return {"resource": result, "process": process}
 
 
@@ -444,10 +479,14 @@ def prove_resource(public_url: str, resource: Mapping[str, Any]) -> dict[str, An
 
 
 def resource_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--resource", action="append", required=True)
+    parser.add_argument("specs", nargs="*", metavar="SPEC_PATH",
+                        help="a spec path; project, root, and base are inferred from its Git worktree")
+    parser.add_argument("--resource", action="append", default=[], metavar="PROJECT_ID=ROOT:SPEC_PATH@BASE")
+    parser.add_argument("--base", action="append", help="base ref for plain spec paths; default the merge base "
+                                                         "of HEAD with origin/HEAD, else main")
     parser.add_argument("--owner", action="append", required=True)
-    parser.add_argument("--checker", action="append", required=True)
-    parser.add_argument("--cursor-name", action="append", required=True)
+    parser.add_argument("--checker", action="append", help="default: the owner")
+    parser.add_argument("--cursor-name", action="append", help=f"default: {DEFAULT_CURSOR}")
     parser.add_argument("--slug", action="append")
     parser.add_argument("--collection", action="append")
 
@@ -463,15 +502,29 @@ def select_flag(values: Sequence[str] | None, index: int, count: int, name: str,
 
 
 def parse_resources(args: argparse.Namespace) -> list[dict[str, Any]]:
+    """--resource entries, then plain spec paths; per-resource flags follow that order."""
+    count = len(args.resource) + len(args.specs)
+    if not count:
+        raise LauncherError("name a spec path or --resource PROJECT_ID=ROOT:SPEC_PATH@BASE")
+    if args.base and not args.specs:
+        raise LauncherError("--base applies only to plain spec paths")
     result = []
-    for index, value in enumerate(args.resource):
-        owner = select_flag(args.owner, index, len(args.resource), "--owner")
-        checker = select_flag(args.checker, index, len(args.resource), "--checker")
-        cursor = select_flag(args.cursor_name, index, len(args.resource), "--cursor-name")
-        slug = select_flag(args.slug, index, len(args.resource), "--slug")
-        collection = select_flag(args.collection, index, len(args.resource), "--collection")
-        assert owner is not None and checker is not None and cursor is not None
-        result.append(parse_resource_spec(value, owner, checker, cursor, slug, collection))
+    for index in range(count):
+        owner = select_flag(args.owner, index, count, "--owner")
+        assert owner is not None
+        checker = select_flag(args.checker, index, count, "--checker", owner)
+        cursor = select_flag(args.cursor_name, index, count, "--cursor-name", DEFAULT_CURSOR)
+        slug = select_flag(args.slug, index, count, "--slug")
+        collection = select_flag(args.collection, index, count, "--collection")
+        assert checker is not None and cursor is not None
+        if index < len(args.resource):
+            result.append(parse_resource_spec(args.resource[index], owner, checker, cursor, slug, collection))
+            continue
+        plain = index - len(args.resource)
+        ref = select_flag(args.base, plain, len(args.specs), "--base")
+        resource = build_resource(*plain_resource(args.specs[plain], ref), owner, checker, cursor, slug, collection)
+        resource["inferred_base"] = ref is None
+        result.append(resource)
     return result
 
 
@@ -546,6 +599,22 @@ def bind_ports(bind: str) -> tuple[int, ...]:
         if os.environ.get(name):
             return parse_ports(os.environ[name])
     return (0,)
+
+
+def start_plan(args: argparse.Namespace, process: Mapping[str, Any] | None) -> tuple[str, str, int | None]:
+    """Bind, proof host, and recorded port to try first; a service on its recorded bind keeps its host and port."""
+    recorded = process or {}
+    bind = select_bind(args, process)
+    same = (recorded.get("bind") or LOOPBACK) == bind
+    host = recorded.get("host") if same and not args.proof_host else None
+    return bind, host or proof_host(args, bind), recorded.get("port") if same else None
+
+
+def select_start_port(bind: str, recorded: int | None) -> int:
+    if recorded:
+        with contextlib.suppress(LauncherError):
+            return select_port((recorded,), bind)
+    return select_port(bind_ports(bind), bind)
 
 
 def server_command(registry: Path, bind: str, port: int, host: str) -> list[str]:
@@ -643,6 +712,10 @@ def register(args: argparse.Namespace) -> int:
         existing, process = registry_state(registry, validate=False)
         for index, item in enumerate(parsed):
             assign_path(existing + parsed[:index], item)
+            old = next((row for row in existing if row["id"] == item["id"]), None)
+            if item.pop("inferred_base", False) and old:
+                # An inferred base never moves a reviewed row back; --base or --resource sets it explicitly.
+                item["base"] = old["base"]
         additions = [registry_record(item) for item in parsed]
         replacement_ids = {item["id"] for item in additions}
         candidate = [item for item in existing if item["id"] not in replacement_ids] + additions
@@ -655,17 +728,17 @@ def register(args: argparse.Namespace) -> int:
                 if (args.public or args.private) and select_bind(args, None) != bind:
                     raise LauncherError(f"review host already running on {bind}; "
                                         "run stop, then register again to change it")
+                url = process.get("url") or running_url(log_path)
+                process = {**process, "url": url}
                 write_registry(registry, candidate, process)
-                url = running_url(log_path)
                 for item in parsed:
                     prove_resource(url, item)
                 print_access(url, bind)
                 print_urls(url, additions, state)
                 return 0
 
-            bind = select_bind(args, process)
-            host = proof_host(args, bind)
-            port = select_port(bind_ports(bind), bind)
+            bind, host, recorded_port = start_plan(args, process)
+            port = select_start_port(bind, recorded_port)
             write_registry(registry, candidate)
             command = server_command(registry, bind, port, host)
             with log_path.open("w", encoding="utf-8") as log:
@@ -687,7 +760,8 @@ def register(args: argparse.Namespace) -> int:
                 raise LauncherError("review server did not print a URL")
             for item in parsed:
                 prove_resource(url, item)
-            process = {"pid": child.pid, "port": urllib.parse.urlsplit(url).port or port, "bind": bind}
+            process = {"pid": child.pid, "port": urllib.parse.urlsplit(url).port or port, "bind": bind,
+                       "host": host, "url": url}
             write_registry(registry, candidate, process)
             print_access(url, bind)
             print_urls(url, additions, state)
