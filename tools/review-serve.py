@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import html
 import json
 import mimetypes
@@ -304,6 +305,28 @@ def _review_status(mount):
     return code != 0 or prior != current
 
 
+_ROW_CACHE = {}
+# A ref base can move under an unchanged key; only a full commit id is cacheable.
+_COMMIT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+
+
+def _index_row(mount, path, row):
+    """(status, title) for one served spec, recomputed only when its file identity or row base changes."""
+    try:
+        info = os.stat(path)
+    except OSError:
+        return (_review_status(mount) if row else None), _page_title(path)
+    base = mount.get("base") if row else None
+    key = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, base)
+    cached = _ROW_CACHE.get(path)
+    if cached and cached[0] == key:
+        return cached[1]
+    value = (_review_status(mount) if row else None), _page_title(path)
+    if base is None or _COMMIT_ID.fullmatch(base):
+        _ROW_CACHE[path] = (key, value)
+    return value
+
+
 def _lane_label(slug):
     match = re.fullmatch(r"([a-z]+)-?([0-9]+)", slug)
     if not match:
@@ -561,6 +584,9 @@ class WakeController:
 
 
 class MountHandler(SimpleHTTPRequestHandler):
+    # Keep-alive: every response carries Content-Length, is a bodiless 304, or
+    # closes (send_error); do_POST drains its body before any reply.
+    protocol_version = "HTTP/1.1"
     server_version = "SpecChat/1"
     timeout = 2.0
 
@@ -572,9 +598,30 @@ class MountHandler(SimpleHTTPRequestHandler):
         super().setup()
         self.connection.settimeout(self.timeout)
 
-    def end_headers(self):
-        self.send_header("Cache-Control", "no-cache")
+    def end_headers(self, cache_control="no-cache"):
+        self.send_header("Cache-Control", cache_control)
         super().end_headers()
+
+    def _send_body(self, body, content_type, *, immutable=False, headers=None):
+        if immutable:
+            validator, cache_control = {}, "public, max-age=31536000, immutable"
+        else:
+            etag = '"%s"' % hashlib.sha256(body).hexdigest()
+            validator, cache_control = {"ETag": etag}, "no-cache"
+            tags = [tag.strip() for tag in self.headers.get("If-None-Match", "").split(",")]
+            if etag in tags or "W/" + etag in tags or "*" in tags:
+                self.send_response(304)
+                self.send_header("ETag", etag)
+                self.end_headers()
+                return
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        for name, header in {**validator, **(headers or {})}.items():
+            self.send_header(name, header)
+        self.end_headers(cache_control)
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def log_message(self, fmt, *args):
         return
@@ -605,8 +652,8 @@ class MountHandler(SimpleHTTPRequestHandler):
                     continue
                 seen.add(stable)
                 href = ("/" if mount["slug"] else "") + quote(stable, safe="/") + (("?" + query) if query else "")
-                status = _review_status(mount) if row else None
-                lanes.setdefault(lane, {}).setdefault(project, []).append((status, _page_title(path), href))
+                status, title = _index_row(mount, path, row)
+                lanes.setdefault(lane, {}).setdefault(project, []).append((status, title, href))
 
         def lane_order(item):
             lane, projects = item
@@ -660,12 +707,7 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
 .status.changed { color: #8a4b00; font-weight: 750; padding: 1px .5rem; border: 1px solid currentColor; border-radius: 999px; }
 .empty { color: #595e68; padding: 1rem; }
 </style></head><body><main><h1>Review index</h1><nav aria-label="Spec Chat detail pages">%s</nav></main></body></html>''' % listing).encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        if self.command != "HEAD":
-            self.wfile.write(body)
+        self._send_body(body, "text/html; charset=utf-8")
 
     def _resolve_path(self, path, *, spec_only=False):
         decoded = _decoded_path(path)
@@ -826,7 +868,7 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
         except (OSError, RuntimeError, ValueError):
             return self._json({"error": "jev unavailable"}, 503)
 
-    def _post_event(self, query):
+    def _post_event(self, query, body):
         mount, review = self._route_review(query)
         actor = query.get("actor", ["human"])[0]
         if not mount or actor not in ("human", "agent"):
@@ -834,8 +876,8 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
         if actor == "agent":
             return self._json({"error": "agent spool writes are disk-only"}, 403)
         try:
-            event = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
-        except (TypeError, ValueError):
+            event = json.loads(body)
+        except ValueError:
             return self._json({"error": "bad json"}, 400)
         if not isinstance(event, dict):
             return self._json({"error": "bad json"}, 400)
@@ -851,6 +893,7 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
 
     def _send_file(self, path):
         handled, bundled = _own_viz_asset(path)
+        vendor = False
         if handled:
             decoded = _decoded_path(path) or ""
             parts = decoded.split("/")
@@ -865,6 +908,7 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
                 self.send_error(404)
                 return
             target = bundled
+            vendor = bool(bundled) and parts[parts.index(".viz") + 1] == "vendor"
         else:
             _, target, _ = self._resolve_path(path)
         if not target:
@@ -875,13 +919,10 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
         except OSError:
             self.send_error(404)
             return
-        self.send_response(200)
-        self.send_header("Content-Type", mimetypes.guess_type(target)[0] or "application/octet-stream")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Last-Modified", self.date_time_string(int(os.stat(target).st_mtime)))
-        self.end_headers()
-        if self.command != "HEAD":
-            self.wfile.write(body)
+        self._send_body(
+            body, mimetypes.guess_type(target)[0] or "application/octet-stream", immutable=vendor,
+            headers={"Last-Modified": self.date_time_string(int(os.stat(target).st_mtime))},
+        )
 
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -902,10 +943,14 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
         return self.do_GET()
 
     def do_POST(self):
+        try:
+            body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        except ValueError:
+            return self.send_error(400)
         parsed = urlparse(self.path)
         if parsed.path != "/api/events":
             return self._json({"error": "not found"}, 404)
-        return self._post_event(parse_qs(parsed.query))
+        return self._post_event(parse_qs(parsed.query), body)
 
 
 class ReviewThreadingHTTPServer(ThreadingHTTPServer):
