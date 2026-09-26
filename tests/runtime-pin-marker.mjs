@@ -5,6 +5,8 @@ import { dirname, resolve } from 'node:path';
 
 // A thread pin and a Jev marker on the same criterion never overlap: the point at the marker's
 // center, and its tap pad, belong to the marker at every width (jev-suggestions #markers-mobile).
+// Where they would meet, the pin sits directly below the marker, never left over the text on its
+// line (jev-suggestions #markers-pin-clear).
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime.js'), 'utf8');
 const start = runtime.indexOf('function clearJevMarkers(');
@@ -18,7 +20,7 @@ const center = r => [r.left + r.width / 2, r.top + r.height / 2];
 const inside = ([x, y], r) => x >= r.left && x < r.right && y >= r.top && y < r.bottom;
 
 function run({ holderLeft, pinLeft, pinSize, marker, pad }) {
-  const pin = { style: { left: pinLeft + 'px' }, getBoundingClientRect() { return box(holderLeft + parseFloat(this.style.left), 397, pinSize, pinSize); } };
+  const pin = { style: { left: pinLeft + 'px', top: '4px' }, getBoundingClientRect() { return box(holderLeft + parseFloat(this.style.left), 393 + parseFloat(this.style.top), pinSize, pinSize); } };
   const markerEl = { getBoundingClientRect: () => marker, pad };
   const holder = { querySelectorAll: sel => (assert.equal(sel, '.hx-jev-marker'), [markerEl]) };
   const getComputedStyle = (el, pseudo) => (assert.equal(pseudo, '::before'), el.pad);
@@ -39,6 +41,11 @@ for (const [w, holderLeft, pinLeft, pinSize, marker, pad] of [
   assert.ok(!inside(center(marker), pin), w + ' px: the marker center is the marker, not the pin');
   assert.equal(pin.width, pinSize, w + ' px: pin keeps its tap target');
   assert.ok(pin.left >= holderLeft, w + ' px: pin never moves right or out of its block');
+  assert.equal(pin.left, holderLeft + pinLeft, w + ' px: pin never steps left over the text on its line');
+  if (w === 1280) continue; // the desktop margin holds pin and marker side by side
+  assert.ok(pin.top >= tapPad.bottom, w + ' px: pin sits below the marker tap pad');
+  assert.equal(pin.top, tapPad.bottom, w + ' px: pin sits directly below the marker');
+  assert.ok(pin.left < marker.right && pin.right > marker.left, w + ' px: pin is under the marker');
 }
 
 // A pin already clear of the marker is left where it was placed.

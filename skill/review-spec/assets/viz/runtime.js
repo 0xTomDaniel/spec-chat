@@ -2512,7 +2512,8 @@ function renderPins() {
 }
 
 // A pin never covers a Jev marker in its block or the marker's tap pad (its ::before): where they
-// would meet, the pin steps left of the pad. The marker keeps its place on its text line.
+// would meet, the pin sits directly below the pad, never left over the text on the marker's line.
+// The marker keeps its place on its text line.
 function clearJevMarkers(pin, holder) {
   for (const marker of holder.querySelectorAll('.hx-jev-marker')) {
     const pad = getComputedStyle(marker, '::before');
@@ -2520,7 +2521,7 @@ function clearJevMarkers(pin, holder) {
     const left = m.left + (parseFloat(pad.left) || 0);
     const top = m.top + (parseFloat(pad.top) || 0), bottom = m.bottom - (parseFloat(pad.bottom) || 0);
     if (p.right <= left || p.left >= m.right || p.bottom <= top || p.top >= bottom) continue;
-    pin.style.left = parseFloat(pin.style.left) - (p.right - left) + 'px';
+    pin.style.top = parseFloat(pin.style.top) + (bottom - p.top) + 'px';
   }
 }
 
