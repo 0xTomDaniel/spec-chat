@@ -1143,6 +1143,11 @@ function jevGitFocus() {
   return new URLSearchParams(location.search).get('focus') === 'changes' || document.body.classList.contains('hx-focus-active');
 }
 
+// Note buttons only open the existing composer with fixed text; nothing is written until the reviewer sends.
+function jevDraftAction(label, text) {
+  return { label, run: note => { closeJevPopover(); openComposer(note.anchor, null, null, text); } };
+}
+
 function jevNeutralNote(anchor, stateName) {
   return { anchor, group: 'neutral', state: stateName, text: stateName === 'unsure' ? 'unsure' : 'Jev unavailable' };
 }
@@ -1151,7 +1156,10 @@ function jevSuggestionNotes() {
   if (state.jev.status !== 'on') return [];
   const notes = [];
   for (const flag of coverageGapFlags(state.jev.items)) {
-    notes.push(flag.state === 'gap' ? { anchor: flag.anchor, group: 'coverage', state: 'label', text: flag.label } : jevNeutralNote(flag.anchor, flag.state));
+    notes.push(flag.state !== 'gap' ? jevNeutralNote(flag.anchor, flag.state) : { anchor: flag.anchor, group: 'coverage', state: 'label', text: flag.label,
+      actions: [flag.side === 'story'
+        ? jevDraftAction('Ask for a criterion', 'Add an acceptance criterion that verifies this story.')
+        : jevDraftAction('Ask for a story', 'Name or add the user story this criterion verifies.')] });
   }
   const neutral = item => item.state === 'unsure' || item.state === 'unavailable';
   if (state.readingView) {
@@ -1165,12 +1173,17 @@ function jevSuggestionNotes() {
     if (flag.state !== 'label') { notes.push(jevNeutralNote(flag.anchor, flag.state)); continue; }
     const link = corpusTargetLink(flag.target);
     notes.push({ anchor: flag.anchor, group: 'conflict', state: 'label', text: flag.label + (link ? ' ' + link.text : ''),
-      href: link ? link.href : null, attention: JEV_ATTENTION_LABELS.has(flag.label) });
+      href: link ? link.href : null, attention: JEV_ATTENTION_LABELS.has(flag.label),
+      actions: link && JEV_ATTENTION_LABELS.has(flag.label) ? [jevDraftAction('Ask agent to reconcile', 'Reconcile this clause with ' + link.text + '.')] : [] });
   }
   for (const item of state.jev.items) {
     if (item.kind !== 'type' || !item.id) continue;
     if (neutral(item)) notes.push(jevNeutralNote(item.id, item.state));
-    else if (item.state === 'label' && jevDisplayLabel(item)) notes.push({ anchor: item.id, group: 'type', state: 'label', text: jevDisplayLabel(item) });
+    else if (item.state === 'label' && jevDisplayLabel(item)) {
+      const text = jevDisplayLabel(item);
+      notes.push({ anchor: item.id, group: 'type', state: 'label', text,
+        actions: text === 'Scope' || text === 'Behavior' ? [jevDraftAction('Comment on this change', 'About this change: ')] : [] });
+    }
   }
   return notes;
 }
@@ -1853,8 +1866,8 @@ function openPanel(open) {
 }
 function status(msg) { document.getElementById('hx-status').textContent = msg; }
 
-function openComposer(anchorId, target, quote) {
-  state.composer = { kind: 'comment', anchorId, target, quote, text: '' };
+function openComposer(anchorId, target, quote, text = '') {
+  state.composer = { kind: 'comment', anchorId, target, quote, text };
   setCommentMode(false);
   openPanel(true);
   renderPanel();
@@ -1956,10 +1969,11 @@ function renderPanel() {
     d.className = 'hx-thread' + (state.activeThread === th.id ? ' active' : '') + (collapsed ? ' resolved-collapsed' : '');
     const resolvedHint = jevItem('resolved', th.id);
     const orphanHint = jevItem('orphan', th.id);
+    const looksResolved = Boolean(resolvedHint && resolvedHint.state === 'label' && resolvedHint.label === 'resolved in spirit');
     const threadJevState = [orphanHint, resolvedHint].find(item => item && ['unsure', 'unavailable'].includes(item.state));
     d.innerHTML = '<div class="hx-thread-summary"><div class="hx-anchor">' + esc(label(b)) + '</div>' +
       '<span class="hx-pill" data-s="' + th.status + '">' + th.status + '</span>' +
-      (resolvedHint && resolvedHint.state === 'label' && resolvedHint.label === 'resolved in spirit' ? '<span class="hx-jev-thread-label">Looks resolved</span>' : '') +
+      (looksResolved ? '<span class="hx-jev-thread-label">Looks resolved</span>' : '') +
       (threadJevState ? '<span class="hx-jev-thread-label" data-state="' + threadJevState.state + '">' + esc(jevDisplayLabel(threadJevState)) + '</span>' : '') +
       (th.status === 'resolved' ? '<button class="hx-disclosure" data-act="disclosure" aria-expanded="' + String(!collapsed) + '" aria-label="' + (collapsed ? 'Show' : 'Hide') + ' resolved thread">' + (collapsed ? '▸' : '▾') + '</button>' : '') + '</div>' +
       (collapsed ? '<div class="hx-thread-preview">' + esc(b.text || 'Resolved comment') + '</div>' : '');
@@ -1991,11 +2005,12 @@ function renderPanel() {
         reply.addEventListener('click', e => { e.stopPropagation(); startReply(th, replyAction.message); });
         d.appendChild(reply);
       }
-      if (th.status === 'acknowledged') {
+      for (const action of threadResolveButtons(th, looksResolved)) {
         const resolve = document.createElement('button');
         resolve.className = 'hx-btn';
-        resolve.dataset.act = 'resolve';
-        resolve.textContent = '✓ Resolve';
+        resolve.dataset.act = action.act;
+        resolve.textContent = action.label;
+        resolve.addEventListener('click', e => { e.stopPropagation(); resolveThread(th); });
         d.appendChild(resolve);
       }
       if (state.composer && state.composer.threadId === th.id) addComposer(d, state.composer);
@@ -2009,13 +2024,6 @@ function renderPanel() {
         renderPanel();
         renderPins();
       }
-    });
-    d.querySelector('[data-act=resolve]')?.addEventListener('click', async e => {
-      e.stopPropagation();
-      await state.transport.postEvent({ id: humanId('s'), event: 'status', respondsTo: th.id, threadId: th.id, status: 'resolved', actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
-      state.expandedResolved.delete(th.id);
-      toast('Resolved');
-      refresh();
     });
     wrap.appendChild(d);
   }
@@ -2032,6 +2040,21 @@ function renderPanel() {
   mobileHandoff.textContent = handoffState.finish ? 'Accept spec' : handoffState.tbd ? 'TBD open' : drafts ? 'Hand off (' + drafts + ')' : 'Hand off';
   renderThreadDock();
   renderThreadHighlight();
+}
+
+// A Looks resolved card's Resolve thread and the card's own resolve control share one path.
+function threadResolveButtons(th, looksResolved) {
+  const buttons = [];
+  if (looksResolved && th.status !== 'resolved') buttons.push({ act: 'jev-resolve', label: 'Resolve thread' });
+  if (th.status === 'acknowledged') buttons.push({ act: 'resolve', label: '✓ Resolve' });
+  return buttons;
+}
+
+async function resolveThread(th) {
+  await state.transport.postEvent({ id: humanId('s'), event: 'status', respondsTo: th.id, threadId: th.id, status: 'resolved', actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
+  state.expandedResolved.delete(th.id);
+  toast('Resolved');
+  refresh();
 }
 
 function selectThread(th, scroll) {

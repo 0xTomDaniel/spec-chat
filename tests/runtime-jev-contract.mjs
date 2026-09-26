@@ -79,4 +79,42 @@ assert.equal(posted[0].text, 'Original note');
 assert.equal(posted[1].event, 'status');
 assert.equal(posted[1].status, 'resolved');
 
+// #acceptance-note-draft: a draft button only opens the existing composer with fixed text; nothing is written.
+const composerStart = runtime.indexOf('function openComposer(');
+const composerEnd = runtime.indexOf('\n\nconst label', composerStart);
+assert.ok(composerStart >= 0 && composerEnd > composerStart, 'runtime exposes the comment composer');
+const composerState = { transport: { postEvent: async event => posted.push(event) } };
+const openComposer = Function('state', 'setCommentMode', 'openPanel', 'renderPanel', 'setTimeout',
+  runtime.slice(composerStart, composerEnd) + '; return openComposer;')(composerState, () => {}, () => {}, () => {}, () => {});
+posted.length = 0;
+openComposer('story-a', null, null, 'Add an acceptance criterion that verifies this story.');
+assert.deepEqual(composerState.composer, { kind: 'comment', anchorId: 'story-a', target: null, quote: null,
+  text: 'Add an acceptance criterion that verifies this story.' });
+openComposer('clause-a', { type: 'element', key: 'p:1' }, 'quote');
+assert.equal(composerState.composer.text, '', 'ordinary comments still open empty');
+assert.equal(posted.length, 0, 'opening a draft writes nothing');
+
+// #acceptance-note-resolve: Resolve thread on a Looks resolved card posts what the card's own resolve control posts.
+const resolveStart = runtime.indexOf('function threadResolveButtons(');
+const resolveEnd = runtime.indexOf('\n\nfunction selectThread(', resolveStart);
+assert.ok(resolveStart >= 0 && resolveEnd > resolveStart, 'runtime exposes the shared resolve path');
+const resolveState = { expandedResolved: new Set(['t1']), transport: { postEvent: async event => posted.push(event) } };
+const { threadResolveButtons, resolveThread } = Function('state', 'humanId', 'toast', 'refresh',
+  runtime.slice(resolveStart, resolveEnd) + '; return { threadResolveButtons, resolveThread };')(
+  resolveState, prefix => prefix + 'fixed', () => {}, () => {});
+const acts = (status, looks) => threadResolveButtons({ id: 't1', status }, looks).map(b => b.act + ':' + b.label);
+assert.deepEqual(acts('pending', true), ['jev-resolve:Resolve thread']);
+assert.deepEqual(acts('acknowledged', true), ['jev-resolve:Resolve thread', 'resolve:✓ Resolve']);
+assert.deepEqual(acts('acknowledged', false), ['resolve:✓ Resolve']);
+assert.deepEqual(acts('resolved', true), []);
+assert.deepEqual(acts('pending', false), []);
+assert.match(runtime, /for \(const action of threadResolveButtons\(th, looksResolved\)\) \{[^}]*resolveThread\(th\)/,
+  'every resolve button on a card runs the one resolve path');
+posted.length = 0;
+await resolveThread({ id: 't1' });
+assert.equal(posted.length, 1);
+assert.deepEqual({ ...posted[0], createdAt: null }, { id: 'sfixed', event: 'status', respondsTo: 't1', threadId: 't1', status: 'resolved',
+  actor: 'human', createdAt: null, schemaVersion: 1 });
+assert.equal(resolveState.expandedResolved.has('t1'), false);
+
 console.log('runtime Jev contract tests passed');
