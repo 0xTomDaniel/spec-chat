@@ -692,7 +692,8 @@ class MountHandler(SimpleHTTPRequestHandler):
         for mount in self.mounts:
             specs = enumerate_served_specs(mount)
             row = bool(mount.get("slug") and mount.get("spec"))
-            lane = mount["slug"] if row else None
+            # Only a lane-key slug (ann230) is an open lane; any other slug settles.
+            lane = mount["slug"] if row and _lane_label(mount["slug"])[1][0] == 0 else None
             project = mount.get("project") or os.path.basename(mount["root"])
             for spec, path in specs:
                 stable = _mount_prefix(mount) + spec

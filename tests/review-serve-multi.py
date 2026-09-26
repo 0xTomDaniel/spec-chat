@@ -448,7 +448,12 @@ class MultiReviewServeTest(unittest.TestCase):
         lost["path"] = "ann134/zz/" + lost["spec"]
         git(lost["root"], "branch", "gone")
         lost["base"] = "gone"
-        self.start([steady, broken, board, fresh, tool, lost])
+        # #acceptance-index-sections: rows under a slug that is not an issue key settle.
+        main = self.make_resource("aa") | {"project": "aa"}
+        other = self.make_resource("trunk") | {"slug": "aa", "project": "sc"}
+        other["path"] = "aa/sc/" + other["spec"]
+        git(other["root"], "checkout", "--", other["spec"])
+        self.start([steady, broken, main, board, other, fresh, tool, lost])
         git(broken["root"], "branch", "-D", "gone")
         git(lost["root"], "branch", "-D", "gone")
 
@@ -461,8 +466,9 @@ class MultiReviewServeTest(unittest.TestCase):
         text = html_lib.unescape(re.sub(r"<style>.*?</style>|<[^>]+>", "\n", body, flags=re.S))
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         self.assertEqual(lines[:2], ["Spec Chat index", "Review index"])
-        # #acceptance-index-sections: lane cards sit under In progress; no row-less specs, so no Settled.
-        self.assertNotIn("<details", body)
+        # #acceptance-index-sections: lane cards sit under In progress; aa rows in one closed Settled.
+        self.assertEqual(len(re.findall(r"<details\b", body)), 1)
+        self.assertRegex(body, r"<details(?![^>]*\bopen\b)[^>]*>\s*<summary>Settled \(2\)</summary>")
         self.assertEqual(lines[2:], [
             "In progress",
             "ANN-134", "3 of 3 changed",
@@ -471,6 +477,9 @@ class MultiReviewServeTest(unittest.TestCase):
             "zz", "ann134b",
             "ANN-7", "no status", "aa", "ann7",
             "ANN-119", "up to date", "sc", "ann119", "Up to date",
+            "Settled (2)",
+            "aa", "aa", "Changed since you reviewed",
+            "sc", "trunk", "Up to date",
         ])
         for leaked in ("docs/specs", "spec:", "main", "gone", "ann134/"):
             self.assertNotIn(leaked, "\n".join(lines))
