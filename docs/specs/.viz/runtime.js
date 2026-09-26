@@ -58,6 +58,7 @@ const state = {
   lastTbd: null,         // open TBD marker focused by the last TBD open activation
   range: { baseline: null, loading: false, pickerOpen: false },
   jev: { status: 'idle', items: [], base: null, request: 0 },
+  evidence: { criteria: null }, // anchor -> evidence entry once /api/evidence answers; null shows nothing
   readingView: false,
   movingOrphans: new Set(),
 };
@@ -217,6 +218,18 @@ async function requestJev(base) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+// One evidence read per page, after it renders; any failure leaves the page without evidence notes.
+async function requestEvidence() {
+  try {
+    const response = await fetch('/api/evidence?' + new URLSearchParams({ path: location.pathname.replace(/^\//, '') }));
+    const result = response.ok ? await response.json() : null;
+    const criteria = result && result.criteria;
+    if (!criteria || typeof criteria !== 'object' || Array.isArray(criteria)) return;
+    state.evidence.criteria = criteria;
+    renderJev();
+  } catch (_) {}
 }
 
 function markIssueFocus(currentText, baseline) {
@@ -1136,7 +1149,7 @@ function goToJevTarget(target) {
  */
 const JEV_NOTE_GROUPS = ['evidence', 'conflict', 'coverage', 'type', 'neutral'];
 const JEV_ATTENTION_LABELS = new Set(['Contradicts', 'Oversteps']);
-const jevNoteSources = [jevSuggestionNotes];
+const jevNoteSources = [jevSuggestionNotes, evidenceNotes];
 const jevPopoverState = { element: null, marker: null, closeTimer: 0, wired: false };
 
 function jevGitFocus() {
@@ -1184,6 +1197,45 @@ function jevSuggestionNotes() {
       notes.push({ anchor: item.id, group: 'type', state: 'label', text,
         actions: text === 'Scope' || text === 'Behavior' ? [jevDraftAction('Comment on this change', 'About this change: ')] : [] });
     }
+  }
+  return notes;
+}
+
+/* Criterion evidence (criterion-evidence spec): one note per acceptance criterion once evidence loads. */
+function evidenceLabel(entry) {
+  if (!entry) return 'Not yet';
+  if (entry.uncommitted) return 'Stale';
+  const verdict = entry.verdict === 'fail' ? 'Failed' : 'Passed';
+  if (entry.match) return verdict;
+  return entry.judgment === 'cosmetic' ? verdict + ' \u00b7 reworded' : 'Stale';
+}
+
+function evidenceAge(capturedAt, now = Date.now()) {
+  const captured = Date.parse(capturedAt);
+  if (Number.isNaN(captured)) return '';
+  const minutes = Math.max(0, Math.floor((now - captured) / 60000));
+  if (minutes < 60) return minutes + ' m';
+  if (minutes < 1440) return Math.floor(minutes / 60) + ' h';
+  return Math.floor(minutes / 1440) + ' d';
+}
+
+function evidenceNotes() {
+  const criteria = state.evidence && state.evidence.criteria;
+  if (!criteria) return [];
+  const notes = [];
+  for (const element of document.querySelectorAll('[data-acceptance-criterion]')) {
+    const anchor = element.dataset.anchor;
+    if (!anchor) continue;
+    const entry = Object.prototype.hasOwnProperty.call(criteria, anchor) && criteria[anchor] && typeof criteria[anchor] === 'object' ? criteria[anchor] : null;
+    const text = evidenceLabel(entry);
+    const note = { anchor, group: 'evidence', state: text === 'Not yet' ? 'none' : 'label', text, attention: text === 'Stale' };
+    if (entry) {
+      const context = [Number.isInteger(entry.pr) ? '#' + entry.pr : '', evidenceAge(entry.capturedAt), entry.onMain === false ? 'not on main' : '']
+        .filter(Boolean).join(' \u00b7 ');
+      Object.assign(note, { href: typeof entry.artifact === 'string' ? entry.artifact : null, external: true, context,
+        link: typeof entry.bundle === 'string' ? { text: 'bundle', href: entry.bundle } : null });
+    }
+    notes.push(note);
   }
   return notes;
 }
@@ -1289,8 +1341,22 @@ function renderJevNote(note) {
   const text = document.createElement(note.href ? 'a' : 'span');
   text.className = 'hx-jev-pop-text';
   if (note.href) text.href = note.href;
+  if (note.href && note.external) { text.target = '_blank'; text.rel = 'noopener'; }
   text.textContent = note.text;
   row.appendChild(text);
+  if (note.context || (note.link && note.link.href)) {
+    const meta = document.createElement('span');
+    meta.className = 'hx-jev-pop-meta';
+    if (note.context) meta.appendChild(document.createElement('span')).textContent = note.context;
+    if (note.link && note.link.href) {
+      const link = meta.appendChild(document.createElement('a'));
+      link.className = 'hx-jev-pop-link';
+      link.href = note.link.href;
+      if (note.external) { link.target = '_blank'; link.rel = 'noopener'; }
+      link.textContent = note.link.text;
+    }
+    row.appendChild(meta);
+  }
   const actions = Array.isArray(note.actions) ? note.actions.filter(action => action && action.label) : [];
   if (actions.length) {
     const slot = document.createElement('div');
@@ -1613,6 +1679,8 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-jev-pop-note[data-attention=true] .hx-jev-pop-text{color:#b42318}
 .hx-jev-pop-note[data-group=neutral] .hx-jev-pop-text{font-weight:600;color:#5a5a63}
 a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
+.hx-jev-pop-meta{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;font-size:12px;color:#5a5a63;overflow-wrap:anywhere}
+.hx-jev-pop-link{color:#2947c7;text-decoration:underline;text-underline-offset:2px}
 .hx-jev-pop-actions{display:flex;flex-wrap:wrap;gap:4px}
 .hx-jev-pop-actions .hx-btn{margin:0;font-size:11.5px;padding:4px 8px;border-color:#2947c7;background:#ffffff;color:#2947c7}
 @media(prefers-color-scheme:dark){
@@ -1621,6 +1689,8 @@ a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
 .hx-jev-pop-text{color:#e8e7e2}
 .hx-jev-pop-note[data-attention=true] .hx-jev-pop-text{color:#ffb4ab}
 .hx-jev-pop-note[data-group=neutral] .hx-jev-pop-text{color:#b8bbc5}
+.hx-jev-pop-meta{color:#b8bbc5}
+.hx-jev-pop-link{color:#aebcff}
 .hx-jev-pop-actions .hx-btn{background:#17191d;border-color:#7d91ff;color:#aebcff}
 }
 .hx-jev-target-flash{animation:hx-jev-flash 1.2s ease-out}
@@ -2429,6 +2499,7 @@ async function watchSpec() {
   mountUI();
   const httpPage = !EMBED_REVIEW_DIR && ['http:', 'https:'].includes(location.protocol);
   if (httpPage) applyIssueFocus();
+  if (httpPage) requestEvidence();
   await hydrateIslands();
   adoptForeignCharts();
   // spec scripts can create/recreate charts at any time; rescan when canvases appear

@@ -86,6 +86,8 @@ const markers = [
   [['.hx-jev-pop', '.hx-jev-pop-text', '.hx-jev-pop-note[data-attention=true] .hx-jev-pop-text'], ['.hx-jev-pop']],
   [['.hx-jev-pop', '.hx-jev-pop-text', '.hx-jev-pop-note[data-group=neutral] .hx-jev-pop-text'], ['.hx-jev-pop']],
   [['.hx-jev-pop-actions .hx-btn'], ['.hx-jev-pop', '.hx-jev-pop-actions .hx-btn']],
+  [['.hx-jev-pop', '.hx-jev-pop-meta'], ['.hx-jev-pop']],
+  [['.hx-jev-pop', '.hx-jev-pop-meta', '.hx-jev-pop-link'], ['.hx-jev-pop']],
   [['.hx-jev-note'], ['.hx-jev-note']],
   [['.hx-jev-marker'], ['.hx-jev-marker', '.hx-jev-marker[data-attention=true]']],
 ];
