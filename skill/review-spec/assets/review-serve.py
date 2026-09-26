@@ -692,7 +692,8 @@ class MountHandler(SimpleHTTPRequestHandler):
         for mount in self.mounts:
             specs = enumerate_served_specs(mount)
             row = bool(mount.get("slug") and mount.get("spec"))
-            lane = mount["slug"] if row else None
+            # Only a lane-key slug (ann230) is an open lane; any other slug settles.
+            lane = mount["slug"] if row and _lane_label(mount["slug"])[1][0] == 0 else None
             project = mount.get("project") or os.path.basename(mount["root"])
             for spec, path in specs:
                 stable = _mount_prefix(mount) + spec
@@ -703,29 +704,17 @@ class MountHandler(SimpleHTTPRequestHandler):
                 status, title = _index_row(mount, path, row)
                 lanes.setdefault(lane, {}).setdefault(project, []).append((status, title, href))
 
+        settled = lanes.pop(None, {})
+
         def lane_order(item):
             lane, projects = item
-            if lane is None:
-                return (2,)
             changed = any(status for specs in projects.values() for status, _, _ in specs)
             return (0 if changed else 1, _lane_label(lane)[1])
 
-        cards = []
-        for lane, projects in sorted(lanes.items(), key=lane_order):
-            statuses = [status for specs in projects.values() for status, _, _ in specs if status is not None]
-            changed = sum(1 for status in statuses if status)
-            if lane is None:
-                heading, count = "Other specs", "no status"
-            else:
-                heading = _lane_label(lane)[0]
-                count = (
-                    "%d of %d changed" % (changed, len(statuses)) if changed
-                    else "up to date" if statuses else "no status"
-                )
-            parts = ['<section class="lane"><h2><span>%s</span><span class="count">%s</span></h2>' % (
-                html.escape(heading), count)]
+        def project_rows(projects):
+            parts = []
             for project in sorted(projects):
-                parts.append('<h3>%s</h3><ul>' % html.escape(project))
+                parts.append('<h4>%s</h4><ul>' % html.escape(project))
                 for status, title, href in sorted(projects[project], key=lambda spec: (not spec[0], spec[1].casefold(), spec[2])):
                     badge = (
                         '<span class="status changed">Changed since you reviewed</span>' if status
@@ -734,9 +723,25 @@ class MountHandler(SimpleHTTPRequestHandler):
                     parts.append('<li><a href="%s">%s</a>%s</li>' % (
                         html.escape(href, quote=True), html.escape(title), badge))
                 parts.append('</ul>')
-            parts.append('</section>')
-            cards.append("".join(parts))
-        listing = "\n".join(cards) or '<p class="empty">No Spec Chat spec pages are available.</p>'
+            return "".join(parts)
+
+        cards = []
+        for lane, projects in sorted(lanes.items(), key=lane_order):
+            statuses = [status for specs in projects.values() for status, _, _ in specs if status is not None]
+            changed = sum(1 for status in statuses if status)
+            count = (
+                "%d of %d changed" % (changed, len(statuses)) if changed
+                else "up to date" if statuses else "no status"
+            )
+            cards.append('<section class="lane"><h3><span>%s</span><span class="count">%s</span></h3>%s</section>' % (
+                html.escape(_lane_label(lane)[0]), count, project_rows(projects)))
+        listing = ""
+        if cards:
+            listing += '<h2>In progress</h2><nav aria-label="Spec Chat detail pages">%s</nav>' % "\n".join(cards)
+        if settled:
+            listing += '<details class="settled"><summary>Settled (%d)</summary>%s</details>' % (
+                sum(len(specs) for specs in settled.values()), project_rows(settled))
+        listing = listing or '<p class="empty">No Spec Chat spec pages are available.</p>'
         body = ('''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Spec Chat index</title><style>
@@ -745,16 +750,18 @@ body { margin: 0; } main { box-sizing: border-box; max-width: 80rem; margin: 0 a
 h1 { font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1.1; margin: 0 0 2rem; }
 nav { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%%, 300px), 1fr)); align-items: start; }
 .lane { min-width: 0; background: #fff; border: 1px solid #e2e0d8; border-radius: .75rem; padding: .75rem 1rem; }
-.lane h2 { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; margin: 0; font-size: 1.125rem; font-weight: 800; }
+h2, summary { margin: 0 0 1rem; font-size: 1.25rem; font-weight: 800; }
+.settled { margin-top: 1.5rem; } summary { cursor: pointer; margin: 0; }
+.lane h3 { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; margin: 0; font-size: 1.125rem; font-weight: 800; }
 .count { flex: none; color: #595e68; font-size: .8125rem; font-weight: 400; }
-h3 { margin: .625rem 0 .125rem; color: #595e68; font-size: .75rem; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; overflow-wrap: anywhere; }
+h4 { margin: .625rem 0 .125rem; color: #595e68; font-size: .75rem; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; overflow-wrap: anywhere; }
 ul { list-style: none; margin: 0; padding: 0; }
 li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0 .75rem; padding-bottom: .25rem; border-top: 1px solid #e2e0d8; }
 li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-height: 44px; min-width: 0; font-weight: 650; font-size: .9375rem; line-height: 1.35; overflow-wrap: anywhere; }
 .status { flex: none; margin-left: auto; color: #595e68; font-size: .8125rem; text-align: right; }
 .status.changed { color: #8a4b00; font-weight: 750; padding: 1px .5rem; border: 1px solid currentColor; border-radius: 999px; }
 .empty { color: #595e68; padding: 1rem; }
-</style></head><body><main><h1>Review index</h1><nav aria-label="Spec Chat detail pages">%s</nav></main></body></html>''' % listing).encode("utf-8")
+</style></head><body><main><h1>Review index</h1>%s</main></body></html>''' % listing).encode("utf-8")
         self._send_body(body, "text/html; charset=utf-8")
 
     def _resolve_path(self, path, *, spec_only=False):
