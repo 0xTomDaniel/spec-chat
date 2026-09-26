@@ -13,8 +13,8 @@
 <header data-anchor="header">
 <h1 data-anchor="title">Jev review suggestions</h1>
 <nav data-anchor="breadcrumbs">docs / specs / jev-suggestions.spec.html</nav>
-<p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-100">ANN-100</a>.</p>
-<p data-anchor="context">Follows the shared Jev contract, annotateanything <code>docs/specs/jev-seam.spec.html#contract</code> (ANN-49, human-accepted at <code>3cdd123</code>; since <code>ed95fc8</code> only its retry, cache, and no-reorder rules changed, to match this spec). This spec owns Spec Chat's questions and display. Spec Chat reads only specs and review threads, with no tracker or evidence dependency. Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a> and <a href="./compared-range.spec.html#change-base">compared range</a>.</p>
+<p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-100">ANN-100</a>, <a href="https://linear.app/annotateanything/issue/ANN-206">ANN-206</a>.</p>
+<p data-anchor="context">Follows the shared Jev contract, annotateanything <code>docs/specs/jev-seam.spec.html#contract</code> (ANN-49, human-accepted at <code>3cdd123</code>; since <code>ed95fc8</code> only its retry, cache, and no-reorder rules changed, to match this spec). This spec owns Spec Chat's questions and display. Jev questions read only specs and review threads, with no tracker or evidence dependency. Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a> and <a href="./compared-range.spec.html#change-base">compared range</a>.</p>
 </header>
 
 <section data-spec-section="user-stories" data-anchor="user-stories">
@@ -26,6 +26,7 @@
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-coverage">As a reviewer, a story no criterion verifies and a criterion no story backs are flagged while shaping.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-reading">As a reader, a reading view dims the internals in place, so the clauses written for me stand out and nothing moves or hides.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-neutral">As a reviewer, when Jev is off, unsure, or failing, a small note says so and the page otherwise works as today.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-note-action">As a reviewer, each actionable Jev note offers one button that drafts the comment it calls for, which I edit and send myself.</p>
 <p data-user-story data-user-facing="false" data-anchor="story-record">As the operator, I can see for any suggestion which model, question set, and sources produced it, and with what confidence.</p>
 </section>
 
@@ -40,7 +41,10 @@
 <p data-acceptance-criterion data-anchor="acceptance-corpus" data-story="story-corpus"><span data-acceptance-scenario>When a draft clause adds a behavior its own spec lists as a non-goal, and another restates a clause of another served spec,</span> <span data-acceptance-observable>the first shows <code>Contradicts</code> and the second <code>Overlaps</code>, each linking to that clause.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-coverage" data-story="story-coverage"><span data-acceptance-scenario>When a spec has a story no criterion verifies and a criterion no story backs,</span> <span data-acceptance-observable>each shows its gap label, and adding the missing counterpart clears it on the next head.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-reading" data-story="story-reading"><span data-acceptance-scenario>When the reviewer turns reading view on,</span> <span data-acceptance-observable><code>internals</code> clauses are dimmed in place and readable, and no clause moves or hides.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-inert" data-story="story-neutral"><span data-acceptance-scenario>Across a session with any suggestions and no move click,</span> <span data-acceptance-observable>spool, thread statuses, Finish eligibility, and spec bytes match Jev off, and every item stays present and 4.5:1 readable.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-note-draft" data-story="story-note-action"><span data-acceptance-scenario>When the reviewer clicks <code>Ask agent to reconcile</code> on a <code>Contradicts</code> clause, <code>Ask for a criterion</code> on a story gap, or <code>Comment on this change</code> on a <code>Behavior</code> section,</span> <span data-acceptance-observable>the comment composer opens at that element with the table's draft text, links to both clauses for reconcile, and nothing is written until the reviewer sends.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-note-resolve" data-story="story-note-action"><span data-acceptance-scenario>When the reviewer clicks <code>Resolve thread</code> on a <code>Looks resolved</code> card,</span> <span data-acceptance-observable>the thread is resolved exactly as the card's own resolve control does.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-note-none" data-story="story-note-action"><span data-acceptance-scenario>When a note is <code>Cosmetic</code>, <code>Clarification</code>, reading view, <code>unsure</code>, <code>Jev unavailable</code>, or <code>Jev off</code>,</span> <span data-acceptance-observable>it shows no button.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-inert" data-story="story-neutral"><span data-acceptance-scenario>Across a session with any suggestions and no note button click,</span> <span data-acceptance-observable>spool, thread statuses, Finish eligibility, and spec bytes match Jev off, and every item stays present and 4.5:1 readable.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-cache" data-story="story-record"><span data-acceptance-scenario>When the same page, base, and head load again,</span> <span data-acceptance-observable>no Jev call is made and the same labels show.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-record" data-story="story-record"><span data-acceptance-scenario>For every call,</span> <span data-acceptance-observable>one record carries every contract field and no source text, and no page, record, log, or response contains the key.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-own-state" data-story="story-record"><span data-acceptance-scenario>When a client sends text or parameters beyond path and base,</span> <span data-acceptance-observable>the server ignores them.</span></p>
@@ -49,7 +53,7 @@
 <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
 <h2>Modular boundaries</h2>
 <p data-modular-boundary data-anchor="boundary-seam"><span data-boundary-responsibility>The review server's Jev seam owns questions, provider calls, one retry, thresholds, and records, which serve as the cache.</span> <span data-boundary-seam>Caller-facing seam: <code>GET /api/jev?path=&lt;spec&gt;&amp;base=&lt;id&gt;[&amp;view=reading]</code>, returning on or off and one state per item.</span> <span data-boundary-dependency>Dependency direction: calls OpenRouter as an external provider; reads local Git, served specs, and the spool; nothing calls back.</span> <span data-boundary-scope>Observable scope: the JSON response and records, in single-root and registry modes.</span></p>
-<p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns every label, treatment, marker, reading view, and <code>Move comment here</code>.</span> <span data-boundary-seam>Caller-facing seam: the rendered page; spool writes use existing events only.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; consumes the seam route; no model, threshold, or key logic.</span> <span data-boundary-scope>Observable scope: what the reviewer sees.</span></p>
+<p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns every label, treatment, marker, reading view, and note button.</span> <span data-boundary-seam>Caller-facing seam: the rendered page; spool writes use existing events only.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; consumes the seam route; no model, threshold, or key logic.</span> <span data-boundary-scope>Observable scope: what the reviewer sees.</span></p>
 <p data-modular-boundary data-anchor="boundary-qsets"><span data-boundary-responsibility>Question sets own instructions, criteria, examples, and thresholds.</span> <span data-boundary-seam>Caller-facing seam: a set id and version.</span> <span data-boundary-dependency>Dependency direction: self-contained data read by the seam.</span> <span data-boundary-scope>Observable scope: the version named in each record.</span></p>
 </section>
 
@@ -122,7 +126,7 @@
 </tbody>
 </table>
 </div>
-<p data-anchor="shared-never-act">No suggestion edits a spec, writes the spool, changes a thread, or affects Finish; only a human click on <code>Move comment here</code> writes, using existing events.</p>
+<p data-anchor="shared-never-act">No suggestion edits a spec, writes the spool, changes a thread, or affects Finish; only a human click on a <a href="#note-actions">note button</a> writes, and only through existing events.</p>
 <p data-anchor="shared-never-hide">Nothing is hidden or reordered; dimmed text stays 4.5:1 readable; badges carry text, not color alone.</p>
 <p data-anchor="type-async">The page renders at once as today and labels arrive later; a base change drops all labels and asks again.</p>
 <p data-anchor="record-fields">Every call appends one contract <code>#record</code> to JSONL in the server's state directory, outside spools and Git, with addresses but no source text or key.</p>
@@ -148,6 +152,26 @@
 <section data-anchor="orphan">
 <h2>Moving an orphaned comment</h2>
 <p data-anchor="orphan-move"><code>Move comment here</code> resolves the orphaned thread and starts a new draft comment at the suggested section that quotes the original, using only existing events; the agent answers it like any comment.</p>
+</section>
+
+<section data-anchor="note-actions">
+<h2>Note buttons</h2>
+<p data-anchor="note-one">Each actionable note gets one button beside its label. A draft button opens the existing comment composer at the note's element with fixed draft text; the reviewer edits and sends it like any comment, or discards it.</p>
+<div class="table-scroll" data-anchor="note-table-scroll">
+<table data-anchor="note-table">
+<thead><tr><th>Note</th><th>Button</th><th>Click</th></tr></thead>
+<tbody>
+<tr data-anchor="note-reconcile"><td><code>Contradicts</code>, <code>Overlaps</code>, <code>Oversteps</code></td><td><code>Ask agent to reconcile</code></td><td>Draft on the flagged clause: <code>Reconcile this clause with &lt;link to other clause&gt;.</code></td></tr>
+<tr data-anchor="note-criterion"><td><code>No criterion covers this</code></td><td><code>Ask for a criterion</code></td><td>Draft on the story: <code>Add an acceptance criterion that verifies this story.</code></td></tr>
+<tr data-anchor="note-story"><td><code>No story backs this</code></td><td><code>Ask for a story</code></td><td>Draft on the criterion: <code>Name or add the user story this criterion verifies.</code></td></tr>
+<tr data-anchor="note-resolve"><td><code>Looks resolved</code></td><td><code>Resolve thread</code></td><td>Resolves the thread with the existing resolve event</td></tr>
+<tr data-anchor="note-move"><td><code>Possibly moved to:</code></td><td><code>Move comment here</code></td><td>As <a href="#orphan">Moving an orphaned comment</a> defines</td></tr>
+<tr data-anchor="note-change"><td><code>Scope</code>, <code>Behavior</code></td><td><code>Comment on this change</code></td><td>Draft on the section: <code>About this change: </code></td></tr>
+<tr data-anchor="note-none"><td><code>Cosmetic</code>, <code>Clarification</code>, reading view, <code>unsure</code>, <code>Jev unavailable</code>, <code>Jev off</code></td><td>None</td><td>None</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="note-fixed">Draft text is fixed per button, never generated, and Jev never sends, resolves, or moves anything.</p>
 </section>
 
 <section data-anchor="coverage">
