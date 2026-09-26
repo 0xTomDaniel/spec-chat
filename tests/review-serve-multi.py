@@ -461,7 +461,10 @@ class MultiReviewServeTest(unittest.TestCase):
         text = html_lib.unescape(re.sub(r"<style>.*?</style>|<[^>]+>", "\n", body, flags=re.S))
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         self.assertEqual(lines[:2], ["Spec Chat index", "Review index"])
+        # #acceptance-index-sections: lane cards sit under In progress; no row-less specs, so no Settled.
+        self.assertNotIn("<details", body)
         self.assertEqual(lines[2:], [
+            "In progress",
             "ANN-134", "3 of 3 changed",
             "aa", "Alpha fresh", "Changed since you reviewed", "Zeta board", "Changed since you reviewed",
             "sc", "Zeta board", "Changed since you reviewed",
@@ -473,6 +476,38 @@ class MultiReviewServeTest(unittest.TestCase):
             self.assertNotIn(leaked, "\n".join(lines))
         self.assertIn('href="/ann134/sc/docs/specs/domains/x.spec.html?focus=changes"', body)
         self.assertIn('href="/ann134/docs/specs/new.spec.html?focus=changes"', body)
+
+    def test_index_settles_specs_served_without_a_row_in_a_closed_disclosure(self):
+        """ANN-230 lane-hosting #acceptance-index-sections: row-less specs go in one closed Settled (n)."""
+        import html as html_lib
+        import re
+
+        repo = self.work / "settled"
+        specs = repo / "docs/specs"
+        (specs / "sub").mkdir(parents=True)
+        (specs / "b.spec.html").write_text("<title>Beta</title>")
+        (specs / "sub/a.spec.html").write_text("<title>Alpha</title>")
+        git(repo, "init", "-b", "main")
+        port = self._free_port()
+        process = subprocess.Popen((sys.executable, str(SERVER), str(repo / "docs"), str(port)), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(self.stop, process)
+        for _ in range(200):
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=0.1) as response:
+                    body = response.read().decode()
+                break
+            except Exception:
+                time.sleep(0.01)
+        else:
+            self.fail("review server did not start")
+        self.assertEqual(len(re.findall(r"<details\b", body)), 1)
+        self.assertRegex(body, r"<details(?![^>]*\bopen\b)[^>]*>\s*<summary>Settled \(2\)</summary>")
+        self.assertTrue(body.rstrip().endswith("</details></main></body></html>"))
+        text = html_lib.unescape(re.sub(r"<style>.*?</style>|<[^>]+>", "\n", body, flags=re.S))
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        self.assertEqual(lines, ["Spec Chat index", "Review index", "Settled (2)", "settled", "Alpha", "Beta"])
+        for gone in ("In progress", "Other specs", "no status", "Up to date"):
+            self.assertNotIn(gone, body)
 
     def test_status_is_none_when_any_git_call_fails(self):
         """ANN-136 lane-hosting #index-entry-status: no status when the compare fails."""
