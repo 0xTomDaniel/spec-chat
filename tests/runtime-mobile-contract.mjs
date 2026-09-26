@@ -27,6 +27,8 @@ assert.match(runtime, /overlay\('error', e\.message/, 'attributable script error
 assert.match(runtime, /if \(state\.handoffPosting \|\| !action\.enabled\) return/, 'handoff and Accept spec latch against duplicate submission');
 assert.match(runtime, /hx-service-index-link/, 'HTTP detail pages expose a visible service index link');
 assert.ok(runtime.includes("new URL('/', location.href).href"), 'service index link resolves to the configured service root');
+assert.match(runtime, /@media\(max-width:640px\)\{[^}]*(?:\}[^}@]*)*body\.hx-panel-open \.hx-service-index-link\{display:none\}/, 'phone-width open panel hides the service index link');
+assert.doesNotMatch(runtime.split('@media(max-width:640px)')[0], /body\.hx-panel-open \.hx-service-index-link/, 'desktop open panel keeps the service index link');
 assert.match(runtime, /Back to Spec Chat index/, 'service index link has an accessible visible label');
 assert.match(runtime, /automatic wake did not occur; send a new chat message to resume/, 'queued handoff gives an explicit manual-resume instruction');
 
