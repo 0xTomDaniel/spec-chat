@@ -1867,7 +1867,7 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-jev-pop-note[data-attention=true] .hx-jev-pop-text{color:#b42318}
 .hx-jev-pop-note[data-group=neutral] .hx-jev-pop-text{font-weight:600;color:#5a5a63}
 a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
-.hx-jev-pop-sentence{display:none;font-size:12px;color:#5a5a63;overflow-wrap:anywhere}
+.hx-jev-pop-sentence{display:none;contain:inline-size;font-size:12px;color:#5a5a63;overflow-wrap:anywhere}
 .hx-jev-pop-note:hover .hx-jev-pop-sentence,.hx-jev-pop-note:focus-within .hx-jev-pop-sentence{display:block}
 .hx-jev-pop-meta{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;font-size:12px;color:#5a5a63;overflow-wrap:anywhere}
 .hx-jev-pop-link{color:#2947c7;text-decoration:underline;text-underline-offset:2px}
