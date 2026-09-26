@@ -80,13 +80,16 @@ const browser = await chromium.launch();
 try {
   // Criteria paragraphs, and table rows, whose marker sits in the row's last cell.
   const cases = [
-    { name: 'criterion', selector: '[data-acceptance-criterion]', count: 19, widths: [375, 560, 640, 800, 1280] },
-    { name: 'row', selector: 'tr[data-anchor]', count: 23, widths: [375, 560, 1280] },
+    { name: 'criterion', selector: '[data-acceptance-criterion]', widths: [375, 560, 640, 800, 1280] },
+    { name: 'row', selector: 'tr[data-anchor]', widths: [375, 560, 1280] },
   ];
-  for (const { name, selector, count, widths } of cases) for (const width of widths) for (const order of ['markers-first', 'pins-first']) {
+  for (const { name, selector, widths } of cases) for (const width of widths) for (const order of ['markers-first', 'pins-first']) {
     const page = await browser.newPage({ viewport: { width, height: 900 } });
     await page.goto('file://' + resolve(root, 'docs/specs/jev-suggestions.spec.html'));
     await page.setContent(spec, { waitUntil: 'load' });
+    // Expected count comes from the spec itself, so it tracks the spec as rows are added.
+    const count = await page.evaluate(s => document.querySelectorAll(s).length, selector);
+    assert.ok(count > 0, `${width} px ${order}: spec has ${name} blocks`);
     assert.equal(await page.evaluate(mount, { css, code, selector, order }), count, `${width} px ${order}: all ${count} ${name} blocks carry one marker and a pin`);
     // A second placement (the runtime re-renders pins every 2 s and on resize) lands on the same spots.
     const first = await page.evaluate(measure, selector);
