@@ -546,19 +546,21 @@ def build_corpus_questions(current: str | bytes, baseline: str | bytes | None, p
         for key in non_goals:
             if key not in own_keys:
                 own_keys.append(key)
-        candidates = [(key, str(now[key].get("text", ""))) for key in own_keys]
+        candidates = [(key, str(now[key].get("text", "")), key in non_goals) for key in own_keys]
 
         cross: list[tuple[int, int, str, str, str]] = []
         for other_path, anchors in other_specs:
             for key in _corpus_leaf_anchors(anchors):
                 text = str(anchors[key].get("text", ""))
                 overlap, ratio = _match_score(after, text)
-                cross.append((-overlap, -ratio, other_path, key, text))
+                cross.append((-overlap, -ratio, other_path, key, text, _is_non_goal(key, anchors)))
         cross.sort()
-        candidates.extend((other_path + "#" + key, text) for _, _, other_path, key, text in cross[:8])
+        candidates.extend((other_path + "#" + key, text, non_goal) for _, _, other_path, key, text, non_goal in cross[:8])
 
-        for target, target_text in candidates:
-            question = _question("corpus", anchor, {"before": before, "after": after, "target": target_text},
+        for target, target_text, non_goal in candidates:
+            # Jev sees only text: without this fact a clause adding what a non-goal excludes reads as overlap.
+            question = _question("corpus", anchor, {"before": before, "after": after, "target": target_text,
+                                                    "target_non_goal": non_goal},
                                  path, base, revision, target)
             question["sources"] = [path + "#" + anchor, target]
             # overlaps is still answered and recorded, but restating a clause is normal: it shows nothing.
