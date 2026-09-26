@@ -12,7 +12,7 @@ Visual HTML specs you annotate in the browser; a coding agent addresses the anno
 - A compact floating dock shows one status-colored square per conversation; selecting a square opens that thread, while comment mode or the dock’s chat control opens the full review sidebar.
 - Threads support human↔agent follow-up replies and append-only edits to unanswered human messages; selecting a thread rings the exact page element it annotates, and resolved threads collapse automatically while remaining browsable.
 - One parked CLI watcher (Claude Code, Codex CLI, or pi) covers the whole spec collection by default: it discovers per-page hand-off spools, drains batches serially with independent cursors/session state, edits the selected spec, and writes replies back. In-session subscription inference; no MCP, hooks, inference service, or mandatory daemon.
-- A prompt-first shaping skill creates the durable issue and spec seed, opens Git-derived focus through a public review link, and keeps the same authoring turn parked through hand-off batches.
+- A prompt-first shaping skill commits the spec seed locally, linked to the issue its caller names, opens Git-derived focus through a private review link by default, and keeps the same authoring turn parked through hand-off batches.
 
 ## Constraints (fixed)
 
@@ -24,7 +24,7 @@ Canonical contract: [remote hosting lifecycle](skill/review-spec/SKILL.md#remote
 
 - The box hosts two independent services only: Spec Chat review (this repo) and annotateanything evidence (peer repo).
 - Each service has its own launcher, process, approved-port discovery, collision-safe binding, narrow root, public URL, exact served-byte check, and baseline check. Starting, failing, or stopping one never touches the other.
-- Spec Chat starts with `skill/review-spec/scripts/review-host.py register --slug <lane-key> --resource PROJECT_ID=ROOT:SPEC_PATH@BASE`. Approved ports come from `SPEC_CHAT_APPROVED_INGRESS_PORTS` or readable host firewall rules. It checks exact spec bytes and `/api/baseline` on the box before printing the public URL.
+- Spec Chat starts with `skill/review-spec/scripts/review-host.py register --slug <lane-key> --resource PROJECT_ID=ROOT:SPEC_PATH@BASE`. Approved ports come from `SPEC_CHAT_APPROVED_INGRESS_PORTS` or readable host firewall rules. It listens on loopback by default (reach it with `ssh -L`); `--public <host>` binds an approved port with a no-login warning, and the registry keeps that choice across restarts. It checks exact spec bytes and `/api/baseline` on the box before printing the URL.
 - Ordinary edits to a served spec keep the same server and URL alive. Rerun exact served-byte and `/api/baseline` checks for the same selected base after each edit. Restart only when the root, collection, process, port, runtime, or ownership changes, or when the server is dead.
 - Shared helper code is allowed only when service-neutral.
 - BB is a laptop client. Box hosting boot never requires, installs, or starts BB. BB consumes two public URLs: the Spec Chat URL and the evidence URL.

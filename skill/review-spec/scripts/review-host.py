@@ -106,7 +106,7 @@ def dump_registry(process: Mapping[str, Any] | None, records: Sequence[Mapping[s
     lines: list[str] = []
     if process is not None:
         lines.append("[process]")
-        for key in ("pid", "port"):
+        for key in ("pid", "port", "bind"):
             if key in process:
                 lines.append(f"{key} = {toml_value(process[key])}")
         if records:
@@ -411,7 +411,10 @@ def read_registry_document(path: Path, validate: bool = True) -> dict[str, Any]:
     if process is not None:
         if not isinstance(process, dict) or not isinstance(process.get("pid"), int) or not isinstance(process.get("port"), int):
             raise LauncherError("registry process must contain integer pid and port")
-        process = {"pid": process["pid"], "port": process["port"]}
+        bind = process.get("bind")
+        if bind is not None and not isinstance(bind, str):
+            raise LauncherError("registry process bind must be a string")
+        process = {"pid": process["pid"], "port": process["port"], **({"bind": bind} if bind else {})}
     return {"resource": result, "process": process}
 
 
@@ -473,8 +476,7 @@ def parse_resources(args: argparse.Namespace) -> list[dict[str, Any]]:
     return result
 
 
-def test_loopback_enabled(args: argparse.Namespace) -> bool:
-    return bool(getattr(args, "test_loopback", False) or os.environ.get("SPEC_CHAT_TEST_LOOPBACK") == "1")
+LOOPBACK = "127.0.0.1"
 
 
 def resolved_addresses(host: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
@@ -496,27 +498,34 @@ def resolved_addresses(host: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6
         return addresses
 
 
-def checked_host(host: str, *, test_loopback: bool, role: str, allow_wildcard: bool = False) -> str:
+def is_loopback(host: str) -> bool:
+    addresses = resolved_addresses(host)
+    return all((getattr(address, "ipv4_mapped", None) or address).is_loopback for address in addresses)
+
+
+def public_host(host: str, *, role: str, allow_wildcard: bool = False) -> str:
     addresses = resolved_addresses(host)
     effective = [getattr(address, "ipv4_mapped", None) or address for address in addresses]
-    if test_loopback:
-        if not all(address.is_loopback for address in effective):
-            raise LauncherError(f"test-only launches require a loopback {role}")
-    else:
-        if any(address.is_loopback for address in effective):
-            raise LauncherError(f"normal launches require a non-loopback {role}; use --test-loopback only for tests")
-        if any(address.is_unspecified for address in effective) and not allow_wildcard:
-            raise LauncherError(f"{role} must be a concrete host address")
+    if any(address.is_loopback for address in effective):
+        raise LauncherError(f"public {role} must not be loopback; omit --public for a private page")
+    if any(address.is_unspecified for address in effective) and not allow_wildcard:
+        raise LauncherError(f"{role} must be a concrete host address")
     return str(next((address for address in addresses if address.version == 4), addresses[0]))
 
 
-def bind_host(args: argparse.Namespace) -> str:
-    test_mode = test_loopback_enabled(args)
-    selected = args.bind or os.environ.get("SPEC_CHAT_BIND_HOST") or ("127.0.0.1" if test_mode else "0.0.0.0")
-    return checked_host(selected, test_loopback=test_mode, role="bind host", allow_wildcard=True)
+def select_bind(args: argparse.Namespace, process: Mapping[str, Any] | None) -> str:
+    """Explicit --public/--private wins; otherwise keep the recorded choice; default private loopback."""
+    if args.public:
+        return public_host(args.public, role="bind host", allow_wildcard=True)
+    if args.private:
+        return LOOPBACK
+    recorded = (process or {}).get("bind")
+    return recorded if recorded else LOOPBACK
 
 
 def proof_host(args: argparse.Namespace, bind: str) -> str:
+    if is_loopback(bind):
+        return bind
     selected = args.proof_host or os.environ.get("SPEC_CHAT_PROOF_HOST") or os.environ.get("REVIEW_PROOF_HOST")
     if not selected and bind not in {"0.0.0.0", "::"}:
         selected = bind
@@ -527,7 +536,17 @@ def proof_host(args: argparse.Namespace, bind: str) -> str:
                 selected = probe.getsockname()[0]
             except OSError as exc:
                 raise ProofError("cannot determine proof host; set SPEC_CHAT_PROOF_HOST") from exc
-    return checked_host(selected, test_loopback=test_loopback_enabled(args), role="proof host")
+    return public_host(selected, role="proof host")
+
+
+def bind_ports(bind: str) -> tuple[int, ...]:
+    """Public binds need an approved ingress port; loopback takes one if configured, else any free port."""
+    if not is_loopback(bind):
+        return approved_ports()
+    for name in ("SPEC_CHAT_APPROVED_INGRESS_PORTS", "REVIEW_APPROVED_INGRESS_PORTS"):
+        if os.environ.get(name):
+            return parse_ports(os.environ[name])
+    return (0,)
 
 
 def server_command(registry: Path, bind: str, port: int, host: str) -> list[str]:
@@ -563,15 +582,13 @@ def registry_state(path: Path, validate: bool = True) -> tuple[list[dict[str, An
     return document["resource"], document["process"]
 
 
-def running_url(log_path: Path, port: int, args: argparse.Namespace) -> str:
+def running_url(log_path: Path) -> str:
+    """The server prints its actual URL at start; without it the bind is unknown, so never guess."""
     if log_path.exists():
         match = re.search(r"spec-chat review-serve on (https?://\S+)", log_path.read_text(encoding="utf-8", errors="replace"))
         if match:
             return match.group(1).rstrip("/")
-    host = args.proof_host or os.environ.get("SPEC_CHAT_PROOF_HOST") or os.environ.get("REVIEW_PROOF_HOST")
-    if not host:
-        host = "127.0.0.1" if test_loopback_enabled(args) else socket.gethostname()
-    return f"http://{host}:{port}"
+    raise LauncherError("cannot read the running review URL from its log; run stop, then register again")
 
 
 def wake_status(owner: str) -> str:
@@ -585,6 +602,16 @@ def wake_status(owner: str) -> str:
     except (OSError, subprocess.TimeoutExpired, KeyError, TypeError, ValueError):
         agent = {}
     return "verified" if isinstance(agent, dict) and agent.get("pane_id") == owner else "unavailable"
+
+
+def print_access(url: str, bind: str | None) -> None:
+    port = urllib.parse.urlsplit(url).port
+    if bind and not is_loopback(bind):
+        print(f"warning: public review page on {bind}:{port} has no login; anyone who can reach it can read and comment",
+              file=sys.stderr)
+    else:
+        print(f"private: loopback only; reach it with ssh -L {port}:127.0.0.1:{port} <box>, "
+              "or restart with --public <tailscale-address>")
 
 
 def print_urls(url: str, additions: list[dict[str, str]]) -> None:
@@ -611,17 +638,22 @@ def register(args: argparse.Namespace) -> int:
         child: subprocess.Popen[str] | None = None
         try:
             if process and process_owns_registry(process["pid"], registry):
-                port = process["port"]
+                # A live server is reused unchanged; a registry without bind is private.
+                bind = process.get("bind") or LOOPBACK
+                if (args.public or args.private) and select_bind(args, None) != bind:
+                    raise LauncherError(f"review host already running on {bind}; "
+                                        "run stop, then register again to change it")
                 write_registry(registry, candidate, process)
-                url = running_url(log_path, port, args)
+                url = running_url(log_path)
                 for item in parsed:
                     prove_resource(url, item)
+                print_access(url, bind)
                 print_urls(url, additions)
                 return 0
 
-            bind = bind_host(args)
+            bind = select_bind(args, process)
             host = proof_host(args, bind)
-            port = select_port(approved_ports(), bind)
+            port = select_port(bind_ports(bind), bind)
             write_registry(registry, candidate)
             command = server_command(registry, bind, port, host)
             with log_path.open("w", encoding="utf-8") as log:
@@ -643,8 +675,9 @@ def register(args: argparse.Namespace) -> int:
                 raise LauncherError("review server did not print a URL")
             for item in parsed:
                 prove_resource(url, item)
-            process = {"pid": child.pid, "port": port}
+            process = {"pid": child.pid, "port": urllib.parse.urlsplit(url).port or port, "bind": bind}
             write_registry(registry, candidate, process)
+            print_access(url, bind)
             print_urls(url, additions)
             return 0
         except BaseException:
@@ -698,7 +731,8 @@ def stop(args: argparse.Namespace) -> int:
     state = state_dir(args)
     registry, _, _ = paths(state)
     with state_lock(state):
-        _, process = registry_state(registry)
+        # Stop reads only [process]; resource rows may point at specs gone from their checkout.
+        _, process = registry_state(registry, validate=False)
         if not process:
             raise LauncherError("registry has no running process")
         stop_process(process["pid"], registry)
@@ -712,9 +746,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub = commands.add_parser("register")
     resource_flags(sub)
     sub.add_argument("--state-dir", required=False)
-    sub.add_argument("--bind")
-    sub.add_argument("--proof-host")
-    sub.add_argument("--test-loopback", action="store_true")
+    visibility = sub.add_mutually_exclusive_group()
+    visibility.add_argument("--public", metavar="HOST", help="listen on HOST instead of loopback; the page has no login")
+    visibility.add_argument("--private", action="store_true", help="listen on loopback even if a public bind is recorded")
+    sub.add_argument("--proof-host", help="public proof host when --public binds a wildcard address")
     sub = commands.add_parser("remove")
     sub.add_argument("--id", required=True)
     sub.add_argument("--state-dir", required=False)

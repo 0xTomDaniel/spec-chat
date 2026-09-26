@@ -81,7 +81,6 @@ Reached via adversarial design review: Claude (Fable 5) ↔ GPT-5.5 (xhigh), thr
 
 ```mermaid
 flowchart LR
-  Shape[Shaping skill] -->|issue interface| Issue[Repository-selected issue skill]
   Shape -->|review interface| Review[Review skill]
   Review -->|event protocol| Browser[Browser runtime]
   Browser -->|HTTP events and baseline reads| Local[Local review transport]
@@ -92,8 +91,8 @@ flowchart LR
   Host -->|owner pane wake| Review
 ```
 
-- The shaping skill owns prompt intake, durable seed order, readable information-density optimization, visual-system selection, artifact coverage, fallback styling, completeness reconciliation, implementation-graph shaping, and orchestration through the issue and review interfaces.
-- The repository-selected issue skill owns tracker-specific create, read, replace-current-content, and link behavior; no tracker behavior enters the browser runtime, review transport, or event protocol.
+- The shaping skill owns prompt intake, durable seed order, readable information-density optimization, visual-system selection, artifact coverage, fallback styling, completeness reconciliation, implementation-graph shaping, and orchestration through the review interface. It commits locally and links the issue its caller names; pushing, pull requests, and issue or ticket filing belong to the caller.
+- No tracker behavior enters Spec Chat: not the skills, browser runtime, review transport, or event protocol.
 - The review skill owns review-surface preflight, capability migration, explicit control-state selection, exact batch processing, spec edits, replies, cursor advancement, and cold reconstruction from durable sources.
 - The long-lived review host owns read-only detection and invokes one owner-pane wake once per unchanged batch; it never advances review state or runs an agent.
 - One process-held local kernel lock permits a single control owner for each collection root and cursor; process exit releases it without a lease protocol.
@@ -130,7 +129,7 @@ spec.html.review/
 ### 3. Browser runtime: review-folder handle, permissions as re-auth UX
 - "Open review folder" is a first-class button; one directory handle covers all event files. Handles persisted to IndexedDB as convenience — **expect re-permission on reopen** (Chrome does not guarantee persistence). A stock Chromium live test must cover both the native directory picker and the separate browser write-confirmation window; transport mocks alone are insufficient. Chromium-only accepted; export-button fallback elsewhere.
 - If `file://` origin behavior proves flaky in testing, a tiny `review serve` static viewer is the sanctioned fallback — zero-server is a preference, not dogma.
-- **Remote dev is a first-class deployment mode, not a fallback (added 2026-07-03).** FSA requires browser and files on the SAME machine; SSH boxes, devcontainers, and Codespaces — where coding agents actually live — break that. There, `tools/review-serve.py` (stdlib-only, localhost-bound: static files + GET/POST `/api/events`) over an SSH-forwarded port is the transport. Same spools, same protocol; the server only does the file I/O the browser can't reach across machines. Bonus: also covers non-Chromium browsers. Local Chromium keeps zero-server FSA.
+- **Remote dev is a first-class deployment mode, not a fallback (added 2026-07-03).** FSA requires browser and files on the SAME machine; SSH boxes, devcontainers, and Codespaces — where coding agents actually live — break that. There, the skill's own `assets/review-serve.py`, launched through `scripts/review-host.py` (stdlib-only, localhost-bound: static files + GET/POST `/api/events`) over an SSH-forwarded port is the transport. Same spools, same protocol; the server only does the file I/O the browser can't reach across machines. Bonus: also covers non-Chromium browsers. Local Chromium keeps zero-server FSA.
 
 ### 4. Agent loop: bounded detection with explicit wake ownership
 Indefinite `inotifywait` dies on real runtimes (tool timeouts, missing binaries, read-only/approval-gated sandboxes — Codex's default sandbox included). Instead, a skill loop:

@@ -33,7 +33,7 @@ Register a lane's review resources with --slug <lane key>, where the lane key is
 
 3. **Classify before editing, then apply each comment** to the spec in place. Questions and atomic corrections that do not change behavior or information architecture remain review-only. A batch is material when it adds or changes a behavior cluster, user outcome, flow, state model, module boundary, acceptance family, spatial contract, or the page's information architecture. Before a material edit, load `spec-chat-shape` and apply its complete authoring and browser-quality contract to the affected spec. The existence or age of the spec never exempts it. If the current page cannot carry the new material with readable visual density, restructure it instead of appending prose, cards, or one catch-all diagram. An informational comment may use `change: "no spec change"`; answer through the channel without forcing an edit.
 
-4. **Publish accepted spec changes before reply.** When the active shaping contract requires durable publication, commit and push every accepted spec change before the browser receives its reply or refreshed Git focus. `spec-chat-shape` owns the exact issue and change-request order. Review-only work follows its caller's publication contract.
+4. **Commit accepted spec changes before reply.** Commit every accepted spec change locally before the browser receives its reply or refreshed Git focus. Never push, open a pull request, or create an issue; publishing is the caller's. `spec-chat-shape` owns the seed order.
 
 5. **Reply to each newest human message** with the bundled emitter (one event per comment, follow-up reply, or edit addressed):
 
@@ -57,7 +57,7 @@ Register a lane's review resources with --slug <lane key>, where the lane key is
 
    - `turn-yielded`: run `scripts/review-control.sh yielded <spec-root> .cursor-<cli-or-session> 3600 3` through a verified same-turn yield and keep this turn open. A final response is forbidden.
    - `host-wake`: register the resource with `scripts/review-host.py register --owner <owner-pane-id> --cursor-name .cursor-<cli-or-session>`, using the lane record owner pane id, never an agent or tab name. Re-register an existing row with its current `base` from `registry.toml` as `@<row base>`, never the lane start base. Final is allowed only when registration printed `wake=verified owner=<pane>`; the review host then prompts that pane once per hand-off batch. `wake=unavailable` selects `manual-resume`.
-   - `manual-resume`: run `scripts/review-control.sh manual`, return a final response that explicitly requires a new human chat message, and claim no automatic wake. Keep the same public server and checker alive while waiting. The new message resumes the checker against that public URL.
+   - `manual-resume`: run `scripts/review-control.sh manual`, return a final response that explicitly requires a new human chat message, and claim no automatic wake. Keep the same review server and checker alive while waiting. The new message resumes the checker against that URL.
 
    `<spec-root>` is normally the repository's shared `docs/` collection root.
    `review-control.sh` holds one local kernel lock per canonical collection root and cursor, so a second yielded owner fails visibly instead of racing the first.
@@ -112,7 +112,7 @@ The loop is identical on every CLI. Read `references/cli-adapters.md` before sel
 
 ## Git-derived focus
 
-Prompt-first shaping opens the HTTP page with `focus=changes&base=<exact-local-review-base>`. An explicit base is the exact selected snapshot, including a previously reviewed sibling branch; it may differ from the change request's merge base. Pin its resolved commit in the review URL. The runtime reads baseline HTML through the review server, compares stable current anchor signatures, keeps added or modified current blocks clear, and recedes unchanged current blocks. A new spec remains entirely clear. A normal URL renders every block at normal clarity. Only automatic base discovery uses a merge base.
+Prompt-first shaping opens the HTTP page with `focus=changes&base=<exact-local-review-base>`. An explicit base is the exact selected snapshot, including a previously reviewed sibling branch. Pin its resolved commit in the review URL. The runtime reads baseline HTML through the review server, compares stable current anchor signatures, keeps added or modified current blocks clear, and recedes unchanged current blocks. A new spec remains entirely clear. A normal URL renders every block at normal clarity. Only automatic base discovery uses a merge base.
 
 When the selected base does not contain a spec, the baseline response keeps the selected commit in `base` and returns null for both `htmlBase` and `html`; the complete current spec is new.
 
@@ -136,7 +136,7 @@ Whichever transport is in play, host the spec with `assets/review-serve.py`.
 Do not substitute `python3 -m http.server` or another static file server: it serves the page but provides no annotation spool, no `/api/baseline`, no capability check, and no review URL contract, so the review layer silently never works.
 
 - **Local browser, same machine**: nothing to run; the page connects to the folder directly (file:// + FSA). Browser security does not reliably persist write permission. When an IndexedDB handle returns `prompt`, the runtime shows **Resume review** and requests write permission on the already-selected handle; **Choose different folder** remains a separate picker fallback for a moved tree, wrong prior scope, or Chromium shell that does not surface the regrant prompt. Chromium can follow the native directory picker with a separate **Allow this site to edit files?** browser window; the runtime must name that step and visibly wait for it because shells such as Arc may not layer it over the spec window. The grant accepts ANY ancestor folder of the spec — pick it in the dialog or drag it from Finder onto the page; the runtime walks down to the spec's folder itself and remembers the ancestor. Caveats: Chromium refuses grants on the top-level roots themselves (home, Documents, Desktop, Downloads — children beneath them are fine), so suggest a workspace/projects folder one level down; if the granted tree contains two same-named specs at matching sub-paths the runtime refuses to guess and asks for a narrower grant. The spec's exact path also lands on the clipboard when the picker opens (⌘⇧G + paste in the macOS panel). If the user wants zero prompts or uses Safari or Firefox, run `assets/review-serve.py` on loopback; the HTTP transport auto-connects.
-- **Remote browser**: use `scripts/review-host.py register` with one or more `--resource PROJECT_ID=ROOT:SPEC_PATH@BASE` entries and the lane `--slug`. It keeps one `registry.toml` with a `[process]` table and resource rows, discovers an approved port, binds `assets/review-serve.py`, and checks exact resource bytes plus `/api/baseline`. Use `remove` to delete a resource row and `stop` to stop the server. The URL is public and is not an authentication boundary; require no login, token, SSH, or proxy.
+- **Remote browser**: use `scripts/review-host.py register` with one or more `--resource PROJECT_ID=ROOT:SPEC_PATH@BASE` entries and the lane `--slug`. It keeps one `registry.toml` with a `[process]` table (pid, port, bind) and resource rows, binds `assets/review-serve.py`, and checks exact resource bytes plus `/api/baseline`. By default the page is private: it listens on loopback and prints the `ssh -L <port>:127.0.0.1:<port> <box>` tunnel. `--public <host>` (for example the box's Tailscale address) listens there on an approved ingress port instead, and warns that anyone who can reach it can read and comment without logging in; `--private` returns to loopback. The record keeps the bind, so a restart keeps the choice. A live registered server is reused unchanged; a `--public` or `--private` that differs from its bind fails, so stop it and register again to change it. Use `remove` to delete a resource row and `stop` to stop the server.
 
 ## Scaffolding spec-chat into a repo
 
@@ -152,11 +152,12 @@ Before every initial or resumed review, run the self-contained compatibility pre
 python3 scripts/preflight.py <target-repository-root> <spec-html>
 ```
 
-Preflight preserves target runtime and server assets that declare every capability required by the current bundle.
-It replaces only incompatible assets from the bundle, including vendored visual dependencies when runtime migration is required, and rejects semantic islands without a same-parent `data-render-target`.
+Preflight preserves a target runtime that declares every capability required by the current bundle.
+It replaces only an incompatible runtime from the bundle, including vendored visual dependencies, and rejects semantic islands without a same-parent `data-render-target`.
+It never writes a review server into the target: every launch runs this skill's own `assets/review-serve.py`, directly on loopback or through `scripts/review-host.py`.
 Treat a preflight failure as a review blocker.
-Commit and push migrated assets before presenting a shaping review.
-If the server was already running when migration occurred, restart it through
+Commit migrated assets locally before presenting a shaping review.
+If the server was already running when runtime migration occurred, restart it through
 review-host stop/register and rerun host checks before handoff. This is a
 runtime change; ordinary edits to a served spec do not require a restart.
 
@@ -165,8 +166,8 @@ runtime change; ordinary edits to a served spec do not require a restart.
 ## Starting a review when asked
 
 1. Confirm the page exists, run `scripts/preflight.py`, and identify the shared collection root (normally the repository's `docs/` directory, not the page's immediate `docs/specs/`, `docs/specs/<domain>/`, or `docs/adr/` directory; use the narrowest common ancestor for a legacy or explicitly different layout).
-2. Start `assets/review-serve.py` when HTTP review is required. For remote review, use `scripts/review-host.py register` with the resource and lane slug; it binds the host interface on a free approved port. Verify the served runtime advertises the required capabilities and `/api/baseline` succeeds for the exact page and change-request base. Keep that server and URL through ordinary edits, rerunning exact served-byte and `/api/baseline` checks for the same base after each edit. Restart only for a root, collection, process, port, runtime, or ownership change, or when the server is dead.
-3. Present the verified review URL. Do not hand back a GitHub link or a loopback URL when the human is reviewing from another machine.
+2. Start `assets/review-serve.py` when HTTP review is required. For remote review, use `scripts/review-host.py register` with the resource and lane slug; it binds loopback by default, or `--public <host>` on a free approved port when the developer asks for it. Verify the served runtime advertises the required capabilities and `/api/baseline` succeeds for the exact page and review base. Keep that server and URL through ordinary edits, rerunning exact served-byte and `/api/baseline` checks for the same base after each edit. Restart only for a root, collection, process, port, runtime, or ownership change, or when the server is dead.
+3. Present the verified review URL. For a private page on another machine, also give the printed `ssh -L` tunnel. Do not hand back a GitHub link.
 4. On both an initial start and any resumed/reconnected turn, run `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 0 3`; drain, reply, and cursor each ready batch, then repeat until exit 3.
 5. After reconciliation is empty, establish `turn-yielded`, verified `host-wake` through `scripts/review-host.py register`, or `manual-resume` through `scripts/review-control.sh`.
 6. State the selected control state truthfully. Never say watching, attached, or active after final unless `host-wake` is verified.
@@ -198,4 +199,4 @@ If asked only for **status** (no review mode), read the spool, summarize threads
 
 ## Get out of the terminal — visual-first
 
-When the user asks to see, understand, or walk through a spec ("what's in this spec?", "walk me through it"), don't answer with a terminal summary — the whole point of spec-chat is that the spec is better experienced rendered. Set up the visual surface (open the file locally, or start the direct public review server if remote), start review mode, and offer to have the conversation in-page: they can pin questions on the elements they're asking about and your walkthrough arrives as replies anchored to the exact marks. A terminal summary is the fallback when the user can't open a browser, not the default.
+When the user asks to see, understand, or walk through a spec ("what's in this spec?", "walk me through it"), don't answer with a terminal summary: the whole point of spec-chat is that the spec is better experienced rendered. Set up the visual surface (open the file locally, or start the review host if remote), start review mode, and offer to have the conversation in-page: they can pin questions on the elements they're asking about and your walkthrough arrives as replies anchored to the exact marks. A terminal summary is the fallback when the user can't open a browser, not the default.
