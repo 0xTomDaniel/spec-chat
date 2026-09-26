@@ -71,16 +71,17 @@
 </figure>
 <div class="table-scroll" data-anchor="states-table-scroll">
 <table data-anchor="states-table">
-<thead><tr><th>Evidence picked</th><th>Jev judgment</th><th>Label</th><th>Context and links</th></tr></thead>
+<thead><tr><th>Evidence picked</th><th>Jev judgment</th><th>Label</th></tr></thead>
 <tbody>
-<tr data-anchor="state-passed"><td>Matching text, passed</td><td>Not asked</td><td><code>Passed</code></td><td rowspan="4"><code>#&lt;PR&gt; · &lt;age&gt;</code>, plus <code>not on main</code> when so; label opens the artifact, <code>bundle</code> opens the bundle page</td></tr>
+<tr data-anchor="state-passed"><td>Matching text, passed</td><td>Not asked</td><td><code>Passed</code></td></tr>
 <tr data-anchor="state-failed"><td>Matching text, failed</td><td>Not asked</td><td><code>Failed</code></td></tr>
 <tr data-anchor="state-reworded"><td>Newest, text differs</td><td>cosmetic</td><td><code>Passed · reworded</code> or <code>Failed · reworded</code></td></tr>
 <tr data-anchor="state-stale"><td>Newest, text differs, or criterion edited but uncommitted</td><td>material, unsure, off, or unavailable</td><td><code>Stale</code></td></tr>
-<tr data-anchor="state-not-yet"><td>None</td><td>Not asked</td><td><code>Not yet</code></td><td>None</td></tr>
+<tr data-anchor="state-not-yet"><td>None</td><td>Not asked</td><td><code>Not yet</code></td></tr>
 </tbody>
 </table>
 </div>
+<p data-anchor="chip-context">Every label but <code>Not yet</code> has context <code>#&lt;PR&gt; · &lt;age&gt;</code>, plus <code>not on main</code> when so; the label opens the artifact and <code>bundle</code> opens the bundle page. <code>Not yet</code> has neither.</p>
 <p data-anchor="chip-age">Age is the capture time relative to now: minutes, hours, or days, as <code>5 m</code>, <code>3 h</code>, <code>2 d</code>.</p>
 <p data-anchor="chip-artifact">A picked evidence with no valid artifact makes the label plain text; <code>bundle</code> still opens the bundle page.</p>
 <p data-anchor="chip-never-act">Chips never change a spec, the spool, a thread, or spec acceptance eligibility, and never hide or reorder content.</p>
