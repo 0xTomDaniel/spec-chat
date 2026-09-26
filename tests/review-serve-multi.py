@@ -508,6 +508,7 @@ class MultiReviewServeTest(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         mount = self.make_resource("ann181")
+        mount["base"] = git(mount["root"], "rev-parse", "HEAD")
         path = str(Path(mount["root"]) / mount["spec"])
         calls = []
         status, title = module._review_status, module._page_title
@@ -527,6 +528,21 @@ class MultiReviewServeTest(unittest.TestCase):
             os.utime(path, ns=(info.st_atime_ns, info.st_mtime_ns + 1))
             module._index_row(mount | {"base": head}, path, True)
             self.assertEqual(len(calls), 8)
+
+    def test_index_row_with_ref_base_matches_uncached_after_the_ref_moves(self):
+        """ANN-192 lane-hosting #index-entry-cost: a legacy ref row base is compared uncached."""
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("review_serve_ref", SERVER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        mount = self.make_resource("ann192")
+        self.assertEqual(mount["base"], "main")
+        path = str(Path(mount["root"]) / mount["spec"])
+        self.assertEqual(module._index_row(mount, path, True), (True, "ann192"))
+        git(mount["root"], "commit", "-qam", "reviewed on main")
+        self.assertIs(module._review_status(mount), False)
+        self.assertEqual(module._index_row(mount, path, True), (False, "ann192"))
 
     def test_invalid_registries_exit_before_binding_or_printing_url(self):
         first, second = (self.make_resource(name) for name in ("first", "second"))

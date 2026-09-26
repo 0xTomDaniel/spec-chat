@@ -296,6 +296,8 @@ def _review_status(mount):
 
 
 _ROW_CACHE = {}
+# A ref base can move under an unchanged key; only a full commit id is cacheable.
+_COMMIT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
 
 def _index_row(mount, path, row):
@@ -304,12 +306,14 @@ def _index_row(mount, path, row):
         info = os.stat(path)
     except OSError:
         return (_review_status(mount) if row else None), _page_title(path)
-    key = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, mount.get("base") if row else None)
+    base = mount.get("base") if row else None
+    key = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, base)
     cached = _ROW_CACHE.get(path)
     if cached and cached[0] == key:
         return cached[1]
     value = (_review_status(mount) if row else None), _page_title(path)
-    _ROW_CACHE[path] = (key, value)
+    if base is None or _COMMIT_ID.fullmatch(base):
+        _ROW_CACHE[path] = (key, value)
     return value
 
 

@@ -139,6 +139,15 @@ class ReviewHostTest(unittest.TestCase):
         self.assertEqual(stopped.returncode, 0, stopped.stderr)
         self.assertFalse(review_host.process_owns_registry(document["process"]["pid"], Path(state) / "registry.toml"))
 
+    def test_register_records_a_ref_base_as_its_resolved_commit(self):
+        """ANN-192 compared-range #reviewed-default: a branch base never moves the row."""
+        state = self.work / "state"
+        args = self.register_args(state)
+        args[args.index("--resource") + 1] = f"review={self.repo}:docs/specs/review.spec.html@main"
+        started = self.run_cli(*args, state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        self.assertEqual(self.registry(state)["resource"][0]["base"], self.base)
+
     def wake_lines(self, result):
         return [line.split(" URL: ", 1)[1].split(" ", 1)[1] for line in result.stdout.splitlines()
                 if " URL: " in line and not line.startswith("review URL: ")]
@@ -309,7 +318,7 @@ finish_event = ""
         rows = {row["id"]: row for row in self.registry(state)["resource"]}
         self.assertEqual(set(rows), {"spec:ann45:review::docs/specs/review.spec.html",
                                      "spec:ann45:review::docs/specs/second.spec.html"})
-        self.assertEqual(rows["spec:ann45:review::docs/specs/review.spec.html"]["base"], "HEAD")
+        self.assertEqual(rows["spec:ann45:review::docs/specs/review.spec.html"]["base"], self.git("rev-parse", "HEAD"))
         self.assertEqual(rows["spec:ann45:review::docs/specs/second.spec.html"]["base"], self.base)
 
     def test_second_project_under_a_slug_serves_at_slug_project_spec(self):

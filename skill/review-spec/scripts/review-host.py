@@ -299,11 +299,11 @@ def parse_resource_spec(value: str, owner: str, checker: str, cursor_name: str,
     selected_slug = (slug or project).strip()
     if not SLUG_RE.fullmatch(selected_slug) or selected_slug in {"api", "static"}:
         raise LauncherError(f"invalid or reserved resource slug: {selected_slug}")
-    resolved_base = run_git(top, "rev-parse", "--verify", base + "^{commit}")
+    base = run_git(top, "rev-parse", "--verify", base + "^{commit}")
     return {
         "id": f"spec:{selected_slug}:{project}::{spec}", "slug": selected_slug, "project": project, "root": str(top),
         "narrow_root": str(narrow), "spec": spec, "spec_file": str(spec_file),
-        "base": base, "resolved_base_commit": resolved_base,
+        "base": base,
         "owner": owner.strip(), "checker": checker.strip(), "cursor_name": cursor_name,
     }
 
@@ -422,7 +422,7 @@ def write_registry(path: Path, records: Sequence[Mapping[str, Any]], process: Ma
 
 
 def prove_resource(public_url: str, resource: Mapping[str, Any]) -> dict[str, Any]:
-    exact_base = resource.get("resolved_base_commit") or run_git(
+    exact_base = run_git(
         Path(resource["root"]), "rev-parse", "--verify", resource["base"] + "^{commit}"
     )
     review_url = public_url.rstrip("/") + urllib.parse.quote(stable_path(resource), safe="/")
