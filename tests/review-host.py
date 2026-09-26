@@ -575,7 +575,7 @@ cursor_name = ".cursor-test"
     def run_lane(self, *args, env=None, ports=None):
         """The lane command: no --state-dir, host, port, bind, or visibility flag."""
         full = os.environ.copy()
-        full.update({"PATH": path_without_herdr(), "PYTHONDONTWRITEBYTECODE": "1", **(env or {})})
+        full.update({"PYTHONDONTWRITEBYTECODE": "1", **(env or {})})
         full["SPEC_CHAT_APPROVED_INGRESS_PORTS"] = str(ports or self.port())
         return subprocess.run(["python3", str(LAUNCHER_PATH), "register", *args], cwd=ROOT, env=full, text=True,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=25)
