@@ -29,8 +29,7 @@ _wake_spec = importlib.util.spec_from_file_location("review_host_wake", ROOT / "
 review_host_wake = importlib.util.module_from_spec(_wake_spec)
 assert _wake_spec.loader is not None
 _wake_spec.loader.exec_module(review_host_wake)
-FakeHerdr = review_host_wake.FakeHerdr
-path_without_herdr = review_host_wake.path_without_herdr
+FakeWaker = review_host_wake.FakeWaker
 
 
 def request(url, *, method="GET", body=None):
@@ -86,12 +85,11 @@ class ReviewHostTest(unittest.TestCase):
     def resource(self, project="review", spec="review"):
         return f"{project}={self.repo}:docs/specs/{spec}.spec.html@{self.base}"
 
-    def run_cli(self, *args, state=None, ports=None, herdr=None):
+    def run_cli(self, *args, state=None, ports=None):
         state = Path(state or self.work / "state")
         if state not in self.states:
             self.states.append(state)
         env = os.environ.copy()
-        env.update(herdr.env() if herdr else {"PATH": path_without_herdr()})
         env["SPEC_CHAT_APPROVED_INGRESS_PORTS"] = str(ports or self.port())
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         return subprocess.run(
@@ -153,20 +151,20 @@ class ReviewHostTest(unittest.TestCase):
         return [line.split(" URL: ", 1)[1].split(" ", 1)[1] for line in result.stdout.splitlines()
                 if " URL: " in line and not line.startswith("review URL: ")]
 
-    def test_register_prints_wake_verified_only_when_herdr_resolves_owner(self):
-        herdr = FakeHerdr(self.work)
-        herdr.agent("owner")
+    def test_register_prints_wake_verified_only_when_the_wake_provider_resolves_owner(self):
         state = self.work / "state"
-        verified = self.run_cli(*self.register_args(state), state=state, herdr=herdr)
+        waker = FakeWaker(self.work, state)
+        waker.agent("owner")
+        verified = self.run_cli(*self.register_args(state), state=state)
         self.assertEqual(verified.returncode, 0, verified.stderr)
         self.assertEqual(self.wake_lines(verified), ["wake=verified owner=owner"])
-        herdr.agent("owner", None)
-        unresolved = self.run_cli(*self.register_args(state, spec="second"), state=state, herdr=herdr)
+        waker.agent("owner", False)
+        unresolved = self.run_cli(*self.register_args(state, spec="second"), state=state)
         self.assertEqual(unresolved.returncode, 0, unresolved.stderr)
         self.assertEqual(self.wake_lines(unresolved), ["wake=unavailable owner=owner"])
-        self.assertEqual(herdr.says(), [], "registration never prompts the owner")
+        self.assertEqual(waker.says(), [], "registration never prompts the owner")
 
-    def test_register_without_herdr_prints_wake_unavailable(self):
+    def test_register_without_wake_provider_prints_wake_unavailable(self):
         state = self.work / "state"
         started = self.run_cli(*self.register_args(state), state=state)
         self.assertEqual(started.returncode, 0, started.stderr)
@@ -301,7 +299,7 @@ finish_event = ""
     def test_private_default_needs_no_approved_ports(self):
         state = self.work / "state"
         self.states.append(state)
-        env = {**os.environ, "PATH": path_without_herdr(), "PYTHONDONTWRITEBYTECODE": "1"}
+        env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
         env.pop("SPEC_CHAT_APPROVED_INGRESS_PORTS", None)
         env.pop("REVIEW_APPROVED_INGRESS_PORTS", None)
         started = subprocess.run(["python3", str(LAUNCHER_PATH), *self.register_args(state)], cwd=ROOT, env=env,

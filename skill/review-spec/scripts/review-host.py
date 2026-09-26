@@ -11,7 +11,6 @@ import ipaddress
 import json
 import os
 import re
-import shutil
 import signal
 import socket
 import subprocess
@@ -591,17 +590,30 @@ def running_url(log_path: Path) -> str:
     raise LauncherError("cannot read the running review URL from its log; run stop, then register again")
 
 
-def wake_status(owner: str) -> str:
-    """Report whether Herdr resolves the owner pane; never prompts it."""
-    if not shutil.which("herdr") or not shutil.which("herdr-say"):
+def wake_status(owner: str, state: Path) -> str:
+    """Report whether the registered wake provider's check resolves the owner; never prompts it
+    (review-service #providers). No valid providers/wake.toml means unavailable."""
+    try:
+        provider = tomllib.loads((state / "providers" / "wake.toml").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "unavailable"
+    commands = [provider.get(key) for key in ("check", "send")]
+    if not all(isinstance(argv, list) and argv and all(isinstance(arg, str) for arg in argv) for argv in commands):
+        return "unavailable"
+    argv = [arg.replace("{owner}", owner).replace("{artifact}", "").replace("{message}", "") for arg in commands[0]]
+    try:
+        process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError:
         return "unavailable"
     try:
-        result = subprocess.run(("herdr", "agent", "get", owner), text=True, stdin=subprocess.DEVNULL,
-                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5)
-        agent = json.loads(result.stdout)["result"]["agent"] if result.returncode == 0 else {}
-    except (OSError, subprocess.TimeoutExpired, KeyError, TypeError, ValueError):
-        agent = {}
-    return "verified" if isinstance(agent, dict) and agent.get("pane_id") == owner else "unavailable"
+        code = process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(OSError):
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+        return "unavailable"
+    return "verified" if code == 0 else "unavailable"
 
 
 def print_access(url: str, bind: str | None) -> None:
@@ -614,11 +626,11 @@ def print_access(url: str, bind: str | None) -> None:
               "or restart with --public <tailscale-address>")
 
 
-def print_urls(url: str, additions: list[dict[str, str]]) -> None:
+def print_urls(url: str, additions: list[dict[str, str]], state: Path) -> None:
     print(f"review URL: {url}")
     for item in additions:
         owner = item["owner"]
-        print(f"{item['id']} URL: {url.rstrip('/')}{stable_path(item)} wake={wake_status(owner)} owner={owner}")
+        print(f"{item['id']} URL: {url.rstrip('/')}{stable_path(item)} wake={wake_status(owner, state)} owner={owner}")
 
 
 def register(args: argparse.Namespace) -> int:
@@ -648,7 +660,7 @@ def register(args: argparse.Namespace) -> int:
                 for item in parsed:
                     prove_resource(url, item)
                 print_access(url, bind)
-                print_urls(url, additions)
+                print_urls(url, additions, state)
                 return 0
 
             bind = select_bind(args, process)
@@ -678,7 +690,7 @@ def register(args: argparse.Namespace) -> int:
             process = {"pid": child.pid, "port": urllib.parse.urlsplit(url).port or port, "bind": bind}
             write_registry(registry, candidate, process)
             print_access(url, bind)
-            print_urls(url, additions)
+            print_urls(url, additions, state)
             return 0
         except BaseException:
             if child is not None and child.poll() is None:
