@@ -82,7 +82,8 @@ class FakeEvidence:
 def entry(**values):
     value = {"match": True, "verdict": "pass", "judgment": None, "pr": 58,
              "capturedAt": "2026-09-20T10:00:00Z", "onMain": True,
-             "artifact": "/bundles/b1/artifacts/a.png", "bundle": "/bundles/b1"}
+             "artifact": "/bundles/b1/artifacts/a.png", "bundle": "/bundles/b1",
+             "proven": "Shows ok.", "view": "/bundles/b1#criterion=ok"}
     value.update(values)
     return value
 
@@ -128,16 +129,19 @@ class EvidenceRouteTest(unittest.TestCase):
         service = self.fake(body={"criteria": {
             "ok": entry(),
             "moved": entry(match=False, judgment="material", pr=61, onMain=False,
-                           artifact="/bundles/b2/artifacts/m.png", bundle="/bundles/b2"),
+                           artifact="/bundles/b2/artifacts/m.png", bundle="/bundles/b2",
+                           proven="Shows old.", view="/bundles/b2#criterion=moved"),
         }})
         url, _, head = self.single(page(ok="Shows ok.", moved="Shows moved."))
         with patch.dict(os.environ, {"SPEC_CHAT_EVIDENCE_URL": service.url}):
             body = self.evidence(url)
         base = service.url.rstrip("/")
         self.assertEqual(body, {"criteria": {
-            "ok": entry(artifact=base + "/bundles/b1/artifacts/a.png", bundle=base + "/bundles/b1", uncommitted=False),
+            "ok": entry(artifact=base + "/bundles/b1/artifacts/a.png", bundle=base + "/bundles/b1",
+                        view=base + "/bundles/b1#criterion=ok", uncommitted=False),
             "moved": entry(match=False, judgment="material", pr=61, onMain=False,
-                           artifact=base + "/bundles/b2/artifacts/m.png", bundle=base + "/bundles/b2", uncommitted=False),
+                           artifact=base + "/bundles/b2/artifacts/m.png", bundle=base + "/bundles/b2",
+                           proven="Shows old.", view=base + "/bundles/b2#criterion=moved", uncommitted=False),
         }})
         self.assertEqual(len(service.requests), 1)
         request = urlparse(service.requests[0])
@@ -166,12 +170,13 @@ class EvidenceRouteTest(unittest.TestCase):
 
     def test_non_relative_paths_are_not_linked(self):
         service = self.fake(body={"criteria": {"ok": entry(
-            artifact="javascript:alert(1)", bundle="//evil.example/bundles/b1")}})
+            artifact="javascript:alert(1)", bundle="//evil.example/bundles/b1", view="https://evil.example/")}})
         url, _, _ = self.single(page(ok="Shows ok."))
         with patch.dict(os.environ, {"SPEC_CHAT_EVIDENCE_URL": service.url}):
             value = self.evidence(url)["criteria"]["ok"]
         self.assertIsNone(value["artifact"])
         self.assertIsNone(value["bundle"])
+        self.assertIsNone(value["view"])
 
     def test_unset_down_error_and_non_json_answer_none(self):
         url, _, _ = self.single(page(ok="Shows ok."))
@@ -214,6 +219,25 @@ class EvidenceRouteTest(unittest.TestCase):
             {"spec": ["project/spec-chat::" + SPEC], "commit": [main_head]},
             {"spec": ["project/spec-chat::" + SPEC], "commit": [lane_head]},
         ])
+
+    def watched(self, url, review_dir):
+        with urllib.request.urlopen(url + "/api/events?dir=" + review_dir, timeout=10) as response:
+            return response.headers.get("X-Spec-Chat-Watched")
+
+    def test_events_report_whether_the_row_has_an_owner(self):
+        root = self.dir / "repo"
+        repo(root, page(ok="Shows ok."))
+        row = {"id": "r", "slug": "lane", "root": str(root), "narrow_root": str(root / "docs"),
+               "spec": SPEC, "spec_file": str(root / SPEC), "base": "HEAD", "owner": "w1:pOwner"}
+        for mounts, review_dir, expected in (
+            ([row], "lane/" + SPEC + ".review", "yes"),
+            ([row | {"owner": ""}], "lane/" + SPEC + ".review", "no"),
+            ([serve._single_mount(root / "docs")], "specs/demo.spec.html.review", "no"),
+        ):
+            with self.subTest(expected=expected, mount=mounts[0]["id"]):
+                url = self.review_server(mounts)
+                self.servers[-1].wake_controller = serve.WakeController(self.servers[-1])
+                self.assertEqual(self.watched(url, review_dir), expected)
 
     def test_bad_path_is_rejected_without_a_read(self):
         service = self.fake(body={"criteria": {}})

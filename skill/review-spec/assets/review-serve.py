@@ -48,7 +48,7 @@ WAKE_SAY_TIMEOUT_SECONDS = 10
 # Herdr typed the prompt but did not observe the pane react; retyping would duplicate it.
 TYPED_UNCONFIRMED_CODES = frozenset({"agent_prompt_stalled"})
 EVIDENCE_TIMEOUT_SECONDS = 30
-EVIDENCE_FIELDS = ("match", "verdict", "judgment", "pr", "capturedAt", "onMain", "artifact", "bundle")
+EVIDENCE_FIELDS = ("match", "verdict", "judgment", "pr", "capturedAt", "onMain", "artifact", "bundle", "proven", "view")
 
 
 def parse_args(argv=None):
@@ -348,6 +348,7 @@ def read_evidence(base, project, spec, commit, served, committed):
         value = {field: raw.get(field) for field in EVIDENCE_FIELDS}
         value["artifact"] = _evidence_link(base, value["artifact"])
         value["bundle"] = _evidence_link(base, value["bundle"])
+        value["view"] = _evidence_link(base, value["view"])
         value["uncommitted"] = at_head.get(anchor) != current[anchor]
         result[anchor] = value
     return result
@@ -882,7 +883,10 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
             return self._json({"error": "unsafe spool path"}, 400)
         events.sort(key=lambda event: event["name"])
         wake = self.server.wake_controller.status(mount.get("id"))
-        headers = {"X-Spec-Chat-Wake": wake} if wake else None
+        # A row with no owner is unwatched: a hand-off there wakes no one (criterion-evidence spec).
+        headers = {"X-Spec-Chat-Watched": "yes" if mount.get("owner") else "no"}
+        if wake:
+            headers["X-Spec-Chat-Wake"] = wake
         return self._json(events, headers=headers)
 
     def _jev(self, query):
