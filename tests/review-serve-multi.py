@@ -1,5 +1,6 @@
 """ANN-61: HTTP/registry seam from the ANN-31 brief, T1 and H4/C1/H6."""
 import hashlib
+import http.client
 import json
 import socket
 import subprocess
@@ -210,6 +211,49 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertEqual(body, (VIZ / "vendor/echarts-5.5.1.min.js").read_bytes())
         status, headers, _ = fetch("/cache/docs/specs/.viz/missing.js")
         self.assertEqual((status, headers["Cache-Control"], headers["ETag"]), (404, "no-cache", None))
+
+    def test_every_path_is_http11_keep_alive_on_one_connection(self):
+        resource = self.make_resource("alive")
+        self.start([resource])
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=2)
+        self.addCleanup(connection.close)
+        page = self.stable(resource)
+        etag = None
+        socket_in_use = None
+        steps = (
+            ("GET", "/", None, {}, 200),
+            ("GET", page, None, {}, 200),
+            ("GET", page, None, "etag", 304),
+            ("HEAD", page, None, {}, 200),
+            ("GET", self.api(resource, "baseline"), None, {}, 200),
+            ("GET", self.api(resource), None, {}, 200),
+            ("POST", self.api(resource, actor="agent"), b'{"event": "reply", "id": "agent"}', {}, 403),
+            ("POST", "/nowhere", b'{"event": "comment", "id": "lost"}', {}, 404),
+            ("POST", self.api(resource), b'not json', {}, 400),
+            ("POST", self.api(resource, actor="human"), b'{"event": "comment", "id": "human"}', {}, 200),
+            ("GET", "/alive/docs/specs/.viz/vendor/echarts-5.5.1.min.js", None, {}, 200),
+            ("GET", page, None, {}, 200),
+        )
+        for method, path, body, headers, expected in steps:
+            if headers == "etag":
+                headers = {"If-None-Match": etag}
+            connection.request(method, path, body=body, headers=headers)
+            response = connection.getresponse()
+            data = response.read()
+            self.assertEqual((response.status, response.version), (expected, 11), (method, path))
+            self.assertFalse(response.will_close, (method, path))
+            if method == "HEAD" or expected == 304:
+                self.assertEqual(data, b"", (method, path))
+            else:
+                self.assertEqual(int(response.headers["Content-Length"]), len(data), (method, path))
+            if path == page and expected == 200:
+                etag = response.headers["ETag"]
+            socket_in_use = socket_in_use or connection.sock
+            self.assertIs(connection.sock, socket_in_use, (method, path))
+        connection.request("GET", "/alive/docs/specs/missing.spec.html")
+        response = connection.getresponse()
+        response.read()
+        self.assertEqual((response.status, response.version, response.will_close), (404, 11, True))
 
     def test_legacy_mode_uses_vendored_viz_and_collection_style(self):
         repo = self.work / "legacy"
