@@ -1,4 +1,5 @@
 """ANN-61: HTTP/registry seam from the ANN-31 brief, T1 and H4/C1/H6."""
+import hashlib
 import json
 import socket
 import subprocess
@@ -184,6 +185,31 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertEqual(self.request(self.api(resource, actor="agent"), "POST", {"event": "reply", "id": "agent"})[0], 403)
         self.assertEqual(sorted(str(path.relative_to(review)) for path in review.rglob("*")), before)
         self.assertEqual(self.request(self.api(resource, actor="human"), "POST", {"event": "comment", "id": "human"})[0], 200)
+
+    def test_pages_revalidate_by_etag_and_vendor_assets_are_immutable(self):
+        resource = self.make_resource("cache")
+        self.start([resource])
+        def fetch(path, etag=None):
+            request = urllib.request.Request(self.url + path, headers={"If-None-Match": etag} if etag else {})
+            try:
+                with urllib.request.urlopen(request, timeout=2) as response:
+                    return response.status, response.headers, response.read()
+            except urllib.error.HTTPError as error:
+                with error:
+                    return error.code, error.headers, error.read()
+        for path in ("/", self.stable(resource), "/cache/docs/specs/.viz/runtime.js"):
+            status, headers, body = fetch(path)
+            self.assertEqual((status, headers["Cache-Control"]), (200, "no-cache"), path)
+            etag = headers["ETag"]
+            self.assertEqual(etag, '"%s"' % hashlib.sha256(body).hexdigest())
+            status, headers, body = fetch(path, etag)
+            self.assertEqual((status, headers["ETag"], headers["Cache-Control"], body), (304, etag, "no-cache", b""), path)
+            self.assertEqual(fetch(path, '"stale"')[0], 200, path)
+        status, headers, body = fetch("/cache/docs/specs/.viz/vendor/echarts-5.5.1.min.js")
+        self.assertEqual((status, headers["Cache-Control"], headers["ETag"]), (200, "public, max-age=31536000, immutable", None))
+        self.assertEqual(body, (VIZ / "vendor/echarts-5.5.1.min.js").read_bytes())
+        status, headers, _ = fetch("/cache/docs/specs/.viz/missing.js")
+        self.assertEqual((status, headers["Cache-Control"], headers["ETag"]), (404, "no-cache", None))
 
     def test_legacy_mode_uses_vendored_viz_and_collection_style(self):
         repo = self.work / "legacy"
