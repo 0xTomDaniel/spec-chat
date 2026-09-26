@@ -31,7 +31,15 @@ class El {
   remove() { if (this.parent) this.parent.children.splice(this.parent.children.indexOf(this), 1); this.parent = null; }
   setAttribute(k, v) { this.attrs[k] = String(v); }
   getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
-  focus() { document.activeElement = this; }
+  // Real focus order: blur and focusout on the old element, then focus on the new one.
+  focus() {
+    const from = document.activeElement;
+    if (from === this) return;
+    from.fire('blur', { relatedTarget: this });
+    for (let e = from; e; e = e.parent) e.fire('focusout', { target: from, relatedTarget: this });
+    document.activeElement = this;
+    this.fire('focus');
+  }
   set textContent(v) { this.children = []; this.ownText = String(v); }
   get textContent() { return this.ownText + this.children.map(c => c.textContent).join(''); }
   get parentNode() { return this.parent; }
@@ -156,6 +164,37 @@ assert.deepEqual(popNotes(), [['conflict', 'Contradicts #non-goal-text'], ['type
 assert.equal(pop().querySelector('a').href, '#non-goal-text');
 fireDoc('keydown', { key: 'Escape' });
 assert.equal(pop().hidden, true);
+// #markers-open by keyboard: Tab from the marker enters the popover, Shift+Tab returns, Tab past
+// its last control leaves from the marker, and Escape inside closes it and it stays closed.
+const tab = (shiftKey = false) => {
+  let prevented = false;
+  fireDoc('keydown', { key: 'Tab', shiftKey, preventDefault() { prevented = true; } });
+  return prevented;
+};
+marker('rule').focus();
+assert.equal(pop().hidden, false);
+const ruleLink = pop().querySelector('a');
+assert.equal(tab(), true, 'Tab from the marker is taken into the popover');
+assert.equal(document.activeElement, ruleLink);
+assert.equal(pop().hidden, false, 'focus inside keeps the popover');
+assert.equal(tab(true), true);
+assert.equal(document.activeElement, marker('rule'), 'Shift+Tab from the first control returns to the marker');
+assert.deepEqual(pop().querySelectorAll('a,button').map(e => e.tagName), ['A', 'BUTTON', 'BUTTON'], 'link and note buttons are reachable');
+pop().querySelectorAll('button').at(-1).focus();
+assert.equal(pop().hidden, false, 'the browser moves within the popover');
+assert.equal(tab(), false, 'Tab past the last control is left to the browser');
+assert.equal(document.activeElement, marker('rule'), 'and continues from the marker');
+assert.equal(pop().hidden, false);
+marker('typo').focus();
+assert.deepEqual(popNotes(), [['type', 'Cosmetic']], 'the next marker opens its own popover');
+marker('rule').focus();
+tab();
+fireDoc('keydown', { key: 'Escape' });
+assert.equal(document.activeElement, marker('rule'), 'Escape returns focus to the marker');
+assert.equal(pop().hidden, true, 'Escape inside the popover closes it and focus return does not reopen it');
+assert.equal(marker('rule').getAttribute('aria-expanded'), 'false');
+document.activeElement.fire('blur', { relatedTarget: body });
+document.activeElement = body;
 // Tap opens; a tap inside the popover keeps it; a tap elsewhere closes it.
 marker('typo').fire('click');
 assert.deepEqual(popNotes(), [['type', 'Cosmetic']]);
