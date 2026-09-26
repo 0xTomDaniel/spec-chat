@@ -1,4 +1,6 @@
 """ANN-61: HTTP/registry seam from the ANN-31 brief, T1 and H4/C1/H6."""
+import hashlib
+import http.client
 import json
 import socket
 import subprocess
@@ -184,6 +186,74 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertEqual(self.request(self.api(resource, actor="agent"), "POST", {"event": "reply", "id": "agent"})[0], 403)
         self.assertEqual(sorted(str(path.relative_to(review)) for path in review.rglob("*")), before)
         self.assertEqual(self.request(self.api(resource, actor="human"), "POST", {"event": "comment", "id": "human"})[0], 200)
+
+    def test_pages_revalidate_by_etag_and_vendor_assets_are_immutable(self):
+        resource = self.make_resource("cache")
+        self.start([resource])
+        def fetch(path, etag=None):
+            request = urllib.request.Request(self.url + path, headers={"If-None-Match": etag} if etag else {})
+            try:
+                with urllib.request.urlopen(request, timeout=2) as response:
+                    return response.status, response.headers, response.read()
+            except urllib.error.HTTPError as error:
+                with error:
+                    return error.code, error.headers, error.read()
+        for path in ("/", self.stable(resource), "/cache/docs/specs/.viz/runtime.js"):
+            status, headers, body = fetch(path)
+            self.assertEqual((status, headers["Cache-Control"]), (200, "no-cache"), path)
+            etag = headers["ETag"]
+            self.assertEqual(etag, '"%s"' % hashlib.sha256(body).hexdigest())
+            status, headers, body = fetch(path, etag)
+            self.assertEqual((status, headers["ETag"], headers["Cache-Control"], body), (304, etag, "no-cache", b""), path)
+            self.assertEqual(fetch(path, '"stale"')[0], 200, path)
+        status, headers, body = fetch("/cache/docs/specs/.viz/vendor/echarts-5.5.1.min.js")
+        self.assertEqual((status, headers["Cache-Control"], headers["ETag"]), (200, "public, max-age=31536000, immutable", None))
+        self.assertEqual(body, (VIZ / "vendor/echarts-5.5.1.min.js").read_bytes())
+        status, headers, _ = fetch("/cache/docs/specs/.viz/missing.js")
+        self.assertEqual((status, headers["Cache-Control"], headers["ETag"]), (404, "no-cache", None))
+
+    def test_every_path_is_http11_keep_alive_on_one_connection(self):
+        resource = self.make_resource("alive")
+        self.start([resource])
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=2)
+        self.addCleanup(connection.close)
+        page = self.stable(resource)
+        etag = None
+        socket_in_use = None
+        steps = (
+            ("GET", "/", None, {}, 200),
+            ("GET", page, None, {}, 200),
+            ("GET", page, None, "etag", 304),
+            ("HEAD", page, None, {}, 200),
+            ("GET", self.api(resource, "baseline"), None, {}, 200),
+            ("GET", self.api(resource), None, {}, 200),
+            ("POST", self.api(resource, actor="agent"), b'{"event": "reply", "id": "agent"}', {}, 403),
+            ("POST", "/nowhere", b'{"event": "comment", "id": "lost"}', {}, 404),
+            ("POST", self.api(resource), b'not json', {}, 400),
+            ("POST", self.api(resource, actor="human"), b'{"event": "comment", "id": "human"}', {}, 200),
+            ("GET", "/alive/docs/specs/.viz/vendor/echarts-5.5.1.min.js", None, {}, 200),
+            ("GET", page, None, {}, 200),
+        )
+        for method, path, body, headers, expected in steps:
+            if headers == "etag":
+                headers = {"If-None-Match": etag}
+            connection.request(method, path, body=body, headers=headers)
+            response = connection.getresponse()
+            data = response.read()
+            self.assertEqual((response.status, response.version), (expected, 11), (method, path))
+            self.assertFalse(response.will_close, (method, path))
+            if method == "HEAD" or expected == 304:
+                self.assertEqual(data, b"", (method, path))
+            else:
+                self.assertEqual(int(response.headers["Content-Length"]), len(data), (method, path))
+            if path == page and expected == 200:
+                etag = response.headers["ETag"]
+            socket_in_use = socket_in_use or connection.sock
+            self.assertIs(connection.sock, socket_in_use, (method, path))
+        connection.request("GET", "/alive/docs/specs/missing.spec.html")
+        response = connection.getresponse()
+        response.read()
+        self.assertEqual((response.status, response.version, response.will_close), (404, 11, True))
 
     def test_legacy_mode_uses_vendored_viz_and_collection_style(self):
         repo = self.work / "legacy"
@@ -427,6 +497,52 @@ class MultiReviewServeTest(unittest.TestCase):
         git(mount["root"], "rm", "-q", "--cached", mount["spec"])
         git(mount["root"], "commit", "-q", "-m", "drop spec")
         self.assertTrue(module._review_status(mount))
+
+    def test_index_row_rereads_only_on_new_file_identity_or_base(self):
+        """ANN-181 lane-hosting #index-entry-cost."""
+        import importlib.util
+        import os
+        from unittest import mock
+
+        spec = importlib.util.spec_from_file_location("review_serve_cache", SERVER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        mount = self.make_resource("ann181")
+        mount["base"] = git(mount["root"], "rev-parse", "HEAD")
+        path = str(Path(mount["root"]) / mount["spec"])
+        calls = []
+        status, title = module._review_status, module._page_title
+        with mock.patch.object(module, "_review_status", lambda m: calls.append("git") or status(m)), \
+                mock.patch.object(module, "_page_title", lambda p: calls.append("title") or title(p)):
+            row = module._index_row(mount, path, True)
+            self.assertEqual(row, (True, "ann181"))
+            self.assertEqual(module._index_row(mount, path, True), row)
+            self.assertEqual(calls, ["git", "title"])
+            Path(path).write_text("<title>Renamed</title>x\n")
+            self.assertEqual(module._index_row(mount, path, True), (True, "Renamed"))
+            self.assertEqual(len(calls), 4)
+            head = git(mount["root"], "commit", "-qam", "reviewed") or git(mount["root"], "rev-parse", "HEAD")
+            self.assertEqual(module._index_row(mount | {"base": head}, path, True), (False, "Renamed"))
+            self.assertEqual(len(calls), 6)
+            info = os.stat(path)
+            os.utime(path, ns=(info.st_atime_ns, info.st_mtime_ns + 1))
+            module._index_row(mount | {"base": head}, path, True)
+            self.assertEqual(len(calls), 8)
+
+    def test_index_row_with_ref_base_matches_uncached_after_the_ref_moves(self):
+        """ANN-192 lane-hosting #index-entry-cost: a legacy ref row base is compared uncached."""
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("review_serve_ref", SERVER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        mount = self.make_resource("ann192")
+        self.assertEqual(mount["base"], "main")
+        path = str(Path(mount["root"]) / mount["spec"])
+        self.assertEqual(module._index_row(mount, path, True), (True, "ann192"))
+        git(mount["root"], "commit", "-qam", "reviewed on main")
+        self.assertIs(module._review_status(mount), False)
+        self.assertEqual(module._index_row(mount, path, True), (False, "ann192"))
 
     def test_invalid_registries_exit_before_binding_or_printing_url(self):
         first, second = (self.make_resource(name) for name in ("first", "second"))

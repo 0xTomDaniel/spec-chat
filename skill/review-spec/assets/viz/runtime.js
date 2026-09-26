@@ -56,7 +56,7 @@ const state = {
   eventsRendered: false,
   handoffPosting: false,
   lastTbd: null,         // open TBD marker focused by the last TBD open activation
-  range: { baseline: null, loading: false, pickerOpen: false },
+  range: { baseline: null, loaded: null, loading: false, pickerOpen: false }, // loaded: anchor signatures of the page as served
   jev: { status: 'idle', items: [], base: null, request: 0 },
   evidence: { criteria: null }, // anchor -> evidence entry once /api/evidence answers; null shows nothing
   readingView: false,
@@ -232,10 +232,8 @@ async function requestEvidence() {
   } catch (_) {}
 }
 
-function markIssueFocus(currentText, baseline) {
-  const parser = new DOMParser();
-  const current = anchorSignatures(parser.parseFromString(currentText, 'text/html'));
-  const prior = baseline.html === null ? null : anchorSignatures(parser.parseFromString(baseline.html, 'text/html'));
+function markIssueFocus(current, baseline) {
+  const prior = baseline.html === null ? null : anchorSignatures(new DOMParser().parseFromString(baseline.html, 'text/html'));
   const classification = classifyAnchorSignatures(current, prior);
   const focused = [...document.querySelectorAll('[data-anchor]')];
   for (const element of focused) {
@@ -254,16 +252,10 @@ function markIssueFocus(currentText, baseline) {
   document.body.classList.toggle('hx-focus-active', focused.some(element => element.dataset.hxFocus === 'changed'));
 }
 
-async function fetchBaseline(base, includeCurrent = false, signal) {
-  const params = baselineParams(base);
-  const requests = [fetch('/api/baseline?' + params, { signal })];
-  if (includeCurrent) requests.push(fetch(location.pathname, { cache: 'no-store', signal }));
-  const responses = await Promise.all(requests);
-  const baselineResponse = responses[0];
-  if (!baselineResponse.ok || (includeCurrent && !responses[1].ok)) throw new Error('Git baseline unavailable');
-  const baseline = await baselineResponse.json();
-  if (includeCurrent) return { baseline, currentText: await responses[1].text() };
-  return { baseline };
+async function fetchBaseline(base, signal) {
+  const response = await fetch('/api/baseline?' + baselineParams(base), { signal });
+  if (!response.ok) throw new Error('Git baseline unavailable');
+  return response.json();
 }
 
 async function applyIssueFocus() {
@@ -272,11 +264,11 @@ async function applyIssueFocus() {
   const timeout = setTimeout(() => controller.abort(), 5000);
   try {
     const requestedBase = new URLSearchParams(location.search).get('base');
-    const result = await fetchBaseline(requestedBase, true, controller.signal);
-    state.range.baseline = result.baseline;
-    renderRangeBar(result.baseline);
-    requestJev(result.baseline.base);
-    markIssueFocus(result.currentText, result.baseline);
+    const baseline = await fetchBaseline(requestedBase, controller.signal);
+    state.range.baseline = baseline;
+    renderRangeBar(baseline);
+    requestJev(baseline.base);
+    markIssueFocus(state.range.loaded, baseline);
   } catch (error) {
     const copy = document.getElementById('hx-range-copy');
     if (copy) copy.textContent = 'Compared range unavailable.';
@@ -384,10 +376,9 @@ async function selectRangeBase(value) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
   try {
-    const result = await fetchBaseline(requested, true, controller.signal);
-    const baseline = result.baseline;
+    const baseline = await fetchBaseline(requested, controller.signal);
     state.range.baseline = baseline;
-    markIssueFocus(result.currentText, baseline);
+    markIssueFocus(state.range.loaded, baseline);
     renderRangeBar(baseline);
     requestJev(baseline.base || requested);
     const url = new URL(location.href);
@@ -2496,8 +2487,10 @@ async function watchSpec() {
 
 /* ---------------- boot ---------------- */
 (async function boot() {
-  mountUI();
   const httpPage = !EMBED_REVIEW_DIR && ['http:', 'https:'].includes(location.protocol);
+  // Deferred script: the DOM is the served spec until mountUI; compare it, never refetch it.
+  if (httpPage) state.range.loaded = anchorSignatures(document);
+  mountUI();
   if (httpPage) applyIssueFocus();
   if (httpPage) requestEvidence();
   await hydrateIslands();
