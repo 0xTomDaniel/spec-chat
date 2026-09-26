@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import urllib.request
 from pathlib import Path
@@ -82,11 +83,16 @@ class BoardTest(unittest.TestCase):
         service = jev.JevService(state_dir=self.dir / "state", provider=provider, api_key="fake")
         return service, provider
 
+    def idle(self, service):
+        self.assertTrue(service._board_idle.wait(10))
+
     def settle(self, service, rows):
-        """First read answers from records; the misses are asked after; the second read holds them."""
+        """First read answers at once; the board thread asks the misses; the second read holds them."""
         first = service.board(rows)
-        service._asks.join()
-        return first, service.board(rows)
+        self.idle(service)
+        second = service.board(rows)
+        self.idle(service)
+        return first, second
 
     def one_row(self, before="Old words.", after="New words."):
         root = self.dir / "a"
@@ -97,7 +103,7 @@ class BoardTest(unittest.TestCase):
         rows = self.one_row()
         service, _ = self.service(lambda kind, state: ("cosmetic", 0.9))
         first, second = self.settle(service, rows)
-        self.assertEqual(first, {"jev": "on", "rows": [{"id": rows[0]["id"], "material": "unknown"}], "conflicts": []})
+        self.assertEqual(first, {"jev": "on", "rows": [], "conflicts": []})  # unanswered is unknown
         self.assertEqual(second["rows"], [{"id": rows[0]["id"], "material": "no"}])
 
         self.tmp.cleanup()
@@ -131,14 +137,33 @@ class BoardTest(unittest.TestCase):
 
         rows = self.one_row()
         service, provider = self.service(blocked)
-        answer = service.board(rows)
-        self.assertEqual(answer["rows"][0]["material"], "unknown")
+        self.assertEqual(service.board(rows)["rows"], [])
+        while not provider.calls:
+            time.sleep(0.01)
         again = service.board(rows)  # in-flight question is not asked twice
-        self.assertEqual(again["rows"][0]["material"], "unknown")
+        self.assertEqual(again["rows"], [{"id": rows[0]["id"], "material": "unknown"}])
         gate.set()
-        service._asks.join()
+        self.idle(service)
         self.assertEqual(len(provider.calls), 1)
         self.assertEqual(service.board(rows)["rows"][0]["material"], "no")
+        self.idle(service)
+
+    def test_answer_never_builds_questions(self):
+        gate = threading.Event()
+        rows = self.one_row()
+        service, _ = self.service(lambda kind, state: ("cosmetic", 0.9))
+        slow = service._material_questions
+        service._material_questions = lambda row: (gate.wait(5), slow(row))[1]
+        started = time.monotonic()
+        answer = service.board(rows)
+        again = service.board(rows)
+        self.assertLess(time.monotonic() - started, 0.1)
+        self.assertEqual(answer, {"jev": "on", "rows": [], "conflicts": []})
+        self.assertEqual(again["rows"], [])
+        gate.set()
+        self.idle(service)
+        self.assertEqual(service.board(rows)["rows"], [{"id": rows[0]["id"], "material": "no"}])
+        self.idle(service)
 
     def test_unavailable_record_is_reused_until_inputs_change(self):
         def failing(kind, state):
@@ -148,15 +173,14 @@ class BoardTest(unittest.TestCase):
         service, provider = self.service(failing)
         _, second = self.settle(service, rows)
         self.assertEqual(second["rows"][0]["material"], "unknown")
-        service._asks.join()
         asked = len(provider.calls)
         self.assertEqual(asked, 2)  # each question asked once, never re-asked by the second read
         service.board(rows)
-        service._asks.join()
+        self.idle(service)
         self.assertEqual(len(provider.calls), asked)  # same key: no provider call
         Path(rows[0]["spec_file"]).write_text(section("Newer words."), encoding="utf-8")
         service.board(rows)
-        service._asks.join()
+        self.idle(service)
         self.assertGreater(len(provider.calls), asked)  # new head asks again
 
     def test_off_without_key(self):
@@ -228,13 +252,14 @@ class BoardTest(unittest.TestCase):
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
             with opener.open(url, timeout=2) as response:
                 first = json.loads(response.read())
-            service._asks.join()
+            self.idle(service)
             with opener.open(url + "?path=ignored", timeout=2) as response:
                 second = json.loads(response.read())
+            self.idle(service)
         finally:
             server.shutdown()
             server.server_close()
-        self.assertEqual(first["rows"], [{"id": rows[0]["id"], "material": "unknown"}])
+        self.assertEqual(first["rows"], [])
         self.assertEqual(second["rows"], [{"id": rows[0]["id"], "material": "no"}])
         records = (self.dir / "state" / "records.jsonl").read_text(encoding="utf-8")
         self.assertNotIn("New words", records)

@@ -6,7 +6,6 @@ import hashlib
 import json
 import math
 import os
-import queue
 import re
 import subprocess
 import threading
@@ -861,10 +860,14 @@ class JevService:
         self.seam = JevSeam(self.question_sets, provider=provider, api_key=self.api_key,
                             record_store=JudgmentStore(path))
 
-        self._asks: queue.Queue = queue.Queue()
-        self._asking: set[str] = set()
-        self._asking_lock = threading.Lock()
-        self._askers: list[threading.Thread] = []
+        # Board state (#jev-board-answer): the last answer and the rows the board thread answers next.
+        self._board_lock = threading.Lock()
+        self._board_rows: list[Any] = []
+        self._board_answer: dict[str, Any] = {"jev": "on", "rows": [], "conflicts": []}
+        self._board_wake = threading.Event()
+        self._board_idle = threading.Event()
+        self._board_idle.set()
+        self._board_thread: threading.Thread | None = None
 
     @property
     def enabled(self) -> bool:
@@ -1018,18 +1021,55 @@ class JevService:
                 for anchor, before, after in changed_leaf_clauses(current, old)]
 
     def board(self, rows: Any) -> dict[str, Any]:
-        """GET /api/jev/board (#jev-board-answer): answer from held records at once, then ask the misses."""
+        """GET /api/jev/board (#jev-board-answer): the last answer at once; the board thread refreshes it."""
         if not self.enabled:
             return {"jev": "off", "rows": [], "conflicts": []}
+        with self._board_lock:
+            self._board_rows = list(rows or ())
+            self._board_idle.clear()
+            self._board_wake.set()
+            if self._board_thread is None:
+                self._board_thread = threading.Thread(target=self._board_loop, name="spec-chat-jev-board", daemon=True)
+                self._board_thread.start()
+            return self._board_answer
+
+    def _board_loop(self) -> None:
+        """Answer the latest rows from held records, publish, ask the misses, then publish again."""
+        while True:
+            self._board_wake.wait()
+            with self._board_lock:
+                self._board_wake.clear()
+                rows = self._board_rows
+            try:
+                answer, misses = self._board_from_records(rows)
+                self._board_answer = answer
+                if misses:
+                    with ThreadPoolExecutor(max_workers=BOARD_ASK_WORKERS) as pool:
+                        list(pool.map(self._ask_quietly, misses))
+                    self._board_answer, _ = self._board_from_records(rows)
+            except Exception:
+                pass
+            with self._board_lock:
+                if not self._board_wake.is_set():
+                    self._board_idle.set()
+
+    def _ask_quietly(self, question: Mapping[str, Any]) -> None:
+        try:
+            self.seam.ask(question)
+        except Exception:
+            pass
+
+    def _board_from_records(self, rows: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         rows = [row for row in rows or () if isinstance(row, Mapping) and row.get("slug") and row.get("spec")]
         sets = self.seam.question_sets
-        misses: list[dict[str, Any]] = []
+        misses: dict[str, dict[str, Any]] = {}
 
         def held(question: Mapping[str, Any]) -> dict[str, Any] | None:
             # Any held record answers, unavailable included: board reads never re-ask unchanged inputs.
-            record = self.seam.store.get(self.seam.key(question))
+            key = self.seam.key(question)
+            record = self.seam.store.get(key)
             if record is None:
-                misses.append(dict(question))
+                misses.setdefault(key, dict(question))
             return record
 
         answer_rows = []
@@ -1050,35 +1090,8 @@ class JevService:
             for question in build_board_conflict_questions(clauses):
                 if _confident_label(held(question)) == "contradicts":
                     pairs.add(question["pair"])
-        self._ask_later(misses)
-        return {"jev": "on", "rows": answer_rows,
-                "conflicts": [{"a": a, "b": b} for a, b in sorted(pairs)]}
-
-    def _ask_later(self, questions: list[dict[str, Any]]) -> None:
-        """Queue unanswered questions once each for background daemon askers; never waits."""
-        with self._asking_lock:
-            for question in questions:
-                key = self.seam.key(question)
-                if key in self._asking:
-                    continue
-                self._asking.add(key)
-                self._asks.put((key, question))
-            while self._asks.qsize() and len(self._askers) < BOARD_ASK_WORKERS:
-                thread = threading.Thread(target=self._asker, name="spec-chat-jev-board", daemon=True)
-                self._askers.append(thread)
-                thread.start()
-
-    def _asker(self) -> None:
-        while True:
-            key, question = self._asks.get()
-            try:
-                self.seam.ask(question)
-            except Exception:
-                pass
-            finally:
-                with self._asking_lock:
-                    self._asking.discard(key)
-                self._asks.task_done()
+        answer = {"jev": "on", "rows": answer_rows, "conflicts": [{"a": a, "b": b} for a, b in sorted(pairs)]}
+        return answer, list(misses.values())
 
     def response(self, mount: Mapping[str, Any], target: str, relative: str, base: str,
                  events: list[Mapping[str, Any]], view: str = "", served_mounts: Any = None) -> dict[str, Any]:
