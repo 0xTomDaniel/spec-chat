@@ -32,8 +32,9 @@
 
 <section data-spec-section="acceptance" data-acceptance-scope="jev-suggestions" data-anchor="acceptance">
 <h2>Acceptance criteria</h2>
-<p data-acceptance-criterion data-anchor="acceptance-types" data-story="story-change-type"><span data-acceptance-scenario>When a spec change fixes a typo in one section and changes a rule in another, in Git focus,</span> <span data-acceptance-observable>the rule shows <code>Behavior</code> highlighted and the typo shows <code>Cosmetic</code>, dimmed and readable.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-neutral" data-story="story-neutral"><span data-acceptance-scenario>When an answer is below threshold, fails twice, or there is no key,</span> <span data-acceptance-observable>the item shows <code>unsure</code> or <code>Jev unavailable</code>, or the page shows one <code>Jev off</code> note, and review controls work unchanged.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-types" data-story="story-change-type"><span data-acceptance-scenario>When a spec change fixes a typo in one section and changes a rule in another, in Git focus,</span> <span data-acceptance-observable>the rule's marker popover says <code>Behavior</code> and the typo's says <code>Cosmetic</code>, the typo is dimmed and readable, and neither section is tinted.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-markers" data-story="story-change-type story-corpus story-coverage"><span data-acceptance-scenario>When a spec with change types, a <code>Contradicts</code> clause, a coverage gap, and several notes on one clause loads,</span> <span data-acceptance-observable>each noted section or clause has exactly one margin marker, only the <code>Contradicts</code> marker is colored, no text reflows or gains a tint, badge, or inline note, and hovering, focusing, or tapping a marker opens a popover listing all its notes.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-neutral" data-story="story-neutral"><span data-acceptance-scenario>When an answer is below threshold, fails twice, or there is no key,</span> <span data-acceptance-observable>the item's popover shows <code>unsure</code> or <code>Jev unavailable</code>, or the page shows one <code>Jev off</code> note, and review controls work unchanged.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-base" data-story="story-change-type"><span data-acceptance-scenario>When the reviewer changes the base,</span> <span data-acceptance-observable>old labels disappear at once and the new base's labels replace them without a reload.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-orphan" data-story="story-orphan"><span data-acceptance-scenario>When a commented passage moves and its anchor is removed,</span> <span data-acceptance-observable>its card shows <code>Possibly moved to:</code> that section with <code>Go to</code>; a deleted passage shows today's card.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-move" data-story="story-orphan"><span data-acceptance-scenario>When the reviewer clicks <code>Move comment here</code>,</span> <span data-acceptance-observable>the orphaned thread is resolved and a draft comment at that section quotes the original, with no new event type.</span></p>
@@ -42,7 +43,7 @@
 <p data-acceptance-criterion data-anchor="acceptance-corpus-scope" data-story="story-corpus"><span data-acceptance-scenario>When a lane changes its Status line and a clause that another lane also serves a copy of,</span> <span data-acceptance-observable>the Status line gets no question, and the clause is compared once, against main's copy, never against another lane's served copy.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-coverage" data-story="story-coverage"><span data-acceptance-scenario>When a spec has a story no criterion verifies and a criterion no story backs,</span> <span data-acceptance-observable>each shows its gap label, and adding the missing counterpart clears it on the next head.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-reading" data-story="story-reading"><span data-acceptance-scenario>When the reviewer turns reading view on,</span> <span data-acceptance-observable><code>internals</code> clauses are dimmed in place and readable, and no clause moves or hides.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-note-draft" data-story="story-note-action"><span data-acceptance-scenario>When the reviewer clicks <code>Ask agent to reconcile</code> on a <code>Contradicts</code> clause, <code>Ask for a criterion</code> on a story gap, or <code>Comment on this change</code> on a <code>Behavior</code> section,</span> <span data-acceptance-observable>the comment composer opens at that element with the table's draft text, links to both clauses for reconcile, and nothing is written until the reviewer sends.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-note-draft" data-story="story-note-action"><span data-acceptance-scenario>When the reviewer clicks <code>Ask agent to reconcile</code> on a <code>Contradicts</code> clause, <code>Ask for a criterion</code> on a story gap, or <code>Comment on this change</code> on a <code>Behavior</code> section,</span> <span data-acceptance-observable>from the marker popover, the comment composer opens at that element with the table's draft text, links to both clauses for reconcile, and nothing is written until the reviewer sends.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-note-resolve" data-story="story-note-action"><span data-acceptance-scenario>When the reviewer clicks <code>Resolve thread</code> on a <code>Looks resolved</code> card,</span> <span data-acceptance-observable>the thread is resolved exactly as the card's own resolve control does.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-note-none" data-story="story-note-action"><span data-acceptance-scenario>When a note is <code>Cosmetic</code>, <code>Clarification</code>, reading view, <code>unsure</code>, <code>Jev unavailable</code>, or <code>Jev off</code>,</span> <span data-acceptance-observable>it shows no button.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-inert" data-story="story-neutral"><span data-acceptance-scenario>Across a session with any suggestions and no note button click,</span> <span data-acceptance-observable>spool, thread statuses, Finish eligibility, and spec bytes match Jev off, and every item stays present and 4.5:1 readable.</span></p>
@@ -54,7 +55,7 @@
 <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
 <h2>Modular boundaries</h2>
 <p data-modular-boundary data-anchor="boundary-seam"><span data-boundary-responsibility>The review server's Jev seam owns questions, provider calls, one retry, thresholds, and records, which serve as the cache.</span> <span data-boundary-seam>Caller-facing seam: <code>GET /api/jev?path=&lt;spec&gt;&amp;base=&lt;id&gt;[&amp;view=reading]</code>, returning on or off and one state per item.</span> <span data-boundary-dependency>Dependency direction: calls OpenRouter as an external provider; reads local Git, served specs, and the spool; nothing calls back.</span> <span data-boundary-scope>Observable scope: the JSON response and records, in single-root and registry modes.</span></p>
-<p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns every label, treatment, marker, reading view, and note button.</span> <span data-boundary-seam>Caller-facing seam: the rendered page; spool writes use existing events only.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; consumes the seam route; no model, threshold, or key logic.</span> <span data-boundary-scope>Observable scope: what the reviewer sees.</span></p>
+<p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns every marker, popover, reading view dim, and note button.</span> <span data-boundary-seam>Caller-facing seam: the rendered page; spool writes use existing events only.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; consumes the seam route; no model, threshold, or key logic.</span> <span data-boundary-scope>Observable scope: what the reviewer sees.</span></p>
 <p data-modular-boundary data-anchor="boundary-qsets"><span data-boundary-responsibility>Question sets own instructions, criteria, examples, and thresholds.</span> <span data-boundary-seam>Caller-facing seam: a set id and version.</span> <span data-boundary-dependency>Dependency direction: self-contained data read by the seam.</span> <span data-boundary-scope>Observable scope: the version named in each record.</span></p>
 </section>
 
@@ -64,11 +65,11 @@
 <table data-anchor="features-table">
 <thead><tr><th>Suggestion</th><th>Asked for</th><th>Compared with</th><th>Labels that show</th><th>Shown as</th></tr></thead>
 <tbody>
-<tr data-anchor="feature-type"><td><a href="#change-type">Change type</a></td><td>Each changed root section in Git focus</td><td>Its text at the base</td><td>scope, behavioral, clarification, cosmetic</td><td>Badge and focus treatment</td></tr>
+<tr data-anchor="feature-type"><td><a href="#change-type">Change type</a></td><td>Each changed root section in Git focus</td><td>Its text at the base</td><td>scope, behavioral, clarification, cosmetic</td><td>Marker popover; cosmetic also dimmed</td></tr>
 <tr data-anchor="feature-orphan"><td><a href="#orphan">Orphan location</a></td><td>Each thread whose anchor is gone</td><td>Up to 8 current anchors that best match its stored quote</td><td>one candidate</td><td><code>Possibly moved to:</code> with <code>Go to</code> and <code>Move comment here</code> on its card</td></tr>
 <tr data-anchor="feature-resolved"><td>Resolved in spirit</td><td>Each open thread whose section changed since its newest human message</td><td>Its human messages, not agent replies</td><td>resolved in spirit</td><td><code>Looks resolved</code> on its card and pin</td></tr>
-<tr data-anchor="feature-corpus"><td>Draft checks</td><td>Each changed leaf clause in Git focus</td><td>Up to 8 best matches in the same spec, always its non-goals, and up to 8 in <a href="#corpus">other specs</a></td><td>contradicts, oversteps</td><td>e.g. <code>Contradicts #non-goal-text</code> on the clause, linking there</td></tr>
-<tr data-anchor="feature-coverage"><td><a href="#coverage">Coverage</a></td><td>Every story and criterion, in any view</td><td>Every criterion or story in the same spec</td><td>verifies, counted per item</td><td><code>No criterion covers this</code> or <code>No story backs this</code></td></tr>
+<tr data-anchor="feature-corpus"><td>Draft checks</td><td>Each changed leaf clause in Git focus</td><td>Up to 8 best matches in the same spec, always its non-goals, and up to 8 in <a href="#corpus">other specs</a></td><td>contradicts, oversteps</td><td>Marker popover, e.g. <code>Contradicts #non-goal-text</code> linking there; colored marker</td></tr>
+<tr data-anchor="feature-coverage"><td><a href="#coverage">Coverage</a></td><td>Every story and criterion, in any view</td><td>Every criterion or story in the same spec</td><td>verifies, counted per item</td><td>Marker popover: <code>No criterion covers this</code> or <code>No story backs this</code></td></tr>
 <tr data-anchor="feature-reading"><td><a href="#reading">Reading view</a></td><td>Every leaf clause, while reading view is on</td><td>What matters to a reader of the result, as defined below</td><td>for you, internals</td><td>Internals dimmed in place</td></tr>
 </tbody>
 </table>
@@ -82,7 +83,7 @@
 <p data-anchor="flow-own-state">The browser sends only the spec path and compared base. The server builds every question from its own served files, local Git, and the spool, so a public URL cannot submit text for classification.</p>
 <figure data-anchor="flow-figure">
 <div class="rail-wrap" data-anchor="flow-figure-scroll">
-<svg viewBox="0 0 780 290" style="min-width: 620px" role="img" aria-label="Swimlane. Browser: 1 focus renders as today, then calls GET /api/jev with path and base. Review server: 2 builds changed sections and threads from its own file, Git, and spool; on a cache hit it goes straight to 5; on a miss it posts to Jev. Jev: 4 returns a choice with probabilities. Review server: 5 applies thresholds, writes the judgment record, and caches. Browser: 6 shows badge and treatment, or stays neutral.">
+<svg viewBox="0 0 780 290" style="min-width: 620px" role="img" aria-label="Swimlane. Browser: 1 focus renders as today, then calls GET /api/jev with path and base. Review server: 2 builds changed sections and threads from its own file, Git, and spool; on a cache hit it goes straight to 5; on a miss it posts to Jev. Jev: 4 returns a choice with probabilities. Review server: 5 applies thresholds, writes the judgment record, and caches. Browser: 6 shows a margin marker, or stays neutral.">
 <rect x="0" y="0" width="780" height="92" fill="#f4f6fb"></rect>
 <rect x="0" y="92" width="780" height="100" fill="#ffffff"></rect>
 <rect x="0" y="192" width="780" height="98" fill="#f4f6fb"></rect>
@@ -94,7 +95,7 @@
 <rect x="140" y="24" width="190" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
 <text x="152" y="51" fill="#171719" font-size="13">1 Focus renders as today</text>
 <rect x="556" y="24" width="216" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="568" y="51" fill="#171719" font-size="13">6 Badge, marker, or note</text>
+<text x="568" y="51" fill="#171719" font-size="13">6 Marker, or Jev off note</text>
 <rect x="160" y="120" width="200" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
 <text x="172" y="147" fill="#171719" font-size="13">2 Sections and threads</text>
 <rect x="500" y="120" width="200" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
@@ -120,15 +121,15 @@
 <thead><tr><th>Answer</th><th>Item shows</th></tr></thead>
 <tbody>
 <tr data-anchor="state-label"><td>Confident label</td><td>The suggestion, as listed above</td></tr>
-<tr data-anchor="state-unsure"><td>Below threshold</td><td>Small <code>unsure</code>, never a best guess</td></tr>
-<tr data-anchor="state-error"><td>Error or timeout</td><td>The server retries once in the same request; if that fails, small <code>Jev unavailable</code> until the next view</td></tr>
+<tr data-anchor="state-unsure"><td>Below threshold</td><td><code>unsure</code> in the popover, never a best guess</td></tr>
+<tr data-anchor="state-error"><td>Error or timeout</td><td>The server retries once in the same request; if that fails, <code>Jev unavailable</code> in the popover until the next view</td></tr>
 <tr data-anchor="state-oversize"><td>Oversize state</td><td>Nothing</td></tr>
 <tr data-anchor="state-off"><td>No key</td><td>One page-level <code>Jev off</code> note</td></tr>
 </tbody>
 </table>
 </div>
 <p data-anchor="shared-never-act">No suggestion edits a spec, writes the spool, changes a thread, or affects Finish; only a human click on a <a href="#note-actions">note button</a> writes, and only through existing events.</p>
-<p data-anchor="shared-never-hide">Nothing is hidden or reordered; dimmed text stays 4.5:1 readable; badges carry text, not color alone.</p>
+<p data-anchor="shared-never-hide">Nothing is hidden or reordered; dimmed text stays 4.5:1 readable; every note is text in a <a href="#markers">popover</a>, and a colored marker also carries a glyph.</p>
 <p data-anchor="type-async">The page renders at once as today and labels arrive later; a base change drops all labels and asks again.</p>
 <p data-anchor="record-fields">Every call appends one contract <code>#record</code> to JSONL in the server's state directory, outside spools and Git, with addresses but no source text or key.</p>
 <p data-anchor="cache-key">The records are the cache: each is keyed by a hash of its question's inputs and set version, and a matching record is reused without calling Jev.</p>
@@ -139,12 +140,12 @@
 <h2>Change type</h2>
 <div class="table-scroll" data-anchor="type-table-scroll">
 <table data-anchor="type-table">
-<thead><tr><th>Label</th><th>Criterion</th><th>Focus treatment and badge</th></tr></thead>
+<thead><tr><th>Label</th><th>Criterion</th><th>Popover note</th></tr></thead>
 <tbody>
-<tr data-anchor="type-scope"><td>scope</td><td>Adds, removes, or moves a capability, surface, or non-goal</td><td>Changed highlight, strongest; <code>Scope</code></td></tr>
-<tr data-anchor="type-behavioral"><td>behavioral</td><td>Alters what the result does: a rule, interface, edge case, or criterion</td><td>Changed highlight; <code>Behavior</code></td></tr>
-<tr data-anchor="type-clarification"><td>clarification</td><td>Same behavior, meaning stated more precisely</td><td>Changed highlight, lighter; <code>Clarification</code></td></tr>
-<tr data-anchor="type-cosmetic"><td>cosmetic</td><td>Wording, typo, order, or style with no change in meaning</td><td>Dimmed; <code>Cosmetic</code></td></tr>
+<tr data-anchor="type-scope"><td>scope</td><td>Adds, removes, or moves a capability, surface, or non-goal</td><td><code>Scope</code></td></tr>
+<tr data-anchor="type-behavioral"><td>behavioral</td><td>Alters what the result does: a rule, interface, edge case, or criterion</td><td><code>Behavior</code></td></tr>
+<tr data-anchor="type-clarification"><td>clarification</td><td>Same behavior, meaning stated more precisely</td><td><code>Clarification</code></td></tr>
+<tr data-anchor="type-cosmetic"><td>cosmetic</td><td>Wording, typo, order, or style with no change in meaning</td><td><code>Cosmetic</code>; the section is dimmed</td></tr>
 </tbody>
 </table>
 </div>
@@ -153,6 +154,35 @@
 <section data-anchor="orphan">
 <h2>Moving an orphaned comment</h2>
 <p data-anchor="orphan-move"><code>Move comment here</code> resolves the orphaned thread and starts a new draft comment at the suggested section that quotes the original, using only existing events; the agent answers it like any comment.</p>
+</section>
+
+<section data-anchor="markers">
+<h2>Markers</h2>
+<p data-anchor="markers-quiet">Jev adds no section tint, bar, inline badge, or inline note; the spec text keeps its layout. Git focus's own change highlight and the dims of cosmetic changes and reading view stay.</p>
+<p data-anchor="markers-one">Each section or clause with any note gets one small marker in the right margin beside its first line, one per location however many notes it has.</p>
+<p data-anchor="markers-color">A marker is a quiet neutral dot, colored with a <code>!</code> glyph only when its notes include <code>Contradicts</code>, <code>Oversteps</code>, or an evidence <code>Stale</code>.</p>
+<p data-anchor="markers-open">Hover or keyboard focus opens its popover, a tap opens it on touch, and moving away, Escape, or a tap elsewhere closes it; the popover never covers review controls.</p>
+<p data-anchor="markers-content">A popover lists, in this order, evidence (<a href="./criterion-evidence.spec.html#chip">criterion evidence</a>), conflicts, coverage, change type, and <code>unsure</code> or <code>Jev unavailable</code>, each note with its <a href="#note-actions">note button</a>.</p>
+<figure data-anchor="markers-figure">
+<div class="rail-wrap" data-anchor="markers-figure-scroll">
+<svg viewBox="0 0 760 220" style="min-width: 600px" role="img" aria-label="A spec section with two clauses. The first clause has a neutral grey dot in the right margin. The second has a red dot with an exclamation glyph; its open popover lists Contradicts #non-goal-text with an Ask agent to reconcile button, and Behavior change with a Comment on this change button.">
+<text x="12" y="34" fill="#171719" font-size="14">The picker lists at most 20 commits that changed this spec.</text>
+<circle cx="560" cy="29" r="6" fill="#8a8f99"></circle>
+<text x="12" y="74" fill="#171719" font-size="14">The picker also lists commits from other branches.</text>
+<circle cx="560" cy="69" r="8" fill="#b42318"></circle>
+<text x="556" y="74" fill="#ffffff" font-size="12" font-weight="700">!</text>
+<rect x="400" y="86" width="340" height="124" rx="6" fill="#ffffff" stroke="#303036" stroke-width="1.5"></rect>
+<text x="414" y="110" fill="#b42318" font-size="13" font-weight="700">Contradicts #non-goal-head</text>
+<rect x="414" y="118" width="184" height="24" rx="4" fill="#ffffff" stroke="#2947c7"></rect>
+<text x="424" y="135" fill="#2947c7" font-size="12" font-weight="700">Ask agent to reconcile</text>
+<text x="414" y="166" fill="#303036" font-size="13" font-weight="700">Behavior change</text>
+<rect x="414" y="174" width="200" height="24" rx="4" fill="#ffffff" stroke="#2947c7"></rect>
+<text x="424" y="191" fill="#2947c7" font-size="12" font-weight="700">Comment on this change</text>
+</svg>
+</div>
+<figcaption data-anchor="markers-figure-caption">Markers in the margin: neutral for ordinary notes, colored with a glyph for a conflict; the open popover holds the notes and their buttons.</figcaption>
+</figure>
+<p data-anchor="markers-mobile">At 375px, markers sit at the content column's right edge without widening the page, and the popover opens as a sheet above the review controls.</p>
 </section>
 
 <section data-anchor="corpus">
@@ -164,7 +194,7 @@
 
 <section data-anchor="note-actions">
 <h2>Note buttons</h2>
-<p data-anchor="note-one">Each actionable note gets one button beside its label. A draft button opens the existing comment composer at the note's element with fixed draft text; the reviewer edits and sends it like any comment, or discards it.</p>
+<p data-anchor="note-one">Each actionable note gets one button beside it in the marker popover. A draft button opens the existing comment composer at the note's element with fixed draft text; the reviewer edits and sends it like any comment, or discards it.</p>
 <div class="table-scroll" data-anchor="note-table-scroll">
 <table data-anchor="note-table">
 <thead><tr><th>Note</th><th>Button</th><th>Click</th></tr></thead>

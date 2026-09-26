@@ -21,53 +21,53 @@
 <section data-spec-section="user-stories" data-anchor="user-stories">
 <h2>User stories</h2>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-proven">As a reviewer, each acceptance criterion tells me whether its newest evidence proves the text I am reading, so I know what is actually proven.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-open-proof">As a reviewer, one click on a criterion's chip opens its evidence, and a small link opens the whole bundle.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-branch">As a reviewer on a lane worktree or on main, chips judge the text of the tree I am viewing.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-absent">As a reviewer, when the evidence service is down or not configured, the page works as today, with no chips.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-open-proof">As a reviewer, one click on the evidence label in a criterion's marker popover opens its evidence, and a small link opens the whole bundle.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-branch">As a reviewer on a lane worktree or on main, evidence notes judge the text of the tree I am viewing.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-absent">As a reviewer, when the evidence service is down or not configured, the page works as today, with no evidence notes.</p>
 </section>
 
 <section data-spec-section="acceptance" data-acceptance-scope="criterion-evidence" data-anchor="acceptance">
 <h2>Acceptance criteria</h2>
-<p data-acceptance-criterion data-anchor="acceptance-match" data-story="story-proven"><span data-acceptance-scenario>When a criterion's newest evidence whose proven text matches the criterion as read passed, and another's failed,</span> <span data-acceptance-observable>the first shows <code>Passed</code> and the second <code>Failed</code>, each with <code>#&lt;PR&gt; · &lt;age&gt;</code>.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-reworded" data-story="story-proven"><span data-acceptance-scenario>When no evidence matches, the newest evidence passed, and Jev judges the text change cosmetic,</span> <span data-acceptance-observable>the chip shows <code>Passed · reworded</code>.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-stale" data-story="story-proven"><span data-acceptance-scenario>When no evidence matches and Jev judges the change material, is unsure, off, or unavailable, or the criterion has an uncommitted edit,</span> <span data-acceptance-observable>the chip shows <code>Stale</code> with the newest evidence's context and links.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-not-yet" data-story="story-proven"><span data-acceptance-scenario>When a criterion has no evidence,</span> <span data-acceptance-observable>the chip shows <code>Not yet</code> with no context and no links.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-match" data-story="story-proven"><span data-acceptance-scenario>When a criterion's newest evidence whose proven text matches the criterion as read passed, and another's failed,</span> <span data-acceptance-observable>their marker popovers show <code>Passed</code> and <code>Failed</code>, each with <code>#&lt;PR&gt; · &lt;age&gt;</code>.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-reworded" data-story="story-proven"><span data-acceptance-scenario>When no evidence matches, the newest evidence passed, and Jev judges the text change cosmetic,</span> <span data-acceptance-observable>its marker popover shows <code>Passed · reworded</code>.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-stale" data-story="story-proven"><span data-acceptance-scenario>When no evidence matches and Jev judges the change material, is unsure, off, or unavailable, or the criterion has an uncommitted edit,</span> <span data-acceptance-observable>its marker popover shows <code>Stale</code> with the newest evidence's context and links, and its marker is colored.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-not-yet" data-story="story-proven"><span data-acceptance-scenario>When a criterion has no evidence,</span> <span data-acceptance-observable>its marker popover shows <code>Not yet</code> with no context and no links.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-main" data-story="story-proven"><span data-acceptance-scenario>When the picked evidence's tested commit is not on main, and another's is,</span> <span data-acceptance-observable>only the first adds <code>not on main</code> to its context.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-links" data-story="story-open-proof"><span data-acceptance-scenario>When the reviewer clicks a chip, then its bundle link,</span> <span data-acceptance-observable>the chip opens that criterion's artifact and the link opens the bundle page, both on the evidence service.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-links" data-story="story-open-proof"><span data-acceptance-scenario>When the reviewer clicks the evidence label in a popover, then its bundle link,</span> <span data-acceptance-observable>the label opens that criterion's artifact and the link opens the bundle page, both on the evidence service.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-branch" data-story="story-branch"><span data-acceptance-scenario>When a lane worktree rewords a criterion materially and main does not,</span> <span data-acceptance-observable>the lane's page shows <code>Stale</code> and main's page shows <code>Passed</code> for the same criterion ID.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-absent" data-story="story-absent"><span data-acceptance-scenario>When the evidence service is down, errors, or is not configured,</span> <span data-acceptance-observable>no chip and no error show, and the page, review controls, spool, and spec acceptance eligibility are unchanged.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-async" data-story="story-proven story-absent"><span data-acceptance-scenario>When a spec page loads,</span> <span data-acceptance-observable>it renders at once and chips arrive after it, without moving review controls.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-mobile" data-story="story-proven story-open-proof"><span data-acceptance-scenario>When the page is 375px wide,</span> <span data-acceptance-observable>chips wrap within their criterion with no horizontal page drift, and text and chip labels are 4.5:1 readable.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-absent" data-story="story-absent"><span data-acceptance-scenario>When the evidence service is down, errors, or is not configured,</span> <span data-acceptance-observable>no evidence note and no error show, and the page, review controls, spool, and spec acceptance eligibility are unchanged.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-async" data-story="story-proven story-absent"><span data-acceptance-scenario>When a spec page loads,</span> <span data-acceptance-observable>it renders at once and evidence notes arrive after it, without reflowing text or moving review controls.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-mobile" data-story="story-proven story-open-proof"><span data-acceptance-scenario>When the page is 375px wide,</span> <span data-acceptance-observable>a tap on a criterion's marker opens its evidence note with no horizontal page drift, and every label is 4.5:1 readable.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-own-state" data-story="story-branch"><span data-acceptance-scenario>When a client sends parameters beyond the spec path,</span> <span data-acceptance-observable>the review server ignores them.</span></p>
 </section>
 
 <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
 <h2>Modular boundaries</h2>
 <p data-modular-boundary data-anchor="boundary-server"><span data-boundary-responsibility>The review server owns one evidence read per page: it names the spec and the tree being viewed, marks uncommitted criteria, and makes links absolute.</span> <span data-boundary-seam>Caller-facing seam: <code>GET /api/evidence?path=&lt;spec&gt;</code>, returning one entry per criterion anchor, or none.</span> <span data-boundary-dependency>Dependency direction: calls the evidence service as an external provider over HTTP; reads local Git and served specs; imports no annotateanything code.</span> <span data-boundary-scope>Observable scope: the JSON response, in single-root and registry modes.</span></p>
-<p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns each chip's label, context, links, and placement.</span> <span data-boundary-seam>Caller-facing seam: the rendered chips.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; consumes the server route; holds no matching, Jev, or Git logic.</span> <span data-boundary-scope>Observable scope: what the reviewer sees.</span></p>
+<p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns each evidence note's label, context, and links inside the marker popover that <a href="./jev-suggestions.spec.html#markers">jev-suggestions</a> defines.</span> <span data-boundary-seam>Caller-facing seam: the rendered evidence notes.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; consumes the server route; holds no matching, Jev, or Git logic.</span> <span data-boundary-scope>Observable scope: what the reviewer sees.</span></p>
 <p data-modular-boundary data-anchor="boundary-evidence"><span data-boundary-responsibility>The annotateanything evidence service owns which evidence is picked, text matching, the Jev judgment, and on main.</span> <span data-boundary-seam>Caller-facing seam: <code>GET /criteria</code>, as <code>evidence-site#criteria-read</code> defines.</span> <span data-boundary-dependency>Dependency direction: external provider; it never calls Spec Chat.</span> <span data-boundary-scope>Observable scope: its JSON response.</span></p>
 </section>
 
 <section data-anchor="chip">
-<h2>The chip</h2>
-<p data-anchor="chip-where">Every <code>data-acceptance-criterion</code> on an HTTP-served spec gets one chip at the end of its text once evidence loads.</p>
-<p data-anchor="chip-parts">A chip is a state label in words, a muted context line, and a small <code>bundle</code> link; color always repeats the words.</p>
+<h2>Evidence note</h2>
+<p data-anchor="chip-where">Every <code>data-acceptance-criterion</code> on an HTTP-served spec gets an evidence note, listed first in its <a href="./jev-suggestions.spec.html#markers">marker popover</a>, once evidence loads; a criterion with no other note gets a marker for it.</p>
+<p data-anchor="chip-parts">An evidence note is a state label in words, a muted context line, and a small <code>bundle</code> link. Only <code>Stale</code> colors the marker; every other state leaves it neutral.</p>
 <figure data-anchor="chip-figure">
 <div class="rail-wrap" data-anchor="chip-figure-scroll">
-<svg viewBox="0 0 760 150" style="min-width: 600px" role="img" aria-label="Two acceptance criteria. The first ends with a green Passed chip, context #62 · 2 d, and a bundle link. The second ends with an amber Stale chip, context #58 · 9 d · not on main, and a bundle link.">
+<svg viewBox="0 0 760 200" style="min-width: 600px" role="img" aria-label="Two acceptance criteria with margin markers. The first marker is a neutral grey dot. The second is a red dot with an exclamation glyph; its open popover shows Stale, context #58 · 9 d · not on main, and a bundle link.">
 <text x="12" y="34" fill="#171719" font-size="14">When the reviewer picks a listed commit, highlighting reflects that base.</text>
-<rect x="12" y="46" width="72" height="26" rx="13" fill="#d9eee9" stroke="#167b68"></rect>
-<text x="26" y="64" fill="#204a43" font-size="13" font-weight="700">Passed</text>
-<text x="96" y="64" fill="#303036" font-size="13">#62 · 2 d</text>
-<text x="176" y="64" fill="#2947c7" font-size="13" text-decoration="underline">bundle</text>
-<text x="12" y="106" fill="#171719" font-size="14">When the picker opens, it lists at most 20 commits that changed this spec.</text>
-<rect x="12" y="118" width="64" height="26" rx="13" fill="#fff0c2" stroke="#78520a"></rect>
-<text x="26" y="136" fill="#78520a" font-size="13" font-weight="700">Stale</text>
-<text x="88" y="136" fill="#303036" font-size="13">#58 · 9 d · not on main</text>
-<text x="252" y="136" fill="#2947c7" font-size="13" text-decoration="underline">bundle</text>
+<circle cx="600" cy="29" r="6" fill="#8a8f99"></circle>
+<text x="12" y="74" fill="#171719" font-size="14">When the picker opens, it lists at most 20 commits.</text>
+<circle cx="600" cy="69" r="8" fill="#b42318"></circle>
+<text x="596" y="74" fill="#ffffff" font-size="12" font-weight="700">!</text>
+<rect x="420" y="86" width="320" height="100" rx="6" fill="#ffffff" stroke="#303036" stroke-width="1.5"></rect>
+<text x="434" y="112" fill="#303036" font-size="12" font-weight="700">EVIDENCE</text>
+<text x="434" y="138" fill="#b42318" font-size="14" font-weight="700" text-decoration="underline">Stale</text>
+<text x="484" y="138" fill="#303036" font-size="13">#58 · 9 d · not on main</text>
+<text x="434" y="168" fill="#2947c7" font-size="13" text-decoration="underline">bundle</text>
 </svg>
 </div>
-<figcaption data-anchor="chip-figure-caption">Chips at the end of two criteria; the label opens the artifact, <code>bundle</code> opens the bundle page.</figcaption>
+<figcaption data-anchor="chip-figure-caption">Evidence in the marker popover: the label opens the artifact, <code>bundle</code> opens the bundle page, and only <code>Stale</code> colors the marker.</figcaption>
 </figure>
 <div class="table-scroll" data-anchor="states-table-scroll">
 <table data-anchor="states-table">
@@ -84,14 +84,14 @@
 <p data-anchor="chip-context">Every label but <code>Not yet</code> has context <code>#&lt;PR&gt; · &lt;age&gt;</code>, plus <code>not on main</code> when so; the label opens the artifact and <code>bundle</code> opens the bundle page. <code>Not yet</code> has neither.</p>
 <p data-anchor="chip-age">Age is the capture time relative to now: minutes, hours, or days, as <code>5 m</code>, <code>3 h</code>, <code>2 d</code>.</p>
 <p data-anchor="chip-artifact">A picked evidence with no valid artifact makes the label plain text; <code>bundle</code> still opens the bundle page.</p>
-<p data-anchor="chip-never-act">Chips never change a spec, the spool, a thread, or spec acceptance eligibility, and never hide or reorder content.</p>
+<p data-anchor="chip-never-act">Evidence notes never change a spec, the spool, a thread, or spec acceptance eligibility, and never hide or reorder content.</p>
 </section>
 
 <section data-anchor="read">
 <h2>One read per page</h2>
 <figure data-anchor="read-figure">
 <div class="rail-wrap" data-anchor="read-figure-scroll">
-<svg viewBox="0 0 780 290" style="min-width: 620px" role="img" aria-label="Swimlane. Browser: 1 the page renders as today, then calls GET /api/evidence with the spec path. Review server: 2 names the spec ID and viewed commit, 3 calls GET /criteria on the evidence service. Evidence service: 4 picks, matches, asks Jev, checks main, and returns criteria. Review server: 5 marks uncommitted criteria and makes links absolute. Browser: 6 shows chips, or nothing.">
+<svg viewBox="0 0 780 290" style="min-width: 620px" role="img" aria-label="Swimlane. Browser: 1 the page renders as today, then calls GET /api/evidence with the spec path. Review server: 2 names the spec ID and viewed commit, 3 calls GET /criteria on the evidence service. Evidence service: 4 picks, matches, asks Jev, checks main, and returns criteria. Review server: 5 marks uncommitted criteria and makes links absolute. Browser: 6 shows evidence notes, or nothing.">
 <rect x="0" y="0" width="780" height="92" fill="#f4f6fb"></rect>
 <rect x="0" y="92" width="780" height="100" fill="#ffffff"></rect>
 <rect x="0" y="192" width="780" height="98" fill="#f4f6fb"></rect>
@@ -104,7 +104,7 @@
 <rect x="140" y="24" width="190" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
 <text x="152" y="51" fill="#171719" font-size="13">1 Page renders as today</text>
 <rect x="556" y="24" width="216" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="568" y="51" fill="#171719" font-size="13">6 Chips, or nothing</text>
+<text x="568" y="51" fill="#171719" font-size="13">6 Evidence notes, or nothing</text>
 <rect x="140" y="120" width="210" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
 <text x="152" y="147" fill="#171719" font-size="13">2 Spec ID, viewed commit</text>
 <rect x="500" y="120" width="220" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
@@ -123,7 +123,7 @@
 </div>
 <figcaption data-anchor="read-figure-caption">One evidence read: the page never waits for it, and the browser names only the spec path.</figcaption>
 </figure>
-<p data-anchor="read-config">The review server reads the evidence service's public base URL from <code>SPEC_CHAT_EVIDENCE_URL</code> in its environment; unset means no read and no chips.</p>
+<p data-anchor="read-config">The review server reads the evidence service's public base URL from <code>SPEC_CHAT_EVIDENCE_URL</code> in its environment; unset means no read and no evidence notes.</p>
 <p data-anchor="read-spec-id">The criterion ID is branch-free, <code>project/&lt;project-id&gt;::&lt;spec path&gt;#&lt;anchor&gt;</code>, as evidence records it; the project ID is the last path part of the served root's <code>origin</code> URL without <code>.git</code>, such as <code>spec-chat</code>.</p>
 <p data-anchor="read-commit">The viewed commit is the serving root's head, so a lane worktree and main each judge their own text.</p>
 <p data-anchor="read-uncommitted">A criterion whose served bytes differ from its bytes at head is marked uncommitted and shows <code>Stale</code>, because the evidence service judges committed text only.</p>
@@ -140,7 +140,7 @@
 <section data-anchor="non-goals">
 <h2>Non-goals</h2>
 <p data-anchor="non-goal-totals" data-spec-tbd="later">Coverage totals per spec are later work.</p>
-<p data-anchor="non-goal-act">Recapturing, re-reviewing, or accepting from the chip; chips on stories; tracker reads.</p>
+<p data-anchor="non-goal-act">Recapturing, re-reviewing, or accepting from the popover; evidence on stories; tracker reads.</p>
 </section>
 
 </article>
