@@ -294,6 +294,24 @@ def _review_status(mount):
     return code != 0 or prior != current
 
 
+_ROW_CACHE = {}
+
+
+def _index_row(mount, path, row):
+    """(status, title) for one served spec, recomputed only when its file identity or row base changes."""
+    try:
+        info = os.stat(path)
+    except OSError:
+        return (_review_status(mount) if row else None), _page_title(path)
+    key = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, mount.get("base") if row else None)
+    cached = _ROW_CACHE.get(path)
+    if cached and cached[0] == key:
+        return cached[1]
+    value = (_review_status(mount) if row else None), _page_title(path)
+    _ROW_CACHE[path] = (key, value)
+    return value
+
+
 def _lane_label(slug):
     match = re.fullmatch(r"([a-z]+)-?([0-9]+)", slug)
     if not match:
@@ -612,8 +630,8 @@ class MountHandler(SimpleHTTPRequestHandler):
                     continue
                 seen.add(stable)
                 href = ("/" if mount["slug"] else "") + quote(stable, safe="/") + (("?" + query) if query else "")
-                status = _review_status(mount) if row else None
-                lanes.setdefault(lane, {}).setdefault(project, []).append((status, _page_title(path), href))
+                status, title = _index_row(mount, path, row)
+                lanes.setdefault(lane, {}).setdefault(project, []).append((status, title, href))
 
         def lane_order(item):
             lane, projects = item
