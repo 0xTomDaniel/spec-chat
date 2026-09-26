@@ -1345,8 +1345,8 @@ function mountJevMarker(holder, notes) {
   marker.addEventListener('focus', () => openJevPopover(marker));
   marker.addEventListener('blur', event => { if (!jevPopoverKeeps(event.relatedTarget)) closeJevPopover(); });
   marker.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); openJevPopover(marker); });
-  // Rows cannot hold a positioned child; the marker sits inside the row's last cell.
-  (holder.tagName === 'TR' ? holder.lastElementChild || holder : holder).appendChild(marker);
+  // Rows cannot hold a positioned child; the marker sits inside the row's last cell (a cell, never a pin).
+  (holder.tagName === 'TR' ? holder.cells[holder.cells.length - 1] || holder : holder).appendChild(marker);
   placeJevMarker(marker);
   wireJevPopover();
   return marker;
@@ -2484,8 +2484,7 @@ function pinPos(b, holder) {
 // Block corner, or, when the block has its own Jev marker, the block's reserved right column
 // directly below the marker's tap pad (its ::before), so the pin covers neither the marker nor text.
 function cornerPos(holder) {
-  // A row's marker sits in a cell (mountJevMarker); the row's last child may be an earlier pin.
-  const marker = holder.querySelector(holder.tagName === 'TR' ? ':scope > * > .hx-jev-marker' : ':scope > .hx-jev-marker');
+  const marker = holder.querySelector(holder.tagName === 'TR' ? ':scope > :is(td,th) > .hx-jev-marker' : ':scope > .hx-jev-marker');
   if (!marker) return { top: 4, left: holder.clientWidth - 30 };
   const pad = parseFloat(getComputedStyle(marker, '::before').bottom) || 0;
   const top = marker.getBoundingClientRect().bottom - pad - holder.getBoundingClientRect().top - holder.clientTop;

@@ -45,6 +45,7 @@ class El {
   get parentNode() { return this.parent; }
   get firstChild() { return this.children[0] || null; }
   get lastElementChild() { return this.children.at(-1) || null; }
+  get cells() { return this.children.filter(c => c.tagName === 'TD' || c.tagName === 'TH'); }
   get isConnected() { let e = this; while (e.parent) e = e.parent; return e === body; }
   get offsetParent() { return null; }
   contains(other) { for (let e = other; e; e = e.parent) if (e === this) return true; return false; }

@@ -21,30 +21,28 @@ const slice = (from, to) => {
 };
 const css = ['FOCUS_CSS', 'CSS'].map(name => new Function('return ' + slice(`const ${name} = \``, '`;').replace(/^const \w+ = /, '').replace(/;$/, ''))()).join('\n');
 assert.match(css, /\.hx-jev-marker\{position:absolute/, 'runtime overlay CSS extracted');
-const code = ['placeJevMarker', 'pinPos', 'cornerPos', 'renderPins'].map(name => slice(`function ${name}(`, '\n}\n')).join('\n');
+const code = ['mountJevMarker', 'placeJevMarker', 'pinPos', 'cornerPos', 'renderPins'].map(name => slice(`function ${name}(`, '\n}\n')).join('\n');
 const spec = readFileSync(resolve(root, 'docs/specs/jev-suggestions.spec.html'), 'utf8')
   .replace(/<script[^>]*runtime\.js[^>]*><\/script>/, '')
   .replace('./.style/spec.css', 'file://' + resolve(root, 'docs/specs/.style/spec.css'));
 
-function mount({ css, code, selector }) {
+function mount({ css, code, selector, order }) {
   document.head.insertAdjacentHTML('beforeend', '<style>' + css + '</style>');
   const holders = [...document.querySelectorAll(selector)];
   const state = { threads: new Map(), activeThread: null };
   const findAnchor = id => document.querySelector(`[data-anchor="${id}"]`);
-  const stubs = { state, findAnchor, jevItem: () => null, label: () => 'thread', selectThread() {}, chartInfoFor: () => null, resolveElement: () => null };
-  const api = new Function(...Object.keys(stubs), code + 'return { placeJevMarker, renderPins };')(...Object.values(stubs));
-  holders.forEach((holder, i) => {
-    const marker = document.createElement('button');
-    marker.className = 'hx-jev-marker';
-    marker.dataset.attention = String(i % 3 === 0);
-    marker.dataset.passed = String(i % 3 === 1);
-    (holder.tagName === 'TR' ? holder.lastElementChild : holder).appendChild(marker); // as mountJevMarker
-    state.threads.set('t' + i, { id: 't' + i, status: 'pending', ev: { body: { anchorId: holder.dataset.anchor, target: null } } });
-  });
-  const place = () => { document.querySelectorAll('.hx-jev-marker').forEach(api.placeJevMarker); api.renderPins(); };
-  place();
-  window.hxPlace = place;
-  return holders.length;
+  const noop = () => {};
+  const stubs = { state, findAnchor, jevItem: () => null, label: () => 'thread', selectThread: noop, chartInfoFor: () => null, resolveElement: () => null,
+    openJevPopover: noop, scheduleJevPopoverClose: noop, closeJevPopover: noop, jevPopoverKeeps: () => false, wireJevPopover: noop };
+  const api = new Function(...Object.keys(stubs), code + 'return { mountJevMarker, placeJevMarker, renderPins };')(...Object.values(stubs));
+  holders.forEach((holder, i) => state.threads.set('t' + i, { id: 't' + i, status: 'pending', ev: { body: { anchorId: holder.dataset.anchor, target: null } } }));
+  // Real runtime order: renderJev mounts markers (mountJevMarker), renderPins runs on load, on
+  // every change, every 2 s, and on resize (which also re-places markers).
+  const markers = () => holders.forEach((holder, i) => api.mountJevMarker(holder, [{ text: 'note', attention: i % 3 === 0, group: 'evidence', passed: i % 3 === 1 }]));
+  const pins = () => api.renderPins();
+  (order === 'markers-first' ? [markers, pins] : [pins, markers, pins]).forEach(step => step());
+  window.hxPlace = () => { document.querySelectorAll('.hx-jev-marker').forEach(api.placeJevMarker); api.renderPins(); };
+  return holders.filter(h => h.querySelectorAll('.hx-jev-marker').length === 1 && h.querySelector(':scope > .hx-pin')).length;
 }
 
 function measure(selector) {
@@ -85,17 +83,18 @@ try {
     { name: 'criterion', selector: '[data-acceptance-criterion]', count: 19, widths: [375, 560, 640, 800, 1280] },
     { name: 'row', selector: 'tr[data-anchor]', count: 23, widths: [375, 560, 1280] },
   ];
-  for (const { name, selector, count, widths } of cases) for (const width of widths) {
+  for (const { name, selector, count, widths } of cases) for (const width of widths) for (const order of ['markers-first', 'pins-first']) {
     const page = await browser.newPage({ viewport: { width, height: 900 } });
     await page.goto('file://' + resolve(root, 'docs/specs/jev-suggestions.spec.html'));
     await page.setContent(spec, { waitUntil: 'load' });
-    assert.equal(await page.evaluate(mount, { css, code, selector }), count, `all ${count} ${name} blocks carry a marker and a pin`);
+    assert.equal(await page.evaluate(mount, { css, code, selector, order }), count, `${width} px ${order}: all ${count} ${name} blocks carry one marker and a pin`);
     // A second placement (the runtime re-renders pins every 2 s and on resize) lands on the same spots.
     const first = await page.evaluate(measure, selector);
     await page.evaluate(() => window.hxPlace());
-    assert.deepEqual(await page.evaluate(measure, selector), first, width + ' px: re-render is stable');
+    assert.deepEqual(await page.evaluate(measure, selector), first, `${width} px ${order}: re-render is stable`);
+    if (name === 'row') assert.ok(first.some(r => r.anchor === 'note-reproof'), 'note-reproof row measured');
     for (const r of first) {
-      const at = `${width} px ${name} ${r.anchor}: `;
+      const at = `${width} px ${order} ${name} ${r.anchor}: `;
       assert.ok(!r.pinOnText, at + 'pin covers no text');
       assert.ok(!r.markerOnText, at + 'marker covers no text');
       assert.ok(!r.pinOnMarker, at + 'pin covers no marker or marker tap pad');
@@ -103,7 +102,7 @@ try {
       assert.ok(r.pinTap, at + 'a tap on the pin hits the pin');
       assert.ok(r.markerTap, at + 'a tap on the marker hits the marker');
     }
-    if (shots && name === 'criterion') {
+    if (shots && name === 'criterion' && order === 'pins-first') {
       await page.evaluate(() => document.querySelector('[data-anchor="acceptance-cache"]').scrollIntoView({ block: 'center' }));
       await page.screenshot({ path: resolve(shots, `pin-marker-${width}.png`) });
     }
