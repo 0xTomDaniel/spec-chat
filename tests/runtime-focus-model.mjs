@@ -81,6 +81,12 @@ assert.doesNotMatch(runtime, /outline-color:#5eead4/, 'no dark-mode outline surv
 assert.match(runtime, /AbortController/, 'focus bounds slow baseline reads');
 assert.doesNotMatch(runtime, /await applyIssueFocus\(\)/, 'focus lookup never blocks chart and review boot');
 assert.match(runtime, /fetch\('\/api\/baseline\?'/, 'focus reads its baseline from the review server');
+assert.doesNotMatch(runtime, /fetch\(location\.pathname, \{ cache/, 'the page never downloads its own file again');
+assert.doesNotMatch(runtime, /no-store/, 'no request bypasses the cache the navigation filled');
+assert.match(runtime, /if \(httpPage\) state\.range\.loaded = anchorSignatures\(document\);\n\s*(\/\/.*\n\s*)*mountUI\(\);/,
+  'anchors are read from the served DOM before the runtime changes it');
+assert.equal((runtime.match(/markIssueFocus\(state\.range\.loaded, baseline\)/g) || []).length, 2,
+  'default open and base changes compare the same loaded anchors');
 assert.match(runtime, /sharedDocumentStyle \? '' : DOC_CSS/, 'a linked shared spec stylesheet owns document presentation');
 assert.match(runtime, /sharedDocumentStyle \? '' : DOC_CSS\) \+ FOCUS_CSS \+ CSS/, 'focus styling loads with shared document styles');
 const focusCss = runtime.slice(runtime.indexOf('const FOCUS_CSS = `'), runtime.indexOf('const CSS = `'));

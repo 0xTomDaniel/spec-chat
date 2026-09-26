@@ -570,6 +570,9 @@ class WakeController:
 
 
 class MountHandler(SimpleHTTPRequestHandler):
+    # Keep-alive: every response carries Content-Length, is a bodiless 304, or
+    # closes (send_error); do_POST drains its body before any reply.
+    protocol_version = "HTTP/1.1"
     server_version = "SpecChat/1"
     timeout = 2.0
 
@@ -837,7 +840,7 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
         headers = {"X-Spec-Chat-Wake": wake} if wake else None
         return self._json(events, headers=headers)
 
-    def _post_event(self, query):
+    def _post_event(self, query, body):
         mount, review = self._route_review(query)
         actor = query.get("actor", ["human"])[0]
         if not mount or actor not in ("human", "agent"):
@@ -845,8 +848,8 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
         if actor == "agent":
             return self._json({"error": "agent spool writes are disk-only"}, 403)
         try:
-            event = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
-        except (TypeError, ValueError):
+            event = json.loads(body)
+        except ValueError:
             return self._json({"error": "bad json"}, 400)
         if not isinstance(event, dict):
             return self._json({"error": "bad json"}, 400)
@@ -908,10 +911,14 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
         return self.do_GET()
 
     def do_POST(self):
+        try:
+            body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        except ValueError:
+            return self.send_error(400)
         parsed = urlparse(self.path)
         if parsed.path != "/api/events":
             return self._json({"error": "not found"}, 404)
-        return self._post_event(parse_qs(parsed.query))
+        return self._post_event(parse_qs(parsed.query), body)
 
 
 class ReviewThreadingHTTPServer(ThreadingHTTPServer):
