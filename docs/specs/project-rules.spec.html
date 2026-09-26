@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./.style/spec.css">
+<title>Project-wide rules at shaping</title>
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Project-wide rules at shaping</h1>
+<nav data-anchor="breadcrumbs">docs / specs / project-rules.spec.html</nav>
+<p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-272">ANN-272</a>.</p>
+<p data-anchor="status">Status: shaping; direction agreed with the human in ANN-272 (2026-09-26).</p>
+<p data-anchor="context">Some acceptance criteria apply to every feature, such as <q>every change to what a user sees or does adds its onboarding section</q>. They live in one spec that shaping never reads, so they get missed. This spec lets Jev find them and check a spec under shaping against them. Extends <a href="./jev-suggestions.spec.html">Jev review suggestions</a>: its seam, records, cache, markers, popovers, and note buttons apply unchanged, and marks use its one-word question style (ANN-258).</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-home">As a spec author, I write a rule that applies to every feature once, in plain words, in its home spec, and Spec Chat treats it as project-wide with nothing else to maintain.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-vague">As a spec author, a criterion whose scope is too vague to tell shows as unsure on its home spec, so I sharpen its wording.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-miss">As a reviewer of a spec under shaping, a project-wide rule the spec triggers but does not cover shows one compact mark linking the rule, which I resolve by adding a criterion or by a thread saying why it does not apply.</p>
+<p data-user-story data-user-facing="false" data-anchor="story-agent">As the shaping agent, I read every Jev check on my spec as JSON without a browser, and resolve what I can before the human sees the review link.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="project-rules" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-derive" data-story="story-home"><span data-acceptance-scenario>When one served spec has a criterion that applies to every feature and another that applies only to its own feature,</span> <span data-acceptance-observable>Jev treats only the first as a project-wide rule, and no tag, list, side file, or Spec Chat state names it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-reword" data-story="story-home"><span data-acceptance-scenario>When a rule's criterion is reworded to apply to one feature, or deleted,</span> <span data-acceptance-observable>on the next load no spec shows a mark for it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-cache" data-story="story-home"><span data-acceptance-scenario>When a criterion's text is unchanged across heads, lanes, and specs that read it,</span> <span data-acceptance-observable>its scope question is asked once and its record reused.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-vague" data-story="story-vague"><span data-acceptance-scenario>When Jev is below threshold on whether a criterion applies to every feature,</span> <span data-acceptance-observable>that criterion on its home spec shows the one-word note <code>rule?</code>, muted, with the sentence <q>Jev is unsure whether this applies to every feature</q> on hover, and no other spec shows a mark for it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-miss" data-story="story-miss"><span data-acceptance-scenario>When a spec under shaping adds a change to what a user sees and has no onboarding criterion, while <code>onboarding.spec.html</code> holds the onboarding rule,</span> <span data-acceptance-observable>its Acceptance criteria heading shows one marker whose popover lists <code>onboarding?</code> linking that rule, with <code>Ask to cover</code>.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-clear" data-story="story-miss"><span data-acceptance-scenario>When the spec then adds a criterion that covers the rule, or a thread linking the rule is resolved,</span> <span data-acceptance-observable>the <code>onboarding?</code> note is gone on the next load; a spec that does not trigger the rule never shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-ask" data-story="story-miss"><span data-acceptance-scenario>When the reviewer clicks <code>Ask to cover</code>,</span> <span data-acceptance-observable>the comment composer opens at the Acceptance criteria heading with the draft <q>Cover &lt;link to rule&gt; with a criterion, or say why it does not apply.</q>, and nothing is written until the reviewer sends.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-agent-read" data-story="story-agent"><span data-acceptance-scenario>When the shaping agent reads its spec's Jev checks from the box,</span> <span data-acceptance-observable>one command prints the same items the page gets as JSON: conflicts, coverage gaps, unsure notes, and rule misses, each with its anchor and link, or <code>off</code>.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-skill" data-story="story-agent"><span data-acceptance-scenario>When the shaping skill registers a spec for review,</span> <span data-acceptance-observable>it reads the Jev checks, resolves each it can per the reconcile rule, commits, and only then hands the review link to the human.</span></p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-seam"><span data-boundary-responsibility>The review server's Jev seam owns the scope and rule-check questions, their records, and the cache.</span> <span data-boundary-seam>Caller-facing seam: the existing <code>GET /api/jev</code> response, gaining items of kind <code>scope</code> and <code>rule</code>.</span> <span data-boundary-dependency>Dependency direction: external-provider; calls Jev and reads the served specs as the draft checks do; nothing calls back.</span> <span data-boundary-scope>Observable scope: the JSON response and records.</span></p>
+<p data-modular-boundary data-anchor="boundary-page"><span data-boundary-responsibility>The browser runtime owns the <code>rule?</code> and <code>&lt;word&gt;?</code> notes and the <code>Ask to cover</code> button.</span> <span data-boundary-seam>Caller-facing seam: the rendered page; writes only through the existing comment composer.</span> <span data-boundary-dependency>Dependency direction: self-contained; consumes the seam route.</span> <span data-boundary-scope>Observable scope: what the reviewer sees.</span></p>
+<p data-modular-boundary data-anchor="boundary-skill"><span data-boundary-responsibility>The shaping skill owns reading and resolving the checks before handing off the link.</span> <span data-boundary-seam>Caller-facing seam: one read command over the running review server.</span> <span data-boundary-dependency>Dependency direction: the skill calls the server; the server never calls the skill.</span> <span data-boundary-scope>Observable scope: commits and threads before the review link is sent.</span></p>
+</section>
+
+<section data-anchor="questions">
+<h2>Two questions</h2>
+<div class="table-scroll" data-anchor="questions-scroll">
+<table data-anchor="questions-table">
+<caption>Both are Jev questions under the <a href="./jev-suggestions.spec.html#every">Every suggestion</a> rules: one question set each, one record per call, records as cache.</caption>
+<thead><tr><th>Question</th><th>Asked for</th><th>Jev sees</th><th>Labels</th><th>Cache key</th></tr></thead>
+<tbody>
+<tr data-anchor="q-scope"><td>Scope: <q>does this apply to every feature?</q></td><td>Every acceptance criterion of every served spec, and of main's copy of every other spec path, as the <a href="./jev-suggestions.spec.html#corpus">draft checks</a> choose other specs</td><td>The criterion text only</td><td>every feature, this feature</td><td>Criterion text and set version</td></tr>
+<tr data-anchor="q-rule"><td>Rule check: <q>does this spec trigger the rule and not cover it?</q></td><td>Each project-wide rule from another spec, on a spec that differs from its compared base</td><td>The rule text, and the spec's stories and criteria</td><td>missed, covered, not triggered</td><td>Rule text, stories and criteria text, and set version</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="q-rule-def">A project-wide rule is a criterion with a confident <code>every feature</code> answer. A spec is never checked against its own criteria.</p>
+<p data-anchor="q-legacy">A spec without <code>data-acceptance-criterion</code> clauses holds no rules.</p>
+</section>
+
+<section data-anchor="marks">
+<h2>Marks</h2>
+<div class="table-scroll" data-anchor="marks-scroll">
+<table data-anchor="marks-table">
+<thead><tr><th>Answer</th><th>Where</th><th>Note</th><th>Hover sentence</th><th>Button</th></tr></thead>
+<tbody>
+<tr data-anchor="mark-scope-unsure"><td>Scope below threshold</td><td>The criterion, on its home spec</td><td><code>rule?</code>, muted</td><td>Jev is unsure whether this applies to every feature</td><td>None</td></tr>
+<tr data-anchor="mark-miss"><td>Rule check <code>missed</code></td><td>The Acceptance criteria heading of the spec under shaping</td><td><code>&lt;word&gt;?</code> linking the rule</td><td>This spec may need &lt;rule&gt; from &lt;home spec&gt;</td><td><code>Ask to cover</code></td></tr>
+<tr data-anchor="mark-rule-unsure"><td>Rule check below threshold</td><td>Same</td><td><code>&lt;word&gt;?</code>, muted, linking the rule</td><td>Jev is unsure whether this spec needs &lt;rule&gt;</td><td>None</td></tr>
+<tr data-anchor="mark-none"><td>Confident <code>every feature</code> or <code>this feature</code>, <code>covered</code>, <code>not triggered</code></td><td>None</td><td>Nothing</td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="mark-word">The word is the home spec's file name without <code>.spec.html</code>, e.g. <code>onboarding?</code>; fixed, never generated.</p>
+<p data-anchor="mark-order">Rule notes list after coverage in the <a href="./jev-suggestions.spec.html#markers-content">popover order</a>, one per rule, and the marker stays neutral.</p>
+<p data-anchor="mark-thread">A resolved thread on the spec whose messages link the rule's anchor clears its note; an open one does not.</p>
+</section>
+
+<section data-anchor="agent-read">
+<h2>Agent read</h2>
+<p data-anchor="agent-read-same">The read returns the <code>/api/jev</code> response for the spec and base the review link serves, from the running server, so the agent and the page see one answer from one cache.</p>
+<p data-anchor="agent-read-order">The shaping skill step runs after <code>review-host register</code> and before the link is sent: read, resolve per the reconcile rule in <a href="../../skill/shape-spec/SKILL.md">shape-spec</a>, commit, read again, then send the link with what is left.</p>
+<p data-anchor="agent-read-off">With Jev off, the read says <code>off</code> and the skill sends the link at once.</p>
+</section>
+
+<section data-anchor="proof">
+<h2>Proof</h2>
+<p data-anchor="proof-first">First failing test: with a fake provider answering <code>every feature</code> for one criterion of spec A and <code>missed</code> for spec B, <code>/api/jev</code> for B returns one <code>rule</code> item targeting A's criterion.</p>
+<p data-anchor="proof-evidence">Evidence: seam and runtime tests behind fakes, one live run per new question set, and a QA bundle on a real spec with a real project-wide rule.</p>
+</section>
+
+<section data-anchor="non-goals">
+<h2>Non-goals</h2>
+<p data-anchor="non-goal-list">Tags, rule lists, side files, or Spec Chat state holding project knowledge; rules from outside the served specs; generated mark text; checking a spec that is not under shaping.</p>
+</section>
+
+</article>
+</body>
+</html>
