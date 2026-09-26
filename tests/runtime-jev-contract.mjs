@@ -27,9 +27,9 @@ let requested = '';
 const fakeFetch = async url => {
   requested = url;
   return { ok: true, json: async () => ({ jev: 'on', items: [
-    { kind: 'type', id: 'change-type', state: 'label', label: 'behavioral', target: null, record: 'r1' },
+    { kind: 'type', id: 'change-type', state: 'label', label: 'behavioral', target: null, record: 'r1', level: 'warning' },
     { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2' },
-  ] }) };
+  ], levels: { behavioral: 'warning', contradicts: 'important' } }) };
 };
 const fetchJev = Function('fetch', 'jevParams', 'location', 'URLSearchParams', runtime.slice(fetchStart, fetchEnd) + '; return fetchJev;')(
   fakeFetch,
@@ -42,9 +42,10 @@ assert.match(requested, /^\/api\/jev\\?/);
 assert.deepEqual(answer, {
   jev: 'on',
   items: [
-    { kind: 'type', id: 'change-type', state: 'label', label: 'behavioral', target: null, record: 'r1' },
-    { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2' },
+    { kind: 'type', id: 'change-type', state: 'label', label: 'behavioral', target: null, record: 'r1', level: 'warning' },
+    { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2', level: null },
   ],
+  levels: { behavioral: 'warning', contradicts: 'important' },
 });
 assert.equal((runtime.match(/fetch\('\/api\/jev\?/g) || []).length, 1, 'all Jev display uses one request seam');
 assert.match(runtime, /120000/, 'Jev fetch allows a cold provider request to finish');

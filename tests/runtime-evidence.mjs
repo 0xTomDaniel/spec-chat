@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -131,7 +132,9 @@ for (const value of [new Error('down'), { ok: false, json: async () => ({}) }, {
 }
 assert.ok(fetches.every(url => url === '/api/evidence?path=specs%2Fdemo.spec.html'), fetches.join());
 
-answer = json({ criteria: {
+// The server's levels table as /api/evidence returns it (tools/jev.py MARK_LEVELS).
+const levels = JSON.parse(execFileSync('python3', ['-c', 'import json, sys; sys.path.insert(0, "tools"); from jev import MARK_LEVELS; print(json.dumps(MARK_LEVELS))'], { cwd: root, encoding: 'utf8' }));
+answer = json({ levels, criteria: {
   passed: entry(),
   failed: entry({ verdict: 'fail', pr: 12, capturedAt: ago(3 * 3600000 + 5000) }),
   reworded: entry({ match: false, judgment: 'cosmetic' }),
@@ -173,6 +176,12 @@ assert.deepEqual(marked('attention'), ['failed', 'failed-reworded', 'material', 
 assert.deepEqual(marked('passed'), ['passed', 'reworded', 'plain', 'lane']);
 assert.equal(marker('none').dataset.attention + marker('none').dataset.passed, 'falsefalse');
 assert.equal(markersOf('story').length, 0);
+// #acceptance-levels-api: evidence color follows the response's levels table; changing one row changes the color.
+state.evidence.levels = { ...levels, 'qa-stale': 'warning' };
+renderJev();
+assert.deepEqual(marked('attention'), ['failed', 'failed-reworded']);
+state.evidence.levels = levels;
+renderJev();
 // Notes add no text to the spec and move nothing: each criterion keeps its text, plus one marker.
 assert.deepEqual(article.children.map(e => e.textContent), textBefore);
 for (const a of criteria) assert.deepEqual(holder(a).children.map(c => c.tagName), ['BUTTON']);

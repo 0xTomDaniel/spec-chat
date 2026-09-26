@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -96,7 +97,10 @@ const code = [
   slice('function jevDisplayLabel(', '\n\nfunction goToJevTarget('),
   slice('/* ---------------- Jev markers', '\n\n/* ---------------- UI'),
 ].join('\n\n');
-const item = (kind, id, stateName, label = null, target = null) => ({ kind, id, state: stateName, label, target, record: 'r' });
+// The server's levels table as /api/jev returns it (tools/jev.py MARK_LEVELS); items carry level as the server sets it.
+const levels = JSON.parse(execFileSync('python3', ['-c', 'import json, sys; sys.path.insert(0, "tools"); from jev import MARK_LEVELS; print(json.dumps(MARK_LEVELS))'], { cwd: root, encoding: 'utf8' }));
+const item = (kind, id, stateName, label = null, target = null) => ({ kind, id, state: stateName, label, target, record: 'r',
+  level: stateName === 'label' && kind !== 'orphan' && label in levels ? levels[label] : null });
 const typeItems = [
   item('type', 'rule', 'label', 'behavioral'),
   item('type', 'typo', 'label', 'cosmetic'),
@@ -117,7 +121,7 @@ const suggestionItems = [
   item('coverage', 'story-down::criterion-down', 'unavailable'),
 ];
 // The real runtime state shape, as requestJev leaves it after a successful fetch.
-const state = { readingView: false, jev: { request: 1, status: 'on', base: 'b', items: suggestionItems } };
+const state = { readingView: false, jev: { request: 1, status: 'on', base: 'b', items: suggestionItems, levels } };
 const location = { search: '?focus=changes' };
 const composed = [];
 const openComposer = (...args) => composed.push(args);
@@ -138,9 +142,20 @@ for (const a of ['rule', 'typo', 'crowded', 'overstep', 'type-unsure', 'story-ga
   'criterion-unsure', 'story-down', 'criterion-down', 'row']) marker(a);
 assert.equal(markersOf('quiet').length, 0, 'an explicit none answer adds no marker');
 assert.equal(markersOf('internals').length, 0, 'audience items stay out of Git focus');
-// Only Contradicts and Oversteps color a marker.
-assert.deepEqual(body.querySelectorAll('.hx-jev-marker').filter(m => m.dataset.attention === 'true')
-  .map(m => m.closest('[data-anchor]').dataset.anchor), ['rule', 'overstep']);
+// Only Important marks color a marker (#markers-levels): Contradicts and coverage gaps, never Oversteps or change types.
+const colored = () => body.querySelectorAll('.hx-jev-marker').filter(m => m.dataset.attention === 'true')
+  .map(m => m.closest('[data-anchor]').dataset.anchor);
+assert.deepEqual(colored(), ['rule', 'crowded', 'story-gap', 'criterion-gap']);
+assert.deepEqual(holder('rule').querySelector('.hx-jev-marker').jevNotes.map(n => [n.text, n.level]),
+  [['Contradicts #non-goal-text', 'important'], ['Behavior', 'warning']]);
+// #acceptance-levels-api: color follows the server table; changing one row changes the color with no runtime mapping.
+state.jev.levels = { ...levels, 'no-criterion': 'warning', 'no-story': 'warning', oversteps: 'important' };
+state.jev.items = suggestionItems.map(i => i.label === 'oversteps' ? { ...i, level: 'important' } : i);
+renderJev();
+assert.deepEqual(colored(), ['rule', 'overstep']);
+state.jev.levels = levels;
+state.jev.items = suggestionItems;
+renderJev();
 // No tint, badge, or inline note; the only in-text display is the cosmetic dim; text is unchanged.
 assert.deepEqual(article.querySelectorAll('[data-hx-jev-type]').map(e => [e.dataset.anchor, e.dataset.hxJevType]), [['typo', 'cosmetic']]);
 assert.deepEqual(anchors.concat('row').map(a => holder(a).textContent), textBefore, 'markers add no text to the spec');
@@ -251,7 +266,7 @@ assert.deepEqual(clickNote('crowded', 'Comment on this change'), ['crowded', nul
 assert.equal(composed.length, 0);
 
 // A later note source (criterion evidence) joins first in the same marker and can color it.
-jevNoteSources.push(() => [{ anchor: 'typo', group: 'evidence', state: 'label', text: 'Stale', attention: true,
+jevNoteSources.push(() => [{ anchor: 'typo', group: 'evidence', state: 'label', text: 'Stale', level: 'important',
   actions: [{ label: 'Ask agent', run: () => {} }] }]);
 renderJev();
 assert.equal(marker('typo').dataset.attention, 'true');
