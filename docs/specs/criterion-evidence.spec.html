@@ -14,7 +14,7 @@
 <h1 data-anchor="title">Evidence per criterion</h1>
 <nav data-anchor="breadcrumbs">docs / specs / criterion-evidence.spec.html</nav>
 <p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-206">ANN-206</a>, <a href="https://linear.app/annotateanything/issue/ANN-224">ANN-224</a>.</p>
-<p data-anchor="status-revision">Status: ANN-224 revision accepted by human spec acceptance relayed by operator w5:p2 (2026-09-26T04:41:06Z, "accept it") at <code>8bbd3ff</code>, including the fold-ins since the seed acceptance at <code>b83a6d8</code>; governing contract. Atomic correction directed by operator w5:p2 (2026-09-26, delete-first): the unwatched state was removed as unreachable, since every hosted row has an owner.</p>
+<p data-anchor="status-revision">Status: ANN-224 revision accepted by human spec acceptance relayed by operator w5:p2 (2026-09-26T04:41:06Z, "accept it") at <code>8bbd3ff</code>, including the fold-ins since the seed acceptance at <code>b83a6d8</code>; governing contract. Atomic correction directed by operator w5:p2 (2026-09-26, delete-first): the unwatched state was removed as unreachable, since every hosted row has an owner. Human-directed addition relayed by operator w5:p2 (2026-09-26): <a href="#place">Keeping the reader\'s place</a>.</p>
 <p data-anchor="status">Status: accepted for ANN-206 by human spec acceptance relayed by operator w5:p2 (2026-09-26T02:28:52Z, "accepted") at <code>4f2df71</code>; governing contract.</p>
 <p data-anchor="context">Each acceptance criterion on the spec page shows what its newest evidence proves about the text being read. The evidence read is owned by annotateanything <code>docs/specs/evidence-site.spec.html#criteria-read</code>; Spec Chat holds no annotateanything code and only renders the answer.</p>
 <p data-anchor="principle">In spec-driven development behavior changes only with a spec change, so a text-matched <code>Passed</code> is proof of what the spec promises now, and <code>Stale</code> on an unchanged-looking spec exposes unspecced behavior change.</p>
@@ -28,6 +28,7 @@
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-what-changed">As a reviewer, a <code>Stale</code> or reworded criterion shows me what changed between the proven text and the text I am reading, so I judge the gap without opening anything.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-reproof">As a reviewer, a <code>Stale</code> criterion offers one button that drafts a re-proof request; the request reaches the spec's owner, who acts on it.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-plugin">As a reviewer inside the BB plugin, evidence links open in the plugin's Proof page instead of a browser.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-place">As a reviewer, when a spec page reloads, including after I go to Proof and back with Spec alone in BB, it returns me to where I was reading.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-absent">As a reviewer, when the evidence service is down or not configured, the page works as today, with no evidence notes.</p>
 </section>
 
@@ -47,6 +48,8 @@
 <p data-acceptance-criterion data-anchor="acceptance-reproof-owner" data-story="story-reproof"><span data-acceptance-scenario>When a sent re-proof request is handed off on a lane spec, and on a main spec,</span> <span data-acceptance-observable>the lane owner pane, and the operator pane, is woken with the batch like any comment.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-plugin-open" data-story="story-plugin"><span data-acceptance-scenario>When the page runs inside the BB plugin and the reviewer clicks an evidence label or <code>bundle</code>,</span> <span data-acceptance-observable>the plugin's Proof page opens on that bundle, at that criterion for the label, and no browser tab opens.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-plugin-outside" data-story="story-plugin"><span data-acceptance-scenario>When the same page runs in a browser tab, or in a frame whose host never announces itself,</span> <span data-acceptance-observable>evidence links open on the evidence service as today.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-place-restore" data-story="story-place"><span data-acceptance-scenario>When the reviewer scrolls a spec to a later section and the page reloads, including Spec alone in BB after an evidence open and Back,</span> <span data-acceptance-observable>the page returns to that section at the same offset, not the top.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-place-fallback" data-story="story-place"><span data-acceptance-scenario>When the address names an anchor, or browser storage is unavailable or throws, or the remembered section no longer exists,</span> <span data-acceptance-observable>the anchor wins, or the page opens at the top as today, with no error shown.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-absent" data-story="story-absent"><span data-acceptance-scenario>When the evidence service is down, errors, or is not configured,</span> <span data-acceptance-observable>no evidence note and no error show, and the page, review controls, spool, and spec acceptance eligibility are unchanged.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-async" data-story="story-proven story-absent"><span data-acceptance-scenario>When a spec page loads,</span> <span data-acceptance-observable>it renders at once and evidence notes arrive after it, without reflowing text or moving review controls.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-mobile" data-story="story-proven story-open-proof"><span data-acceptance-scenario>When the page is 375px wide,</span> <span data-acceptance-observable>a tap on a criterion's marker opens its evidence note with no horizontal page drift, and every label is 4.5:1 readable.</span></p>
@@ -126,6 +129,14 @@
 </div>
 <p data-anchor="bridge-intercept">Only after step 1 does the page turn an evidence click into step 2 instead of following the link; before it, and in any unframed page, links behave as today.</p>
 <p data-anchor="bridge-ids"><code>bundle</code> and <code>criterion</code> are the evidence service's bundle ID and criterion ID, not URLs, so the plugin opens only its own Proof page.</p>
+</section>
+
+<section data-anchor="place">
+<h2>Keeping the reader's place</h2>
+<p data-anchor="place-save">The runtime remembers, per spec path, the nearest section anchor at the top of the viewport and the scroll offset from it, in the browser's local storage, updated as the reader scrolls and when the page hides.</p>
+<p data-anchor="place-restore">On load, once the page has rendered, it scrolls back to that anchor plus the offset; an anchor in the address wins, and a missing anchor or no record leaves the page at the top.</p>
+<p data-anchor="place-safe">Every storage read and write is wrapped so a sandboxed frame, a full quota, or disabled storage never breaks the page; the place is then simply not kept.</p>
+<p data-anchor="place-why">This makes Spec alone in BB keep its place across an evidence open and Back, where BB reloads the frame.</p>
 </section>
 
 <section data-anchor="read">
