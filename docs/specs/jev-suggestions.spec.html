@@ -13,7 +13,7 @@
 <header data-anchor="header">
 <h1 data-anchor="title">Jev review suggestions</h1>
 <nav data-anchor="breadcrumbs">docs / specs / jev-suggestions.spec.html</nav>
-<p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-100">ANN-100</a>, <a href="https://linear.app/annotateanything/issue/ANN-206">ANN-206</a>, <a href="https://linear.app/annotateanything/issue/ANN-224">ANN-224</a>.</p>
+<p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-100">ANN-100</a>, <a href="https://linear.app/annotateanything/issue/ANN-206">ANN-206</a>, <a href="https://linear.app/annotateanything/issue/ANN-224">ANN-224</a>, <a href="https://linear.app/annotateanything/issue/ANN-316">ANN-316</a>.</p>
 <p data-anchor="status-ann224">Status: ANN-224 touch (<code>Ask for re-proof</code> row, Passed check marker) accepted by human spec acceptance (hand-off <code>hmuhw9498</code>, 2026-09-26T04:32:58Z) at <code>bf6d5f1</code>. Follow-up directed by operator w5:p2 after merge (2026-09-26): <a href="#markers-pin-clear">pin clear of text</a>.</p>
 <p data-anchor="status">Status: accepted for ANN-206 by human spec acceptance relayed by operator w5:p2 (2026-09-26T02:28:52Z, "accepted") at <code>4f2df71</code>; governing contract.</p>
 <p data-anchor="context">Follows the shared Jev contract, annotateanything <code>docs/specs/jev-seam.spec.html#contract</code> (ANN-49, human-accepted at <code>3cdd123</code>; since <code>ed95fc8</code> only its retry, cache, and no-reorder rules changed, to match this spec). This spec owns Spec Chat's questions and display. Jev questions read only specs and review threads, with no tracker or evidence dependency. Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a> and <a href="./compared-range.spec.html#change-base">compared range</a>.</p>
@@ -28,6 +28,7 @@
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-coverage">As a reviewer, a story no criterion verifies and a criterion no story backs are flagged while shaping.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-reading">As a reader, a reading view dims the internals in place, so the clauses written for me stand out and nothing moves or hides.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-neutral">As a reviewer, when Jev is off, unsure, or failing, a small note says so and the page otherwise works as today.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-fast-marks">As a reviewer, Jev marks appear without a visible wait after the page renders, even while the box is busy.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-note-action">As a reviewer, each actionable Jev note offers one button that drafts the comment it calls for, which I edit and send myself.</p>
 <p data-user-story data-user-facing="false" data-anchor="story-record">As the operator, I can see for any suggestion which model, question set, and sources produced it, and with what confidence.</p>
 </section>
@@ -51,6 +52,7 @@
 <p data-acceptance-criterion data-anchor="acceptance-pin-clear" data-story="story-change-type"><span data-acceptance-scenario>When a criterion with a marker also has a thread pin, at 375px, 560px, and 1280px,</span> <span data-acceptance-observable>the pin covers neither the marker nor any spec text, and a tap on each opens its own popover or thread.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-inert" data-story="story-neutral"><span data-acceptance-scenario>Across a session with any suggestions and no note button click,</span> <span data-acceptance-observable>spool, thread statuses, Finish eligibility, and spec bytes match Jev off, and every item stays present and 4.5:1 readable.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-cache" data-story="story-record"><span data-acceptance-scenario>When the same page, base, and head load again,</span> <span data-acceptance-observable>no Jev call is made and the same labels show.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-fast" data-story="story-fast-marks"><span data-acceptance-scenario>Given a served spec whose questions are all answered in records, on a box whose load average exceeds its CPU count,</span> <span data-acceptance-observable><code>GET /api/jev?path=&lt;spec&gt;</code> answers in under 200 ms at the median of 10 sequential requests, measured before and after on the same box, with the same items and states.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-record" data-story="story-record"><span data-acceptance-scenario>For every call,</span> <span data-acceptance-observable>one record carries every contract field and no source text, and no page, record, log, or response contains the key.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-own-state" data-story="story-record"><span data-acceptance-scenario>When a client sends text or parameters beyond path and base,</span> <span data-acceptance-observable>the server ignores them.</span></p>
 </section>
@@ -61,6 +63,7 @@
 <p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns every marker, popover, reading view dim, and note button.</span> <span data-boundary-seam>Caller-facing seam: the rendered page; spool writes use existing events only.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; consumes the seam route; no model, threshold, or key logic.</span> <span data-boundary-scope>Observable scope: what the reviewer sees.</span></p>
 <p data-modular-boundary data-anchor="boundary-qsets"><span data-boundary-responsibility>Question sets own instructions, criteria, examples, and thresholds.</span> <span data-boundary-seam>Caller-facing seam: a set id and version.</span> <span data-boundary-dependency>Dependency direction: self-contained data read by the seam.</span> <span data-boundary-scope>Observable scope: the version named in each record.</span></p>
 </section>
+<p data-anchor="fast-marks" data-spec-tbd>Where <code>/api/jev</code> time goes on an all-cached spec is being traced (ANN-316).</p>
 
 <section data-anchor="features">
 <h2>Suggestions</h2>
