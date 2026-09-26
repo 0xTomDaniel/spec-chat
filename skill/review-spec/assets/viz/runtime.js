@@ -1435,12 +1435,25 @@ function wireJevPopover() {
   document.addEventListener('pointerdown', event => {
     if (jevPopoverState.marker && !jevPopoverKeeps(event.target)) closeJevPopover();
   }, true);
+  // The popover lives at the end of body, so the keyboard path through it is bridged here:
+  // Tab from the marker enters it, Tab past its last control leaves from the marker, and Escape
+  // returns focus to the marker before closing so the marker's focus listener cannot reopen it.
   document.addEventListener('keydown', event => {
-    if (event.key !== 'Escape' || !jevPopoverState.marker) return;
     const marker = jevPopoverState.marker;
-    const inside = jevPopoverState.element.contains(document.activeElement);
-    closeJevPopover();
-    if (inside) marker.focus({ preventScroll: true });
+    if (!marker) return;
+    const pop = jevPopoverState.element;
+    const active = document.activeElement;
+    if (event.key === 'Escape') {
+      if (pop.contains(active)) marker.focus({ preventScroll: true });
+      closeJevPopover();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const stops = pop.querySelectorAll('a,button');
+    if (!stops.length) return;
+    if (active === marker && !event.shiftKey) { event.preventDefault(); stops[0].focus(); }
+    else if (active === stops[0] && event.shiftKey) { event.preventDefault(); marker.focus(); }
+    else if (active === stops[stops.length - 1] && !event.shiftKey) marker.focus();
   });
   let frame = 0;
   document.addEventListener('scroll', () => {
