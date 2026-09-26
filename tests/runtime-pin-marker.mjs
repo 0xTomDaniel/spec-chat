@@ -38,7 +38,7 @@ function mount({ css, code, selector, order }) {
   holders.forEach((holder, i) => state.threads.set('t' + i, { id: 't' + i, status: 'pending', ev: { body: { anchorId: holder.dataset.anchor, target: null } } }));
   // Real runtime order: renderJev mounts markers (mountJevMarker), renderPins runs on load, on
   // every change, every 2 s, and on resize (which also re-places markers).
-  const markers = () => holders.forEach((holder, i) => api.mountJevMarker(holder, [{ text: 'note', attention: i % 3 === 0, group: 'evidence', passed: i % 3 === 1 }]));
+  const markers = () => holders.forEach((holder, i) => api.mountJevMarker(holder, [{ text: 'note', level: i % 3 === 0 ? 'important' : null, group: 'evidence', passed: i % 3 === 1 }]));
   const pins = () => api.renderPins();
   (order === 'markers-first' ? [markers, pins] : [pins, markers, pins]).forEach(step => step());
   window.hxPlace = () => { document.querySelectorAll('.hx-jev-marker').forEach(api.placeJevMarker); api.renderPins(); };

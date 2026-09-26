@@ -57,8 +57,8 @@ const state = {
   handoffPosting: false,
   lastTbd: null,         // open TBD marker focused by the last TBD open activation
   range: { baseline: null, loaded: null, loading: false, pickerOpen: false }, // loaded: anchor signatures of the page as served
-  jev: { status: 'idle', items: [], base: null, request: 0 },
-  evidence: { criteria: null, hostOrigin: null }, // criteria: anchor -> entry once /api/evidence answers, null shows nothing;
+  jev: { status: 'idle', items: [], levels: {}, base: null, request: 0 }, // levels: the server's mark kind -> level table
+  evidence: { criteria: null, levels: {}, hostOrigin: null }, // criteria: anchor -> entry once /api/evidence answers, null shows nothing;
   // hostOrigin: the BB plugin frame that announced itself
   readingView: false,
   movingOrphans: new Set(),
@@ -171,7 +171,9 @@ async function fetchJev(base, signal) {
       label: item.label == null ? null : String(item.label),
       target: item.target == null ? null : String(item.target),
       record: item.record == null ? null : String(item.record),
+      level: item.level == null ? null : String(item.level),
     })) : [],
+    levels: result ? result.levels : null, // the server's levels table (#markers-levels-source); markLevel reads it
   };
 }
 
@@ -187,6 +189,7 @@ function clearJev() {
   state.jev.request += 1;
   state.jev.status = 'idle';
   state.jev.items = [];
+  state.jev.levels = {};
   state.jev.base = null;
   renderJev();
   renderPanel();
@@ -206,6 +209,7 @@ async function requestJev(base) {
     if (request !== state.jev.request) return;
     state.jev.status = result.jev === 'off' ? 'off' : 'on';
     state.jev.items = result.items;
+    state.jev.levels = result.levels;
     renderJev();
     renderPanel();
     renderPins();
@@ -213,6 +217,7 @@ async function requestJev(base) {
     if (request !== state.jev.request) return;
     state.jev.status = 'unavailable';
     state.jev.items = [];
+    state.jev.levels = {};
     renderJev();
     renderPanel();
     renderPins();
@@ -228,6 +233,7 @@ async function requestEvidence() {
     const result = response.ok ? await response.json() : null;
     const criteria = result && result.criteria;
     if (!criteria || typeof criteria !== 'object' || Array.isArray(criteria)) return;
+    state.evidence.levels = result.levels;
     state.evidence.criteria = criteria;
     renderJev();
   } catch (_) {}
@@ -1103,7 +1109,7 @@ function corpusFlags(items) {
     const label = labels[String(item.label || '').toLowerCase()];
     if (label) {
       confident.add(anchor);
-      result.push({ anchor, state: 'label', label,
+      result.push({ anchor, state: 'label', label, level: item.level || null,
         target: item.target == null ? null : String(item.target) });
     }
   }
@@ -1136,13 +1142,19 @@ function goToJevTarget(target) {
 /* ---------------- Jev markers ----------------
  * Jev never changes spec layout: each noted anchor gets one margin marker, and
  * one shared popover lists that anchor's notes. A note source returns
- * { anchor, group, state, text, href, attention, actions }; criterion evidence
+ * { anchor, group, state, text, href, level, actions }; criterion evidence
  * adds a source and note buttons add actions, without touching placement.
  */
 const JEV_NOTE_GROUPS = ['evidence', 'conflict', 'coverage', 'type', 'neutral'];
-const JEV_ATTENTION_LABELS = new Set(['Contradicts', 'Oversteps']);
+const JEV_RECONCILE_LABELS = new Set(['Contradicts', 'Oversteps']);
 const jevNoteSources = [jevSuggestionNotes, evidenceNotes];
 const jevPopoverState = { element: null, marker: null, closeTimer: 0, wired: false };
+
+// A derived mark's level from the server's levels table in one response state; the runtime holds no mapping of its own.
+function markLevel(source, kind) {
+  const level = source && source.levels && source.levels[kind];
+  return typeof level === 'string' ? level : null;
+}
 
 function jevGitFocus() {
   return new URLSearchParams(location.search).get('focus') === 'changes' || document.body.classList.contains('hx-focus-active');
@@ -1165,7 +1177,8 @@ function jevNeutralNote(anchor, stateName, question) {
   const [word, tail] = JEV_QUESTIONS[question];
   const unsure = stateName === 'unsure';
   return { anchor, group: 'neutral', state: stateName, text: unsure ? word : 'Jev unavailable',
-    sentence: (unsure ? 'Jev is unsure ' : 'Jev could not check ') + tail };
+    sentence: (unsure ? 'Jev is unsure ' : 'Jev could not check ') + tail,
+    level: unsure ? markLevel(state.jev, 'unsure') : null };
 }
 
 function jevSuggestionNotes() {
@@ -1173,6 +1186,7 @@ function jevSuggestionNotes() {
   const notes = [];
   for (const flag of coverageGapFlags(state.jev.items)) {
     notes.push(flag.state !== 'gap' ? jevNeutralNote(flag.anchor, flag.state, flag.side) : { anchor: flag.anchor, group: 'coverage', state: 'label', text: flag.label,
+      level: markLevel(state.jev, flag.side === 'story' ? 'no-criterion' : 'no-story'),
       actions: [flag.side === 'story'
         ? jevDraftAction('Ask for a criterion', 'Add an acceptance criterion that verifies this story.')
         : jevDraftAction('Ask for a story', 'Name or add the user story this criterion verifies.')] });
@@ -1189,15 +1203,15 @@ function jevSuggestionNotes() {
     if (flag.state !== 'label') { notes.push(jevNeutralNote(flag.anchor, flag.state, 'corpus')); continue; }
     const link = corpusTargetLink(flag.target);
     notes.push({ anchor: flag.anchor, group: 'conflict', state: 'label', text: flag.label + (link ? ' ' + link.text : ''),
-      href: link ? link.href : null, attention: JEV_ATTENTION_LABELS.has(flag.label),
-      actions: link && JEV_ATTENTION_LABELS.has(flag.label) ? [jevDraftAction('Ask agent to reconcile', 'Reconcile this clause with ' + link.text + '.')] : [] });
+      href: link ? link.href : null, level: flag.level,
+      actions: link && JEV_RECONCILE_LABELS.has(flag.label) ? [jevDraftAction('Ask agent to reconcile', 'Reconcile this clause with ' + link.text + '.')] : [] });
   }
   for (const item of state.jev.items) {
     if (item.kind !== 'type' || !item.id) continue;
     if (neutral(item)) notes.push(jevNeutralNote(item.id, item.state, 'type'));
     else if (item.state === 'label' && jevDisplayLabel(item)) {
       const text = jevDisplayLabel(item);
-      notes.push({ anchor: item.id, group: 'type', state: 'label', text,
+      notes.push({ anchor: item.id, group: 'type', state: 'label', text, level: item.level || null,
         actions: text === 'Scope' || text === 'Behavior' ? [jevDraftAction('Comment on this change', 'About this change: ')] : [] });
     }
   }
@@ -1303,7 +1317,8 @@ function evidenceNotes() {
     if (!anchor) continue;
     const entry = Object.prototype.hasOwnProperty.call(criteria, anchor) && criteria[anchor] && typeof criteria[anchor] === 'object' ? criteria[anchor] : null;
     const text = evidenceLabel(entry);
-    const note = { anchor, group: 'evidence', state: text === 'No QA yet' ? 'none' : 'label', text, attention: text === 'QA stale' || text.startsWith('QA failed'),
+    const note = { anchor, group: 'evidence', state: text === 'No QA yet' ? 'none' : 'label', text,
+      level: text === 'QA stale' ? markLevel(state.evidence, 'qa-stale') : text.startsWith('QA failed') ? markLevel(state.evidence, 'qa-failed') : null,
       passed: text.startsWith('QA passed') };
     if (entry) {
       const pr = Number.isInteger(entry.pr) ? '#' + entry.pr : '';
@@ -1345,7 +1360,7 @@ function mountJevMarker(holder, notes) {
   const marker = document.createElement('button');
   marker.type = 'button';
   marker.className = 'hx-jev-marker';
-  const attention = notes.some(note => note.attention);
+  const attention = notes.some(note => note.level === 'important');
   marker.dataset.attention = String(attention);
   marker.dataset.passed = String(!attention && notes.some(note => note.group === 'evidence' && note.passed));
   marker.setAttribute('aria-label', 'Jev notes: ' + notes.map(note => note.sentence || note.text).join('; '));
@@ -1424,7 +1439,7 @@ function renderJevNote(note) {
   row.className = 'hx-jev-pop-note';
   row.dataset.group = note.group;
   row.dataset.state = note.state || 'label';
-  row.dataset.attention = String(Boolean(note.attention));
+  row.dataset.attention = String(note.level === 'important');
   const text = document.createElement(note.href ? 'a' : 'span');
   text.className = 'hx-jev-pop-text';
   if (note.href) text.href = note.href;
