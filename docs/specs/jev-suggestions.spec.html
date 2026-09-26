@@ -52,7 +52,7 @@
 <p data-acceptance-criterion data-anchor="acceptance-pin-clear" data-story="story-change-type"><span data-acceptance-scenario>When a criterion with a marker also has a thread pin, at 375px, 560px, and 1280px,</span> <span data-acceptance-observable>the pin covers neither the marker nor any spec text, and a tap on each opens its own popover or thread.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-inert" data-story="story-neutral"><span data-acceptance-scenario>Across a session with any suggestions and no note button click,</span> <span data-acceptance-observable>spool, thread statuses, Finish eligibility, and spec bytes match Jev off, and every item stays present and 4.5:1 readable.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-cache" data-story="story-record"><span data-acceptance-scenario>When the same page, base, and head load again,</span> <span data-acceptance-observable>no Jev call is made and the same labels show.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-fast" data-story="story-fast-marks"><span data-acceptance-scenario>Given a served spec whose questions are all answered in records, on a box whose load average exceeds its CPU count,</span> <span data-acceptance-observable><code>GET /api/jev?path=&lt;spec&gt;</code> answers in under 200 ms at the median of 10 sequential requests, measured before and after on the same box, with the same items and states.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-fast" data-story="story-fast-marks"><span data-acceptance-scenario>Given a served spec whose questions are all answered in records, on a box whose load average exceeds its CPU count,</span> <span data-acceptance-observable><code>GET /api/jev?path=&lt;spec&gt;</code> answers in under 200 ms at the median of 10 sequential requests, measured before and after on the same box, with the same items, states, and labels as before the change; a repeat read with an unchanged spec, spool, and served files parses no spec and runs no git process beyond resolving <code>base</code>, <code>HEAD</code>, and each repository's <code>origin/main</code>.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-record" data-story="story-record"><span data-acceptance-scenario>For every call,</span> <span data-acceptance-observable>one record carries every contract field and no source text, and no page, record, log, or response contains the key.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-own-state" data-story="story-record"><span data-acceptance-scenario>When a client sends text or parameters beyond path and base,</span> <span data-acceptance-observable>the server ignores them.</span></p>
 </section>
@@ -63,7 +63,25 @@
 <p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns every marker, popover, reading view dim, and note button.</span> <span data-boundary-seam>Caller-facing seam: the rendered page; spool writes use existing events only.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; consumes the seam route; no model, threshold, or key logic.</span> <span data-boundary-scope>Observable scope: what the reviewer sees.</span></p>
 <p data-modular-boundary data-anchor="boundary-qsets"><span data-boundary-responsibility>Question sets own instructions, criteria, examples, and thresholds.</span> <span data-boundary-seam>Caller-facing seam: a set id and version.</span> <span data-boundary-dependency>Dependency direction: self-contained data read by the seam.</span> <span data-boundary-scope>Observable scope: the version named in each record.</span></p>
 </section>
-<p data-anchor="fast-marks" data-spec-tbd>Where <code>/api/jev</code> time goes on an all-cached spec is being traced (ANN-316).</p>
+<section data-anchor="fast-marks-section" id="fast-marks-section">
+<h2>Fast reads</h2>
+<p data-anchor="fast-marks">Every <code>/api/jev</code> read stays fresh: it builds its questions from the current spec, spool, Git, and served files, as today. What makes it fast is that a read never redoes work whose input has not changed since the last read (ANN-316).</p>
+<figure data-anchor="fast-marks-trace">
+<h3 data-anchor="fast-marks-trace-heading">Where an <code>/api/jev</code> read spent its time, and what it does instead</h3>
+<div class="table-scroll" data-anchor="fast-marks-trace-wrap">
+<table data-anchor="fast-marks-trace-table">
+<thead><tr><th>Work per read before</th><th>Measured cost</th><th>Instead</th></tr></thead>
+<tbody>
+<tr data-anchor="fast-marks-parse"><td>Corpus questions: parse the HTML of all 24 other served specs and score 4,416 anchor matches</td><td>1.6 s</td><td>Each question builder's result is kept by the content of its inputs: the same spec text, baseline, spool, and other specs give the kept questions without parsing or scoring again.</td></tr>
+<tr data-anchor="fast-marks-git"><td>31 git processes: each row's common directory, each other row's <code>origin/main</code> copy, the baseline, <code>HEAD</code>, and each open thread's source</td><td>0.3 s</td><td>A row's common directory is read once. A file's content at a given commit is read once and kept, since it cannot change. A read resolves only <code>base</code>, <code>HEAD</code>, and each repository's <code>origin/main</code>.</td></tr>
+<tr data-anchor="fast-marks-rest"><td>Record lookups and answer mapping</td><td>0.1 s</td><td>Unchanged; records are already held in memory.</td></tr>
+</tbody>
+</table>
+</div>
+<figcaption data-anchor="fast-marks-trace-caption">Measured 2026-09-26 in process on the box at load about 30 on 4 CPUs, 27 registered rows, all questions answered in records: 0.8 to 0.9 s per read, 2.4 s under a profiler. Over HTTP, 3 to 9 s. No item, state, label, or record changes.</figcaption>
+</figure>
+</section>
+
 
 <section data-anchor="features">
 <h2>Suggestions</h2>
