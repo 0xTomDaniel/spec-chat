@@ -1546,10 +1546,7 @@ function wireJevPopover() {
     cancelAnimationFrame(frame);
     frame = requestAnimationFrame(placeJevPopover);
   }, true);
-  window.addEventListener('resize', () => {
-    document.querySelectorAll('.hx-jev-marker').forEach(placeJevMarker);
-    placeJevPopover();
-  });
+  window.addEventListener('resize', placeJevPopover);
 }
 
 function renderJev() {
@@ -2510,6 +2507,20 @@ function renderPins() {
     pin.style.left = Math.max(0, Math.min(pos.left, holder.clientWidth - pinSize)) + 'px';
     pin.addEventListener('click', e => { e.stopPropagation(); selectThread(th, true); });
     holder.appendChild(pin);
+    clearJevMarkers(pin, holder);
+  }
+}
+
+// A pin never covers a Jev marker in its block or the marker's tap pad (its ::before): where they
+// would meet, the pin steps left of the pad. The marker keeps its place on its text line.
+function clearJevMarkers(pin, holder) {
+  for (const marker of holder.querySelectorAll('.hx-jev-marker')) {
+    const pad = getComputedStyle(marker, '::before');
+    const m = marker.getBoundingClientRect(), p = pin.getBoundingClientRect();
+    const left = m.left + (parseFloat(pad.left) || 0);
+    const top = m.top + (parseFloat(pad.top) || 0), bottom = m.bottom - (parseFloat(pad.bottom) || 0);
+    if (p.right <= left || p.left >= m.right || p.bottom <= top || p.top >= bottom) continue;
+    pin.style.left = parseFloat(pin.style.left) - (p.right - left) + 'px';
   }
 }
 
@@ -2791,7 +2802,8 @@ function startLoops() {
   // Pins live inside anchored holders; a host framework re-rendering a holder (React
   // remounts, spec scripts rebuilding DOM) silently drops them. Redraw is idempotent.
   setInterval(() => { renderPins(); renderThreadHighlight(); }, 2000);
-  window.addEventListener('resize', () => { renderPins(); renderThreadHighlight(); });
+  // Markers are placed before pins, which step clear of them.
+  window.addEventListener('resize', () => { document.querySelectorAll('.hx-jev-marker').forEach(placeJevMarker); renderPins(); renderThreadHighlight(); });
 }
 
 /* ---------------- ANN-108 reading view ----------------
