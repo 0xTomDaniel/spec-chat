@@ -1165,6 +1165,21 @@ function jevDraftAction(label, text) {
   return { label, run: note => { closeJevPopover(); openComposer(note.anchor, null, null, text); } };
 }
 
+// #note-reconcile-all: n Important and m Warning reconcile notes, with n >= 1 and n + m >= 2, each get
+// Reconcile all (n) listing the Important clauses, plus a +m warnings link adding the Warning ones.
+function jevReconcileAll(reconcile) {
+  const order = new Map([...document.querySelectorAll('[data-anchor]')].map((el, index) => [el.dataset.anchor, index]));
+  reconcile.sort((a, b) => (order.get(a.note.anchor) ?? Infinity) - (order.get(b.note.anchor) ?? Infinity));
+  const important = reconcile.filter(entry => entry.note.level === 'important');
+  const m = reconcile.length - important.length;
+  if (!important.length || reconcile.length < 2) return;
+  const draft = entries => ['Reconcile each clause with its link:', ...entries.map(entry => entry.line)].join('\n');
+  for (const { note } of reconcile) {
+    note.actions.push(jevDraftAction('Reconcile all (' + important.length + ')', draft(important)));
+    if (m) note.actions.push({ ...jevDraftAction('+' + m + (m === 1 ? ' warning' : ' warnings'), draft(reconcile)), link: true });
+  }
+}
+
 function jevNeutralNote(anchor, stateName) {
   return { anchor, group: 'neutral', state: stateName, text: stateName === 'unsure' ? 'unsure' : 'Jev unavailable',
     level: stateName === 'unsure' ? markLevel(state.jev, 'unsure') : null };
@@ -1188,13 +1203,19 @@ function jevSuggestionNotes() {
     return notes;
   }
   if (!jevGitFocus()) return notes;
+  const reconcile = [];
   for (const flag of corpusFlags(state.jev.items)) {
     if (flag.state !== 'label') { notes.push(jevNeutralNote(flag.anchor, flag.state)); continue; }
     const link = corpusTargetLink(flag.target);
-    notes.push({ anchor: flag.anchor, group: 'conflict', state: 'label', text: flag.label + (link ? ' ' + link.text : ''),
-      href: link ? link.href : null, level: flag.level,
-      actions: link && JEV_RECONCILE_LABELS.has(flag.label) ? [jevDraftAction('Ask agent to reconcile', 'Reconcile this clause with ' + link.text + '.')] : [] });
+    const note = { anchor: flag.anchor, group: 'conflict', state: 'label', text: flag.label + (link ? ' ' + link.text : ''),
+      href: link ? link.href : null, level: flag.level, actions: [] };
+    if (link && JEV_RECONCILE_LABELS.has(flag.label)) {
+      note.actions.push(jevDraftAction('Ask agent to reconcile', 'Reconcile this clause with ' + link.text + '.'));
+      reconcile.push({ note, line: '#' + flag.anchor + ' ' + note.text });
+    }
+    notes.push(note);
   }
+  jevReconcileAll(reconcile);
   for (const item of state.jev.items) {
     if (item.kind !== 'type' || !item.id) continue;
     if (neutral(item)) notes.push(jevNeutralNote(item.id, item.state));
@@ -1465,10 +1486,16 @@ function renderJevNote(note) {
     for (const action of actions) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = 'hx-btn';
+      button.className = action.link ? 'hx-jev-pop-more' : 'hx-btn';
       button.textContent = action.label;
       button.addEventListener('click', event => { event.stopPropagation(); if (action.run) action.run(note); });
-      slot.appendChild(button);
+      // A link action sits on its button's line: both share one unwrapped group.
+      const before = action.link && slot.lastElementChild;
+      if (before && before.tagName === 'BUTTON') {
+        const group = slot.appendChild(document.createElement('span'));
+        group.className = 'hx-jev-pop-batch';
+        group.append(before, button);
+      } else slot.appendChild(button);
     }
     row.appendChild(slot);
   }
@@ -1803,6 +1830,8 @@ a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
 .hx-jev-pop-diff ins{text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:2px}
 .hx-jev-pop-actions{display:flex;flex-wrap:wrap;gap:4px}
 .hx-jev-pop-actions .hx-btn{margin:0;font-size:11.5px;padding:4px 8px;border-color:#2947c7;background:#ffffff;color:#2947c7}
+.hx-jev-pop-batch{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.hx-jev-pop-more{margin:0;padding:0 2px;border:0;background:none;font:inherit;font-size:11.5px;color:#2947c7;text-decoration:underline;text-underline-offset:2px;cursor:pointer;align-self:center}
 @media(prefers-color-scheme:dark){
 .hx-jev-pop{border-color:#5b5f68;background:#24272c;color:#e8e7e2}
 .hx-jev-pop-text{color:#e8e7e2}
@@ -1812,6 +1841,7 @@ a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
 .hx-jev-pop-link{color:#aebcff}
 .hx-jev-pop-diff{color:#e8e7e2}
 .hx-jev-pop-actions .hx-btn{background:#17191d;border-color:#7d91ff;color:#aebcff}
+.hx-jev-pop-more{color:#aebcff}
 }
 .hx-jev-target-flash{animation:hx-jev-flash 1.2s ease-out}
 @keyframes hx-jev-flash{0%{box-shadow:0 0 0 4px rgba(41,71,199,.42)}100%{box-shadow:0 0 0 14px rgba(41,71,199,0)}}
@@ -1855,7 +1885,7 @@ tr[data-anchor]:has(> .hx-pin[data-column]) > :has(> .hx-jev-marker){padding-rig
 .hx-jev-note{margin:8px 16px 0}
 .hx-jev-marker::before{inset:-14px 0 -14px -28px}
 .hx-jev-pop{left:12px;right:12px;top:auto;bottom:calc(10px + var(--hx-dock-space,64px) + 8px + env(safe-area-inset-bottom));width:auto;max-width:none;max-height:40dvh;padding:10px 12px}
-.hx-jev-pop-actions .hx-btn{min-height:44px}
+.hx-jev-pop-actions .hx-btn,.hx-jev-pop-more{min-height:44px}
 .hx-banner{align-items:flex-start;flex-wrap:wrap;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;text-align:center}
 .hx-banner button{min-height:44px;padding:8px 12px;touch-action:manipulation}
 .hx-toast{bottom:calc(112px + env(safe-area-inset-bottom));max-width:calc(100vw - 24px);box-sizing:border-box;text-align:center}

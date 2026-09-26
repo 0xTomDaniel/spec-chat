@@ -195,7 +195,7 @@ assert.equal(document.activeElement, ruleLink);
 assert.equal(pop().hidden, false, 'focus inside keeps the popover');
 assert.equal(tab(true), true);
 assert.equal(document.activeElement, marker('rule'), 'Shift+Tab from the first control returns to the marker');
-assert.deepEqual(pop().querySelectorAll('a,button').map(e => e.tagName), ['A', 'BUTTON', 'BUTTON'], 'link and note buttons are reachable');
+assert.deepEqual(pop().querySelectorAll('a,button').map(e => e.tagName), ['A', 'BUTTON', 'BUTTON', 'BUTTON', 'BUTTON'], 'link, note buttons, and the batch are reachable');
 pop().querySelectorAll('button').at(-1).focus();
 assert.equal(pop().hidden, false, 'the browser moves within the popover');
 assert.equal(tab(), false, 'Tab past the last control is left to the browser');
@@ -239,10 +239,17 @@ assert.deepEqual(popNotes(), [['coverage', 'No story backs this']]);
 const noteButtons = anchor => {
   marker(anchor).fire('focus');
   return pop().querySelectorAll('.hx-jev-pop-note').map(n => [n.querySelector('.hx-jev-pop-text').textContent,
-    (n.querySelector('.hx-jev-pop-actions') || { children: [] }).children.map(b => b.textContent)]);
+    (n.querySelector('.hx-jev-pop-actions') || { querySelectorAll: () => [] }).querySelectorAll('button').map(b => b.textContent)]);
 };
-assert.deepEqual(noteButtons('rule'), [['Contradicts #non-goal-text', ['Ask agent to reconcile']], ['Behavior', ['Comment on this change']]]);
-assert.deepEqual(noteButtons('overstep'), [['Oversteps other#scope', ['Ask agent to reconcile']], ['Clarification', []]]);
+const batch = ['Ask agent to reconcile', 'Reconcile all (1)', '+1 warning'];
+assert.deepEqual(noteButtons('rule'), [['Contradicts #non-goal-text', batch], ['Behavior', ['Comment on this change']]]);
+assert.deepEqual(noteButtons('overstep'), [['Oversteps other#scope', batch], ['Clarification', []]]);
+// The +m link is a small text link on the button's line: one unwrapped group, no second row or menu.
+marker('rule').fire('focus');
+assert.deepEqual(pop().querySelector('.hx-jev-pop-actions').children.map(c => [c.tagName, c.className]),
+  [['BUTTON', 'hx-btn'], ['SPAN', 'hx-jev-pop-batch']]);
+assert.deepEqual(pop().querySelector('.hx-jev-pop-batch').children.map(c => [c.className, c.textContent]),
+  [['hx-btn', 'Reconcile all (1)'], ['hx-jev-pop-more', '+1 warning']]);
 assert.deepEqual(noteButtons('crowded'), [['No criterion covers this', ['Ask for a criterion']], ['Scope', ['Comment on this change']], ['unsure', []]]);
 assert.deepEqual(noteButtons('criterion-gap'), [['No story backs this', ['Ask for a story']]]);
 assert.deepEqual(noteButtons('row'), [['Behavior', ['Comment on this change']]]);
@@ -259,6 +266,41 @@ const clickNote = (anchor, label) => {
 };
 assert.deepEqual(clickNote('rule', 'Ask agent to reconcile'), ['rule', null, null, 'Reconcile this clause with #non-goal-text.']);
 assert.deepEqual(clickNote('overstep', 'Ask agent to reconcile'), ['overstep', null, null, 'Reconcile this clause with other#scope.']);
+// #acceptance-reconcile-all: one draft at the clicked clause, page order; the button lists Important ones, the link adds Warnings.
+const clickMore = (anchor, label) => {
+  marker(anchor).fire('focus');
+  pop().querySelectorAll('.hx-jev-pop-more').find(b => b.textContent === label).fire('click');
+  assert.equal(pop().hidden, true, label + ' closes the popover');
+  return composed.pop();
+};
+assert.deepEqual(clickNote('overstep', 'Reconcile all (1)'), ['overstep', null, null,
+  'Reconcile each clause with its link:\n#rule Contradicts #non-goal-text']);
+assert.deepEqual(clickMore('rule', '+1 warning'), ['rule', null, null,
+  'Reconcile each clause with its link:\n#rule Contradicts #non-goal-text\n#overstep Oversteps other#scope']);
+// Batch visibility (#status-ann258): n >= 1 and n + m >= 2; n = 0 shows neither; m = 0 shows no link.
+const withCorpus = (corpus, check) => {
+  state.jev.items = [...typeItems, ...corpus];
+  renderJev();
+  check();
+  state.jev.items = suggestionItems;
+  renderJev();
+};
+const reconcileButtons = anchor => noteButtons(anchor)[0][1];
+withCorpus([item('corpus', 'overstep', 'label', 'oversteps', 'other#scope'), item('corpus', 'typo', 'label', 'oversteps', 'x')],
+  () => assert.deepEqual(reconcileButtons('overstep'), ['Ask agent to reconcile'], 'n = 0 shows neither'));
+withCorpus([item('corpus', 'rule', 'label', 'contradicts', 'non-goal-text')],
+  () => assert.deepEqual(reconcileButtons('rule'), ['Ask agent to reconcile'], 'one clause shows no batch'));
+withCorpus([item('corpus', 'typo', 'label', 'contradicts', 'b'), item('corpus', 'rule', 'label', 'contradicts', 'a')], () => {
+  assert.deepEqual(reconcileButtons('typo'), ['Ask agent to reconcile', 'Reconcile all (2)'], 'm = 0 shows no link');
+  assert.deepEqual(clickNote('typo', 'Reconcile all (2)'), ['typo', null, null,
+    'Reconcile each clause with its link:\n#rule Contradicts #a\n#typo Contradicts #b']);
+});
+withCorpus([item('corpus', 'rule', 'label', 'contradicts', 'a'), item('corpus', 'overstep', 'label', 'oversteps', 'b'),
+  item('corpus', 'typo', 'label', 'oversteps', 'c')], () => {
+  assert.deepEqual(reconcileButtons('typo'), ['Ask agent to reconcile', 'Reconcile all (1)', '+2 warnings']);
+  assert.deepEqual(clickMore('typo', '+2 warnings'), ['typo', null, null,
+    'Reconcile each clause with its link:\n#rule Contradicts #a\n#typo Oversteps #c\n#overstep Oversteps #b']);
+});
 assert.deepEqual(clickNote('story-gap', 'Ask for a criterion'), ['story-gap', null, null, 'Add an acceptance criterion that verifies this story.']);
 assert.deepEqual(clickNote('criterion-gap', 'Ask for a story'), ['criterion-gap', null, null, 'Name or add the user story this criterion verifies.']);
 assert.deepEqual(clickNote('rule', 'Comment on this change'), ['rule', null, null, 'About this change: ']);
