@@ -172,6 +172,8 @@ async function fetchJev(base, signal) {
       target: item.target == null ? null : String(item.target),
       record: item.record == null ? null : String(item.record),
       level: item.level == null ? null : String(item.level),
+      side: item.side == null ? null : String(item.side),
+      other: item.other == null ? null : String(item.other), // lane items name the other slug (#acceptance-cross-lane)
     })) : [],
     levels: result ? result.levels : null, // the server's levels table (#markers-levels-source); markLevel reads it
   };

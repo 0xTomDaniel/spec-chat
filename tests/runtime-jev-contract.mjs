@@ -35,6 +35,7 @@ const fakeFetch = async url => {
   return { ok: true, json: async () => ({ jev: 'on', items: [
     { kind: 'type', id: 'change-type', state: 'label', label: 'behavioral', target: null, record: 'r1', level: 'warning', agent_level: 'warning' },
     { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2' },
+    { kind: 'lane', id: 'rule', state: 'label', label: 'contradicts', side: 'first', other: 'ann2', target: 'ann2/y.spec.html#b', record: 'r3', level: 'important', agent_level: 'important' },
   ], levels: { behavioral: { human: 'warning', agent: 'warning' }, contradicts: { human: 'important', agent: 'important' } } }) };
 };
 const fetchJev = Function('fetch', 'jevParams', 'location', 'URLSearchParams', runtime.slice(fetchStart, fetchEnd) + '; return fetchJev;')(
@@ -49,8 +50,9 @@ assert.match(requested, /^\/api\/jev\\?/);
 assert.deepEqual(answer, {
   jev: 'on',
   items: [
-    { kind: 'type', id: 'change-type', state: 'label', label: 'behavioral', target: null, record: 'r1', level: 'warning' },
-    { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2', level: null },
+    { kind: 'type', id: 'change-type', state: 'label', label: 'behavioral', target: null, record: 'r1', level: 'warning', side: null, other: null },
+    { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2', level: null, side: null, other: null },
+    { kind: 'lane', id: 'rule', state: 'label', label: 'contradicts', target: 'ann2/y.spec.html#b', record: 'r3', level: 'important', side: 'first', other: 'ann2' },
   ],
   levels: { behavioral: { human: 'warning', agent: 'warning' }, contradicts: { human: 'important', agent: 'important' } },
 });

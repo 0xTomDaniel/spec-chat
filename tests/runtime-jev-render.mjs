@@ -336,7 +336,11 @@ const laneItems = [
   lane('typo', 'overstepped by', Y + '#e', 'warning'),
   { kind: 'lane', id: 'quiet', state: 'pending', label: null, side: 'second', other: 'ann2', target: Y + '#f', record: null },
 ];
-withCorpus(laneItems, () => {
+// Lane items reach the notes through the real route consumer, so other and side survive fetchJev.
+const fetchJev = Function('fetch', 'jevParams', slice('async function fetchJev(', '\n\nfunction jevItem(') + '; return fetchJev;')(
+  async () => ({ ok: true, json: async () => ({ jev: 'on', items: laneItems, levels: null }) }), () => new URLSearchParams());
+const fetchedLane = (await fetchJev('base')).items;
+withCorpus(fetchedLane, () => {
   assert.deepEqual(colored(), ['rule']);
   assert.equal(markersOf('quiet').length, 0, 'a pending question never renders');
   const laneNote = anchor => holder(anchor).querySelector('.hx-jev-marker').jevNotes.find(n => n.group === 'conflict');
