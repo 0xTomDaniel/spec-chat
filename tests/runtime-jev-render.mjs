@@ -97,10 +97,10 @@ const code = [
   slice('function jevDisplayLabel(', '\n\nfunction goToJevTarget('),
   slice('/* ---------------- Jev markers', '\n\n/* ---------------- UI'),
 ].join('\n\n');
-// The server's levels table as /api/jev returns it (tools/jev.py MARK_LEVELS); items carry level as the server sets it.
+// The server's two-column levels table as /api/jev returns it (tools/jev.py MARK_LEVELS); items carry level, the human column, as the server sets it.
 const levels = JSON.parse(execFileSync('python3', ['-c', 'import json, sys; sys.path.insert(0, "tools"); from jev import MARK_LEVELS; print(json.dumps(MARK_LEVELS))'], { cwd: root, encoding: 'utf8' }));
 const item = (kind, id, stateName, label = null, target = null) => ({ kind, id, state: stateName, label, target, record: 'r',
-  level: stateName === 'label' && kind !== 'orphan' && label in levels ? levels[label] : null });
+  level: stateName === 'label' && kind !== 'orphan' && label in levels ? levels[label].human : null });
 const typeItems = [
   item('type', 'rule', 'label', 'behavioral'),
   item('type', 'typo', 'label', 'cosmetic'),
@@ -149,13 +149,20 @@ assert.deepEqual(colored(), ['rule', 'crowded', 'story-gap', 'criterion-gap']);
 assert.deepEqual(holder('rule').querySelector('.hx-jev-marker').jevNotes.map(n => [n.text, n.level]),
   [['Contradicts #non-goal-text', 'important'], ['Behavior', 'warning']]);
 // #acceptance-levels-api: color follows the server table; changing one row changes the color with no runtime mapping.
-state.jev.levels = { ...levels, 'no-criterion': 'warning', 'no-story': 'warning', oversteps: 'important' };
+const warn = { human: 'warning', agent: 'important' };
+state.jev.levels = { ...levels, 'no-criterion': warn, 'no-story': warn, oversteps: { human: 'important', agent: 'important' } };
 state.jev.items = suggestionItems.map(i => i.label === 'oversteps' ? { ...i, level: 'important' } : i);
 renderJev();
 assert.deepEqual(colored(), ['rule', 'overstep']);
-state.jev.levels = levels;
+// #markers-levels-source: color reads only the human column; flipping every agent cell changes no marker.
+state.jev.levels = Object.fromEntries(Object.entries(levels).map(([k, v]) => [k, { ...v, agent: v.agent === 'important' ? 'warning' : 'important' }]));
 state.jev.items = suggestionItems;
 renderJev();
+assert.deepEqual(colored(), ['rule', 'crowded', 'story-gap', 'criterion-gap']);
+state.jev.levels = levels;
+renderJev();
+// #proof-levels-audience: an unsure word keeps its Warning, read from the human column.
+assert.deepEqual(holder('type-unsure').querySelector('.hx-jev-marker').jevNotes.map(n => n.level), ['warning']);
 // No tint, badge, or inline note; the only in-text display is the cosmetic dim; text is unchanged.
 assert.deepEqual(article.querySelectorAll('[data-hx-jev-type]').map(e => [e.dataset.anchor, e.dataset.hxJevType]), [['typo', 'cosmetic']]);
 assert.deepEqual(anchors.concat('row').map(a => holder(a).textContent), textBefore, 'markers add no text to the spec');

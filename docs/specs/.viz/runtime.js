@@ -1172,9 +1172,10 @@ const JEV_RECONCILE_LABELS = new Set(['Contradicts', 'Oversteps']);
 const jevNoteSources = [jevSuggestionNotes, evidenceNotes];
 const jevPopoverState = { element: null, marker: null, closeTimer: 0, wired: false };
 
-// A derived mark's level from the server's levels table in one response state; the runtime holds no mapping of its own.
+// A derived mark's level from the human column of the server's levels table in one response state (#markers-levels-source);
+// the runtime holds no mapping of its own.
 function markLevel(source, kind) {
-  const level = source && source.levels && source.levels[kind];
+  const level = source && source.levels && source.levels[kind] && source.levels[kind].human;
   return typeof level === 'string' ? level : null;
 }
 

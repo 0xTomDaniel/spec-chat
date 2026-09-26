@@ -24,21 +24,22 @@ OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
 DEFAULT_THRESHOLD = 0.4
 DEFAULT_MAX_INPUT_TOKENS = 32000
 RETRYABLE_OUTCOMES = frozenset({"off", "unavailable"})
-# Mark levels (jev-suggestions#markers-levels): the single source, mark kind to level, fixed by kind and never by confidence.
-# Item labels key it directly; the browser keys derived marks (coverage gaps, QA evidence, unsure words) by the other names.
+# Mark levels (jev-suggestions#markers-levels): the single source, mark kind to a human and an agent level, fixed by kind and never
+# by confidence; the agent level is never quieter (#markers-levels-audience). Item labels key it directly; the browser keys derived
+# marks (coverage gaps, QA evidence, unsure words) by the other names and reads only the human column.
 MARK_LEVELS = {
-    "contradicts": "important",
-    "no-criterion": "important",
-    "no-story": "important",
-    "qa-failed": "important",
-    "qa-stale": "important",
-    "overlaps": "warning",
-    "oversteps": "warning",
-    "unsure": "warning",
-    "scope": "warning",
-    "behavioral": "warning",
-    "clarification": "warning",
-    "cosmetic": "warning",
+    "contradicts": {"human": "important", "agent": "important"},
+    "no-criterion": {"human": "important", "agent": "important"},
+    "no-story": {"human": "important", "agent": "important"},
+    "qa-failed": {"human": "important", "agent": "important"},
+    "qa-stale": {"human": "important", "agent": "important"},
+    "overlaps": {"human": "warning", "agent": "warning"},
+    "oversteps": {"human": "warning", "agent": "important"},
+    "unsure": {"human": "warning", "agent": "warning"},
+    "scope": {"human": "warning", "agent": "warning"},
+    "behavioral": {"human": "warning", "agent": "warning"},
+    "clarification": {"human": "warning", "agent": "warning"},
+    "cosmetic": {"human": "warning", "agent": "warning"},
 }
 VOID_ELEMENTS = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"})
 IMPLIED_ENDS = {
@@ -1150,7 +1151,7 @@ class JevService:
                     "label": label if state == "label" else None,
                     "target": target_anchor, "record": record.get("record_id")}
             if state == "label" and question["kind"] != "orphan" and label in MARK_LEVELS:
-                item["level"] = MARK_LEVELS[label]
+                item["level"], item["agent_level"] = MARK_LEVELS[label]["human"], MARK_LEVELS[label]["agent"]
             items.append(item)
         return {"jev": "on", "items": items, "levels": dict(MARK_LEVELS)}
 

@@ -33,9 +33,9 @@ let requested = '';
 const fakeFetch = async url => {
   requested = url;
   return { ok: true, json: async () => ({ jev: 'on', items: [
-    { kind: 'type', id: 'change-type', state: 'label', label: 'behavioral', target: null, record: 'r1', level: 'warning' },
+    { kind: 'type', id: 'change-type', state: 'label', label: 'behavioral', target: null, record: 'r1', level: 'warning', agent_level: 'warning' },
     { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2' },
-  ], levels: { behavioral: 'warning', contradicts: 'important' } }) };
+  ], levels: { behavioral: { human: 'warning', agent: 'warning' }, contradicts: { human: 'important', agent: 'important' } } }) };
 };
 const fetchJev = Function('fetch', 'jevParams', 'location', 'URLSearchParams', runtime.slice(fetchStart, fetchEnd) + '; return fetchJev;')(
   fakeFetch,
@@ -45,13 +45,14 @@ const fetchJev = Function('fetch', 'jevParams', 'location', 'URLSearchParams', r
 );
 const answer = await fetchJev('base-123');
 assert.match(requested, /^\/api\/jev\\?/);
+// The browser keeps only the human level; agent_level is for the agent read (#markers-levels-source).
 assert.deepEqual(answer, {
   jev: 'on',
   items: [
     { kind: 'type', id: 'change-type', state: 'label', label: 'behavioral', target: null, record: 'r1', level: 'warning' },
     { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2', level: null },
   ],
-  levels: { behavioral: 'warning', contradicts: 'important' },
+  levels: { behavioral: { human: 'warning', agent: 'warning' }, contradicts: { human: 'important', agent: 'important' } },
 });
 assert.equal((runtime.match(/fetch\('\/api\/jev\?/g) || []).length, 1, 'all Jev display uses one request seam');
 assert.match(runtime, /120000/, 'Jev fetch allows a cold provider request to finish');
