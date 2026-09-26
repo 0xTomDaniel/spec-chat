@@ -152,11 +152,12 @@ Before every initial or resumed review, run the self-contained compatibility pre
 python3 scripts/preflight.py <target-repository-root> <spec-html>
 ```
 
-Preflight preserves target runtime and server assets that declare every capability required by the current bundle.
-It replaces only incompatible assets from the bundle, including vendored visual dependencies when runtime migration is required, and rejects semantic islands without a same-parent `data-render-target`.
+Preflight preserves a target runtime that declares every capability required by the current bundle.
+It replaces only an incompatible runtime from the bundle, including vendored visual dependencies, and rejects semantic islands without a same-parent `data-render-target`.
+It never writes a review server into the target: every launch runs this skill's own `assets/review-serve.py`, directly on loopback or through `scripts/review-host.py`.
 Treat a preflight failure as a review blocker.
 Commit migrated assets locally before presenting a shaping review.
-If the server was already running when migration occurred, restart it through
+If the server was already running when runtime migration occurred, restart it through
 review-host stop/register and rerun host checks before handoff. This is a
 runtime change; ordinary edits to a served spec do not require a restart.
 

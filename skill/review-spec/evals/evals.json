@@ -66,13 +66,14 @@
     {
       "id": 7,
       "eval_name": "stale-repository-review-surface",
-      "prompt": "Start review on an existing repository whose vendored Spec Chat runtime and server predate Git focus, spec acceptance, and thread reopen. The spec also contains a semantic chart island with no render target.",
+      "prompt": "Start review on an existing repository whose vendored Spec Chat runtime predates Git focus, spec acceptance, and thread reopen. The spec also contains a semantic chart island with no render target.",
       "expectations": [
         "Runs the bundled review-surface preflight before starting or resuming review",
         "Blocks publication until the missing render target is repaired",
-        "Migrates runtime and server assets that lack required capabilities from the current skill bundle",
-        "Preserves compatible customized target assets",
-        "Restarts an already-running migrated server on the same local port",
+        "Migrates a runtime that lacks required capabilities from the current skill bundle",
+        "Never writes a review server into the target repository; serves with the skill's own assets/review-serve.py",
+        "Preserves a compatible customized target runtime",
+        "Restarts an already-running server on the same local port after runtime migration",
         "Verifies served capabilities and the exact-base /api/baseline response before presenting the review URL"
       ]
     },
