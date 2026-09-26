@@ -77,11 +77,38 @@ p.keepPlace()();
 p.win.scrollY = 600; p.win.fire('pagehide');
 assert.deepEqual(JSON.parse(store.m.get(KEY)), { anchor: 'intro', offset: 600 });
 
-// Address anchor wins.
+// Address anchor wins: specs have no ids, so the runtime scrolls to the [data-anchor] after render.
 store.m.set(KEY, JSON.stringify({ anchor: 'later', offset: 10 }));
-p = page({ storage: store, hash: '#place' });
+p = page({ storage: store, hash: '#place-save' });
+const hashStep = p.keepPlace();
+assert.deepEqual(p.win.scrolls, [], 'hash waits for render');
+hashStep();
+assert.deepEqual(p.win.scrolls, [1200], 'hash wins over the stored place');
+p = page({ storage: store, hash: '#place%2Dsave' });
 p.keepPlace()();
-assert.deepEqual(p.win.scrolls, [], 'hash wins');
+assert.deepEqual(p.win.scrolls, [1200], 'encoded hash decodes');
+p = page({ storage: null, hash: '#place' });
+p.keepPlace()();
+assert.deepEqual(p.win.scrolls, [1000], 'hash wins without storage');
+p = page({ storage: new Error('SecurityError'), hash: '#place' });
+p.keepPlace()();
+assert.deepEqual(p.win.scrolls, [1000], 'hash wins when storage throws');
+// Unknown hash falls back to the stored place, then the top.
+p = page({ storage: store, hash: '#nope' });
+p.keepPlace()();
+assert.deepEqual(p.win.scrolls, [3010], 'unknown hash: stored place');
+p = page({ storage: memory(), hash: '#nope' });
+p.keepPlace()();
+assert.deepEqual(p.win.scrolls, [], 'unknown hash, no record: top');
+p = page({ storage: store, hash: '#%E0%A4%A' });
+p.keepPlace()();
+assert.deepEqual(p.win.scrolls, [3010], 'malformed hash: stored place, no error');
+// Reader moved before render: hash never re-scrolls either.
+p = page({ storage: store, hash: '#place' });
+const movedHash = p.keepPlace();
+p.win.fire('keydown');
+movedHash();
+assert.deepEqual(p.win.scrolls, [], 'moved reader keeps position over hash');
 
 // Reader moved before render: never re-scrolled.
 p = page({ storage: store });

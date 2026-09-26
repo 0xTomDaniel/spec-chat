@@ -2632,19 +2632,27 @@ function currentPlace() {
 }
 
 // Call before render; returns the after-render step that restores, then keeps, the place.
+// An address anchor names a [data-anchor]; specs carry no ids, so the browser never scrolls to it.
+function addressPlace() {
+  let anchor = location.hash.slice(1);
+  try { anchor = decodeURIComponent(anchor); } catch (_) { /* keep raw */ }
+  return anchor && findAnchor(anchor) ? { anchor, offset: 0 } : null;
+}
+
 function keepPlace() {
+  if (EMBED_REVIEW_DIR) return () => {};
   let storage = null;
   try { storage = window.localStorage; } catch (_) { /* sandboxed frame */ }
-  if (!storage || EMBED_REVIEW_DIR) return () => {};
   let moved = false;
   const intent = () => { moved = true; };
   const intents = ['wheel', 'touchstart', 'keydown', 'pointerdown'];
   for (const t of intents) window.addEventListener(t, intent, { capture: true, passive: true });
   return () => {
     for (const t of intents) window.removeEventListener(t, intent, true);
-    const place = !moved && location.hash.length <= 1 ? readPlace(storage) : null;
+    const place = moved ? null : addressPlace() || (storage && readPlace(storage));
     const el = place && findAnchor(place.anchor);
     if (el) window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY + place.offset);
+    if (!storage) return;
     let timer = 0;
     const save = () => { clearTimeout(timer); timer = 0; writePlace(storage, currentPlace()); };
     window.addEventListener('scroll', () => { if (!timer) timer = setTimeout(save, 250); }, { passive: true });
