@@ -1168,7 +1168,9 @@ function goToJevTarget(target) {
  * adds a source and note buttons add actions, without touching placement.
  */
 const JEV_NOTE_GROUPS = ['evidence', 'conflict', 'coverage', 'type', 'neutral'];
-const JEV_RECONCILE_LABELS = new Set(['Contradicts', 'Oversteps']);
+const JEV_RECONCILE_LABELS = new Set(['Contradicts', 'Oversteps', 'Overstepped by']);
+// Cross-lane labels (#cross-lane-finding); a pending lane item is an unanswered question and never a note.
+const JEV_LANE_LABELS = { contradicts: 'Contradicts', oversteps: 'Oversteps', 'overstepped by': 'Overstepped by' };
 const jevNoteSources = [jevSuggestionNotes, evidenceNotes];
 const jevPopoverState = { element: null, marker: null, closeTimer: 0, wired: false };
 
@@ -1236,20 +1238,32 @@ function jevSuggestionNotes() {
     }
     return notes;
   }
-  if (!jevGitFocus()) return notes;
   const reconcile = [];
-  for (const flag of corpusFlags(state.jev.items)) {
-    if (flag.state !== 'label') { notes.push(jevNeutralNote(flag.anchor, flag.state, 'corpus')); continue; }
-    const link = corpusTargetLink(flag.target);
-    const note = { anchor: flag.anchor, group: 'conflict', state: 'label', text: flag.label + (link ? ' ' + link.text : ''),
-      href: link ? link.href : null, level: flag.level, actions: [] };
-    if (link && JEV_RECONCILE_LABELS.has(flag.label)) {
-      note.actions.push(jevDraftAction('Ask agent to reconcile', 'Reconcile this clause with ' + link.text + '.'));
-      reconcile.push({ note, line: '#' + flag.anchor + ' ' + note.text });
+  // One conflict note; a reconcile link (draft) is the full target so the agent can open it (#note-reconcile).
+  const conflict = (anchor, label, level, text, href, draftLink) => {
+    const note = { anchor, group: 'conflict', state: 'label', text, href, level, actions: [] };
+    if (draftLink && JEV_RECONCILE_LABELS.has(label)) {
+      note.actions.push(jevDraftAction('Ask agent to reconcile', 'Reconcile this clause with ' + draftLink + '.'));
+      reconcile.push({ note, line: '#' + anchor + ' ' + label + ' ' + draftLink });
     }
     notes.push(note);
+  };
+  // Cross-lane marks compare against target main, not the Git focus base, so they show in either view (#cross-lane-finding).
+  for (const item of state.jev.items) {
+    const label = item && item.kind === 'lane' && item.state === 'label' && item.id ? JEV_LANE_LABELS[item.label] : null;
+    const link = label ? corpusTargetLink(item.target) : null;
+    if (!link) continue;
+    conflict(String(item.id), label, item.level || null, label + ' ' + item.other + ' #' + link.href.slice(link.href.indexOf('#') + 1),
+      link.href, link.text);
+  }
+  const gitFocus = jevGitFocus();
+  for (const flag of gitFocus ? corpusFlags(state.jev.items) : []) {
+    if (flag.state !== 'label') { notes.push(jevNeutralNote(flag.anchor, flag.state, 'corpus')); continue; }
+    const link = corpusTargetLink(flag.target);
+    conflict(flag.anchor, flag.label, flag.level, flag.label + (link ? ' ' + link.text : ''), link ? link.href : null, link && link.text);
   }
   jevReconcileAll(reconcile);
+  if (!gitFocus) return notes;
   for (const item of state.jev.items) {
     if (item.kind !== 'type' || !item.id) continue;
     if (neutral(item)) notes.push(jevNeutralNote(item.id, item.state, 'type'));
