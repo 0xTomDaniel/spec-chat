@@ -142,6 +142,34 @@ class JevSeamTest(unittest.TestCase):
         self.assertEqual(result["items"][0]["state"], "none")
         self.assertIsNone(result["items"][0]["label"])
 
+    def test_levels_table_is_one_server_source_on_every_response(self):
+        # jev-suggestions#markers-levels: Important and Warning mark kinds, fixed by kind.
+        self.assertEqual({kind for kind, level in jev.MARK_LEVELS.items() if level == "important"},
+                         {"contradicts", "no-criterion", "no-story", "qa-failed", "qa-stale"})
+        self.assertEqual(set(jev.MARK_LEVELS.values()), {"important", "warning"})
+        with tempfile.TemporaryDirectory() as directory:
+            off = jev.JevService(state_dir=directory, provider=None, api_key="")
+            self.assertEqual(off.response({}, "", "", "base", []), {"jev": "off", "items": [], "levels": jev.MARK_LEVELS})
+        for kind, choice, confidence, level in (("corpus", "contradicts", 0.9, "important"), ("corpus", "oversteps", 0.9, "warning"),
+                                                 ("corpus", "unrelated", 0.9, None), ("type", "scope", 0.9, "warning"),
+                                                 ("corpus", "contradicts", 0.01, None)):
+            provider = FakeProvider({"answers": {kind: {"choice": choice, "confidence": confidence}}})
+            with tempfile.TemporaryDirectory() as directory:
+                service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
+                question = {"kind": kind, "id": "clause", "state": {"after": choice}, "sources": [], "revision": "head"}
+                service.questions = lambda *args, **kwargs: [question]
+                result = service.response({}, "", "", "base", [])
+            self.assertEqual(result["levels"], jev.MARK_LEVELS)
+            self.assertEqual(result["items"][0].get("level"), level, (kind, choice, confidence))
+        # Changing one table row changes the JSON.
+        provider = FakeProvider({"answers": {"corpus": {"choice": "oversteps", "confidence": 0.9}}})
+        with tempfile.TemporaryDirectory() as directory, patch.dict(jev.MARK_LEVELS, {"oversteps": "important"}):
+            service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
+            question = {"kind": "corpus", "id": "clause", "state": {"after": "x"}, "sources": [], "revision": "head"}
+            service.questions = lambda *args, **kwargs: [question]
+            result = service.response({}, "", "", "base", [])
+        self.assertEqual((result["levels"]["oversteps"], result["items"][0]["level"]), ("important", "important"))
+
     def test_response_asks_uncached_questions_in_parallel(self):
         provider = SlowProvider()
         with tempfile.TemporaryDirectory() as directory:
