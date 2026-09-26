@@ -14,7 +14,7 @@
 <h1 data-anchor="title">Jev review suggestions</h1>
 <nav data-anchor="breadcrumbs">docs / specs / jev-suggestions.spec.html</nav>
 <p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-100">ANN-100</a>, <a href="https://linear.app/annotateanything/issue/ANN-206">ANN-206</a>, <a href="https://linear.app/annotateanything/issue/ANN-224">ANN-224</a>.</p>
-<p data-anchor="status-ann224">Status: ANN-224 touch (<code>Ask for re-proof</code> row, Passed check marker) accepted by human spec acceptance (hand-off <code>hmuhw9498</code>, 2026-09-26T04:32:58Z) at <code>bf6d5f1</code>.</p>
+<p data-anchor="status-ann224">Status: ANN-224 touch (<code>Ask for re-proof</code> row, Passed check marker) accepted by human spec acceptance (hand-off <code>hmuhw9498</code>, 2026-09-26T04:32:58Z) at <code>bf6d5f1</code>. Follow-up directed by operator w5:p2 after merge (2026-09-26): <a href="#markers-pin-clear">pin clear of text</a>.</p>
 <p data-anchor="status">Status: accepted for ANN-206 by human spec acceptance relayed by operator w5:p2 (2026-09-26T02:28:52Z, "accepted") at <code>4f2df71</code>; governing contract.</p>
 <p data-anchor="context">Follows the shared Jev contract, annotateanything <code>docs/specs/jev-seam.spec.html#contract</code> (ANN-49, human-accepted at <code>3cdd123</code>; since <code>ed95fc8</code> only its retry, cache, and no-reorder rules changed, to match this spec). This spec owns Spec Chat's questions and display. Jev questions read only specs and review threads, with no tracker or evidence dependency. Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a> and <a href="./compared-range.spec.html#change-base">compared range</a>.</p>
 </header>
@@ -48,6 +48,7 @@
 <p data-acceptance-criterion data-anchor="acceptance-note-draft" data-story="story-note-action"><span data-acceptance-scenario>When the reviewer clicks <code>Ask agent to reconcile</code> on a <code>Contradicts</code> clause, <code>Ask for a criterion</code> on a story gap, or <code>Comment on this change</code> on a <code>Behavior</code> section,</span> <span data-acceptance-observable>from the marker popover, the comment composer opens at that element with the table's draft text, links to both clauses for reconcile, and nothing is written until the reviewer sends.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-note-resolve" data-story="story-note-action"><span data-acceptance-scenario>When the reviewer clicks <code>Resolve thread</code> on a <code>Looks resolved</code> card,</span> <span data-acceptance-observable>the thread is resolved exactly as the card's own resolve control does.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-note-none" data-story="story-note-action"><span data-acceptance-scenario>When a note is <code>Cosmetic</code>, <code>Clarification</code>, reading view, <code>unsure</code>, <code>Jev unavailable</code>, or <code>Jev off</code>,</span> <span data-acceptance-observable>it shows no button.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-pin-clear" data-story="story-change-type"><span data-acceptance-scenario>When a criterion with a marker also has a thread pin, at 375px, 560px, and 1280px,</span> <span data-acceptance-observable>the pin covers neither the marker nor any spec text, and a tap on each opens its own popover or thread.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-inert" data-story="story-neutral"><span data-acceptance-scenario>Across a session with any suggestions and no note button click,</span> <span data-acceptance-observable>spool, thread statuses, Finish eligibility, and spec bytes match Jev off, and every item stays present and 4.5:1 readable.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-cache" data-story="story-record"><span data-acceptance-scenario>When the same page, base, and head load again,</span> <span data-acceptance-observable>no Jev call is made and the same labels show.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-record" data-story="story-record"><span data-acceptance-scenario>For every call,</span> <span data-acceptance-observable>one record carries every contract field and no source text, and no page, record, log, or response contains the key.</span></p>
@@ -160,7 +161,7 @@
 
 <section data-anchor="markers">
 <h2>Markers</h2>
-<p data-anchor="markers-quiet">Jev adds no section tint, bar, inline badge, or inline note; the spec text keeps its layout. Git focus's own change highlight and the dims of cosmetic changes and reading view stay.</p>
+<p data-anchor="markers-quiet">Jev adds no section tint, bar, inline badge, or inline note; the spec text keeps its layout, except that a block carrying both a marker and a thread pin reserves a right column for them so its text stays readable (<a href="#markers-pin-clear">pin clear of text</a>). Git focus's own change highlight and the dims of cosmetic changes and reading view stay.</p>
 <p data-anchor="markers-one">Each section or clause with any note gets one small marker in the right margin beside its first line, one per location however many notes it has.</p>
 <p data-anchor="markers-color">A marker is a colored <code>!</code> when its notes include <code>Contradicts</code>, <code>Oversteps</code>, or evidence <code>Stale</code> or <code>Failed</code>; else a small green check when its evidence <code>Passed</code>; else a quiet neutral dot. The first that applies wins, and hover opens the popover for every kind.</p>
 <p data-anchor="markers-open">Hover or keyboard focus opens its popover, a tap opens it on touch, and moving away, Escape, or a tap elsewhere closes it; the popover never covers review controls.</p>
@@ -185,6 +186,7 @@
 <figcaption data-anchor="markers-figure-caption">Markers in the margin: neutral for ordinary notes, colored with a glyph for a conflict; the open popover holds the notes and their buttons.</figcaption>
 </figure>
 <p data-anchor="markers-mobile">At 375px, markers sit at the content column's right edge without widening the page, and the popover opens as a sheet above the review controls.</p>
+<p data-anchor="markers-pin-clear">A thread pin and a marker on the same block never cover each other or the spec text, at every width: the block reserves a right column for them, the marker beside its first line and the pin directly below the marker, and the block is at least tall enough to hold both, so neither reaches the next block. ANN-224 follow-up; padding directed by operator w5:p2 (2026-09-26, ANN-247).</p>
 </section>
 
 <section data-anchor="corpus">
