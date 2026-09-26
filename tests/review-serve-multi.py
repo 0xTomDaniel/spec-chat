@@ -461,8 +461,8 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertEqual(status, 200)
         body = raw.decode()
         self.assertIn('"GIT_OPTIONAL_LOCKS": "0"', SERVER.read_text())
-        # #index-entry-title: status sits on the right of its row, right aligned when wrapped.
-        self.assertRegex(body, r"\.status \{[^}]*margin-left: auto;[^}]*text-align: right;")
+        # #index-entry-title: the Changed pill sits on the right of its row.
+        self.assertRegex(body, r"\.pill \{[^}]*margin-left: auto;")
         text = html_lib.unescape(re.sub(r"<style>.*?</style>|<[^>]+>", "\n", body, flags=re.S))
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         self.assertEqual(lines[:2], ["Spec Chat index", "Review index"])
@@ -472,19 +472,81 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertEqual(lines[2:], [
             "In progress",
             "ANN-134", "3 of 3 changed",
-            "aa", "Alpha fresh", "Changed since you reviewed", "Zeta board", "Changed since you reviewed",
-            "sc", "Zeta board", "Changed since you reviewed",
+            "aa", "Alpha fresh", "Changed", "Zeta board", "Changed",
+            "sc", "Zeta board", "Changed",
             "zz", "ann134b",
-            "ANN-7", "no status", "aa", "ann7",
-            "ANN-119", "up to date", "sc", "ann119", "Up to date",
+            "ANN-7", "No status", "aa", "ann7",
+            "ANN-119", "Up to date", "sc", "ann119",
             "Settled (2)",
-            "aa", "aa", "Changed since you reviewed",
-            "sc", "trunk", "Up to date",
+            "aa", "aa", "Changed",
+            "sc", "trunk",
         ])
+        # #index-entry-lane: the stripe is attention when any spec changed, else border.
+        cards = re.findall(r'<section class="lane( changed)?"', body)
+        self.assertEqual(cards, [" changed", "", ""])
         for leaked in ("docs/specs", "spec:", "main", "gone", "ann134/"):
             self.assertNotIn(leaked, "\n".join(lines))
         self.assertIn('href="/ann134/sc/docs/specs/domains/x.spec.html?focus=changes"', body)
         self.assertIn('href="/ann134/docs/specs/new.spec.html?focus=changes"', body)
+
+    INDEX_TOKENS = {
+        "--ui-font": '"Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+        "--ui-mono": "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+        "--ui-text-xs": "12px", "--ui-text-sm": "14px", "--ui-text-md": "16px", "--ui-text-lg": "20px",
+        "--ui-page": "#ffffff", "--ui-surface": "#ffffff", "--ui-ink": "#333333",
+        "--ui-muted": "#525252", "--ui-border": "#dfdfdf",
+        "--ui-link": "#333333", "--ui-focus": "#262626", "--ui-action": "#262626",
+        "--ui-pass": "#005c32", "--ui-pass-soft": "#e6efea",
+        "--ui-fail": "#a5000f", "--ui-fail-soft": "#f6e6e7",
+        "--ui-attention": "#b0540e", "--ui-attention-soft": "#faf4ef",
+        "--ui-muted-soft": "#eeeeee", "--ui-muted-stripe": "#8a8a8a",
+        "--ui-space-1": "4px", "--ui-space-2": "8px", "--ui-space-3": "12px",
+        "--ui-space-4": "16px", "--ui-space-5": "24px", "--ui-space-6": "32px",
+        "--ui-radius": "8px", "--ui-radius-sm": "6px", "--ui-radius-pill": "999px",
+    }
+
+    def test_index_css_is_one_ui_tokens_block_and_rules_use_only_its_variables(self):
+        """ANN-301 lane-hosting #acceptance-index-design, #index-design, #index-tokens."""
+        import re
+
+        board = self.make_resource("ann134")
+        Path(board["root"], board["spec"]).write_text("<title>Board</title>changed\n")
+        self.start([board])
+        body = self.request("/")[1].decode()
+        css = re.search(r"<style>(.*?)</style>", body, re.S).group(1)
+        self.assertEqual(len(re.findall(r":root\s*\{", css)), 1)
+        block = re.search(r"/\* ui tokens \*/\s*:root\s*\{([^}]*)\}", css)
+        self.assertIsNotNone(block)
+        declared = dict(
+            (name, value.strip()) for name, value in re.findall(r"(--[\w-]+)\s*:\s*([^;]+);", block.group(1)))
+        self.assertEqual(declared, self.INDEX_TOKENS)
+        rules = css.replace(block.group(0), "")
+        self.assertNotRegex(rules, r"#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(")
+        self.assertNotRegex(rules, r"font-family\s*:(?!\s*var\()")
+        self.assertNotRegex(rules, r"font-size\s*:(?!\s*var\()")
+        for prop, value in re.findall(r"((?:padding|margin|gap|border-radius)[\w-]*)\s*:([^;}]*)", rules):
+            self.assertNotRegex(re.sub(r"var\(--[\w-]+\)", "", value), r"\b(?!0\b)\d", prop)
+        # Only hairline and ring widths, the 640px breakpoint, and the 72rem width are literal lengths.
+        self.assertLessEqual(set(re.findall(r"\b\d+(?:\.\d+)?(?:px|rem)\b", rules)),
+                             {"1px", "2px", "640px", "72rem"})
+        self.assertLessEqual(set(re.findall(r"var\((--[\w-]+)\)", rules)), set(self.INDEX_TOKENS))
+        # One heading; the rest are section labels.
+        self.assertEqual(re.findall(r"<h\d\b[^>]*>(.*?)</h\d>", body), ["Review index"])
+        self.assertIn("max-width: 72rem", rules)
+
+        def luminance(color):
+            channels = [int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+            linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+            return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+        def contrast(one, two):
+            high, low = sorted((luminance(self.INDEX_TOKENS[one]), luminance(self.INDEX_TOKENS[two])), reverse=True)
+            return (high + 0.05) / (low + 0.05)
+
+        for text, ground in (("--ui-ink", "--ui-page"), ("--ui-muted", "--ui-surface"),
+                             ("--ui-link", "--ui-surface"), ("--ui-attention", "--ui-attention-soft")):
+            self.assertGreaterEqual(contrast(text, ground), 4.5, (text, ground))
+        self.assertGreaterEqual(contrast("--ui-attention", "--ui-surface"), 3)
 
     def test_index_settles_specs_served_without_a_row_in_a_closed_disclosure(self):
         """ANN-230 lane-hosting #acceptance-index-sections: row-less specs go in one closed Settled (n)."""
@@ -515,7 +577,7 @@ class MultiReviewServeTest(unittest.TestCase):
         text = html_lib.unescape(re.sub(r"<style>.*?</style>|<[^>]+>", "\n", body, flags=re.S))
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         self.assertEqual(lines, ["Spec Chat index", "Review index", "Settled (2)", "settled", "Alpha", "Beta"])
-        for gone in ("In progress", "Other specs", "no status", "Up to date"):
+        for gone in ("In progress", "Other specs", "No status", "Up to date"):
             self.assertNotIn(gone, body)
 
     def test_status_is_none_when_any_git_call_fails(self):
