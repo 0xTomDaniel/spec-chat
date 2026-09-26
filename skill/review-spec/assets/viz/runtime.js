@@ -2598,8 +2598,63 @@ async function watchSpec() {
   if (m) state.specMtime = state.specMtime || m;
 }
 
+/* ---------------- ANN-233 reader's place ----------------
+ * Per spec path: the nearest data-anchor at the viewport top plus the offset
+ * past its top, in localStorage. Restored once, after render; an address anchor
+ * wins, and a reader who already moved is never re-scrolled. Every storage call
+ * is wrapped: no storage means no kept place, never a broken page.
+ */
+const PLACE_KEY = 'hx-place:' + location.pathname;
+
+function readPlace(storage) {
+  try {
+    const place = JSON.parse(storage.getItem(PLACE_KEY));
+    return place && typeof place.anchor === 'string' && Number.isFinite(place.offset) ? place : null;
+  } catch (_) { return null; }
+}
+
+function writePlace(storage, place) {
+  try {
+    if (place) storage.setItem(PLACE_KEY, JSON.stringify(place));
+    else storage.removeItem(PLACE_KEY);
+  } catch (_) { /* full, sandboxed, or disabled: the place is simply not kept */ }
+}
+
+function currentPlace() {
+  if (window.scrollY <= 0) return null;
+  let place = null;
+  for (const el of document.querySelectorAll('[data-anchor]')) {
+    const r = el.getBoundingClientRect();
+    if (!r.height || r.top > 0 || (place && -r.top >= place.offset)) continue;
+    place = { anchor: el.dataset.anchor, offset: Math.round(-r.top) };
+  }
+  return place;
+}
+
+// Call before render; returns the after-render step that restores, then keeps, the place.
+function keepPlace() {
+  let storage = null;
+  try { storage = window.localStorage; } catch (_) { /* sandboxed frame */ }
+  if (!storage || EMBED_REVIEW_DIR) return () => {};
+  let moved = false;
+  const intent = () => { moved = true; };
+  const intents = ['wheel', 'touchstart', 'keydown', 'pointerdown'];
+  for (const t of intents) window.addEventListener(t, intent, { capture: true, passive: true });
+  return () => {
+    for (const t of intents) window.removeEventListener(t, intent, true);
+    const place = !moved && location.hash.length <= 1 ? readPlace(storage) : null;
+    const el = place && findAnchor(place.anchor);
+    if (el) window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY + place.offset);
+    let timer = 0;
+    const save = () => { clearTimeout(timer); timer = 0; writePlace(storage, currentPlace()); };
+    window.addEventListener('scroll', () => { if (!timer) timer = setTimeout(save, 250); }, { passive: true });
+    window.addEventListener('pagehide', save);
+  };
+}
+
 /* ---------------- boot ---------------- */
 (async function boot() {
+  const restorePlace = keepPlace();
   const httpPage = !EMBED_REVIEW_DIR && ['http:', 'https:'].includes(location.protocol);
   // Deferred script: the DOM is the served spec until mountUI; compare it, never refetch it.
   if (httpPage) state.range.loaded = anchorSignatures(document);
@@ -2608,6 +2663,7 @@ async function watchSpec() {
   if (httpPage) { listenEvidenceHost(); requestEvidence(); }
   await hydrateIslands();
   adoptForeignCharts();
+  restorePlace();
   // spec scripts can create/recreate charts at any time; rescan when canvases appear
   let adoptTimer = null;
   new MutationObserver(muts => {
