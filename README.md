@@ -16,7 +16,7 @@ Visual HTML specs you annotate in the browser; a coding agent addresses the anno
 
 ## Constraints (fixed)
 
-Agent-agnostic across Claude Code / Codex / pi · plain files + CLI + skills over MCP/hooks/inference services · all inference through the CLI session · tiny HTTP file transport only when the browser cannot share the filesystem (loopback on one machine, box-side public service for remote review) · no alt-tabbing to the terminal to trigger the agent.
+Agent-agnostic across Claude Code / Codex / pi · plain files + CLI + skills over MCP/hooks/inference services · all inference through the CLI session, except optional Jev typed suggestions called by the review server and off without a key ([jev-suggestions](docs/specs/jev-suggestions.spec.html)) · tiny HTTP file transport only when the browser cannot share the filesystem (loopback on one machine, box-side public service for remote review) · no alt-tabbing to the terminal to trigger the agent.
 
 ## Remote hosting
 

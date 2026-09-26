@@ -57,6 +57,9 @@ const state = {
   handoffPosting: false,
   lastTbd: null,         // open TBD marker focused by the last TBD open activation
   range: { baseline: null, loaded: null, loading: false, pickerOpen: false }, // loaded: anchor signatures of the page as served
+  jev: { status: 'idle', items: [], base: null, request: 0 },
+  readingView: false,
+  movingOrphans: new Set(),
 };
 
 /* ---------------- transports ---------------- */
@@ -140,6 +143,82 @@ function baselineParams(base) {
   return params;
 }
 
+const JEV_TYPE_LABELS = {
+  scope: 'Scope',
+  behavioral: 'Behavior',
+  clarification: 'Clarification',
+  cosmetic: 'Cosmetic',
+};
+
+function jevParams(base) {
+  const params = new URLSearchParams({ path: location.pathname.replace(/^\//, ''), base: String(base || '') });
+  if (state.readingView) params.set('view', 'reading');
+  return params;
+}
+
+async function fetchJev(base, signal) {
+  const response = await fetch('/api/jev?' + jevParams(base), { signal });
+  if (!response.ok) throw new Error('Jev unavailable');
+  const result = await response.json();
+  return {
+    jev: result && result.jev === 'off' ? 'off' : 'on',
+    items: Array.isArray(result && result.items) ? result.items.filter(item => item && typeof item === 'object').map(item => ({
+      kind: String(item.kind || ''),
+      id: String(item.id || ''),
+      state: String(item.state || 'none'),
+      label: item.label == null ? null : String(item.label),
+      target: item.target == null ? null : String(item.target),
+      record: item.record == null ? null : String(item.record),
+    })) : [],
+  };
+}
+
+function jevItem(kind, id) {
+  return state.jev.items.find(item => item.kind === kind && item.id === String(id)) || null;
+}
+
+function findAnchor(anchorId) {
+  return [...document.querySelectorAll('[data-anchor]')].find(el => el.dataset.anchor === String(anchorId)) || null;
+}
+
+function clearJev() {
+  state.jev.request += 1;
+  state.jev.status = 'idle';
+  state.jev.items = [];
+  state.jev.base = null;
+  renderJev();
+  renderPanel();
+  renderPins();
+}
+
+async function requestJev(base) {
+  if (!['http:', 'https:'].includes(location.protocol) || !base) return;
+  const request = ++state.jev.request;
+  state.jev.status = 'loading';
+  state.jev.base = String(base);
+  renderJev();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120000);
+  try {
+    const result = await fetchJev(base, controller.signal);
+    if (request !== state.jev.request) return;
+    state.jev.status = result.jev === 'off' ? 'off' : 'on';
+    state.jev.items = result.items;
+    renderJev();
+    renderPanel();
+    renderPins();
+  } catch (_) {
+    if (request !== state.jev.request) return;
+    state.jev.status = 'unavailable';
+    state.jev.items = [];
+    renderJev();
+    renderPanel();
+    renderPins();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function markIssueFocus(current, baseline) {
   const prior = baseline.html === null ? null : anchorSignatures(new DOMParser().parseFromString(baseline.html, 'text/html'));
   const classification = classifyAnchorSignatures(current, prior);
@@ -175,6 +254,7 @@ async function applyIssueFocus() {
     const baseline = await fetchBaseline(requestedBase, controller.signal);
     state.range.baseline = baseline;
     renderRangeBar(baseline);
+    requestJev(baseline.base);
     markIssueFocus(state.range.loaded, baseline);
   } catch (error) {
     const copy = document.getElementById('hx-range-copy');
@@ -279,6 +359,7 @@ async function selectRangeBase(value) {
   setRangeError('');
   const apply = document.getElementById('hx-range-apply');
   if (apply) apply.disabled = true;
+  clearJev();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
   try {
@@ -286,6 +367,7 @@ async function selectRangeBase(value) {
     state.range.baseline = baseline;
     markIssueFocus(state.range.loaded, baseline);
     renderRangeBar(baseline);
+    requestJev(baseline.base || requested);
     const url = new URL(location.href);
     url.searchParams.set('focus', 'changes');
     url.searchParams.set('base', baseline.base || requested);
@@ -318,6 +400,76 @@ function mountRangeBar() {
   bar.addEventListener('keydown', event => {
     if (event.key === 'Escape') openRangePicker(false);
   });
+}
+
+/* ---------------- Jev coverage ----------------
+ * Coverage stays in a separate block so other suggestion builders can add their
+ * markers without changing the review transport or thread model.
+ */
+function coveragePair(item) {
+  if (item && item.story !== undefined && item.criterion !== undefined) {
+    return { story: item.story == null ? '' : String(item.story), criterion: item.criterion == null ? '' : String(item.criterion) };
+  }
+  const id = String(item && item.id || '');
+  const split = id.indexOf('::');
+  if (split >= 0 && (split > 0 || split < id.length - 2)) return { story: id.slice(0, split), criterion: id.slice(split + 2) };
+  return null;
+}
+
+function coverageGapFlags(items) {
+  const values = new Map();
+  const ensure = (anchor, side) => {
+    const key = side + ':' + anchor;
+    if (!values.has(key)) values.set(key, { anchor, side, verifies: false, unsure: false, unavailable: false });
+    return values.get(key);
+  };
+  for (const item of Array.isArray(items) ? items : []) {
+    if (!item || item.kind !== 'coverage') continue;
+    const pair = coveragePair(item);
+    if (!pair) continue;
+    const story = ensure(pair.story, 'story');
+    const criterion = ensure(pair.criterion, 'criterion');
+    const verifies = item.state === 'label' && item.label === 'verifies';
+    const unsure = item.state === 'unsure' || (item.state === 'label' && item.label === 'unsure');
+    const unavailable = item.state === 'unavailable';
+    for (const value of [story, criterion]) {
+      value.verifies ||= verifies;
+      value.unsure ||= unsure;
+      value.unavailable ||= unavailable;
+    }
+  }
+  return [...values.values()].flatMap(value => {
+    if (!value.anchor) return [];
+    if (value.verifies) return [];
+    if (value.unsure) return [{ anchor: value.anchor, side: value.side, state: 'unsure', label: 'unsure' }];
+    if (value.unavailable) return [{ anchor: value.anchor, side: value.side, state: 'unavailable', label: 'Jev unavailable' }];
+    return [{ anchor: value.anchor, side: value.side, state: 'gap',
+      label: value.side === 'story' ? 'No criterion covers this' : 'No story backs this' }];
+  });
+}
+
+function coverageFlags(items) {
+  return coverageGapFlags(items);
+}
+
+function clearJevCoverage() {
+  document.querySelectorAll('.hx-jev-coverage').forEach(element => element.remove());
+}
+
+function renderJevCoverage(result) {
+  clearJevCoverage();
+  if (!result || result.jev !== 'on') return;
+  for (const flag of coverageGapFlags(result.items)) {
+    const holder = findAnchor(flag.anchor);
+    if (!holder) continue;
+    const note = document.createElement('span');
+    note.className = 'hx-jev-coverage';
+    note.dataset.state = flag.state;
+    note.textContent = flag.label;
+    note.setAttribute('role', 'status');
+    const heading = holder.querySelector('h1,h2,h3,h4,h5,h6');
+    (heading || holder).appendChild(note);
+  }
 }
 
 // Name the folder the user should grant: the first ancestor Chromium will accept
@@ -924,6 +1076,143 @@ function ingest(events) {
   renderBadges();
 }
 
+function jevDisplayLabel(item) {
+  if (!item) return '';
+  if (item.state === 'unsure') return 'unsure';
+  if (item.state === 'unavailable') return 'Jev unavailable';
+  const raw = String(item.label || '').toLowerCase();
+  return JEV_TYPE_LABELS[raw] || item.label || '';
+}
+
+function corpusFlags(items) {
+  const labels = { contradicts: 'Contradicts', overlaps: 'Overlaps', oversteps: 'Oversteps' };
+  const seenUnsure = new Set();
+  const seenUnavailable = new Set();
+  const confident = new Set();
+  const result = [];
+  for (const item of Array.isArray(items) ? items : []) {
+    if (!item || item.kind !== 'corpus' || !item.id) continue;
+    const anchor = String(item.id);
+    if (item.state === 'unsure') {
+      if (seenUnsure.has(anchor)) continue;
+      seenUnsure.add(anchor);
+      result.push({ anchor, state: 'unsure', label: 'unsure', target: null });
+      continue;
+    }
+    if (item.state === 'unavailable') {
+      if (seenUnavailable.has(anchor)) continue;
+      seenUnavailable.add(anchor);
+      result.push({ anchor, state: 'unavailable', label: 'Jev unavailable', target: null });
+      continue;
+    }
+    if (item.state !== 'label') continue;
+    const label = labels[String(item.label || '').toLowerCase()];
+    if (label) {
+      confident.add(anchor);
+      result.push({ anchor, state: 'label', label,
+        target: item.target == null ? null : String(item.target) });
+    }
+  }
+  return result.filter(flag => flag.state !== 'unsure' || !confident.has(flag.anchor));
+}
+
+function corpusTargetLink(target) {
+  const value = String(target || '').trim();
+  if (!value) return null;
+  const hash = value.indexOf('#');
+  const anchor = hash < 0 ? value : value.slice(hash + 1);
+  if (!anchor) return null;
+  const href = hash < 0 ? '#' + anchor : hash === 0 ? value :
+    (value.slice(0, hash).startsWith('/') ? value.slice(0, hash) : '/' + value.slice(0, hash)) + '#' + anchor;
+  return { text: hash < 0 ? '#' + anchor : value, href };
+}
+
+function appendJevCorpusMarker(holder, flag) {
+  const marker = document.createElement(flag.target ? 'a' : 'span');
+  marker.className = 'hx-jev-corpus';
+  marker.dataset.state = flag.state;
+  const target = corpusTargetLink(flag.target);
+  if (target && marker.tagName === 'A') {
+    marker.href = target.href;
+    marker.textContent = flag.label + ' ' + target.text;
+  } else {
+    marker.textContent = flag.label;
+  }
+  const heading = holder.querySelector('h1,h2,h3,h4,h5,h6') || holder;
+  heading.appendChild(marker);
+}
+
+function appendJevMarker(holder, text, stateName) {
+  const marker = document.createElement('span');
+  marker.className = 'hx-jev-marker hx-jev-badge';
+  marker.dataset.state = stateName;
+  marker.textContent = text;
+  const heading = holder.querySelector('h1,h2,h3,h4,h5,h6') || holder;
+  heading.appendChild(marker);
+}
+
+function goToJevTarget(target) {
+  const value = String(target || '');
+  const hash = value.indexOf('#');
+  const path = hash < 0 ? '' : value.slice(0, hash);
+  const anchor = hash < 0 ? value : value.slice(hash + 1);
+  if (path && path !== location.pathname.replace(/^\//, '')) {
+    location.href = (path.startsWith('/') ? path : '/' + path) + (anchor ? '#' + anchor : '');
+    return;
+  }
+  scrollToJevAnchor(anchor || value);
+}
+
+function renderJev() {
+  document.querySelectorAll('.hx-jev-badge').forEach(el => el.remove());
+  document.querySelectorAll('.hx-jev-corpus').forEach(el => el.remove());
+  document.querySelectorAll('.hx-jev-coverage').forEach(el => el.remove());
+  document.querySelectorAll('[data-hx-audience]').forEach(el => delete el.dataset.hxAudience);
+  document.querySelectorAll('[data-hx-jev-type]').forEach(el => {
+    delete el.dataset.hxJevType;
+    delete el.dataset.hxJevState;
+  });
+  document.querySelectorAll('.hx-jev-note').forEach(el => el.remove());
+  if (EMBED_REVIEW_DIR) return;
+  renderJevCoverage(state.jev.status === 'on' ? { jev: 'on', items: state.jev.items } : null);
+
+  if (state.jev.status === 'off' || state.jev.status === 'unavailable') {
+    const note = document.createElement('p');
+    note.className = 'hx-jev-note';
+    note.textContent = state.jev.status === 'off' ? 'Jev off' : 'Jev unavailable';
+    const article = document.querySelector('article.spec');
+    if (article) article.parentNode.insertBefore(note, article);
+    else document.body.insertBefore(note, document.body.firstChild);
+  }
+
+  const gitFocus = new URLSearchParams(location.search).get('focus') === 'changes' || document.body.classList.contains('hx-focus-active');
+  const reading = state.readingView;
+  for (const item of state.jev.items) {
+    if (!item.id || item.state === 'none') continue;
+    const holder = findAnchor(item.id);
+    if (!holder) continue;
+    if (reading) {
+      if (item.kind !== 'audience') continue;
+      if (item.state === 'label' && item.label === 'internals') holder.dataset.hxAudience = 'internals';
+      if (item.state === 'unsure' || item.state === 'unavailable') {
+        appendJevMarker(holder, jevDisplayLabel(item), item.state);
+      }
+      continue;
+    }
+    if (!gitFocus || item.kind !== 'type') continue;
+    const label = jevDisplayLabel(item);
+    if (!label) continue;
+    holder.dataset.hxJevType = String(item.label || item.state).toLowerCase();
+    holder.dataset.hxJevState = item.state;
+    appendJevMarker(holder, label, item.state);
+  }
+  if (!gitFocus) return;
+  for (const flag of corpusFlags(state.jev.items)) {
+    const holder = findAnchor(flag.anchor);
+    if (holder) appendJevCorpusMarker(holder, flag);
+  }
+}
+
 /* ---------------- UI ---------------- */
 // Document presentation applies only to standalone spec pages: an embedding host app
 // owns its own look, so embed mode ships the hx-* overlay CSS alone.
@@ -945,6 +1234,7 @@ article.spec header{border-color:#33363c}
 article.spec nav{color:#74767e}
 article.spec a{color:#34a899}
 [data-render-target]{border-color:#33363c;background:#1d2024}
+body [data-hx-jev-type=cosmetic]{color:#b9c0ca!important}
 }
 @media(max-width:640px){
 :where(body){padding-bottom:calc(112px + env(safe-area-inset-bottom))}
@@ -959,6 +1249,7 @@ body.hx-focus-active tr[data-hx-focus=unchanged]:not([data-hx-focus=unchanged]:n
 body.hx-focus-active .hx-tbd-open{position:relative;z-index:3}
 body.hx-focus-active .hx-tbd-open[data-hx-focus=unchanged]::after,body.hx-focus-active tr.hx-tbd-open[data-hx-focus=unchanged] > :is(td,th)::after{display:none!important}
 body.hx-focus-active [data-hx-focus=unchanged] .hx-pin,body.hx-focus-active [data-hx-focus=unchanged] .hx-badge{opacity:1;filter:none;z-index:700}
+body.hx-focus-active [data-hx-focus=unchanged] .hx-jev-badge,body.hx-focus-active [data-hx-focus=unchanged] .hx-jev-corpus,body.hx-focus-active [data-hx-focus=unchanged] .hx-jev-coverage{position:relative;opacity:1;filter:none;z-index:700}
 .hx-focus-error{position:fixed;top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);max-width:calc(100vw - 24px);box-sizing:border-box;padding:8px 12px;border-radius:8px;background:#8b1a1a;color:#fff;font:600 12px system-ui;z-index:970;box-shadow:0 6px 20px rgba(30,30,40,.25)}
 @media(prefers-color-scheme:dark){
 body.hx-focus-active [data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])):not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *):not(tr):not(td):not(th):not(script):not(style)::after{background:rgba(0,0,0,calc(.6*var(--hx-veil,1)))}
@@ -1095,6 +1386,36 @@ body.hx-comment [data-render-target]:hover{border:1.5px dashed #d98e04}
 body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-tbd-open{outline:2px solid #d98e04;outline-offset:4px}
 .hx-badge{font:600 9.5px system-ui;text-transform:uppercase;letter-spacing:.04em;color:#0e7264;background:#e3f2f0;border-radius:4px;padding:2px 7px;margin-left:8px;vertical-align:middle}
+.hx-jev-badge{font:700 10px/1 system-ui,sans-serif;text-transform:none;letter-spacing:0;border-radius:999px;padding:4px 8px;margin-left:8px;vertical-align:middle;white-space:nowrap}
+.hx-jev-badge[data-state=label]{color:#204a43;background:#d9eee9}
+.hx-jev-badge[data-state=unsure]{color:#78520a;background:#fff0c2}
+.hx-jev-badge[data-state=unavailable]{color:#7b2525;background:#f8dddd}
+.hx-jev-corpus{display:inline-block;margin-left:8px;padding:1px 5px;border-radius:4px;background:#f4f6fb;color:#35405f;font:650 10px/1.3 system-ui,sans-serif;text-decoration:none;white-space:nowrap}
+.hx-jev-corpus[href]{text-decoration:underline;text-underline-offset:2px}
+.hx-jev-corpus[data-state=unsure]{background:#fff8e9;color:#8b5c0b}
+.hx-jev-note{box-sizing:border-box;max-width:720px;margin:12px auto 0;padding:6px 10px;border:1px solid #e0c77a;border-radius:7px;background:#fff7d6;color:#6d4b05;font:600 12px/1.35 system-ui,sans-serif}
+[data-hx-jev-type=scope]{box-shadow:inset 4px 0 #b42318;background:rgba(180,35,24,.08)}
+[data-hx-jev-type=behavioral]{box-shadow:inset 3px 0 #b45309;background:rgba(180,83,9,.06)}
+[data-hx-jev-type=clarification]{box-shadow:inset 2px 0 #28756a;background:rgba(40,117,106,.045)}
+[data-hx-jev-type=cosmetic]{color:#586069!important}
+[data-hx-jev-type=cosmetic] :is(h1,h2,h3,h4,h5,h6,p,li,td,th,blockquote,code,strong,em,a:not(.hx-jev-corpus)){color:inherit!important}
+.hx-jev-target-flash{animation:hx-jev-flash 1.2s ease-out}
+@keyframes hx-jev-flash{0%{box-shadow:0 0 0 4px rgba(41,71,199,.42)}100%{box-shadow:0 0 0 14px rgba(41,71,199,0)}}
+.hx-jev-thread-label{flex:0 0 auto;color:#2f6b32;background:#e8f2e8;border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700;white-space:nowrap}
+.hx-jev-thread-label[data-state=unsure]{color:#78520a;background:#fff0c2}
+.hx-jev-thread-label[data-state=unavailable]{color:#7b2525;background:#f8dddd}
+.hx-orphan-hint{display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin:7px 0;padding:7px 8px;border-left:3px solid #b47308;background:#fff8e9;color:#76500a;font-size:11.5px;line-height:1.35}
+.hx-orphan-hint>span{flex:1 1 100%}
+.hx-orphan-hint .hx-btn{margin:0;font-size:10.5px;padding:4px 8px}
+.hx-pin-jev{position:absolute;left:calc(100% + 4px);top:50%;transform:translateY(-50%);width:max-content;max-width:120px;color:#2f6b32;background:#e8f2e8;border:1px solid #69a76b;border-radius:4px;padding:2px 4px;font:700 9px/1.1 system-ui,sans-serif;white-space:nowrap;pointer-events:none}
+.hx-jev-coverage{display:inline-block;margin-left:8px;padding:2px 6px;border:1px solid #b7c1d8;border-radius:4px;background:#f4f6fb;color:#35405f;font:650 10px/1.3 system-ui,sans-serif;vertical-align:middle}
+.hx-jev-coverage[data-state=unsure]{border-color:#c69b4d;background:#fff8e9;color:#8b5c0b}
+.hx-jev-coverage[data-state=unavailable]{border-color:#c98282;background:#fff1f1;color:#8b1a1a}
+@media(prefers-color-scheme:dark){
+.hx-jev-coverage{border-color:#596480;background:#242b45;color:#d9e0ff}
+.hx-jev-coverage[data-state=unsure]{border-color:#a77c32;background:#3c301d;color:#ffd98a}
+.hx-jev-coverage[data-state=unavailable]{border-color:#a65d5d;background:#3a2020;color:#ffb4b4}
+}
 .hx-banner{position:fixed;top:0;left:0;right:0;background:#12897c;color:#fff;font:600 13px system-ui;padding:8px 16px;z-index:950;display:flex;gap:14px;align-items:center;justify-content:center}
 .hx-toast{position:fixed;bottom:76px;left:50%;transform:translateX(-50%);background:#22242a;color:#faf9f6;font:600 12.5px system-ui;border-radius:8px;padding:9px 16px;box-shadow:0 8px 28px rgba(30,30,40,.3);z-index:960;opacity:0;transition:opacity .25s;pointer-events:none}
 .hx-toast.show{opacity:1}
@@ -1104,7 +1425,7 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-toolbar button{min-height:44px;flex:1 1 auto;padding:8px 12px;touch-action:manipulation}
 .hx-mobile-handoff{display:block}
 .hx-toolbar .hx-status{flex:1 0 100%;min-width:0;padding:2px 8px 4px;overflow:hidden;text-align:center;text-overflow:ellipsis;white-space:nowrap}
-.hx-panel{width:100vw;height:100dvh;max-height:100dvh;border-left:0}
+.hx-panel{width:100vw;height:100dvh;max-height:100dvh;border-left:0;box-sizing:border-box;padding-bottom:calc(var(--hx-dock-space,0px) + 10px + env(safe-area-inset-bottom))}
 body.hx-panel-open{padding-right:0;overflow:hidden}
 .hx-panel-head{min-height:56px;padding:18px 16px 14px 60px}
 .hx-panel-toggle{top:6px;left:6px;width:44px;height:44px;touch-action:manipulation}
@@ -1122,6 +1443,10 @@ body.hx-panel-open{padding-right:0;overflow:hidden}
 .hx-handoff .hx-note{flex:1 1 auto}
 .hx-handoff .hx-btn{flex:1 1 auto;margin:0}
 .hx-pin{width:44px;height:44px;font-size:12px;touch-action:manipulation}
+.hx-pin-jev{left:auto;right:calc(100% + 4px);max-width:110px;text-align:right}
+.hx-jev-note{margin:8px 16px 0}
+.hx-jev-badge{font-size:9px;padding:4px 6px;margin-left:5px}
+.hx-jev-badge{display:inline-block;max-width:100%;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere}
 .hx-banner{align-items:flex-start;flex-wrap:wrap;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;text-align:center}
 .hx-banner button{min-height:44px;padding:8px 12px;touch-action:manipulation}
 .hx-toast{bottom:calc(112px + env(safe-area-inset-bottom));max-width:calc(100vw - 24px);box-sizing:border-box;text-align:center}
@@ -1215,6 +1540,8 @@ function mountUI() {
   bar.className = 'hx-toolbar';
   bar.innerHTML = '<button id="hx-mode" aria-pressed="false">✛ Comment (C)</button><button class="hx-mobile-handoff" id="hx-mobile-handoff" type="button" disabled>Hand off</button><button id="hx-connect" hidden>Connect review folder</button><button id="hx-repick" hidden>Choose different folder</button><span class="hx-status" id="hx-status">starting…</span>';
   document.body.appendChild(bar);
+  // The narrow sidebar ends above the fixed dock, so its last content stays reachable.
+  new ResizeObserver(() => document.documentElement.style.setProperty('--hx-dock-space', bar.offsetHeight + 'px')).observe(bar);
 
   const dock = document.createElement('nav');
   dock.className = 'hx-thread-dock';
@@ -1423,10 +1750,17 @@ function renderPanel() {
     const collapsed = resolvedThreadCollapsed(th, state.expandedResolved);
     const d = document.createElement('div');
     d.className = 'hx-thread' + (state.activeThread === th.id ? ' active' : '') + (collapsed ? ' resolved-collapsed' : '');
+    const resolvedHint = jevItem('resolved', th.id);
+    const orphanHint = jevItem('orphan', th.id);
+    const threadJevState = [orphanHint, resolvedHint].find(item => item && ['unsure', 'unavailable'].includes(item.state));
     d.innerHTML = '<div class="hx-thread-summary"><div class="hx-anchor">' + esc(label(b)) + '</div>' +
       '<span class="hx-pill" data-s="' + th.status + '">' + th.status + '</span>' +
+      (resolvedHint && resolvedHint.state === 'label' && resolvedHint.label === 'resolved in spirit' ? '<span class="hx-jev-thread-label">Looks resolved</span>' : '') +
+      (threadJevState ? '<span class="hx-jev-thread-label" data-state="' + threadJevState.state + '">' + esc(jevDisplayLabel(threadJevState)) + '</span>' : '') +
       (th.status === 'resolved' ? '<button class="hx-disclosure" data-act="disclosure" aria-expanded="' + String(!collapsed) + '" aria-label="' + (collapsed ? 'Show' : 'Hide') + ' resolved thread">' + (collapsed ? '▸' : '▾') + '</button>' : '') + '</div>' +
       (collapsed ? '<div class="hx-thread-preview">' + esc(b.text || 'Resolved comment') + '</div>' : '');
+    const hint = orphanHintElement(th, orphanHint);
+    if (hint) d.appendChild(hint);
     if (!collapsed) {
       for (const message of th.messages) {
         const m = message.body;
@@ -1507,7 +1841,69 @@ function selectThread(th, scroll) {
 }
 
 function scrollToThread(b) {
-  document.querySelector('[data-anchor="' + b.anchorId + '"]')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  findAnchor(b.anchorId)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+function scrollToJevAnchor(anchorId) {
+  const holder = findAnchor(anchorId);
+  if (!holder) return;
+  holder.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  holder.classList.remove('hx-jev-target-flash');
+  requestAnimationFrame(() => holder.classList.add('hx-jev-target-flash'));
+}
+
+function orphanHintElement(th, orphanHint) {
+  if (!orphanHint || orphanHint.state !== 'label' || !orphanHint.target) return null;
+  const hint = document.createElement('div');
+  hint.className = 'hx-orphan-hint';
+  const copy = document.createElement('span');
+  copy.textContent = 'Possibly moved to: #' + orphanHint.target;
+  const go = document.createElement('button');
+  go.type = 'button';
+  go.className = 'hx-btn';
+  go.dataset.act = 'orphan-go';
+  go.textContent = 'Go to';
+  go.addEventListener('click', e => { e.stopPropagation(); goToJevTarget(orphanHint.target); });
+  hint.append(copy, go);
+  // A resolved thread was already moved or closed: offer no second move.
+  if (th.status === 'resolved') return hint;
+  const move = document.createElement('button');
+  move.type = 'button';
+  move.className = 'hx-btn pri';
+  move.dataset.act = 'orphan-move';
+  move.textContent = state.movingOrphans.has(th.id) ? 'Moving…' : 'Move comment here';
+  move.disabled = state.movingOrphans.has(th.id);
+  move.addEventListener('click', e => { e.stopPropagation(); moveOrphan(th, orphanHint.target); });
+  hint.append(move);
+  return hint;
+}
+
+async function moveOrphan(th, target) {
+  if (!th || !target || state.movingOrphans.has(th.id)) return;
+  state.movingOrphans.add(th.id);
+  renderPanel();
+  const original = th.ev.body || {};
+  const quote = original.quote || original.text || '';
+  try {
+    await state.transport.postEvent({
+      id: humanId('u'), event: 'comment', anchorId: target, target: null,
+      quote, text: original.text || 'Moved comment', actor: 'human',
+      createdAt: new Date().toISOString(), schemaVersion: 1,
+    });
+    await state.transport.postEvent({
+      id: humanId('s'), event: 'status', respondsTo: th.id, threadId: th.id,
+      status: 'resolved', actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1,
+    });
+    toast('Comment moved to #' + target);
+    state.activeThread = null;
+    await refresh();
+  } catch (_) {
+    toast('Could not move comment');
+  } finally {
+    state.movingOrphans.delete(th.id);
+    renderPanel();
+    renderPins();
+  }
 }
 
 const chartInfoFor = b => {
@@ -1687,14 +2083,27 @@ function renderPins() {
   for (const th of state.threads.values()) {
     n++;
     const b = th.ev.body;
-    const holder = document.querySelector('[data-anchor="' + b.anchorId + '"]');
+    const holder = findAnchor(b.anchorId);
     if (!holder) continue;
     const pos = pinPos(b, holder);
     const pin = document.createElement('button');
     pin.className = 'hx-pin' + (state.activeThread === th.id ? ' active' : '');
     pin.dataset.s = th.status;
-    pin.textContent = n;
-    pin.title = label(b);
+    const looksResolved = Boolean(jevItem('resolved', th.id) && jevItem('resolved', th.id).state === 'label' && jevItem('resolved', th.id).label === 'resolved in spirit');
+    pin.textContent = '';
+    const number = document.createElement('span');
+    number.className = 'hx-pin-number';
+    number.textContent = n;
+    pin.appendChild(number);
+    if (looksResolved) {
+      pin.dataset.jev = 'resolved';
+      const marker = document.createElement('span');
+      marker.className = 'hx-pin-jev';
+      marker.textContent = 'Looks resolved';
+      pin.appendChild(marker);
+    }
+    pin.title = (looksResolved ? 'Looks resolved · ' : '') + label(b);
+    pin.setAttribute('aria-label', (looksResolved ? 'Looks resolved: ' : '') + label(b));
     pin.style.top = pos.top + 'px';
     const pinSize = window.matchMedia('(max-width: 640px)').matches ? 44 : 24;
     pin.style.left = Math.max(0, Math.min(pos.left, holder.clientWidth - pinSize)) + 'px';
@@ -1918,5 +2327,78 @@ function startLoops() {
   setInterval(() => { renderPins(); renderThreadHighlight(); }, 2000);
   window.addEventListener('resize', () => { renderPins(); renderThreadHighlight(); });
 }
+
+/* ---------------- ANN-108 reading view ----------------
+ * This block owns the audience toggle and its HTTP-only Jev request. It never
+ * changes document order or removes clauses. Git focus and reading view are
+ * mutually exclusive display modes.
+ */
+function clearReadingAudience() {
+  document.querySelectorAll('[data-hx-audience]').forEach(el => delete el.dataset.hxAudience);
+}
+
+function clearGitFocusForReading() {
+  document.body.classList.remove('hx-focus-active');
+  document.querySelectorAll('[data-hx-focus],[data-hx-focus-root]').forEach(el => {
+    delete el.dataset.hxFocus;
+    delete el.dataset.hxFocusRoot;
+  });
+  document.querySelectorAll('.hx-focus-error').forEach(el => el.remove());
+  const url = new URL(location.href);
+  if (url.searchParams.get('focus') === 'changes') {
+    url.searchParams.delete('focus');
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
+  }
+}
+
+function setReadingView(on) {
+  const next = Boolean(on);
+  if (next === state.readingView && !next) {
+    clearReadingAudience();
+    return;
+  }
+  if (next) clearGitFocusForReading();
+  state.readingView = next;
+  document.body.classList.toggle('hx-reading-active', next);
+  const button = document.getElementById('hx-reading');
+  if (button) {
+    button.setAttribute('aria-pressed', String(next));
+    button.textContent = next ? 'Reading view on' : 'Reading view';
+  }
+  if (!next) clearReadingAudience();
+  if (next) {
+    const base = (state.range.baseline && state.range.baseline.base) || new URLSearchParams(location.search).get('base');
+    if (base) requestJev(base);
+  } else {
+    renderJev();
+  }
+}
+
+function mountReadingView() {
+  if (EMBED_REVIEW_DIR || !['http:', 'https:'].includes(location.protocol) || document.getElementById('hx-reading')) return;
+  const toolbar = document.querySelector('.hx-toolbar');
+  if (!toolbar) return;
+  const style = document.createElement('style');
+  style.textContent = `.hx-reading-active [data-hx-audience="internals"]{color:#586069!important}
+.hx-reading-active [data-hx-audience="internals"] :is(a,code,strong,em,span):not(.hx-jev-badge,.hx-jev-corpus,.hx-jev-coverage){color:inherit!important}
+` + (document.querySelector('link[rel~="stylesheet"][href*=".style/spec.css"]') ? '' :
+    `@media(prefers-color-scheme:dark){.hx-reading-active [data-hx-audience="internals"]{color:#b9c0ca!important}}`);
+  document.head.appendChild(style);
+  const button = document.createElement('button');
+  button.id = 'hx-reading';
+  button.type = 'button';
+  button.textContent = 'Reading view';
+  button.setAttribute('aria-pressed', 'false');
+  button.addEventListener('click', () => setReadingView(!state.readingView));
+  toolbar.insertBefore(button, document.getElementById('hx-status'));
+  document.body.classList.toggle('hx-reading-active', state.readingView);
+}
+
+const readingClassObserver = new MutationObserver(() => {
+  if (state.readingView && document.body.classList.contains('hx-focus-active')) setReadingView(false);
+  else document.body.classList.toggle('hx-reading-active', state.readingView);
+});
+readingClassObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+setTimeout(mountReadingView, 0);
 
 })();

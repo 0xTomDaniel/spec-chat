@@ -1,0 +1,96 @@
+{
+  "id": "corpus",
+  "version": 4,
+  "instructions": "Compare the changed clause with the linked clause. Choose contradicts when the changed behavior conflicts with the target clause or its non-goal. Choose overlaps when both clauses describe the same behavior or surface. Choose oversteps when the changed clause adds a behavior beyond the target clause's stated boundary. Choose unrelated when the clauses share no behavior or boundary that needs a review flag. Do not flag a merely related clause.",
+  "labels": [
+    {
+      "name": "contradicts",
+      "description": "The changed clause conflicts with the target clause or with a non-goal in the same spec.",
+      "examples": [
+        {
+          "input": {
+            "before": "The base end is the commit whose spec bytes are compared, which is the selected base or, for a spec absent there, its first committed seed.",
+            "after": "The base end is the selected base commit; a spec absent there is entirely new, as focus defines.",
+            "target": "The baseline response retains the selected commit in base and identifies the actual HTML snapshot in htmlBase; a file absent from the selected base uses its stable first committed seed, or null when still uncommitted."
+          },
+          "label": "contradicts"
+        },
+        {
+          "input": {
+            "before": "Only human clicks write spool events.",
+            "after": "The agent automatically writes a move event.",
+            "target": "Only a human click on Move comment here writes, using existing events."
+          },
+          "label": "contradicts"
+        }
+      ]
+    },
+    {
+      "name": "overlaps",
+      "description": "The changed clause and target clause describe the same behavior, surface, or responsibility.",
+      "examples": [
+        {
+          "input": {
+            "before": "The server stores one judgment record for each question.",
+            "after": "The records are the cache.",
+            "target": "The records are the cache: each is keyed by a hash of its question inputs and set version."
+          },
+          "label": "overlaps"
+        },
+        {
+          "input": {
+            "before": "A confident flag adds a label.",
+            "after": "A confident flag adds a label on the changed clause.",
+            "target": "A confident flag adds a small label on the changed clause."
+          },
+          "label": "overlaps"
+        }
+      ]
+    },
+    {
+      "name": "oversteps",
+      "description": "The changed clause extends beyond the target clause's stated scope or boundary without directly contradicting it.",
+      "examples": [
+        {
+          "input": {
+            "before": "Reading view dims internal clauses in the browser.",
+            "after": "Reading view changes provider thresholds on the server.",
+            "target": "The browser runtime owns reading view and consumes the route."
+          },
+          "label": "oversteps"
+        },
+        {
+          "input": {
+            "before": "The route returns suggestion items.",
+            "after": "The route edits the spec when a label is confident.",
+            "target": "No suggestion edits a spec; only a human click writes."
+          },
+          "label": "oversteps"
+        }
+      ]
+    },
+    {
+      "name": "unrelated",
+      "description": "The changed clause and target clause share no behavior or boundary that needs a review flag.",
+      "examples": [
+        {
+          "input": {
+            "before": "The cache key includes the source revision.",
+            "after": "The cache key includes the source revision and set version.",
+            "target": "Mobile markers stay visible at narrow widths."
+          },
+          "label": "unrelated"
+        },
+        {
+          "input": {
+            "before": "The page shows a comment label.",
+            "after": "The page shows a comment label with text.",
+            "target": "The compared base determines the Git focus."
+          },
+          "label": "unrelated"
+        }
+      ]
+    }
+  ],
+  "threshold": 0.4
+}

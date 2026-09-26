@@ -1,0 +1,68 @@
+{
+  "id": "audience",
+  "version": 4,
+  "instructions": "Classify one leaf clause of a spec for a reading view. Choose for you when the clause is user-facing or behavioral (what a user sees or what the result does), or states highly important architecture (a hard-to-reverse boundary, a dependency direction, or a key interface). Choose internals for everything else: implementation detail, mechanics, proofs, fixture or test detail, and minor structure. An acceptance criterion is usually for you; choose internals only when it is about proof or fixture mechanics.",
+  "labels": [
+    {
+      "name": "for you",
+      "description": "User-facing or behavioral: what a user sees or what the result does; or highly important architecture: a hard-to-reverse boundary, a dependency direction, or a key interface.",
+      "examples": [
+        {
+          "input": {
+            "clause": "The bar sits in page flow, wraps on narrow screens, and never covers the spec or review controls."
+          },
+          "label": "for you"
+        },
+        {
+          "input": {
+            "clause": "When no agent process exists, handed-off events remain durably queued and no claim of active processing is made."
+          },
+          "label": "for you"
+        },
+        {
+          "input": {
+            "clause": "Tracker-specific graph mutations remain behind the repository-selected issue skill, so Spec Chat depends on no tracker or orchestrator."
+          },
+          "label": "for you"
+        },
+        {
+          "input": {
+            "clause": "When the reviewer pastes a valid commit id, the page re-diffs against it as if picked; an unknown or option-like value shows an inline error and the previous range stays."
+          },
+          "label": "for you"
+        }
+      ]
+    },
+    {
+      "name": "internals",
+      "description": "Everything else: implementation detail, mechanics, proofs, fixture or test detail, and minor structure.",
+      "examples": [
+        {
+          "input": {
+            "clause": "The lock uses one user-owned absolute runtime namespace independent of shell environment variables so Herdr panes and ordinary shells contend on the same identity."
+          },
+          "label": "internals"
+        },
+        {
+          "input": {
+            "clause": "Smallest first failing test: two fake lanes, one Active and one waiting on QA review, map to one card in each column with the reason, owner tab name, and last activity passed through unchanged."
+          },
+          "label": "internals"
+        },
+        {
+          "input": {
+            "clause": "When the review host verifies a served resource, its existing base, htmlBase, and html checks pass unchanged."
+          },
+          "label": "internals"
+        },
+        {
+          "input": {
+            "clause": "headDate, baseDate Commit dates of head and base as YYYY-MM-DD."
+          },
+          "label": "internals"
+        }
+      ]
+    }
+  ],
+  "threshold": 0.4
+}

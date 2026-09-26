@@ -26,6 +26,16 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+try:
+    from jev import JevService, enumerate_served_specs
+except ModuleNotFoundError:
+    import importlib.util
+    _jev_spec = importlib.util.spec_from_file_location("review_serve_jev", os.path.join(os.path.dirname(__file__), "jev.py"))
+    _jev_module = importlib.util.module_from_spec(_jev_spec)
+    _jev_spec.loader.exec_module(_jev_module)
+    JevService = _jev_module.JevService
+    enumerate_served_specs = _jev_module.enumerate_served_specs
+
 
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
 SAFE_CURSOR_RE = re.compile(r"[^/\\]+\Z")
@@ -632,24 +642,7 @@ class MountHandler(SimpleHTTPRequestHandler):
         seen = set()
         query = urlparse(self.path).query
         for mount in self.mounts:
-            specs = []
-            if mount.get("spec"):
-                specs = [(mount["spec"], mount["spec_file"])]
-            else:
-                for directory, directories, names in os.walk(mount["narrow_root"], followlinks=False):
-                    directories[:] = sorted(
-                        name for name in directories
-                        if not name.startswith(".") and not name.endswith(".review")
-                        and name.lower() not in {"evidence", "evidence-bundle", "evidence-bundles", "fixture", "fixtures", "support", "supports"}
-                    )
-                    for name in sorted(names):
-                        if name.startswith(".") or not name.endswith(".spec.html"):
-                            continue
-                        path = os.path.join(directory, name)
-                        if not _inside(path, mount["narrow_root"]) or not os.path.isfile(path):
-                            continue
-                        relative = os.path.relpath(path, mount["narrow_root"]).replace(os.sep, "/")
-                        specs.append((relative, path))
+            specs = enumerate_served_specs(mount)
             row = bool(mount.get("slug") and mount.get("spec"))
             lane = mount["slug"] if row else None
             project = mount.get("project") or os.path.basename(mount["root"])
@@ -844,6 +837,30 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
         headers = {"X-Spec-Chat-Wake": wake} if wake else None
         return self._json(events, headers=headers)
 
+    def _jev(self, query):
+        mount, target, relative = self._resolve_path(query.get("path", [""])[0], spec_only=True)
+        if not mount:
+            return self._json({"error": "bad path"}, 400)
+        base = query.get("base", [mount.get("base", "")])[0]
+        if not base or base.startswith("-"):
+            return self._json({"error": "invalid base"}, 400)
+        try:
+            subprocess.check_call(
+                ("git", "-C", mount["root"], "rev-parse", "--verify", base + "^{commit}"),
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except (OSError, subprocess.CalledProcessError):
+            return self._json({"error": "invalid base"}, 400)
+        review = target + ".review"
+        view = query.get("view", [""])[0]
+        events = _read_spool_events(review, mount["narrow_root"])
+        if events is None:
+            return self._json({"error": "unsafe spool path"}, 400)
+        try:
+            return self._json(self.server.jev.response(mount, target, relative, base, events, view, self.mounts))
+        except (OSError, RuntimeError, ValueError):
+            return self._json({"error": "jev unavailable"}, 503)
+
     def _post_event(self, query, body):
         mount, review = self._route_review(query)
         actor = query.get("actor", ["human"])[0]
@@ -909,6 +926,8 @@ li a { flex: 1 1 7rem; color: #087f73; display: flex; align-items: center; min-h
             return self._events(query)
         if parsed.path == "/api/baseline":
             return self._baseline(query)
+        if parsed.path == "/api/jev":
+            return self._jev(query)
         return self._send_file(parsed.path)
 
     def do_HEAD(self):
@@ -971,6 +990,7 @@ def main(argv=None):
         print("review-serve: %s" % exc, file=sys.stderr)
         return 2
     server.mount_state = state
+    server.jev = JevService()
     server.wake_controller = WakeController(server)
     wake_thread = threading.Thread(target=server.wake_controller.run, name="spec-chat-wake", daemon=True)
     wake_thread.start()
