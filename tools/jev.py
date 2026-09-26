@@ -21,9 +21,13 @@ from urllib.request import Request, urlopen
 
 MODEL = "typesafe/jev-1.13"
 OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
+OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_THRESHOLD = 0.4
 DEFAULT_MAX_INPUT_TOKENS = 32000
 RETRYABLE_OUTCOMES = frozenset({"off", "unavailable"})
+# Jev was below threshold on a set with a general LLM fallback (project-rules #q-fallback): the LLM decides next.
+ESCALATED = "escalated"
+REPLACEABLE_OUTCOMES = RETRYABLE_OUTCOMES | {ESCALATED}
 VOID_ELEMENTS = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"})
 IMPLIED_ENDS = {
     "li": {"li"}, "dt": {"dt", "dd"}, "dd": {"dt", "dd"},
@@ -85,8 +89,9 @@ def _now() -> str:
 
 class QuestionSet:
     def __init__(self, identifier: str, version: Any, instructions: str = "", labels: Any = None,
-                 threshold: float = DEFAULT_THRESHOLD):
+                 threshold: float = DEFAULT_THRESHOLD, fallback_model: str | None = None):
         self.id = identifier
+        self.fallback_model = fallback_model
         self.version = version
         self.instructions = instructions
         self.labels = [] if labels is None else labels
@@ -102,7 +107,12 @@ class QuestionSet:
             raise ValueError("invalid question set")
         if not isinstance(labels, (list, dict)):
             raise ValueError("question set labels must be an array or object")
-        return cls(identifier, version, str(raw.get("instructions", "")), labels, threshold)
+        fallback = raw.get("fallback")
+        model = fallback.get("model") if isinstance(fallback, Mapping) else None
+        if fallback is not None and (not isinstance(model, str) or not model.strip()):
+            raise ValueError("question set fallback needs a model")
+        return cls(identifier, version, str(raw.get("instructions", "")), labels, threshold,
+                   model.strip() if model else None)
 
     def criteria(self) -> dict[str, str]:
         if isinstance(self.labels, Mapping):
@@ -160,8 +170,11 @@ class QuestionSet:
         return result
 
     def to_dict(self) -> dict[str, Any]:
-        return {"id": self.id, "version": self.version, "instructions": self.instructions,
-                "labels": _jsonable(self.labels), "threshold": self.threshold}
+        result = {"id": self.id, "version": self.version, "instructions": self.instructions,
+                  "labels": _jsonable(self.labels), "threshold": self.threshold}
+        if self.fallback_model:
+            result["fallback"] = {"model": self.fallback_model}
+        return result
 
 
 def load_question_sets(*directories: str | Path | None) -> dict[str, QuestionSet]:
@@ -207,7 +220,7 @@ class JudgmentStore:
                 if isinstance(record, Mapping) and record.get("cache_key"):
                     record = dict(record)
                     current = self.by_key.get(record["cache_key"])
-                    if current is None or current.get("outcome") in RETRYABLE_OUTCOMES:
+                    if current is None or current.get("outcome") in REPLACEABLE_OUTCOMES:
                         self.by_key[record["cache_key"]] = record
 
     def get(self, key: str) -> dict[str, Any] | None:
@@ -218,7 +231,7 @@ class JudgmentStore:
         record = dict(record)
         with self.lock:
             current = self.by_key.get(record["cache_key"])
-            if current is not None and current.get("outcome") not in RETRYABLE_OUTCOMES:
+            if current is not None and current.get("outcome") not in REPLACEABLE_OUTCOMES:
                 return current
             self.by_key[record["cache_key"]] = record
             if self.path:
@@ -235,7 +248,14 @@ class OpenRouterProvider:
         self.timeout = timeout
 
     def decide(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
-        request = Request(self.endpoint,
+        return self._post(self.endpoint, payload)
+
+    def complete(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """General LLM chat completion through OpenRouter (project-rules #q-fallback)."""
+        return self._post(OPENROUTER_CHAT_URL, payload)
+
+    def _post(self, endpoint: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        request = Request(endpoint,
                           data=json.dumps(_jsonable(payload), ensure_ascii=False).encode("utf-8"),
                           headers={"Authorization": "Bearer " + self._api_key, "Content-Type": "application/json"},
                           method="POST")
@@ -262,6 +282,16 @@ def _parse_provider_answer(value: Mapping[str, Any], question_name: str) -> tupl
     return label.strip(), confidence, probabilities, str(value.get("model", MODEL))
 
 
+def _parse_general_answer(value: Mapping[str, Any], labels: Any) -> str:
+    """The general LLM's one label, from a chat completion whose content is {"choice": label}."""
+    content = value["choices"][0]["message"]["content"]
+    match = re.search(r"\{.*\}", str(content), re.S)
+    label = json.loads(match.group(0) if match else content).get("choice")
+    if not isinstance(label, str) or label.strip() not in labels:
+        raise RuntimeError("general answer has no known choice")
+    return label.strip()
+
+
 def _anchor_answer(answer: Mapping[str, Any], candidate_anchors: Mapping[str, Any]) -> dict[str, Any]:
     """Records hold anchors, never source text: map readable candidate labels back to anchor ids."""
     ids = {str(label): str(anchor) for label, anchor in candidate_anchors.items()}
@@ -283,13 +313,16 @@ class JevSeam:
         self.store = record_store or JudgmentStore()
         self.clock = clock
         self.max_input_tokens = max_input_tokens
+        self._key_locks: dict[str, threading.Lock] = {}
+        self._key_locks_lock = threading.Lock()
 
     def question_set(self, kind: str) -> QuestionSet:
         return self.question_sets[kind]
 
     def _record(self, key: str, kind: str, qset: QuestionSet, sources: Any, revision: Any,
-                answer: Mapping[str, Any], outcome: str, model: str = MODEL) -> dict[str, Any]:
-        return self.store.append({
+                answer: Mapping[str, Any], outcome: str, model: str = MODEL, escalated: bool = False) -> dict[str, Any]:
+        extra = {"escalated": True} if escalated else {}
+        return self.store.append({**extra,
             "record_id": "judgment-" + uuid.uuid4().hex,
             "cache_key": key,
             "model": model,
@@ -313,15 +346,27 @@ class JevSeam:
     def cached(self, question: Mapping[str, Any]) -> dict[str, Any] | None:
         """The record already held for this question, never asking."""
         record = self.store.get(self.key(question))
-        return record if record and record.get("outcome") not in RETRYABLE_OUTCOMES else None
+        return record if record and record.get("outcome") not in REPLACEABLE_OUTCOMES else None
+
+    def _lock(self, key: str) -> threading.Lock:
+        with self._key_locks_lock:
+            return self._key_locks.setdefault(key, threading.Lock())
 
     def ask(self, question: Mapping[str, Any]) -> dict[str, Any]:
+        """One answer per key at a time: a concurrent ask of the same inputs waits and reuses the record."""
+        key = self.key(question)
+        with self._lock(key):
+            return self._ask(question, key)
+
+    def _ask(self, question: Mapping[str, Any], key: str) -> dict[str, Any]:
         kind = str(question.get("kind", "type"))
         qset = self.question_set(kind)
-        key = self.key(question)
-        cached = self.cached(question)
-        if cached:
-            return cached
+        held = self.store.get(key)
+        if held and held.get("outcome") not in REPLACEABLE_OUTCOMES:
+            return held
+        if held and qset.fallback_model and self.provider is not None and self.api_key and (
+                held.get("outcome") == ESCALATED or held.get("escalated")):
+            return self._general(question, key, qset)
         criteria = qset.criteria_payload()
         dynamic = question.get("criteria")
         if isinstance(dynamic, Mapping):
@@ -356,7 +401,36 @@ class JevSeam:
             return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
                                 {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model)
         outcome = "shown" if answer["confidence"] is not None and answer["confidence"] >= qset.threshold else "unsure"
+        if outcome == "unsure" and qset.fallback_model:
+            self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, ESCALATED, model)
+            return self._general(question, key, qset)
         return self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, outcome, model)
+
+    def general_payload(self, question: Mapping[str, Any], qset: QuestionSet) -> dict[str, Any]:
+        labels = qset.criteria()
+        system = {"question": qset.instructions, "labels": labels, "examples": qset.examples(),
+                  "answer": 'Reply with only a JSON object {"choice": <one label>}.'}
+        return {"model": qset.fallback_model,
+                "messages": [{"role": "system", "content": _canonical(system)},
+                             {"role": "user", "content": _canonical(question.get("state", {}))}],
+                "response_format": {"type": "json_object"}}
+
+    def _general(self, question: Mapping[str, Any], key: str, qset: QuestionSet) -> dict[str, Any]:
+        """The same question, once, to the set's general LLM; its answer decides (project-rules #q-fallback)."""
+        kind = str(question.get("kind", "type"))
+        sources, revision = question.get("sources", []), question.get("revision")
+        model = str(qset.fallback_model)
+        try:
+            if hasattr(self.provider, "complete"):
+                response = self.provider.complete(self.general_payload(question, qset))
+            else:
+                raise RuntimeError("provider has no general LLM")
+            label = _parse_general_answer(response, qset.criteria())
+        except Exception:
+            return self._record(key, kind, qset, sources, revision,
+                                {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model, True)
+        return self._record(key, kind, qset, sources, revision,
+                            {"label": label, "probabilities": {}, "confidence": None}, "shown", model, True)
 
 
 # Shaped sections whose clauses are for you by structure, never asked (spec #reading-structural).
@@ -390,6 +464,7 @@ class _AnchorParser(HTMLParser):
                 "text": [],
                 "tag": tag,
                 "section": tag == "section" or attrs.get("data-spec-section") is not None,
+                "spec_section": attrs.get("data-spec-section"),
                 "story": "data-user-story" in attrs,
                 "criterion": "data-acceptance-criterion" in attrs,
                 "parent": parent,
@@ -768,6 +843,61 @@ def build_audience_questions(current: str | bytes, path: str = "spec", base: str
     return result
 
 
+RULE_SCOPE = "every feature"
+RULE_MISSED = "missed"
+SPEC_SUFFIX = ".spec.html"
+
+
+def rule_word(path: str) -> str:
+    """The mark word: the home spec's file name without .spec.html, fixed, never generated (#mark-word)."""
+    name = path.rsplit("/", 1)[-1]
+    return name[:-len(SPEC_SUFFIX)] if name.endswith(SPEC_SUFFIX) else name
+
+
+def spec_text(source: str | bytes | None) -> str:
+    """A spec's readable text: its top-level anchors, header and status excluded."""
+    anchors = extract_anchors(source)
+    return "\n".join(value["text"] for value in anchors.values()
+                     if value.get("parent") is None and not value.get("meta") and value["text"])
+
+
+def rule_mark_anchor(source: str | bytes | None) -> str | None:
+    """Where a rule note shows: the Acceptance criteria section, else the first section (#marks)."""
+    anchors = extract_anchors(source)
+    for key, value in anchors.items():
+        if value.get("spec_section") == "acceptance":
+            return key
+    return next((key for key, value in anchors.items() if value.get("section") and not value.get("meta")), None)
+
+
+def build_scope_questions(served_specs: Any) -> list[dict[str, Any]]:
+    """One scope question per acceptance criterion of every other spec; the key is its text alone (#q-scope)."""
+    result = []
+    for raw in served_specs or []:
+        part = _served_spec_parts(raw)
+        if not part:
+            continue
+        path, source = part
+        for anchor, value in extract_anchors(source).items():
+            if not value.get("criterion") or not value["text"]:
+                continue
+            question = _question("scope", anchor, {"criterion": value["text"]}, path, "", None, path + "#" + anchor)
+            question["revision"] = None
+            question["word"] = rule_word(path)
+            result.append(question)
+    return result
+
+
+def build_rule_question(scope: Mapping[str, Any], current: str | bytes, path: str, base: str,
+                        revision: Any, mark: str) -> dict[str, Any]:
+    """Does this spec trigger the rule and not cover it? Sees the rule text and the spec's text (#q-rule)."""
+    question = _question("rule", mark, {"rule": scope["state"]["criterion"], "spec": spec_text(current)},
+                         path, base, revision, scope["target"])
+    question["sources"] = [path, scope["target"]]
+    question["word"] = scope["word"]
+    return question
+
+
 BUILDERS = {"type": build_type_questions, "orphan": build_orphan_questions, "resolved": build_resolved_questions,
             "coverage": build_coverage_questions, "audience": build_audience_questions,
             "corpus": build_corpus_questions}
@@ -777,6 +907,7 @@ BUILDERS = {"type": build_type_questions, "orphan": build_orphan_questions, "res
 MATERIAL_NO = frozenset({"cosmetic", "clarification"})
 MATERIAL_YES = frozenset({"scope", "behavioral"})
 BOARD_ASK_WORKERS = 4
+RULE_ASK_WORKERS = 8
 
 
 def changed_leaf_clauses(current: str | bytes, baseline: str | bytes | None) -> list[tuple[str, str, str]]:
@@ -868,6 +999,11 @@ class JevService:
         self._board_idle = threading.Event()
         self._board_idle.set()
         self._board_thread: threading.Thread | None = None
+
+        # Rule checks (project-rules #pending): asked in the background, answered from records.
+        self._rule_pool = ThreadPoolExecutor(max_workers=RULE_ASK_WORKERS, thread_name_prefix="spec-chat-jev-rule")
+        self._rule_lock = threading.Lock()
+        self._rule_inflight: set[str] = set()
 
     @property
     def enabled(self) -> bool:
@@ -1093,10 +1229,90 @@ class JevService:
         answer = {"jev": "on", "rows": answer_rows, "conflicts": [{"a": a, "b": b} for a, b in sorted(pairs)]}
         return answer, list(misses.values())
 
+    def _rule_task(self, keys: tuple[str, ...], scope: Mapping[str, Any], rule: Mapping[str, Any] | None) -> None:
+        try:
+            if _confident_label(self.seam.ask(scope)) == RULE_SCOPE and rule is not None:
+                self.seam.ask(rule)
+        except Exception:
+            pass
+        finally:
+            with self._rule_lock:
+                self._rule_inflight.difference_update(keys)
+
+    def _rule_held(self, question: Mapping[str, Any]) -> tuple[str, dict[str, Any] | None]:
+        """final, pending, or unavailable, with the held record; never asks."""
+        key = self.seam.key(question)
+        record = self.seam.store.get(key)
+        with self._rule_lock:
+            inflight = key in self._rule_inflight
+        if record is not None and record.get("outcome") not in REPLACEABLE_OUTCOMES:
+            return "final", record
+        if record is None or record.get("outcome") == ESCALATED or inflight:
+            return "pending", record
+        return "unavailable", record
+
+    def _rule_submit(self, scope: Mapping[str, Any], rule: Mapping[str, Any]) -> None:
+        keys = (self.seam.key(scope), self.seam.key(rule))
+        with self._rule_lock:
+            if keys[1] in self._rule_inflight:
+                return
+            self._rule_inflight.update(keys)
+        self._rule_pool.submit(self._rule_task, keys, scope, rule)
+
+    def rule_items(self, current: bytes, old: bytes | None, path: str, base: str, revision: Any,
+                   served: Any) -> tuple[list[dict[str, Any]], list[str]]:
+        """Rule items for a spec that differs from its compared base, and the rules checked (#marks, #pending).
+
+        Answers come from held records only; misses are asked in the background and show as pending, with
+        escalated true once Jev was unsure and the general LLM has the question."""
+        sets = self.seam.question_sets
+        mark = rule_mark_anchor(current)
+        if "scope" not in sets or "rule" not in sets or mark is None or old == current:
+            return [], []
+        items: list[dict[str, Any]] = []
+        rules: list[str] = []
+        for scope in build_scope_questions(served):
+            rule = build_rule_question(scope, current, path, base, revision, mark)
+            state, record = self._rule_held(scope)
+            if state == "final":
+                if _confident_label(record) != RULE_SCOPE:
+                    continue
+                rules.append(scope["target"])
+                state, record = self._rule_held(rule)
+                if state == "final" and record.get("outcome") == "oversize":
+                    continue
+            if state != "final":
+                self._rule_submit(scope, rule)
+            label = _confident_label(record) if state == "final" else None
+            item = {"kind": "rule", "id": mark, "target": scope["target"], "word": scope["word"],
+                    "state": "label" if label == RULE_MISSED else ("none" if state == "final" else state),
+                    "label": RULE_MISSED if label == RULE_MISSED else None,
+                    "record": record.get("record_id") if record and state == "final" else None}
+            if state == "pending":
+                item["escalated"] = bool(record and (record.get("outcome") == ESCALATED or record.get("escalated")))
+            items.append(item)
+        return items, sorted(set(rules))
+
+    def _rules(self, mount: Mapping[str, Any], target: str, relative: str, base: str,
+               served_mounts: Any) -> tuple[list[dict[str, Any]], list[str]]:
+        root = mount.get("root") if isinstance(mount, Mapping) else None
+        if not root:
+            return [], []
+        try:
+            current = Path(target).read_bytes()
+            rel = os.path.relpath(target, root).replace(os.sep, "/")
+            head = _commit(str(root), "HEAD") or "working-tree"
+            old = _git_read(str(root), "show", "--end-of-options", base + ":" + rel) if base and not base.startswith("-") else None
+            return self.rule_items(current, old, relative, base, head,
+                                   self._served_specs(served_mounts or [mount], target, mount))
+        except Exception:
+            return [], []
+
     def response(self, mount: Mapping[str, Any], target: str, relative: str, base: str,
                  events: list[Mapping[str, Any]], view: str = "", served_mounts: Any = None) -> dict[str, Any]:
         if not self.enabled:
             return {"jev": "off", "items": []}
+        rule_items, rules = self._rules(mount, target, relative, base, served_mounts)
         questions = [question for question in self.questions(mount, target, relative, base, events, view, served_mounts)
                      if question["kind"] in self.seam.question_sets]
 
@@ -1133,10 +1349,10 @@ class JevService:
             items.append({"kind": question["kind"], "id": question["id"], "state": state,
                           "label": label if state == "label" else None,
                           "target": target_anchor, "record": record.get("record_id")})
-        return {"jev": "on", "items": items}
+        return {"jev": "on", "items": items + rule_items, "rules": rules}
 
 
 __all__ = ["BUILDERS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MODEL",
            "OPENROUTER_DECISIONS_URL", "OpenRouterProvider", "QuestionSet",
-           "build_audience_questions", "build_board_conflict_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_type_questions", "changed_leaf_clauses", "extract_anchors",
-           "load_question_sets", "material"]
+           "build_audience_questions", "build_board_conflict_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_rule_question", "build_scope_questions", "build_type_questions", "changed_leaf_clauses", "extract_anchors",
+           "load_question_sets", "material", "rule_mark_anchor", "rule_word", "spec_text"]

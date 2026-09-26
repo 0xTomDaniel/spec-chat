@@ -14,6 +14,8 @@ STATE_KEYS = {
     "corpus": {"before", "after", "target", "target_non_goal"},
     "coverage": {"story", "criterion"},
     "audience": {"clause"},
+    "scope": {"criterion"},
+    "rule": {"rule", "spec"},
 }
 
 
