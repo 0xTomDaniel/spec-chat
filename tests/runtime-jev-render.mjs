@@ -153,7 +153,7 @@ assert.equal(body.querySelectorAll('.hx-jev-note').length, 0);
 marker('crowded').fire('mouseenter');
 assert.equal(pop().hidden, false);
 assert.equal(marker('crowded').getAttribute('aria-expanded'), 'true');
-assert.deepEqual(popNotes(), [['coverage', 'No criterion covers this'], ['type', 'Scope'], ['neutral', 'unsure']]);
+assert.deepEqual(popNotes(), [['coverage', 'No criterion covers this'], ['type', 'Scope'], ['neutral', 'conflict?']]);
 // Moving away closes it.
 marker('crowded').fire('mouseleave');
 await new Promise(resolve => setTimeout(resolve, 200));
@@ -210,11 +210,28 @@ assert.equal(pop().hidden, false);
 marker('overstep').fire('blur', { relatedTarget: holder('rule') });
 assert.equal(pop().hidden, true);
 
-// #acceptance-neutral and coverage: neutral text in the popover.
-marker('type-unsure').fire('focus');
-assert.deepEqual(popNotes(), [['neutral', 'unsure']]);
-marker('story-down').fire('focus');
-assert.deepEqual(popNotes(), [['neutral', 'Jev unavailable']]);
+// #acceptance-neutral and #neutral-questions: one muted word per question, its sentence the accessible name and shown on hover or focus.
+const neutralNote = anchor => {
+  marker(anchor).fire('focus');
+  const notes = pop().querySelectorAll('.hx-jev-pop-note');
+  assert.equal(notes.length, 1, anchor);
+  const text = notes[0].querySelector('.hx-jev-pop-text');
+  const sentence = notes[0].querySelector('.hx-jev-pop-sentence');
+  assert.equal(text.getAttribute('tabindex'), '0', anchor + ' is focusable');
+  assert.equal(sentence.getAttribute('aria-hidden'), 'true');
+  assert.equal(text.getAttribute('aria-label'), sentence.textContent, anchor + ' sentence is its name');
+  return [notes[0].dataset.group, text.textContent, sentence.textContent];
+};
+assert.deepEqual(neutralNote('type-unsure'), ['neutral', 'scope?', 'Jev is unsure whether this is scope or behavior']);
+assert.deepEqual(neutralNote('story-unsure'), ['neutral', 'criterion?', 'Jev is unsure which criterion verifies this story']);
+assert.deepEqual(neutralNote('criterion-unsure'), ['neutral', 'story?', 'Jev is unsure which story this criterion verifies']);
+assert.deepEqual(neutralNote('story-down'), ['neutral', 'Jev unavailable', 'Jev could not check which criterion verifies this story']);
+assert.deepEqual(neutralNote('criterion-down'), ['neutral', 'Jev unavailable', 'Jev could not check which story this criterion verifies']);
+assert.match(runtime, /\.hx-jev-pop-sentence\{display:none;/, 'the sentence is hidden until hover or focus');
+assert.match(runtime, /\.hx-jev-pop-note:hover \.hx-jev-pop-sentence,\.hx-jev-pop-note:focus-within \.hx-jev-pop-sentence\{display:block\}/);
+// Evidence and other notes carry no sentence.
+marker('rule').fire('focus');
+assert.equal(pop().querySelectorAll('.hx-jev-pop-sentence').length, 0);
 marker('story-gap').fire('focus');
 assert.deepEqual(popNotes(), [['coverage', 'No criterion covers this']]);
 marker('criterion-gap').fire('focus');
@@ -228,7 +245,7 @@ const noteButtons = anchor => {
 };
 assert.deepEqual(noteButtons('rule'), [['Contradicts #non-goal-text', ['Ask agent to reconcile']], ['Behavior', ['Comment on this change']]]);
 assert.deepEqual(noteButtons('overstep'), [['Oversteps other#scope', ['Ask agent to reconcile']], ['Clarification', []]]);
-assert.deepEqual(noteButtons('crowded'), [['No criterion covers this', ['Ask for a criterion']], ['Scope', ['Comment on this change']], ['unsure', []]]);
+assert.deepEqual(noteButtons('crowded'), [['No criterion covers this', ['Ask for a criterion']], ['Scope', ['Comment on this change']], ['conflict?', []]]);
 assert.deepEqual(noteButtons('criterion-gap'), [['No story backs this', ['Ask for a story']]]);
 assert.deepEqual(noteButtons('row'), [['Behavior', ['Comment on this change']]]);
 for (const a of ['typo', 'type-unsure', 'story-unsure', 'story-down', 'criterion-down']) {
@@ -251,14 +268,24 @@ assert.deepEqual(clickNote('crowded', 'Comment on this change'), ['crowded', nul
 assert.equal(composed.length, 0);
 
 // A later note source (criterion evidence) joins first in the same marker and can color it.
-jevNoteSources.push(() => [{ anchor: 'typo', group: 'evidence', state: 'label', text: 'Stale', attention: true,
+jevNoteSources.push(() => [{ anchor: 'typo', group: 'evidence', state: 'label', text: 'QA stale', attention: true,
   actions: [{ label: 'Ask agent', run: () => {} }] }]);
 renderJev();
 assert.equal(marker('typo').dataset.attention, 'true');
 marker('typo').fire('focus');
-assert.deepEqual(popNotes(), [['evidence', 'Stale'], ['type', 'Cosmetic']]);
+assert.deepEqual(popNotes(), [['evidence', 'QA stale'], ['type', 'Cosmetic']]);
 assert.deepEqual(pop().querySelector('.hx-jev-pop-actions').children.map(b => [b.tagName, b.textContent]), [['BUTTON', 'Ask agent']]);
 jevNoteSources.pop();
+
+// Notes for different questions on one location each show once, even with the same words.
+state.jev.items = [item('type', 'typo', 'unavailable'), item('corpus', 'typo', 'unavailable'), item('type', 'typo', 'unavailable')];
+renderJev();
+marker('typo').fire('focus');
+assert.deepEqual(pop().querySelectorAll('.hx-jev-pop-sentence').map(n => n.textContent),
+  ['Jev could not check whether this conflicts with another clause', 'Jev could not check whether this is scope or behavior']);
+assert.deepEqual(popNotes(), [['neutral', 'Jev unavailable'], ['neutral', 'Jev unavailable']]);
+state.jev.items = suggestionItems;
+renderJev();
 
 // Without Git focus, change types and draft checks do not show; coverage does.
 location.search = '';
@@ -274,8 +301,7 @@ state.jev.items = [item('audience', 'internals', 'label', 'internals'), item('au
 renderJev();
 assert.equal(holder('internals').dataset.hxAudience, 'internals');
 assert.equal(markersOf('internals').length, 0);
-marker('audience-unsure').fire('focus');
-assert.deepEqual(popNotes(), [['neutral', 'unsure']]);
+assert.deepEqual(neutralNote('audience-unsure'), ['neutral', 'reader?', 'Jev is unsure whether this is for readers or internals']);
 assert.equal(pop().querySelectorAll('.hx-jev-pop-actions').length, 0, 'reading view notes show no button');
 state.readingView = false;
 

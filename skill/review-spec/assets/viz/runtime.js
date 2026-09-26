@@ -1153,15 +1153,26 @@ function jevDraftAction(label, text) {
   return { label, run: note => { closeJevPopover(); openComposer(note.anchor, null, null, text); } };
 }
 
-function jevNeutralNote(anchor, stateName) {
-  return { anchor, group: 'neutral', state: stateName, text: stateName === 'unsure' ? 'unsure' : 'Jev unavailable' };
+// Each Jev question has one unsure word and its hover sentence (jev-suggestions #neutral-questions), so a neutral note never reads as QA.
+const JEV_QUESTIONS = {
+  type: ['scope?', 'whether this is scope or behavior'],
+  criterion: ['story?', 'which story this criterion verifies'],
+  story: ['criterion?', 'which criterion verifies this story'],
+  corpus: ['conflict?', 'whether this conflicts with another clause'],
+  audience: ['reader?', 'whether this is for readers or internals'],
+};
+function jevNeutralNote(anchor, stateName, question) {
+  const [word, tail] = JEV_QUESTIONS[question];
+  const unsure = stateName === 'unsure';
+  return { anchor, group: 'neutral', state: stateName, text: unsure ? word : 'Jev unavailable',
+    sentence: (unsure ? 'Jev is unsure ' : 'Jev could not check ') + tail };
 }
 
 function jevSuggestionNotes() {
   if (state.jev.status !== 'on') return [];
   const notes = [];
   for (const flag of coverageGapFlags(state.jev.items)) {
-    notes.push(flag.state !== 'gap' ? jevNeutralNote(flag.anchor, flag.state) : { anchor: flag.anchor, group: 'coverage', state: 'label', text: flag.label,
+    notes.push(flag.state !== 'gap' ? jevNeutralNote(flag.anchor, flag.state, flag.side) : { anchor: flag.anchor, group: 'coverage', state: 'label', text: flag.label,
       actions: [flag.side === 'story'
         ? jevDraftAction('Ask for a criterion', 'Add an acceptance criterion that verifies this story.')
         : jevDraftAction('Ask for a story', 'Name or add the user story this criterion verifies.')] });
@@ -1169,13 +1180,13 @@ function jevSuggestionNotes() {
   const neutral = item => item.state === 'unsure' || item.state === 'unavailable';
   if (state.readingView) {
     for (const item of state.jev.items) {
-      if (item.kind === 'audience' && item.id && neutral(item)) notes.push(jevNeutralNote(item.id, item.state));
+      if (item.kind === 'audience' && item.id && neutral(item)) notes.push(jevNeutralNote(item.id, item.state, 'audience'));
     }
     return notes;
   }
   if (!jevGitFocus()) return notes;
   for (const flag of corpusFlags(state.jev.items)) {
-    if (flag.state !== 'label') { notes.push(jevNeutralNote(flag.anchor, flag.state)); continue; }
+    if (flag.state !== 'label') { notes.push(jevNeutralNote(flag.anchor, flag.state, 'corpus')); continue; }
     const link = corpusTargetLink(flag.target);
     notes.push({ anchor: flag.anchor, group: 'conflict', state: 'label', text: flag.label + (link ? ' ' + link.text : ''),
       href: link ? link.href : null, attention: JEV_ATTENTION_LABELS.has(flag.label),
@@ -1183,7 +1194,7 @@ function jevSuggestionNotes() {
   }
   for (const item of state.jev.items) {
     if (item.kind !== 'type' || !item.id) continue;
-    if (neutral(item)) notes.push(jevNeutralNote(item.id, item.state));
+    if (neutral(item)) notes.push(jevNeutralNote(item.id, item.state, 'type'));
     else if (item.state === 'label' && jevDisplayLabel(item)) {
       const text = jevDisplayLabel(item);
       notes.push({ anchor: item.id, group: 'type', state: 'label', text,
@@ -1194,12 +1205,13 @@ function jevSuggestionNotes() {
 }
 
 /* Criterion evidence (criterion-evidence spec): one note per acceptance criterion once evidence loads. */
+// Every label names QA, so evidence never reads as a Jev note beside it (#chip-labels).
 function evidenceLabel(entry) {
-  if (!entry) return 'Not yet';
-  if (entry.uncommitted) return 'Stale';
-  const verdict = entry.verdict === 'fail' ? 'Failed' : 'Passed';
+  if (!entry) return 'No QA yet';
+  if (entry.uncommitted) return 'QA stale';
+  const verdict = entry.verdict === 'fail' ? 'QA failed' : 'QA passed';
   if (entry.match) return verdict;
-  return entry.judgment === 'cosmetic' ? verdict + ' \u00b7 reworded' : 'Stale';
+  return entry.judgment === 'cosmetic' ? verdict + ' \u00b7 reworded' : 'QA stale';
 }
 
 function evidenceAge(capturedAt, now = Date.now()) {
@@ -1291,8 +1303,8 @@ function evidenceNotes() {
     if (!anchor) continue;
     const entry = Object.prototype.hasOwnProperty.call(criteria, anchor) && criteria[anchor] && typeof criteria[anchor] === 'object' ? criteria[anchor] : null;
     const text = evidenceLabel(entry);
-    const note = { anchor, group: 'evidence', state: text === 'Not yet' ? 'none' : 'label', text, attention: text === 'Stale' || text.startsWith('Failed'),
-      passed: text.startsWith('Passed') };
+    const note = { anchor, group: 'evidence', state: text === 'No QA yet' ? 'none' : 'label', text, attention: text === 'QA stale' || text.startsWith('QA failed'),
+      passed: text.startsWith('QA passed') };
     if (entry) {
       const pr = Number.isInteger(entry.pr) ? '#' + entry.pr : '';
       const context = [pr, evidenceAge(entry.capturedAt), entry.onMain === false ? 'not on main' : ''].filter(Boolean).join(' · ');
@@ -1301,8 +1313,8 @@ function evidenceNotes() {
       const bundleId = evidenceBundleId(view) || evidenceBundleId(bundle);
       Object.assign(note, { href: view, external: true, context, open: evidenceOpen(bundleId, evidenceCriterionKey(view)),
         link: bundle ? { text: 'bundle', href: bundle, open: evidenceOpen(bundleId, null) } : null });
-      if (text !== 'Passed' && text !== 'Failed' && typeof entry.proven === 'string') note.diff = evidenceDiff(entry.proven, evidenceReadText(element));
-      if (text === 'Stale') {
+      if (text !== 'QA passed' && text !== 'QA failed' && typeof entry.proven === 'string') note.diff = evidenceDiff(entry.proven, evidenceReadText(element));
+      if (text === 'QA stale') {
         const date = commitDate(entry.capturedAt);
         const since = [pr, date].filter(Boolean).join(', ');
         note.actions = [jevDraftAction('Ask for re-proof', anchor + ' changed since its evidence' + (since ? ' (' + since + ')' : '') + ': please recapture it.')];
@@ -1320,7 +1332,7 @@ function jevNotesByAnchor() {
       if (!note || !note.anchor || !note.text || !JEV_NOTE_GROUPS.includes(note.group)) continue;
       const anchor = String(note.anchor);
       const notes = byAnchor.get(anchor) || [];
-      if (note.group === 'neutral' && notes.some(other => other.group === 'neutral' && other.text === note.text)) continue;
+      if (note.group === 'neutral' && notes.some(other => other.group === 'neutral' && other.sentence === note.sentence)) continue;
       notes.push(note);
       byAnchor.set(anchor, notes);
     }
@@ -1336,7 +1348,7 @@ function mountJevMarker(holder, notes) {
   const attention = notes.some(note => note.attention);
   marker.dataset.attention = String(attention);
   marker.dataset.passed = String(!attention && notes.some(note => note.group === 'evidence' && note.passed));
-  marker.setAttribute('aria-label', 'Jev notes: ' + notes.map(note => note.text).join('; '));
+  marker.setAttribute('aria-label', 'Jev notes: ' + notes.map(note => note.sentence || note.text).join('; '));
   marker.setAttribute('aria-haspopup', 'dialog');
   marker.setAttribute('aria-expanded', 'false');
   marker.jevNotes = notes;
@@ -1420,6 +1432,16 @@ function renderJevNote(note) {
   if (note.href && note.open) text.addEventListener('click', event => { if (note.open()) event.preventDefault(); });
   text.textContent = note.text;
   row.appendChild(text);
+  // A neutral note's sentence is its accessible name and shows in the popover on hover or focus.
+  if (note.sentence) {
+    text.setAttribute('role', 'note');
+    text.setAttribute('tabindex', '0');
+    text.setAttribute('aria-label', note.sentence);
+    const sentence = row.appendChild(document.createElement('span'));
+    sentence.className = 'hx-jev-pop-sentence';
+    sentence.setAttribute('aria-hidden', 'true');
+    sentence.textContent = note.sentence;
+  }
   if (note.context || (note.link && note.link.href)) {
     const meta = document.createElement('span');
     meta.className = 'hx-jev-pop-meta';
@@ -1781,6 +1803,8 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-jev-pop-note[data-attention=true] .hx-jev-pop-text{color:#b42318}
 .hx-jev-pop-note[data-group=neutral] .hx-jev-pop-text{font-weight:600;color:#5a5a63}
 a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
+.hx-jev-pop-sentence{display:none;font-size:12px;color:#5a5a63;overflow-wrap:anywhere}
+.hx-jev-pop-note:hover .hx-jev-pop-sentence,.hx-jev-pop-note:focus-within .hx-jev-pop-sentence{display:block}
 .hx-jev-pop-meta{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;font-size:12px;color:#5a5a63;overflow-wrap:anywhere}
 .hx-jev-pop-link{color:#2947c7;text-decoration:underline;text-underline-offset:2px}
 .hx-jev-pop-diff{font-size:12px;color:#303036;overflow-wrap:anywhere}
@@ -1793,7 +1817,7 @@ a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
 .hx-jev-pop-text{color:#e8e7e2}
 .hx-jev-pop-note[data-attention=true] .hx-jev-pop-text{color:#ffb4ab}
 .hx-jev-pop-note[data-group=neutral] .hx-jev-pop-text{color:#b8bbc5}
-.hx-jev-pop-meta{color:#b8bbc5}
+.hx-jev-pop-meta,.hx-jev-pop-sentence{color:#b8bbc5}
 .hx-jev-pop-link{color:#aebcff}
 .hx-jev-pop-diff{color:#e8e7e2}
 .hx-jev-pop-actions .hx-btn{background:#17191d;border-color:#7d91ff;color:#aebcff}
