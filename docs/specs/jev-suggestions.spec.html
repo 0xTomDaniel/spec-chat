@@ -14,7 +14,7 @@
 <h1 data-anchor="title">Jev review suggestions</h1>
 <nav data-anchor="breadcrumbs">docs / specs / jev-suggestions.spec.html</nav>
 <p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-100">ANN-100</a>, <a href="https://linear.app/annotateanything/issue/ANN-206">ANN-206</a>, <a href="https://linear.app/annotateanything/issue/ANN-224">ANN-224</a>, <a href="https://linear.app/annotateanything/issue/ANN-258">ANN-258</a>.</p>
-<p data-anchor="status-ann258">Status: ANN-258 touch (named neutral notes, arrival highlight, <code>Reconcile all</code>) in review.</p>
+<p data-anchor="status-ann258">Status: ANN-258 touch (one-word Jev questions, arrival highlight, <code>Reconcile all</code>) in review. Human decisions (2026-09-26): one-word questions with the sentence on hover; arrival reuses the open-TBD outline and drops the blue flash; <code>Reconcile all</code> only for two or more, one fixed draft.</p>
 <p data-anchor="status-ann224">Status: ANN-224 touch (<code>Ask for re-proof</code> row, Passed check marker) accepted by human spec acceptance (hand-off <code>hmuhw9498</code>, 2026-09-26T04:32:58Z) at <code>bf6d5f1</code>. Follow-up directed by operator w5:p2 after merge (2026-09-26): <a href="#markers-pin-clear">pin clear of text</a>.</p>
 <p data-anchor="status">Status: accepted for ANN-206 by human spec acceptance relayed by operator w5:p2 (2026-09-26T02:28:52Z, "accepted") at <code>4f2df71</code>; governing contract.</p>
 <p data-anchor="context">Follows the shared Jev contract, annotateanything <code>docs/specs/jev-seam.spec.html#contract</code> (ANN-49, human-accepted at <code>3cdd123</code>; since <code>ed95fc8</code> only its retry, cache, and no-reorder rules changed, to match this spec). This spec owns Spec Chat's questions and display. Jev questions read only specs and review threads, with no tracker or evidence dependency. Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a> and <a href="./compared-range.spec.html#change-base">compared range</a>.</p>
@@ -28,7 +28,7 @@
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-corpus">As a reviewer, a changed clause that contradicts or oversteps another clause in this or another spec is flagged with a link to it; following the link lands me on that clause, highlighted.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-coverage">As a reviewer, a story no criterion verifies and a criterion no story backs are flagged while shaping.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-reading">As a reader, a reading view dims the internals in place, so the clauses written for me stand out and nothing moves or hides.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-neutral">As a reviewer, when Jev is off, unsure, or failing, a small note names Jev and the question it could not answer, so I never mistake it for QA evidence, and the page otherwise works as today.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-neutral">As a reviewer, when Jev is off, unsure, or failing, a one-word muted note names the question Jev could not answer, with the full sentence on hover, so I never mistake it for QA evidence, and the page otherwise works as today.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-note-action">As a reviewer, each actionable Jev note offers one button that drafts the comment it calls for, which I edit and send myself; with several conflicts on the page, one button drafts them all.</p>
 <p data-user-story data-user-facing="false" data-anchor="story-record">As the operator, I can see for any suggestion which model, question set, and sources produced it, and with what confidence.</p>
 </section>
@@ -37,7 +37,7 @@
 <h2>Acceptance criteria</h2>
 <p data-acceptance-criterion data-anchor="acceptance-types" data-story="story-change-type"><span data-acceptance-scenario>When a spec change fixes a typo in one section and changes a rule in another, in Git focus,</span> <span data-acceptance-observable>the rule's marker popover says <code>Behavior</code> and the typo's says <code>Cosmetic</code>, the typo is dimmed and readable, and neither section is tinted.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-markers" data-story="story-change-type story-corpus story-coverage"><span data-acceptance-scenario>When a spec with change types, a <code>Contradicts</code> clause, a coverage gap, and several notes on one clause loads,</span> <span data-acceptance-observable>each noted section or clause has exactly one margin marker, only the <code>Contradicts</code> marker is colored, no text reflows or gains a tint, badge, or inline note, and hovering, focusing, or tapping a marker opens a popover listing all its notes.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-neutral" data-story="story-neutral"><span data-acceptance-scenario>When an answer is below threshold, fails twice, or there is no key,</span> <span data-acceptance-observable>the item's popover shows <code>Jev unsure: &lt;question&gt;</code> or <code>Jev unavailable: &lt;question&gt;</code> as <a href="#neutral-questions">named</a>, or the page shows one <code>Jev off</code> note, and review controls work unchanged.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-neutral" data-story="story-neutral"><span data-acceptance-scenario>When an answer is below threshold, fails twice, or there is no key,</span> <span data-acceptance-observable>the item's popover shows its <a href="#neutral-questions">one-word question</a>, such as <code>story?</code>, or <code>Jev unavailable</code>, muted, with the full sentence on hover, or the page shows one <code>Jev off</code> note, and review controls work unchanged.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-base" data-story="story-change-type"><span data-acceptance-scenario>When the reviewer changes the base,</span> <span data-acceptance-observable>old labels disappear at once and the new base's labels replace them without a reload.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-orphan" data-story="story-orphan"><span data-acceptance-scenario>When a commented passage moves and its anchor is removed,</span> <span data-acceptance-observable>its card shows <code>Possibly moved to:</code> that section with <code>Go to</code>; a deleted passage shows today's card.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-move" data-story="story-orphan"><span data-acceptance-scenario>When the reviewer clicks <code>Move comment here</code>,</span> <span data-acceptance-observable>the orphaned thread is resolved and a draft comment at that section quotes the original, with no new event type.</span></p>
@@ -50,7 +50,7 @@
 <p data-acceptance-criterion data-anchor="acceptance-reconcile-all" data-story="story-note-action"><span data-acceptance-scenario>When the page shows two or more <code>Contradicts</code> or <code>Oversteps</code> notes and the reviewer clicks <code>Reconcile all (n)</code> in any of their popovers,</span> <span data-acceptance-observable>the comment composer opens at that clause with one draft listing every flagged clause with its link, as the flags read, and nothing is written until the reviewer sends; with one such note the button is absent.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-link-arrival" data-story="story-corpus"><span data-acceptance-scenario>When the reviewer follows a conflict link to a clause in this or another spec, or clicks <code>Go to</code> on an orphan card,</span> <span data-acceptance-observable>the page lands on that clause with the same outline an open TBD shows, and no other highlight style appears.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-note-resolve" data-story="story-note-action"><span data-acceptance-scenario>When the reviewer clicks <code>Resolve thread</code> on a <code>Looks resolved</code> card,</span> <span data-acceptance-observable>the thread is resolved exactly as the card's own resolve control does.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-note-none" data-story="story-note-action"><span data-acceptance-scenario>When a note is <code>Cosmetic</code>, <code>Clarification</code>, reading view, <code>Jev unsure</code>, <code>Jev unavailable</code>, or <code>Jev off</code>,</span> <span data-acceptance-observable>it shows no button.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-note-none" data-story="story-note-action"><span data-acceptance-scenario>When a note is <code>Cosmetic</code>, <code>Clarification</code>, reading view, an unsure question, <code>Jev unavailable</code>, or <code>Jev off</code>,</span> <span data-acceptance-observable>it shows no button.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-pin-clear" data-story="story-change-type"><span data-acceptance-scenario>When a criterion with a marker also has a thread pin, at 375px, 560px, and 1280px,</span> <span data-acceptance-observable>the pin covers neither the marker nor any spec text, and a tap on each opens its own popover or thread.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-inert" data-story="story-neutral"><span data-acceptance-scenario>Across a session with any suggestions and no note button click,</span> <span data-acceptance-observable>spool, thread statuses, Finish eligibility, and spec bytes match Jev off, and every item stays present and 4.5:1 readable.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-cache" data-story="story-record"><span data-acceptance-scenario>When the same page, base, and head load again,</span> <span data-acceptance-observable>no Jev call is made and the same labels show.</span></p>
@@ -127,8 +127,8 @@
 <thead><tr><th>Answer</th><th>Item shows</th></tr></thead>
 <tbody>
 <tr data-anchor="state-label"><td>Confident label</td><td>The suggestion, as listed above</td></tr>
-<tr data-anchor="state-unsure"><td>Below threshold</td><td><code>Jev unsure: &lt;question&gt;</code> in the popover, never a best guess</td></tr>
-<tr data-anchor="state-error"><td>Error or timeout</td><td>The server retries once in the same request; if that fails, <code>Jev unavailable: &lt;question&gt;</code> in the popover until the next view</td></tr>
+<tr data-anchor="state-unsure"><td>Below threshold</td><td>The <a href="#neutral-questions">one-word question</a> in the popover, never a best guess</td></tr>
+<tr data-anchor="state-error"><td>Error or timeout</td><td>The server retries once in the same request; if that fails, <code>Jev unavailable</code> in the popover until the next view</td></tr>
 <tr data-anchor="state-oversize"><td>Oversize state</td><td>Nothing</td></tr>
 <tr data-anchor="state-off"><td>No key</td><td>One page-level <code>Jev off</code> note</td></tr>
 </tbody>
@@ -168,20 +168,20 @@
 <p data-anchor="markers-one">Each section or clause with any note gets one small marker in the right margin beside its first line, one per location however many notes it has.</p>
 <p data-anchor="markers-color">A marker is a colored <code>!</code> when its notes include <code>Contradicts</code>, <code>Oversteps</code>, or evidence <code>Stale</code> or <code>Failed</code>; else a small green check when its evidence <code>Passed</code>; else a quiet neutral dot. The first that applies wins, and hover opens the popover for every kind.</p>
 <p data-anchor="markers-open">Hover or keyboard focus opens its popover, a tap opens it on touch, and moving away, Escape, or a tap elsewhere closes it; the popover never covers review controls.</p>
-<p data-anchor="markers-content">A popover lists, in this order, evidence (<a href="./criterion-evidence.spec.html#chip">criterion evidence</a>), conflicts, coverage, change type, and <code>Jev unsure</code> or <code>Jev unavailable</code>, each note with its <a href="#note-actions">note button</a>. Every note is one short line of a few words; the popover adds no box, rule, or heading between notes.</p>
+<p data-anchor="markers-content">A popover lists, in this order, evidence (<a href="./criterion-evidence.spec.html#chip">criterion evidence</a>), conflicts, coverage, change type, and unsure questions or <code>Jev unavailable</code>, each note with its <a href="#note-actions">note button</a>. Every note is one short line of a few words; the popover adds no box, rule, or heading between notes.</p>
 <div class="table-scroll" data-anchor="neutral-questions-scroll">
 <table data-anchor="neutral-questions">
-<thead><tr><th>Jev question</th><th>Neutral note names it as</th></tr></thead>
+<thead><tr><th>Jev question</th><th>Unsure note</th><th>Hover sentence</th></tr></thead>
 <tbody>
-<tr data-anchor="neutral-q-type"><td>Change type</td><td><code>scope or behavior?</code></td></tr>
-<tr data-anchor="neutral-q-story"><td>Coverage, on a story</td><td><code>which criterion?</code></td></tr>
-<tr data-anchor="neutral-q-criterion"><td>Coverage, on a criterion</td><td><code>which story?</code></td></tr>
-<tr data-anchor="neutral-q-corpus"><td>Draft check</td><td><code>conflict?</code></td></tr>
-<tr data-anchor="neutral-q-audience"><td>Audience, reading view</td><td><code>reader or internals?</code></td></tr>
+<tr data-anchor="neutral-q-type"><td>Change type</td><td><code>scope?</code></td><td>Jev is unsure whether this is scope or behavior</td></tr>
+<tr data-anchor="neutral-q-criterion"><td>Coverage, on a criterion</td><td><code>story?</code></td><td>Jev is unsure which story this criterion verifies</td></tr>
+<tr data-anchor="neutral-q-story"><td>Coverage, on a story</td><td><code>criterion?</code></td><td>Jev is unsure which criterion verifies this story</td></tr>
+<tr data-anchor="neutral-q-corpus"><td>Draft check</td><td><code>conflict?</code></td><td>Jev is unsure whether this conflicts with another clause</td></tr>
+<tr data-anchor="neutral-q-audience"><td>Audience, reading view</td><td><code>reader?</code></td><td>Jev is unsure whether this is for readers or internals</td></tr>
 </tbody>
 </table>
 </div>
-<p data-anchor="neutral-questions-rule">A neutral note reads <code>Jev unsure: </code> or <code>Jev unavailable: </code> followed by its question, e.g. <code>Jev unsure: which story?</code>; notes for different questions on one location each show once.</p>
+<p data-anchor="neutral-questions-rule">An unsure note is its one word in the muted neutral style, so it reads as Jev and never as QA evidence; hovering or focusing it shows its sentence in the popover, and the sentence is its accessible name. A <code>Jev unavailable</code> note keeps that text and its hover sentence names the question, e.g. <code>Jev could not check which story this criterion verifies</code>. Notes for different questions on one location each show once.</p>
 <p data-anchor="markers-arrival">A conflict link or <code>Go to</code> that lands on a clause of this or another spec scrolls to it and gives it the open-TBD outline (<a href="./prompt-first-shaping.spec.html#finish-ready">TBD open</a>) while that clause is the page address; it adds no highlight style of its own.</p>
 <figure data-anchor="markers-figure">
 <div class="rail-wrap" data-anchor="markers-figure-scroll">
@@ -228,7 +228,7 @@
 <tr data-anchor="note-move"><td><code>Possibly moved to:</code></td><td><code>Move comment here</code></td><td>As <a href="#orphan">Moving an orphaned comment</a> defines</td></tr>
 <tr data-anchor="note-reproof"><td>Evidence <code>Stale</code></td><td><code>Ask for re-proof</code></td><td>As <a href="./criterion-evidence.spec.html#reproof">Ask for re-proof</a> defines</td></tr>
 <tr data-anchor="note-change"><td><code>Scope</code>, <code>Behavior</code></td><td><code>Comment on this change</code></td><td>Draft on the section: <code>About this change: </code></td></tr>
-<tr data-anchor="note-none"><td><code>Cosmetic</code>, <code>Clarification</code>, reading view, <code>Jev unsure</code>, <code>Jev unavailable</code>, <code>Jev off</code></td><td>None</td><td>None</td></tr>
+<tr data-anchor="note-none"><td><code>Cosmetic</code>, <code>Clarification</code>, reading view, unsure questions, <code>Jev unavailable</code>, <code>Jev off</code></td><td>None</td><td>None</td></tr>
 </tbody>
 </table>
 </div>
@@ -237,7 +237,7 @@
 
 <section data-anchor="coverage">
 <h2>Coverage</h2>
-<p data-anchor="coverage-story">An item with no confident verifies is a gap; if any of its pairs is unsure, it shows <code>Jev unsure: which story?</code> or <code>Jev unsure: which criterion?</code> instead.</p>
+<p data-anchor="coverage-story">An item with no confident verifies is a gap; if any of its pairs is unsure, it shows <code>criterion?</code> on a story or <code>story?</code> on a criterion instead.</p>
 </section>
 
 <section data-anchor="reading">
