@@ -532,6 +532,28 @@ cursor_name = ".cursor-test"
         self.assertEqual(clean.returncode, 0, clean.stderr)
         self.assertEqual(self.registry(state)["resource"][0]["base"], self.git("rev-parse", "HEAD"))
 
+    def test_reviewed_accepted_records_spec_acceptance_on_the_row(self):
+        """ANN-239 compared-range #acceptance-reviewed-accepted."""
+        state = self.work / "state"
+        started = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        before = self.registry(state)["resource"][0]
+        rid = before["id"]
+        self.assertNotIn("accepted", before)
+        self.spec.write_text("<!doctype html><title>review</title><p>accepted</p>\n", encoding="utf-8")
+        done = self.run_cli("reviewed", "--state-dir", str(state), "--id", rid, "--accepted", state=state)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        row = self.registry(state)["resource"][0]
+        self.assertEqual((row["accepted"], row["base"]), (True, self.git("rev-parse", "HEAD")))
+        untouched = {key: value for key, value in before.items() if key not in {"base", "updated_at"}}
+        self.assertEqual({key: row[key] for key in untouched}, untouched)
+        self.spec.write_text("<!doctype html><title>review</title><p>batch</p>\n", encoding="utf-8")
+        plain = self.run_cli("reviewed", "--state-dir", str(state), "--id", rid, state=state)
+        self.assertEqual(plain.returncode, 0, plain.stderr)
+        row = self.registry(state)["resource"][0]
+        self.assertEqual((row["accepted"], row["base"]), (False, self.git("rev-parse", "HEAD")))
+        self.assertEqual({key: row[key] for key in untouched}, untouched)
+
     def test_proof_rejects_wrong_bytes(self):
         resource = review_host.parse_resource_spec(
             self.resource(), "owner", "checker", ".cursor-test", "ann45", None

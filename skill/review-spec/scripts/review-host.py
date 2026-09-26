@@ -37,7 +37,7 @@ _verify_spec.loader.exec_module(_verify_module)
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
 SAFE_CURSOR_RE = re.compile(r"[^/\\]+\Z")
 RESOURCE_FIELDS = (
-    "id", "slug", "project", "root", "narrow_root", "spec", "path", "base", "owner", "checker",
+    "id", "slug", "project", "root", "narrow_root", "spec", "path", "base", "accepted", "owner", "checker",
     "cursor_name", "registered_at", "updated_at",
 )
 
@@ -708,7 +708,7 @@ def remove(args: argparse.Namespace) -> int:
 
 
 def reviewed(args: argparse.Namespace) -> int:
-    """Human spec review: commit the spec if dirty, then set the row base to HEAD."""
+    """Human spec review: commit the spec if dirty, then set the row base to HEAD and accepted."""
     state = state_dir(args)
     registry, _, _ = paths(state)
     with state_lock(state):
@@ -721,6 +721,7 @@ def reviewed(args: argparse.Namespace) -> int:
             run_git(root, "add", "--", spec)
             run_git(root, "commit", "-q", "-m", f"docs: human spec review of {spec}", "--", spec)
         record["base"] = run_git(root, "rev-parse", "HEAD")
+        record["accepted"] = args.accepted
         record["updated_at"] = now()
         write_registry(registry, records, process)
         print(f"{args.id}: base {record['base']}")
@@ -755,6 +756,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_argument("--state-dir", required=False)
     sub = commands.add_parser("reviewed")
     sub.add_argument("--id", required=True)
+    sub.add_argument("--accepted", action="store_true", help="the review was Accept spec")
     sub.add_argument("--state-dir", required=False)
     sub = commands.add_parser("stop")
     sub.add_argument("--state-dir", required=False)
