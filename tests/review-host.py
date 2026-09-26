@@ -375,6 +375,22 @@ finish_event = ""
         home = self.registry(state)["process"]
         self.assertEqual((home["bind"], home["port"]), ("127.0.0.1", process["port"]))
 
+    def test_visibility_switch_without_a_free_port_leaves_the_live_service_up(self):
+        state = self.work / "state"
+        first = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        process = self.registry(state)["process"]
+        with socket.socket() as held:
+            held.bind(("0.0.0.0", 0))
+            held.listen()
+            busy = held.getsockname()[1]
+            public = self.run_cli(*self.register_args(state, spec="second"), "--public", "0.0.0.0",
+                                  "--proof-host", outbound_address(), state=state, ports=busy)
+        self.assertNotEqual(public.returncode, 0)
+        self.assertIn("no approved ingress port is free", public.stderr)
+        self.assertTrue(review_host.process_owns_registry(process["pid"], state / "registry.toml"))
+        self.assertEqual(self.registry(state)["process"], process)
+
     def test_empty_xdg_state_home_is_unset(self):
         args = review_host.build_parser().parse_args(["stop"])
         with mock.patch.dict(os.environ, {"XDG_STATE_HOME": "", "HOME": str(self.work)}):
@@ -704,6 +720,36 @@ cursor_name = ".cursor-test"
         self.assertEqual(again.returncode, 0, again.stderr)
         row = self.registry(default)["resource"][0]
         self.assertEqual((row["base"], row["owner"]), (head, "p2"))
+
+    def test_reregister_keeps_every_recorded_field_it_was_not_given(self):
+        """One upsert rule: defaults fill only a new row; given flags override; the rest is kept."""
+        env, default = self.lane_env()
+        first = self.run_lane("--slug", "lane", "--owner", "p1", str(self.spec), env=env)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        new = self.registry(default)["resource"][0]
+        self.assertEqual((new["checker"], new["cursor_name"], new["base"]), ("p1", ".cursor-owner", self.base))
+        self.assertNotIn("accepted", new)
+        rid = new["id"]
+        registry = default / "registry.toml"
+        registry.write_text(registry.read_text(encoding="utf-8").replace(
+            'cursor_name = ".cursor-owner"', 'cursor_name = ".cursor-claude"'), encoding="utf-8")
+        self.spec.write_text("<!doctype html><title>review</title><p>accepted</p>\n", encoding="utf-8")
+        done = self.run_cli("reviewed", "--state-dir", str(default), "--id", rid, "--accepted", state=default)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        head = self.git("rev-parse", "HEAD")
+        kept_before = self.registry(default)["resource"][0]
+        again = self.run_lane("--slug", "lane", "--owner", "p2", str(self.spec), env=env)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        row = self.registry(default)["resource"][0]
+        self.assertEqual((row["accepted"], row["cursor_name"], row["checker"], row["base"], row["owner"]),
+                         (True, ".cursor-claude", "p1", head, "p2"))
+        self.assertEqual((row["path"], row["registered_at"]), (kept_before["path"], kept_before["registered_at"]))
+        given = self.run_lane("--slug", "lane", "--owner", "p3", "--checker", "c3", "--cursor-name", ".cursor-p3",
+                              "--base", self.base, str(self.spec), env=env)
+        self.assertEqual(given.returncode, 0, given.stderr)
+        row = self.registry(default)["resource"][0]
+        self.assertEqual((row["accepted"], row["cursor_name"], row["checker"], row["base"], row["owner"]),
+                         (True, ".cursor-p3", "c3", self.base, "p3"))
 
     def test_proof_rejects_wrong_bytes(self):
         resource = review_host.parse_resource_spec(

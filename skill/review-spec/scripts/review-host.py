@@ -357,16 +357,14 @@ def build_resource(project: str, root_text: str, spec: str, base: str, owner: st
     }
 
 
-def registry_record(resource: Mapping[str, Any], registered_at: str | None = None) -> dict[str, Any]:
-    stamp = registered_at or now()
-    result = {
-        key: resource[key] for key in (
-            "id", "slug", "project", "root", "narrow_root", "spec", "path", "base", "owner", "checker",
-            "cursor_name",
-        )
-    }
-    result.update({"registered_at": stamp, "updated_at": stamp})
-    return result
+def registry_record(resource: Mapping[str, Any], old: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """One upsert rule: an existing row keeps every recorded field register was not given; defaults fill only a new row."""
+    stamp = now()
+    fields = ("id", "slug", "project", "root", "narrow_root", "spec", "path", "base", "owner", "checker", "cursor_name")
+    defaulted = resource.get("defaulted", ())
+    given = {key: resource[key] for key in fields if key not in defaulted}
+    defaults = {key: resource[key] for key in defaulted}
+    return {"registered_at": stamp, **defaults, **(old or {}), **given, "updated_at": stamp}
 
 
 def row_path(record: Mapping[str, Any]) -> str:
@@ -533,13 +531,16 @@ def parse_resources(args: argparse.Namespace) -> list[dict[str, Any]]:
         slug = select_flag(args.slug, index, count, "--slug")
         collection = select_flag(args.collection, index, count, "--collection")
         assert checker is not None and cursor is not None
+        defaulted = [key for key, flag in (("checker", args.checker), ("cursor_name", args.cursor_name)) if not flag]
         if index < len(args.resource):
-            result.append(parse_resource_spec(args.resource[index], owner, checker, cursor, slug, collection))
-            continue
-        plain = index - len(args.resource)
-        ref = select_flag(args.base, plain, len(args.specs), "--base")
-        resource = build_resource(*plain_resource(args.specs[plain], ref), owner, checker, cursor, slug, collection)
-        resource["inferred_base"] = ref is None
+            resource = parse_resource_spec(args.resource[index], owner, checker, cursor, slug, collection)
+        else:
+            plain = index - len(args.resource)
+            ref = select_flag(args.base, plain, len(args.specs), "--base")
+            resource = build_resource(*plain_resource(args.specs[plain], ref), owner, checker, cursor, slug, collection)
+            if ref is None:
+                defaulted.append("base")
+        resource["defaulted"] = tuple(defaulted)
         result.append(resource)
     return result
 
@@ -732,13 +733,12 @@ def register(args: argparse.Namespace) -> int:
         old_bytes = registry.read_bytes() if registry.exists() else None
         # Rows being replaced may point at a deleted root; only the resulting candidate set is validated.
         existing, process = registry_state(registry, validate=False)
+        additions = []
         for index, item in enumerate(parsed):
             assign_path(existing + parsed[:index], item)
             old = next((row for row in existing if row["id"] == item["id"]), None)
-            if item.pop("inferred_base", False) and old:
-                # An inferred base never moves a reviewed row back; --base or --resource sets it explicitly.
-                item["base"] = old["base"]
-        additions = [registry_record(item) for item in parsed]
+            additions.append(registry_record(item, old))
+            item.update(additions[-1])
         replacement_ids = {item["id"] for item in additions}
         candidate = [item for item in existing if item["id"] not in replacement_ids] + additions
         validate_records(candidate)
@@ -750,6 +750,9 @@ def register(args: argparse.Namespace) -> int:
             bind, plan = (process or {}).get("bind") or LOOPBACK, None
             if live and (args.public or args.private) and select_bind(args, None) != bind:
                 plan = start_plan(args, process)
+                if not plan[2]:
+                    # No recorded port this bind may take: pick one while the old service still runs.
+                    plan = (*plan[:2], select_port(bind_ports(plan[0]), plan[0]))
                 stop_process(process["pid"], registry)
                 live = False
             if live:
