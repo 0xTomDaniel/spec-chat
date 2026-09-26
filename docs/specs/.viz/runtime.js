@@ -1575,6 +1575,7 @@ function closeJevPopover() {
 }
 
 // Desktop: beside the marker, below or above, never over the toolbar, dock, or open panel.
+// Its box is measured with every note sentence shown and kept, so a hover sentence fills room already placed.
 // Narrow screens: CSS makes it a sheet above the toolbar.
 function placeJevPopover() {
   const pop = jevPopoverState.element;
@@ -1582,14 +1583,16 @@ function placeJevPopover() {
   if (!pop || !marker || pop.hidden) return;
   pop.style.left = '';
   pop.style.top = '';
+  pop.style.width = '';
   if (window.matchMedia('(max-width: 640px)').matches) return;
   const anchor = marker.getBoundingClientRect();
   if (!marker.isConnected || anchor.bottom < 0 || anchor.top > innerHeight) { closeJevPopover(); return; }
   const controls = [...document.querySelectorAll('.hx-toolbar,.hx-thread-dock,.hx-panel.open,.hx-service-index-link,.hx-banner')]
     .filter(control => getComputedStyle(control).visibility !== 'hidden' && getComputedStyle(control).opacity !== '0')
     .map(control => control.getBoundingClientRect()).filter(rect => rect.width && rect.height);
-  const width = pop.offsetWidth;
-  const height = pop.offsetHeight;
+  pop.dataset.measure = '';
+  const { width, height } = pop.getBoundingClientRect();
+  delete pop.dataset.measure;
   const panel = document.querySelector('.hx-panel.open');
   const rightLimit = innerWidth - 8 - (panel ? panel.getBoundingClientRect().width : 0);
   const left = Math.max(8, Math.min(anchor.right - width, rightLimit - width));
@@ -1599,6 +1602,7 @@ function placeJevPopover() {
   const top = candidates.find(value => fits(value) && !covers(value)) ?? candidates.find(fits) ?? Math.max(8, candidates[0]);
   pop.style.left = Math.round(left) + 'px';
   pop.style.top = Math.round(top) + 'px';
+  pop.style.width = width + 'px';
 }
 
 function wireJevPopover() {
@@ -1868,7 +1872,7 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-jev-pop-note[data-group=neutral] .hx-jev-pop-text{font-weight:600;color:#5a5a63}
 a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
 .hx-jev-pop-sentence{display:none;font-size:12px;color:#5a5a63;overflow-wrap:anywhere}
-.hx-jev-pop-note:hover .hx-jev-pop-sentence,.hx-jev-pop-note:focus-within .hx-jev-pop-sentence{display:block}
+.hx-jev-pop[data-measure] .hx-jev-pop-sentence,.hx-jev-pop-note:hover .hx-jev-pop-sentence,.hx-jev-pop-note:focus-within .hx-jev-pop-sentence{display:block}
 .hx-jev-pop-meta{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;font-size:12px;color:#5a5a63;overflow-wrap:anywhere}
 .hx-jev-pop-link{color:#2947c7;text-decoration:underline;text-underline-offset:2px}
 .hx-jev-pop-diff{font-size:12px;color:#303036;overflow-wrap:anywhere}
