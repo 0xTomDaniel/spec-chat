@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Box review service and providers - spec</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./.style/spec.css">
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Box review service and providers</h1>
+<nav data-anchor="breadcrumbs">docs / specs / review-service.spec.html</nav>
+<p data-anchor="status">Status: under human spec review.</p>
+<p data-anchor="context">Spec Chat works completely alone. A box has one review service that every lane joins; the service owns its bind, port, and URL. Anything else plugs in only through the service's own state: Spec Chat publishes facts there for readers, and reads optional providers from there. Spec Chat names no reader and no provider product.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-box-service">As a human reviewer, every lane on a box hands me a link on the box's one review service, so a page I can open once I can open for every lane.</p>
+<p data-user-story data-user-facing="false" data-anchor="story-standalone">As a Spec Chat user with nothing else installed, review works end to end: private by default, public when I say so once, and no capability I lack shows an error.</p>
+<p data-user-story data-user-facing="false" data-anchor="story-plug">As another tool, I find the review service and plug an optional capability into it through its state alone, with no launch flag, environment variable, path, or port set by hand, and Spec Chat never learns my name.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="review-service" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-join" data-story="story-box-service"><span data-acceptance-scenario>Given the box's review service running public, when a lane runs <code>review-host register</code> with its resources and slug and no host, port, bind, or state flag,</span> <span data-acceptance-observable>its rows join that service and the printed URL is the service's own, the same host and port as every other lane's.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-lane-args" data-story="story-box-service"><span data-acceptance-scenario>When the lane-facing register command in Spec Chat's skills and adapters is read,</span> <span data-acceptance-observable>it is the <a href="#lane-command">lane command</a> and carries no <code>--public</code>, <code>--private</code>, <code>--proof-host</code>, <code>--state-dir</code>, bind, port, or address argument; those appear only under box setup.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-plain-path" data-story="story-box-service"><span data-acceptance-scenario>Given a spec path inside a worktree whose <code>origin</code> ends in <code>example.git</code>, registered as a plain path with no <code>--base</code>, then with <code>--base &lt;ref&gt;</code>, then in the old <code>PROJECT_ID=ROOT:SPEC_PATH@BASE</code> form,</span> <span data-acceptance-observable>the first row has project <code>example</code>, the worktree top as root, and the merge base of <code>HEAD</code> with the default branch as base; the second has <code>&lt;ref&gt;</code>'s commit as base; the third registers exactly as before.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-restart" data-story="story-box-service"><span data-acceptance-scenario>When the box's review service is dead and a lane registers,</span> <span data-acceptance-observable>the service restarts on its recorded bind and proof host, on its recorded port while that port is free, else on another port it finds, and prints its URL; the caller passed no port.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-standalone" data-story="story-standalone"><span data-acceptance-scenario>On a box with only Spec Chat installed and no service yet,</span> <span data-acceptance-observable>the first register starts a private loopback service and prints its <code>ssh -L</code> tunnel; one <code>--public &lt;host&gt;</code> makes it public and later registers join it public; with no provider files, criteria read <code>null</code>, Jev is off, and wake reports <code>unavailable</code>, with no error.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-published" data-story="story-plug"><span data-acceptance-scenario>After any register starts or joins a service,</span> <span data-acceptance-observable><code>registry.toml</code> <code>[process]</code> holds <code>url</code> equal to the printed review URL, and for the box's service that file is at the <a href="#service-location">stable location</a>.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-provider-live" data-story="story-plug"><span data-acceptance-scenario>With the service running, when a provider writes <code>providers/evidence.toml</code>, then deletes it,</span> <span data-acceptance-observable>the next page load reads criterion evidence from that provider's URL, then the next reads <code>null</code>; the server is never restarted.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-no-env" data-story="story-plug"><span data-acceptance-scenario>When the review server's environment sets the former evidence URL or Jev key variables and no provider file exists,</span> <span data-acceptance-observable>criteria read <code>null</code> and Jev is off: the environment is not read.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-wake" data-story="story-plug story-standalone"><span data-acceptance-scenario>Given a <code>wake</code> provider whose check exits 0 for pane <code>p1</code>, and none at all,</span> <span data-acceptance-observable>register prints <code>wake=verified owner=p1</code> and a hand-off runs the provider's wake command with the owner and message; without a provider it prints <code>wake=unavailable</code>.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-wake-only" data-story="story-plug"><span data-acceptance-scenario>When Spec Chat's code, specs, and skills are read after the change,</span> <span data-acceptance-observable>host wake runs only the <code>wake</code> provider's commands, and no pane tool is named; the host-wake states are the provider's exit codes.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-onboarding" data-story="story-standalone story-plug"><span data-acceptance-scenario>In a fresh environment with only Spec Chat, when its onboarding runs end to end,</span> <span data-acceptance-observable>its skills are installed, a first spec is reviewed through the box's service, and <code>$XDG_STATE_HOME/spec-chat/onboarding.toml</code> reads <code>status = "done"</code> with <code>doc</code> linking Spec Chat's steps; before that it reads <code>pending</code>; a second run changes nothing.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-ci-alone" data-story="story-standalone story-plug"><span data-acceptance-scenario>On every push and pull request,</span> <span data-acceptance-observable>CI runs the full test suite and the onboarding fresh-install test in a clean environment with no other tool of the box installed and no provider file, and it includes one contract test per <a href="#providers">provider</a>: file present, capability appears; file absent, capability quietly absent.</span></p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-service"><span data-boundary-responsibility>The review service owns its bind, port, proof host, and URL, recorded in its own state.</span> <span data-boundary-seam>Caller-facing seam: <code>review-host register</code>, which returns the URL.</span> <span data-boundary-dependency>Dependency direction: self-contained; no lane, skill, or brief picks a port.</span> <span data-boundary-scope>Observable scope: the printed URL and <code>[process]</code>.</span></p>
+<p data-modular-boundary data-anchor="boundary-readers"><span data-boundary-responsibility>Readers own nothing in the service state; they read what the service publishes.</span> <span data-boundary-seam>Caller-facing seam: the <a href="#published">published files and routes</a>.</span> <span data-boundary-dependency>Dependency direction: external-provider; readers depend on Spec Chat, never the reverse, and never write into its state.</span> <span data-boundary-scope>Observable scope: the published fields.</span></p>
+<p data-modular-boundary data-anchor="boundary-providers"><span data-boundary-responsibility>Each provider owns exactly its own file under <code>providers/</code>; Spec Chat owns each file's format and reads it.</span> <span data-boundary-seam>Caller-facing seam: the <a href="#providers">provider files</a>.</span> <span data-boundary-dependency>Dependency direction: external-provider; providers depend on Spec Chat's format, Spec Chat names no provider product.</span> <span data-boundary-scope>Observable scope: a capability on while its file is valid, off otherwise.</span></p>
+</section>
+
+<section data-anchor="service" id="service">
+<h2>One service per box</h2>
+<p data-anchor="service-location" id="service-location">The box's review service lives at Spec Chat's default service state, <code>$XDG_STATE_HOME/spec-chat/hosting/default</code> (<code>~/.local/state</code> when <code>XDG_STATE_HOME</code> is unset). <code>review-host register</code> without <code>--state-dir</code> joins it; if it is live, the rows are added and its URL is returned unchanged.</p>
+<p data-anchor="service-visibility">A new service is private on loopback. <code>--public &lt;host&gt;</code> makes it public; <code>--private</code> returns it to loopback. The choice, and the proof host used for a wildcard bind, are recorded, so every later register and restart keeps them. Choosing visibility is the box owner's act, not each lane's.</p>
+<p data-anchor="service-restart">A dead service restarts on its recorded bind and recorded port while that port is free; otherwise it takes another free port by its own rule (an approved ingress port when public).</p>
+<p data-anchor="lane-command" id="lane-command">A lane runs only <code>review-host register --slug &lt;lane-key&gt; --owner &lt;pane&gt; &lt;spec path&gt;</code>, repeating the spec path for more specs. It names no exposure: the service already owns it, so a lane command never reads as opening ingress.</p>
+<p data-anchor="lane-plain-path">A plain spec path infers the rest from Git: root is the worktree top; project is the last path part of <code>origin</code> without <code>.git</code>, or the top directory's name without an <code>origin</code>; base is the merge base of <code>HEAD</code> with the default branch (<code>origin/HEAD</code>, else <code>main</code>), or <code>--base &lt;ref&gt;</code>. The <code>PROJECT_ID=ROOT:SPEC_PATH@BASE</code> form still works.</p>
+<p data-anchor="box-setup">Box setup, by the box owner and outside any lane: <code>--public &lt;host&gt;</code>, <code>--private</code>, and <code>--proof-host</code>, each once.</p>
+<p data-anchor="service-isolated"><code>--state-dir</code> names a separate, isolated service for tests or deliberate isolation; lanes do not pass it.</p>
+</section>
+
+<section data-anchor="published" id="published">
+<h2>What the service publishes</h2>
+<div class="table-scroll" data-anchor="published-table-scroll">
+<table data-anchor="published-table">
+<thead><tr><th>Read</th><th>Holds</th></tr></thead>
+<tbody>
+<tr data-anchor="published-process"><td><code>registry.toml</code> <code>[process]</code></td><td><code>pid</code>, <code>bind</code>, <code>port</code>, <code>host</code> (proof host), and <code>url</code>, the URL the service printed.</td></tr>
+<tr data-anchor="published-rows"><td><code>registry.toml</code> <code>[[resource]]</code></td><td>One row per registered spec: slug, project, <code>path</code>, root, base, <code>accepted</code>, owner (<a href="./lane-hosting.spec.html#paths">lane hosting</a>).</td></tr>
+<tr data-anchor="published-onboarding"><td><code>$XDG_STATE_HOME/spec-chat/onboarding.toml</code></td><td><code>status</code>, <code>pending</code> or <code>done</code>, and <code>doc</code>, a link to Spec Chat's own install and first-run steps, which Spec Chat alone owns.</td></tr>
+<tr data-anchor="published-routes"><td>Routes under <code>url</code></td><td>Spec pages, the review index, and <code>/api/jev/board</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="published-readonly">Readers never write into the service state; a reader keeps its own records in its own state.</p>
+</section>
+
+<section data-anchor="providers" id="providers">
+<h2>Providers</h2>
+<p data-anchor="providers-rule">An optional capability is on while <code>providers/&lt;name&gt;.toml</code> in the service state is valid, and off otherwise, silently. A provider writes its file atomically and deletes it to unplug. The server reads the file at each use, so plugging needs no restart.</p>
+<div class="table-scroll" data-anchor="providers-table-scroll">
+<table data-anchor="providers-table">
+<thead><tr><th>Name</th><th>Keys</th><th>Capability</th></tr></thead>
+<tbody>
+<tr data-anchor="providers-evidence"><td><code>evidence</code></td><td><code>url</code>: base URL answering <code>/criteria</code></td><td><a href="./criterion-evidence.spec.html#read-config">Criterion evidence</a>; replaces <code>SPEC_CHAT_EVIDENCE_URL</code>.</td></tr>
+<tr data-anchor="providers-jev"><td><code>jev</code></td><td><code>key</code>: model API key; file mode 0600</td><td><a href="./jev-suggestions.spec.html">Jev suggestions</a>; replaces <code>OPENROUTER_API_KEY</code>.</td></tr>
+<tr data-anchor="providers-wake"><td><code>wake</code></td><td><code>check</code> and <code>send</code>: argument lists with <code>{owner}</code>, <code>{artifact}</code>, <code>{message}</code> placeholders</td><td><a href="./host-wake.spec.html#wake-rule">Host wake</a>: <code>check</code> exit 0 means the owner resolves; <code>send</code> exit 0 sent, 75 deferred, other failed. Replaces the built-in pane tool calls: the host reaches owner panes only through the registered waker, and Spec Chat names no pane tool.</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="providers-no-env">The server reads no provider setting from its environment.</p>
+</section>
+
+<section data-anchor="proof" id="proof">
+<h2>Proof</h2>
+<p data-anchor="proof-seam">Seam: <code>review-host register</code> and the review server's provider read, tested with fixture state directories and fake providers.</p>
+<p data-anchor="proof-first-test">First failing test: a live service's <code>registry.toml</code> gains <code>[process] url</code> equal to the printed URL.</p>
+</section>
+
+</article>
+</body>
+</html>
