@@ -372,8 +372,8 @@ class JevSeam:
 
 # Shaped sections whose clauses are for you by structure, never asked (spec #reading-structural).
 AUDIENCE_STRUCTURAL_SECTIONS = frozenset({"user-stories", "modular-boundaries"})
-# Page header clauses and status or source issue sections: never asked nor compared (spec #corpus-meta).
-CORPUS_META_ANCHORS = frozenset({"status", "source-issues"})
+# Page header clauses and source issue sections: never asked nor compared (spec #corpus-meta).
+CORPUS_META_ANCHORS = frozenset({"source-issues"})
 CONTAINER_TAGS = frozenset({"article", "div", "figure", "footer", "header", "main", "nav", "ol", "section", "table", "tbody", "thead", "tfoot", "ul"})
 
 
