@@ -14,6 +14,13 @@ const end = runtime.indexOf('\n}\n', start) + 3;
 assert.ok(start >= 0, 'runtime exposes clearJevMarkers');
 assert.match(runtime, /holder\.appendChild\(pin\);\n\s*clearJevMarkers\(pin, holder\);/, 'every placed pin steps clear of its block markers');
 assert.match(runtime, /forEach\(placeJevMarker\); renderPins\(\);/, 'on resize markers are placed before pins');
+// Where the margin cannot hold the marker (it is inset), a block carrying both a marker and a pin
+// reserves right padding at least one pin wide, so neither covers its text (jev-suggestions #markers-quiet).
+const reserve = /\[data-anchor\]:has\(> \.hx-jev-marker\[data-inset=true\]\):has\(> \.hx-pin\)\{padding-right:(\d+)px\}/g;
+const pads = [...runtime.matchAll(reserve)].map(m => [m.index, +m[1]]);
+const narrow = runtime.indexOf('.hx-pin{width:44px;height:44px');
+assert.ok(pads.some(([at, px]) => at < narrow && px >= 24), 'desktop: inset marker and pin reserve a 24 px pin column');
+assert.ok(pads.some(([at, px]) => at > narrow && px >= 44), 'narrow: inset marker and pin reserve a 44 px pin column');
 
 const box = (x, y, w, h) => ({ left: x, top: y, right: x + w, bottom: y + h, width: w, height: h });
 const center = r => [r.left + r.width / 2, r.top + r.height / 2];

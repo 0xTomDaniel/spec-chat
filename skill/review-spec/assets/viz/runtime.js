@@ -1745,6 +1745,7 @@ body.hx-panel-open .hx-thread-dock{opacity:0;transform:translateX(10px);pointer-
 .hx-pin[data-s=resolved]{background:#fff;color:#3d8c40;border:2px solid #3d8c40}
 .hx-pin.active{box-shadow:0 0 0 3px rgba(217,142,4,.3),0 2px 8px rgba(20,20,30,.3)}
 [data-anchor]{position:relative}
+[data-anchor]:has(> .hx-jev-marker[data-inset=true]):has(> .hx-pin){padding-right:28px}
 body.hx-comment [data-anchor]{cursor:copy}
 body.hx-comment [data-anchor]:hover:not(:has(:is(h1,h2,h3,h4,h5,h6,p,li,ul,ol,table,tr,td,th,blockquote,pre,code,nav,figcaption,button,input,select,textarea,label,a,output,summary,svg,[data-render-target]):hover)){outline:2px dashed #d98e04;outline-offset:6px}
 body.hx-comment [data-anchor] :is(h1,h2,h3,h4,h5,h6,p,li,td,th,blockquote,pre,code,nav,figcaption,button,label,a,output,summary):hover{outline:1.5px dashed #d98e04;outline-offset:4px;border-radius:2px}
@@ -1830,6 +1831,7 @@ body.hx-panel-open{padding-right:0;overflow:hidden}
 .hx-handoff .hx-note{flex:1 1 auto}
 .hx-handoff .hx-btn{flex:1 1 auto;margin:0}
 .hx-pin{width:44px;height:44px;font-size:12px;touch-action:manipulation}
+[data-anchor]:has(> .hx-jev-marker[data-inset=true]):has(> .hx-pin){padding-right:48px}
 .hx-pin-jev{left:auto;right:calc(100% + 4px);max-width:110px;text-align:right}
 .hx-jev-note{margin:8px 16px 0}
 .hx-jev-marker::before{inset:-14px 0 -14px -28px}

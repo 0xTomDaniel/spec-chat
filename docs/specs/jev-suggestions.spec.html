@@ -161,7 +161,7 @@
 
 <section data-anchor="markers">
 <h2>Markers</h2>
-<p data-anchor="markers-quiet">Jev adds no section tint, bar, inline badge, or inline note; the spec text keeps its layout. Git focus's own change highlight and the dims of cosmetic changes and reading view stay.</p>
+<p data-anchor="markers-quiet">Jev adds no section tint, bar, inline badge, or inline note; the spec text keeps its layout, except that where the right margin is too narrow for a block's marker and thread pin, that block reserves right padding for them so its text stays readable (<a href="#markers-pin-clear">pin clear of text</a>). Git focus's own change highlight and the dims of cosmetic changes and reading view stay.</p>
 <p data-anchor="markers-one">Each section or clause with any note gets one small marker in the right margin beside its first line, one per location however many notes it has.</p>
 <p data-anchor="markers-color">A marker is a colored <code>!</code> when its notes include <code>Contradicts</code>, <code>Oversteps</code>, or evidence <code>Stale</code> or <code>Failed</code>; else a small green check when its evidence <code>Passed</code>; else a quiet neutral dot. The first that applies wins, and hover opens the popover for every kind.</p>
 <p data-anchor="markers-open">Hover or keyboard focus opens its popover, a tap opens it on touch, and moving away, Escape, or a tap elsewhere closes it; the popover never covers review controls.</p>
@@ -186,7 +186,7 @@
 <figcaption data-anchor="markers-figure-caption">Markers in the margin: neutral for ordinary notes, colored with a glyph for a conflict; the open popover holds the notes and their buttons.</figcaption>
 </figure>
 <p data-anchor="markers-mobile">At 375px, markers sit at the content column's right edge without widening the page, and the popover opens as a sheet above the review controls.</p>
-<p data-anchor="markers-pin-clear">A thread pin and a marker on the same line never cover each other or the spec text: where the margin cannot hold both side by side, the pin sits directly below the marker. ANN-224 follow-up.</p>
+<p data-anchor="markers-pin-clear">A thread pin and a marker on the same line never cover each other or the spec text: where the margin cannot hold both side by side, the pin sits directly below the marker, and where the margin cannot hold them at all, the block reserves right padding for them. ANN-224 follow-up; padding directed by operator w5:p2 (2026-09-26, ANN-247).</p>
 </section>
 
 <section data-anchor="corpus">
