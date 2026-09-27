@@ -5,6 +5,12 @@ import { dirname, resolve } from 'node:path';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime.js'), 'utf8');
+const slice = (from, to) => {
+  const start = runtime.indexOf(from);
+  const end = runtime.indexOf(to, start);
+  assert.ok(start >= 0 && end > start, 'runtime exposes ' + from);
+  return runtime.slice(start, end);
+};
 
 const paramsStart = runtime.indexOf('function jevParams(');
 const paramsEnd = runtime.indexOf('\n\nasync function fetchJev(', paramsStart);
@@ -27,9 +33,9 @@ let requested = '';
 const fakeFetch = async url => {
   requested = url;
   return { ok: true, json: async () => ({ jev: 'on', items: [
-    { kind: 'type', id: 'change-type', state: 'label', label: 'behavioral', target: null, record: 'r1' },
+    { kind: 'type', id: 'change-type', state: 'label', label: 'behavioral', target: null, record: 'r1', level: 'warning' },
     { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2' },
-  ] }) };
+  ], levels: { behavioral: 'warning', contradicts: 'important' } }) };
 };
 const fetchJev = Function('fetch', 'jevParams', 'location', 'URLSearchParams', runtime.slice(fetchStart, fetchEnd) + '; return fetchJev;')(
   fakeFetch,
@@ -42,13 +48,14 @@ assert.match(requested, /^\/api\/jev\\?/);
 assert.deepEqual(answer, {
   jev: 'on',
   items: [
-    { kind: 'type', id: 'change-type', state: 'label', label: 'behavioral', target: null, record: 'r1' },
-    { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2' },
+    { kind: 'type', id: 'change-type', state: 'label', label: 'behavioral', target: null, record: 'r1', level: 'warning' },
+    { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2', level: null },
   ],
+  levels: { behavioral: 'warning', contradicts: 'important' },
 });
 assert.equal((runtime.match(/fetch\('\/api\/jev\?/g) || []).length, 1, 'all Jev display uses one request seam');
 assert.match(runtime, /120000/, 'Jev fetch allows a cold provider request to finish');
-assert.match(runtime, /resolvedHint\.label === 'resolved in spirit'/, 'unrelated resolved answers never display');
+assert.match(runtime, /hint\.label === 'resolved in spirit'/, 'unrelated resolved answers never display');
 assert.doesNotMatch(runtime, /async function loadJev\(/, 'coverage shares the main Jev request');
 assert.doesNotMatch(runtime, /const jevState/, 'coverage shares the main Jev state');
 assert.match(runtime, /renderPanel\(\);\n  renderPins\(\);/, 'base changes clear thread and pin Jev displays');
@@ -94,27 +101,40 @@ openComposer('clause-a', { type: 'element', key: 'p:1' }, 'quote');
 assert.equal(composerState.composer.text, '', 'ordinary comments still open empty');
 assert.equal(posted.length, 0, 'opening a draft writes nothing');
 
-// #acceptance-note-resolve: Resolve thread on a Looks resolved card posts what the card's own resolve control posts.
-const resolveStart = runtime.indexOf('function threadResolveButtons(');
+// #acceptance-note-resolve: Resolve all (n) resolves every Looks resolved thread with the card's own resolve event.
+const resolveStart = runtime.indexOf('async function resolveThreads(');
 const resolveEnd = runtime.indexOf('\n\nfunction selectThread(', resolveStart);
 assert.ok(resolveStart >= 0 && resolveEnd > resolveStart, 'runtime exposes the shared resolve path');
-const resolveState = { expandedResolved: new Set(['t1']), transport: { postEvent: async event => posted.push(event) } };
-const { threadResolveButtons, resolveThread } = Function('state', 'humanId', 'toast', 'refresh',
-  runtime.slice(resolveStart, resolveEnd) + '; return { threadResolveButtons, resolveThread };')(
-  resolveState, prefix => prefix + 'fixed', () => {}, () => {});
-const acts = (status, looks) => threadResolveButtons({ id: 't1', status }, looks).map(b => b.act + ':' + b.label);
-assert.deepEqual(acts('pending', true), ['jev-resolve:Resolve thread']);
-assert.deepEqual(acts('acknowledged', true), ['jev-resolve:Resolve thread', 'resolve:✓ Resolve']);
-assert.deepEqual(acts('acknowledged', false), ['resolve:✓ Resolve']);
-assert.deepEqual(acts('resolved', true), []);
-assert.deepEqual(acts('pending', false), []);
-assert.match(runtime, /for \(const action of threadResolveButtons\(th, looksResolved\)\) \{[^}]*resolveThread\(th\)/,
-  'every resolve button on a card runs the one resolve path');
+let refreshed = 0;
+const resolveState = { expandedResolved: new Set(['t1', 't3']), transport: { postEvent: async event => posted.push(event) } };
+const { resolveThreads, resolveThread } = Function('state', 'humanId', 'toast', 'refresh',
+  runtime.slice(resolveStart, resolveEnd) + '; return { resolveThreads, resolveThread };')(
+  resolveState, prefix => prefix + 'fixed', () => {}, () => { refreshed++; });
+const resolvedEvent = id => ({ id: 'sfixed', event: 'status', respondsTo: id, threadId: id, status: 'resolved', actor: 'human', createdAt: null, schemaVersion: 1 });
 posted.length = 0;
 await resolveThread({ id: 't1' });
-assert.equal(posted.length, 1);
-assert.deepEqual({ ...posted[0], createdAt: null }, { id: 'sfixed', event: 'status', respondsTo: 't1', threadId: 't1', status: 'resolved',
-  actor: 'human', createdAt: null, schemaVersion: 1 });
-assert.equal(resolveState.expandedResolved.has('t1'), false);
+assert.deepEqual(posted.map(e => ({ ...e, createdAt: null })), [resolvedEvent('t1')]);
+posted.length = 0;
+await resolveThreads([{ id: 't2' }, { id: 't3' }]);
+assert.deepEqual(posted.map(e => ({ ...e, createdAt: null })), [resolvedEvent('t2'), resolvedEvent('t3')], 'one resolve event per hinted thread, nothing else');
+assert.equal(resolveState.expandedResolved.size, 0);
+assert.equal(refreshed, 2, 'one refresh per click');
+const panel = slice('function renderPanel(', '\n\n// A card');
+assert.doesNotMatch(runtime, /Resolve thread|jev-resolve/, 'no card has its own Resolve thread button');
+assert.match(panel, /if \(th\.status === 'acknowledged'\) \{[\s\S]*?'✓ Resolve'[\s\S]*?resolveThread\(th\)/, "each card's own resolve control is unchanged");
+assert.match(panel, /const hinted = threads\.filter\(looksResolved\);\n\s+if \(hinted\.length\) \{[\s\S]*?'Resolve all \(' \+ hinted\.length \+ '\)'[\s\S]*?resolveThreads\(hinted\)[\s\S]*?wrap\.appendChild\(all\);\n  \}\n  const handoffState/,
+  'Resolve all (n) sits after every card, only when a thread looks resolved');
+
+// #acceptance-resolved-tag: the tag shows only while the thread is open; once resolved its own indicator replaces it.
+const looksStart = runtime.indexOf('function looksResolved(');
+const looksResolved = Function('jevItem', runtime.slice(looksStart, runtime.indexOf('\n}\n', looksStart) + 2) + '; return looksResolved;')(
+  (kind, id) => kind === 'resolved' && id === 'hinted' ? { kind, id, state: 'label', label: 'resolved in spirit' } : null);
+assert.equal(looksResolved({ id: 'hinted', status: 'pending' }), true);
+assert.equal(looksResolved({ id: 'hinted', status: 'acknowledged' }), true);
+assert.equal(looksResolved({ id: 'hinted', status: 'resolved' }), false);
+assert.equal(looksResolved({ id: 'other', status: 'pending' }), false);
+assert.match(panel, /\(looksResolved\(th\) \? '<span class="hx-jev-thread-label">Looks resolved<\/span>' : ''\)/);
+assert.match(panel, /const resolvedHint = th\.status === 'resolved' \? null : jevItem\('resolved', th\.id\);/, 'a resolved card shows no resolved-in-spirit Jev label');
+assert.match(slice('function renderPins(', '\n\nfunction renderBadges('), /const hinted = looksResolved\(th\);/, 'the pin tag follows the card tag');
 
 console.log('runtime Jev contract tests passed');
