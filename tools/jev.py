@@ -32,6 +32,7 @@ REPLACEABLE_OUTCOMES = RETRYABLE_OUTCOMES | {ESCALATED}
 # Item labels key it directly; the browser keys derived marks (coverage gaps, QA evidence, unsure words) by the other names.
 MARK_LEVELS = {
     "contradicts": "important",
+    "missed": "important",  # a project-rule miss (project-rules #mark-order)
     "no-criterion": "important",
     "no-story": "important",
     "qa-failed": "important",
@@ -1340,6 +1341,8 @@ class JevService:
                     "state": "label" if label == RULE_MISSED else ("none" if state == "final" else state),
                     "label": RULE_MISSED if label == RULE_MISSED else None,
                     "record": record.get("record_id") if record and state == "final" else None}
+            if item["label"] in MARK_LEVELS:
+                item["level"] = MARK_LEVELS[item["label"]]
             if state == "pending":
                 item["escalated"] = bool(record and (record.get("outcome") == ESCALATED or record.get("escalated")))
             items.append(item)

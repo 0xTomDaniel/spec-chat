@@ -8,6 +8,7 @@ import tempfile
 import threading
 import time
 import unittest
+import unittest.mock
 from pathlib import Path
 
 
@@ -129,6 +130,22 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(item["target"], "specs/onboarding.spec.html#acceptance-onboarding")
         self.assertEqual(item["id"], "acceptance")
         self.assertEqual(item["word"], "onboarding")
+
+    def test_rule_miss_level_is_important_from_the_one_levels_table(self):
+        # project-rules #mark-order, jev-suggestions #level-important: one MARK_LEVELS row, returned in /api/jev.
+        self.seed()
+        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("missed", 0.95)})
+        result = self.read(self.service(provider))
+        self.assertEqual(result["levels"]["missed"], "important")
+        self.assertEqual([item.get("level") for item in self.rules(result)], ["important"])
+        # the row alone sets it: changing the table changes the item
+        with unittest.mock.patch.dict(jev.MARK_LEVELS, {"missed": "warning"}):
+            result = self.read(self.service(provider))
+        self.assertEqual((result["levels"]["missed"], self.rules(result)[0]["level"]), ("warning", "warning"))
+        # covered or pending notes carry no level
+        self.write("b.spec.html", spec(("b-one", FEATURE), body="Covered body."))
+        covered = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("covered", 0.95)})
+        self.assertEqual([item.get("level") for item in self.rules(self.read(self.service(covered)))], [None])
 
     def test_derive_only_every_feature_criteria_are_rules_and_no_state_names_them(self):
         self.seed()
@@ -264,7 +281,7 @@ class RulesTest(unittest.TestCase):
     def test_off_returns_off(self):
         self.seed()
         service = jev.JevService(state_dir=Path(self.tmp.name) / "state", api_key="")
-        self.assertEqual(self.read(service), {"jev": "off", "items": []})
+        self.assertEqual(self.read(service), {"jev": "off", "items": [], "levels": jev.MARK_LEVELS})
 
 
 if __name__ == "__main__":

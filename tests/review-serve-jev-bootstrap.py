@@ -193,7 +193,7 @@ class BootstrapTest(unittest.TestCase):
         off = jev.JevService(state_dir=self.dir / "off", api_key="")
         self.assertEqual(off.warm([self.row()]), [])
         self.assertIsNone(off.onboarding_status("proj"))
-        self.assertEqual(self.page(off, [self.row()]), {"jev": "off", "items": []})
+        self.assertEqual(self.page(off, [self.row()]), {"jev": "off", "items": [], "levels": jev.MARK_LEVELS})
         # nothing was warmed: a later server with Jev on warms the project
         on = jev.JevService(state_dir=self.dir / "off", provider=FakeProvider(), api_key="fake")
         self.assertEqual(on.warm([self.row()]), ["proj"])
