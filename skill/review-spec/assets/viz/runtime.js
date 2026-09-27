@@ -1726,19 +1726,51 @@ function wireJevPopover() {
 // project-rules #bootstrap-offer: one page note after warm-up. Reconcile drafts one comment; sending it or
 // dismissing the note records the offer, after which the server never returns it again for this project.
 function jevOfferNote(offer) {
-  const note = document.createElement('p');
+  const note = document.createElement('div');
   note.className = 'hx-jev-note hx-jev-offer';
   const count = Number(offer.count);
   note.appendChild(document.createElement('span')).textContent =
     count + (count === 1 ? ' existing spec misses' : ' existing specs miss') + ' project rules: reconcile?';
+  const specs = Array.isArray(offer.specs) ? offer.specs : [];
+  // Disclosure toggle: collapsed detail list of each spec and its missed rules.
+  const toggle = note.appendChild(document.createElement('button'));
+  toggle.type = 'button';
+  toggle.className = 'hx-disclosure';
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-label', 'Show spec details');
+  toggle.textContent = '\u25b8';
+  const detail = note.appendChild(document.createElement('div'));
+  detail.className = 'hx-jev-offer-detail';
+  detail.hidden = true;
+  for (const entry of specs) {
+    const row = detail.appendChild(document.createElement('div'));
+    row.className = 'hx-jev-offer-spec';
+    const specLink = row.appendChild(document.createElement('a'));
+    specLink.href = '/' + String(entry.spec || '');
+    specLink.textContent = String(entry.spec || '');
+    for (const r of (Array.isArray(entry.rules) ? entry.rules : [])) {
+      const ruleLink = row.appendChild(document.createElement('a'));
+      ruleLink.href = '/' + String(r.target || '');
+      ruleLink.className = 'hx-jev-offer-rule';
+      ruleLink.textContent = String(r.word || '') + '?';
+    }
+  }
+  toggle.addEventListener('click', event => {
+    event.stopPropagation();
+    const expanded = detail.hidden;
+    detail.hidden = !expanded;
+    toggle.setAttribute('aria-expanded', String(expanded));
+    toggle.textContent = expanded ? '\u25be' : '\u25b8';
+    toggle.setAttribute('aria-label', expanded ? 'Hide spec details' : 'Show spec details');
+  });
   const record = action => {
     state.jev.offer = null;
     renderJev();
     fetch('/api/jev/offer?' + new URLSearchParams({ path: location.pathname.replace(/^\//, '') }),
       { method: 'POST', body: JSON.stringify({ offer: action }) }).catch(() => {});
   };
-  const lines = (Array.isArray(offer.specs) ? offer.specs : []).map(entry => [String(entry.spec || ''),
-    ...(Array.isArray(entry.rules) ? entry.rules : []).map(rule => String(rule.word || '') + '? ' + String(rule.target || ''))].join(' '));
+  const lines = specs.map(entry => [String(entry.spec || ''),
+    ...(Array.isArray(entry.rules) ? entry.rules : []).map(r => String(r.word || '') + '? ' + String(r.target || ''))].join(' '));
   const reconcile = note.appendChild(document.createElement('button'));
   reconcile.type = 'button';
   reconcile.className = 'hx-btn';
@@ -1989,10 +2021,15 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-jev-marker:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}
 .hx-jev-marker[data-pending=true]{background:transparent;border:2px solid #767b85;border-right-color:transparent;animation:hx-jev-spin 1s linear infinite}
 @keyframes hx-jev-spin{to{transform:rotate(360deg)}}
-.hx-jev-offer{display:flex;align-items:center;gap:8px}
+.hx-jev-offer{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
 .hx-jev-offer span{flex:1 1 auto}
 .hx-jev-offer .hx-btn{margin:0;font-size:11.5px;padding:3px 8px}
 .hx-jev-offer-dismiss{margin:0;padding:0 4px;border:0;background:none;color:inherit;font:700 14px/1 system-ui,sans-serif;cursor:pointer}
+.hx-jev-offer-detail{width:100%;font:12px/1.5 system-ui,sans-serif;padding-left:4px}
+.hx-jev-offer-detail[hidden]{display:none}
+.hx-jev-offer-spec{margin:2px 0}
+.hx-jev-offer-spec a{color:#2947c7;text-decoration:underline;text-underline-offset:2px}
+.hx-jev-offer-rule{margin-left:8px;font-size:11px;color:#5a5a63}
 .hx-jev-pop{position:fixed;z-index:880;box-sizing:border-box;width:max-content;min-width:180px;max-width:min(340px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;padding:8px 10px;border:1px solid #303036;border-radius:8px;background:#ffffff;color:#303036;box-shadow:0 8px 28px rgba(30,30,40,.18);font:13px/1.4 system-ui,sans-serif}
 .hx-jev-pop[hidden]{display:none}
 .hx-jev-pop-notes{margin:0;padding:0;list-style:none;display:grid;gap:6px}
