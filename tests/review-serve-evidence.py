@@ -235,6 +235,12 @@ class EvidenceRouteTest(unittest.TestCase):
         key.chmod(0o600)
         self.assertEqual(serve.jev_provider(str(self.state)), "sk-file")
         self.assertTrue(service.enabled)
+        # project-rules #q-fallback: the fallback model is llm_model beside the key, else Jev's default
+        model = lambda: serve.jev_llm_model(str(self.state))
+        seam = serve.JevService(state_dir=self.dir / "jev", api_key="k", llm_model=model).seam
+        self.assertEqual(seam.llm_model(), "anthropic/claude-sonnet-5")
+        key.write_text('key = "sk-file"\nllm_model = "openai/gpt-5"\n')
+        self.assertEqual(seam.llm_model(), "openai/gpt-5")
         key.unlink()
         self.assertFalse(service.enabled)
 
