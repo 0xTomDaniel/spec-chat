@@ -132,7 +132,7 @@ for (const value of [new Error('down'), { ok: false, json: async () => ({}) }, {
 }
 assert.ok(fetches.every(url => url === '/api/evidence?path=specs%2Fdemo.spec.html'), fetches.join());
 
-// The server's levels table as /api/evidence returns it (tools/jev.py MARK_LEVELS).
+// The server's two-column levels table as /api/evidence returns it (tools/jev.py MARK_LEVELS); color reads its human column.
 const levels = JSON.parse(execFileSync('python3', ['-c', 'import json, sys; sys.path.insert(0, "tools"); from jev import MARK_LEVELS; print(json.dumps(MARK_LEVELS))'], { cwd: root, encoding: 'utf8' }));
 answer = json({ levels, criteria: {
   passed: entry(),
@@ -177,9 +177,13 @@ assert.deepEqual(marked('passed'), ['passed', 'reworded', 'plain', 'lane']);
 assert.equal(marker('none').dataset.attention + marker('none').dataset.passed, 'falsefalse');
 assert.equal(markersOf('story').length, 0);
 // #acceptance-levels-api: evidence color follows the response's levels table; changing one row changes the color.
-state.evidence.levels = { ...levels, 'qa-stale': 'warning' };
+state.evidence.levels = { ...levels, 'qa-stale': { human: 'warning', agent: 'important' } };
 renderJev();
 assert.deepEqual(marked('attention'), ['failed', 'failed-reworded']);
+// #markers-levels-source: the agent column never colors a marker.
+state.evidence.levels = Object.fromEntries(Object.entries(levels).map(([k, v]) => [k, { ...v, agent: 'warning' }]));
+renderJev();
+assert.deepEqual(marked('attention'), ['failed', 'failed-reworded', 'material', 'unsure', 'uncommitted']);
 state.evidence.levels = levels;
 renderJev();
 // Notes add no text to the spec and move nothing: each criterion keeps its text, plus one marker.
@@ -199,10 +203,22 @@ assert.deepEqual(evidenceDiff('a b c d', 'a x c d e').map(p => p.op + ':' + p.te
 // Only QA stale gets Ask for re-proof; it drafts the fixed text in the composer and writes nothing.
 const actionsOf = anchor => row(anchor).querySelectorAll('.hx-btn').map(b => b.textContent);
 for (const a of ['passed', 'failed', 'reworded', 'failed-reworded', 'lane', 'plain', 'none']) assert.deepEqual(actionsOf(a), [], a);
-for (const a of ['material', 'unsure', 'uncommitted']) assert.deepEqual(actionsOf(a), ['Ask for re-proof'], a);
+for (const a of ['material', 'unsure', 'uncommitted']) assert.deepEqual(actionsOf(a), ['Ask for re-proof', 'Re-proof all stale (3)'], a);
 row('material').querySelector('.hx-btn').fire('click');
 const captured = new Date(Date.now() - 9 * 86400000 - 5000).toISOString().slice(0, 10);
 assert.deepEqual(composed, [['material', 'material changed since its evidence (#58, ' + captured + '): please recapture it.']]);
+// #acceptance-reproof-all: one draft at the clicked criterion listing every stale criterion in page order.
+row('unsure').querySelectorAll('.hx-btn').find(b => b.textContent === 'Re-proof all stale (3)').fire('click');
+assert.deepEqual(composed.pop(), ['unsure', 'Re-proof each criterion, changed since its evidence:\nmaterial (#58, ' + captured
+  + ')\nunsure (#58, ' + captured + ')\nuncommitted (#58, ' + captured + ')']);
+composed.pop();
+// With one stale criterion, only Ask for re-proof shows.
+const allCriteria = state.evidence.criteria;
+state.evidence.criteria = { material: allCriteria.material, passed: allCriteria.passed };
+renderJev();
+assert.deepEqual(actionsOf('material'), ['Ask for re-proof']);
+state.evidence.criteria = allCriteria;
+renderJev();
 assert.equal(fetches.length, 5, 'drafting writes nothing');
 
 // Plugin bridge: links behave as today until the parent frame announces itself; then clicks post IDs to that origin.
@@ -227,6 +243,15 @@ assert.deepEqual(posted, [
   [{ type: 'spec-chat-open-evidence', bundle: 'b' }, 'https://bb.example'],
   [{ type: 'spec-chat-open-evidence', bundle: 'b' }, 'https://bb.example'],
 ]);
+
+// #acceptance-reproof-settle: once evidence of the current text lands, the next read shows its label; the stale note,
+// its diff, and its re-proof button are gone.
+answer = json({ levels, criteria: { material: entry({ proven: 'material', pr: 61, capturedAt: ago(5 * 60000 + 5000) }) } });
+await requestEvidence();
+assert.deepEqual(note('material'), linked('QA passed', '#61 · 5 m'));
+assert.equal(diffOf('material'), null);
+assert.deepEqual(actionsOf('material'), []);
+assert.equal(marker('material').dataset.attention, 'false');
 
 // Evidence is listed first beside other Jev notes, and Jev rerenders keep it.
 state.jev.status = 'on';

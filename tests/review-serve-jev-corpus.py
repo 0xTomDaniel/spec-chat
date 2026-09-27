@@ -222,7 +222,9 @@ class CorpusTest(unittest.TestCase):
         self.assertEqual(parses, [])
         self.assertTrue(all("rev-parse" in argv for argv in gits), gits)
         resolved = sorted(argv[-1].removesuffix("^{commit}") for argv in gits)
-        self.assertEqual(resolved, sorted([base, "HEAD", "origin/main", "origin/main"]))
+        # Cross-lane target main (#cross-lane-clauses) is each repository's origin/HEAD, resolved once per read.
+        self.assertEqual(resolved, sorted([base, "HEAD", "origin/main", "origin/main",
+                                           "refs/remotes/origin/HEAD", "refs/remotes/origin/HEAD"]))
         self.assertEqual(read(self.jev_service(state_dir=self.dir / "state", provider=provider, api_key="fake",
                                              question_dirs=dirs)), first)  # same as a cold read
 

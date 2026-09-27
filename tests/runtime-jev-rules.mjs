@@ -89,7 +89,7 @@ const code = [
 const levels = JSON.parse(execFileSync('python3', ['-c', 'import json, sys; sys.path.insert(0, "tools"); from jev import MARK_LEVELS; print(json.dumps(MARK_LEVELS))'], { cwd: root, encoding: 'utf8' }));
 const target = 'docs/specs/onboarding.spec.html#acceptance-onboarding';
 const rule = (stateName, extra = {}) => ({ kind: 'rule', id: 'acceptance', state: stateName, label: stateName === 'label' ? 'missed' : null,
-  target, record: null, word: 'onboarding', escalated: false, level: stateName === 'label' ? levels.missed : null, ...extra });
+  target, record: null, word: 'onboarding', escalated: false, level: stateName === 'label' ? levels.missed.human : null, ...extra });
 const state = { readingView: false, jev: { request: 1, status: 'on', base: 'b', items: [], levels, offer: null } };
 const location = { search: '', pathname: '/docs/specs/b.spec.html' };
 const composed = [];

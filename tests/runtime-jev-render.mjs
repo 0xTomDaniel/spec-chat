@@ -97,10 +97,10 @@ const code = [
   slice('function jevDisplayLabel(', '\n\nfunction goToJevTarget('),
   slice('/* ---------------- Jev markers', '\n\n/* ---------------- UI'),
 ].join('\n\n');
-// The server's levels table as /api/jev returns it (tools/jev.py MARK_LEVELS); items carry level as the server sets it.
+// The server's two-column levels table as /api/jev returns it (tools/jev.py MARK_LEVELS); items carry level, the human column, as the server sets it.
 const levels = JSON.parse(execFileSync('python3', ['-c', 'import json, sys; sys.path.insert(0, "tools"); from jev import MARK_LEVELS; print(json.dumps(MARK_LEVELS))'], { cwd: root, encoding: 'utf8' }));
 const item = (kind, id, stateName, label = null, target = null) => ({ kind, id, state: stateName, label, target, record: 'r',
-  level: stateName === 'label' && kind !== 'orphan' && label in levels ? levels[label] : null });
+  level: stateName === 'label' && kind !== 'orphan' && label in levels ? levels[label].human : null });
 const typeItems = [
   item('type', 'rule', 'label', 'behavioral'),
   item('type', 'typo', 'label', 'cosmetic'),
@@ -149,13 +149,20 @@ assert.deepEqual(colored(), ['rule', 'crowded', 'story-gap', 'criterion-gap']);
 assert.deepEqual(holder('rule').querySelector('.hx-jev-marker').jevNotes.map(n => [n.text, n.level]),
   [['Contradicts #non-goal-text', 'important'], ['Behavior', 'warning']]);
 // #acceptance-levels-api: color follows the server table; changing one row changes the color with no runtime mapping.
-state.jev.levels = { ...levels, 'no-criterion': 'warning', 'no-story': 'warning', oversteps: 'important' };
+const warn = { human: 'warning', agent: 'important' };
+state.jev.levels = { ...levels, 'no-criterion': warn, 'no-story': warn, oversteps: { human: 'important', agent: 'important' } };
 state.jev.items = suggestionItems.map(i => i.label === 'oversteps' ? { ...i, level: 'important' } : i);
 renderJev();
 assert.deepEqual(colored(), ['rule', 'overstep']);
-state.jev.levels = levels;
+// #markers-levels-source: color reads only the human column; flipping every agent cell changes no marker.
+state.jev.levels = Object.fromEntries(Object.entries(levels).map(([k, v]) => [k, { ...v, agent: v.agent === 'important' ? 'warning' : 'important' }]));
 state.jev.items = suggestionItems;
 renderJev();
+assert.deepEqual(colored(), ['rule', 'crowded', 'story-gap', 'criterion-gap']);
+state.jev.levels = levels;
+renderJev();
+// #proof-levels-audience: an unsure word keeps its Warning, read from the human column.
+assert.deepEqual(holder('type-unsure').querySelector('.hx-jev-marker').jevNotes.map(n => n.level), ['warning']);
 // No tint, badge, or inline note; the only in-text display is the cosmetic dim; text is unchanged.
 assert.deepEqual(article.querySelectorAll('[data-hx-jev-type]').map(e => [e.dataset.anchor, e.dataset.hxJevType]), [['typo', 'cosmetic']]);
 assert.deepEqual(anchors.concat('row').map(a => holder(a).textContent), textBefore, 'markers add no text to the spec');
@@ -267,8 +274,8 @@ assert.deepEqual(pop().querySelector('.hx-jev-pop-actions').children.map(c => [c
   [['BUTTON', 'hx-btn'], ['SPAN', 'hx-jev-pop-batch']]);
 assert.deepEqual(pop().querySelector('.hx-jev-pop-batch').children.map(c => [c.className, c.textContent]),
   [['hx-btn', 'Reconcile all (1)'], ['hx-jev-pop-more', '+1 warning']]);
-assert.deepEqual(noteButtons('crowded'), [['No criterion covers this', ['Ask for a criterion']], ['Scope', ['Comment on this change']], ['conflict?', []]]);
-assert.deepEqual(noteButtons('criterion-gap'), [['No story backs this', ['Ask for a story']]]);
+assert.deepEqual(noteButtons('crowded'), [['No criterion covers this', ['Ask for a criterion', 'Ask about all gaps (3)']], ['Scope', ['Comment on this change']], ['conflict?', []]]);
+assert.deepEqual(noteButtons('criterion-gap'), [['No story backs this', ['Ask for a story', 'Ask about all gaps (3)']]]);
 assert.deepEqual(noteButtons('row'), [['Behavior', ['Comment on this change']]]);
 for (const a of ['typo', 'type-unsure', 'story-unsure', 'story-down', 'criterion-down']) {
   assert.ok(noteButtons(a).every(([, buttons]) => buttons.length === 0), a + ' shows no button');
@@ -317,6 +324,70 @@ withCorpus([item('corpus', 'rule', 'label', 'contradicts', 'a'), item('corpus', 
   assert.deepEqual(reconcileButtons('typo'), ['Ask agent to reconcile', 'Reconcile all (1)', '+2 warnings']);
   assert.deepEqual(clickMore('typo', '+2 warnings'), ['typo', null, null,
     'Reconcile each clause with its link:\n#rule Contradicts #a\n#typo Oversteps #c\n#overstep Oversteps #b']);
+});
+// #acceptance-reconcile-all: a popover whose clause has several reconcile notes shows the pair once.
+withCorpus([item('corpus', 'rule', 'label', 'contradicts', 'a'), item('corpus', 'rule', 'label', 'oversteps', 'b')], () => {
+  assert.deepEqual(noteButtons('rule').map(([, buttons]) => buttons),
+    [['Ask agent to reconcile', 'Reconcile all (1)', '+1 warning'], ['Ask agent to reconcile'], ['Comment on this change']]);
+  assert.deepEqual(clickMore('rule', '+1 warning'), ['rule', null, null,
+    'Reconcile each clause with its link:\n#rule Contradicts #a\n#rule Oversteps #b']);
+});
+// #proof-batch and #acceptance-gaps-all: two gaps give each popover Ask about all gaps (2), both lines in page order; one gives none.
+withCorpus([item('coverage', 'story-gap::criterion-gap', 'label', 'unrelated')], () => {
+  assert.deepEqual(noteButtons('story-gap'), [['No criterion covers this', ['Ask for a criterion', 'Ask about all gaps (2)']]]);
+  assert.deepEqual(noteButtons('criterion-gap'), [['No story backs this', ['Ask for a story', 'Ask about all gaps (2)']]]);
+  assert.equal(pop().querySelectorAll('.hx-jev-pop-more').length, 0, 'gaps carry no +m link');
+  const draft = 'Add a criterion for each story, or name the story for each criterion:\n#story-gap No criterion covers this\n#criterion-gap No story backs this';
+  assert.deepEqual(clickNote('criterion-gap', 'Ask about all gaps (2)'), ['criterion-gap', null, null, draft]);
+  assert.deepEqual(clickNote('story-gap', 'Ask about all gaps (2)'), ['story-gap', null, null, draft]);
+});
+withCorpus([item('coverage', 'story-gap::criterion-gap', 'label', 'unrelated'), item('coverage', 'story-gap::quiet', 'label', 'verifies')],
+  () => assert.deepEqual(noteButtons('criterion-gap'), [['No story backs this', ['Ask for a story']]], 'one gap shows only its own button'));
+// #acceptance-cross-lane: lane items name the other slug and link its served clause; color from the item level only;
+// Oversteps and Overstepped by are Warnings for the reconcile batch; pending items never render.
+const Y = 'ann2/docs/specs/y.spec.html';
+const lane = (id, label, target, levelName) => ({ kind: 'lane', id, state: 'label', label, side: 'first', other: 'ann2', target,
+  level: levelName, agent_level: 'important', record: 'r' });
+const laneItems = [
+  lane('rule', 'contradicts', Y + '#b', 'important'),
+  lane('overstep', 'oversteps', Y + '#d', 'warning'),
+  lane('typo', 'overstepped by', Y + '#e', 'warning'),
+  { kind: 'lane', id: 'quiet', state: 'pending', label: null, side: 'second', other: 'ann2', target: Y + '#f', record: null },
+];
+// Lane items reach the notes through the real route consumer, so other and side survive fetchJev.
+const fetchJev = Function('fetch', 'jevParams', slice('async function fetchJev(', '\n\nfunction jevItem(') + '; return fetchJev;')(
+  async () => ({ ok: true, json: async () => ({ jev: 'on', items: laneItems, levels: null }) }), () => new URLSearchParams());
+const fetchedLane = (await fetchJev('base')).items;
+withCorpus(fetchedLane, () => {
+  assert.deepEqual(colored(), ['rule']);
+  assert.equal(markersOf('quiet').length, 0, 'a pending question never renders');
+  const laneNote = anchor => holder(anchor).querySelector('.hx-jev-marker').jevNotes.find(n => n.group === 'conflict');
+  assert.deepEqual(['rule', 'overstep', 'typo'].map(a => [laneNote(a).text, laneNote(a).href, laneNote(a).level]), [
+    ['Contradicts ann2 #b', '/' + Y + '#b', 'important'],
+    ['Oversteps ann2 #d', '/' + Y + '#d', 'warning'],
+    ['Overstepped by ann2 #e', '/' + Y + '#e', 'warning'],
+  ]);
+  assert.deepEqual(noteButtons('rule')[0], ['Contradicts ann2 #b', ['Ask agent to reconcile', 'Reconcile all (1)', '+2 warnings']]);
+  assert.deepEqual(clickNote('typo', 'Ask agent to reconcile'), ['typo', null, null, 'Reconcile this clause with ' + Y + '#e.']);
+  assert.deepEqual(clickNote('overstep', 'Reconcile all (1)'), ['overstep', null, null,
+    'Reconcile each clause with its link:\n#rule Contradicts ' + Y + '#b']);
+  assert.deepEqual(clickMore('rule', '+2 warnings'), ['rule', null, null,
+    'Reconcile each clause with its link:\n#rule Contradicts ' + Y + '#b\n#typo Overstepped by ' + Y + '#e\n#overstep Oversteps ' + Y + '#d']);
+  // Color follows the item level, never a runtime mapping.
+  state.jev.items = [...typeItems, ...laneItems.map(i => i.label === 'overstepped by' ? { ...i, level: 'important' } : i)];
+  renderJev();
+  assert.deepEqual(colored(), ['rule', 'typo']);
+  // Lane marks compare against target main, not the Git focus base, so they show without Git focus too.
+  location.search = '';
+  state.jev.items = [...typeItems, ...laneItems];
+  renderJev();
+  assert.deepEqual(noteButtons('overstep'), [['Oversteps ann2 #d', ['Ask agent to reconcile', 'Reconcile all (1)', '+2 warnings']]]);
+  location.search = '?focus=changes';
+});
+// Draft and cross-lane reconcile notes batch together.
+withCorpus([item('corpus', 'crowded', 'label', 'contradicts', 'non-goal-text'), lane('rule', 'contradicts', Y + '#b', 'important')], () => {
+  assert.deepEqual(clickNote('crowded', 'Reconcile all (2)'), ['crowded', null, null,
+    'Reconcile each clause with its link:\n#rule Contradicts ' + Y + '#b\n#crowded Contradicts #non-goal-text']);
 });
 assert.deepEqual(clickNote('story-gap', 'Ask for a criterion'), ['story-gap', null, null, 'Add an acceptance criterion that verifies this story.']);
 assert.deepEqual(clickNote('criterion-gap', 'Ask for a story'), ['criterion-gap', null, null, 'Name or add the user story this criterion verifies.']);
@@ -369,15 +440,32 @@ renderJev();
 assert.equal(body.querySelectorAll('.hx-jev-marker').length, 0, 'Jev off clears markers');
 assert.deepEqual(body.querySelectorAll('.hx-jev-note').map(n => n.textContent), ['Jev off']);
 
-// After Move comment here resolves the orphaned thread, its card offers no second move,
-// even while the old orphan suggestion is still in state until the next Jev fetch.
+// An open orphan card shows the guess with Go to and Move comment here; a resolved one gets no guess (openOrphanHint).
 const orphanHintElement = Function('document', 'state', 'goToJevTarget', 'moveOrphan',
-  slice('function orphanHintElement(', '\n\nasync function moveOrphan(') + '; return orphanHintElement;',
+  slice('function orphanHintElement(', '\n\n// Move comment here and Move all') + '; return orphanHintElement;',
 )(document, { movingOrphans: new Set() }, () => {}, () => {});
 const suggestion = { kind: 'orphan', id: 'thread-1', state: 'label', label: 'Moved section', target: 'moved-section', record: 'r9' };
 const acts = el => el.querySelectorAll('button').map(b => b.dataset.act);
 assert.deepEqual(acts(orphanHintElement({ id: 'thread-1', status: 'pending' }, suggestion)), ['orphan-go', 'orphan-move']);
-assert.deepEqual(acts(orphanHintElement({ id: 'thread-1', status: 'resolved' }, suggestion)), ['orphan-go']);
 assert.equal(orphanHintElement({ id: 'thread-1', status: 'pending' }, null), null);
+
+// #settle-gap and #settle-conflict: once the next head has the counterpart and answers no finding, the marks are gone.
+state.jev.status = 'on';
+location.search = '?focus=changes';
+state.jev.items = suggestionItems;
+renderJev();
+marker('story-gap');
+assert.ok(holder('rule').querySelector('.hx-jev-marker').jevNotes.some(n => n.group === 'conflict'));
+state.jev.items = [
+  ...typeItems.filter(i => i.id !== 'rule'),
+  item('corpus', 'rule', 'label', 'unrelated', 'non-goal-text'),
+  item('corpus', 'overstep', 'label', 'unrelated', 'other#scope'),
+  item('coverage', 'story-gap::criterion-gap', 'label', 'verifies'),
+];
+renderJev();
+for (const a of ['rule', 'story-gap', 'criterion-gap']) assert.equal(markersOf(a).length, 0, a + ' settles to no mark');
+assert.ok(!markersOf('overstep').length || markersOf('overstep')[0].jevNotes.every(n => n.group !== 'conflict'), 'no conflict label left');
+state.jev.items = suggestionItems;
+renderJev();
 
 console.log('runtime Jev render tests passed');
