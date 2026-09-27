@@ -211,9 +211,195 @@ Pin border-radius is unchanged (teardrop shape).</p>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════ -->
-<section data-anchor="surfaces">
+<section data-anchor="preview">
 <div class="sec-head">
 <span class="sec-num">05</span>
+<h2 data-anchor="preview-heading">Visual preview</h2>
+<p class="sec-note" data-anchor="preview-note">Live rendering of the proposed tokens and components, light and dark.</p>
+</div>
+
+<figure data-anchor="preview-figure">
+<div data-anchor="preview-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+
+<!-- Light mode -->
+<div data-anchor="preview-light" style="--ui-font:'Inter Variable',Inter,system-ui,sans-serif;--ui-mono:ui-monospace,SFMono-Regular,Menlo,monospace;--ui-text-xs:12px;--ui-text-sm:14px;--ui-page:#ffffff;--ui-surface:#ffffff;--ui-ink:#333333;--ui-muted:#525252;--ui-border:#dfdfdf;--ui-focus:#262626;--ui-draft:#b0540e;--ui-draft-soft:#faf4ef;--ui-ack:#1d4ed8;--ui-ack-soft:#eff3ff;--ui-resolved:#005c32;--ui-resolved-soft:#e6efea;--ui-error:#a5000f;--ui-pass:#005c32;--ui-fail:#a5000f;--ui-marker:#767b85;--ui-marker-important:#d1242f;--ui-marker-pass:#1a7f37;--ui-shadow:rgba(51,51,51,0.14);--ui-radius:8px;--ui-radius-sm:6px;--ui-radius-pill:999px;font-family:var(--ui-font);color:var(--ui-ink);background:var(--ui-page);padding:20px;border-radius:4px;border:1px solid var(--ui-border)">
+
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Light mode</div>
+
+<!-- Swatches -->
+<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px">
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#ffffff"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">page</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#333333"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">ink</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#525252"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">muted</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#dfdfdf"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">border</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#b0540e"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">draft</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#faf4ef"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">draft-s</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#1d4ed8"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">ack</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#eff3ff"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">ack-s</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#005c32"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">resolved</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#e6efea"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">res-s</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#a5000f"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">error</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#767b85"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">marker</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#d1242f"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">m-imp</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#1a7f37"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">m-pass</div></div>
+</div>
+
+<!-- Buttons -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Buttons</div>
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;align-items:center">
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-ink);color:var(--ui-page);border:1px solid var(--ui-ink);cursor:pointer">Hand off</button>
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-surface);color:var(--ui-ink);border:1px solid var(--ui-border);cursor:pointer">Cancel</button>
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);width:32px;height:32px;padding:0;background:var(--ui-surface);color:var(--ui-muted);border:1px solid var(--ui-border);cursor:pointer">&#9881;</button>
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:transparent;color:var(--ui-ink);border:none;cursor:pointer">Comment</button>
+</div>
+
+<!-- Status -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Status</div>
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;align-items:end">
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-draft);background:var(--ui-draft-soft)">Draft</span>
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-ack);background:var(--ui-ack-soft)">Ack</span>
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-resolved);background:var(--ui-resolved-soft)">Resolved</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:#fff;background:var(--ui-draft)">1</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:#fff;background:var(--ui-ack)">2</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:var(--ui-resolved);background:var(--ui-surface);border:2px solid var(--ui-resolved)">3</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;color:#fff;background:var(--ui-marker)">!</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;color:#fff;background:var(--ui-marker-important)">!</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;color:#fff;background:var(--ui-marker-pass)">&#10003;</span>
+<span style="display:inline-block;background:var(--ui-resolved-soft);color:var(--ui-resolved);border-radius:var(--ui-radius-pill);padding:2px 8px;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase">Agent</span>
+</div>
+
+<!-- Toolbar -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Toolbar</div>
+<div style="display:inline-flex;align-items:center;gap:4px;background:var(--ui-surface);border:1px solid var(--ui-border);border-radius:var(--ui-radius);padding:6px 8px;box-shadow:0 8px 28px var(--ui-shadow);margin-bottom:20px">
+<span style="font-size:var(--ui-text-xs);font-weight:600;padding:4px 8px;border-radius:var(--ui-radius-sm);background:var(--ui-draft-soft);color:var(--ui-draft);cursor:pointer">Comment</span>
+<span style="font-size:var(--ui-text-xs);font-weight:600;padding:4px 8px;color:var(--ui-ink);cursor:pointer">Reading view</span>
+<span style="font-size:var(--ui-text-xs);color:var(--ui-muted);margin-left:8px">3 threads</span>
+</div>
+
+<!-- Thread card -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Thread card</div>
+<div style="background:var(--ui-surface);border:1px solid var(--ui-draft);border-radius:var(--ui-radius);padding:12px;margin-bottom:20px;font-size:var(--ui-text-sm)">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-draft);background:var(--ui-draft-soft)">Draft</span><span style="font-size:var(--ui-text-xs);color:var(--ui-muted)">2 min ago</span></div>
+<div>Button radius should be consistent across all surfaces.</div>
+<div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end">
+<button style="font-family:var(--ui-font);font-size:11px;font-weight:600;border-radius:var(--ui-radius-sm);min-height:26px;padding:2px 8px;background:var(--ui-surface);color:var(--ui-ink);border:1px solid var(--ui-border);cursor:pointer">Reply</button>
+<button style="font-family:var(--ui-font);font-size:11px;font-weight:600;border-radius:var(--ui-radius-sm);min-height:26px;padding:2px 8px;background:var(--ui-surface);color:var(--ui-ink);border:1px solid var(--ui-border);cursor:pointer">Resolve</button>
+</div>
+</div>
+
+<!-- Jev note -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Jev note</div>
+<div style="background:var(--ui-draft-soft);border:1px solid rgba(176,84,14,0.4);border-radius:var(--ui-radius);padding:12px;font-size:var(--ui-text-sm);color:var(--ui-draft);margin-bottom:20px">
+<div style="font-size:var(--ui-text-xs);margin-bottom:4px;font-weight:600">Reconcile suggestion</div>
+Button sizes conflict with the range bar spec.
+<div style="margin-top:8px"><button style="font-family:var(--ui-font);font-size:11px;font-weight:600;border-radius:var(--ui-radius-sm);min-height:26px;padding:2px 8px;background:var(--ui-surface);color:var(--ui-ink);border:1px solid var(--ui-border);cursor:pointer">Reconcile</button></div>
+</div>
+
+<!-- Popover -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Jev popover</div>
+<div style="background:var(--ui-surface);border:1px solid var(--ui-ink);border-radius:var(--ui-radius);padding:16px;box-shadow:0 8px 28px var(--ui-shadow);max-width:320px;font-size:var(--ui-text-sm);margin-bottom:20px">
+<div style="font-size:var(--ui-text-xs);color:var(--ui-muted);margin-bottom:8px">important &middot; contradicts</div>
+<div>Conflicts with <a href="#" style="color:var(--ui-ack)">button-system-rule</a>.</div>
+<div style="display:flex;gap:8px;margin-top:12px">
+<button style="font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-surface);color:var(--ui-ack);border:1px solid var(--ui-ack);cursor:pointer">Go to clause</button>
+<button style="font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-surface);color:var(--ui-ack);border:1px solid var(--ui-ack);cursor:pointer">Dismiss</button>
+</div>
+</div>
+
+<!-- Inverted -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Inverted surfaces</div>
+<div style="background:var(--ui-pass);color:var(--ui-page);padding:8px 12px;display:flex;align-items:center;justify-content:space-between;font-size:var(--ui-text-xs);font-weight:600;margin-bottom:8px">
+<span>Spec updated to latest commit</span>
+<button style="font-family:var(--ui-font);font-size:11px;font-weight:600;border-radius:var(--ui-radius-sm);min-height:26px;padding:2px 8px;background:transparent;color:var(--ui-page);border:1px solid var(--ui-page);cursor:pointer">Reload</button>
+</div>
+<div style="display:inline-block;background:var(--ui-ink);color:var(--ui-page);border-radius:var(--ui-radius);padding:8px 12px;font-size:var(--ui-text-xs);font-weight:600;margin-bottom:8px">Thread resolved</div>
+<div style="background:var(--ui-error);color:var(--ui-page);padding:12px;font-size:var(--ui-text-xs);font-family:var(--ui-mono)">Error: runtime.js failed to load</div>
+</div>
+
+<!-- Dark mode -->
+<div data-anchor="preview-dark" style="--ui-font:'Inter Variable',Inter,system-ui,sans-serif;--ui-mono:ui-monospace,SFMono-Regular,Menlo,monospace;--ui-text-xs:12px;--ui-text-sm:14px;--ui-page:#1a1a1a;--ui-surface:#242424;--ui-ink:#e0e0e0;--ui-muted:#999999;--ui-border:#3a3a3a;--ui-focus:#cccccc;--ui-draft:#e5873a;--ui-draft-soft:#2e2218;--ui-ack:#6b8aed;--ui-ack-soft:#1a2040;--ui-resolved:#3daa6e;--ui-resolved-soft:#1a2e22;--ui-error:#e05560;--ui-pass:#3daa6e;--ui-fail:#e05560;--ui-marker:#999999;--ui-marker-important:#e05560;--ui-marker-pass:#3daa6e;--ui-shadow:rgba(0,0,0,0.4);--ui-radius:8px;--ui-radius-sm:6px;--ui-radius-pill:999px;font-family:var(--ui-font);color:var(--ui-ink);background:var(--ui-page);padding:20px;border-radius:4px;border:1px solid var(--ui-border)">
+
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Dark mode</div>
+
+<!-- Dark swatches -->
+<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px">
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#1a1a1a"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">page</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#242424"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">surface</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#e0e0e0"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">ink</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#3a3a3a"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">border</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#e5873a"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">draft</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#2e2218"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">draft-s</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#6b8aed"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">ack</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#1a2040"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">ack-s</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#3daa6e"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">resolved</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#1a2e22"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">res-s</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#e05560"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">error</div></div>
+</div>
+
+<!-- Dark buttons -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Buttons</div>
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;align-items:center">
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-ink);color:var(--ui-page);border:1px solid var(--ui-ink);cursor:pointer">Hand off</button>
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-surface);color:var(--ui-ink);border:1px solid var(--ui-border);cursor:pointer">Cancel</button>
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);width:32px;height:32px;padding:0;background:var(--ui-surface);color:var(--ui-muted);border:1px solid var(--ui-border);cursor:pointer">&#9881;</button>
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:transparent;color:var(--ui-ink);border:none;cursor:pointer">Comment</button>
+</div>
+
+<!-- Dark status -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Status</div>
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;align-items:end">
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-draft);background:var(--ui-draft-soft)">Draft</span>
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-ack);background:var(--ui-ack-soft)">Ack</span>
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-resolved);background:var(--ui-resolved-soft)">Resolved</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:#fff;background:var(--ui-draft)">1</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:#fff;background:var(--ui-ack)">2</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:var(--ui-resolved);background:var(--ui-surface);border:2px solid var(--ui-resolved)">3</span>
+</div>
+
+<!-- Dark thread card -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Thread card</div>
+<div style="background:var(--ui-surface);border:1px solid var(--ui-draft);border-radius:var(--ui-radius);padding:12px;margin-bottom:20px;font-size:var(--ui-text-sm)">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-draft);background:var(--ui-draft-soft)">Draft</span><span style="font-size:var(--ui-text-xs);color:var(--ui-muted)">2 min ago</span></div>
+<div>Button radius should be consistent across all surfaces.</div>
+</div>
+
+<!-- Dark Jev note -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Jev note</div>
+<div style="background:var(--ui-draft-soft);border:1px solid rgba(229,135,58,0.4);border-radius:var(--ui-radius);padding:12px;font-size:var(--ui-text-sm);color:var(--ui-draft);margin-bottom:20px">
+<div style="font-size:var(--ui-text-xs);margin-bottom:4px;font-weight:600">Reconcile suggestion</div>
+Button sizes conflict with the range bar spec.
+</div>
+
+<!-- Dark popover -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Jev popover</div>
+<div style="background:var(--ui-surface);border:1px solid var(--ui-ink);border-radius:var(--ui-radius);padding:16px;box-shadow:0 8px 28px var(--ui-shadow);max-width:320px;font-size:var(--ui-text-sm);margin-bottom:20px">
+<div style="font-size:var(--ui-text-xs);color:var(--ui-muted);margin-bottom:8px">important &middot; contradicts</div>
+<div>Conflicts with <a href="#" style="color:var(--ui-ack)">button-system-rule</a>.</div>
+<div style="display:flex;gap:8px;margin-top:12px">
+<button style="font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-surface);color:var(--ui-ack);border:1px solid var(--ui-ack);cursor:pointer">Go to clause</button>
+</div>
+</div>
+
+<!-- Dark inverted -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Inverted surfaces</div>
+<div style="background:var(--ui-pass);color:var(--ui-page);padding:8px 12px;display:flex;align-items:center;justify-content:space-between;font-size:var(--ui-text-xs);font-weight:600;margin-bottom:8px">
+<span>Spec updated</span>
+<button style="font-family:var(--ui-font);font-size:11px;font-weight:600;border-radius:6px;min-height:26px;padding:2px 8px;background:transparent;color:var(--ui-page);border:1px solid var(--ui-page);cursor:pointer">Reload</button>
+</div>
+<div style="display:inline-block;background:var(--ui-ink);color:var(--ui-page);border-radius:var(--ui-radius);padding:8px 12px;font-size:var(--ui-text-xs);font-weight:600;margin-bottom:8px">Thread resolved</div>
+<div style="background:var(--ui-error);color:var(--ui-page);padding:12px;font-size:var(--ui-text-xs);font-family:var(--ui-mono)">Error: runtime.js failed to load</div>
+</div>
+
+</div>
+<figcaption data-anchor="preview-caption">Left: light mode. Right: dark mode. All values from the proposed token block. Button system: one shape (6px radius, 12px/600, 32px min-height), four variants (primary, secondary, icon, text-link). Status colors: draft amber, acknowledged blue, resolved green. Inverted surfaces: toast (dark), banner (green), error (red).</figcaption>
+</figure>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-anchor="surfaces">
+<div class="sec-head">
+<span class="sec-num">06</span>
 <h2 data-anchor="surfaces-heading">Surface rules</h2>
 <p class="sec-note" data-anchor="surfaces-note">Every chrome surface, by element.</p>
 </div>
@@ -248,7 +434,7 @@ Pin border-radius is unchanged (teardrop shape).</p>
 <!-- ════════════════════════════════════════════════════════════════ -->
 <section data-anchor="coordinate">
 <div class="sec-head">
-<span class="sec-num">06</span>
+<span class="sec-num">07</span>
 <h2 data-anchor="coordinate-heading">Coordinate lanes</h2>
 <p class="sec-note" data-anchor="coordinate-note">What changes, what does not, how merges work.</p>
 </div>
