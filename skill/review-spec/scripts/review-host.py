@@ -439,6 +439,18 @@ def validate_records(records: Sequence[Mapping[str, Any]]) -> None:
         stable.add(key)
 
 
+def is_row_stale(record: Mapping[str, Any]) -> str | None:
+    """Return a reason when the row's spec file cannot be reached, else None."""
+    try:
+        top = resource_toplevel(Path(record["root"]))
+    except LauncherError:
+        return "worktree is unreachable"
+    spec_file = (top / record["spec"].replace("\\", "/")).resolve()
+    if not spec_file.is_file():
+        return "spec file is missing"
+    return None
+
+
 def read_registry_document(path: Path, validate: bool = True) -> dict[str, Any]:
     document = read_toml(path, missing={"resource": []})
     if not isinstance(document, dict):
@@ -740,7 +752,16 @@ def register(args: argparse.Namespace) -> int:
             additions.append(registry_record(item, old))
             item.update(additions[-1])
         replacement_ids = {item["id"] for item in additions}
-        candidate = [item for item in existing if item["id"] not in replacement_ids] + additions
+        kept = []
+        for item in existing:
+            if item["id"] in replacement_ids:
+                continue
+            reason = is_row_stale(item)
+            if reason:
+                print(f"review-host: warning: dropping stale row {item['id']}: {reason}", file=sys.stderr)
+                continue
+            kept.append(item)
+        candidate = kept + additions
         validate_records(candidate)
         child: subprocess.Popen[str] | None = None
         try:
@@ -812,7 +833,7 @@ def remove(args: argparse.Namespace) -> int:
     state = state_dir(args)
     registry, _, _ = paths(state)
     with state_lock(state):
-        records, process = registry_state(registry)
+        records, process = registry_state(registry, validate=False)
         remaining = [record for record in records if record["id"] != args.id]
         if len(remaining) == len(records):
             raise LauncherError(f"unknown resource id: {args.id}")
