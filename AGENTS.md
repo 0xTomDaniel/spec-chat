@@ -83,8 +83,6 @@ All other `runtime-*.mjs` tests run in Node without a browser.
 
 ## Tool and runtime copies
 
-> `tools/` copies are going away (ANN-318); this section will be updated then.
-
 `tools/*.py` must be byte-identical to `skill/review-spec/assets/*.py`.
 `docs/specs/.viz/runtime.js` must be byte-identical to
 `skill/review-spec/assets/viz/runtime.js`. Both invariants are tested by
