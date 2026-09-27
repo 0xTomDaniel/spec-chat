@@ -13,7 +13,6 @@
 <header data-anchor="header">
 <h1 data-anchor="title">Jev review suggestions</h1>
 <nav data-anchor="breadcrumbs">docs / specs / jev-suggestions.spec.html</nav>
-<p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-100">ANN-100</a>, <a href="https://linear.app/annotateanything/issue/ANN-206">ANN-206</a>, <a href="https://linear.app/annotateanything/issue/ANN-224">ANN-224</a>, <a href="https://linear.app/annotateanything/issue/ANN-258">ANN-258</a>, <a href="https://linear.app/annotateanything/issue/ANN-310">ANN-310</a>.</p>
 <p data-anchor="context">This spec owns Spec Chat's Jev contract, questions, and display; <a href="#shared">Every suggestion</a> holds the rules every question follows. Jev questions read only specs and review threads, with no tracker or evidence dependency. Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a> and <a href="./compared-range.spec.html#change-base">compared range</a>.</p>
 </header>
 
@@ -213,14 +212,14 @@
 <table data-anchor="markers-levels">
 <thead><tr><th>Mark kinds</th><th>Human level</th><th>Agent level</th><th>Marker</th></tr></thead>
 <tbody>
-<tr data-anchor="level-important"><td><code>Contradicts</code>, project-rule miss (ANN-272), <code>No criterion covers this</code>, <code>No story backs this</code>, evidence <code>QA failed</code> (reworded or not) or <code>QA stale</code></td><td>Important</td><td>Important</td><td>Colored <code>!</code>, today's attention color</td></tr>
+<tr data-anchor="level-important"><td><code>Contradicts</code>, project-rule miss (<a href="./project-rules.spec.html">project rules</a>), <code>No criterion covers this</code>, <code>No story backs this</code>, evidence <code>QA failed</code> (reworded or not) or <code>QA stale</code></td><td>Important</td><td>Important</td><td>Colored <code>!</code>, today's attention color</td></tr>
 <tr data-anchor="level-oversteps"><td><code>Oversteps</code>, draft or <a href="#cross-lane">cross-lane</a></td><td>Warning</td><td>Important</td><td>Quiet grey dot</td></tr>
 <tr data-anchor="level-warning"><td><code>Overlaps</code>, unsure words, <code>Scope</code>, <code>Behavior</code>, and other change-type labels</td><td>Warning</td><td>Warning</td><td>Quiet grey dot</td></tr>
 </tbody>
 </table>
 </div>
 <p data-anchor="markers-levels-audience">Agent attention is much cheaper than human attention, so each mark kind has a level per audience: an agent gets the stricter one and must solve its Important marks before hand-off, and the human gets the quieter one. An agent level is never quieter than the human level.</p>
-<p data-anchor="markers-levels-source">The review server owns this table as its single source, as mark kind to a human and an agent level, each <code>important</code> or <code>warning</code>. It returns it as <code>levels</code> in <code>/api/jev</code> and <code>/api/evidence</code>, and puts <code>level</code>, the human column, and <code>agent_level</code> on each <code>/api/jev</code> item whose label is a mark kind. The browser colors every marker from the human column only: an item from its <code>level</code>, and a mark it derives, such as a coverage gap, evidence, or an unsure word, from the human column of <code>levels</code>; it holds no mapping of its own; the compact agent read (ANN-272) keys only on <code>agent_level</code>.</p>
+<p data-anchor="markers-levels-source">The review server owns this table as its single source, as mark kind to a human and an agent level, each <code>important</code> or <code>warning</code>. It returns it as <code>levels</code> in <code>/api/jev</code> and <code>/api/evidence</code>, and puts <code>level</code>, the human column, and <code>agent_level</code> on each <code>/api/jev</code> item whose label is a mark kind. The browser colors every marker from the human column only: an item from its <code>level</code>, and a mark it derives, such as a coverage gap, evidence, or an unsure word, from the human column of <code>levels</code>; it holds no mapping of its own; the compact agent read (<a href="./project-rules.spec.html">project rules</a>) keys only on <code>agent_level</code>.</p>
 <p data-anchor="markers-color">Both levels are fixed by mark kind, never by confidence. A marker is a colored <code>!</code> when any of its notes is Important at the human level; else a small green check when its evidence is <code>QA passed</code> or <code>QA passed · reworded</code>, which has no level; else a quiet grey dot. The first that applies wins, and hover opens the popover for every kind. Both levels are advice only: color changes nothing else, with no folding, counts, or new UI. <code>Overlaps</code> still shows no mark (<a href="#corpus-labels">draft checks</a>); its level applies only if it is shown.</p>
 <p data-anchor="markers-open">Hover or keyboard focus opens its popover, a tap opens it on touch, and moving away, Escape, or a tap elsewhere closes it; the popover never covers review controls.</p>
 <p data-anchor="markers-content">A popover lists, in this order, evidence (<a href="./criterion-evidence.spec.html#chip">criterion evidence</a>), conflicts, coverage, change type, and unsure questions or <code>Jev unavailable</code>, each note with its <a href="#note-actions">note button</a>. Every note is one short line of a few words; the popover adds no box, rule, or heading between notes.</p>
@@ -258,7 +257,7 @@
 <figcaption data-anchor="markers-figure-caption">Markers in the margin: neutral for ordinary notes, colored with a glyph for a conflict; the open popover holds the notes and their buttons.</figcaption>
 </figure>
 <p data-anchor="markers-mobile">At 375px, markers sit at the content column's right edge without widening the page, and the popover opens as a sheet above the review controls.</p>
-<p data-anchor="markers-pin-clear">A thread pin and a marker on the same block never cover each other or the spec text, at every width: the block reserves a right column for them, the marker beside its first line and the pin directly below the marker, and the block is at least tall enough to hold both, so neither reaches the next block. ANN-224 follow-up; padding directed by operator w5:p2 (2026-09-26, ANN-247).</p>
+<p data-anchor="markers-pin-clear">A thread pin and a marker on the same block never cover each other or the spec text, at every width: the block reserves a right column for them, the marker beside its first line and the pin directly below the marker, and the block is at least tall enough to hold both, so neither reaches the next block.</p>
 </section>
 
 <section data-anchor="corpus">
@@ -275,7 +274,7 @@
 <p data-anchor="cross-lane-pairs">For every two slugs, every pair of changed clauses, one from each slug, in any file, is asked once, with no candidate cut. Same slug pairs are the <a href="#corpus">draft check</a>'s job.</p>
 <p data-anchor="cross-lane-question">The pair question is its own versioned set, <code>lane</code>, with a directional answer: <code>contradicts</code>, which is symmetric; <code>first oversteps second</code>; <code>second oversteps first</code>; <code>overlaps</code>; or <code>unrelated</code>. One ask finds an overstep in either direction, so no pair is asked twice. The first clause is the lower slug's.</p>
 <p data-anchor="cross-lane-finding">A confident <code>contradicts</code> or either overstep answer is a finding; <code>overlaps</code>, unrelated, unsure, unavailable, and off are none. A finding marks both clauses: each spec's <code>/api/jev</code> carries a <code>lane</code> item on its own clause with the label, its side, the other slug, and the other clause's served path and anchor, at the label's <a href="#markers-levels">levels</a>. An overstep reads <code>Oversteps</code> on the clause that oversteps and <code>Overstepped by</code> on the other. Every finding is Important for both owners; for the human, <code>Contradicts</code> is Important and an overstep a Warning.</p>
-<p data-anchor="cross-lane-owner">The marks are the owners' to solve, as any mark Important at the agent level is before hand-off (ANN-272): a spec fix, a reason line in the spec, or a thread for the human. <code>Ask agent to reconcile</code> works on them as on draft checks, and a reconcile link opens the other slug's served clause.</p>
+<p data-anchor="cross-lane-owner">The marks are the owners' to solve, as any mark Important at the agent level is before hand-off (<a href="./project-rules.spec.html">project rules</a>): a spec fix, a reason line in the spec, or a thread for the human. <code>Ask agent to reconcile</code> works on them as on draft checks, and a reconcile link opens the other slug's served clause.</p>
 <p data-anchor="cross-lane-board">The parameterless <code>GET /api/jev/board</code> keeps its answer shape and lists a pair of served paths once for any finding between them. What a reader of the board shows is the reader's own contract.</p>
 <p data-anchor="cross-lane-async">Both routes answer at once from held records and ask the missing questions after answering, as the board does today. On a page, each unanswered cross-lane question on its clauses counts as <code>pending</code>. In single-root mode there is one slug and no cross-lane check.</p>
 </section>
@@ -318,13 +317,13 @@
 <section data-anchor="proof">
 <h2>Proof</h2>
 <p data-anchor="proof-first-test">First failing test: a fake provider answer below threshold returns unsure and appends an unsure record.</p>
-<p data-anchor="proof-levels-audience">ANN-310 first failing test: with the two-column <code>levels</code> from both routes, a coverage gap, evidence <code>QA failed</code>, and an unsure word keep their colors, read from the human column, and a cross-lane <code>Oversteps</code> item has <code>level</code> <code>warning</code> and <code>agent_level</code> <code>important</code>.</p>
+<p data-anchor="proof-levels-audience">Levels per audience, first failing test: with the two-column <code>levels</code> from both routes, a coverage gap, evidence <code>QA failed</code>, and an unsure word keep their colors, read from the human column, and a cross-lane <code>Oversteps</code> item has <code>level</code> <code>warning</code> and <code>agent_level</code> <code>important</code>.</p>
 <p data-anchor="proof-evidence">Evidence: seam and runtime tests behind fakes, one live run per question set against real Jev, and a QA bundle on a real spec change.</p>
 </section>
 
 <section data-anchor="non-goals">
 <h2>Non-goals</h2>
-<p data-anchor="non-goal-text">Generated text of any kind (ANN-96), other providers, budget rules, specs outside the served collection, and Jev questions beyond those listed here.</p>
+<p data-anchor="non-goal-text">Generated text of any kind, other providers, budget rules, specs outside the served collection, and Jev questions beyond those listed here.</p>
 </section>
 
 </article>
