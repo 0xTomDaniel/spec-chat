@@ -75,14 +75,15 @@ They read `PLAYWRIGHT_CORE` to locate the package:
 PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core node tests/runtime-pin-marker.mjs
 ```
 
-On this box: `PLAYWRIGHT_CORE=/home/admin/.local/share/spec-chat-pw/node_modules/playwright-core`
-(v1.63.0, browsers in `~/.cache/ms-playwright`). Install once per box; CI
+Install `playwright-core` once per box and point `PLAYWRIGHT_CORE` at it. CI
 installs its own (`npm install --no-save --prefix /tmp/pw playwright-core` then
 `playwright-core install --with-deps chromium`).
 
 All other `runtime-*.mjs` tests run in Node without a browser.
 
 ## Tool and runtime copies
+
+> `tools/` copies are going away (ANN-318); this section will be updated then.
 
 `tools/*.py` must be byte-identical to `skill/review-spec/assets/*.py`.
 `docs/specs/.viz/runtime.js` must be byte-identical to
