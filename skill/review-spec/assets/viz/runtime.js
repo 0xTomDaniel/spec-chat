@@ -1187,18 +1187,22 @@ function jevDraftAction(label, text) {
   return { label, run: note => { closeJevPopover(); openComposer(note.anchor, null, null, text); } };
 }
 
-// #note-reconcile-all: n Important and m Warning reconcile notes, with n >= 1 and n + m >= 2, each get
-// Reconcile all (n) listing the Important clauses, plus a +m warnings link adding the Warning ones.
-function jevReconcileAll(reconcile) {
+// #batch: the one popover batch. entries are { note, line, warning } for one per-item button kind. With n listed
+// (non-warning) entries, n >= 1 and all entries >= 2, the first note of each clause gets <label> (n), drafting
+// <heading> then the listed lines in page order, and, when m warnings exist, a +m link drafting all of them.
+function jevBatch(entries, label, heading) {
   const order = new Map([...document.querySelectorAll('[data-anchor]')].map((el, index) => [el.dataset.anchor, index]));
-  reconcile.sort((a, b) => (order.get(a.note.anchor) ?? Infinity) - (order.get(b.note.anchor) ?? Infinity));
-  const important = reconcile.filter(entry => entry.note.level === 'important');
-  const m = reconcile.length - important.length;
-  if (!important.length || reconcile.length < 2) return;
-  const draft = entries => ['Reconcile each clause with its link:', ...entries.map(entry => entry.line)].join('\n');
-  for (const { note } of reconcile) {
-    note.actions.push(jevDraftAction('Reconcile all (' + important.length + ')', draft(important)));
-    if (m) note.actions.push({ ...jevDraftAction('+' + m + (m === 1 ? ' warning' : ' warnings'), draft(reconcile)), link: true });
+  entries.sort((a, b) => (order.get(a.note.anchor) ?? Infinity) - (order.get(b.note.anchor) ?? Infinity));
+  const listed = entries.filter(entry => !entry.warning);
+  const m = entries.length - listed.length;
+  if (!listed.length || entries.length < 2) return;
+  const draft = chosen => [heading, ...chosen.map(entry => entry.line)].join('\n');
+  const shown = new Set();
+  for (const { note } of entries) {
+    if (shown.has(note.anchor)) continue;
+    shown.add(note.anchor);
+    note.actions.push(jevDraftAction(label + ' (' + listed.length + ')', draft(listed)));
+    if (m) note.actions.push({ ...jevDraftAction('+' + m + (m === 1 ? ' warning' : ' warnings'), draft(entries)), link: true });
   }
 }
 
@@ -1221,13 +1225,18 @@ function jevNeutralNote(anchor, stateName, question) {
 function jevSuggestionNotes() {
   if (state.jev.status !== 'on') return [];
   const notes = [];
+  const gaps = [];
   for (const flag of coverageGapFlags(state.jev.items)) {
-    notes.push(flag.state !== 'gap' ? jevNeutralNote(flag.anchor, flag.state, flag.side) : { anchor: flag.anchor, group: 'coverage', state: 'label', text: flag.label,
+    if (flag.state !== 'gap') { notes.push(jevNeutralNote(flag.anchor, flag.state, flag.side)); continue; }
+    const note = { anchor: flag.anchor, group: 'coverage', state: 'label', text: flag.label,
       level: markLevel(state.jev, flag.side === 'story' ? 'no-criterion' : 'no-story'),
       actions: [flag.side === 'story'
         ? jevDraftAction('Ask for a criterion', 'Add an acceptance criterion that verifies this story.')
-        : jevDraftAction('Ask for a story', 'Name or add the user story this criterion verifies.')] });
+        : jevDraftAction('Ask for a story', 'Name or add the user story this criterion verifies.')] };
+    gaps.push({ note, line: '#' + flag.anchor + ' ' + flag.label });
+    notes.push(note);
   }
+  jevBatch(gaps, 'Ask about all gaps', 'Add a criterion for each story, or name the story for each criterion:');
   const neutral = item => item.state === 'unsure' || item.state === 'unavailable';
   if (state.readingView) {
     for (const item of state.jev.items) {
@@ -1244,11 +1253,11 @@ function jevSuggestionNotes() {
       href: link ? link.href : null, level: flag.level, actions: [] };
     if (link && JEV_RECONCILE_LABELS.has(flag.label)) {
       note.actions.push(jevDraftAction('Ask agent to reconcile', 'Reconcile this clause with ' + link.text + '.'));
-      reconcile.push({ note, line: '#' + flag.anchor + ' ' + note.text });
+      reconcile.push({ note, line: '#' + flag.anchor + ' ' + note.text, warning: note.level !== 'important' });
     }
     notes.push(note);
   }
-  jevReconcileAll(reconcile);
+  jevBatch(reconcile, 'Reconcile all', 'Reconcile each clause with its link:');
   for (const item of state.jev.items) {
     if (item.kind !== 'type' || !item.id) continue;
     if (neutral(item)) notes.push(jevNeutralNote(item.id, item.state, 'type'));
@@ -1355,6 +1364,7 @@ function evidenceNotes() {
   const criteria = state.evidence && state.evidence.criteria;
   if (!criteria) return [];
   const notes = [];
+  const stale = [];
   for (const element of document.querySelectorAll('[data-acceptance-criterion]')) {
     const anchor = element.dataset.anchor;
     if (!anchor) continue;
@@ -1375,11 +1385,14 @@ function evidenceNotes() {
       if (text === 'QA stale') {
         const date = commitDate(entry.capturedAt);
         const since = [pr, date].filter(Boolean).join(', ');
-        note.actions = [jevDraftAction('Ask for re-proof', anchor + ' changed since its evidence' + (since ? ' (' + since + ')' : '') + ': please recapture it.')];
+        const cited = since ? ' (' + since + ')' : '';
+        note.actions = [jevDraftAction('Ask for re-proof', anchor + ' changed since its evidence' + cited + ': please recapture it.')];
+        stale.push({ note, line: anchor + cited });
       }
     }
     notes.push(note);
   }
+  jevBatch(stale, 'Re-proof all stale', 'Re-proof each criterion, changed since its evidence:');
   return notes;
 }
 

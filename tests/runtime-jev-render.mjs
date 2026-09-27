@@ -267,8 +267,8 @@ assert.deepEqual(pop().querySelector('.hx-jev-pop-actions').children.map(c => [c
   [['BUTTON', 'hx-btn'], ['SPAN', 'hx-jev-pop-batch']]);
 assert.deepEqual(pop().querySelector('.hx-jev-pop-batch').children.map(c => [c.className, c.textContent]),
   [['hx-btn', 'Reconcile all (1)'], ['hx-jev-pop-more', '+1 warning']]);
-assert.deepEqual(noteButtons('crowded'), [['No criterion covers this', ['Ask for a criterion']], ['Scope', ['Comment on this change']], ['conflict?', []]]);
-assert.deepEqual(noteButtons('criterion-gap'), [['No story backs this', ['Ask for a story']]]);
+assert.deepEqual(noteButtons('crowded'), [['No criterion covers this', ['Ask for a criterion', 'Ask about all gaps (3)']], ['Scope', ['Comment on this change']], ['conflict?', []]]);
+assert.deepEqual(noteButtons('criterion-gap'), [['No story backs this', ['Ask for a story', 'Ask about all gaps (3)']]]);
 assert.deepEqual(noteButtons('row'), [['Behavior', ['Comment on this change']]]);
 for (const a of ['typo', 'type-unsure', 'story-unsure', 'story-down', 'criterion-down']) {
   assert.ok(noteButtons(a).every(([, buttons]) => buttons.length === 0), a + ' shows no button');
@@ -318,6 +318,24 @@ withCorpus([item('corpus', 'rule', 'label', 'contradicts', 'a'), item('corpus', 
   assert.deepEqual(clickMore('typo', '+2 warnings'), ['typo', null, null,
     'Reconcile each clause with its link:\n#rule Contradicts #a\n#typo Oversteps #c\n#overstep Oversteps #b']);
 });
+// #acceptance-reconcile-all: a popover whose clause has several reconcile notes shows the pair once.
+withCorpus([item('corpus', 'rule', 'label', 'contradicts', 'a'), item('corpus', 'rule', 'label', 'oversteps', 'b')], () => {
+  assert.deepEqual(noteButtons('rule').map(([, buttons]) => buttons),
+    [['Ask agent to reconcile', 'Reconcile all (1)', '+1 warning'], ['Ask agent to reconcile'], ['Comment on this change']]);
+  assert.deepEqual(clickMore('rule', '+1 warning'), ['rule', null, null,
+    'Reconcile each clause with its link:\n#rule Contradicts #a\n#rule Oversteps #b']);
+});
+// #proof-batch and #acceptance-gaps-all: two gaps give each popover Ask about all gaps (2), both lines in page order; one gives none.
+withCorpus([item('coverage', 'story-gap::criterion-gap', 'label', 'unrelated')], () => {
+  assert.deepEqual(noteButtons('story-gap'), [['No criterion covers this', ['Ask for a criterion', 'Ask about all gaps (2)']]]);
+  assert.deepEqual(noteButtons('criterion-gap'), [['No story backs this', ['Ask for a story', 'Ask about all gaps (2)']]]);
+  assert.equal(pop().querySelectorAll('.hx-jev-pop-more').length, 0, 'gaps carry no +m link');
+  const draft = 'Add a criterion for each story, or name the story for each criterion:\n#story-gap No criterion covers this\n#criterion-gap No story backs this';
+  assert.deepEqual(clickNote('criterion-gap', 'Ask about all gaps (2)'), ['criterion-gap', null, null, draft]);
+  assert.deepEqual(clickNote('story-gap', 'Ask about all gaps (2)'), ['story-gap', null, null, draft]);
+});
+withCorpus([item('coverage', 'story-gap::criterion-gap', 'label', 'unrelated'), item('coverage', 'story-gap::quiet', 'label', 'verifies')],
+  () => assert.deepEqual(noteButtons('criterion-gap'), [['No story backs this', ['Ask for a story']]], 'one gap shows only its own button'));
 assert.deepEqual(clickNote('story-gap', 'Ask for a criterion'), ['story-gap', null, null, 'Add an acceptance criterion that verifies this story.']);
 assert.deepEqual(clickNote('criterion-gap', 'Ask for a story'), ['criterion-gap', null, null, 'Name or add the user story this criterion verifies.']);
 assert.deepEqual(clickNote('rule', 'Comment on this change'), ['rule', null, null, 'About this change: ']);
