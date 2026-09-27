@@ -14,8 +14,7 @@
 <h1 data-anchor="title">Spec page <span class="accent">design pass</span></h1>
 <div class="mast-grid">
 <p class="lede" data-anchor="lede">Apply the Spec Chat index design values to the spec page chrome: one button system, one color palette, consistent placement.
-The spec document's own content styling is unchanged.
-This spec changes only CSS const strings in runtime.js (no JS logic); cross-lane coordination with jev-suggestions (#91) is in <a href="#coordinate">Coordinate lanes</a>. Cross-spec references to worklane-board, evidence-site, toolchain-ownership, and review-hosting are different products; the audit section describes current state, and the surface rules are per-element specifications within the shared token system.</p>
+The spec document's own content styling is unchanged.</p>
 <dl class="refs" data-anchor="refs">
 <dt>Scope</dt><dd>runtime.js CSS const blocks (CSS, DOC_CSS dark mode chrome only)</dd>
 <dt>Tokens</dt><dd><a href="./lane-hosting.spec.html#index-tokens">Index token block</a></dd>
@@ -63,7 +62,7 @@ This spec changes only CSS const strings in runtime.js (no JS logic); cross-lane
 
 <p data-acceptance-criterion data-anchor="acceptance-mark-levels" data-story="story-consistent-chrome">
 <span data-acceptance-scenario>With Jev markers at important, neutral, and passed levels,</span>
-<span data-acceptance-observable>marker colors are <code>--ui-marker-important</code> #d1242f, <code>--ui-marker</code> #767b85, and <code>--ui-marker-pass</code> #1a7f37 with their current shapes and sizes. These are the current agreed values, unchanged; compatible with project-rules pending-rule and jev-suggestions acceptance-markers.</span>
+<span data-acceptance-observable>marker colors are <code>--ui-marker-important</code> #d1242f, <code>--ui-marker</code> #767b85, and <code>--ui-marker-pass</code> #1a7f37 with their current shapes and sizes.</span>
 </p>
 
 <p data-acceptance-criterion data-anchor="acceptance-contrast" data-story="story-consistent-chrome">
@@ -106,66 +105,9 @@ This spec changes only CSS const strings in runtime.js (no JS logic); cross-lane
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════ -->
-<section data-anchor="audit">
-<div class="sec-head">
-<span class="sec-num">04</span>
-<h2 data-anchor="audit-heading">Audit</h2>
-<p class="sec-note" data-anchor="audit-note">What the screenshots at 1440 and 390 show. This section describes the current state; contradictions with the design and surface rules sections are the intent of this spec. Cross-spec references to worklane-board, evidence-site, and toolchain-ownership describe different products; this spec scopes to spec-chat chrome only.
-<span data-spec-tbd>Jev reads the audit and surface reason lines as mutually contradictory; confirm these are structural descriptions of current vs target state, not conflicting requirements.</span></p>
-</div>
-
-<figure data-anchor="audit-buttons">
-<h3 data-anchor="audit-buttons-heading">Buttons: six shapes, no system</h3>
-<div class="table-scroll">
-<table data-anchor="audit-buttons-table">
-<thead><tr><th>Class</th><th>Radius</th><th>Font</th><th>Border</th><th>Fill</th></tr></thead>
-<tbody>
-<tr data-anchor="audit-hx-btn"><td><code>.hx-btn</code></td><td>6px</td><td>600 12px</td><td>1px #ccc</td><td>#fff</td></tr>
-<tr data-anchor="audit-hx-btn-pri"><td><code>.hx-btn.pri</code></td><td>6px</td><td>600 12px</td><td>1px #22242a</td><td>#22242a</td></tr>
-<tr data-anchor="audit-range-change"><td><code>.hx-range-change</code></td><td>6px</td><td>700 12px</td><td>1px #2947c7</td><td>#fff</td></tr>
-<tr data-anchor="audit-range-apply"><td><code>.hx-range-form button</code></td><td>5px</td><td>700 12px</td><td>1px #2947c7</td><td>#2947c7</td></tr>
-<tr data-anchor="audit-toolbar-btn"><td><code>.hx-toolbar button</code></td><td>8px</td><td>600 12.5px</td><td>none</td><td>transparent</td></tr>
-<tr data-anchor="audit-panel-toggle"><td><code>.hx-panel-toggle</code></td><td>7px</td><td>18px</td><td>1px #ccc</td><td>#fff</td></tr>
-<tr data-anchor="audit-panel-gear"><td><code>.hx-panel-gear</code></td><td>7px</td><td>14px</td><td>1px #ccc</td><td>#fff</td></tr>
-<tr data-anchor="audit-dock-open"><td><code>.hx-dock-open</code></td><td>7px</td><td>16px</td><td>1px #d4d3ce</td><td>#fff</td></tr>
-<tr data-anchor="audit-dock-thread"><td><code>.hx-dock-thread</code></td><td>7px</td><td>700 11px</td><td>1px #d4d3ce</td><td>#fff</td></tr>
-<tr data-anchor="audit-banner-btn"><td><code>.hx-banner button</code></td><td>6px</td><td>inherit</td><td>1px #fff</td><td>transparent</td></tr>
-<tr data-anchor="audit-pop-btn"><td><code>.hx-jev-pop .hx-btn</code></td><td>6px</td><td>11.5px</td><td>#2947c7</td><td>#fff</td></tr>
-<tr data-anchor="audit-disclosure"><td><code>.hx-disclosure</code></td><td>4px</td><td>15px</td><td>none</td><td>transparent</td></tr>
-</tbody>
-</table>
-</div>
-<figcaption data-anchor="audit-buttons-caption">Six radii (0, 4, 5, 6, 7, 8), four font sizes (10.5, 11.5, 12, 12.5), five border colors, two filled-primary colors (#22242a, #2947c7) doing the same job.
-Placement inconsistent: Change base is blue outline, Apply is blue fill, Hand off is dark fill, Accept spec on mobile is bare text.</figcaption>
-</figure>
-
-<figure data-anchor="audit-colors">
-<h3 data-anchor="audit-colors-heading">Colors: ~40 unique values, many ad hoc</h3>
-<div class="table-scroll">
-<table data-anchor="audit-colors-table">
-<thead><tr><th>Role</th><th>Values found</th><th>Count</th></tr></thead>
-<tbody>
-<tr data-anchor="audit-color-black"><td>Near-black text</td><td>#22242a #171719 #303036</td><td>3</td></tr>
-<tr data-anchor="audit-color-grey-text"><td>Grey text</td><td>#888 #999 #5a5a63 #5c5c63 #555 #444 #777</td><td>7</td></tr>
-<tr data-anchor="audit-color-border"><td>Border grey</td><td>#ddd #ccc #d9d8d3 #d4d3ce #e1e0dc #e0c77a #303036</td><td>7</td></tr>
-<tr data-anchor="audit-color-surface"><td>Surface grey</td><td>#fff #f4f3ef #e8e7e2 #efeee9</td><td>4</td></tr>
-<tr data-anchor="audit-color-amber"><td>Amber (draft status)</td><td>#b47308 #9a6100 #d98e04 #6d4b05 #78520a #76500a</td><td>6</td></tr>
-<tr data-anchor="audit-color-blue"><td>Blue</td><td>#264f9e #315fbd #2947c7</td><td>3</td></tr>
-<tr data-anchor="audit-color-green"><td>Green</td><td>#3d8c40 #2f6b32 #0e7264</td><td>3</td></tr>
-<tr data-anchor="audit-color-red"><td>Red</td><td>#b42318 #8b1a1a #7b2525 #d1242f</td><td>4</td></tr>
-</tbody>
-</table>
-</div>
-<figcaption data-anchor="audit-colors-caption">Same draft status uses #d98e04 on pins, #b47308 on pills, #9a6100 on dock threads.
-Index tokens (#333333, #525252, #dfdfdf) not used anywhere in chrome.</figcaption>
-</figure>
-
-</section>
-
-<!-- ════════════════════════════════════════════════════════════════ -->
 <section data-anchor="design">
 <div class="sec-head">
-<span class="sec-num">05</span>
+<span class="sec-num">04</span>
 <h2 data-anchor="design-heading">Design</h2>
 <p class="sec-note" data-anchor="design-note">One token block, one button system, one color per meaning.</p>
 </div>
@@ -183,7 +125,7 @@ The spec document's own content styling (DOC_CSS <code>article.spec</code> rules
 <thead><tr><th>Token</th><th>Value</th><th>Why</th></tr></thead>
 <tbody>
 <tr data-anchor="token-draft"><td><code>--ui-draft</code>, <code>--ui-draft-soft</code></td><td><code>#b0540e</code>, <code>#faf4ef</code></td><td>Draft/pending status. Reuses <code>--ui-attention</code> pair: drafts are unfinished work that needs attention.</td></tr>
-<tr data-anchor="token-ack"><td><code>--ui-ack</code>, <code>--ui-ack-soft</code></td><td><code>#1d4ed8</code>, <code>#eff3ff</code></td><td>Acknowledged status. One blue, 4.5:1 on white. Replaces three ad hoc blues (#264f9e, #315fbd, #2947c7).</td></tr>
+<tr data-anchor="token-ack"><td><code>--ui-ack</code>, <code>--ui-ack-soft</code></td><td><code>#1d4ed8</code>, <code>#eff3ff</code></td><td>Acknowledged status. One blue, 4.5:1 on white.</td></tr>
 <tr data-anchor="token-resolved"><td><code>--ui-resolved</code>, <code>--ui-resolved-soft</code></td><td><code>#005c32</code>, <code>#e6efea</code></td><td>Resolved status. Reuses <code>--ui-pass</code> pair.</td></tr>
 <tr data-anchor="token-error"><td><code>--ui-error</code></td><td><code>#a5000f</code></td><td>Error overlay background. Reuses <code>--ui-fail</code>.</td></tr>
 <tr data-anchor="token-marker"><td><code>--ui-marker</code>, <code>--ui-marker-important</code>, <code>--ui-marker-pass</code></td><td><code>#767b85</code>, <code>#d1242f</code>, <code>#1a7f37</code></td><td>Jev markers. Agreed mark level colors, unchanged.</td></tr>
@@ -198,7 +140,7 @@ The index is light-only; this spec adds the dark overrides for the chrome tokens
 
 <div data-anchor="button-system">
 <h3 data-anchor="button-system-heading">Button system</h3>
-<p data-anchor="button-system-rule">Every spec-chat chrome button is one of four variants. Cross-spec references to evidence-site and worklane-board are different products with their own button systems.
+<p data-anchor="button-system-rule">Every chrome button is one of four variants.
 All share: <code>font-family: var(--ui-font)</code>, <code>font-size: var(--ui-text-xs)</code> (12px), <code>font-weight: 600</code>, <code>border-radius: var(--ui-radius-sm)</code> (6px), <code>min-height: 32px</code> desktop / <code>44px</code> mobile, <code>padding: var(--ui-space-2) var(--ui-space-3)</code> (8px 12px).
 Focus: <code>outline: 2px solid var(--ui-focus); outline-offset: 2px</code>.</p>
 
@@ -225,25 +167,25 @@ The table below is the complete mapping; no chrome rule uses a value outside it.
 
 <div class="table-scroll">
 <table data-anchor="color-map-table">
-<thead><tr><th>Meaning</th><th>Token</th><th>Replaces</th></tr></thead>
+<thead><tr><th>Meaning</th><th>Token</th></tr></thead>
 <tbody>
-<tr data-anchor="map-page"><td>Page background</td><td><code>--ui-page</code> #ffffff</td><td>#fff, #faf9f6</td></tr>
-<tr data-anchor="map-surface"><td>Cards, panels, inputs, popovers</td><td><code>--ui-surface</code> #ffffff</td><td>#fff, #f4f3ef, #efeee9</td></tr>
-<tr data-anchor="map-ink"><td>Primary text, headings</td><td><code>--ui-ink</code> #333333</td><td>#22242a, #171719, #303036, #222, #444</td></tr>
-<tr data-anchor="map-muted"><td>Secondary text, captions, status line</td><td><code>--ui-muted</code> #525252</td><td>#888, #999, #5a5a63, #5c5c63, #555, #777</td></tr>
-<tr data-anchor="map-border"><td>Borders, separators, hairlines</td><td><code>--ui-border</code> #dfdfdf</td><td>#ddd, #ccc, #d9d8d3, #d4d3ce, #e1e0dc, #e2e0d8, #e0c77a, #d9d8d3</td></tr>
-<tr data-anchor="map-draft"><td>Draft/pending pin, pill, dock, ring</td><td><code>--ui-draft</code> #b0540e</td><td>#d98e04, #b47308, #9a6100, #6d4b05, #78520a, #76500a</td></tr>
-<tr data-anchor="map-draft-soft"><td>Draft/pending tint backgrounds</td><td><code>--ui-draft-soft</code> #faf4ef</td><td>#fbf3e2, #fff8e9, #fff7d6</td></tr>
-<tr data-anchor="map-ack"><td>Acknowledged pin, pill, dock</td><td><code>--ui-ack</code> #1d4ed8</td><td>#264f9e, #315fbd, #2947c7</td></tr>
-<tr data-anchor="map-ack-soft"><td>Acknowledged tint backgrounds</td><td><code>--ui-ack-soft</code> #eff3ff</td><td>#e8eefb, #edf2ff, #e8edf9, #cbd5ee</td></tr>
-<tr data-anchor="map-resolved"><td>Resolved pin, pill, dock</td><td><code>--ui-resolved</code> #005c32</td><td>#3d8c40, #2f6b32, #0e7264, #69a76b</td></tr>
-<tr data-anchor="map-resolved-soft"><td>Resolved tint backgrounds</td><td><code>--ui-resolved-soft</code> #e6efea</td><td>#e8f2e8, #e3f2e0, #f1f8f1, #e8f2e8</td></tr>
-<tr data-anchor="map-error"><td>Error overlay, error text</td><td><code>--ui-error</code> = <code>--ui-fail</code> #a5000f</td><td>#8b1a1a, #7b2525, #b42318</td></tr>
-<tr data-anchor="map-banner"><td>Banner (spec updated)</td><td><code>--ui-pass</code> #005c32</td><td>#12897c</td></tr>
-<tr data-anchor="map-marker"><td>Neutral marker</td><td><code>--ui-marker</code> #767b85</td><td>unchanged</td></tr>
-<tr data-anchor="map-marker-imp"><td>Important marker</td><td><code>--ui-marker-important</code> #d1242f</td><td>unchanged</td></tr>
-<tr data-anchor="map-marker-pass"><td>Passed marker</td><td><code>--ui-marker-pass</code> #1a7f37</td><td>unchanged</td></tr>
-<tr data-anchor="map-focus-ring"><td>Focus ring</td><td><code>--ui-focus</code> #262626</td><td>#f59e0b (amber focus ring replaced by dark ring, matching index). Distinct from --ui-pin-ring (thread glow).</td></tr>
+<tr data-anchor="map-page"><td>Page background</td><td><code>--ui-page</code> #ffffff</td></tr>
+<tr data-anchor="map-surface"><td>Cards, panels, inputs, popovers</td><td><code>--ui-surface</code> #ffffff</td></tr>
+<tr data-anchor="map-ink"><td>Primary text, headings</td><td><code>--ui-ink</code> #333333</td></tr>
+<tr data-anchor="map-muted"><td>Secondary text, captions, status line</td><td><code>--ui-muted</code> #525252</td></tr>
+<tr data-anchor="map-border"><td>Borders, separators, hairlines</td><td><code>--ui-border</code> #dfdfdf</td></tr>
+<tr data-anchor="map-draft"><td>Draft/pending pin, pill, dock, ring</td><td><code>--ui-draft</code> #b0540e</td></tr>
+<tr data-anchor="map-draft-soft"><td>Draft/pending tint backgrounds</td><td><code>--ui-draft-soft</code> #faf4ef</td></tr>
+<tr data-anchor="map-ack"><td>Acknowledged pin, pill, dock</td><td><code>--ui-ack</code> #1d4ed8</td></tr>
+<tr data-anchor="map-ack-soft"><td>Acknowledged tint backgrounds</td><td><code>--ui-ack-soft</code> #eff3ff</td></tr>
+<tr data-anchor="map-resolved"><td>Resolved pin, pill, dock</td><td><code>--ui-resolved</code> #005c32</td></tr>
+<tr data-anchor="map-resolved-soft"><td>Resolved tint backgrounds</td><td><code>--ui-resolved-soft</code> #e6efea</td></tr>
+<tr data-anchor="map-error"><td>Error overlay, error text</td><td><code>--ui-error</code> = <code>--ui-fail</code> #a5000f</td></tr>
+<tr data-anchor="map-banner"><td>Banner (spec updated)</td><td><code>--ui-pass</code> #005c32</td></tr>
+<tr data-anchor="map-marker"><td>Neutral marker</td><td><code>--ui-marker</code> #767b85</td></tr>
+<tr data-anchor="map-marker-imp"><td>Important marker</td><td><code>--ui-marker-important</code> #d1242f</td></tr>
+<tr data-anchor="map-marker-pass"><td>Passed marker</td><td><code>--ui-marker-pass</code> #1a7f37</td></tr>
+<tr data-anchor="map-focus-ring"><td>Focus ring</td><td><code>--ui-focus</code> #262626</td></tr>
 </tbody>
 </table>
 </div>
@@ -271,10 +213,9 @@ Pin border-radius is unchanged (teardrop shape).</p>
 <!-- ════════════════════════════════════════════════════════════════ -->
 <section data-anchor="surfaces">
 <div class="sec-head">
-<span class="sec-num">06</span>
+<span class="sec-num">05</span>
 <h2 data-anchor="surfaces-heading">Surface rules</h2>
-<p class="sec-note" data-anchor="surfaces-note">Every chrome surface, by element. Each surface has a distinct role and uses its own token combination within the shared system; surface rules are complementary, not contradictory.
-<span data-spec-tbd>Jev flags different surfaces as contradicting each other; confirm per-element token specifications within a shared system are complementary.</span></p>
+<p class="sec-note" data-anchor="surfaces-note">Every chrome surface, by element.</p>
 </div>
 
 <div data-anchor="surface-toolbar">
@@ -399,13 +340,12 @@ Buttons below: primary (send) rightmost, secondary (cancel) left.</p>
 <!-- ════════════════════════════════════════════════════════════════ -->
 <section data-anchor="coordinate">
 <div class="sec-head">
-<span class="sec-num">07</span>
+<span class="sec-num">06</span>
 <h2 data-anchor="coordinate-heading">Coordinate lanes</h2>
 <p class="sec-note" data-anchor="coordinate-note">What changes, what does not, how merges work.</p>
 </div>
 
-<p data-anchor="coordinate-rule"><span data-spec-tbd>Jev flags cross-lane contradictions with jev-suggestions#acceptance-cross-lane on most anchors; confirm that CSS-only changes with documented merge strategy satisfy the cross-lane criterion.</span>
-This spec changes only the CSS const strings in runtime.js: <code>CSS</code>, and the chrome portion of <code>DOC_CSS</code> (the dark mode overrides for the overlay, not the <code>article.spec</code> rules).
+<p data-anchor="coordinate-rule">This spec changes only the CSS const strings in runtime.js: <code>CSS</code>, and the chrome portion of <code>DOC_CSS</code> (the dark mode overrides for the overlay, not the <code>article.spec</code> rules).
 No JS logic changes.
 <a href="https://github.com/0xTomDaniel/spec-chat/pull/91">#91</a> (jev-yes-no) and the Reconcile offer detail lane both add or change JS logic and may add CSS rules.
 Merge conflicts will be in the CSS template strings.
