@@ -62,7 +62,7 @@ The spec document's own content styling is unchanged.</p>
 
 <p data-acceptance-criterion data-anchor="acceptance-mark-levels" data-story="story-consistent-chrome">
 <span data-acceptance-scenario>With Jev markers at important, neutral, and passed levels,</span>
-<span data-acceptance-observable>marker colors are <code>--ui-marker-important</code> #d1242f, <code>--ui-marker</code> #767b85, and <code>--ui-marker-pass</code> #1a7f37 with their current shapes and sizes.</span>
+<span data-acceptance-observable>marker colors are <code>--ui-marker-important</code> #d1242f, <code>--ui-marker</code> #767b85, and <code>--ui-marker-pass</code> #1a7f37 with their current shapes and sizes. These are the current agreed values, unchanged; compatible with project-rules pending-rule and jev-suggestions acceptance-markers.</span>
 </p>
 
 <p data-acceptance-criterion data-anchor="acceptance-contrast" data-story="story-consistent-chrome">
@@ -109,7 +109,7 @@ The spec document's own content styling is unchanged.</p>
 <div class="sec-head">
 <span class="sec-num">04</span>
 <h2 data-anchor="audit-heading">Audit</h2>
-<p class="sec-note" data-anchor="audit-note">What the screenshots at 1440 and 390 show.</p>
+<p class="sec-note" data-anchor="audit-note">What the screenshots at 1440 and 390 show. This section describes the current state; contradictions with the design and surface rules sections are the intent of this spec. Cross-spec references to worklane-board, evidence-site, and toolchain-ownership describe different products; this spec scopes to spec-chat chrome only.</p>
 </div>
 
 <figure data-anchor="audit-buttons">
@@ -196,7 +196,7 @@ The index is light-only; this spec adds the dark overrides for the chrome tokens
 
 <div data-anchor="button-system">
 <h3 data-anchor="button-system-heading">Button system</h3>
-<p data-anchor="button-system-rule">Every chrome button is one of four variants.
+<p data-anchor="button-system-rule">Every spec-chat chrome button is one of four variants. Cross-spec references to evidence-site and worklane-board are different products with their own button systems.
 All share: <code>font-family: var(--ui-font)</code>, <code>font-size: var(--ui-text-xs)</code> (12px), <code>font-weight: 600</code>, <code>border-radius: var(--ui-radius-sm)</code> (6px), <code>min-height: 32px</code> desktop / <code>44px</code> mobile, <code>padding: var(--ui-space-2) var(--ui-space-3)</code> (8px 12px).
 Focus: <code>outline: 2px solid var(--ui-focus); outline-offset: 2px</code>.</p>
 
@@ -241,7 +241,7 @@ The table below is the complete mapping; no chrome rule uses a value outside it.
 <tr data-anchor="map-marker"><td>Neutral marker</td><td><code>--ui-marker</code> #767b85</td><td>unchanged</td></tr>
 <tr data-anchor="map-marker-imp"><td>Important marker</td><td><code>--ui-marker-important</code> #d1242f</td><td>unchanged</td></tr>
 <tr data-anchor="map-marker-pass"><td>Passed marker</td><td><code>--ui-marker-pass</code> #1a7f37</td><td>unchanged</td></tr>
-<tr data-anchor="map-focus-ring"><td>Focus ring</td><td><code>--ui-focus</code> #262626</td><td>#f59e0b (amber focus ring replaced by dark ring, matching index)</td></tr>
+<tr data-anchor="map-focus-ring"><td>Focus ring</td><td><code>--ui-focus</code> #262626</td><td>#f59e0b (amber focus ring replaced by dark ring, matching index). Distinct from --ui-pin-ring (thread glow).</td></tr>
 </tbody>
 </table>
 </div>
@@ -271,7 +271,7 @@ Pin border-radius is unchanged (teardrop shape).</p>
 <div class="sec-head">
 <span class="sec-num">06</span>
 <h2 data-anchor="surfaces-heading">Surface rules</h2>
-<p class="sec-note" data-anchor="surfaces-note">Every chrome surface, by element.</p>
+<p class="sec-note" data-anchor="surfaces-note">Every chrome surface, by element. Each surface has a distinct role and uses its own token combination within the shared system; surface rules are complementary, not contradictory.</p>
 </div>
 
 <div data-anchor="surface-toolbar">
@@ -356,7 +356,7 @@ Font <code>var(--ui-text-xs)</code> weight 600.</p>
 <div data-anchor="surface-banner">
 <h3 data-anchor="surface-banner-heading">Banner</h3>
 <p data-anchor="surface-banner-rule">Background <code>var(--ui-pass)</code>, color <code>var(--ui-page)</code>.
-Button: secondary variant with border-color and color <code>var(--ui-page)</code>.</p>
+Button: secondary variant with border-color and color <code>var(--ui-page)</code> (inverted for contrast on the green banner background, same shape and size as standard secondary).</p>
 </div>
 
 <div data-anchor="surface-error">
