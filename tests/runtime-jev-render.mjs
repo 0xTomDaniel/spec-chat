@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -96,7 +97,10 @@ const code = [
   slice('function jevDisplayLabel(', '\n\nfunction goToJevTarget('),
   slice('/* ---------------- Jev markers', '\n\n/* ---------------- UI'),
 ].join('\n\n');
-const item = (kind, id, stateName, label = null, target = null) => ({ kind, id, state: stateName, label, target, record: 'r' });
+// The server's levels table as /api/jev returns it (tools/jev.py MARK_LEVELS); items carry level as the server sets it.
+const levels = JSON.parse(execFileSync('python3', ['-c', 'import json, sys; sys.path.insert(0, "tools"); from jev import MARK_LEVELS; print(json.dumps(MARK_LEVELS))'], { cwd: root, encoding: 'utf8' }));
+const item = (kind, id, stateName, label = null, target = null) => ({ kind, id, state: stateName, label, target, record: 'r',
+  level: stateName === 'label' && kind !== 'orphan' && label in levels ? levels[label] : null });
 const typeItems = [
   item('type', 'rule', 'label', 'behavioral'),
   item('type', 'typo', 'label', 'cosmetic'),
@@ -117,7 +121,7 @@ const suggestionItems = [
   item('coverage', 'story-down::criterion-down', 'unavailable'),
 ];
 // The real runtime state shape, as requestJev leaves it after a successful fetch.
-const state = { readingView: false, jev: { request: 1, status: 'on', base: 'b', items: suggestionItems } };
+const state = { readingView: false, jev: { request: 1, status: 'on', base: 'b', items: suggestionItems, levels } };
 const location = { search: '?focus=changes' };
 const composed = [];
 const openComposer = (...args) => composed.push(args);
@@ -138,9 +142,20 @@ for (const a of ['rule', 'typo', 'crowded', 'overstep', 'type-unsure', 'story-ga
   'criterion-unsure', 'story-down', 'criterion-down', 'row']) marker(a);
 assert.equal(markersOf('quiet').length, 0, 'an explicit none answer adds no marker');
 assert.equal(markersOf('internals').length, 0, 'audience items stay out of Git focus');
-// Only Contradicts and Oversteps color a marker.
-assert.deepEqual(body.querySelectorAll('.hx-jev-marker').filter(m => m.dataset.attention === 'true')
-  .map(m => m.closest('[data-anchor]').dataset.anchor), ['rule', 'overstep']);
+// Only Important marks color a marker (#markers-levels): Contradicts and coverage gaps, never Oversteps or change types.
+const colored = () => body.querySelectorAll('.hx-jev-marker').filter(m => m.dataset.attention === 'true')
+  .map(m => m.closest('[data-anchor]').dataset.anchor);
+assert.deepEqual(colored(), ['rule', 'crowded', 'story-gap', 'criterion-gap']);
+assert.deepEqual(holder('rule').querySelector('.hx-jev-marker').jevNotes.map(n => [n.text, n.level]),
+  [['Contradicts #non-goal-text', 'important'], ['Behavior', 'warning']]);
+// #acceptance-levels-api: color follows the server table; changing one row changes the color with no runtime mapping.
+state.jev.levels = { ...levels, 'no-criterion': 'warning', 'no-story': 'warning', oversteps: 'important' };
+state.jev.items = suggestionItems.map(i => i.label === 'oversteps' ? { ...i, level: 'important' } : i);
+renderJev();
+assert.deepEqual(colored(), ['rule', 'overstep']);
+state.jev.levels = levels;
+state.jev.items = suggestionItems;
+renderJev();
 // No tint, badge, or inline note; the only in-text display is the cosmetic dim; text is unchanged.
 assert.deepEqual(article.querySelectorAll('[data-hx-jev-type]').map(e => [e.dataset.anchor, e.dataset.hxJevType]), [['typo', 'cosmetic']]);
 assert.deepEqual(anchors.concat('row').map(a => holder(a).textContent), textBefore, 'markers add no text to the spec');
@@ -153,7 +168,7 @@ assert.equal(body.querySelectorAll('.hx-jev-note').length, 0);
 marker('crowded').fire('mouseenter');
 assert.equal(pop().hidden, false);
 assert.equal(marker('crowded').getAttribute('aria-expanded'), 'true');
-assert.deepEqual(popNotes(), [['coverage', 'No criterion covers this'], ['type', 'Scope'], ['neutral', 'unsure']]);
+assert.deepEqual(popNotes(), [['coverage', 'No criterion covers this'], ['type', 'Scope'], ['neutral', 'conflict?']]);
 // Moving away closes it.
 marker('crowded').fire('mouseleave');
 await new Promise(resolve => setTimeout(resolve, 200));
@@ -180,7 +195,7 @@ assert.equal(document.activeElement, ruleLink);
 assert.equal(pop().hidden, false, 'focus inside keeps the popover');
 assert.equal(tab(true), true);
 assert.equal(document.activeElement, marker('rule'), 'Shift+Tab from the first control returns to the marker');
-assert.deepEqual(pop().querySelectorAll('a,button').map(e => e.tagName), ['A', 'BUTTON', 'BUTTON'], 'link and note buttons are reachable');
+assert.deepEqual(pop().querySelectorAll('a,button').map(e => e.tagName), ['A', 'BUTTON', 'BUTTON', 'BUTTON', 'BUTTON'], 'link, note buttons, and the batch are reachable');
 pop().querySelectorAll('button').at(-1).focus();
 assert.equal(pop().hidden, false, 'the browser moves within the popover');
 assert.equal(tab(), false, 'Tab past the last control is left to the browser');
@@ -210,11 +225,28 @@ assert.equal(pop().hidden, false);
 marker('overstep').fire('blur', { relatedTarget: holder('rule') });
 assert.equal(pop().hidden, true);
 
-// #acceptance-neutral and coverage: neutral text in the popover.
-marker('type-unsure').fire('focus');
-assert.deepEqual(popNotes(), [['neutral', 'unsure']]);
-marker('story-down').fire('focus');
-assert.deepEqual(popNotes(), [['neutral', 'Jev unavailable']]);
+// #acceptance-neutral and #neutral-questions: one muted word per question, its sentence the accessible name and shown on hover or focus.
+const neutralNote = anchor => {
+  marker(anchor).fire('focus');
+  const notes = pop().querySelectorAll('.hx-jev-pop-note');
+  assert.equal(notes.length, 1, anchor);
+  const text = notes[0].querySelector('.hx-jev-pop-text');
+  const sentence = notes[0].querySelector('.hx-jev-pop-sentence');
+  assert.equal(text.getAttribute('tabindex'), '0', anchor + ' is focusable');
+  assert.equal(sentence.getAttribute('aria-hidden'), 'true');
+  assert.equal(text.getAttribute('aria-label'), sentence.textContent, anchor + ' sentence is its name');
+  return [notes[0].dataset.group, text.textContent, sentence.textContent];
+};
+assert.deepEqual(neutralNote('type-unsure'), ['neutral', 'scope?', 'Jev is unsure whether this is scope or behavior']);
+assert.deepEqual(neutralNote('story-unsure'), ['neutral', 'criterion?', 'Jev is unsure which criterion verifies this story']);
+assert.deepEqual(neutralNote('criterion-unsure'), ['neutral', 'story?', 'Jev is unsure which story this criterion verifies']);
+assert.deepEqual(neutralNote('story-down'), ['neutral', 'Jev unavailable', 'Jev could not check which criterion verifies this story']);
+assert.deepEqual(neutralNote('criterion-down'), ['neutral', 'Jev unavailable', 'Jev could not check which story this criterion verifies']);
+assert.match(runtime, /\.hx-jev-pop-sentence\{display:none;/, 'the sentence is hidden until hover or focus');
+assert.match(runtime, /\.hx-jev-pop-note:hover \.hx-jev-pop-sentence,\.hx-jev-pop-note:focus-within \.hx-jev-pop-sentence\{display:block\}/);
+// Evidence and other notes carry no sentence.
+marker('rule').fire('focus');
+assert.equal(pop().querySelectorAll('.hx-jev-pop-sentence').length, 0);
 marker('story-gap').fire('focus');
 assert.deepEqual(popNotes(), [['coverage', 'No criterion covers this']]);
 marker('criterion-gap').fire('focus');
@@ -224,11 +256,18 @@ assert.deepEqual(popNotes(), [['coverage', 'No story backs this']]);
 const noteButtons = anchor => {
   marker(anchor).fire('focus');
   return pop().querySelectorAll('.hx-jev-pop-note').map(n => [n.querySelector('.hx-jev-pop-text').textContent,
-    (n.querySelector('.hx-jev-pop-actions') || { children: [] }).children.map(b => b.textContent)]);
+    (n.querySelector('.hx-jev-pop-actions') || { querySelectorAll: () => [] }).querySelectorAll('button').map(b => b.textContent)]);
 };
-assert.deepEqual(noteButtons('rule'), [['Contradicts #non-goal-text', ['Ask agent to reconcile']], ['Behavior', ['Comment on this change']]]);
-assert.deepEqual(noteButtons('overstep'), [['Oversteps other#scope', ['Ask agent to reconcile']], ['Clarification', []]]);
-assert.deepEqual(noteButtons('crowded'), [['No criterion covers this', ['Ask for a criterion']], ['Scope', ['Comment on this change']], ['unsure', []]]);
+const batch = ['Ask agent to reconcile', 'Reconcile all (1)', '+1 warning'];
+assert.deepEqual(noteButtons('rule'), [['Contradicts #non-goal-text', batch], ['Behavior', ['Comment on this change']]]);
+assert.deepEqual(noteButtons('overstep'), [['Oversteps other#scope', batch], ['Clarification', []]]);
+// The +m link is a small text link on the button's line: one unwrapped group, no second row or menu.
+marker('rule').fire('focus');
+assert.deepEqual(pop().querySelector('.hx-jev-pop-actions').children.map(c => [c.tagName, c.className]),
+  [['BUTTON', 'hx-btn'], ['SPAN', 'hx-jev-pop-batch']]);
+assert.deepEqual(pop().querySelector('.hx-jev-pop-batch').children.map(c => [c.className, c.textContent]),
+  [['hx-btn', 'Reconcile all (1)'], ['hx-jev-pop-more', '+1 warning']]);
+assert.deepEqual(noteButtons('crowded'), [['No criterion covers this', ['Ask for a criterion']], ['Scope', ['Comment on this change']], ['conflict?', []]]);
 assert.deepEqual(noteButtons('criterion-gap'), [['No story backs this', ['Ask for a story']]]);
 assert.deepEqual(noteButtons('row'), [['Behavior', ['Comment on this change']]]);
 for (const a of ['typo', 'type-unsure', 'story-unsure', 'story-down', 'criterion-down']) {
@@ -244,6 +283,41 @@ const clickNote = (anchor, label) => {
 };
 assert.deepEqual(clickNote('rule', 'Ask agent to reconcile'), ['rule', null, null, 'Reconcile this clause with #non-goal-text.']);
 assert.deepEqual(clickNote('overstep', 'Ask agent to reconcile'), ['overstep', null, null, 'Reconcile this clause with other#scope.']);
+// #acceptance-reconcile-all: one draft at the clicked clause, page order; the button lists Important ones, the link adds Warnings.
+const clickMore = (anchor, label) => {
+  marker(anchor).fire('focus');
+  pop().querySelectorAll('.hx-jev-pop-more').find(b => b.textContent === label).fire('click');
+  assert.equal(pop().hidden, true, label + ' closes the popover');
+  return composed.pop();
+};
+assert.deepEqual(clickNote('overstep', 'Reconcile all (1)'), ['overstep', null, null,
+  'Reconcile each clause with its link:\n#rule Contradicts #non-goal-text']);
+assert.deepEqual(clickMore('rule', '+1 warning'), ['rule', null, null,
+  'Reconcile each clause with its link:\n#rule Contradicts #non-goal-text\n#overstep Oversteps other#scope']);
+// Batch visibility (#note-reconcile-all): n >= 1 and n + m >= 2; n = 0 shows neither; m = 0 shows no link.
+const withCorpus = (corpus, check) => {
+  state.jev.items = [...typeItems, ...corpus];
+  renderJev();
+  check();
+  state.jev.items = suggestionItems;
+  renderJev();
+};
+const reconcileButtons = anchor => noteButtons(anchor)[0][1];
+withCorpus([item('corpus', 'overstep', 'label', 'oversteps', 'other#scope'), item('corpus', 'typo', 'label', 'oversteps', 'x')],
+  () => assert.deepEqual(reconcileButtons('overstep'), ['Ask agent to reconcile'], 'n = 0 shows neither'));
+withCorpus([item('corpus', 'rule', 'label', 'contradicts', 'non-goal-text')],
+  () => assert.deepEqual(reconcileButtons('rule'), ['Ask agent to reconcile'], 'one clause shows no batch'));
+withCorpus([item('corpus', 'typo', 'label', 'contradicts', 'b'), item('corpus', 'rule', 'label', 'contradicts', 'a')], () => {
+  assert.deepEqual(reconcileButtons('typo'), ['Ask agent to reconcile', 'Reconcile all (2)'], 'm = 0 shows no link');
+  assert.deepEqual(clickNote('typo', 'Reconcile all (2)'), ['typo', null, null,
+    'Reconcile each clause with its link:\n#rule Contradicts #a\n#typo Contradicts #b']);
+});
+withCorpus([item('corpus', 'rule', 'label', 'contradicts', 'a'), item('corpus', 'overstep', 'label', 'oversteps', 'b'),
+  item('corpus', 'typo', 'label', 'oversteps', 'c')], () => {
+  assert.deepEqual(reconcileButtons('typo'), ['Ask agent to reconcile', 'Reconcile all (1)', '+2 warnings']);
+  assert.deepEqual(clickMore('typo', '+2 warnings'), ['typo', null, null,
+    'Reconcile each clause with its link:\n#rule Contradicts #a\n#typo Oversteps #c\n#overstep Oversteps #b']);
+});
 assert.deepEqual(clickNote('story-gap', 'Ask for a criterion'), ['story-gap', null, null, 'Add an acceptance criterion that verifies this story.']);
 assert.deepEqual(clickNote('criterion-gap', 'Ask for a story'), ['criterion-gap', null, null, 'Name or add the user story this criterion verifies.']);
 assert.deepEqual(clickNote('rule', 'Comment on this change'), ['rule', null, null, 'About this change: ']);
@@ -251,14 +325,24 @@ assert.deepEqual(clickNote('crowded', 'Comment on this change'), ['crowded', nul
 assert.equal(composed.length, 0);
 
 // A later note source (criterion evidence) joins first in the same marker and can color it.
-jevNoteSources.push(() => [{ anchor: 'typo', group: 'evidence', state: 'label', text: 'Stale', attention: true,
+jevNoteSources.push(() => [{ anchor: 'typo', group: 'evidence', state: 'label', text: 'QA stale', level: 'important',
   actions: [{ label: 'Ask agent', run: () => {} }] }]);
 renderJev();
 assert.equal(marker('typo').dataset.attention, 'true');
 marker('typo').fire('focus');
-assert.deepEqual(popNotes(), [['evidence', 'Stale'], ['type', 'Cosmetic']]);
+assert.deepEqual(popNotes(), [['evidence', 'QA stale'], ['type', 'Cosmetic']]);
 assert.deepEqual(pop().querySelector('.hx-jev-pop-actions').children.map(b => [b.tagName, b.textContent]), [['BUTTON', 'Ask agent']]);
 jevNoteSources.pop();
+
+// Notes for different questions on one location each show once, even with the same words.
+state.jev.items = [item('type', 'typo', 'unavailable'), item('corpus', 'typo', 'unavailable'), item('type', 'typo', 'unavailable')];
+renderJev();
+marker('typo').fire('focus');
+assert.deepEqual(pop().querySelectorAll('.hx-jev-pop-sentence').map(n => n.textContent),
+  ['Jev could not check whether this conflicts with another clause', 'Jev could not check whether this is scope or behavior']);
+assert.deepEqual(popNotes(), [['neutral', 'Jev unavailable'], ['neutral', 'Jev unavailable']]);
+state.jev.items = suggestionItems;
+renderJev();
 
 // Without Git focus, change types and draft checks do not show; coverage does.
 location.search = '';
@@ -274,8 +358,7 @@ state.jev.items = [item('audience', 'internals', 'label', 'internals'), item('au
 renderJev();
 assert.equal(holder('internals').dataset.hxAudience, 'internals');
 assert.equal(markersOf('internals').length, 0);
-marker('audience-unsure').fire('focus');
-assert.deepEqual(popNotes(), [['neutral', 'unsure']]);
+assert.deepEqual(neutralNote('audience-unsure'), ['neutral', 'reader?', 'Jev is unsure whether this is for readers or internals']);
 assert.equal(pop().querySelectorAll('.hx-jev-pop-actions').length, 0, 'reading view notes show no button');
 state.readingView = false;
 

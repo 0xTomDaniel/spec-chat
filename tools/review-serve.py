@@ -28,13 +28,14 @@ from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
 from urllib.request import urlopen
 
 try:
-    from jev import JevService, enumerate_served_specs, extract_anchors
+    from jev import MARK_LEVELS, JevService, enumerate_served_specs, extract_anchors
 except ModuleNotFoundError:
     import importlib.util
     _jev_spec = importlib.util.spec_from_file_location("review_serve_jev", os.path.join(os.path.dirname(__file__), "jev.py"))
     _jev_module = importlib.util.module_from_spec(_jev_spec)
     _jev_spec.loader.exec_module(_jev_module)
     JevService = _jev_module.JevService
+    MARK_LEVELS = _jev_module.MARK_LEVELS
     enumerate_served_specs = _jev_module.enumerate_served_specs
     extract_anchors = _jev_module.extract_anchors
 
@@ -937,17 +938,17 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
             return self._json({"error": "bad path"}, 400)
         base = evidence_provider(self.server.state_dir)
         if not base:
-            return self._json({"criteria": None})
+            return self._json({"criteria": None, "levels": MARK_LEVELS})
         try:
             spec = os.path.relpath(target, mount["root"]).replace(os.sep, "/")
             head = _git(mount["root"], "rev-parse", "--verify", "HEAD^{commit}").decode().strip()
             committed = _git(mount["root"], "show", head + ":" + spec, optional=True)
             served = Path(target).read_bytes()
         except (OSError, RuntimeError):
-            return self._json({"criteria": None})
+            return self._json({"criteria": None, "levels": MARK_LEVELS})
         project = _project_id(mount["root"])
         criteria = read_evidence(base, project, spec, head, served, committed) if project else None
-        return self._json({"criteria": criteria})
+        return self._json({"criteria": criteria, "levels": MARK_LEVELS})
 
     def _jev_board(self):
         """Worklane board facts from this host's own registry rows; takes no parameter."""

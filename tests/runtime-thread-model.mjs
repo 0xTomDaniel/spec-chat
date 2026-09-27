@@ -125,7 +125,7 @@ renderTbdHighlight(fakeRoot(allBlocks), tbdHighlightBlocks(tbdState, opens));
 assert.deepEqual(allBlocks.map(b => b.classList.contains('hx-tbd-open')), [true, true, false], 'render highlights only open TBD blocks and clears stale highlights');
 renderTbdHighlight(fakeRoot(allBlocks), tbdHighlightBlocks({ drafts: 1, finish: false, tbd: false, enabled: true }, opens));
 assert.deepEqual(allBlocks.map(b => b.classList.contains('hx-tbd-open')), [false, false, false], 'highlight clears when TBD open is no longer the action');
-assert.match(runtime, /renderTbdHighlight\(document, tbdHighlightBlocks\(handoffState, openTbds\)\);/, 'the panel renders the gated open TBD highlight');
+assert.match(runtime, /renderTbdHighlight\(document, tbdHighlightBlocks\(handoffState, openTbds\)\.concat\(/, 'the panel renders the gated open TBD highlight');
 assert.equal((runtime.match(/const openTbds = openTbdMarkers\(document\.querySelectorAll\('\[data-spec-tbd\]'\)\);\n\s+const \w+ = reviewHandoffState\(state\.threads, openTbds\.length > 0\);/g) || []).length, 2, 'render and activation gate eligibility on open TBD markers only');
 const tbdCss = runtime.match(/\n\.hx-tbd-open\{([^}]*)\}/);
 assert.ok(tbdCss && /outline:/.test(tbdCss[1]), 'open TBD blocks have a visible outline highlight');
