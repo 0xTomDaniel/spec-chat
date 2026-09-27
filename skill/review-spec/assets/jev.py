@@ -1263,6 +1263,7 @@ class JevService:
         # Bootstrap (project-rules #bootstrap): one background warm-up per project, its table in onboarding.toml.
         self._status_lock = threading.Lock()
         self._warm_started: set[str] = set()
+        self._warm_threads: list[threading.Thread] = []
 
     def stop(self) -> None:
         """Stop asking: later reads ask nothing, queued asks are dropped, in-flight asks finish their record."""
@@ -1273,6 +1274,9 @@ class JevService:
             self._asking.clear()
         if pool is not None:
             pool.shutdown(wait=True)
+        for t in self._warm_threads:
+            t.join(timeout=5)
+        self._warm_threads.clear()
 
     @property
     def _kept(self) -> _Kept:
@@ -1757,8 +1761,10 @@ class JevService:
                 except (OSError, ValueError):
                     continue  # unreadable onboarding.toml: never overwritten; the next change or start retries
                 self._warm_started.add(project)
-            threading.Thread(target=self._warm_project, args=(project, members, status), daemon=True,
-                             name="spec-chat-jev-warm").start()
+            t = threading.Thread(target=self._warm_project, args=(project, members, status), daemon=True,
+                                name="spec-chat-jev-warm")
+            self._warm_threads.append(t)
+            t.start()
             started.append(project)
         return started
 
@@ -1782,31 +1788,43 @@ class JevService:
                 specs.append({"path": path, "source": source})
         return commit, specs
 
-    def _ask_or_none(self, question: Mapping[str, Any]) -> dict[str, Any] | None:
-        try:
-            return self.seam.ask(question)
-        except Exception:
-            return None
+    def _warm_submit(self, questions: list[Mapping[str, Any]]) -> None:
+        """Submit questions on the shared pool, skipping final records but re-asking unavailable ones."""
+        futures: list[Future] = []
+        with self._ask_lock:
+            if self._ask_pool is None:
+                return
+            for question in questions:
+                key = self.seam.key(question)
+                if key in self._asking:
+                    futures.append(self._asking[key])
+                elif not _final(self.seam.store.get(key)):
+                    self._asking[key] = self._ask_pool.submit(self._ask_quietly, key, dict(question))
+                    futures.append(self._asking[key])
+        if futures:
+            wait(futures)
 
     def _warm_project(self, project: str, rows: list[Mapping[str, Any]], status: dict[str, Any]) -> None:
         """Classify every criterion and check every spec of main in parallel, then publish the status
-        (#bootstrap-table). Answers are ordinary records, so later pages reuse them without new calls."""
+        (#bootstrap-table). Answers are ordinary records, so later pages reuse them without new calls.
+        Asks use the shared _ask_pool with its in-flight dedupe; stop() drops queued warm-up asks."""
         try:
             commit, specs = self._main_specs(rows)
             scopes = list(self._built("scope", specs))
-            with ThreadPoolExecutor(max_workers=ASK_WORKERS, thread_name_prefix="spec-chat-jev-warm") as pool:
-                decided = list(pool.map(self._ask_or_none, scopes))
-                labels = [_confident_label(record) for record in decided]
-                rules = [scope for scope, label in zip(scopes, labels) if label == RULE_SCOPE]
-                checks = []
-                for spec in specs:
-                    mark = self._built("mark", spec["source"])
-                    if mark is None:
-                        continue
-                    others = [scope for scope in rules if scope["target"].split("#", 1)[0] != spec["path"]]
-                    built = self._built("rule", others, spec["source"], spec["path"], commit, commit, mark)
-                    checks.extend((spec["path"], scope, rule) for scope, rule in zip(others, built))
-                answers = list(pool.map(self._ask_or_none, [check[2] for check in checks]))
+            self._warm_submit(scopes)
+            decided = [self.seam.store.get(self.seam.key(s)) for s in scopes]
+            labels = [_confident_label(record) for record in decided]
+            rules = [scope for scope, label in zip(scopes, labels) if label == RULE_SCOPE]
+            checks: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
+            for spec in specs:
+                mark = self._built("mark", spec["source"])
+                if mark is None:
+                    continue
+                others = [scope for scope in rules if scope["target"].split("#", 1)[0] != spec["path"]]
+                built = self._built("rule", others, spec["source"], spec["path"], commit, commit, mark)
+                checks.extend((spec["path"], scope, rule) for scope, rule in zip(others, built))
+            self._warm_submit([c[2] for c in checks])
+            answers = [self.seam.store.get(self.seam.key(c[2])) for c in checks]
             # Done only once every ask ended in a final outcome; an outage or bad key leaves it for the next start.
             unfinished = sum(not _final(record) for record in decided + answers)
             if unfinished:
@@ -1824,6 +1842,8 @@ class JevService:
             })
         except Exception as exc:
             status.update({"state": "failed", "error": str(exc) or type(exc).__name__})
+        if self._ask_pool is None:
+            return  # stopped: nothing writes after stop returns
         status["finished_at"] = _now()
         with self._status_lock:
             try:

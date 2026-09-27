@@ -81,6 +81,7 @@ class BootstrapTest(unittest.TestCase):
         self.root = self.dir / "repo"
         self.specs = self.root / "docs" / "specs"
         self.specs.mkdir(parents=True)
+        self._services: list = []
         git(self.root, "init", "-q", "-b", "main")
         self.write("onboarding.spec.html", spec(("acceptance-onboarding", ONBOARDING), ("local", LOCAL)))
         self.write("export.spec.html", spec(("export-one", FEATURE), body="The report page gains an export button."))
@@ -92,6 +93,8 @@ class BootstrapTest(unittest.TestCase):
         self.main = self.commit()
 
     def tearDown(self):
+        for svc in self._services:
+            svc.stop()
         self.tmp.cleanup()
 
     def write(self, name, text):
@@ -103,7 +106,9 @@ class BootstrapTest(unittest.TestCase):
         return git(self.root, "rev-parse", "HEAD")
 
     def service(self, provider, api_key="fake"):
-        return jev.JevService(state_dir=self.dir / "state", provider=provider, api_key=api_key)
+        svc = jev.JevService(state_dir=self.dir / "state", provider=provider, api_key=api_key)
+        self._services.append(svc)
+        return svc
 
     def row(self, spec_name="export.spec.html", project="proj"):
         return {"id": "spec:%s:%s::docs/specs/%s" % (project, project, spec_name), "slug": project,
