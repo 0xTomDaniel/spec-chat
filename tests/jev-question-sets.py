@@ -36,6 +36,8 @@ class JevQuestionSetTest(unittest.TestCase):
                 data = json.loads(path.read_text(encoding="utf-8"))
                 self.assertEqual(data["id"], path.stem)
                 self.assertIsInstance(data["version"], int)
+                # #q-fallback: a set only allows the fallback; the model is the box's llm_model.
+                self.assertIn(data.get("fallback", False), (True, False))
                 self.assertTrue(data["instructions"].strip())
                 self.assertEqual(data["threshold"], THRESHOLDS.get(path.stem, 0.4))
                 labels = data["labels"]

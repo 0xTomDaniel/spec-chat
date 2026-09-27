@@ -211,7 +211,7 @@ class RulesTest(unittest.TestCase):
         self.assertEqual([(i["state"], i["label"]) for i in onboarding], [("label", "missed")])
         self.assertFalse([i for i in result["items"] if i["state"] == "unsure"])
         self.assertEqual(len([c for c in provider.general_calls if json.loads(c["messages"][-1]["content"]).get("rule") == ONBOARDING]), 1)
-        self.assertEqual(provider.general_calls[0]["model"], jev.load_question_sets()["scope"].fallback_model)
+        self.assertEqual({c["model"] for c in provider.general_calls}, {jev.DEFAULT_LLM_MODEL})
         records = [json.loads(line) for line in (Path(self.tmp.name) / "state" / "records.jsonl").read_text().splitlines()]
         decided = [r for r in records if r.get("escalated") and r["outcome"] == "shown"]
         self.assertTrue(decided and all(r["model"] != jev.MODEL for r in decided))

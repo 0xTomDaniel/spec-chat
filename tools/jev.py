@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import threading
+import tomllib
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -22,6 +23,8 @@ from urllib.request import Request, urlopen
 MODEL = "typesafe/jev-1.13"
 OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
+# The box's one general LLM name when the Jev provider file has no llm_model (project-rules #q-fallback).
+DEFAULT_LLM_MODEL = "anthropic/claude-sonnet-5"
 DEFAULT_THRESHOLD = 0.4
 DEFAULT_MAX_INPUT_TOKENS = 32000
 RETRYABLE_OUTCOMES = frozenset({"off", "unavailable"})
@@ -106,9 +109,9 @@ def _now() -> str:
 
 class QuestionSet:
     def __init__(self, identifier: str, version: Any, instructions: str = "", labels: Any = None,
-                 threshold: float = DEFAULT_THRESHOLD, fallback_model: str | None = None):
+                 threshold: float = DEFAULT_THRESHOLD, fallback: bool = False):
         self.id = identifier
-        self.fallback_model = fallback_model
+        self.fallback = fallback
         self.version = version
         self.instructions = instructions
         self.labels = [] if labels is None else labels
@@ -124,12 +127,10 @@ class QuestionSet:
             raise ValueError("invalid question set")
         if not isinstance(labels, (list, dict)):
             raise ValueError("question set labels must be an array or object")
-        fallback = raw.get("fallback")
-        model = fallback.get("model") if isinstance(fallback, Mapping) else None
-        if fallback is not None and (not isinstance(model, str) or not model.strip()):
-            raise ValueError("question set fallback needs a model")
-        return cls(identifier, version, str(raw.get("instructions", "")), labels, threshold,
-                   model.strip() if model else None)
+        fallback = raw.get("fallback", False)
+        if not isinstance(fallback, bool):
+            raise ValueError("question set fallback is true or false; sets name no model")
+        return cls(identifier, version, str(raw.get("instructions", "")), labels, threshold, fallback)
 
     def criteria(self) -> dict[str, str]:
         if isinstance(self.labels, Mapping):
@@ -189,8 +190,8 @@ class QuestionSet:
     def to_dict(self) -> dict[str, Any]:
         result = {"id": self.id, "version": self.version, "instructions": self.instructions,
                   "labels": _jsonable(self.labels), "threshold": self.threshold}
-        if self.fallback_model:
-            result["fallback"] = {"model": self.fallback_model}
+        if self.fallback:
+            result["fallback"] = True
         return result
 
 
@@ -329,12 +330,20 @@ def _key_reader(api_key: str | Callable[[], str] | None) -> Callable[[], str]:
     return lambda: fixed
 
 
+def _model_reader(llm_model: str | Callable[[], str] | None) -> Callable[[], str]:
+    """The general LLM model id, read at each use like the key: the Jev provider's llm_model, else the default."""
+    read = _key_reader(llm_model)
+    return lambda: read() or DEFAULT_LLM_MODEL
+
+
 class JevSeam:
     def __init__(self, question_sets: Mapping[str, QuestionSet] | None = None, *, provider: Any = None,
-                 api_key: str | Callable[[], str] | None = None, record_store: JudgmentStore | None = None,
+                 api_key: str | Callable[[], str] | None = None, llm_model: str | Callable[[], str] | None = None,
+                 record_store: JudgmentStore | None = None,
                  clock: Callable[[], str] = _now, max_input_tokens: int = DEFAULT_MAX_INPUT_TOKENS):
         self.question_sets = dict(question_sets or load_question_sets())
         self.api_key = _key_reader(api_key)
+        self.llm_model = _model_reader(llm_model)
         self._provider = provider
         self.store = record_store or JudgmentStore()
         self.clock = clock
@@ -344,6 +353,13 @@ class JevSeam:
 
     def question_set(self, kind: str) -> QuestionSet:
         return self.question_sets[kind]
+
+    def provider(self) -> Any:
+        """The model client for this ask: the injected one, else OpenRouter with the current key; None when off."""
+        api_key = self.api_key()
+        if not api_key:
+            return None
+        return self._provider if self._provider is not None else OpenRouterProvider(api_key)
 
     def _record(self, key: str, kind: str, qset: QuestionSet, sources: Any, revision: Any,
                 answer: Mapping[str, Any], outcome: str, model: str = MODEL, escalated: bool = False) -> dict[str, Any]:
@@ -390,9 +406,10 @@ class JevSeam:
         held = self.store.get(key)
         if held and held.get("outcome") not in REPLACEABLE_OUTCOMES:
             return held
-        if held and qset.fallback_model and self.provider is not None and self.api_key and (
+        provider = self.provider()
+        if held and qset.fallback and provider is not None and (
                 held.get("outcome") == ESCALATED or held.get("escalated")):
-            return self._general(question, key, qset)
+            return self._general(question, key, qset, provider)
         criteria = qset.criteria_payload()
         dynamic = question.get("criteria")
         if isinstance(dynamic, Mapping):
@@ -405,9 +422,7 @@ class JevSeam:
         if (len(_canonical(payload)) + 3) // 4 > self.max_input_tokens:
             return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
                                 {"label": None, "probabilities": {}, "confidence": None}, "oversize")
-        api_key = self.api_key()
-        provider = self._provider if self._provider is not None else (OpenRouterProvider(api_key) if api_key else None)
-        if not api_key or provider is None:
+        if provider is None:
             return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
                                 {"label": None, "probabilities": {}, "confidence": None}, "off")
         answer = None
@@ -429,28 +444,28 @@ class JevSeam:
             return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
                                 {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model)
         outcome = "shown" if answer["confidence"] is not None and answer["confidence"] >= qset.threshold else "unsure"
-        if outcome == "unsure" and qset.fallback_model:
+        if outcome == "unsure" and qset.fallback:
             self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, ESCALATED, model)
-            return self._general(question, key, qset)
+            return self._general(question, key, qset, provider)
         return self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, outcome, model)
 
-    def general_payload(self, question: Mapping[str, Any], qset: QuestionSet) -> dict[str, Any]:
+    def general_payload(self, question: Mapping[str, Any], qset: QuestionSet, model: str) -> dict[str, Any]:
         labels = qset.criteria()
         system = {"question": qset.instructions, "labels": labels, "examples": qset.examples(),
                   "answer": 'Reply with only a JSON object {"choice": <one label>}.'}
-        return {"model": qset.fallback_model,
+        return {"model": model,
                 "messages": [{"role": "system", "content": _canonical(system)},
                              {"role": "user", "content": _canonical(question.get("state", {}))}],
                 "response_format": {"type": "json_object"}}
 
-    def _general(self, question: Mapping[str, Any], key: str, qset: QuestionSet) -> dict[str, Any]:
-        """The same question, once, to the set's general LLM; its answer decides (project-rules #q-fallback)."""
+    def _general(self, question: Mapping[str, Any], key: str, qset: QuestionSet, provider: Any) -> dict[str, Any]:
+        """The same question, once, to the box's general LLM; its answer decides (project-rules #q-fallback)."""
         kind = str(question.get("kind", "type"))
         sources, revision = question.get("sources", []), question.get("revision")
-        model = str(qset.fallback_model)
+        model = self.llm_model()
         try:
-            if hasattr(self.provider, "complete"):
-                response = self.provider.complete(self.general_payload(question, qset))
+            if hasattr(provider, "complete"):
+                response = provider.complete(self.general_payload(question, qset, model))
             else:
                 raise RuntimeError("provider has no general LLM")
             label = _parse_general_answer(response, qset.criteria())
@@ -1006,7 +1021,8 @@ def _commit(root: str, ref: str) -> str | None:
 
 EXCLUDED_COLLECTION_DIRS = frozenset({"evidence", "evidence-bundle", "evidence-bundles", "fixture", "fixtures",
                                       "support", "supports"})
-ONBOARDING_DIR = "onboarding"
+# Warm-up status: one table per project in Spec Chat's one onboarding.toml (project-rules #bootstrap-status).
+ONBOARDING_TABLE = "project"
 OFFER_ACTIONS = frozenset({"sent", "dismissed"})
 
 
@@ -1031,24 +1047,57 @@ def _collection_paths(root: str, commit: str, collection: str) -> list[str]:
     return result
 
 
-def _status_file_name(project: str) -> str:
-    return re.sub(r"[^A-Za-z0-9._-]", "_", project).lstrip(".") + ".json"
+def _toml_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return repr(value)
+    if isinstance(value, Mapping):
+        return "{" + ", ".join(_toml_key(k) + " = " + _toml_value(v) for k, v in value.items() if v is not None) + "}"
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_toml_value(item) for item in value) + "]"
+    return json.dumps(str(value), ensure_ascii=False)
+
+
+def _toml_key(key: Any) -> str:
+    key = str(key)
+    return key if re.fullmatch(r"[A-Za-z0-9_-]+", key) else json.dumps(key, ensure_ascii=False)
+
+
+def dump_toml(document: Mapping[str, Any]) -> str:
+    """Top-level keys, then one [table."name"] per entry of each table of tables; None values are left out."""
+    lines = [_toml_key(k) + " = " + _toml_value(v) for k, v in document.items()
+             if v is not None and not isinstance(v, Mapping)]
+    for table, entries in document.items():
+        if not isinstance(entries, Mapping):
+            continue
+        for name, entry in entries.items():
+            if isinstance(entry, Mapping):
+                lines += ["", "[" + _toml_key(table) + "." + _toml_key(name) + "]"]
+                lines += [_toml_key(k) + " = " + _toml_value(v) for k, v in entry.items() if v is not None]
+    return "\n".join(lines).lstrip("\n") + "\n"
+
+
+def spec_chat_state() -> Path:
+    root = os.environ.get("XDG_STATE_HOME")
+    return (Path(root) if root else Path.home() / ".local" / "state") / "spec-chat"
 
 
 def default_state_dir() -> Path:
-    root = os.environ.get("XDG_STATE_HOME")
-    return Path(root) / "spec-chat" / "jev" if root else Path.home() / ".local" / "state" / "spec-chat" / "jev"
+    return spec_chat_state() / "jev"
 
 
 class JevService:
     def __init__(self, *, state_dir: str | Path | None = None, provider: Any = None,
-                 api_key: str | Callable[[], str] | None = None, question_dirs: list[str | Path] | None = None):
-        self.api_key = _key_reader(api_key)
-        self.provider = provider
+                 api_key: str | Callable[[], str] | None = None, llm_model: str | Callable[[], str] | None = None,
+                 question_dirs: list[str | Path] | None = None, onboarding_path: str | Path | None = None):
         self.question_sets = load_question_sets(*(question_dirs or []))
         self.state_dir = Path(state_dir) if state_dir else default_state_dir()
+        # Spec Chat's one onboarding.toml (review-service #published-onboarding); beside the records under a test state.
+        self.onboarding_path = Path(onboarding_path) if onboarding_path else (
+            self.state_dir / "onboarding.toml" if state_dir else spec_chat_state() / "onboarding.toml")
         path = self.state_dir / "records.jsonl"
-        self.seam = JevSeam(self.question_sets, provider=provider, api_key=self.api_key,
+        self.seam = JevSeam(self.question_sets, provider=provider, api_key=api_key, llm_model=llm_model,
                             record_store=JudgmentStore(path))
 
         # Board state (#jev-board-answer): the last answer and the rows the board thread answers next.
@@ -1065,13 +1114,13 @@ class JevService:
         self._rule_lock = threading.Lock()
         self._rule_inflight: set[str] = set()
 
-        # Bootstrap (project-rules #bootstrap): one background warm-up per project, its status file on disk.
+        # Bootstrap (project-rules #bootstrap): one background warm-up per project, its table in onboarding.toml.
         self._status_lock = threading.Lock()
         self._warm_started: set[str] = set()
 
     @property
     def enabled(self) -> bool:
-        return bool(self.question_sets) and (bool(self.api_key()) or self.provider is not None)
+        return bool(self.question_sets) and bool(self.seam.api_key())
 
     def _served_specs(self, mounts: Any, current: str, page: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
         """Other specs (#corpus-others): the lane's own served specs as served, plus main's copy of every
@@ -1374,22 +1423,28 @@ class JevService:
         except Exception:
             return [], []
 
-    def status_path(self, project: str) -> Path:
-        return self.state_dir / ONBOARDING_DIR / _status_file_name(project)
+    def _onboarding(self) -> dict[str, Any]:
+        try:
+            value = tomllib.loads(self.onboarding_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return value
 
     def onboarding_status(self, project: str) -> dict[str, Any] | None:
-        """The published onboarding status for one project (#bootstrap-status); None before the first warm-up."""
-        try:
-            value = json.loads(self.status_path(project).read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return None
+        """One project's warm-up table in onboarding.toml (#bootstrap-status); None before the first warm-up."""
+        table = self._onboarding().get(ONBOARDING_TABLE)
+        value = table.get(project) if isinstance(table, dict) else None
         return value if isinstance(value, dict) else None
 
     def _write_status(self, project: str, status: Mapping[str, Any]) -> None:
-        path = self.status_path(project)
+        """Replace one project's table, keeping install's status and doc and every other project's table."""
+        document = self._onboarding()
+        table = document.get(ONBOARDING_TABLE)
+        document[ONBOARDING_TABLE] = {**(table if isinstance(table, dict) else {}), project: _jsonable(status)}
+        path = self.onboarding_path
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name("." + path.name + "." + uuid.uuid4().hex + ".tmp")
-        temporary.write_text(json.dumps(_jsonable(status), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        temporary.write_text(dump_toml(document), encoding="utf-8")
         os.replace(temporary, path)
 
     def warm(self, rows: Any) -> list[str]:
@@ -1405,9 +1460,9 @@ class JevService:
                 projects.setdefault(str(row["project"]), []).append(row)
         started = []
         for project, members in projects.items():
-            status: dict[str, Any] = {"project": project, "state": "running",
+            status: dict[str, Any] = {"state": "running",
                                       "started_at": _now(), "criteria_classified": 0, "rules": [],
-                                      "specs_to_reconcile": 0, "reconcile": [], "offer": None}
+                                      "specs_to_reconcile": 0, "reconcile": []}
             with self._status_lock:
                 if project in self._warm_started:
                     continue
@@ -1490,7 +1545,7 @@ class JevService:
         return {"count": status["specs_to_reconcile"], "specs": status.get("reconcile", [])}
 
     def record_offer(self, project: Any, action: str) -> bool:
-        """Record the offer sent or dismissed in the status file; the first record stands."""
+        """Record the offer sent or dismissed in the project's table; the first record stands."""
         if action not in OFFER_ACTIONS or not project:
             return False
         with self._status_lock:

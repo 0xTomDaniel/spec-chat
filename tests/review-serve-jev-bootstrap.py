@@ -7,6 +7,7 @@ import sys
 import tempfile
 import threading
 import time
+import tomllib
 import unittest
 import urllib.request
 from pathlib import Path
@@ -143,12 +144,28 @@ class BootstrapTest(unittest.TestCase):
         rule = {"target": "docs/specs/onboarding.spec.html#acceptance-onboarding", "word": "onboarding"}
         self.assertEqual(status["reconcile"], [{"spec": "docs/specs/export.spec.html", "rules": [rule]},
                                                {"spec": "docs/specs/import.spec.html", "rules": [rule]}])
-        self.assertIsNone(status["offer"])
+        self.assertIsNone(status.get("offer"))
         # the home spec is never checked against its own rule; every other spec is
         checked = sorted(c["state"]["spec"].split("\n")[-1] for c in provider.calls if "rule" in c["questions"])
         self.assertEqual(len(checked), 3)
-        text = service.status_path("proj").read_text(encoding="utf-8")
+        # one table per project in Spec Chat's one onboarding.toml; no separate status file
+        text = service.onboarding_path.read_text(encoding="utf-8")
         self.assertNotIn("w1:p1", text)  # names no peer
+        self.assertEqual(tomllib.loads(text)["project"]["proj"], status)
+        self.assertEqual(sorted(p.name for p in service.state_dir.iterdir()), ["onboarding.toml", "records.jsonl"])
+
+    def test_warm_up_table_keeps_install_status_and_other_projects(self):
+        path = self.dir / "state" / "onboarding.toml"
+        path.parent.mkdir(parents=True)
+        path.write_text('status = "done"\ndoc = "file:///README.md#install-and-onboarding"\n\n[project.other]\nstate = "done"\n')
+        service = self.service(FakeProvider())
+        service.warm([self.row()])
+        self.settle(service)
+        value = tomllib.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual((value["status"], value["doc"]), ("done", "file:///README.md#install-and-onboarding"))
+        self.assertEqual(sorted(value["project"]), ["other", "proj"])
+        self.assertTrue(service.record_offer("proj", "sent"))
+        self.assertEqual(tomllib.loads(path.read_text(encoding="utf-8"))["project"]["proj"]["offer"], "sent")
 
     def test_later_pages_reuse_warm_records_and_show_the_offer_once(self):
         provider = FakeProvider()

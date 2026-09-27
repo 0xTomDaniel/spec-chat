@@ -1,9 +1,9 @@
 {
   "id": "rule",
-  "version": 2,
+  "version": 3,
   "instructions": "Read one project-wide rule and the full text of one product spec. Choose not triggered when nothing the spec changes falls under the rule. Choose covered when the spec triggers the rule and meets it, either with a criterion or clause that does what the rule asks, or with a line saying why the rule does not apply. Choose missed when the spec makes a change the rule applies to and says nothing that meets it or explains why it does not apply.",
   "threshold": 0.7,
-  "fallback": {"model": "anthropic/claude-sonnet-5"},
+  "fallback": true,
   "labels": [
     {
       "name": "missed",

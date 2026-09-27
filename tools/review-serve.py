@@ -517,6 +517,12 @@ def jev_provider(state):
     return key.strip() if isinstance(key, str) else ""
 
 
+def jev_llm_model(state):
+    """The box's one general LLM name, llm_model beside the Jev key, or "" for Jev's default (project-rules #q-fallback)."""
+    model = (read_provider(state, "jev", private=True) or {}).get("llm_model")
+    return model.strip() if isinstance(model, str) else ""
+
+
 def wake_provider(state):
     """The wake provider's (check, send) argument lists, or None when it is not plugged."""
     provider = read_provider(state, "wake") or {}
@@ -1115,7 +1121,8 @@ def main(argv=None):
         return 2
     server.mount_state = state
     server.state_dir = os.path.dirname(os.path.abspath(args.registry)) if args.registry else None
-    server.jev = JevService(api_key=lambda: jev_provider(server.state_dir))
+    server.jev = JevService(api_key=lambda: jev_provider(server.state_dir),
+                            llm_model=lambda: jev_llm_model(server.state_dir))
     # Bootstrap (project-rules #bootstrap-home): a project's first registration starts its warm-up here.
     state.on_change = server.jev.warm
     server.jev.warm(state.records)

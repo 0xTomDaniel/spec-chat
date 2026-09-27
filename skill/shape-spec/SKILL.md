@@ -37,7 +37,7 @@ Create durable current truth before deep investigation.
 
 ## Jev check
 
-After `review-host register` and before the link is sent (project-rules#agent-read), read the review link's Jev checks with `spec-chat-review`'s `scripts/jev-read.py '<review-url>' --wait 120`: one line per important mark, warning counts by kind, rules checked, pending count, or `off`. `--anchor <id>` prints one anchor's full detail.
+After registering with `spec-chat-review`'s lane command and before the link is sent (project-rules#agent-read), read the review link's Jev checks with `spec-chat-review`'s `scripts/jev-read.py '<review-url>' --wait 120`: one line per important mark, warning counts by kind, rules checked, pending count, or `off`. `--anchor <id>` prints one anchor's full detail.
 
 - `off`: send the link at once.
 - Key only on each mark's `level`; keep no list of kinds.
