@@ -59,12 +59,12 @@ requirements of the governing spec. Their scope is carried by the descriptive
 these scope hints are optional and descriptive, and no MVP-labelled heading is required. A deferred or `data-spec-tbd`
 criterion cannot satisfy the governing Acceptance criteria section.
 
-Write each acceptance criterion as a loose Given/When/Then scenario: the
+Write each acceptance criterion as an observable Given/When/Then: the
 scenario states the starting situation (Given) and the action (When), and the
-observable states the visible result (Then). Use plain language; quote a UI
-name when it helps. The criterion is the scenario a QA run executes, so it must
-reach its state from the Given. Existing criteria convert when a change touches
-them.
+observable states the visible result (Then). A criterion in this shape is
+clear to read and checkable: anyone can set up the Given, do the When, and see
+whether the Then holds. Use plain language; quote a UI name when it helps.
+Existing criteria convert when a change touches them.
 
 A `data-spec-tbd` marker is open unless its value is `later`. Open TBDs block
 spec acceptance and are highlighted in review. `data-spec-tbd="later"` marks a
