@@ -4,6 +4,7 @@ import importlib.util
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -158,6 +159,58 @@ class CorpusTest(unittest.TestCase):
         self.assertLess(len(now), len(every_copy))
         self.assertEqual({q["id"] for q in now}, {"rule"})
         self.assertFalse([q for q in now if q["target"].startswith(("l1/", "l2/", "l3/", "l4/"))])
+
+    def test_repeat_read_parses_no_spec_and_runs_git_only_to_resolve_refs(self):
+        """#acceptance-fast: unchanged spec, spool, and served files reuse kept builder results."""
+        main = {SPEC: page("The service reads review events."), OWN: page("Own rule."),
+                "docs/specs/lane-b.spec.html": page("Lane b rule on main.")}
+        lane_a = self.repo("a", {SPEC: page("The service writes review events.")}, main)
+        base = git(lane_a, "rev-parse", "HEAD")
+        lane_b = self.worktree(lane_a, "b", {"docs/specs/lane-b.spec.html": page("Lane b working copy.")})
+        other = self.repo("d", {}, {"docs/specs/d.spec.html": page("Another repository reads review events.")})
+        mounts = [self.row(lane_a, "a", SPEC), self.row(lane_a, "a", OWN),
+                  self.row(lane_b, "b", "docs/specs/lane-b.spec.html"),
+                  self.row(other, "d", "docs/specs/d.spec.html")]
+        events = [{"name": "1-comment.json", "actor": "human", "body": {
+            "id": "u1", "event": "comment", "actor": "human", "anchorId": "rule", "text": "Reads or writes?",
+            "createdAt": "2020-01-01T00:00:00Z"}}]
+        provider = FakeProvider({})
+        dirs = [ROOT / "skill" / "review-spec" / "assets" / "jev"]
+        service = jev.JevService(state_dir=self.dir / "state", provider=provider, api_key="fake", question_dirs=dirs)
+        read = lambda s: s.response(mounts[0], str(lane_a / SPEC), "a/" + SPEC, base, events, "reading", mounts)
+        first = read(service)
+        self.assertTrue(first["items"])
+
+        parses, gits = [], []
+        feed, run, check_output = jev._AnchorParser.feed, subprocess.run, subprocess.check_output
+
+        def counted_feed(parser, data):
+            parses.append(len(data))
+            return feed(parser, data)
+
+        def counted(real):
+            def call(argv, *args, **kwargs):
+                if argv and argv[0] == "git":
+                    gits.append(tuple(argv))
+                return real(argv, *args, **kwargs)
+            return call
+
+        with patch.object(jev._AnchorParser, "feed", counted_feed), \
+                patch.object(jev.subprocess, "run", counted(run)), \
+                patch.object(jev.subprocess, "check_output", counted(check_output)):
+            second = read(service)
+        self.assertEqual(second, first)
+        self.assertEqual(parses, [])
+        self.assertTrue(all("rev-parse" in argv for argv in gits), gits)
+        resolved = sorted(argv[-1].removesuffix("^{commit}") for argv in gits)
+        self.assertEqual(resolved, sorted([base, "HEAD", "origin/main", "origin/main"]))
+        self.assertEqual(read(jev.JevService(state_dir=self.dir / "state", provider=provider, api_key="fake",
+                                             question_dirs=dirs)), first)  # same as a cold read
+
+        (lane_a / OWN).write_text(page("Own rule now writes review events."), encoding="utf-8")
+        with patch.object(jev._AnchorParser, "feed", counted_feed):
+            read(service)
+        self.assertTrue(parses)  # a changed served file is read fresh
 
 
 if __name__ == "__main__":
