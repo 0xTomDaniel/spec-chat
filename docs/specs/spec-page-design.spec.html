@@ -140,8 +140,8 @@ The index is light-only; this spec adds the dark overrides for the chrome tokens
 
 <div data-anchor="button-system">
 <h3 data-anchor="button-system-heading">Button system</h3>
-<p data-anchor="button-system-rule">Every chrome button is one of four variants.
-All share: <code>font-family: var(--ui-font)</code>, <code>font-size: var(--ui-text-xs)</code> (12px), <code>font-weight: 600</code>, <code>border-radius: var(--ui-radius-sm)</code> (6px), <code>min-height: 32px</code> desktop / <code>44px</code> mobile, <code>padding: var(--ui-space-2) var(--ui-space-3)</code> (8px 12px).
+<p data-anchor="button-system-rule">Every chrome button is one of four variants. The button system consumes tokens from the token block; it does not redefine them. Badges and pills are not buttons and use their own radius (<code>--ui-radius-pill</code>).
+All buttons share: <code>font-family: var(--ui-font)</code>, <code>font-size: var(--ui-text-xs)</code> (12px), <code>font-weight: 600</code>, <code>border-radius: var(--ui-radius-sm)</code> (6px), <code>min-height: 32px</code> desktop / <code>44px</code> mobile, <code>padding: var(--ui-space-2) var(--ui-space-3)</code> (8px 12px).
 Focus: <code>outline: 2px solid var(--ui-focus); outline-offset: 2px</code>.</p>
 
 <div class="table-scroll">
@@ -232,9 +232,9 @@ Pin border-radius is unchanged (teardrop shape).</p>
 <tr data-anchor="surface-pills"><td>Pills</td><td>draft <code>--ui-draft-soft</code>, ack <code>--ui-ack-soft</code>, resolved <code>--ui-resolved-soft</code></td><td>none</td><td>draft <code>--ui-draft</code>, ack <code>--ui-ack</code>, resolved <code>--ui-resolved</code></td><td><code>--ui-radius-pill</code></td><td><code>--ui-text-xs</code> 600, uppercase, 0.05em tracking.</td></tr>
 <tr data-anchor="surface-popover"><td>Jev popover</td><td><code>--ui-surface</code></td><td><code>--ui-ink</code></td><td><code>--ui-ink</code>; attention <code>--ui-fail</code>; meta <code>--ui-muted</code></td><td><code>--ui-radius</code></td><td>Shadow <code>--ui-shadow</code>. Links: <code>--ui-ack</code> underlined. Action buttons: secondary with <code>--ui-ack</code> border/text.</td></tr>
 <tr data-anchor="surface-jev-note"><td>Jev note</td><td><code>--ui-draft-soft</code></td><td><code>--ui-draft</code> at 0.4 opacity</td><td><code>--ui-draft</code></td><td><code>--ui-radius</code></td><td>Reconcile/offer: secondary variant.</td></tr>
-<tr data-anchor="surface-toast"><td>Toast</td><td><code>--ui-ink</code> (inverted)</td><td>none</td><td><code>--ui-page</code></td><td><code>--ui-radius</code></td><td><code>--ui-text-xs</code> 600.</td></tr>
-<tr data-anchor="surface-banner"><td>Banner</td><td><code>--ui-pass</code> (inverted)</td><td>none</td><td><code>--ui-page</code></td><td>none</td><td>Button: secondary with <code>--ui-page</code> border/text (inverted for contrast on green).</td></tr>
-<tr data-anchor="surface-error"><td>Error overlay</td><td><code>--ui-error</code> (inverted)</td><td>none</td><td><code>--ui-page</code></td><td>none</td><td><code>--ui-text-xs</code> monospace.</td></tr>
+<tr data-anchor="surface-toast"><td>Toast (transient notification)</td><td><code>--ui-ink</code> (dark inverted)</td><td>none</td><td><code>--ui-page</code></td><td><code>--ui-radius</code></td><td><code>--ui-text-xs</code> 600.</td></tr>
+<tr data-anchor="surface-banner"><td>Banner (spec-updated alert)</td><td><code>--ui-pass</code> (green inverted)</td><td>none</td><td><code>--ui-page</code></td><td>none</td><td>Button: secondary with <code>--ui-page</code> border/text (inverted for contrast on green).</td></tr>
+<tr data-anchor="surface-error"><td>Error overlay (blocking error)</td><td><code>--ui-error</code> (red inverted)</td><td>none</td><td><code>--ui-page</code></td><td>none</td><td><code>--ui-text-xs</code> monospace.</td></tr>
 <tr data-anchor="surface-index-link"><td>Index link</td><td><code>--ui-surface</code></td><td><code>--ui-border</code></td><td><code>--ui-resolved</code> 600</td><td><code>--ui-radius</code></td><td>Hover: <code>--ui-page</code> bg. <code>--ui-text-xs</code>.</td></tr>
 <tr data-anchor="surface-orphan"><td>Orphan hint</td><td><code>--ui-draft-soft</code></td><td>left 3px <code>--ui-draft</code></td><td><code>--ui-draft</code></td><td>none</td><td>Buttons: secondary variant.</td></tr>
 <tr data-anchor="surface-badge"><td>Agent badge</td><td><code>--ui-resolved-soft</code></td><td>none</td><td><code>--ui-resolved</code></td><td><code>--ui-radius-pill</code></td><td><code>--ui-text-xs</code> 600 uppercase.</td></tr>
