@@ -1239,19 +1239,24 @@ function jevNeutralNote(anchor, stateName, question) {
 }
 
 // project-rules #marks: a missed rule is its fixed word linking the rule, not muted, with Ask to cover; a check
-// escalated to the LLM and still unanswered is a wheel in the marker's place; anything else shows nothing.
+// escalated to the LLM and still unanswered is a wheel in the marker's place; a failed LLM fallback is the neutral
+// Jev unavailable note naming the rule (#q-fallback); anything else shows nothing.
 function jevRuleNote(item) {
   if (!item.id || !item.word) return null;
   if (item.state === 'pending') {
     return item.escalated ? { anchor: item.id, group: 'rule', state: 'pending', text: 'checking ' + item.word + '\u2026' } : null;
   }
-  if (item.state !== 'label' || item.label !== 'missed') return null;
+  if (item.state !== 'unavailable' && (item.state !== 'label' || item.label !== 'missed')) return null;
   const link = corpusTargetLink(item.target);
   if (!link) return null;
   const hash = link.text.indexOf('#');
-  const home = link.text.slice(0, Math.max(hash, 0)).split('/').pop() || item.word + '.spec.html';
+  const rule = link.text.slice(hash) + ' from ' + (link.text.slice(0, Math.max(hash, 0)).split('/').pop() || item.word + '.spec.html');
+  if (item.state === 'unavailable') {
+    return { anchor: item.id, group: 'neutral', state: 'unavailable', text: 'Jev unavailable', level: null,
+      sentence: 'Jev could not check whether this spec needs ' + rule };
+  }
   return { anchor: item.id, group: 'rule', state: 'label', text: item.word + '?', href: link.href, level: item.level || null,
-    sentence: 'This spec may need ' + link.text.slice(hash) + ' from ' + home,
+    sentence: 'This spec may need ' + rule,
     actions: [jevDraftAction('Ask to cover', 'Cover ' + link.text + ' with a criterion, or add one line saying why it does not apply.')] };
 }
 

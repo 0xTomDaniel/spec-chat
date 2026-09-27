@@ -145,8 +145,18 @@ assert.deepEqual([markers()[0].dataset.pending, markers()[0].dataset.attention, 
 markers()[0].fire('focus');
 assert.deepEqual(pop().querySelectorAll('.hx-jev-pop-text').map(t => t.textContent), ['checking onboarding…']);
 assert.equal(pop().querySelectorAll('button').length, 0);
-// Plain Jev pending, covered, not triggered, and unavailable show nothing (#mark-none).
-for (const items of [[rule('pending')], [rule('none')], [rule('unavailable')], [rule('label', { label: null })]]) {
+// #q-fallback: a failed LLM fallback shows the neutral Jev unavailable note at the rule's spot, its sentence naming the rule.
+show([rule('unavailable')]);
+assert.equal(markers().length, 1);
+assert.equal(holder('acceptance').querySelector('.hx-jev-marker').dataset.attention, 'false');
+markers()[0].fire('focus');
+const unavailable = pop().querySelector('.hx-jev-pop-note');
+const unavailableSentence = 'Jev could not check whether this spec needs #acceptance-onboarding from onboarding.spec.html';
+assert.deepEqual([unavailable.dataset.group, unavailable.querySelector('.hx-jev-pop-text').textContent,
+  unavailable.querySelector('.hx-jev-pop-text').getAttribute('aria-label'), unavailable.querySelector('.hx-jev-pop-sentence').textContent,
+  unavailable.querySelectorAll('button').length], ['neutral', 'Jev unavailable', unavailableSentence, unavailableSentence, 0]);
+// Plain Jev pending, covered, and not triggered show nothing (#mark-none).
+for (const items of [[rule('pending')], [rule('none')], [rule('label', { label: null })]]) {
   show(items);
   assert.equal(markers().length, 0, JSON.stringify(items));
 }
