@@ -68,7 +68,7 @@ const pages = [
   { name: 'runtime light', rules: docRules.concat(overlayRules), dark: false, bg: hex(decl(docRules, ':where(body)', 'background', false)), text: hex(decl(docRules, ':where(body)', 'color', false)) },
   { name: 'runtime dark', rules: docRules.concat(overlayRules), dark: true, bg: hex(decl(docRules, ':where(body)', 'background', true)), text: hex(decl(docRules, ':where(body)', 'color', true)) },
 ];
-const COSMETIC = '[data-hx-jev-type=cosmetic]';
+const DIMMED = '[data-hx-jev-type=no-behavior-change]';
 const opacityOf = (rules, sel, dark) => {
   const values = [sel, 'body.hx-focus-active ' + sel].map(s => decl(rules, s, 'opacity', dark)).filter(v => v !== null);
   return values.length ? Math.min(...values.map(Number)) : 1;
@@ -93,8 +93,10 @@ const markers = [
   [['.hx-jev-marker'], ['.hx-jev-marker', '.hx-jev-marker[data-passed=true]']],
   [['.hx-jev-pop', '.hx-jev-pop-diff'], ['.hx-jev-pop']],
 ];
-// Marker marks (gray dot, colored !, green check) read 3:1 against the page (criterion-evidence #chip-marker).
-const marks = [['.hx-jev-marker'], ['.hx-jev-marker', '.hx-jev-marker[data-attention=true]'], ['.hx-jev-marker', '.hx-jev-marker[data-passed=true]']];
+// Marker marks (gray dot, colored !, green check, light red warning dot) read 3:1 against the page
+// (criterion-evidence #chip-marker, jev-suggestions #acceptance-warning-color).
+const WARNING = ['.hx-jev-marker', '.hx-jev-marker[data-warning=true]'];
+const marks = [['.hx-jev-marker'], ['.hx-jev-marker', '.hx-jev-marker[data-attention=true]'], ['.hx-jev-marker', '.hx-jev-marker[data-passed=true]'], WARNING];
 const panelLabels = [
   ['.hx-jev-thread-label'], ['.hx-jev-thread-label', '.hx-jev-thread-label[data-state=unsure]'],
   ['.hx-jev-thread-label', '.hx-jev-thread-label[data-state=unavailable]'], ['.hx-pin-jev'], ['.hx-orphan-hint'],
@@ -105,10 +107,11 @@ const check = (name, fg, bg) => {
   if (r < 4.5) failures.push(name + ' ' + r.toFixed(2));
 };
 for (const page of pages) {
-  const a = opacityOf(page.rules, COSMETIC, page.dark);
-  const cosmetic = hex(colorOf(page, ['body ' + COSMETIC, COSMETIC].reverse(), 'color')) || page.text;
-  // Dimmed cosmetic clause text, composited through any opacity on the clause.
-  check(page.name + ': cosmetic text', mix(cosmetic, page.bg, a), page.bg);
+  const a = opacityOf(page.rules, DIMMED, page.dark);
+  const dimmed = hex(colorOf(page, ['body ' + DIMMED, DIMMED].reverse(), 'color'));
+  assert.ok(dimmed, 'No behavior change dim owns its color');
+  // Dimmed No behavior change text, composited through any opacity on the clause.
+  check(page.name + ': no-behavior-change text', mix(dimmed, page.bg, a), page.bg);
   for (const [fgSels, bgSels] of markers) {
     const fg = hex(colorOf(page, fgSels, 'color'));
     const bg = hex(colorOf(page, bgSels, 'background'));
@@ -119,6 +122,12 @@ for (const page of pages) {
     const r = ratio(hex(colorOf(page, sels, 'background')), page.bg);
     if (r < 3) failures.push(page.name + ': mark ' + sels.at(-1) + ' ' + r.toFixed(2));
   }
+  // The Warning dot is light red, distinct from the grey neutral dot and from the Important color.
+  const [warn, grey, important] = [WARNING, ['.hx-jev-marker'], ['.hx-jev-marker', '.hx-jev-marker[data-attention=true]']]
+    .map(sels => hex(colorOf(page, sels, 'background')));
+  assert.ok(warn[0] > warn[1] + 80 && warn[0] > warn[2] + 80, page.name + ': warning dot reads red');
+  assert.notDeepEqual(warn, grey, page.name + ': warning dot differs from grey');
+  assert.ok(lum(warn) > lum(important), page.name + ': warning dot lighter than Important');
   for (const sels of panelLabels) {
     const fg = hex(colorOf(page, sels, 'color'));
     const bg = hex(colorOf(page, sels, 'background'));
@@ -139,6 +148,6 @@ for (const page of pages) {
     decl(page.rules, lift, 'filter', page.dark) === 'none', 'Jev markers sit above the focus veil');
 }
 assert.deepEqual(failures, [], 'Jev text below 4.5:1');
-assert.doesNotMatch(runtime, /\[data-hx-jev-type=cosmetic\]\{[^}]*opacity/, 'cosmetic dimming never fades markers');
+assert.doesNotMatch(runtime, /\[data-hx-jev-type=no-behavior-change\]\{[^}]*opacity/, 'No behavior change dimming never fades markers');
 
 console.log('runtime Jev contrast tests passed');

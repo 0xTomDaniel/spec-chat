@@ -14,13 +14,13 @@ const { coverageGapFlags, coverageFlags } = Function(
 
 const flags = coverageGapFlags([
   { kind: 'coverage', id: 'story-gap::criterion-verified', state: 'label', label: 'unrelated' },
-  { kind: 'coverage', id: 'story-gap::criterion-unsure', state: 'unsure', label: null },
+  { kind: 'coverage', id: 'story-gap::criterion-down', state: 'unavailable', label: null },
   { kind: 'coverage', id: 'story-covered::criterion-verified', state: 'label', label: 'verifies' },
   { kind: 'coverage', id: 'story-covered::criterion-gap', state: 'label', label: 'unrelated' },
 ]);
 assert.deepEqual(flags, [
-  { anchor: 'story-gap', side: 'story', state: 'unsure', label: 'unsure' },
-  { anchor: 'criterion-unsure', side: 'criterion', state: 'unsure', label: 'unsure' },
+  { anchor: 'story-gap', side: 'story', state: 'unavailable', label: 'Jev unavailable' },
+  { anchor: 'criterion-down', side: 'criterion', state: 'unavailable', label: 'Jev unavailable' },
   { anchor: 'criterion-gap', side: 'criterion', state: 'gap', label: 'No story backs this' },
 ]);
 assert.deepEqual(coverageFlags([
