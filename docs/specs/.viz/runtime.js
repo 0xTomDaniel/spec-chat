@@ -57,7 +57,7 @@ const state = {
   handoffPosting: false,
   lastTbd: null,         // open TBD marker focused by the last TBD open activation
   range: { baseline: null, loaded: null, loading: false, pickerOpen: false }, // loaded: anchor signatures of the page as served
-  jev: { status: 'idle', items: [], levels: {}, base: null, request: 0 }, // levels: the server's mark kind -> level table
+  jev: { status: 'idle', items: [], levels: {}, offer: null, base: null, request: 0, poll: 0 }, // levels: the server's mark kind -> level table
   evidence: { criteria: null, levels: {}, hostOrigin: null }, // criteria: anchor -> entry once /api/evidence answers, null shows nothing;
   // hostOrigin: the BB plugin frame that announced itself
   readingView: false,
@@ -174,8 +174,11 @@ async function fetchJev(base, signal) {
       level: item.level == null ? null : String(item.level),
       side: item.side == null ? null : String(item.side),
       other: item.other == null ? null : String(item.other), // lane items name the other slug (#acceptance-cross-lane)
+      word: item.word == null ? null : String(item.word),
+      escalated: item.escalated === true,
     })) : [],
     levels: result ? result.levels : null, // the server's levels table (#markers-levels-source); markLevel reads it
+    offer: result && result.offer && typeof result.offer === 'object' && Number(result.offer.count) > 0 ? result.offer : null,
   };
 }
 
@@ -195,37 +198,54 @@ function findAnchor(anchorId) {
 
 function clearJev() {
   state.jev.request += 1;
+  clearTimeout(state.jev.poll);
   state.jev.status = 'idle';
   state.jev.items = [];
   state.jev.levels = {};
+  state.jev.offer = null;
   state.jev.base = null;
   renderJev();
   renderPanel();
   renderPins();
 }
 
-async function requestJev(base) {
+// While any item is pending the page asks again and swaps answers in place (project-rules #pending-poll).
+const JEV_POLL_MS = 2000;
+
+async function requestJev(base, poll = false) {
   if (!['http:', 'https:'].includes(location.protocol) || !base) return;
+  clearTimeout(state.jev.poll);
   const request = ++state.jev.request;
-  state.jev.status = 'loading';
-  state.jev.base = String(base);
-  renderJev();
+  if (!poll) {
+    state.jev.status = 'loading';
+    state.jev.base = String(base);
+    renderJev();
+  }
+  const again = () => { state.jev.poll = setTimeout(() => { if (request === state.jev.request) requestJev(base, true); }, JEV_POLL_MS); };
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120000);
   try {
     const result = await fetchJev(base, controller.signal);
     if (request !== state.jev.request) return;
-    state.jev.status = result.jev === 'off' ? 'off' : 'on';
+    const status = result.jev === 'off' ? 'off' : 'on';
+    const same = poll && status === state.jev.status &&
+      JSON.stringify([result.items, result.offer]) === JSON.stringify([state.jev.items, state.jev.offer]);
+    state.jev.status = status;
     state.jev.items = result.items;
     state.jev.levels = result.levels;
+    state.jev.offer = result.offer;
+    if (result.items.some(item => item.state === 'pending')) again();
+    if (same) return; // an unchanged poll leaves the page, and any open popover, as it is
     renderJev();
     renderPanel();
     renderPins();
   } catch (_) {
     if (request !== state.jev.request) return;
+    if (poll) { again(); return; } // a failed poll keeps the last answer and asks again
     state.jev.status = 'unavailable';
     state.jev.items = [];
     state.jev.levels = {};
+    state.jev.offer = null;
     renderJev();
     renderPanel();
     renderPins();
@@ -1169,7 +1189,7 @@ function goToJevTarget(target) {
  * { anchor, group, state, text, href, level, actions }; criterion evidence
  * adds a source and note buttons add actions, without touching placement.
  */
-const JEV_NOTE_GROUPS = ['evidence', 'conflict', 'coverage', 'type', 'neutral'];
+const JEV_NOTE_GROUPS = ['evidence', 'conflict', 'coverage', 'rule', 'type', 'neutral'];
 const JEV_RECONCILE_LABELS = new Set(['Contradicts', 'Oversteps', 'Overstepped by']);
 // Cross-lane labels (#cross-lane-finding); a pending lane item is an unanswered question and never a note.
 const JEV_LANE_LABELS = { contradicts: 'Contradicts', oversteps: 'Oversteps', 'overstepped by': 'Overstepped by' };
@@ -1223,9 +1243,35 @@ function jevNeutralNote(anchor, stateName, question) {
     level: unsure ? markLevel(state.jev, 'unsure') : null };
 }
 
+// project-rules #marks: a missed rule is its fixed word linking the rule, not muted, with Ask to cover; a check
+// escalated to the LLM and still unanswered is a wheel in the marker's place; a failed LLM fallback is the neutral
+// Jev unavailable note naming the rule (#q-fallback); anything else shows nothing.
+function jevRuleNote(item) {
+  if (!item.id || !item.word) return null;
+  if (item.state === 'pending') {
+    return item.escalated ? { anchor: item.id, group: 'rule', state: 'pending', text: 'checking ' + item.word + '\u2026' } : null;
+  }
+  if (item.state !== 'unavailable' && (item.state !== 'label' || item.label !== 'missed')) return null;
+  const link = corpusTargetLink(item.target);
+  if (!link) return null;
+  const hash = link.text.indexOf('#');
+  const rule = link.text.slice(hash) + ' from ' + (link.text.slice(0, Math.max(hash, 0)).split('/').pop() || item.word + '.spec.html');
+  if (item.state === 'unavailable') {
+    return { anchor: item.id, group: 'neutral', state: 'unavailable', text: 'Jev unavailable', level: null,
+      sentence: 'Jev could not check whether this spec needs ' + rule };
+  }
+  return { anchor: item.id, group: 'rule', state: 'label', text: item.word + '?', href: link.href, level: item.level || null,
+    sentence: 'This spec may need ' + rule,
+    actions: [jevDraftAction('Ask to cover', 'Cover ' + link.text + ' with a criterion, or add one line saying why it does not apply.')] };
+}
+
 function jevSuggestionNotes() {
   if (state.jev.status !== 'on') return [];
   const notes = [];
+  for (const item of state.jev.items) {
+    const note = item.kind === 'rule' ? jevRuleNote(item) : null;
+    if (note) notes.push(note);
+  }
   for (const flag of coverageGapFlags(state.jev.items)) {
     notes.push(flag.state !== 'gap' ? jevNeutralNote(flag.anchor, flag.state, flag.side) : { anchor: flag.anchor, group: 'coverage', state: 'label', text: flag.label,
       level: markLevel(state.jev, flag.side === 'story' ? 'no-criterion' : 'no-story'),
@@ -1423,7 +1469,10 @@ function mountJevMarker(holder, notes) {
   const attention = notes.some(note => note.level === 'important');
   marker.dataset.attention = String(attention);
   marker.dataset.passed = String(!attention && notes.some(note => note.group === 'evidence' && note.passed));
-  marker.setAttribute('aria-label', 'Jev notes: ' + notes.map(note => note.sentence || note.text).join('; '));
+  // Only escalated checks here: the marker is the pending wheel, its hover sentence its name (project-rules #pending).
+  const pending = notes.every(note => note.state === 'pending');
+  marker.dataset.pending = String(pending);
+  marker.setAttribute('aria-label', (pending ? '' : 'Jev notes: ') + notes.map(note => note.sentence || note.text).join('; '));
   marker.setAttribute('aria-haspopup', 'dialog');
   marker.setAttribute('aria-expanded', 'false');
   marker.jevNotes = notes;
@@ -1509,8 +1558,10 @@ function renderJevNote(note) {
   row.appendChild(text);
   // A neutral note's sentence is its accessible name and shows in the popover on hover or focus.
   if (note.sentence) {
-    text.setAttribute('role', 'note');
-    text.setAttribute('tabindex', '0');
+    if (!note.href) {
+      text.setAttribute('role', 'note');
+      text.setAttribute('tabindex', '0');
+    }
     text.setAttribute('aria-label', note.sentence);
     const sentence = row.appendChild(document.createElement('span'));
     sentence.className = 'hx-jev-pop-sentence';
@@ -1659,6 +1710,41 @@ function wireJevPopover() {
   window.addEventListener('resize', placeJevPopover);
 }
 
+// project-rules #bootstrap-offer: one page note after warm-up. Reconcile drafts one comment; sending it or
+// dismissing the note records the offer, after which the server never returns it again for this project.
+function jevOfferNote(offer) {
+  const note = document.createElement('p');
+  note.className = 'hx-jev-note hx-jev-offer';
+  const count = Number(offer.count);
+  note.appendChild(document.createElement('span')).textContent =
+    count + (count === 1 ? ' existing spec misses' : ' existing specs miss') + ' project rules: reconcile?';
+  const record = action => {
+    state.jev.offer = null;
+    renderJev();
+    fetch('/api/jev/offer?' + new URLSearchParams({ path: location.pathname.replace(/^\//, '') }),
+      { method: 'POST', body: JSON.stringify({ offer: action }) }).catch(() => {});
+  };
+  const lines = (Array.isArray(offer.specs) ? offer.specs : []).map(entry => [String(entry.spec || ''),
+    ...(Array.isArray(entry.rules) ? entry.rules : []).map(rule => String(rule.word || '') + '? ' + String(rule.target || ''))].join(' '));
+  const reconcile = note.appendChild(document.createElement('button'));
+  reconcile.type = 'button';
+  reconcile.className = 'hx-btn';
+  reconcile.textContent = 'Reconcile';
+  reconcile.addEventListener('click', event => {
+    event.stopPropagation();
+    const anchor = document.querySelector('[data-anchor]');
+    openComposer(anchor ? anchor.dataset.anchor : '', null, null,
+      ['Reconcile each spec with its missed rules:', ...lines].join('\n'), () => record('sent'));
+  });
+  const dismiss = note.appendChild(document.createElement('button'));
+  dismiss.type = 'button';
+  dismiss.className = 'hx-jev-offer-dismiss';
+  dismiss.textContent = '\u00d7';
+  dismiss.setAttribute('aria-label', 'Dismiss');
+  dismiss.addEventListener('click', event => { event.stopPropagation(); record('dismissed'); });
+  return note;
+}
+
 function renderJev() {
   closeJevPopover();
   document.querySelectorAll('.hx-jev-marker,.hx-jev-note').forEach(el => el.remove());
@@ -1666,14 +1752,19 @@ function renderJev() {
   document.querySelectorAll('[data-hx-jev-type]').forEach(el => delete el.dataset.hxJevType);
   if (EMBED_REVIEW_DIR) return;
 
+  const pageNote = note => {
+    const article = document.querySelector('article.spec');
+    if (article) article.parentNode.insertBefore(note, article);
+    else document.body.insertBefore(note, document.body.firstChild);
+    return note;
+  };
   if (state.jev.status === 'off' || state.jev.status === 'unavailable') {
     const note = document.createElement('p');
     note.className = 'hx-jev-note';
     note.textContent = state.jev.status === 'off' ? 'Jev off' : 'Jev unavailable';
-    const article = document.querySelector('article.spec');
-    if (article) article.parentNode.insertBefore(note, article);
-    else document.body.insertBefore(note, document.body.firstChild);
+    pageNote(note);
   }
+  if (state.jev.status === 'on' && state.jev.offer) pageNote(jevOfferNote(state.jev.offer));
 
   // Dims are the only in-text Jev display: reading view internals and Git focus cosmetic changes.
   const gitFocus = jevGitFocus();
@@ -1883,6 +1974,12 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-jev-marker[data-inset=true]{left:auto;right:0}
 .hx-jev-marker:hover,.hx-jev-marker[aria-expanded=true]{box-shadow:0 0 0 3px rgba(41,71,199,.22)}
 .hx-jev-marker:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}
+.hx-jev-marker[data-pending=true]{background:transparent;border:2px solid #767b85;border-right-color:transparent;animation:hx-jev-spin 1s linear infinite}
+@keyframes hx-jev-spin{to{transform:rotate(360deg)}}
+.hx-jev-offer{display:flex;align-items:center;gap:8px}
+.hx-jev-offer span{flex:1 1 auto}
+.hx-jev-offer .hx-btn{margin:0;font-size:11.5px;padding:3px 8px}
+.hx-jev-offer-dismiss{margin:0;padding:0 4px;border:0;background:none;color:inherit;font:700 14px/1 system-ui,sans-serif;cursor:pointer}
 .hx-jev-pop{position:fixed;z-index:880;box-sizing:border-box;width:max-content;min-width:180px;max-width:min(340px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;padding:8px 10px;border:1px solid #303036;border-radius:8px;background:#ffffff;color:#303036;box-shadow:0 8px 28px rgba(30,30,40,.18);font:13px/1.4 system-ui,sans-serif}
 .hx-jev-pop[hidden]{display:none}
 .hx-jev-pop-notes{margin:0;padding:0;list-style:none;display:grid;gap:6px}
@@ -1961,6 +2058,7 @@ tr[data-anchor]:has(> .hx-pin[data-column]) > :has(> .hx-jev-marker){padding-rig
 }
 @media(prefers-reduced-motion:reduce){
 .hx-thread-dock,.hx-thread-ring,.hx-toast{transition:none}
+.hx-jev-marker[data-pending=true]{animation:none}
 }
 @media(prefers-color-scheme:dark){
 .hx-toolbar,.hx-thread{background:#24272c;border-color:#3a3d42;color:#e8e7e2}
@@ -2157,8 +2255,8 @@ function openPanel(open) {
 }
 function status(msg) { document.getElementById('hx-status').textContent = msg; }
 
-function openComposer(anchorId, target, quote, text = '') {
-  state.composer = { kind: 'comment', anchorId, target, quote, text };
+function openComposer(anchorId, target, quote, text = '', onSent = null) {
+  state.composer = { kind: 'comment', anchorId, target, quote, text, onSent };
   setCommentMode(false);
   openPanel(true);
   renderPanel();
@@ -2190,6 +2288,7 @@ function addComposer(parent, c) {
     else body = Object.assign(common, { id: humanId('u'), event: 'comment' });
     await state.transport.postEvent(body);
     state.composer = null;
+    if (c.onSent) c.onSent();
     toast((c.kind === 'edit' ? 'Edit' : c.kind === 'reply' ? 'Reply' : 'Comment') + ' saved as draft — hand off when ready');
     refresh();
   });

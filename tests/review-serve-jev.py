@@ -145,7 +145,7 @@ class JevSeamTest(unittest.TestCase):
     def test_levels_table_is_one_server_source_on_every_response(self):
         # jev-suggestions#markers-levels: Important and Warning mark kinds, fixed by kind.
         # #markers-levels-audience: a human and an agent column per kind; the agent level is never quieter.
-        important = {"contradicts", "no-criterion", "no-story", "qa-failed", "qa-stale"}
+        important = {"contradicts", "missed", "no-criterion", "no-story", "qa-failed", "qa-stale"}
         self.assertEqual({kind for kind, level in jev.MARK_LEVELS.items() if level["human"] == "important"}, important)
         self.assertEqual({kind for kind, level in jev.MARK_LEVELS.items() if level["agent"] == "important"}, important | {"oversteps"})
         for kind, level in jev.MARK_LEVELS.items():

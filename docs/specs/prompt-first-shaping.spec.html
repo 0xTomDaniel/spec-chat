@@ -14,7 +14,6 @@
 <header data-anchor="header">
 <h1>Prompt-first shaping and portable handoffs</h1>
 <nav data-anchor="breadcrumbs">docs / specs / prompt-first-shaping.spec.html</nav>
-<p data-anchor="status">Status: shaping contract under direct Spec Chat review.</p>
 </header>
 
 <section data-spec-section="user-stories" data-anchor="user-stories" id="user-stories">
@@ -32,7 +31,7 @@
 <section data-spec-section="acceptance" data-acceptance-scope="traceability" data-anchor="acceptance" id="acceptance">
 <h2>Acceptance criteria</h2>
 <p data-acceptance-criterion data-anchor="acceptance-tbd-later" data-story="story-tbd-later"><span data-acceptance-scenario>When every thread is resolved and every <code>data-spec-tbd</code> marker is <code>data-spec-tbd="later"</code>,</span> <span data-acceptance-observable>the action shows the spec acceptance label and writes the empty hand-off.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-vocabulary" data-story="story-vocabulary"><span data-acceptance-scenario>When current guidance, skills, adapters, specs, and the page in spec-chat, octo-lite, and annotateanything are read after the wording pass,</span> <span data-acceptance-observable>they say human spec review for sent hand-offs and spec acceptance for the delivery approval, the page shows Accept spec, and Finish review survives only in historical receipts and the formerly-called note.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-vocabulary" data-story="story-vocabulary"><span data-acceptance-scenario>When current guidance, skills, adapters, specs, and the page in Spec Chat are read after the wording pass,</span> <span data-acceptance-observable>they say human spec review for sent hand-offs and spec acceptance for the delivery approval, the page shows Accept spec, and Finish review survives only in historical receipts and the formerly-called note.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-tbd-open-highlight" data-story="story-tbd-later"><span data-acceptance-scenario>When every thread is resolved and at least one open TBD remains,</span> <span data-acceptance-observable>the action reads TBD open, and every block holding an open TBD is visibly highlighted while later TBDs are not.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-tbd-open-jump" data-story="story-tbd-later"><span data-acceptance-scenario>When the human activates TBD open repeatedly with several open TBDs,</span> <span data-acceptance-observable>each activation scrolls to and focuses the next open TBD in document order, wrapping after the last, and no hand-off is written.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-seed-durable" data-story="story-operator"><span data-acceptance-scenario>When a feature prompt starts shaping,</span> <span data-acceptance-observable>the first spec seed is committed locally, validated, hosted, and its review link sent before code, tests, or configuration are inspected; the caller files the issue, pushes, and opens the draft change request in parallel, never before the link.</span></p>
@@ -40,7 +39,7 @@
 <p data-acceptance-criterion data-anchor="acceptance-focus-fail" data-story="story-reviewer"><span data-acceptance-scenario>When Git comparison cannot be calculated,</span> <span data-acceptance-observable>focus mode fails visibly and renders the complete current spec without stale highlighting.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-mobile-link" data-story="story-mobile"><span data-acceptance-scenario>When the reviewer opens the review link in an ordinary mobile browser,</span> <span data-acceptance-observable>the spec loads with no SSH, VPN, or account login, and the server exposes only the declared review collection and its event routes.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-mobile-review" data-story="story-mobile"><span data-acceptance-scenario>On a narrow screen,</span> <span data-acceptance-observable>comment mode is target-first with a full-viewport composer, review controls keep 44 pixel touch targets, and the toolbar offers Hand off and Accept spec.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-agent-wake" data-story="story-agent"><span data-acceptance-scenario>When the human hands off a batch and Herdr resolves the registered owner pane,</span> <span data-acceptance-observable>the host prompts that pane once per unchanged batch and never launches a second processor.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-agent-wake" data-story="story-agent"><span data-acceptance-scenario>When the human hands off a batch and the wake provider resolves the registered owner pane,</span> <span data-acceptance-observable>the host prompts that pane once per unchanged batch and never launches a second processor.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-agent-cold" data-story="story-agent"><span data-acceptance-scenario>When no agent ran at hand-off and a compatible agent later enters the repository,</span> <span data-acceptance-observable>its first action drains every completed unprocessed hand-off before new work, and a failed batch leaves the cursor unchanged.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-preflight" data-story="story-compatible-review"><span data-acceptance-scenario>When a target runtime or server lacks a capability the bundled runtime requires,</span> <span data-acceptance-observable>preflight replaces that asset from the bundle before the server starts, leaves an asset declaring every required capability untouched, and shows a failed preflight as a review blocker.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-guided-declared" data-story="story-guided-impact"><span data-acceptance-scenario>When a changed spec has a user-facing story without data-guided-journey, or a yes declaration without exactly one step link and a passive or required mode,</span> <span data-acceptance-observable>the structural validator fails and names that story.</span></p>
@@ -384,7 +383,7 @@
 <p data-anchor="focus-commit-discipline">The shaping skill commits and pushes every accepted spec change before presenting the refreshed focus view, so the Git-derived review state remains durable and reproducible.</p>
 <p data-anchor="focus-http">Prompt-first shaping uses the existing HTTP review transport on desktop and mobile because a browser file page cannot inspect Git.</p>
 <p data-anchor="focus-local-git">The review server reads only the current local repository and never fetches, checks out, stages, commits, or writes Git state.</p>
-<p data-anchor="focus-no-octo">No focus behavior imports, invokes, expects, or mentions octo-lite or another orchestrator.</p>
+<p data-anchor="focus-no-octo">No focus behavior imports, invokes, expects, or mentions an orchestrator.</p>
 <p data-anchor="focus-base-override">An explicit review base resolves to the exact selected local commit, including a previously reviewed sibling branch, while automatic discovery alone uses a merge base.</p>
 <p data-anchor="focus-baseline-provenance">The baseline response retains the selected commit in <code>base</code>; a file absent from the selected base is entirely new and returns null for both <code>htmlBase</code> and <code>html</code>.</p>
 <p data-anchor="focus-failure">If Git comparison cannot be calculated, focus mode fails visibly and renders the complete current spec without stale highlighting.</p>
@@ -472,11 +471,11 @@
 <p data-anchor="wake-raw-watcher">A raw shell watcher is detection-only and never establishes turn-yielded or host-wake state.</p>
 <p data-anchor="wake-monitor">The review host observes complete handoffs per registered resource without advancing the processing cursor and wakes that row's owner pane once per unchanged batch, as defined by <a href="./host-wake.spec.html#wake-rule">Review host wakes the owner pane</a>.</p>
 <p data-anchor="wake-exclusive-owner">A local kernel-held lock permits one turn-yielded control owner for each canonical collection root and cursor name, and a second owner fails visibly into manual resume.</p>
-<p data-anchor="wake-lock-namespace">The lock uses one user-owned absolute runtime namespace independent of shell environment variables so Herdr panes and ordinary shells contend on the same identity.</p>
+<p data-anchor="wake-lock-namespace">The lock uses one user-owned absolute runtime namespace independent of shell environment variables so multiplexer panes and ordinary shells contend on the same identity.</p>
 <p data-anchor="wake-no-lease">The ownership lock is released automatically with its foreground process and introduces no lease, heartbeat, fencing protocol, or persistent coordinator.</p>
 <p data-anchor="wake-adapter">Host wake owns only reactivation and never reads comments, edits the spec, emits replies, advances cursors, or invokes detached agent processing.</p>
-<p data-anchor="wake-herdr">Host wake uses Herdr; <code>review-host register</code> reports <code>wake=verified</code> only when Herdr resolves the owner pane.</p>
-<p data-anchor="wake-portable">Without Herdr, registration reports <code>wake=unavailable</code> and the owner selects manual-resume rather than false active status.</p>
+<p data-anchor="wake-provider">Host wake uses only the registered <code>wake</code> provider (<a href="./review-service.spec.html#providers">Providers</a>); <code>review-host register</code> reports <code>wake=verified</code> only when its <code>check</code> resolves the owner pane.</p>
+<p data-anchor="wake-portable">Without a wake provider, registration reports <code>wake=unavailable</code> and the owner selects manual-resume rather than false active status.</p>
 </section>
 
 <section data-anchor="batch-transaction" id="batch-transaction">
@@ -600,7 +599,7 @@
 <p data-anchor="vocab-review">Human spec review: the human reviews changes and sends them from the page. Every sent hand-off, a comment batch or spec acceptance, is a human spec review and sets the last reviewed version.</p>
 <p data-anchor="vocab-acceptance">Spec acceptance: the human approval that permits delivery under the reviewed canonical spec. It is the no-draft action, formerly called Finish review.</p>
 <p data-anchor="vocab-label">The spec acceptance action is labelled Accept spec.</p>
-<p data-anchor="vocab-wording-only">The split is wording only across spec-chat, octo-lite, and annotateanything, one PR per repository: events, fields, anchors, and gates are unchanged, and historical receipts keep their recorded text.</p>
+<p data-anchor="vocab-wording-only">The split is wording only in Spec Chat: events, fields, anchors, and gates are unchanged, and historical receipts keep their recorded text.</p>
 <p data-anchor="finish-ready">When no draft, pending, acknowledged, or unresolved work remains, the hand-off action becomes spec acceptance. If only open TBD work remains, it reads TBD open, every block holding an open TBD is visibly highlighted, and each activation scrolls to and focuses the next open TBD in document order.</p>
 <p data-anchor="finish-tbd-later">A <code>data-spec-tbd</code> marker is open unless its value is <code>later</code>. <code>data-spec-tbd="later"</code> marks a TBD deliberately left for a later slice: it stays visible text but neither blocks spec acceptance nor is highlighted.</p>
 <p data-anchor="finish-event">Spec acceptance writes the existing hand-off event with an empty batch.</p>
@@ -749,7 +748,7 @@
 <p data-anchor="skill-invariants">Skill instructions preserve contract invariants while leaving room for context-sensitive tactics and visual variation.</p>
 <p data-anchor="skill-progressive-detail">Conditional authoring detail lives in the single reference so the entry skill remains concise.</p>
 <p data-anchor="skill-evals-location">Evaluation fixtures live with repository tests and are not installed as agent instructions.</p>
-<p data-anchor="skill-no-octo">No Spec Chat skill depends on octo-lite, another workflow package, or an external orchestrator.</p>
+<p data-anchor="skill-no-octo">No Spec Chat skill depends on an orchestrator or another workflow package.</p>
 <p data-anchor="skill-consumer">Other workflows may consume Spec Chat skills as downstream callers without becoming required by Spec Chat.</p>
 </section>
 

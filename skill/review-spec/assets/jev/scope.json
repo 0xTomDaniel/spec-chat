@@ -1,0 +1,29 @@
+{
+  "id": "scope",
+  "version": 3,
+  "instructions": "Read one acceptance criterion from a product spec. Choose every feature only when the criterion is a standing rule that any other feature or change of some kind must also meet, whatever is being built, such as every change to what a user sees, every new endpoint, any installer, or every page a change adds. Choose this feature when the criterion describes how one feature, page, command, tool, step, workflow, validator, or component behaves, even when that one thing handles every spec, criterion, lane, or call, and even when it says every, all, any, never, no, or for the whole change. A criterion that checks what one document or one change says or leaves untouched is this feature.",
+  "threshold": 0.4,
+  "fallback": true,
+  "labels": [
+    {
+      "name": "every feature",
+      "description": "A standing rule that other features or changes of a kind must also meet, across the whole project.",
+      "examples": [
+        {"input": {"criterion": "When any change adds a screen or alters what a user can do, the change ships with its help center article."}, "label": "every feature"},
+        {"input": {"criterion": "When an installer installs an owned skill or role into the shared profile, the target is a symlink resolving to the owning repository source."}, "label": "every feature"},
+        {"input": {"criterion": "When a peer is absent, every page that depends on it shows a plain not set up page linking that peer, with no error."}, "label": "every feature"},
+        {"input": {"criterion": "When a lane finishes, nothing it started keeps running except live hosts it declared."}, "label": "every feature"}
+      ]
+    },
+    {
+      "name": "this feature",
+      "description": "How one feature, page, command, tool, step, workflow, or component behaves, including its own every, all, never, and no rules.",
+      "examples": [
+        {"input": {"criterion": "Every row of the billing table shows its due date and amount."}, "label": "this feature"},
+        {"input": {"criterion": "When a criterion does not pass, the review records requirement and evidence states and routes a requirement failure to implementation or a proof gap to capture."}, "label": "this feature"},
+        {"input": {"criterion": "When the installed operating model is read, one line points to ADR-004 and a second line states the one-mechanism rule."}, "label": "this feature"},
+        {"input": {"criterion": "Given a developer's own instruction files, settings, and remotes, no step and no undo changes, replaces, or deletes any of them."}, "label": "this feature"}
+      ]
+    }
+  ]
+}

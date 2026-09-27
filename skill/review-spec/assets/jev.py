@@ -9,9 +9,13 @@ import os
 import re
 import subprocess
 import threading
+import time
+import tomllib
 import uuid
-from concurrent.futures import Future, ThreadPoolExecutor, wait
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -21,14 +25,28 @@ from urllib.request import Request, urlopen
 
 MODEL = "typesafe/jev-1.13"
 OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
+OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
+# The box's one general LLM name when the Jev provider file has no llm_model (project-rules #q-fallback).
+DEFAULT_LLM_MODEL = "anthropic/claude-sonnet-5"
+# Its own budget: the general LLM reasons before its label (up to ~40 s live), past Jev's 15 s decisions.
+GENERAL_LLM_TIMEOUT = 90.0
 DEFAULT_THRESHOLD = 0.4
 DEFAULT_MAX_INPUT_TOKENS = 32000
+# OpenRouter 429: wait per Retry-After, each wait capped, a few times, so a first-registration warm-up
+# finishes in one start (project-rules #bootstrap-table); past the bound the ask is unavailable as before.
+RATE_LIMIT_RETRIES = 5
+RATE_LIMIT_MAX_WAIT = 30.0
+RATE_LIMIT_DEFAULT_WAIT = 2.0
 RETRYABLE_OUTCOMES = frozenset({"off", "unavailable"})
+# Jev was below threshold on a set with a general LLM fallback (project-rules #q-fallback): the LLM decides next.
+ESCALATED = "escalated"
+REPLACEABLE_OUTCOMES = RETRYABLE_OUTCOMES | {ESCALATED}
 # Mark levels (jev-suggestions#markers-levels): the single source, mark kind to a human and an agent level, fixed by kind and never
 # by confidence; the agent level is never quieter (#markers-levels-audience). Item labels key it directly; the browser keys derived
 # marks (coverage gaps, QA evidence, unsure words) by the other names and reads only the human column.
 MARK_LEVELS = {
     "contradicts": {"human": "important", "agent": "important"},
+    "missed": {"human": "important", "agent": "important"},  # a project-rule miss (project-rules #mark-order)
     "no-criterion": {"human": "important", "agent": "important"},
     "no-story": {"human": "important", "agent": "important"},
     "qa-failed": {"human": "important", "agent": "important"},
@@ -102,8 +120,9 @@ def _now() -> str:
 
 class QuestionSet:
     def __init__(self, identifier: str, version: Any, instructions: str = "", labels: Any = None,
-                 threshold: float = DEFAULT_THRESHOLD):
+                 threshold: float = DEFAULT_THRESHOLD, fallback: bool = False):
         self.id = identifier
+        self.fallback = fallback
         self.version = version
         self.instructions = instructions
         self.labels = [] if labels is None else labels
@@ -119,7 +138,10 @@ class QuestionSet:
             raise ValueError("invalid question set")
         if not isinstance(labels, (list, dict)):
             raise ValueError("question set labels must be an array or object")
-        return cls(identifier, version, str(raw.get("instructions", "")), labels, threshold)
+        fallback = raw.get("fallback", False)
+        if not isinstance(fallback, bool):
+            raise ValueError("question set fallback is true or false; sets name no model")
+        return cls(identifier, version, str(raw.get("instructions", "")), labels, threshold, fallback)
 
     def criteria(self) -> dict[str, str]:
         if isinstance(self.labels, Mapping):
@@ -177,8 +199,11 @@ class QuestionSet:
         return result
 
     def to_dict(self) -> dict[str, Any]:
-        return {"id": self.id, "version": self.version, "instructions": self.instructions,
-                "labels": _jsonable(self.labels), "threshold": self.threshold}
+        result = {"id": self.id, "version": self.version, "instructions": self.instructions,
+                  "labels": _jsonable(self.labels), "threshold": self.threshold}
+        if self.fallback:
+            result["fallback"] = True
+        return result
 
 
 def load_question_sets(*directories: str | Path | None) -> dict[str, QuestionSet]:
@@ -224,7 +249,7 @@ class JudgmentStore:
                 if isinstance(record, Mapping) and record.get("cache_key"):
                     record = dict(record)
                     current = self.by_key.get(record["cache_key"])
-                    if current is None or current.get("outcome") in RETRYABLE_OUTCOMES:
+                    if current is None or current.get("outcome") in REPLACEABLE_OUTCOMES:
                         self.by_key[record["cache_key"]] = record
 
     def get(self, key: str) -> dict[str, Any] | None:
@@ -235,7 +260,7 @@ class JudgmentStore:
         record = dict(record)
         with self.lock:
             current = self.by_key.get(record["cache_key"])
-            if current is not None and current.get("outcome") not in RETRYABLE_OUTCOMES:
+            if current is not None and current.get("outcome") not in REPLACEABLE_OUTCOMES:
                 return current
             self.by_key[record["cache_key"]] = record
             if self.path:
@@ -245,22 +270,54 @@ class JudgmentStore:
             return record
 
 
+def retry_after_seconds(value: str | None, now: Callable[[], float] = time.time) -> float:
+    """Retry-After as seconds or an HTTP date, capped at RATE_LIMIT_MAX_WAIT; missing or unreadable waits the default."""
+    try:
+        wait = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        try:
+            wait = parsedate_to_datetime(str(value)).timestamp() - now()
+        except (TypeError, ValueError, IndexError, OverflowError):
+            wait = RATE_LIMIT_DEFAULT_WAIT
+    if not math.isfinite(wait):
+        wait = RATE_LIMIT_DEFAULT_WAIT
+    return min(max(wait, 0.0), RATE_LIMIT_MAX_WAIT)
+
+
 class OpenRouterProvider:
-    def __init__(self, api_key: str, *, endpoint: str = OPENROUTER_DECISIONS_URL, timeout: float = 15.0):
+    def __init__(self, api_key: str, *, endpoint: str = OPENROUTER_DECISIONS_URL, chat_endpoint: str = OPENROUTER_CHAT_URL,
+                 timeout: float = 15.0, sleep: Callable[[float], None] = time.sleep):
         self._api_key = api_key.strip()
         self.endpoint = endpoint
+        self.chat_endpoint = chat_endpoint
         self.timeout = timeout
+        self._sleep = sleep
 
     def decide(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
-        request = Request(self.endpoint,
-                          data=json.dumps(_jsonable(payload), ensure_ascii=False).encode("utf-8"),
-                          headers={"Authorization": "Bearer " + self._api_key, "Content-Type": "application/json"},
-                          method="POST")
-        try:
-            with urlopen(request, timeout=self.timeout) as response:
-                value = json.loads(response.read().decode("utf-8"))
-        except (HTTPError, URLError, TimeoutError, OSError, UnicodeError, ValueError) as exc:
-            raise RuntimeError("OpenRouter decision request failed") from exc
+        return self._post(self.endpoint, payload)
+
+    def complete(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """General LLM chat completion through OpenRouter (project-rules #q-fallback)."""
+        return self._post(self.chat_endpoint, payload, GENERAL_LLM_TIMEOUT)
+
+    def _post(self, endpoint: str, payload: Mapping[str, Any], timeout: float | None = None) -> Mapping[str, Any]:
+        data = json.dumps(_jsonable(payload), ensure_ascii=False).encode("utf-8")
+        for attempt in range(RATE_LIMIT_RETRIES + 1):
+            request = Request(endpoint, data=data,
+                              headers={"Authorization": "Bearer " + self._api_key, "Content-Type": "application/json"},
+                              method="POST")
+            try:
+                with urlopen(request, timeout=timeout or self.timeout) as response:
+                    value = json.loads(response.read().decode("utf-8"))
+                break
+            except HTTPError as exc:
+                if exc.code != 429 or attempt == RATE_LIMIT_RETRIES:
+                    raise RuntimeError("OpenRouter decision request failed") from exc
+                wait = retry_after_seconds(exc.headers.get("Retry-After") if exc.headers else None)
+                exc.close()
+                self._sleep(wait)
+            except (URLError, TimeoutError, OSError, UnicodeError, ValueError) as exc:
+                raise RuntimeError("OpenRouter decision request failed") from exc
         if not isinstance(value, Mapping):
             raise RuntimeError("OpenRouter decision was not an object")
         return value
@@ -290,23 +347,50 @@ def _anchor_answer(answer: Mapping[str, Any], candidate_anchors: Mapping[str, An
     return {"label": ids.get(answer.get("label")), "probabilities": probabilities, "confidence": answer.get("confidence")}
 
 
+def _key_reader(api_key: str | Callable[[], str] | None) -> Callable[[], str]:
+    """The model key, read at each use: a callable (the review server's jev provider) or a fixed string.
+    The environment is never read (review-service #providers-no-env)."""
+    if callable(api_key):
+        return lambda: (api_key() or "").strip()
+    fixed = (api_key or "").strip()
+    return lambda: fixed
+
+
+def _model_reader(llm_model: str | Callable[[], str] | None) -> Callable[[], str]:
+    """The general LLM model id, read at each use like the key: the Jev provider's llm_model, else the default."""
+    read = _key_reader(llm_model)
+    return lambda: read() or DEFAULT_LLM_MODEL
+
+
 class JevSeam:
     def __init__(self, question_sets: Mapping[str, QuestionSet] | None = None, *, provider: Any = None,
-                 api_key: str | None = None, record_store: JudgmentStore | None = None,
+                 api_key: str | Callable[[], str] | None = None, llm_model: str | Callable[[], str] | None = None,
+                 record_store: JudgmentStore | None = None,
                  clock: Callable[[], str] = _now, max_input_tokens: int = DEFAULT_MAX_INPUT_TOKENS):
         self.question_sets = dict(question_sets or load_question_sets())
-        self.api_key = (api_key if api_key is not None else os.environ.get("OPENROUTER_API_KEY", "")).strip()
-        self.provider = provider if provider is not None else (OpenRouterProvider(self.api_key) if self.api_key else None)
+        self.api_key = _key_reader(api_key)
+        self.llm_model = _model_reader(llm_model)
+        self._provider = provider
         self.store = record_store or JudgmentStore()
         self.clock = clock
         self.max_input_tokens = max_input_tokens
+        self._key_locks: dict[str, threading.Lock] = {}
+        self._key_locks_lock = threading.Lock()
 
     def question_set(self, kind: str) -> QuestionSet:
         return self.question_sets[kind]
 
+    def provider(self) -> Any:
+        """The model client for this ask: the injected one, else OpenRouter with the current key; None when off."""
+        api_key = self.api_key()
+        if not api_key:
+            return None
+        return self._provider if self._provider is not None else OpenRouterProvider(api_key)
+
     def _record(self, key: str, kind: str, qset: QuestionSet, sources: Any, revision: Any,
-                answer: Mapping[str, Any], outcome: str, model: str = MODEL) -> dict[str, Any]:
-        return self.store.append({
+                answer: Mapping[str, Any], outcome: str, model: str = MODEL, escalated: bool = False) -> dict[str, Any]:
+        extra = {"escalated": True} if escalated else {}
+        return self.store.append({**extra,
             "record_id": "judgment-" + uuid.uuid4().hex,
             "cache_key": key,
             "model": model,
@@ -330,15 +414,28 @@ class JevSeam:
     def cached(self, question: Mapping[str, Any]) -> dict[str, Any] | None:
         """The record already held for this question, never asking."""
         record = self.store.get(self.key(question))
-        return record if record and record.get("outcome") not in RETRYABLE_OUTCOMES else None
+        return record if record and record.get("outcome") not in REPLACEABLE_OUTCOMES else None
+
+    def _lock(self, key: str) -> threading.Lock:
+        with self._key_locks_lock:
+            return self._key_locks.setdefault(key, threading.Lock())
 
     def ask(self, question: Mapping[str, Any]) -> dict[str, Any]:
+        """One answer per key at a time: a concurrent ask of the same inputs waits and reuses the record."""
+        key = self.key(question)
+        with self._lock(key):
+            return self._ask(question, key)
+
+    def _ask(self, question: Mapping[str, Any], key: str) -> dict[str, Any]:
         kind = str(question.get("kind", "type"))
         qset = self.question_set(kind)
-        key = self.key(question)
-        cached = self.cached(question)
-        if cached:
-            return cached
+        held = self.store.get(key)
+        if held and held.get("outcome") not in REPLACEABLE_OUTCOMES:
+            return held
+        provider = self.provider()
+        if held and qset.fallback and provider is not None and (
+                held.get("outcome") == ESCALATED or held.get("escalated")):
+            return self._general(question, key, qset, provider)
         criteria = qset.criteria_payload()
         dynamic = question.get("criteria")
         if isinstance(dynamic, Mapping):
@@ -351,17 +448,17 @@ class JevSeam:
         if (len(_canonical(payload)) + 3) // 4 > self.max_input_tokens:
             return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
                                 {"label": None, "probabilities": {}, "confidence": None}, "oversize")
-        if not self.api_key or self.provider is None:
+        if provider is None:
             return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
                                 {"label": None, "probabilities": {}, "confidence": None}, "off")
         answer = None
         model = MODEL
         for _ in range(2):
             try:
-                if hasattr(self.provider, "decide"):
-                    response = self.provider.decide(payload)
+                if hasattr(provider, "decide"):
+                    response = provider.decide(payload)
                 else:
-                    response = self.provider(payload)
+                    response = provider(payload)
                 label, confidence, probabilities, model = _parse_provider_answer(response, kind)
                 answer = {"label": label, "probabilities": probabilities, "confidence": confidence}
                 if isinstance(question.get("candidate_anchors"), Mapping):
@@ -373,13 +470,47 @@ class JevSeam:
             return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
                                 {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model)
         outcome = "shown" if answer["confidence"] is not None and answer["confidence"] >= qset.threshold else "unsure"
+        if outcome == "unsure" and qset.fallback:
+            self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, ESCALATED, model)
+            return self._general(question, key, qset, provider)
         return self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, outcome, model)
+
+    def general_payload(self, question: Mapping[str, Any], qset: QuestionSet, model: str) -> dict[str, Any]:
+        """One allowed label by construction: a strict enum schema, served only by providers that enforce it."""
+        labels = qset.criteria()
+        system = {"question": qset.instructions, "labels": labels, "examples": qset.examples()}
+        schema = {"type": "object", "properties": {"choice": {"type": "string", "enum": list(labels)}},
+                  "required": ["choice"], "additionalProperties": False}
+        return {"model": model,
+                "messages": [{"role": "system", "content": _canonical(system)},
+                             {"role": "user", "content": _canonical(question.get("state", {}))}],
+                "response_format": {"type": "json_schema", "json_schema": {"name": "answer", "strict": True, "schema": schema}},
+                "provider": {"require_parameters": True}}
+
+    def _general(self, question: Mapping[str, Any], key: str, qset: QuestionSet, provider: Any) -> dict[str, Any]:
+        """The same question to the box's general LLM, with one retry like Jev; its answer decides (project-rules #q-fallback)."""
+        kind = str(question.get("kind", "type"))
+        sources, revision = question.get("sources", []), question.get("revision")
+        model = self.llm_model()
+        payload = self.general_payload(question, qset, model)
+        label = None
+        for _ in range(2):
+            try:
+                label = json.loads(provider.complete(payload)["choices"][0]["message"]["content"])["choice"]
+                break
+            except Exception:
+                continue
+        if label is None:
+            return self._record(key, kind, qset, sources, revision,
+                                {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model, True)
+        return self._record(key, kind, qset, sources, revision,
+                            {"label": label, "probabilities": {}, "confidence": None}, "shown", model, True)
 
 
 # Shaped sections whose clauses are for you by structure, never asked (spec #reading-structural).
 AUDIENCE_STRUCTURAL_SECTIONS = frozenset({"user-stories", "modular-boundaries"})
-# Page header clauses and status or source issue sections: never asked nor compared (spec #corpus-meta).
-CORPUS_META_ANCHORS = frozenset({"status", "source-issues"})
+# Page header clauses and source issue sections: never asked nor compared (spec #corpus-meta).
+CORPUS_META_ANCHORS = frozenset({"source-issues"})
 CONTAINER_TAGS = frozenset({"article", "div", "figure", "footer", "header", "main", "nav", "ol", "section", "table", "tbody", "thead", "tfoot", "ul"})
 
 
@@ -407,6 +538,7 @@ class _AnchorParser(HTMLParser):
                 "text": [],
                 "tag": tag,
                 "section": tag == "section" or attrs.get("data-spec-section") is not None,
+                "spec_section": attrs.get("data-spec-section"),
                 "story": "data-user-story" in attrs,
                 "criterion": "data-acceptance-criterion" in attrs,
                 "parent": parent,
@@ -785,15 +917,78 @@ def build_audience_questions(current: str | bytes, path: str = "spec", base: str
     return result
 
 
+RULE_SCOPE = "every feature"
+RULE_MISSED = "missed"
+SPEC_SUFFIX = ".spec.html"
+
+
+def rule_word(path: str) -> str:
+    """The mark word: the home spec's file name without .spec.html, fixed, never generated (#mark-word)."""
+    name = path.rsplit("/", 1)[-1]
+    return name[:-len(SPEC_SUFFIX)] if name.endswith(SPEC_SUFFIX) else name
+
+
+def spec_text(source: str | bytes | None) -> str:
+    """A spec's readable text: its top-level anchors, header and status excluded."""
+    anchors = extract_anchors(source)
+    return "\n".join(value["text"] for value in anchors.values()
+                     if value.get("parent") is None and not value.get("meta") and value["text"])
+
+
+def rule_mark_anchor(source: str | bytes | None) -> str | None:
+    """Where a rule note shows: the Acceptance criteria section, else the first section (#marks)."""
+    anchors = extract_anchors(source)
+    for key, value in anchors.items():
+        if value.get("spec_section") == "acceptance":
+            return key
+    return next((key for key, value in anchors.items() if value.get("section") and not value.get("meta")), None)
+
+
+def build_scope_questions(served_specs: Any) -> list[dict[str, Any]]:
+    """One scope question per acceptance criterion of every other spec; the key is its text alone (#q-scope)."""
+    result = []
+    for raw in served_specs or []:
+        part = _served_spec_parts(raw)
+        if not part:
+            continue
+        path, source = part
+        for anchor, value in extract_anchors(source).items():
+            if not value.get("criterion") or not value["text"]:
+                continue
+            question = _question("scope", anchor, {"criterion": value["text"]}, path, "", None, path + "#" + anchor)
+            question["revision"] = None
+            question["word"] = rule_word(path)
+            result.append(question)
+    return result
+
+
+def build_rule_question(scope: Mapping[str, Any], current: str | bytes, path: str, base: str,
+                        revision: Any, mark: str) -> dict[str, Any]:
+    """Does this spec trigger the rule and not cover it? Sees the rule text and the spec's text (#q-rule)."""
+    question = _question("rule", mark, {"rule": scope["state"]["criterion"], "spec": spec_text(current)},
+                         path, base, revision, scope["target"])
+    question["sources"] = [path, scope["target"]]
+    question["word"] = scope["word"]
+    return question
+
+
+def build_rule_questions(scopes: list[Mapping[str, Any]], current: str | bytes, path: str, base: str,
+                         revision: Any, mark: str) -> list[dict[str, Any]]:
+    """One rule question per scope, in scope order."""
+    return [build_rule_question(scope, current, path, base, revision, mark) for scope in scopes]
+
+
 BUILDERS = {"type": build_type_questions, "orphan": build_orphan_questions, "resolved": build_resolved_questions,
             "coverage": build_coverage_questions, "audience": build_audience_questions,
-            "corpus": build_corpus_questions}
+            "corpus": build_corpus_questions, "scope": build_scope_questions, "rule": build_rule_questions,
+            "mark": rule_mark_anchor}
 
 
 # Board route (worklane-provider #jev-board): change type answers that quiet the review highlight.
 MATERIAL_NO = frozenset({"cosmetic", "clarification"})
 MATERIAL_YES = frozenset({"scope", "behavioral"})
 BOARD_ASK_WORKERS = 4
+RULE_ASK_WORKERS = 8
 
 
 def changed_leaf_clauses(current: str | bytes, baseline: str | bytes | None) -> list[tuple[str, str, str]]:
@@ -828,10 +1023,23 @@ def build_board_conflict_questions(clauses: Mapping[str, list[Mapping[str, Any]]
     return result
 
 
+BUILDERS.update({"changed": changed_leaf_clauses, "lane": build_board_conflict_questions})
+
+
 # Cross-lane findings (#cross-lane-finding): answer to the mark on the first and on the second clause.
 LANE_FINDINGS = {"contradicts": ("contradicts", "contradicts"),
                  "first oversteps second": ("oversteps", "overstepped by"),
                  "second oversteps first": ("overstepped by", "oversteps")}
+
+
+def _final(record: Mapping[str, Any] | None) -> bool:
+    """A record that stands: neither missing nor off, unavailable, or escalated."""
+    return record is not None and record.get("outcome") not in REPLACEABLE_OUTCOMES
+
+
+def _escalated(record: Mapping[str, Any] | None) -> bool:
+    """Jev was unsure and the general LLM has, or had, the question (project-rules #pending)."""
+    return bool(record and (record.get("outcome") == ESCALATED or record.get("escalated")))
 
 
 def _confident_label(record: Mapping[str, Any] | None) -> str | None:
@@ -851,14 +1059,26 @@ def material(records: list[Mapping[str, Any] | None]) -> str:
     return "no" if all(label in MATERIAL_NO for label in labels) else "unknown"
 
 
+def _git_run(root: str, *args: str) -> subprocess.CompletedProcess:
+    """Read-only local Git lookup; raises OSError or SubprocessError when git gave no answer."""
+    return subprocess.run(("git", "-C", root, *args), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                          env=dict(os.environ, GIT_OPTIONAL_LOCKS="0"), timeout=5)
+
+
 def _git_read(root: str, *args: str) -> bytes | None:
     """Read-only local Git lookup; None on any failure."""
     try:
-        result = subprocess.run(("git", "-C", root, *args), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                env=dict(os.environ, GIT_OPTIONAL_LOCKS="0"), timeout=5)
+        result = _git_run(root, *args)
     except (OSError, subprocess.SubprocessError):
         return None
     return result.stdout if result.returncode == 0 else None
+
+
+def _git_answer(root: str, *args: str) -> bytes:
+    """Git output on a clean exit; raises otherwise, so nothing unsure is kept."""
+    result = _git_run(root, *args)
+    result.check_returncode()
+    return result.stdout
 
 
 def _commit(root: str, ref: str) -> str | None:
@@ -868,19 +1088,141 @@ def _commit(root: str, ref: str) -> str | None:
     return value.decode().strip() if value else None
 
 
-def default_state_dir() -> Path:
+EXCLUDED_COLLECTION_DIRS = frozenset({"evidence", "evidence-bundle", "evidence-bundles", "fixture", "fixtures",
+                                      "support", "supports"})
+# Warm-up status: one table per project in Spec Chat's one onboarding.toml (project-rules #bootstrap-status).
+ONBOARDING_TABLE = "project"
+OFFER_ACTIONS = frozenset({"sent", "dismissed"})
+
+
+def _main_commit(root: str) -> str | None:
+    """Main's commit for a project: origin/main, else a local main (#bootstrap-table)."""
+    return next((commit for commit in (_commit(root, ref) for ref in ("origin/main", "main")) if commit), None)
+
+
+def _collection_paths(root: str, commit: str, collection: str) -> list[str]:
+    """Repo-relative spec paths in main's tree under one collection, as the review index would list them."""
+    listing = _git_read(root, "ls-tree", "-r", "-z", "--name-only", "--end-of-options", commit, "--",
+                        collection if collection not in ("", ".") else ".")
+    result = []
+    for name in (listing or b"").decode("utf-8", "replace").split("\0"):
+        parts = name.split("/")
+        if not name.endswith(SPEC_SUFFIX) or parts[-1].startswith("."):
+            continue
+        if any(part.startswith(".") or part.endswith(".review") or part.lower() in EXCLUDED_COLLECTION_DIRS
+               for part in parts[:-1]):
+            continue
+        result.append(name)
+    return result
+
+
+def _toml_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return repr(value)
+    if isinstance(value, Mapping):
+        return "{" + ", ".join(_toml_key(k) + " = " + _toml_value(v) for k, v in value.items() if v is not None) + "}"
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_toml_value(item) for item in value) + "]"
+    return json.dumps(str(value), ensure_ascii=False)
+
+
+def _toml_key(key: Any) -> str:
+    key = str(key)
+    return key if re.fullmatch(r"[A-Za-z0-9_-]+", key) else json.dumps(key, ensure_ascii=False)
+
+
+def dump_toml(document: Mapping[str, Any]) -> str:
+    """Top-level keys, then one [table."name"] per entry of each table of tables; None values are left out."""
+    lines = [_toml_key(k) + " = " + _toml_value(v) for k, v in document.items()
+             if v is not None and not isinstance(v, Mapping)]
+    for table, entries in document.items():
+        if not isinstance(entries, Mapping):
+            continue
+        for name, entry in entries.items():
+            if isinstance(entry, Mapping):
+                lines += ["", "[" + _toml_key(table) + "." + _toml_key(name) + "]"]
+                lines += [_toml_key(k) + " = " + _toml_value(v) for k, v in entry.items() if v is not None]
+    return "\n".join(lines).lstrip("\n") + "\n"
+
+
+# Fast reads (jev-suggestions #fast-marks-section): results kept in memory by the content of their inputs.
+KEPT_LIMIT = 512
+
+
+def _content_digest(value: Any) -> str:
+    """Hash builder inputs by content: text and bytes as they are, containers by structure."""
+    digest = hashlib.sha256()
+
+    def feed(item: Any) -> None:
+        if isinstance(item, str):
+            item = item.encode("utf-8", "surrogatepass")
+            digest.update(b"s%d:" % len(item))
+            digest.update(item)
+        elif isinstance(item, (bytes, bytearray)):
+            digest.update(b"b%d:" % len(item))
+            digest.update(item)
+        elif isinstance(item, Mapping):
+            digest.update(b"{%d:" % len(item))
+            for key in sorted(item, key=str):
+                feed(str(key))
+                feed(item[key])
+        elif isinstance(item, (list, tuple)):
+            digest.update(b"[%d:" % len(item))
+            for element in item:
+                feed(element)
+        else:
+            text = repr(item).encode("utf-8", "surrogatepass")
+            digest.update(b"r%d:" % len(text))
+            digest.update(text)
+
+    feed(value)
+    return digest.hexdigest()
+
+
+class _Kept:
+    """Bounded in-memory results beside the held records; nothing is stored and a restart starts empty."""
+
+    def __init__(self, limit: int = KEPT_LIMIT):
+        self.limit = limit
+        self.values: OrderedDict[Any, Any] = OrderedDict()
+        self.lock = threading.Lock()
+
+    def get(self, key: Any, make: Callable[[], Any]) -> Any:
+        """The kept value, or make's; a make that raises keeps nothing and the next get retries."""
+        with self.lock:
+            if key in self.values:
+                self.values.move_to_end(key)
+                return self.values[key]
+        value = make()
+        with self.lock:
+            self.values[key] = value
+            while len(self.values) > self.limit:
+                self.values.popitem(last=False)
+        return value
+
+
+def spec_chat_state() -> Path:
     root = os.environ.get("XDG_STATE_HOME")
-    return Path(root) / "spec-chat" / "jev" if root else Path.home() / ".local" / "state" / "spec-chat" / "jev"
+    return (Path(root) if root else Path.home() / ".local" / "state") / "spec-chat"
+
+
+def default_state_dir() -> Path:
+    return spec_chat_state() / "jev"
 
 
 class JevService:
-    def __init__(self, *, state_dir: str | Path | None = None, provider: Any = None, api_key: str | None = None,
-                 question_dirs: list[str | Path] | None = None):
-        self.api_key = (api_key if api_key is not None else os.environ.get("OPENROUTER_API_KEY", "")).strip()
-        self.provider = provider
+    def __init__(self, *, state_dir: str | Path | None = None, provider: Any = None,
+                 api_key: str | Callable[[], str] | None = None, llm_model: str | Callable[[], str] | None = None,
+                 question_dirs: list[str | Path] | None = None, onboarding_path: str | Path | None = None):
         self.question_sets = load_question_sets(*(question_dirs or []))
-        path = Path(state_dir) / "records.jsonl" if state_dir else default_state_dir() / "records.jsonl"
-        self.seam = JevSeam(self.question_sets, provider=provider, api_key=self.api_key,
+        self.state_dir = Path(state_dir) if state_dir else default_state_dir()
+        # Spec Chat's one onboarding.toml (review-service #published-onboarding); beside the records under a test state.
+        self.onboarding_path = Path(onboarding_path) if onboarding_path else (
+            self.state_dir / "onboarding.toml" if state_dir else spec_chat_state() / "onboarding.toml")
+        path = self.state_dir / "records.jsonl"
+        self.seam = JevSeam(self.question_sets, provider=provider, api_key=api_key, llm_model=llm_model,
                             record_store=JudgmentStore(path))
 
         # Board state (#jev-board-answer): the last answer and the rows the board thread answers next.
@@ -891,14 +1233,69 @@ class JevService:
         self._board_idle = threading.Event()
         self._board_idle.set()
         self._board_thread: threading.Thread | None = None
-        # Misses asked after answering (#cross-lane-async), each in flight once across both routes.
-        self._asking_lock = threading.RLock()
-        self._asking: dict[str, Future] = {}
-        self._asker: ThreadPoolExecutor | None = None
+        # Rule checks, cross-lane and board misses (project-rules #pending, #cross-lane-async): one background
+        # ask pool, each page-submitted key in flight once; reads answer from records.
+        self._rule_pool = ThreadPoolExecutor(max_workers=RULE_ASK_WORKERS, thread_name_prefix="spec-chat-jev-rule")
+        self._rule_lock = threading.Lock()
+        self._rule_inflight: set[str] = set()
+
+        # Bootstrap (project-rules #bootstrap): one background warm-up per project, its table in onboarding.toml.
+        self._status_lock = threading.Lock()
+        self._warm_started: set[str] = set()
+
+    @property
+    def _kept(self) -> _Kept:
+        kept = self.__dict__.get("_kept_results")
+        return kept if kept is not None else self.__dict__.setdefault("_kept_results", _Kept())
+
+    def _common_dir(self, root: str) -> str:
+        """A row's common Git directory, read once."""
+        try:
+            return self._kept.get(("common", root), lambda: os.path.realpath(_git_answer(
+                root, "rev-parse", "--path-format=absolute", "--git-common-dir").decode().strip()))
+        except (OSError, subprocess.SubprocessError):
+            return os.path.realpath(root)
+
+    def _at(self, root: str, commit: str, relative: str) -> bytes | None:
+        """A file's content at a resolved commit, read once: it cannot change. A clean miss is kept as absent."""
+        def read() -> bytes | None:
+            result = _git_run(root, "show", "--end-of-options", commit + ":" + relative)
+            return result.stdout if result.returncode == 0 else None
+        try:
+            return self._kept.get(("at", self._common_dir(root), commit, relative), read)
+        except (OSError, subprocess.SubprocessError):
+            return None
+
+    def _built(self, kind: str, *args: Any) -> Any:
+        """A builder's value, kept by the content of its inputs; kept questions are read only. Raises as the builder does."""
+        builder = BUILDERS[kind]
+        return self._kept.get(("build", kind, builder, _content_digest(args)), lambda: builder(*args))
+
+    def _build(self, kind: str, *args: Any) -> list[dict[str, Any]]:
+        """A builder's questions as a list; a builder that raises gives none."""
+        try:
+            value = self._built(kind, *args)
+        except Exception:
+            return []
+        return list(value) if isinstance(value, list) else []
+
+    def _read_facts(self, mount: Mapping[str, Any], target: str, base: str, served_mounts: Any,
+                    base_commit: str | None) -> dict[str, Any]:
+        """One read's inputs, resolved once for every builder: HEAD, base commit and content, served specs."""
+        current = Path(target).read_bytes()
+        root = mount["root"]
+        rel = os.path.relpath(target, root).replace(os.sep, "/")
+        resolved_head = _commit(root, "HEAD")
+        if base_commit is None:
+            base_commit = _commit(root, base)
+        return {"current": current, "root": root, "rel": rel, "resolved_head": resolved_head,
+                "head": resolved_head or "working-tree", "base_commit": base_commit,
+                "old": self._at(root, base_commit, rel) if base_commit else None,
+                "served": self._served_specs(served_mounts or [mount], target, mount)}
 
     @property
     def enabled(self) -> bool:
-        return bool(self.question_sets) and (bool(self.api_key) or self.provider is not None)
+        return bool(self.question_sets) and bool(self.seam.api_key())
 
     def _served_specs(self, mounts: Any, current: str, page: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
         """Other specs (#corpus-others): the lane's own served specs as served, plus main's copy of every
@@ -909,14 +1306,11 @@ class JevService:
             return self._as_served(mounts, current)
         own = [mount for mount in mounts if isinstance(mount, Mapping) and mount.get("slug") == slug]
         result = self._as_served(own, current)
-        projects: dict[str, str] = {}
+        mains: dict[str, str | None] = {}
 
         def spec_key(mount: Mapping[str, Any], filename: str) -> tuple[str, str]:
             root = str(mount.get("root", ""))
-            if root not in projects:
-                common = _git_read(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
-                projects[root] = os.path.realpath(common.decode().strip() if common else root)
-            return projects[root], os.path.relpath(filename, root).replace(os.sep, "/")
+            return self._common_dir(root), os.path.relpath(filename, root).replace(os.sep, "/")
 
         seen = {spec_key(page, current)}
         for mount in own:
@@ -930,7 +1324,10 @@ class JevService:
                 if key in seen or key[1].startswith("../"):
                     continue
                 seen.add(key)
-                source = _git_read(str(mount["root"]), "show", "--end-of-options", "origin/main:" + key[1])
+                root = str(mount["root"])
+                if key[0] not in mains:
+                    mains[key[0]] = _commit(root, "origin/main")
+                source = self._at(root, mains[key[0]], key[1]) if mains[key[0]] else None
                 if source is not None:
                     result.append({"path": (prefix + "/" if prefix else "") + relative, "source": source})
         return result
@@ -952,8 +1349,11 @@ class JevService:
                     continue
         return result
 
-    def _message_sources(self, root: str, relative: str, base: str,
-                         events: list[Mapping[str, Any]]) -> dict[str, bytes]:
+    def _message_sources(self, root: str, relative: str, base: str | None,
+                         events: list[Mapping[str, Any]], head: str | None = None) -> dict[str, bytes]:
+        """Spec text at each open thread's newest human message; base and head are resolved commits."""
+        if head is None:
+            head = _commit(root, "HEAD")
         result: dict[str, bytes] = {}
         for thread in _human_threads(events):
             if thread.get("status") == "resolved":
@@ -970,54 +1370,37 @@ class JevService:
             if isinstance(created, str) and re.fullmatch(
                     r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})",
                     created):
-                try:
-                    commit = subprocess.check_output(
-                        ("git", "-C", root, "log", "-1", "--before=" + created,
-                         "--format=%H", "--end-of-options", "HEAD", "--", relative),
-                        stderr=subprocess.DEVNULL, text=True,
-                    ).strip()
-                except (OSError, subprocess.CalledProcessError):
-                    commit = ""
-            if not isinstance(commit, str) or not commit.strip():
-                commit = base
-            if not isinstance(commit, str) or not commit.strip():
+                if head:
+                    try:
+                        commit = self._kept.get(("log", self._common_dir(root), head, relative, created), lambda: _git_answer(
+                            root, "log", "-1", "--before=" + created, "--format=%H", "--end-of-options", head, "--",
+                            relative)).decode().strip()
+                    except (OSError, subprocess.SubprocessError):
+                        commit = ""
+            commit = commit or base
+            if not commit:
                 continue
-            try:
-                result[str(identifier)] = subprocess.check_output(
-                    ("git", "-C", root, "show", "--end-of-options", commit + ":" + relative),
-                    stderr=subprocess.DEVNULL,
-                )
-            except (OSError, subprocess.CalledProcessError):
-                continue
+            source = self._at(root, commit, relative)
+            if source is not None:
+                result[str(identifier)] = source
         return result
 
     def questions(self, mount: Mapping[str, Any], target: str, relative: str, base: str,
-                  events: list[Mapping[str, Any]], view: str = "", served_mounts: Any = None) -> list[dict[str, Any]]:
-        current = Path(target).read_bytes()
-        root = mount["root"]
-        rel = os.path.relpath(target, root).replace(os.sep, "/")
-        try:
-            head = subprocess.check_output(("git", "-C", root, "rev-parse", "HEAD"), stderr=subprocess.DEVNULL, text=True).strip()
-        except (OSError, subprocess.CalledProcessError):
-            head = "working-tree"
-        try:
-            old = subprocess.check_output(("git", "-C", root, "show", base + ":" + rel), stderr=subprocess.DEVNULL)
-        except (OSError, subprocess.CalledProcessError):
-            old = None
-        message_sources = self._message_sources(root, rel, base, events)
-        def build(kind: str, *args: Any) -> list[dict[str, Any]]:
-            try:
-                value = BUILDERS[kind](*args)
-                return value if isinstance(value, list) else []
-            except Exception:
-                return []
+                  events: list[Mapping[str, Any]], view: str = "", served_mounts: Any = None,
+                  base_commit: str | None = None, facts: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
+        """Questions for one read; base_commit is base already resolved by the caller, else resolved here."""
+        if facts is None:
+            facts = self._read_facts(mount, target, base, served_mounts, base_commit)
+        current, old, head = facts["current"], facts["old"], facts["head"]
+        message_sources = self._message_sources(facts["root"], facts["rel"], facts["base_commit"], events,
+                                                facts["resolved_head"] or "")
+        build = self._build
 
         result = build("type", current, old, relative, base, head)
         result.extend(build("orphan", events, current, relative, base, head))
         result.extend(build("resolved", events, current, old, relative, base, head, message_sources))
         result.extend(build("coverage", current, relative, base, head))
-        result.extend(build("corpus", current, old, relative, base, head,
-                            self._served_specs(served_mounts or [mount], target, mount)))
+        result.extend(build("corpus", current, old, relative, base, head, facts["served"]))
         if view == "reading":
             result.extend(build("audience", current, relative, base, head))
         return result
@@ -1037,15 +1420,20 @@ class JevService:
         head = _commit(root, "HEAD") or "working-tree"
         return build_type_questions(current, _git_read(root, "show", base + ":" + spec), path, base, head)
 
-    def _changed_clauses(self, row: Mapping[str, Any]) -> list[dict[str, str]]:
-        """Changed leaf clauses against target main, the row root's origin/HEAD as last fetched."""
+    def _changed_clauses(self, row: Mapping[str, Any], mains: dict[str, str | None] | None = None) -> list[dict[str, str]]:
+        """Changed leaf clauses against target main, the row root's origin/HEAD as last fetched, resolved once
+        per repository in mains when given."""
         root, spec, path, current = self._row_parts(row)
-        base = _commit(root, "refs/remotes/origin/HEAD")
+        mains = {} if mains is None else mains
+        common = self._common_dir(root)
+        if common not in mains:
+            mains[common] = _commit(root, "refs/remotes/origin/HEAD")
+        base = mains[common]
         if base is None:
             return []
-        old = _git_read(root, "show", base + ":" + spec)
+        old = self._at(root, base, spec)
         return [{"path": path, "anchor": anchor, "before": before, "after": after, "base": base}
-                for anchor, before, after in changed_leaf_clauses(current, old)]
+                for anchor, before, after in self._built("changed", current, old)]
 
     def board(self, rows: Any) -> dict[str, Any]:
         """GET /api/jev/board (#jev-board-answer): the last answer at once; the board thread refreshes it."""
@@ -1071,32 +1459,13 @@ class JevService:
                 answer, misses = self._board_from_records(rows)
                 self._board_answer = answer
                 if misses:
-                    wait(self._ask_later(misses))
+                    list(self._rule_pool.map(self._ask_quietly, misses))
                     self._board_answer, _ = self._board_from_records(rows)
             except Exception:
                 pass
             with self._board_lock:
                 if not self._board_wake.is_set():
                     self._board_idle.set()
-
-    def _ask_later(self, questions: list[dict[str, Any]]) -> list[Future]:
-        """Ask each question in the background, joining one already in flight."""
-        with self._asking_lock:
-            if self._asker is None:
-                self._asker = ThreadPoolExecutor(max_workers=BOARD_ASK_WORKERS, thread_name_prefix="spec-chat-jev-ask")
-            futures = []
-            for question in questions:
-                key = self.seam.key(question)
-                future = self._asking.get(key)
-                if future is None:
-                    future = self._asking[key] = self._asker.submit(self._ask_quietly, question)
-                    future.add_done_callback(lambda _, key=key: self._forget(key))
-                futures.append(future)
-            return futures
-
-    def _forget(self, key: str) -> None:
-        with self._asking_lock:
-            self._asking.pop(key, None)
 
     def _held(self, question: Mapping[str, Any], misses: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
         # Any held record answers, unavailable included: reads never re-ask unchanged inputs.
@@ -1107,46 +1476,56 @@ class JevService:
         return record
 
     def _lane_questions(self, rows: Any) -> list[dict[str, Any]]:
-        """Cross-lane questions over every registry row's changed clauses (#cross-lane-clauses)."""
+        """Cross-lane questions over every registry row's changed clauses (#cross-lane-clauses), kept by
+        content (#fast-marks): a read resolves each repository's target main once and reparses nothing unchanged."""
+        if "lane" not in self.seam.question_sets:
+            return []
         clauses: dict[str, list[dict[str, str]]] = {}
+        mains: dict[str, str | None] = {}
         for row in rows or ():
             if not isinstance(row, Mapping) or not row.get("slug") or not row.get("spec"):
                 continue
             try:
-                clauses.setdefault(str(row["slug"]), []).extend(self._changed_clauses(row))
+                clauses.setdefault(str(row["slug"]), []).extend(self._changed_clauses(row, mains))
             except Exception:
                 continue
-        return build_board_conflict_questions(clauses) if "lane" in self.seam.question_sets else []
+        try:
+            return list(self._built("lane", clauses))
+        except Exception:
+            return []
 
     def _lane_items(self, mount: Mapping[str, Any], rows: Any) -> list[dict[str, Any]]:
         """`lane` items on this page's own clauses from held records; misses are asked after answering."""
         if not mount.get("slug") or not mount.get("spec"):
             return []
         own = self._row_parts(mount)[2]
-        misses: dict[str, dict[str, Any]] = {}
         items = []
         for question in self._lane_questions(rows):
             if own not in question["pair"]:
                 continue
-            record = self._held(question, misses)
-            label = _confident_label(record)
-            marks = LANE_FINDINGS.get(label) if label else None
-            if record is not None and marks is None:
-                continue
+            state, record = self._rule_held(question)
+            if record is None:
+                # Unasked: ask once in the background; a held unavailable answer is never re-asked (#cross-lane-async).
+                self._ask_submit(question)
+            elif state != "pending":
+                label = _confident_label(record)
+                marks = LANE_FINDINGS.get(label) if label else None
+                if marks is None:
+                    continue
             for index, (_, path, anchor) in enumerate(question["sides"]):
                 if path != own:
                     continue
                 other = question["sides"][1 - index]
-                item = {"kind": "lane", "id": anchor, "state": "pending" if record is None else "label",
-                        "label": None if marks is None else marks[index], "side": ("first", "second")[index],
+                item = {"kind": "lane", "id": anchor, "state": state if state == "pending" else "label",
+                        "label": None if state == "pending" else marks[index], "side": ("first", "second")[index],
                         "other": other[0], "target": other[1] + "#" + other[2],
-                        "record": None if record is None else record.get("record_id")}
-                if marks is not None:
+                        "record": None if state == "pending" else record.get("record_id")}
+                if state == "pending":
+                    item["escalated"] = _escalated(record)
+                else:
                     level = MARK_LEVELS["oversteps" if marks[index] == "overstepped by" else marks[index]]
                     item["level"], item["agent_level"] = level["human"], level["agent"]
                 items.append(item)
-        if misses:
-            self._ask_later(list(misses.values()))
         return items
 
     def _ask_quietly(self, question: Mapping[str, Any]) -> None:
@@ -1176,12 +1555,254 @@ class JevService:
         answer = {"jev": "on", "rows": answer_rows, "conflicts": [{"a": a, "b": b} for a, b in sorted(pairs)]}
         return answer, list(misses.values())
 
+    def _rule_task(self, scope: Mapping[str, Any], rule: Mapping[str, Any] | None) -> None:
+        if _confident_label(self.seam.ask(scope)) == RULE_SCOPE and rule is not None:
+            self.seam.ask(rule)
+
+    def _pooled(self, keys: tuple[str, ...], task: Callable[..., Any], *args: Any) -> None:
+        try:
+            task(*args)
+        except Exception:
+            pass
+        finally:
+            with self._rule_lock:
+                self._rule_inflight.difference_update(keys)
+
+    def _submit(self, keys: tuple[str, ...], task: Callable[..., Any], *args: Any) -> None:
+        """Run task in the background ask pool unless its last key is already in flight."""
+        with self._rule_lock:
+            if keys[-1] in self._rule_inflight:
+                return
+            self._rule_inflight.update(keys)
+        self._rule_pool.submit(self._pooled, keys, task, *args)
+
+    def _ask_submit(self, question: Mapping[str, Any]) -> None:
+        self._submit((self.seam.key(question),), self.seam.ask, question)
+
+    def _rule_held(self, question: Mapping[str, Any]) -> tuple[str, dict[str, Any] | None]:
+        """final, pending, or unavailable, with the held record; never asks."""
+        key = self.seam.key(question)
+        record = self.seam.store.get(key)
+        with self._rule_lock:
+            inflight = key in self._rule_inflight
+        if _final(record):
+            return "final", record
+        if record is None or record.get("outcome") == ESCALATED or inflight:
+            return "pending", record
+        return "unavailable", record
+
+    def _rule_submit(self, scope: Mapping[str, Any], rule: Mapping[str, Any]) -> None:
+        self._submit((self.seam.key(scope), self.seam.key(rule)), self._rule_task, scope, rule)
+
+    def rule_items(self, current: bytes, old: bytes | None, path: str, base: str, revision: Any,
+                   served: Any) -> tuple[list[dict[str, Any]], list[str]]:
+        """Rule items for a spec that differs from its compared base, and the rules checked (#marks, #pending).
+
+        Answers come from held records only; misses are asked in the background and show as pending, with
+        escalated true once Jev was unsure and the general LLM has the question."""
+        sets = self.seam.question_sets
+        mark = self._built("mark", current)
+        if "scope" not in sets or "rule" not in sets or mark is None or old == current:
+            return [], []
+        items: list[dict[str, Any]] = []
+        rules: list[str] = []
+        scopes = self._build("scope", served)
+        for scope, rule in zip(scopes, self._build("rule", scopes, current, path, base, revision, mark)):
+            state, record = self._rule_held(scope)
+            if state == "unavailable":
+                # An undecided scope is no rule yet: ask again, show nothing (non-goals: no scope mark).
+                self._rule_submit(scope, rule)
+                continue
+            if state == "final":
+                if _confident_label(record) != RULE_SCOPE:
+                    continue
+                rules.append(scope["target"])
+                state, record = self._rule_held(rule)
+                if state == "final" and record.get("outcome") == "oversize":
+                    continue
+            if state != "final":
+                self._rule_submit(scope, rule)
+            label = _confident_label(record) if state == "final" else None
+            item = {"kind": "rule", "id": mark, "target": scope["target"], "word": scope["word"],
+                    "state": "label" if label == RULE_MISSED else ("none" if state == "final" else state),
+                    "label": RULE_MISSED if label == RULE_MISSED else None,
+                    "record": record.get("record_id") if record and state == "final" else None}
+            if item["label"] in MARK_LEVELS:
+                item["level"], item["agent_level"] = MARK_LEVELS[item["label"]]["human"], MARK_LEVELS[item["label"]]["agent"]
+            if state == "pending":
+                item["escalated"] = _escalated(record)
+            items.append(item)
+        return items, sorted(set(rules))
+
+    def _rules(self, relative: str, base: str, facts: Mapping[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
+        try:
+            return self.rule_items(facts["current"], facts["old"], relative, base, facts["head"], facts["served"])
+        except Exception:
+            return [], []
+
+    def _onboarding(self) -> dict[str, Any]:
+        """onboarding.toml, empty when missing; raises OSError or ValueError when unreadable, so no write
+        ever replaces a file it could not read (install's status and other projects' tables)."""
+        try:
+            text = self.onboarding_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return {}
+        return tomllib.loads(text)
+
+    def onboarding_status(self, project: str) -> dict[str, Any] | None:
+        """One project's warm-up table in onboarding.toml (#bootstrap-status); None before the first warm-up
+        or while the file cannot be read."""
+        try:
+            table = self._onboarding().get(ONBOARDING_TABLE)
+        except (OSError, ValueError):
+            return None
+        value = table.get(project) if isinstance(table, dict) else None
+        return value if isinstance(value, dict) else None
+
+    def _write_status(self, project: str, status: Mapping[str, Any]) -> None:
+        """Replace one project's table, keeping install's status and doc and every other project's table."""
+        document = self._onboarding()
+        table = document.get(ONBOARDING_TABLE)
+        document[ONBOARDING_TABLE] = {**(table if isinstance(table, dict) else {}), project: _jsonable(status)}
+        path = self.onboarding_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name("." + path.name + "." + uuid.uuid4().hex + ".tmp")
+        temporary.write_text(dump_toml(document), encoding="utf-8")
+        os.replace(temporary, path)
+
+    def warm(self, rows: Any) -> list[str]:
+        """Start the warm-up for each registered project not yet warmed; never waits (#bootstrap-once).
+
+        A project is warmed once: a done status is never redone. A failed or interrupted warm-up is started
+        again on the next server start. With Jev off nothing runs and nothing is written, so no offer shows."""
+        if not self.enabled:
+            return []
+        projects: dict[str, list[Mapping[str, Any]]] = {}
+        for row in rows or []:
+            if isinstance(row, Mapping) and row.get("project") and row.get("root"):
+                projects.setdefault(str(row["project"]), []).append(row)
+        started = []
+        for project, members in projects.items():
+            status: dict[str, Any] = {"state": "running",
+                                      "started_at": _now(), "criteria_classified": 0, "rules": [],
+                                      "specs_to_reconcile": 0, "reconcile": []}
+            with self._status_lock:
+                if project in self._warm_started:
+                    continue
+                if (self.onboarding_status(project) or {}).get("state") == "done":
+                    self._warm_started.add(project)
+                    continue
+                try:
+                    self._write_status(project, status)
+                except (OSError, ValueError):
+                    continue  # unreadable onboarding.toml: never overwritten; the next change or start retries
+                self._warm_started.add(project)
+            threading.Thread(target=self._warm_project, args=(project, members, status), daemon=True,
+                             name="spec-chat-jev-warm").start()
+            started.append(project)
+        return started
+
+    def _main_specs(self, rows: list[Mapping[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+        """Main's copy of every spec in the project's collections, once per repo-relative path."""
+        root = str(rows[0]["root"])
+        commit = _main_commit(root)
+        if not commit:
+            raise RuntimeError("project has no main")
+        paths: list[str] = []
+        for row in rows:
+            narrow = str(row.get("narrow_root") or row["root"])
+            collection = os.path.relpath(narrow, str(row["root"])).replace(os.sep, "/")
+            if collection.startswith("../"):
+                continue
+            paths.extend(path for path in _collection_paths(root, commit, collection) if path not in paths)
+        specs = []
+        for path in paths:
+            source = self._at(root, commit, path)
+            if source is not None:
+                specs.append({"path": path, "source": source})
+        return commit, specs
+
+    def _ask_or_none(self, question: Mapping[str, Any]) -> dict[str, Any] | None:
+        try:
+            return self.seam.ask(question)
+        except Exception:
+            return None
+
+    def _warm_project(self, project: str, rows: list[Mapping[str, Any]], status: dict[str, Any]) -> None:
+        """Classify every criterion and check every spec of main in parallel, then publish the status
+        (#bootstrap-table). Answers are ordinary records, so later pages reuse them without new calls."""
+        try:
+            commit, specs = self._main_specs(rows)
+            scopes = list(self._built("scope", specs))
+            with ThreadPoolExecutor(max_workers=RULE_ASK_WORKERS, thread_name_prefix="spec-chat-jev-warm") as pool:
+                decided = list(pool.map(self._ask_or_none, scopes))
+                labels = [_confident_label(record) for record in decided]
+                rules = [scope for scope, label in zip(scopes, labels) if label == RULE_SCOPE]
+                checks = []
+                for spec in specs:
+                    mark = self._built("mark", spec["source"])
+                    if mark is None:
+                        continue
+                    others = [scope for scope in rules if scope["target"].split("#", 1)[0] != spec["path"]]
+                    built = self._built("rule", others, spec["source"], spec["path"], commit, commit, mark)
+                    checks.extend((spec["path"], scope, rule) for scope, rule in zip(others, built))
+                answers = list(pool.map(self._ask_or_none, [check[2] for check in checks]))
+            # Done only once every ask ended in a final outcome; an outage or bad key leaves it for the next start.
+            unfinished = sum(not _final(record) for record in decided + answers)
+            if unfinished:
+                raise RuntimeError("%d of %d answers not final" % (unfinished, len(decided) + len(answers)))
+            missed: dict[str, list[dict[str, str]]] = {}
+            for (path, scope, _), record in zip(checks, answers):
+                if _confident_label(record) == RULE_MISSED:
+                    missed.setdefault(path, []).append({"target": scope["target"], "word": scope["word"]})
+            status.update({
+                "state": "done", "main": commit,
+                "criteria_classified": sum(label is not None for label in labels),
+                "rules": sorted(scope["target"] for scope in rules),
+                "specs_to_reconcile": len(missed),
+                "reconcile": [{"spec": path, "rules": missed[path]} for path in sorted(missed)],
+            })
+        except Exception as exc:
+            status.update({"state": "failed", "error": str(exc) or type(exc).__name__})
+        status["finished_at"] = _now()
+        with self._status_lock:
+            try:
+                self._write_status(project, status)
+            except (OSError, ValueError):
+                pass  # unreadable onboarding.toml is never overwritten; the next start warms again
+
+    def offer(self, project: Any) -> dict[str, Any] | None:
+        """The one-time reconcile offer (#bootstrap-offer): after warm-up, N above zero, never sent or dismissed."""
+        status = self.onboarding_status(str(project)) if project else None
+        if not status or status.get("state") != "done" or status.get("offer") or not status.get("specs_to_reconcile"):
+            return None
+        return {"count": status["specs_to_reconcile"], "specs": status.get("reconcile", [])}
+
+    def record_offer(self, project: Any, action: str) -> bool:
+        """Record the offer sent or dismissed in the project's table; the first record stands."""
+        if action not in OFFER_ACTIONS or not project:
+            return False
+        with self._status_lock:
+            status = self.onboarding_status(str(project))
+            if not status or status.get("state") != "done":
+                return False
+            if not status.get("offer"):
+                status.update({"offer": action, "offer_at": _now()})
+                self._write_status(str(project), status)
+        return True
+
     def response(self, mount: Mapping[str, Any], target: str, relative: str, base: str,
-                 events: list[Mapping[str, Any]], view: str = "", served_mounts: Any = None) -> dict[str, Any]:
+                 events: list[Mapping[str, Any]], view: str = "", served_mounts: Any = None,
+                 base_commit: str | None = None) -> dict[str, Any]:
         if not self.enabled:
             return {"jev": "off", "items": [], "levels": dict(MARK_LEVELS)}
-        questions = [question for question in self.questions(mount, target, relative, base, events, view, served_mounts)
-                     if question["kind"] in self.seam.question_sets]
+        try:
+            facts = self._read_facts(mount, target, base, served_mounts, base_commit)
+        except Exception:
+            facts = None  # no rules; questions reads again and fails as it always has
+        rule_items, rules = self._rules(relative, base, facts) if facts else ([], [])
+        asked = self.questions(mount, target, relative, base, events, view, served_mounts, base_commit, facts)
+        questions = [question for question in asked if question["kind"] in self.seam.question_sets]
 
         def answer(question):
             if question["kind"] == "coverage" and (question.get("story") is None or question.get("criterion") is None):
@@ -1219,11 +1840,11 @@ class JevService:
             if state == "label" and question["kind"] != "orphan" and label in MARK_LEVELS:
                 item["level"], item["agent_level"] = MARK_LEVELS[label]["human"], MARK_LEVELS[label]["agent"]
             items.append(item)
-        items.extend(self._lane_items(mount, served_mounts))
-        return {"jev": "on", "items": items, "levels": dict(MARK_LEVELS)}
+        return {"jev": "on", "items": items + rule_items + self._lane_items(mount, served_mounts), "rules": rules,
+                "offer": self.offer(mount.get("project")), "levels": dict(MARK_LEVELS)}
 
 
 __all__ = ["BUILDERS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MARK_LEVELS", "MODEL",
            "OPENROUTER_DECISIONS_URL", "OpenRouterProvider", "QuestionSet",
-           "build_audience_questions", "build_board_conflict_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_type_questions", "changed_leaf_clauses", "extract_anchors",
-           "load_question_sets", "material"]
+           "build_audience_questions", "build_board_conflict_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_rule_question", "build_scope_questions", "build_type_questions", "changed_leaf_clauses", "extract_anchors",
+           "load_question_sets", "material", "rule_mark_anchor", "rule_word", "spec_text"]

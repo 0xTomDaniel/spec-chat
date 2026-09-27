@@ -50,11 +50,12 @@ assert.match(requested, /^\/api\/jev\\?/);
 assert.deepEqual(answer, {
   jev: 'on',
   items: [
-    { kind: 'type', id: 'change-type', state: 'label', label: 'behavioral', target: null, record: 'r1', level: 'warning', side: null, other: null },
-    { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2', level: null, side: null, other: null },
-    { kind: 'lane', id: 'rule', state: 'label', label: 'contradicts', target: 'ann2/y.spec.html#b', record: 'r3', level: 'important', side: 'first', other: 'ann2' },
+    { kind: 'type', id: 'change-type', state: 'label', label: 'behavioral', target: null, record: 'r1', level: 'warning', side: null, other: null, word: null, escalated: false },
+    { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2', level: null, side: null, other: null, word: null, escalated: false },
+    { kind: 'lane', id: 'rule', state: 'label', label: 'contradicts', target: 'ann2/y.spec.html#b', record: 'r3', level: 'important', side: 'first', other: 'ann2', word: null, escalated: false },
   ],
   levels: { behavioral: { human: 'warning', agent: 'warning' }, contradicts: { human: 'important', agent: 'important' } },
+  offer: null,
 });
 assert.equal((runtime.match(/fetch\('\/api\/jev\?/g) || []).length, 1, 'all Jev display uses one request seam');
 assert.match(runtime, /120000/, 'Jev fetch allows a cold provider request to finish');
@@ -99,7 +100,7 @@ const openComposer = Function('state', 'setCommentMode', 'openPanel', 'renderPan
 posted.length = 0;
 openComposer('story-a', null, null, 'Add an acceptance criterion that verifies this story.');
 assert.deepEqual(composerState.composer, { kind: 'comment', anchorId: 'story-a', target: null, quote: null,
-  text: 'Add an acceptance criterion that verifies this story.' });
+  text: 'Add an acceptance criterion that verifies this story.', onSent: null });
 openComposer('clause-a', { type: 'element', key: 'p:1' }, 'quote');
 assert.equal(composerState.composer.text, '', 'ordinary comments still open empty');
 assert.equal(posted.length, 0, 'opening a draft writes nothing');

@@ -97,7 +97,7 @@ flowchart LR
 - The long-lived review host owns read-only detection and invokes one owner-pane wake once per unchanged batch; it never advances review state or runs an agent.
 - One process-held local kernel lock permits a single control owner for each collection root and cursor; process exit releases it without a lease protocol.
 - Its user-owned absolute lock namespace is independent of caller environment variables.
-- Herdr is an external provider used by the host when available; registration falls back to manual resume when it is unavailable.
+- Host wake runs only the registered `wake` provider; registration falls back to manual resume when none is registered.
 - The browser runtime owns annotation interaction, current event derivation, mobile controls, truthful status, and Git-focused presentation through the transport interface.
 - The local review transport owns narrow collection reads and writes plus read-only local Git baseline calculation; it never invokes an agent or mutates Git.
 - The public capability transport owns only an unguessable HTTPS relay to the narrow local origin; provider choice remains outside the core protocol.
@@ -213,7 +213,7 @@ Efficient path: one harness covers 2+3+5 (synthetic events → parked CLI → re
 
 ## Unresolved risks (flagged in review)
 1. FSA reliability on `file://` origins — needs a spike before anything else. (Mitigation path: `review serve`.)
-2. Host wake coverage when Herdr is unavailable.
+2. Host wake coverage when no wake provider is registered.
 3. UX tolerance of the one-time "start live review mode" terminal step.
 
 ## Open questions
