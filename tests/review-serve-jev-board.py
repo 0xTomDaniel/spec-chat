@@ -66,6 +66,18 @@ def row(root, slug, spec, base):
 
 
 SPEC = "docs/specs/board.spec.html"
+DRAFT = {"contradicts", "oversteps", "overlaps"}
+
+
+# Each slug's changed clause texts, lower slug first.
+LANES = ({"Cards sort by age."}, {"Cards sort by title."})
+CROSS = ({"Cards sort by age.", "The board edits specs."}, {"Cards sort by title.", "Only the spec owner edits specs."})
+
+
+def crosses(state, texts):
+    """A draft-check state pairing a changed clause of each slug."""
+    pair = {state["after"], state["target"]}
+    return bool(pair & texts[0] and pair & texts[1])
 
 
 def section(text, leaf="rule"):
@@ -206,37 +218,52 @@ class BoardTest(unittest.TestCase):
         (b / other).write_text(section("Unchanged elsewhere.", "else"), encoding="utf-8")
         return [row(a, "ann1", SPEC, base_a), row(b, "ann2", SPEC, base_b)]
 
+    @staticmethod
+    def lane_calls(provider, texts):
+        """Draft-check questions asked of a cross-lane pair: one clause from each slug's changed texts."""
+        return [call for call in provider.calls if set(call["questions"]) <= DRAFT and crosses(call["state"], texts)]
+
     def test_confident_contradiction_lists_pair_once(self):
         rows = self.lanes()
-
-        def answer(kind, state):
-            if kind == "lane":
-                return ("contradicts", 0.9)
-            return ("yes", 0.9)  # does it change behavior?
-
-        service, provider = self.service(answer)
+        service, provider = self.service(lambda kind, state: ("yes", 0.9))  # contradicts?, changes behavior?
         first, second = self.settle(service, rows)
         self.assertEqual(first["conflicts"], [])
         self.assertEqual(second["conflicts"], [{"a": "ann1/" + SPEC, "b": "ann2/" + SPEC}])
-        lane = [call for call in provider.calls if "lane" in call["questions"]]
-        self.assertEqual(len(lane), 1)  # one unordered pair of changed leaves, asked once, lower slug first
-        self.assertEqual(lane[0]["state"], {"first": "Cards sort by age.", "second": "Cards sort by title."})
-        self.assertEqual(set(lane[0]["questions"]["lane"]["criteria"]),
-                         {"contradicts", "first oversteps second", "second oversteps first", "overlaps", "unrelated"})
-        self.assertFalse([call for call in provider.calls if "corpus" in call["questions"]])
+        lane = self.lane_calls(provider, LANES)
+        # One unordered pair of changed leaves, asked once, lower slug first; a yes to contradicts? stops the chain.
+        self.assertEqual([next(iter(call["questions"])) for call in lane], ["contradicts"])
+        self.assertEqual(lane[0]["state"], {"before": "Keep.", "after": "Cards sort by age.",
+                                            "target": "Cards sort by title.", "target_non_goal": False})
+        self.assertEqual(set(lane[0]["questions"]["contradicts"]["criteria"]), {"yes", "no"})
         self.assertNotIn("Cards", json.dumps(second))
 
     def test_findings_are_contradicts_or_either_overstep(self):
-        cases = (("contradicts", 0.9, True), ("first oversteps second", 0.9, True), ("second oversteps first", 0.9, True),
-                 ("overlaps", 0.9, False), ("unrelated", 0.9, False), ("contradicts", 0.1, False))
-        for label, confidence, listed in cases:
-            with self.subTest(label=label, confidence=confidence):
+        age, title = "Cards sort by age.", "Cards sort by title."
+        # Each case: the one question answering yes (kind, after), its confidence, whether the pair is listed,
+        # and the questions asked.
+        contradicts, forth, back, overlaps = (("contradicts", age), ("oversteps", age), ("oversteps", title),
+                                              ("overlaps", age))
+        # contradicts? once, oversteps? each way, overlaps? only when every earlier answer is no; the first yes stops.
+        cases = ((contradicts, 0.9, True, [contradicts]), (forth, 0.9, True, [contradicts, forth]),
+                 (back, 0.9, True, [contradicts, forth, back]), (overlaps, 0.9, False, [contradicts, forth, back, overlaps]),
+                 (None, 0.9, False, [contradicts, forth, back, overlaps]),
+                 (contradicts, 0.1, False, [contradicts]))  # unsure, and the general LLM is unavailable
+        for yes, confidence, listed, expected in cases:
+            with self.subTest(yes=yes, confidence=confidence):
                 self.tearDown()
                 self.setUp()
                 rows = self.lanes()
-                service, _ = self.service(lambda kind, state: (label, confidence) if kind == "lane" else ("yes", 0.9))
+
+                def answer(kind, state):
+                    if kind not in DRAFT:
+                        return ("yes", 0.9)
+                    return ("yes", confidence) if (kind, state["after"]) == yes else ("no", 0.9)
+
+                service, provider = self.service(answer)
                 _, second = self.settle(service, rows)
                 self.assertEqual(second["conflicts"], [{"a": "ann1/" + SPEC, "b": "ann2/" + SPEC}] if listed else [])
+                asked = [(next(iter(call["questions"])), call["state"]["after"]) for call in self.lane_calls(provider, LANES)]
+                self.assertEqual(asked, expected)
 
     def cross_lane(self):
         """#acceptance-cross-lane: X changes a and c, Y changes b and d, against target main."""
@@ -253,14 +280,14 @@ class BoardTest(unittest.TestCase):
 
     @staticmethod
     def cross_answer(kind, state):
-        if kind != "lane":
+        if kind not in DRAFT:
             return ("unrelated", 0.9) if kind == "coverage" else ("no", 0.9)
-        pair = (state["first"], state["second"])
-        if pair == ("Cards sort by age.", "Cards sort by title."):
-            return ("contradicts", 0.9)
-        if pair == ("The board edits specs.", "Only the spec owner edits specs."):
-            return ("first oversteps second", 0.9)
-        return ("overlaps", 0.9)
+        pair = (state["after"], state["target"])
+        if kind == "contradicts" and pair == ("Cards sort by age.", "Cards sort by title."):
+            return ("yes", 0.9)
+        if kind == "oversteps" and pair == ("The board edits specs.", "Only the spec owner edits specs."):
+            return ("yes", 0.9)
+        return ("no", 0.9)
 
     def page(self, service, rows, index):
         mount = rows[index]
@@ -287,7 +314,8 @@ class BoardTest(unittest.TestCase):
                          [("a", "pending", y + "#b"), ("a", "pending", y + "#d"),
                           ("c", "pending", y + "#b"), ("c", "pending", y + "#d")])
         self.wait_asks(service)
-        self.assertEqual(len([call for call in provider.calls if "lane" in call["questions"]]), 4)
+        # a-b stops at contradicts?, c-d at oversteps?, a-d and c-b ask all four.
+        self.assertEqual(len(self.lane_calls(provider, CROSS)), 1 + 2 + 4 + 4)
         x_items = self.lane_items(self.page(service, rows, 0))
         y_items = self.lane_items(self.page(service, rows, 1))
         strip = lambda items: [{k: v for k, v in item.items() if k != "record"} for item in items]
@@ -319,7 +347,7 @@ class BoardTest(unittest.TestCase):
         gate = threading.Event()
 
         def blocked(kind, state):
-            if kind == "lane":
+            if kind in DRAFT and crosses(state, CROSS):
                 gate.wait(5)
             return self.cross_answer(kind, state)
 
@@ -333,7 +361,9 @@ class BoardTest(unittest.TestCase):
         gate.set()
         self.wait_asks(service)
         self.idle(service)
-        self.assertEqual(len([call for call in provider.calls if "lane" in call["questions"]]), 4)
+        lane = self.lane_calls(provider, CROSS)
+        self.assertEqual(len(lane), 1 + 2 + 4 + 4)
+        self.assertEqual(len({json.dumps([call["questions"], call["state"]], sort_keys=True) for call in lane}), len(lane))
 
     def test_single_root_page_has_no_lane_items(self):
         rows = self.cross_lane()
@@ -343,7 +373,7 @@ class BoardTest(unittest.TestCase):
         response = service.response(mount, rows[0]["spec_file"], "specs/board.spec.html", rows[0]["base"], [], "", [mount])
         self.assertEqual(self.lane_items(response), [])
         self.wait_asks(service)
-        self.assertFalse([call for call in provider.calls if "lane" in call["questions"]])
+        self.assertFalse(self.lane_calls(provider, CROSS))
 
     def test_same_slug_clauses_are_never_paired(self):
         rows = self.lanes()
@@ -351,7 +381,7 @@ class BoardTest(unittest.TestCase):
         rows[1]["path"] = "ann1b/" + SPEC
         service, provider = self.service(lambda kind, state: ("yes", 0.9))
         self.settle(service, rows)
-        self.assertFalse([call for call in provider.calls if "lane" in call["questions"]])
+        self.assertFalse(self.lane_calls(provider, LANES))
 
     def test_route_serves_board_without_parameters(self):
         rows = self.one_row()

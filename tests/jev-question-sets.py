@@ -16,7 +16,6 @@ STATE_KEYS = {
     "overlaps": {"before", "after", "target"},
     "coverage": {"story", "criterion"},
     "audience": {"clause"},
-    "lane": {"first", "second"},
     "scope": {"criterion"},
     "triggered": {"rule", "spec"},
     "covered": {"rule", "spec"},
