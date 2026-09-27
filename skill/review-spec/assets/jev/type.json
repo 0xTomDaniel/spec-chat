@@ -1,7 +1,7 @@
 {
   "id": "type",
-  "version": 4,
-  "instructions": "Compare the base and current text for one changed root section. Does this change behavior? Answer yes when the change alters what the result does or covers: a capability, surface, non-goal, rule, interface, edge case, or criterion. Answer no when behavior stays the same: wording, typo, order, style, or meaning stated more precisely.",
+  "version": 5,
+  "instructions": "Compare the base and current text for one changed root section. Does this change behavior? Answer yes when the change alters what the result does or covers: a capability, surface, non-goal, rule, interface, edge case, or criterion. Answer no when behavior stays the same: wording, typo, order, style, or meaning stated more precisely. A line that only records provenance, such as which issue shaped or later amended a section, is no. Renaming a term to follow a rename made elsewhere is no, unless the section's own criterion or surface now shows the new name.",
   "threshold": 0.4,
   "fallback": true,
   "labels": [
@@ -68,6 +68,20 @@
           "input": {
             "before": "lean review (current base)",
             "after": "lean review (base)"
+          },
+          "label": "no"
+        },
+        {
+          "input": {
+            "before": "Source issues: shaped by ISSUE-1.",
+            "after": "Source issues: shaped by ISSUE-1; ISSUE-9 added saved filters, decided by the owner on Monday."
+          },
+          "label": "no"
+        },
+        {
+          "input": {
+            "before": "Out of scope: bulk export, the Reports page redesign, and email digests.",
+            "after": "Out of scope: bulk export, the Insights page redesign, and email digests."
           },
           "label": "no"
         }

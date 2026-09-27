@@ -1,7 +1,7 @@
 {
   "id": "overlaps",
-  "version": 1,
-  "instructions": "Compare the changed clause with the linked clause; they neither contradict nor overstep each other. Do they say the same thing? Answer yes when both clauses describe the same behavior, surface, or responsibility. Answer no when they describe different things, even if related.",
+  "version": 2,
+  "instructions": "Compare the changed clause with the linked clause; they neither contradict nor overstep each other. Do they say the same thing? Answer yes when both clauses describe the same behavior, surface, or responsibility. Answer no when they describe different things, even if related. A criterion or test that checks the behavior the other clause states says the same thing: yes.",
   "threshold": 0.4,
   "fallback": true,
   "labels": [
@@ -22,6 +22,14 @@
             "before": "A confident flag adds a label.",
             "after": "A confident flag adds a label on the changed clause.",
             "target": "A confident flag adds a small label on the changed clause."
+          },
+          "label": "yes"
+        },
+        {
+          "input": {
+            "before": "",
+            "after": "Given a saved filter, choosing it from the toolbar applies it.",
+            "target": "Saved filters appear in the toolbar list and apply when chosen."
           },
           "label": "yes"
         }

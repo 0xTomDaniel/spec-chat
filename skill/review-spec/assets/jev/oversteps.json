@@ -1,8 +1,8 @@
 {
   "id": "oversteps",
-  "version": 1,
-  "instructions": "Compare the changed clause with the linked clause; they do not contradict. Does the changed clause reach into the linked clause's territory? Answer yes when the changed clause adds a behavior or responsibility inside the boundary the linked clause states for itself or its owner. Answer no when it stays within its own scope, restates the linked clause, or shares no boundary with it.",
-  "threshold": 0.4,
+  "version": 2,
+  "instructions": "Compare the changed clause with the linked clause; they do not contradict. Does the changed clause reach into the linked clause's territory? Answer yes only when the linked clause states that a behavior, decision, or responsibility belongs to it or to a named owner, and the changed clause makes a different module, route, or spec do or decide that thing. Answer no when the changed clause stays within its own scope, restates, tests, motivates, or depends on the linked clause, describes the same thing at another layer, or merely shares words or a topic with it. An acceptance criterion, test, or user story about the linked clause's behavior is no.",
+  "threshold": 0.7,
   "fallback": true,
   "labels": [
     {
@@ -22,6 +22,14 @@
             "before": "The route returns suggestion items.",
             "after": "The route edits the spec when a label is confident.",
             "target": "No suggestion edits a spec; only a human click writes."
+          },
+          "label": "yes"
+        },
+        {
+          "input": {
+            "before": "The client shows prices.",
+            "after": "The client computes each price's tax before showing it.",
+            "target": "The billing service owns tax calculation; clients only display what it returns."
           },
           "label": "yes"
         }
@@ -52,6 +60,30 @@
             "before": "The page shows a comment label.",
             "after": "The page shows a comment label with text.",
             "target": "The compared base determines the Git focus."
+          },
+          "label": "no"
+        },
+        {
+          "input": {
+            "before": "",
+            "after": "Given a saved filter, the toolbar lists it by name and choosing it applies it.",
+            "target": "Saved filters appear in the toolbar list and apply when chosen."
+          },
+          "label": "no"
+        },
+        {
+          "input": {
+            "before": "",
+            "after": "As an analyst, I reopen a saved filter from the toolbar.",
+            "target": "Saved filters appear in the toolbar list and apply when chosen."
+          },
+          "label": "no"
+        },
+        {
+          "input": {
+            "before": "The export route returns CSV.",
+            "after": "The export route returns CSV and names the file after the report.",
+            "target": "The report header shows the report's owner and its creation date."
           },
           "label": "no"
         }
