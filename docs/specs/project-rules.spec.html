@@ -57,7 +57,7 @@
 <thead><tr><th>Question</th><th>Asked for</th><th>Sees</th><th>Labels</th><th>Cache key</th></tr></thead>
 <tbody>
 <tr data-anchor="q-scope"><td>Scope: <q>does this apply to every feature?</q></td><td>Every acceptance criterion of every served spec, and of main's copy of every other spec path, as the <a href="./jev-suggestions.spec.html#corpus">draft checks</a> choose other specs</td><td>The criterion text only</td><td>every feature, this feature</td><td>Criterion text and set version</td></tr>
-<tr data-anchor="q-rule"><td>Rule check: <q>does this spec trigger the rule and not cover it?</q></td><td>Each project-wide rule from another spec, on a spec that differs from its compared base, and on every spec at <a href="#bootstrap">warm-up</a></td><td>The rule text and the spec's text</td><td>missed, covered, not triggered</td><td>Rule text, spec text, and set version</td></tr>
+<tr data-anchor="q-rule"><td>Rule check: <q>does this spec trigger the rule?</q> then, only if yes, <q>does it cover it?</q> (<a href="./jev-suggestions.spec.html#chains">yes/no chain</a>)</td><td>Each project-wide rule from another spec, on a spec that differs from its compared base, and on every spec at <a href="#bootstrap">warm-up</a></td><td>The rule text and the spec's text</td><td>yes, no; triggered and not covered is <code>missed</code></td><td>Rule text, spec text, and set version</td></tr>
 </tbody>
 </table>
 </div>
