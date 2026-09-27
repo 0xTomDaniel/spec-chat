@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./.style/spec.css">
+<title>Repair specs</title>
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Repair specs</h1>
+<nav data-anchor="breadcrumbs">docs / specs / repair-specs.spec.html</nav>
+<p data-anchor="context">One Spec Chat skill that brings a repo's existing specs to the current <a href="../../skill/shape-spec/SKILL.md">shaping contract</a>.
+Runnable any time and optionally as onboarding catch-up.
+The skill reads only Spec Chat's own <a href="./review-service.spec.html#published-onboarding">onboarding status</a> and the repo's specs; project rules found by <a href="./jev-suggestions.spec.html">Jev</a> drive criterion repairs generically.
+Extends <a href="./project-rules.spec.html">project-wide rules</a>: its warm-up, detection, and reconcile offer are unchanged; this spec owns the bulk editing that the offer or a direct invocation triggers.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="false" data-anchor="story-repair">As the shaping agent, I run one skill and every spec in a repo is brought to the shaping contract: non-target text removed, behavior in its owning spec, contradictions resolved, criteria matching project rules.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-review">As a reviewer, I review the repairs on the review page with Git focus showing what changed in each spec.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-catch-up">As a project new to Spec Chat, the repairs run as part of onboarding catch-up when warm-up finds specs to reconcile, and I review the result.</p>
+<p data-user-story data-user-facing="false" data-anchor="story-generic">As the shaping agent, the skill drives criterion repairs from Jev project rules without hardcoding any project's rule wording or format.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="repair-specs" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-clean" data-story="story-repair"><span data-acceptance-scenario>Given a spec with sections anchored or named as audit, history, before-after, or status, or with source-issue links or ticket links in its header,</span> <span data-acceptance-observable>repair removes those sections and links and preserves every behavior clause, acceptance criterion, and modular boundary.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-home" data-story="story-repair"><span data-acceptance-scenario>Given a behavior clause in spec A that spec B already owns per its title, boundaries, and stories,</span> <span data-acceptance-observable>repair moves the clause to spec B and removes it from spec A.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-merge" data-story="story-repair"><span data-acceptance-scenario>Given a spec named after a change, fix, or lane whose behavior belongs in an existing owning spec,</span> <span data-acceptance-observable>repair merges its behavior into the owning spec and deletes the change-named file.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-contradict" data-story="story-repair"><span data-acceptance-scenario>Given two specs whose clauses contradict and one side is out of date,</span> <span data-acceptance-observable>repair updates the out-of-date side; when the contradiction is a real design choice, repair writes an open TBD at the clause.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-criteria" data-story="story-repair story-generic"><span data-acceptance-scenario>Given a Jev project rule from another spec and a spec whose acceptance criteria miss that rule,</span> <span data-acceptance-observable>repair rewrites the criteria to satisfy the rule using its wording; the skill names no project's rules and applies whatever Jev found.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-retry" data-story="story-repair"><span data-acceptance-scenario>When a repair edit raises a new contradiction or rule miss on the same clause,</span> <span data-acceptance-observable>an open TBD is written at that clause instead of editing again.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-output" data-story="story-review"><span data-acceptance-scenario>When repairs complete,</span> <span data-acceptance-observable>each changed spec is committed on the current branch and registered with the review server; the reviewer sees changes with Git focus.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-input" data-story="story-generic"><span data-acceptance-scenario>When the skill's code and instructions are read,</span> <span data-acceptance-observable>it reads only Spec Chat's onboarding.toml and the repo's specs; no peer status file or peer name appears.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-catch-up" data-story="story-catch-up"><span data-acceptance-scenario>When Spec Chat's onboarding.toml shows specs to reconcile for a project and the skill is invoked,</span> <span data-acceptance-observable>it runs all four repair types on that project's specs and updates the project's table when done.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-no-jev" data-story="story-repair"><span data-acceptance-scenario>When Jev is off,</span> <span data-acceptance-observable>the skill applies clean, home, and contradiction repairs; criterion repairs are skipped.</span></p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-skill"><span data-boundary-responsibility>The repair skill reads all specs in a repo, identifies repairs using the four types and Jev project rules, edits specs in place, commits, and registers for review.</span> <span data-boundary-seam>Caller-facing seam: the skill invocation; the caller names the repo and optionally the project for onboarding context.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; reads Jev as an existing external provider when available; uses the review page for human review.</span> <span data-boundary-scope>Observable scope: changed spec files, commits, and the review page.</span></p>
+</section>
+
+<section data-anchor="repairs">
+<h2>Repair types</h2>
+<div class="table-scroll" data-anchor="repairs-scroll">
+<table data-anchor="repairs-table">
+<thead><tr><th>Type</th><th>Trigger</th><th>Action</th></tr></thead>
+<tbody>
+<tr data-anchor="repair-clean"><td>Clean</td><td>Non-target text: audit sections, before/after comparisons, history, status, source-issue links, ticket links</td><td>Remove; preserve every behavior clause, criterion, and boundary</td></tr>
+<tr data-anchor="repair-home"><td>Home</td><td>Behavior in a spec that does not own it, or a spec named after a change</td><td>Move clauses to the owning spec; delete a change-named spec once empty</td></tr>
+<tr data-anchor="repair-contradict"><td>Contradict</td><td>Two specs' clauses disagree</td><td>Update the out-of-date side; real design choice becomes an open TBD</td></tr>
+<tr data-anchor="repair-criteria"><td>Criteria</td><td>Acceptance criteria miss a Jev project rule</td><td>Rewrite to satisfy the rule, using its own wording</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="repair-order">Repairs run in this order: clean, home, contradict, criteria.
+Each type reads the spec as the previous type left it.</p>
+<p data-anchor="repair-dialect">Every edit follows the <a href="../../skill/shape-spec/references/authoring.md">authoring contract</a>: one sentence per line, stable <code>data-anchor</code> on every block, pretty-printed semantic islands.</p>
+</section>
+
+<section data-anchor="retry">
+<h2>One retry rule</h2>
+<p data-anchor="retry-rule">If a repair edit raises a new contradiction or rule miss on the same clause, the skill writes an open TBD at that clause (<code>data-spec-tbd</code>) instead of editing again.
+The TBD blocks spec acceptance until the human settles it.
+Same rule as the shaping agent's <a href="./project-rules.spec.html#agent-once-stop">fix-raises-new-mark</a>.</p>
+</section>
+
+<section data-anchor="proof">
+<h2>Proof</h2>
+<p data-anchor="proof-first">First failing test: given a spec with an audit section and a ticket link, after repair neither is present and every acceptance criterion remains.</p>
+<p data-anchor="proof-evidence">Evidence: one repair run on a real repo with all four repair types producing a reviewed PR.</p>
+</section>
+
+<section data-anchor="non-goals">
+<h2>Non-goals</h2>
+<p data-anchor="non-goal-list">Reading a peer's status file or naming a peer; hardcoding project rules; creating specs; changing the warm-up, detection, or reconcile offer in <a href="./project-rules.spec.html">project-wide rules</a>; running without the repo's specs present; automated merging or promotion.</p>
+</section>
+
+</article>
+</body>
+</html>
