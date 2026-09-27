@@ -11,7 +11,7 @@ Create durable current truth before deep investigation.
 
 - A spec describes how the system should work. Nothing in it is ever outdated: no current-state audits, before/after, history, status, ticket links, or migration notes; those go in the PR body.
 - A change that alters behavior another spec describes updates that spec in the same PR.
-- Contradictions Jev finds between current specs are real and are fixed, never parked as an open TBD.
+- A contradiction between specs means one is out of date: update it in the same PR; a real design choice goes to the human as an open TBD.
 - Shaping commits locally only. It never pushes, opens a pull request, or creates or edits an issue or ticket, whatever target instructions say; publishing and tracker work are the caller's.
 - Specs and ADRs name no ticket and no pane; the caller's tracker keeps the ticket to spec link.
 - The canonical spec owns what the result must do: current stories, behavior, edge cases, interaction contracts, and acceptance.
