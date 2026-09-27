@@ -12,19 +12,30 @@ Visual HTML specs you annotate in the browser; a coding agent addresses the anno
 - A compact floating dock shows one status-colored square per conversation; selecting a square opens that thread, while comment mode or the dock’s chat control opens the full review sidebar.
 - Threads support human↔agent follow-up replies and append-only edits to unanswered human messages; selecting a thread rings the exact page element it annotates, and resolved threads collapse automatically while remaining browsable.
 - One parked CLI watcher (Claude Code, Codex CLI, or pi) covers the whole spec collection by default: it discovers per-page hand-off spools, drains batches serially with independent cursors/session state, edits the selected spec, and writes replies back. In-session subscription inference; no MCP, hooks, inference service, or mandatory daemon.
-- A prompt-first shaping skill commits the spec seed locally, linked to the issue its caller names, opens Git-derived focus through a private review link by default, and keeps the same authoring turn parked through hand-off batches.
+- A prompt-first shaping skill commits the spec seed locally, opens Git-derived focus through a private review link by default, and keeps the same authoring turn parked through hand-off batches.
 
 ## Constraints (fixed)
 
 Agent-agnostic across Claude Code / Codex / pi · plain files + CLI + skills over MCP/hooks/inference services · all inference through the CLI session, except optional Jev typed suggestions called by the review server and off without a key ([jev-suggestions](docs/specs/jev-suggestions.spec.html)) · tiny HTTP file transport only when the browser cannot share the filesystem (loopback on one machine, box-side public service for remote review) · no alt-tabbing to the terminal to trigger the agent.
 
+## Install and onboarding
+
+One entry point, `scripts/install-spec-chat`:
+
+1. `scripts/install-spec-chat` links the skills (`spec-chat-shape`, `spec-chat-review`) into `~/.claude/skills` and `~/.codex/skills`, and publishes `$XDG_STATE_HOME/spec-chat/onboarding.toml` with `status = "pending"`.
+2. `scripts/install-spec-chat --specs <spec folder> --review <first .spec.html>` installs the page runtime (`.viz`) and style (`.style`) into the spec folder, starts or joins the box's review service with that spec, prints its URL, and sets `status = "done"`.
+3. Box setup, by the box owner, once: add `--public <host>`, `--private`, or `--proof-host <host>` to step 2. Lanes never pass them.
+
+A rerun changes nothing. `--undo` removes only what earlier runs added (recorded in `$XDG_STATE_HOME/spec-chat/install.toml`).
+
 ## Remote hosting
 
 Canonical contract: [remote hosting lifecycle](skill/review-spec/SKILL.md#remote-hosting-lifecycle).
 
-- The box hosts two independent services only: Spec Chat review (this repo) and annotateanything evidence (peer repo).
+- The box hosts two independent services only: Spec Chat review (this repo) and the evidence provider named in its `providers/evidence.toml` ([Providers](docs/specs/review-service.spec.html#providers)).
 - Each service has its own launcher, process, approved-port discovery, collision-safe binding, narrow root, public URL, exact served-byte check, and baseline check. Starting, failing, or stopping one never touches the other.
-- Spec Chat starts with `skill/review-spec/scripts/review-host.py register --slug <lane-key> --resource PROJECT_ID=ROOT:SPEC_PATH@BASE`. Approved ports come from `SPEC_CHAT_APPROVED_INGRESS_PORTS` or readable host firewall rules. It listens on loopback by default (reach it with `ssh -L`); `--public <host>` binds an approved port with a no-login warning, and the registry keeps that choice across restarts. It checks exact spec bytes and `/api/baseline` on the box before printing the URL.
+- A lane runs only `skill/review-spec/scripts/review-host.py register --slug <lane-key> --owner <pane> <spec path>`, repeating the spec path for more specs. A plain spec path infers project, root, and base from Git; `--base <ref>` overrides the base; the `PROJECT_ID=ROOT:SPEC_PATH@BASE` form still works. It names no exposure. It checks exact spec bytes and `/api/baseline` on the box before printing the URL.
+- Box setup, by the box owner and outside any lane: `--public <host>`, `--private`, and `--proof-host <host>`, each once, through `scripts/install-spec-chat`. Approved ports come from `SPEC_CHAT_APPROVED_INGRESS_PORTS` or readable host firewall rules. The service listens on loopback by default (reach it with `ssh -L`); public binds an approved port with a no-login warning, and the registry keeps that choice across restarts. `review-host.py --state-dir` names a separate, isolated service for tests or deliberate isolation; lanes do not pass it.
 - Ordinary edits to a served spec keep the same server and URL alive. Rerun exact served-byte and `/api/baseline` checks for the same selected base after each edit. Restart only when the root, collection, process, port, runtime, or ownership changes, or when the server is dead.
 - Shared helper code is allowed only when service-neutral.
 - BB is a laptop client. Box hosting boot never requires, installs, or starts BB. BB consumes two public URLs: the Spec Chat URL and the evidence URL.

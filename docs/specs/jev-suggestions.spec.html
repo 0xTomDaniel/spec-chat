@@ -14,9 +14,7 @@
 <h1 data-anchor="title">Jev review suggestions</h1>
 <nav data-anchor="breadcrumbs">docs / specs / jev-suggestions.spec.html</nav>
 <p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-100">ANN-100</a>, <a href="https://linear.app/annotateanything/issue/ANN-206">ANN-206</a>, <a href="https://linear.app/annotateanything/issue/ANN-224">ANN-224</a>, <a href="https://linear.app/annotateanything/issue/ANN-258">ANN-258</a>.</p>
-<p data-anchor="status-ann224">Status: ANN-224 touch (<code>Ask for re-proof</code> row, Passed check marker) accepted by human spec acceptance (hand-off <code>hmuhw9498</code>, 2026-09-26T04:32:58Z) at <code>bf6d5f1</code>. Follow-up directed by operator w5:p2 after merge (2026-09-26): <a href="#markers-pin-clear">pin clear of text</a>.</p>
-<p data-anchor="status">Status: accepted for ANN-206 by human spec acceptance relayed by operator w5:p2 (2026-09-26T02:28:52Z, "accepted") at <code>4f2df71</code>; governing contract.</p>
-<p data-anchor="context">Follows the shared Jev contract, annotateanything <code>docs/specs/jev-seam.spec.html#contract</code> (ANN-49, human-accepted at <code>3cdd123</code>; since <code>ed95fc8</code> only its retry, cache, and no-reorder rules changed, to match this spec). This spec owns Spec Chat's questions and display. Jev questions read only specs and review threads, with no tracker or evidence dependency. Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a> and <a href="./compared-range.spec.html#change-base">compared range</a>.</p>
+<p data-anchor="context">This spec owns Spec Chat's Jev contract, questions, and display; <a href="#shared">Every suggestion</a> holds the rules every question follows. Jev questions read only specs and review threads, with no tracker or evidence dependency. Extends <a href="./prompt-first-shaping.spec.html#focus-view">Git-derived focus</a> and <a href="./compared-range.spec.html#change-base">compared range</a>.</p>
 </header>
 
 <section data-spec-section="user-stories" data-anchor="user-stories">
@@ -44,7 +42,7 @@
 <p data-acceptance-criterion data-anchor="acceptance-resolved" data-story="story-resolved"><span data-acceptance-scenario>When one open thread's section is revised to do what it asked and another's is revised unrelatedly,</span> <span data-acceptance-observable>only the first shows <code>Looks resolved</code>, and both stay open.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-resolved-tag" data-story="story-resolved"><span data-acceptance-scenario>When a thread shows <code>Looks resolved</code>, in light and dark theme, and is then resolved by any control,</span> <span data-acceptance-observable>the tag is light green like the passed-evidence check, its text 4.5:1 readable, and once resolved the tag is gone and the thread shows its existing resolved indicator in its place, never a Jev label.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-corpus" data-story="story-corpus"><span data-acceptance-scenario>When a draft clause adds a behavior its own spec lists as a non-goal, and another restates a clause of another spec,</span> <span data-acceptance-observable>the first shows <code>Contradicts</code> linking to that non-goal, and the second shows nothing.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-corpus-scope" data-story="story-corpus"><span data-acceptance-scenario>When a lane changes its Status line and a clause that another lane also serves a copy of,</span> <span data-acceptance-observable>the Status line gets no question, and the clause is compared once, against main's copy, never against another lane's served copy.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-corpus-scope" data-story="story-corpus"><span data-acceptance-scenario>When a lane changes a page header clause and a clause that another lane also serves a copy of,</span> <span data-acceptance-observable>the header clause gets no question, and the clause is compared once, against main's copy, never against another lane's served copy.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-coverage" data-story="story-coverage"><span data-acceptance-scenario>When a spec has a story no criterion verifies and a criterion no story backs,</span> <span data-acceptance-observable>each shows its gap label, and adding the missing counterpart clears it on the next head.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-reading" data-story="story-reading"><span data-acceptance-scenario>When the reviewer turns reading view on,</span> <span data-acceptance-observable><code>internals</code> clauses are dimmed in place and readable, and no clause moves or hides.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-note-draft" data-story="story-note-action"><span data-acceptance-scenario>When the reviewer clicks <code>Ask agent to reconcile</code> on a <code>Contradicts</code> clause, <code>Ask for a criterion</code> on a story gap, or <code>Comment on this change</code> on a <code>Behavior</code> section,</span> <span data-acceptance-observable>from the marker popover, the comment composer opens at that element with the table's draft text, links to both clauses for reconcile, and nothing is written until the reviewer sends.</span></p>
@@ -56,7 +54,7 @@
 <p data-acceptance-criterion data-anchor="acceptance-pin-clear" data-story="story-change-type"><span data-acceptance-scenario>When a criterion with a marker also has a thread pin, at 375px, 560px, and 1280px,</span> <span data-acceptance-observable>the pin covers neither the marker nor any spec text, and a tap on each opens its own popover or thread.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-inert" data-story="story-neutral"><span data-acceptance-scenario>Across a session with any suggestions and no note button click,</span> <span data-acceptance-observable>spool, thread statuses, Finish eligibility, and spec bytes match Jev off, and every item stays present and 4.5:1 readable.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-cache" data-story="story-record"><span data-acceptance-scenario>When the same page, base, and head load again,</span> <span data-acceptance-observable>no Jev call is made and the same labels show.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-record" data-story="story-record"><span data-acceptance-scenario>For every call,</span> <span data-acceptance-observable>one record carries every contract field and no source text, and no page, record, log, or response contains the key.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-record" data-story="story-record"><span data-acceptance-scenario>For every call,</span> <span data-acceptance-observable>one record carries every <a href="#record-table">record field</a> and no source text, and no page, record, log, or response contains the key.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-own-state" data-story="story-record"><span data-acceptance-scenario>When a client sends text or parameters beyond path and base,</span> <span data-acceptance-observable>the server ignores them.</span></p>
 </section>
 
@@ -82,12 +80,14 @@
 </tbody>
 </table>
 </div>
-<p data-anchor="features-caption">These are the contract's pairs <code>pair-thread</code>, <code>pair-corpus</code>, <code>pair-coverage</code>, and <code>pair-audience</code>, plus change type and orphan location. Unlisted labels, such as unrelated or not addressed, show nothing.</p>
+<p data-anchor="features-caption">Unlisted labels, such as unrelated or not addressed, show nothing.</p>
 </section>
 
 <section data-anchor="shared">
 <h2>Every suggestion</h2>
-<p data-anchor="flow-server-only">Only the review server calls Jev, OpenRouter <code>typesafe/jev-1.13</code> through <code>POST /api/alpha/decisions</code>, with <code>OPENROUTER_API_KEY</code> from its environment. The key never reaches the browser, a spec, spool, log, record, or pull request.</p>
+<p data-anchor="flow-server-only">Only the review server calls Jev, OpenRouter <code>typesafe/jev-1.13</code> through <code>POST /api/alpha/decisions</code>, with the <code>jev</code> provider file's <code>key</code>, read at each use (<a href="./review-service.spec.html#providers">Providers</a>); absent means Jev is off. The key never reaches the browser, a spec, spool, log, record, or pull request.</p>
+<p data-anchor="flow-typed">Every answer is a typed label with probabilities and a confidence. Deterministic code keeps owning facts, identity, workflow, and side effects; humans decide acceptance.</p>
+<p data-anchor="flow-text-only">Every question is text within Jev's 32k token window; oversize state is withheld as neutral, never truncated.</p>
 <p data-anchor="flow-own-state">The browser sends only the spec path and compared base. The server builds every question from its own served files, local Git, and the spool, so a public URL cannot submit text for classification.</p>
 <figure data-anchor="flow-figure">
 <div class="rail-wrap" data-anchor="flow-figure-scroll">
@@ -139,7 +139,20 @@
 <p data-anchor="shared-never-act">No suggestion edits a spec, writes the spool, changes a thread, or affects Finish; only a human click on a <a href="#note-actions">note button</a> writes, and only through existing events.</p>
 <p data-anchor="shared-never-hide">Nothing is hidden or reordered; dimmed text stays 4.5:1 readable; every note is text in a <a href="#markers">popover</a>, and a colored marker also carries a glyph.</p>
 <p data-anchor="type-async">The page renders at once as today and labels arrive later; a base change drops all labels and asks again.</p>
-<p data-anchor="record-fields">Every call appends one contract <code>#record</code> to JSONL in the server's state directory, outside spools and Git, with addresses but no source text or key.</p>
+<p data-anchor="record-fields">Every call appends one judgment record per question to JSONL in the server's state directory, outside spools and Git, with addresses but no source text or key, whether its label shows or not.</p>
+<div class="table-scroll" data-anchor="record-table-scroll">
+<table data-anchor="record-table">
+<thead><tr><th>Field</th><th>Holds</th></tr></thead>
+<tbody>
+<tr data-anchor="record-model"><td>model</td><td>Model version Jev reports</td></tr>
+<tr data-anchor="record-question-set"><td>question set</td><td>Question-set id and version</td></tr>
+<tr data-anchor="record-sources"><td>sources</td><td>Spec, anchor, and thread addresses and the revision they were read at</td></tr>
+<tr data-anchor="record-answer"><td>answer</td><td>Label, probabilities per label, and confidence</td></tr>
+<tr data-anchor="record-outcome"><td>outcome</td><td>Threshold used, and one of: shown, unsure, withheld oversize, off, or unavailable</td></tr>
+<tr data-anchor="record-time"><td>time</td><td>UTC instant of the call</td></tr>
+</tbody>
+</table>
+</div>
 <p data-anchor="cache-key">The records are the cache: each is keyed by a hash of its question's inputs and set version, and a matching record is reused without calling Jev.</p>
 <p data-anchor="qset-data">Each suggestion has one versioned question set in this repository: instructions, criteria with examples, and a moderate starting threshold. It is on whenever a key exists and is tuned from judgment records and what reviewers do next; any change is a new version.</p>
 </section>
@@ -221,7 +234,7 @@
 <section data-anchor="corpus">
 <h2>Draft checks</h2>
 <p data-anchor="corpus-labels">Only <code>contradicts</code> and <code>oversteps</code> show; <code>overlaps</code> is still answered and recorded but shows nothing, because restating a clause is normal in a spec set.</p>
-<p data-anchor="corpus-meta">Clauses in the page header, such as title, Status, source issues, and context, and in any section anchored as status or source issues, are neither asked nor compared against.</p>
+<p data-anchor="corpus-meta">Clauses in the page header, such as title, source issues, and context, and in any section anchored as source issues, are neither asked nor compared against.</p>
 <p data-anchor="corpus-others">Other specs are the lane's own served specs, those registered under the page's slug, as served, plus main's copy of every other spec path served by the registry, read from <code>origin/main</code> in that resource's root. Another lane's served copy is never a candidate, and each project and spec path is a candidate once. A path absent on main is skipped. In single-root mode, other specs are the root's other served specs.</p>
 </section>
 
@@ -268,7 +281,7 @@
 
 <section data-anchor="non-goals">
 <h2>Non-goals</h2>
-<p data-anchor="non-goal-text">Generated text of any kind (ANN-96), other providers, budget rules, specs outside the served collection, and the contract's other pairs (ANN-49).</p>
+<p data-anchor="non-goal-text">Generated text of any kind (ANN-96), other providers, budget rules, specs outside the served collection, and Jev questions beyond those listed here.</p>
 </section>
 
 </article>

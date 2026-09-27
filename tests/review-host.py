@@ -29,8 +29,20 @@ _wake_spec = importlib.util.spec_from_file_location("review_host_wake", ROOT / "
 review_host_wake = importlib.util.module_from_spec(_wake_spec)
 assert _wake_spec.loader is not None
 _wake_spec.loader.exec_module(review_host_wake)
-FakeHerdr = review_host_wake.FakeHerdr
-path_without_herdr = review_host_wake.path_without_herdr
+FakeWaker = review_host_wake.FakeWaker
+
+
+def outbound_address():
+    """A concrete non-loopback address of this machine, for public-bind proofs; skip without one."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        try:
+            probe.connect(("192.0.2.1", 80))
+            address = probe.getsockname()[0]
+        except OSError:
+            address = ""
+    if not address or address.startswith("127."):
+        raise unittest.SkipTest("no non-loopback address for a public bind")
+    return address
 
 
 def request(url, *, method="GET", body=None):
@@ -86,12 +98,11 @@ class ReviewHostTest(unittest.TestCase):
     def resource(self, project="review", spec="review"):
         return f"{project}={self.repo}:docs/specs/{spec}.spec.html@{self.base}"
 
-    def run_cli(self, *args, state=None, ports=None, herdr=None):
+    def run_cli(self, *args, state=None, ports=None):
         state = Path(state or self.work / "state")
         if state not in self.states:
             self.states.append(state)
         env = os.environ.copy()
-        env.update(herdr.env() if herdr else {"PATH": path_without_herdr()})
         env["SPEC_CHAT_APPROVED_INGRESS_PORTS"] = str(ports or self.port())
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         return subprocess.run(
@@ -119,7 +130,7 @@ class ReviewHostTest(unittest.TestCase):
         self.assertEqual(started.returncode, 0, started.stderr)
         document = self.registry(state)
         self.assertEqual(document["process"]["bind"], "127.0.0.1")
-        self.assertEqual(set(document["process"]), {"pid", "port", "bind"})
+        self.assertEqual(set(document["process"]), {"pid", "port", "bind", "host", "url"})
         self.assertIn(f"ssh -L {document['process']['port']}:127.0.0.1:", started.stdout)
         self.assertEqual(len(document["resource"]), 1)
         resource = document["resource"][0]
@@ -153,20 +164,20 @@ class ReviewHostTest(unittest.TestCase):
         return [line.split(" URL: ", 1)[1].split(" ", 1)[1] for line in result.stdout.splitlines()
                 if " URL: " in line and not line.startswith("review URL: ")]
 
-    def test_register_prints_wake_verified_only_when_herdr_resolves_owner(self):
-        herdr = FakeHerdr(self.work)
-        herdr.agent("owner")
+    def test_register_prints_wake_verified_only_when_the_wake_provider_resolves_owner(self):
         state = self.work / "state"
-        verified = self.run_cli(*self.register_args(state), state=state, herdr=herdr)
+        waker = FakeWaker(self.work, state)
+        waker.agent("owner")
+        verified = self.run_cli(*self.register_args(state), state=state)
         self.assertEqual(verified.returncode, 0, verified.stderr)
         self.assertEqual(self.wake_lines(verified), ["wake=verified owner=owner"])
-        herdr.agent("owner", None)
-        unresolved = self.run_cli(*self.register_args(state, spec="second"), state=state, herdr=herdr)
+        waker.agent("owner", False)
+        unresolved = self.run_cli(*self.register_args(state, spec="second"), state=state)
         self.assertEqual(unresolved.returncode, 0, unresolved.stderr)
         self.assertEqual(self.wake_lines(unresolved), ["wake=unavailable owner=owner"])
-        self.assertEqual(herdr.says(), [], "registration never prompts the owner")
+        self.assertEqual(waker.says(), [], "registration never prompts the owner")
 
-    def test_register_without_herdr_prints_wake_unavailable(self):
+    def test_register_without_wake_provider_prints_wake_unavailable(self):
         state = self.work / "state"
         started = self.run_cli(*self.register_args(state), state=state)
         self.assertEqual(started.returncode, 0, started.stderr)
@@ -301,7 +312,7 @@ finish_event = ""
     def test_private_default_needs_no_approved_ports(self):
         state = self.work / "state"
         self.states.append(state)
-        env = {**os.environ, "PATH": path_without_herdr(), "PYTHONDONTWRITEBYTECODE": "1"}
+        env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
         env.pop("SPEC_CHAT_APPROVED_INGRESS_PORTS", None)
         env.pop("REVIEW_APPROVED_INGRESS_PORTS", None)
         started = subprocess.run(["python3", str(LAUNCHER_PATH), *self.register_args(state)], cwd=ROOT, env=env,
@@ -336,7 +347,7 @@ finish_event = ""
         written = "".join(call.args[0] for call in err.write.call_args_list)
         self.assertIn("has no login", written)
 
-    def test_live_host_keeps_its_bind_and_refuses_a_different_one(self):
+    def test_live_host_keeps_its_bind_and_restarts_on_a_different_one(self):
         state = self.work / "state"
         first = self.run_cli(*self.register_args(state), state=state)
         self.assertEqual(first.returncode, 0, first.stderr)
@@ -344,18 +355,46 @@ finish_event = ""
         process = self.registry(state)["process"]
         registry.write_text(registry.read_text(encoding="utf-8").replace('bind = "127.0.0.1"\n', ""), encoding="utf-8")
         self.assertNotIn("bind", self.registry(state)["process"])
-        before = registry.read_bytes()
-        public = self.run_cli(*self.register_args(state, spec="second"), "--public", "0.0.0.0", state=state,
-                              ports=process["port"])
-        self.assertNotEqual(public.returncode, 0)
-        self.assertIn("already running on 127.0.0.1", public.stderr)
-        self.assertIn("run stop", public.stderr)
-        self.assertEqual(registry.read_bytes(), before)
         private = self.run_cli(*self.register_args(state, spec="second"), "--private", state=state,
                                ports=process["port"])
         self.assertEqual(private.returncode, 0, private.stderr)
-        self.assertEqual(self.registry(state)["process"], {"pid": process["pid"], "port": process["port"]})
+        self.assertEqual(self.registry(state)["process"], {k: v for k, v in process.items() if k != "bind"})
         self.assertIn("ssh -L", private.stdout)
+        proof = outbound_address()
+        public = self.run_cli(*self.register_args(state, spec="second"), "--public", "0.0.0.0", "--proof-host", proof,
+                              state=state, ports=process["port"])
+        self.assertEqual(public.returncode, 0, public.stderr)
+        moved = self.registry(state)["process"]
+        self.assertEqual((moved["bind"], moved["host"], moved["port"]), ("0.0.0.0", proof, process["port"]))
+        self.assertNotEqual(moved["pid"], process["pid"])
+        self.assertFalse(review_host.process_owns_registry(process["pid"], registry))
+        self.assertEqual(len(self.registry(state)["resource"]), 2)
+        self.assertIn("has no login", public.stderr)
+        back = self.run_cli(*self.register_args(state), "--private", state=state, ports=self.port())
+        self.assertEqual(back.returncode, 0, back.stderr)
+        home = self.registry(state)["process"]
+        self.assertEqual((home["bind"], home["port"]), ("127.0.0.1", process["port"]))
+
+    def test_visibility_switch_without_a_free_port_leaves_the_live_service_up(self):
+        state = self.work / "state"
+        first = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        process = self.registry(state)["process"]
+        with socket.socket() as held:
+            held.bind(("0.0.0.0", 0))
+            held.listen()
+            busy = held.getsockname()[1]
+            public = self.run_cli(*self.register_args(state, spec="second"), "--public", "0.0.0.0",
+                                  "--proof-host", outbound_address(), state=state, ports=busy)
+        self.assertNotEqual(public.returncode, 0)
+        self.assertIn("no approved ingress port is free", public.stderr)
+        self.assertTrue(review_host.process_owns_registry(process["pid"], state / "registry.toml"))
+        self.assertEqual(self.registry(state)["process"], process)
+
+    def test_empty_xdg_state_home_is_unset(self):
+        args = review_host.build_parser().parse_args(["stop"])
+        with mock.patch.dict(os.environ, {"XDG_STATE_HOME": "", "HOME": str(self.work)}):
+            self.assertEqual(review_host.state_dir(args), (self.work / ".local/state/spec-chat/hosting/default").resolve())
 
     def test_running_url_never_guesses_without_log(self):
         with self.assertRaises(review_host.LauncherError):
@@ -553,6 +592,164 @@ cursor_name = ".cursor-test"
         row = self.registry(state)["resource"][0]
         self.assertEqual((row["accepted"], row["base"]), (False, self.git("rev-parse", "HEAD")))
         self.assertEqual({key: row[key] for key in untouched}, untouched)
+
+    def test_process_url_is_the_printed_url_on_start_and_join(self):
+        """review-service #published: [process] url equals the printed review URL."""
+        state = self.work / "state"
+        first = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        process = self.registry(state)["process"]
+        self.assertEqual(process["url"], self.url(first))
+        self.assertEqual(process["host"], "127.0.0.1")
+        joined = self.run_cli(*self.register_args(state, spec="second"), state=state)
+        self.assertEqual(joined.returncode, 0, joined.stderr)
+        self.assertEqual(self.url(joined), self.url(first))
+        self.assertEqual(self.registry(state)["process"], process)
+
+    def lane_env(self):
+        xdg = self.work / "xdg"
+        default = xdg / "spec-chat/hosting/default"
+        if default not in self.states:
+            self.states.append(default)
+        return {"XDG_STATE_HOME": str(xdg)}, default
+
+    def run_lane(self, *args, env=None, ports=None):
+        """The lane command: no --state-dir, host, port, bind, or visibility flag."""
+        full = os.environ.copy()
+        full.update({"PYTHONDONTWRITEBYTECODE": "1", **(env or {})})
+        full["SPEC_CHAT_APPROVED_INGRESS_PORTS"] = str(ports or self.port())
+        return subprocess.run(["python3", str(LAUNCHER_PATH), "register", *args], cwd=ROOT, env=full, text=True,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=25)
+
+    def test_lane_command_joins_the_default_service(self):
+        """review-service acceptance-join and acceptance-published: stable location, same URL for every lane."""
+        env, default = self.lane_env()
+        first = self.run_lane("--slug", "lane-one", "--owner", "p1", str(self.spec), env=env)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertIn("ssh -L", first.stdout)
+        second = self.run_lane("--slug", "lane-two", "--owner", "p2", str(self.second_spec), env=env)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(self.url(second), self.url(first))
+        document = self.registry(default)
+        self.assertEqual(document["process"]["url"], self.url(first))
+        self.assertEqual({row["slug"] for row in document["resource"]}, {"lane-one", "lane-two"})
+        self.assertEqual(request(self.url(second) + "/lane-two/docs/specs/second.spec.html"),
+                         (200, self.second_spec.read_bytes()))
+
+    def test_dead_service_restarts_on_its_recorded_port_else_another(self):
+        """review-service acceptance-restart."""
+        env, default = self.lane_env()
+        first = self.run_lane("--slug", "lane", "--owner", "p1", str(self.spec), env=env)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        recorded = self.registry(default)["process"]
+        self.assertEqual(self.run_cli("stop", "--state-dir", str(default), state=default).returncode, 0)
+        again = self.run_lane("--slug", "lane", "--owner", "p1", str(self.spec), env=env)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertEqual(self.url(again), recorded["url"])
+        restarted = self.registry(default)["process"]
+        self.assertNotEqual(restarted["pid"], recorded["pid"])
+        self.assertEqual({k: restarted[k] for k in ("port", "bind", "host")},
+                         {k: recorded[k] for k in ("port", "bind", "host")})
+        self.assertEqual(self.run_cli("stop", "--state-dir", str(default), state=default).returncode, 0)
+        with socket.socket() as holder:
+            holder.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            holder.bind(("127.0.0.1", recorded["port"]))
+            holder.listen()
+            moved = self.run_lane("--slug", "lane", "--owner", "p1", str(self.spec), env=env)
+            self.assertEqual(moved.returncode, 0, moved.stderr)
+        process = self.registry(default)["process"]
+        self.assertNotEqual(process["port"], recorded["port"])
+        self.assertEqual(process["url"], self.url(moved))
+
+    def test_restart_keeps_the_recorded_public_bind_and_proof_host(self):
+        args = review_host.build_parser().parse_args(["register", "--owner", "o", "x.spec.html"])
+        recorded = {"pid": 1, "port": 2, "bind": "0.0.0.0", "host": "203.0.113.9", "url": "http://203.0.113.9:2"}
+        self.assertEqual(review_host.start_plan(args, recorded)[:2], ("0.0.0.0", "203.0.113.9"))
+        proof = review_host.build_parser().parse_args(["register", "--owner", "o", "--proof-host", "198.51.100.4",
+                                                       "x.spec.html"])
+        self.assertEqual(review_host.start_plan(proof, recorded)[:2], ("0.0.0.0", "198.51.100.4"))
+
+    def branch_repo(self, origin="https://example.invalid/org/example.git"):
+        """main has the seed; feature adds one commit, so the merge base with main is the seed."""
+        if origin:
+            self.git("remote", "add", "origin", origin)
+        self.git("checkout", "-q", "-b", "feature")
+        self.spec.write_text("<!doctype html><title>review</title><p>feature</p>\n", encoding="utf-8")
+        self.git("commit", "-qam", "feature")
+
+    def test_plain_spec_path_infers_project_root_and_base(self):
+        """review-service acceptance-plain-path."""
+        self.branch_repo()
+        env, default = self.lane_env()
+        nested = self.repo / "docs"
+        plain = self.run_lane("--slug", "lane", "--owner", "p1", str(nested / "specs/../specs/review.spec.html"), env=env)
+        self.assertEqual(plain.returncode, 0, plain.stderr)
+        row = self.registry(default)["resource"][0]
+        self.assertEqual((row["project"], row["root"], row["spec"], row["base"]),
+                         ("example", str(self.repo.resolve()), "docs/specs/review.spec.html", self.base))
+        self.assertEqual((row["owner"], row["checker"]), ("p1", "p1"))
+        head = self.git("rev-parse", "HEAD")
+        based = self.run_lane("--slug", "lane", "--owner", "p1", "--base", "feature", str(self.spec), env=env)
+        self.assertEqual(based.returncode, 0, based.stderr)
+        self.assertEqual([r["base"] for r in self.registry(default)["resource"]], [head])
+
+    def test_plain_spec_path_prefers_origin_head_and_falls_back_to_the_directory_name(self):
+        self.branch_repo(origin="git@example.invalid:org/other-name.git")
+        self.git("update-ref", "refs/remotes/origin/main", self.base)
+        self.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+        self.git("checkout", "-q", "main")
+        self.git("commit", "-q", "--allow-empty", "-m", "main moves")
+        self.git("checkout", "-q", "feature")
+        self.git("merge", "-q", "--no-edit", "main")
+        record = review_host.plain_resource(str(self.spec), None)
+        self.assertEqual((record[0], record[3]), ("other-name", self.base))
+        self.git("remote", "remove", "origin")
+        record = review_host.plain_resource(str(self.spec), None)
+        self.assertEqual((record[0], record[3]), ("repo", self.git("rev-parse", "main")))
+
+    def test_plain_reregister_keeps_the_reviewed_row_base(self):
+        env, default = self.lane_env()
+        first = self.run_lane("--slug", "lane", "--owner", "p1", str(self.spec), env=env)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        rid = self.registry(default)["resource"][0]["id"]
+        self.spec.write_text("<!doctype html><title>review</title><p>reviewed</p>\n", encoding="utf-8")
+        reviewed = self.run_cli("reviewed", "--state-dir", str(default), "--id", rid, state=default)
+        self.assertEqual(reviewed.returncode, 0, reviewed.stderr)
+        head = self.git("rev-parse", "HEAD")
+        again = self.run_lane("--slug", "lane", "--owner", "p2", str(self.spec), env=env)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        row = self.registry(default)["resource"][0]
+        self.assertEqual((row["base"], row["owner"]), (head, "p2"))
+
+    def test_reregister_keeps_every_recorded_field_it_was_not_given(self):
+        """One upsert rule: defaults fill only a new row; given flags override; the rest is kept."""
+        env, default = self.lane_env()
+        first = self.run_lane("--slug", "lane", "--owner", "p1", str(self.spec), env=env)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        new = self.registry(default)["resource"][0]
+        self.assertEqual((new["checker"], new["cursor_name"], new["base"]), ("p1", ".cursor-owner", self.base))
+        self.assertNotIn("accepted", new)
+        rid = new["id"]
+        registry = default / "registry.toml"
+        registry.write_text(registry.read_text(encoding="utf-8").replace(
+            'cursor_name = ".cursor-owner"', 'cursor_name = ".cursor-claude"'), encoding="utf-8")
+        self.spec.write_text("<!doctype html><title>review</title><p>accepted</p>\n", encoding="utf-8")
+        done = self.run_cli("reviewed", "--state-dir", str(default), "--id", rid, "--accepted", state=default)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        head = self.git("rev-parse", "HEAD")
+        kept_before = self.registry(default)["resource"][0]
+        again = self.run_lane("--slug", "lane", "--owner", "p2", str(self.spec), env=env)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        row = self.registry(default)["resource"][0]
+        self.assertEqual((row["accepted"], row["cursor_name"], row["checker"], row["base"], row["owner"]),
+                         (True, ".cursor-claude", "p1", head, "p2"))
+        self.assertEqual((row["path"], row["registered_at"]), (kept_before["path"], kept_before["registered_at"]))
+        given = self.run_lane("--slug", "lane", "--owner", "p3", "--checker", "c3", "--cursor-name", ".cursor-p3",
+                              "--base", self.base, str(self.spec), env=env)
+        self.assertEqual(given.returncode, 0, given.stderr)
+        row = self.registry(default)["resource"][0]
+        self.assertEqual((row["accepted"], row["cursor_name"], row["checker"], row["base"], row["owner"]),
+                         (True, ".cursor-p3", "c3", self.base, "p3"))
 
     def test_proof_rejects_wrong_bytes(self):
         resource = review_host.parse_resource_spec(

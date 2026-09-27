@@ -1,6 +1,6 @@
-"""ANN-132: the review host wakes each registry row's owner pane once per batch.
+"""The review host wakes each registry row's owner once per batch, only through the wake provider.
 
-Herdr is faked on PATH; no real pane is ever prompted.
+The wake provider is a fake registered in providers/wake.toml; no real pane is ever prompted.
 """
 import importlib.util
 import os
@@ -24,69 +24,61 @@ serve = importlib.util.module_from_spec(_spec)
 assert _spec.loader is not None
 _spec.loader.exec_module(serve)
 
-FAKE_HERDR = """#!/bin/sh
-[ "$1 $2" = "agent get" ] || exit 2
-f="$FAKE_HERDR_DIR/agents/$3"
-[ -f "$f" ] || { echo "pane not found: $3" >&2; exit 1; }
-printf '{"result":{"agent":{"pane_id":"%s","terminal_id":"term-1","agent_status":"%s"}}}\\n' "$3" "$(cat "$f")"
+FAKE_CHECK = """#!/bin/sh
+[ -f "$0.d/owners/$1" ]
 """
-FAKE_SAY = """#!/bin/sh
-{ for arg in "$@"; do printf '%s\\037' "$arg"; done; printf '\\n'; } >> "$FAKE_HERDR_DIR/say.log"
-[ -f "$FAKE_HERDR_DIR/say.err" ] && cat "$FAKE_HERDR_DIR/say.err" >&2
-[ -f "$FAKE_HERDR_DIR/say.sleep" ] && sleep "$(cat "$FAKE_HERDR_DIR/say.sleep")"
-exit "$(cat "$FAKE_HERDR_DIR/say.rc" 2>/dev/null || echo 0)"
+FAKE_SEND = """#!/bin/sh
+{ for arg in "$@"; do printf '%s\\037' "$arg"; done; printf '\\n'; } >> "$0.d/send.log"
+[ -f "$0.d/send.sleep" ] && sleep "$(cat "$0.d/send.sleep")"
+exit "$(cat "$0.d/send.rc" 2>/dev/null || echo 0)"
 """
 
 
-def path_without_herdr():
-    keep = []
-    for entry in os.environ.get("PATH", "").split(os.pathsep):
-        if entry and not any(os.path.exists(os.path.join(entry, tool)) for tool in ("herdr", "herdr-say")):
-            keep.append(entry)
-    return os.pathsep.join(keep)
+class FakeWaker:
+    """A fake wake provider plugged into a service state dir, controlled by files."""
 
-
-class FakeHerdr:
-    """Fake herdr and herdr-say on PATH, controlled by files."""
-
-    def __init__(self, work):
-        self.dir = Path(work) / "herdr"
-        self.bin = self.dir / "bin"
-        (self.dir / "agents").mkdir(parents=True)
-        self.bin.mkdir()
-        for name, body in (("herdr", FAKE_HERDR), ("herdr-say", FAKE_SAY)):
-            path = self.bin / name
+    def __init__(self, work, state):
+        self.dir = Path(work) / "waker"
+        self.state = Path(state)
+        self.check = self.dir / "check"
+        self.send = self.dir / "send"
+        self.data = self.dir / "send.d"
+        (self.dir / "check.d/owners").mkdir(parents=True)
+        self.data.mkdir()
+        for path, body in ((self.check, FAKE_CHECK), (self.send, FAKE_SEND)):
             path.write_text(body)
             path.chmod(0o755)
-        self.log = self.dir / "say.log"
+        self.plug()
 
-    def env(self, installed=True):
-        base = path_without_herdr()
-        return {
-            "PATH": (str(self.bin) + os.pathsep + base) if installed else base,
-            "FAKE_HERDR_DIR": str(self.dir),
-        }
+    def plug(self):
+        providers = self.state / "providers"
+        providers.mkdir(parents=True, exist_ok=True)
+        (providers / "wake.toml").write_text(
+            f'check = ["{self.check}", "{{owner}}"]\n'
+            f'send = ["{self.send}", "{{owner}}", "{{artifact}}", "{{message}}"]\n'
+        )
 
-    def agent(self, pane, status="idle"):
-        path = self.dir / "agents" / pane
-        if status is None:
-            path.unlink(missing_ok=True)
+    def unplug(self):
+        (self.state / "providers/wake.toml").unlink(missing_ok=True)
+
+    def agent(self, owner, present=True):
+        path = self.dir / "check.d/owners" / owner
+        if present:
+            path.write_text("")
         else:
-            path.write_text(status)
+            path.unlink(missing_ok=True)
 
-    def say_rc(self, code):
-        (self.dir / "say.rc").write_text(str(code))
+    def send_rc(self, code):
+        (self.data / "send.rc").write_text(str(code))
 
-    def say_err(self, text):
-        (self.dir / "say.err").write_text(text)
-
-    def say_sleep(self, seconds):
-        (self.dir / "say.sleep").write_text(str(seconds))
+    def send_sleep(self, seconds):
+        (self.data / "send.sleep").write_text(str(seconds))
 
     def says(self):
-        if not self.log.exists():
+        log = self.data / "send.log"
+        if not log.exists():
             return []
-        return [line.split("\x1f")[:-1] for line in self.log.read_text().splitlines()]
+        return [line.split("\x1f")[:-1] for line in log.read_text().splitlines()]
 
 
 class WakeControllerTest(unittest.TestCase):
@@ -94,8 +86,8 @@ class WakeControllerTest(unittest.TestCase):
         temp = tempfile.TemporaryDirectory(prefix="spec-chat-host-wake-")
         self.addCleanup(temp.cleanup)
         self.work = Path(temp.name)
-        self.herdr = FakeHerdr(self.work)
-        self.use_env(installed=True)
+        self.state = self.work / "state"
+        self.waker = FakeWaker(self.work, self.state)
         self.collection = self.work / "repo/docs"
         self.spec = self.collection / "specs/wake.spec.html"
         self.spec.parent.mkdir(parents=True)
@@ -110,23 +102,11 @@ class WakeControllerTest(unittest.TestCase):
             "base": "HEAD", "owner": "w1:pOwner", "checker": "checker",
             "cursor_name": ".cursor-owner",
         }
-        self.herdr.agent("w1:pOwner")
+        self.waker.agent("w1:pOwner")
         self.controller = self.new_controller()
 
-    def use_env(self, installed):
-        saved = {key: os.environ.get(key) for key in ("PATH", "FAKE_HERDR_DIR")}
-
-        def restore():
-            for key, value in saved.items():
-                if value is None:
-                    os.environ.pop(key, None)
-                else:
-                    os.environ[key] = value
-        self.addCleanup(restore)
-        os.environ.update(self.herdr.env(installed))
-
     def new_controller(self):
-        server = types.SimpleNamespace(mount_state=serve.MountState([self.record]))
+        server = types.SimpleNamespace(mount_state=serve.MountState([self.record]), state_dir=str(self.state))
         return serve.WakeController(server)
 
     def event(self, name):
@@ -140,27 +120,26 @@ class WakeControllerTest(unittest.TestCase):
     def status(self):
         return self.controller.status(self.record["id"])
 
-    def test_idle_owner_is_woken_exactly_once_per_unchanged_batch(self):
+    def test_owner_is_woken_exactly_once_per_unchanged_batch(self):
         self.event("100-comment-a.json")
         self.event("110-handoff-a.json")
         self.controller.poll()
-        says = self.herdr.says()
+        says = self.waker.says()
         self.assertEqual(len(says), 1)
-        argv = says[0]
-        self.assertEqual(argv[:5], ["--kind", "command", "--artifact", str(self.spec), "w1:pOwner"])
-        message = argv[5]
+        owner, artifact, message = says[0]
+        self.assertEqual((owner, artifact), ("w1:pOwner", str(self.spec)))
         for part in (str(self.spec), str(self.collection), ".cursor-owner", "2 events", "zero-wait scan", "park"):
             self.assertIn(part, message)
         self.assertEqual(self.status(), "sent")
         for _ in range(3):
             self.controller.poll()
-        self.assertEqual(len(self.herdr.says()), 1)
+        self.assertEqual(len(self.waker.says()), 1)
         self.assertFalse(self.cursor.exists(), "the host never advances the cursor")
 
     def test_no_wake_without_completed_handoff(self):
         self.event("100-comment-a.json")
         self.controller.poll()
-        self.assertEqual(self.herdr.says(), [])
+        self.assertEqual(self.waker.says(), [])
         self.assertIsNone(self.status())
 
     def test_batch_matches_zero_wait_scan(self):
@@ -181,99 +160,68 @@ class WakeControllerTest(unittest.TestCase):
         self.event("200-handoff-b.json")
         self.controller.poll()
         self.controller.poll()
-        self.assertEqual(len(self.herdr.says()), 2)
-        self.assertIn("2 events", self.herdr.says()[1][5])
+        self.assertEqual(len(self.waker.says()), 2)
+        self.assertIn("2 events", self.waker.says()[1][2])
         self.advance("100-handoff-a.json", "200-handoff-b.json")
         self.controller.poll()
         self.assertIsNone(self.status())
         self.event("300-handoff-c.json")
         self.controller.poll()
         self.controller.poll()
-        self.assertEqual(len(self.herdr.says()), 3)
-        self.assertIn("1 events", self.herdr.says()[2][5])
+        self.assertEqual(len(self.waker.says()), 3)
+        self.assertIn("1 events", self.waker.says()[2][2])
 
-    def test_working_owner_is_deferred_and_retried_until_delivered(self):
-        self.herdr.agent("w1:pOwner", "working")
+    def test_send_exit_75_is_deferred_and_retried_each_poll(self):
+        self.waker.send_rc(75)
         self.event("100-handoff-a.json")
         self.controller.poll()
         self.controller.poll()
-        self.assertEqual(self.herdr.says(), [])
+        self.assertEqual(len(self.waker.says()), 2)
         self.assertEqual(self.status(), "deferred")
-        self.herdr.agent("w1:pOwner", "idle")
+        self.waker.send_rc(0)
         self.controller.poll()
         self.controller.poll()
-        self.assertEqual(len(self.herdr.says()), 1)
+        self.assertEqual(len(self.waker.says()), 3)
         self.assertEqual(self.status(), "sent")
 
-    def test_blocked_delivery_exit_75_is_deferred_and_retried_each_poll(self):
-        self.herdr.say_rc(75)
+    def test_failed_check_fails_and_reregistered_owner_is_woken(self):
+        self.waker.agent("w1:pOwner", False)
         self.event("100-handoff-a.json")
         self.controller.poll()
         self.controller.poll()
-        self.assertEqual(len(self.herdr.says()), 2)
-        self.assertEqual(self.status(), "deferred")
-        self.herdr.say_rc(0)
-        self.controller.poll()
-        self.controller.poll()
-        self.assertEqual(len(self.herdr.says()), 3)
-        self.assertEqual(self.status(), "sent")
-
-    def test_unresolved_owner_fails_and_reregistered_owner_is_woken(self):
-        self.herdr.agent("w1:pOwner", None)
-        self.event("100-handoff-a.json")
-        self.controller.poll()
-        self.controller.poll()
-        self.assertEqual(self.herdr.says(), [])
+        self.assertEqual(self.waker.says(), [])
         self.assertEqual(self.status(), "failed")
         self.record["owner"] = "w2:pNew"
-        self.herdr.agent("w2:pNew")
+        self.waker.agent("w2:pNew")
         self.controller.poll()
-        self.assertEqual([argv[4] for argv in self.herdr.says()], ["w2:pNew"])
+        self.assertEqual([argv[0] for argv in self.waker.says()], ["w2:pNew"])
         self.assertEqual(self.status(), "sent")
 
-    def test_other_delivery_failure_fails_and_retries(self):
-        self.herdr.say_rc(3)
+    def test_other_send_exit_fails_and_retries(self):
+        self.waker.send_rc(3)
         self.event("100-handoff-a.json")
         self.controller.poll()
         self.controller.poll()
-        self.assertEqual(len(self.herdr.says()), 2)
+        self.assertEqual(len(self.waker.says()), 2)
         self.assertEqual(self.status(), "failed")
-        self.herdr.say_rc(0)
+        self.waker.send_rc(0)
         self.controller.poll()
         self.assertEqual(self.status(), "sent")
         self.controller.poll()
-        self.assertEqual(len(self.herdr.says()), 3)
+        self.assertEqual(len(self.waker.says()), 3)
 
-    def test_stalled_prompt_counts_as_sent_and_is_never_retyped(self):
-        self.herdr.say_rc(1)
-        self.herdr.say_err('{"error":{"code":"agent_prompt_stalled","message":"no activity observed"}}\n')
-        self.event("100-handoff-a.json")
-        for _ in range(3):
-            self.controller.poll()
-        self.assertEqual(len(self.herdr.says()), 1)
-        self.assertEqual(self.status(), "sent")
-
-    def test_refused_prompt_error_stays_failed(self):
-        self.herdr.say_rc(1)
-        self.herdr.say_err('{"error":{"code":"agent_prompt_failed","message":"refused"}}\n')
-        self.event("100-handoff-a.json")
-        self.controller.poll()
-        self.controller.poll()
-        self.assertEqual(len(self.herdr.says()), 2)
-        self.assertEqual(self.status(), "failed")
-
-    def test_say_timeout_after_sending_counts_as_sent_and_is_never_retyped(self):
-        saved = serve.WAKE_SAY_TIMEOUT_SECONDS
-        serve.WAKE_SAY_TIMEOUT_SECONDS = 0.5
-        self.addCleanup(setattr, serve, "WAKE_SAY_TIMEOUT_SECONDS", saved)
-        self.herdr.say_sleep(5)
+    def test_send_timeout_counts_as_sent_and_is_never_resent(self):
+        saved = serve.WAKE_SEND_TIMEOUT_SECONDS
+        serve.WAKE_SEND_TIMEOUT_SECONDS = 0.5
+        self.addCleanup(setattr, serve, "WAKE_SEND_TIMEOUT_SECONDS", saved)
+        self.waker.send_sleep(5)
         self.event("100-handoff-a.json")
         started = time.monotonic()
         self.controller.poll()
-        self.assertLess(time.monotonic() - started, 3, "timeout must kill the whole herdr-say process group")
+        self.assertLess(time.monotonic() - started, 3, "timeout must kill the whole send process group")
         self.controller.poll()
         self.controller.poll()
-        self.assertEqual(len(self.herdr.says()), 1)
+        self.assertEqual(len(self.waker.says()), 1)
         self.assertEqual(self.status(), "sent")
 
     def test_bad_row_never_stops_wake_for_other_rows(self):
@@ -283,17 +231,24 @@ class WakeControllerTest(unittest.TestCase):
         self.controller.server.mount_state = serve.MountState([bad_cursor, broken, self.record])
         self.event("100-handoff-a.json")
         self.controller.poll()
-        self.assertEqual([argv[4] for argv in self.herdr.says()], ["w1:pOwner"])
+        self.assertEqual([argv[0] for argv in self.waker.says()], ["w1:pOwner"])
         self.assertEqual(self.status(), "sent")
         self.controller.poll()
-        self.assertEqual(len(self.herdr.says()), 1)
+        self.assertEqual(len(self.waker.says()), 1)
 
-    def test_without_herdr_nothing_is_sent_and_state_is_unavailable(self):
-        self.use_env(installed=False)
+    def test_without_provider_nothing_is_sent_and_plugging_needs_no_restart(self):
+        self.waker.unplug()
         self.event("100-handoff-a.json")
         self.controller.poll()
-        self.assertEqual(self.herdr.says(), [])
+        self.assertEqual(self.waker.says(), [])
         self.assertEqual(self.status(), "unavailable")
+        (self.state / "providers/wake.toml").write_text('check = "not a list"\n')
+        self.controller.poll()
+        self.assertEqual(self.status(), "unavailable")
+        self.waker.plug()
+        self.controller.poll()
+        self.assertEqual(len(self.waker.says()), 1)
+        self.assertEqual(self.status(), "sent")
 
     def test_restart_wakes_unprocessed_batch_once_more(self):
         self.event("100-handoff-a.json")
@@ -301,15 +256,24 @@ class WakeControllerTest(unittest.TestCase):
         self.controller = self.new_controller()
         self.controller.poll()
         self.controller.poll()
-        self.assertEqual(len(self.herdr.says()), 2)
+        self.assertEqual(len(self.waker.says()), 2)
 
     def test_removed_resource_forgets_state(self):
-        self.herdr.agent("w1:pOwner", None)
+        self.waker.agent("w1:pOwner", False)
         self.event("100-handoff-a.json")
         self.controller.poll()
         self.controller.server.mount_state = serve.MountState([])
         self.controller.poll()
         self.assertIsNone(self.status())
+
+    def test_no_pane_tool_is_named(self):
+        roots = [ROOT / "skill", ROOT / "tools", ROOT / "DESIGN.md", ROOT / "README.md"]
+        roots += [path for path in (ROOT / "docs/specs").glob("*.spec.html")]
+        for root in roots:
+            for path in ([root] if root.is_file() else root.rglob("*")):
+                if path.is_file() and "vendor" not in path.parts:
+                    text = path.read_text(encoding="utf-8", errors="replace").lower()
+                    self.assertNotIn("herdr", text, str(path))
 
 
 class RegistryReloadTest(unittest.TestCase):
@@ -343,7 +307,7 @@ class WakeHeaderHttpTest(unittest.TestCase):
     def test_events_carry_wake_state_header(self):
         with tempfile.TemporaryDirectory(prefix="spec-chat-host-wake-http-") as temp:
             work = Path(temp)
-            herdr = FakeHerdr(work)
+            waker = FakeWaker(work, work)
             repo = work / "repo"
             spec = repo / "docs/wake.spec.html"
             spec.parent.mkdir(parents=True)
@@ -364,7 +328,7 @@ class WakeHeaderHttpTest(unittest.TestCase):
             with socket.socket() as sock:
                 sock.bind(("127.0.0.1", 0))
                 port = sock.getsockname()[1]
-            env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", **herdr.env(True))
+            env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
             process = subprocess.Popen(
                 (sys.executable, str(SERVER_PATH), "--registry", str(registry), "--bind", "127.0.0.1", "--port", str(port)),
                 env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -394,13 +358,13 @@ class WakeHeaderHttpTest(unittest.TestCase):
             self.assertIsNone(header())
             (human / "100-handoff-a.json").write_text('{"event":"handoff","id":"h1","createdAt":"2026-09-25T00:00:00Z"}')
             self.assertEqual(wait_for("failed"), "failed")
-            self.assertEqual(herdr.says(), [])
-            herdr.agent("w1:pGone")
+            self.assertEqual(waker.says(), [])
+            waker.agent("w1:pGone")
             started = time.monotonic()
             self.assertEqual(wait_for("sent"), "sent")
             self.assertLess(time.monotonic() - started, 8)
             time.sleep(3.5)
-            self.assertEqual(len(herdr.says()), 1)
+            self.assertEqual(len(waker.says()), 1)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
-"""GET /api/evidence behind a fake evidence service (criterion-evidence spec)."""
+"""GET /api/evidence behind a fake evidence provider (criterion-evidence spec, review-service #providers)."""
 
+import contextlib
 import importlib.util
 import json
 import os
@@ -92,6 +93,7 @@ class EvidenceRouteTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
+        self.state = self.dir / "state"
         self.servers = []
 
     def tearDown(self):
@@ -99,6 +101,18 @@ class EvidenceRouteTest(unittest.TestCase):
             server.shutdown()
             server.server_close()
         self.tmp.cleanup()
+
+    @contextlib.contextmanager
+    def plugged(self, url):
+        """The evidence provider file, written atomically for the block and deleted after."""
+        providers = self.state / "providers"
+        providers.mkdir(parents=True, exist_ok=True)
+        (providers / "evidence.toml.tmp").write_text('url = "%s"\n' % url)
+        os.replace(providers / "evidence.toml.tmp", providers / "evidence.toml")
+        try:
+            yield
+        finally:
+            (providers / "evidence.toml").unlink()
 
     def fake(self, **kwargs):
         service = FakeEvidence(**kwargs)
@@ -108,6 +122,7 @@ class EvidenceRouteTest(unittest.TestCase):
     def review_server(self, mounts):
         server = serve.ReviewThreadingHTTPServer(("127.0.0.1", 0), serve.MountHandler)
         server.mount_state = serve.MountState(mounts)
+        server.state_dir = str(self.state)
         self.servers.append(server)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         return "http://127.0.0.1:%d" % server.server_port
@@ -133,7 +148,7 @@ class EvidenceRouteTest(unittest.TestCase):
                            proven="Shows old.", view="/bundles/b2#criterion=moved"),
         }})
         url, _, head = self.single(page(ok="Shows ok.", moved="Shows moved."))
-        with patch.dict(os.environ, {"SPEC_CHAT_EVIDENCE_URL": service.url}):
+        with self.plugged(service.url):
             body = self.evidence(url)
         base = service.url.rstrip("/")
         self.assertEqual(body, {"criteria": {
@@ -153,7 +168,7 @@ class EvidenceRouteTest(unittest.TestCase):
         service = self.fake(body={"criteria": {"ok": entry(), "edited": entry()}})
         url, root, _ = self.single(page(ok="Shows ok.", edited="Shows old."))
         (root / SPEC).write_text(page(ok="Shows ok.", edited="Shows new."), encoding="utf-8")
-        with patch.dict(os.environ, {"SPEC_CHAT_EVIDENCE_URL": service.url}):
+        with self.plugged(service.url):
             body = self.evidence(url)
         self.assertFalse(body["criteria"]["ok"]["uncommitted"])
         self.assertTrue(body["criteria"]["edited"]["uncommitted"])
@@ -162,7 +177,7 @@ class EvidenceRouteTest(unittest.TestCase):
         service = self.fake(body={"criteria": {
             "ok": entry(artifact=None, secret="x"), "intro": entry(), "gone": entry(), "bad": "nope"}})
         url, _, _ = self.single(page(ok="Shows ok.", bad="Bad."))
-        with patch.dict(os.environ, {"SPEC_CHAT_EVIDENCE_URL": service.url}):
+        with self.plugged(service.url):
             body = self.evidence(url)
         self.assertEqual(list(body["criteria"]), ["ok"])
         self.assertIsNone(body["criteria"]["ok"]["artifact"])
@@ -172,7 +187,7 @@ class EvidenceRouteTest(unittest.TestCase):
         service = self.fake(body={"criteria": {"ok": entry(
             artifact="javascript:alert(1)", bundle="//evil.example/bundles/b1", view="https://evil.example/")}})
         url, _, _ = self.single(page(ok="Shows ok."))
-        with patch.dict(os.environ, {"SPEC_CHAT_EVIDENCE_URL": service.url}):
+        with self.plugged(service.url):
             value = self.evidence(url)["criteria"]["ok"]
         self.assertIsNone(value["artifact"])
         self.assertIsNone(value["bundle"])
@@ -180,21 +195,53 @@ class EvidenceRouteTest(unittest.TestCase):
 
     def test_unset_down_error_and_non_json_answer_none(self):
         url, _, _ = self.single(page(ok="Shows ok."))
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("SPEC_CHAT_EVIDENCE_URL", None)
-            self.assertEqual(self.evidence(url), {"criteria": None, "levels": serve.MARK_LEVELS})
+        self.assertEqual(self.evidence(url), {"criteria": None, "levels": serve.MARK_LEVELS})
         for service in (self.fake(status=500, body={"criteria": {"ok": entry()}}),
                         self.fake(raw=b"<html>"), self.fake(body=["list"])):
-            with patch.dict(os.environ, {"SPEC_CHAT_EVIDENCE_URL": service.url}):
+            with self.plugged(service.url):
                 self.assertEqual(self.evidence(url), {"criteria": None, "levels": serve.MARK_LEVELS})
             self.assertEqual(len(service.requests), 1)
-        with patch.dict(os.environ, {"SPEC_CHAT_EVIDENCE_URL": "http://127.0.0.1:9/"}):
+        with self.plugged("http://127.0.0.1:9/"):
             self.assertEqual(self.evidence(url), {"criteria": None, "levels": serve.MARK_LEVELS})
+
+    def test_provider_plugs_and_unplugs_live(self):
+        service = self.fake(body={"criteria": {"ok": entry()}})
+        url, _, _ = self.single(page(ok="Shows ok."))
+        with self.plugged(service.url):
+            self.assertEqual(list(self.evidence(url)["criteria"]), ["ok"])
+        self.assertEqual(self.evidence(url), {"criteria": None, "levels": serve.MARK_LEVELS})
+        self.assertEqual(len(service.requests), 1)
+
+    def test_environment_is_not_read(self):
+        service = self.fake(body={"criteria": {"ok": entry()}})
+        url, _, _ = self.single(page(ok="Shows ok."))
+        former = {"SPEC_CHAT_EVIDENCE_URL": service.url, "OPENROUTER_API_KEY": "sk-env"}
+        with patch.dict(os.environ, former):
+            self.assertEqual(self.evidence(url), {"criteria": None, "levels": serve.MARK_LEVELS})
+            self.assertEqual(serve.jev_provider(str(self.state)), "")
+            self.assertFalse(serve.JevService(state_dir=self.dir / "jev",
+                                              api_key=lambda: serve.jev_provider(str(self.state))).enabled)
+        self.assertEqual(service.requests, [])
+
+    def test_jev_key_is_read_at_each_use_and_only_from_a_private_file(self):
+        providers = self.state / "providers"
+        providers.mkdir(parents=True)
+        service = serve.JevService(state_dir=self.dir / "jev", api_key=lambda: serve.jev_provider(str(self.state)))
+        self.assertFalse(service.enabled)
+        key = providers / "jev.toml"
+        key.write_text('key = "sk-file"\n')
+        key.chmod(0o644)
+        self.assertEqual(serve.jev_provider(str(self.state)), "")
+        key.chmod(0o600)
+        self.assertEqual(serve.jev_provider(str(self.state)), "sk-file")
+        self.assertTrue(service.enabled)
+        key.unlink()
+        self.assertFalse(service.enabled)
 
     def test_parameters_beyond_path_are_ignored(self):
         service = self.fake(body={"criteria": {}})
         url, _, head = self.single(page(ok="Shows ok."))
-        with patch.dict(os.environ, {"SPEC_CHAT_EVIDENCE_URL": service.url}):
+        with self.plugged(service.url):
             self.assertEqual(self.evidence(url), {"criteria": {}, "levels": serve.MARK_LEVELS})
             self.evidence(url, extra="&commit=deadbeef&spec=project/x::y&base=HEAD~1&url=http://evil")
         self.assertEqual(service.requests[0], service.requests[1])
@@ -211,7 +258,7 @@ class EvidenceRouteTest(unittest.TestCase):
             rows.append({"id": slug, "slug": slug, "root": str(root), "narrow_root": str(root / "docs"),
                          "spec": SPEC, "spec_file": str(root / SPEC), "path": slug + "/" + SPEC, "base": "HEAD"})
         url = self.review_server(rows)
-        with patch.dict(os.environ, {"SPEC_CHAT_EVIDENCE_URL": service.url}):
+        with self.plugged(service.url):
             self.evidence(url, path="main/" + SPEC)
             self.evidence(url, path="ann1/" + SPEC)
         commits = [parse_qs(urlparse(request).query) for request in service.requests]
@@ -223,7 +270,7 @@ class EvidenceRouteTest(unittest.TestCase):
     def test_bad_path_is_rejected_without_a_read(self):
         service = self.fake(body={"criteria": {}})
         url, _, _ = self.single(page(ok="Shows ok."))
-        with patch.dict(os.environ, {"SPEC_CHAT_EVIDENCE_URL": service.url}):
+        with self.plugged(service.url):
             with self.assertRaises(urllib.error.HTTPError) as caught:
                 self.evidence(url, path="specs/missing.spec.html")
         self.assertEqual(caught.exception.code, 400)
