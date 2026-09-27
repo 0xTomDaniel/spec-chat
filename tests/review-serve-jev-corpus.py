@@ -212,6 +212,68 @@ class CorpusTest(unittest.TestCase):
             read(service)
         self.assertTrue(parses)  # a changed served file is read fresh
 
+    def healing_setup(self):
+        main = {SPEC: page("The service reads review events."), OWN: page("Own rule.")}
+        lane = self.repo("h", {SPEC: page("The service writes review events.")}, main)
+        base = git(lane, "rev-parse", "HEAD")
+        git(lane, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qam", "lane")
+        other = self.worktree(lane, "o", {})  # same project: its row must dedupe against this page
+        mounts = [self.row(lane, "h", SPEC), self.row(lane, "h", OWN), self.row(other, "o", SPEC)]
+        events = [{"name": "1-comment.json", "actor": "human", "body": {  # message after HEAD: text at HEAD
+            "id": "u1", "event": "comment", "actor": "human", "anchorId": "rule", "text": "Reads or writes?",
+            "createdAt": "2099-01-01T00:00:00Z"}}]
+        service = jev.JevService(state_dir=self.dir / "state", provider=FakeProvider({}), api_key="fake",
+                                 question_dirs=[ROOT / "skill" / "review-spec" / "assets" / "jev"])
+        read = lambda: service.questions(mounts[0], str(lane / SPEC), "h/" + SPEC, base, events, "reading", mounts)
+        cold = jev.JevService(state_dir=self.dir / "cold", provider=FakeProvider({}), api_key="fake",
+                              question_dirs=[ROOT / "skill" / "review-spec" / "assets" / "jev"])
+        expected = cold.questions(mounts[0], str(lane / SPEC), "h/" + SPEC, base, events, "reading", mounts)
+        return service, read, expected
+
+    def test_git_read_that_fails_once_is_retried_next_read(self):
+        """A timeout, OSError, or failed git exit is never kept: the next read heals."""
+        run = subprocess.run
+        failures = {
+            "timeout": lambda argv: (_ for _ in ()).throw(subprocess.TimeoutExpired(argv, 5)),
+            "oserror": lambda argv: (_ for _ in ()).throw(OSError("fork failed")),
+            "exit": lambda argv: subprocess.CompletedProcess(argv, 128, b"", b""),
+        }
+        for name, fail in failures.items():
+            for verb in ("show", "log", "--git-common-dir"):
+                with self.subTest(failure=name, verb=verb):
+                    self.tearDown()
+                    self.setUp()
+                    service, read, expected = self.healing_setup()
+                    if name == "exit" and verb == "show":
+                        continue  # a clean nonzero show is a definite "path absent"
+                    left = [1]
+
+                    def flaky(argv, *args, **kwargs):
+                        if left and argv and argv[0] == "git" and verb in argv:
+                            left.pop()
+                            return fail(argv)
+                        return run(argv, *args, **kwargs)
+
+                    with patch.object(jev.subprocess, "run", flaky):
+                        read()
+                    self.assertFalse(left)
+                    self.assertEqual(read(), expected)
+
+    def test_builder_that_raised_is_rebuilt_next_read(self):
+        service, read, expected = self.healing_setup()
+        original, calls = jev.BUILDERS["type"], []
+
+        def flaky(*args):
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError("transient")
+            return original(*args)
+
+        with patch.dict(jev.BUILDERS, {"type": flaky}):
+            self.assertNotIn("type", {q["kind"] for q in read()})
+            self.assertEqual(read(), expected)
+        self.assertEqual(len(calls), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

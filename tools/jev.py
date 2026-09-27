@@ -856,14 +856,26 @@ def material(records: list[Mapping[str, Any] | None]) -> str:
     return "no" if all(label in MATERIAL_NO for label in labels) else "unknown"
 
 
+def _git_run(root: str, *args: str) -> subprocess.CompletedProcess:
+    """Read-only local Git lookup; raises OSError or SubprocessError when git gave no answer."""
+    return subprocess.run(("git", "-C", root, *args), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                          env=dict(os.environ, GIT_OPTIONAL_LOCKS="0"), timeout=5)
+
+
 def _git_read(root: str, *args: str) -> bytes | None:
     """Read-only local Git lookup; None on any failure."""
     try:
-        result = subprocess.run(("git", "-C", root, *args), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                env=dict(os.environ, GIT_OPTIONAL_LOCKS="0"), timeout=5)
+        result = _git_run(root, *args)
     except (OSError, subprocess.SubprocessError):
         return None
     return result.stdout if result.returncode == 0 else None
+
+
+def _git_answer(root: str, *args: str) -> bytes:
+    """Git output on a clean exit; raises otherwise, so nothing unsure is kept."""
+    result = _git_run(root, *args)
+    result.check_returncode()
+    return result.stdout
 
 
 def _commit(root: str, ref: str) -> str | None:
@@ -916,6 +928,7 @@ class _Kept:
         self.lock = threading.Lock()
 
     def get(self, key: Any, make: Callable[[], Any]) -> Any:
+        """The kept value, or make's; a make that raises keeps nothing and the next get retries."""
         with self.lock:
             if key in self.values:
                 self.values.move_to_end(key)
@@ -959,27 +972,30 @@ class JevService:
 
     def _common_dir(self, root: str) -> str:
         """A row's common Git directory, read once."""
-        def read() -> str:
-            common = _git_read(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
-            return os.path.realpath(common.decode().strip() if common else root)
-        return self._kept.get(("common", root), read)
+        try:
+            return self._kept.get(("common", root), lambda: os.path.realpath(_git_answer(
+                root, "rev-parse", "--path-format=absolute", "--git-common-dir").decode().strip()))
+        except (OSError, subprocess.SubprocessError):
+            return os.path.realpath(root)
 
     def _at(self, root: str, commit: str, relative: str) -> bytes | None:
-        """A file's content at a resolved commit, read once: it cannot change."""
-        return self._kept.get(("at", self._common_dir(root), commit, relative),
-                              lambda: _git_read(root, "show", "--end-of-options", commit + ":" + relative))
+        """A file's content at a resolved commit, read once: it cannot change. A clean miss is kept as absent."""
+        def read() -> bytes | None:
+            result = _git_run(root, "show", "--end-of-options", commit + ":" + relative)
+            return result.stdout if result.returncode == 0 else None
+        try:
+            return self._kept.get(("at", self._common_dir(root), commit, relative), read)
+        except (OSError, subprocess.SubprocessError):
+            return None
 
     def _build(self, kind: str, *args: Any) -> list[dict[str, Any]]:
         """A builder's questions, kept by the content of its inputs; kept questions are read only."""
         builder = BUILDERS[kind]
-
-        def build() -> list[dict[str, Any]]:
-            try:
-                value = builder(*args)
-                return value if isinstance(value, list) else []
-            except Exception:
-                return []
-        return list(self._kept.get(("build", kind, builder, _content_digest(args)), build))
+        try:
+            value = self._kept.get(("build", kind, builder, _content_digest(args)), lambda: builder(*args))
+        except Exception:
+            return []
+        return list(value) if isinstance(value, list) else []
 
     @property
     def enabled(self) -> bool:
@@ -1059,9 +1075,12 @@ class JevService:
                     r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})",
                     created):
                 if head:
-                    found = self._kept.get(("log", self._common_dir(root), head, relative, created), lambda: _git_read(
-                        root, "log", "-1", "--before=" + created, "--format=%H", "--end-of-options", head, "--", relative))
-                    commit = found.decode().strip() if found else ""
+                    try:
+                        commit = self._kept.get(("log", self._common_dir(root), head, relative, created), lambda: _git_answer(
+                            root, "log", "-1", "--before=" + created, "--format=%H", "--end-of-options", head, "--",
+                            relative)).decode().strip()
+                    except (OSError, subprocess.SubprocessError):
+                        commit = ""
             commit = commit or base
             if not commit:
                 continue
@@ -1071,13 +1090,16 @@ class JevService:
         return result
 
     def questions(self, mount: Mapping[str, Any], target: str, relative: str, base: str,
-                  events: list[Mapping[str, Any]], view: str = "", served_mounts: Any = None) -> list[dict[str, Any]]:
+                  events: list[Mapping[str, Any]], view: str = "", served_mounts: Any = None,
+                  base_commit: str | None = None) -> list[dict[str, Any]]:
+        """Questions for one read; base_commit is base already resolved by the caller, else resolved here."""
         current = Path(target).read_bytes()
         root = mount["root"]
         rel = os.path.relpath(target, root).replace(os.sep, "/")
         resolved_head = _commit(root, "HEAD")
         head = resolved_head or "working-tree"
-        base_commit = _commit(root, base)
+        if base_commit is None:
+            base_commit = _commit(root, base)
         old = self._at(root, base_commit, rel) if base_commit else None
         message_sources = self._message_sources(root, rel, base_commit, events, resolved_head or "")
         build = self._build
@@ -1191,11 +1213,12 @@ class JevService:
         return answer, list(misses.values())
 
     def response(self, mount: Mapping[str, Any], target: str, relative: str, base: str,
-                 events: list[Mapping[str, Any]], view: str = "", served_mounts: Any = None) -> dict[str, Any]:
+                 events: list[Mapping[str, Any]], view: str = "", served_mounts: Any = None,
+                 base_commit: str | None = None) -> dict[str, Any]:
         if not self.enabled:
             return {"jev": "off", "items": [], "levels": dict(MARK_LEVELS)}
-        questions = [question for question in self.questions(mount, target, relative, base, events, view, served_mounts)
-                     if question["kind"] in self.seam.question_sets]
+        asked = self.questions(mount, target, relative, base, events, view, served_mounts, base_commit)
+        questions = [question for question in asked if question["kind"] in self.seam.question_sets]
 
         def answer(question):
             if question["kind"] == "coverage" and (question.get("story") is None or question.get("criterion") is None):

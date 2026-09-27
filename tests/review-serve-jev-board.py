@@ -8,7 +8,9 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.error
 import urllib.request
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -263,6 +265,44 @@ class BoardTest(unittest.TestCase):
         self.assertEqual(second["rows"], [{"id": rows[0]["id"], "material": "no"}])
         records = (self.dir / "state" / "records.jsonl").read_text(encoding="utf-8")
         self.assertNotIn("New words", records)
+
+    def test_jev_route_resolves_base_once_and_rejects_bad_base(self):
+        """GET /api/jev runs one base resolve per read; a bad base is still 400 invalid base."""
+        rows = self.one_row()
+        base = rows[0]["base"]
+        rows[0]["root"] = str(Path(rows[0]["root"]).resolve())
+        rows[0]["narrow_root"] = str(Path(rows[0]["root"]) / "docs")
+        service, _ = self.service(lambda kind, state: ("cosmetic", 0.9))
+        server = serve.ReviewThreadingHTTPServer(("127.0.0.1", 0), serve.MountHandler)
+        server.mount_state = serve.MountState(rows)
+        server.jev = service
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        gits = []
+
+        class Counted(subprocess.Popen):
+            def __init__(self, argv, *args, **kwargs):
+                if argv and argv[0] == "git":
+                    gits.append(tuple(argv))
+                super().__init__(argv, *args, **kwargs)
+
+        try:
+            url = "http://127.0.0.1:%d/api/jev?path=%s" % (server.server_port, rows[0]["path"])
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            with patch.object(subprocess, "Popen", Counted):
+                with opener.open(url + "&base=" + base, timeout=10) as response:
+                    self.assertEqual(response.status, 200)
+                    self.assertIn("items", json.loads(response.read()))
+            with self.assertRaises(urllib.error.HTTPError) as bad:
+                opener.open(url + "&base=no-such-ref", timeout=10)
+            self.assertEqual(bad.exception.code, 400)
+            self.assertEqual(json.loads(bad.exception.read()), {"error": "invalid base"})
+            bad.exception.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+        resolves = [argv for argv in gits if "rev-parse" in argv and any(a.startswith(base) for a in argv)]
+        self.assertEqual(len(resolves), 1, gits)
 
 
 if __name__ == "__main__":
