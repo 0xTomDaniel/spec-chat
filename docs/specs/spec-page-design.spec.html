@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spec page design pass</title>
+<link rel="stylesheet" href=".style/spec.css">
+<script defer src=".viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-anchor="spec-page-design" data-spec-contract="shaped-sections-v1">
+<header data-anchor="header">
+<nav data-anchor="breadcrumb">spec-chat / specs</nav>
+<h1 data-anchor="title">Spec page <span class="accent">design pass</span></h1>
+<div class="mast-grid">
+<p class="lede" data-anchor="lede">Apply the Spec Chat index design values to the spec page chrome: one button system, one color palette, consistent placement.
+The spec document's own content styling is unchanged.</p>
+<dl class="refs" data-anchor="refs">
+<dt>Scope</dt><dd>runtime.js CSS const blocks (CSS, DOC_CSS dark mode chrome only)</dd>
+<dt>Tokens</dt><dd><a href="./lane-hosting.spec.html#index-tokens">Index token block</a></dd>
+<dt>Coordinate</dt><dd><a href="https://github.com/0xTomDaniel/spec-chat/pull/91">#91</a> jev-yes-no, Reconcile offer detail: same runtime.js</dd>
+</dl>
+</div>
+</header>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<div class="sec-head">
+<span class="sec-num">01</span>
+<h2 data-anchor="stories-heading">User stories</h2>
+<p class="sec-note" data-anchor="stories-note">One reviewer, one page, consistent chrome.</p>
+</div>
+
+<p data-user-story data-anchor="story-consistent-chrome" data-user-facing="true" data-guided-journey="no">As a spec reviewer, I see one coherent visual system across every button, pill, pin, panel, popover, toolbar, and bar on a spec page, so I never wonder whether two differently styled controls do the same thing.</p>
+
+<p data-user-story data-anchor="story-token-reuse" data-user-facing="false" data-guided-journey="no">As a contributor editing runtime.js, every chrome color, font size, weight, radius, and spacing value is a named token from one block, so I never invent an ad hoc value or guess which grey to use.</p>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-spec-section="acceptance" data-acceptance-scope="design-pass" data-anchor="acceptance">
+<div class="sec-head">
+<span class="sec-num">02</span>
+<h2 data-anchor="acceptance-heading">Acceptance criteria</h2>
+<p class="sec-note" data-anchor="acceptance-note">Screenshots at 1440 and 390, before and after.</p>
+</div>
+
+<p data-acceptance-criterion data-anchor="acceptance-token-block" data-story="story-token-reuse">
+<span data-acceptance-scenario>Given the CSS const string in runtime.js,</span>
+<span data-acceptance-observable>it opens with one <code>:root</code> block headed <code>/* ui tokens */</code> holding the index tokens plus the additions in <a href="#token-additions">the token additions table</a>, and every chrome color, font-size, font-weight, border-radius, and spacing value in the CSS const is a <code>var(--ui-*)</code> reference, with no remaining literal values except pin teardrop border-radius, z-index, transition, animation, and position values.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-button-system" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>At 1440 and 390 widths,</span>
+<span data-acceptance-observable>every chrome button matches one of the four <a href="#button-variants">button variants</a> (primary, secondary, icon, text-link) with the specified shared properties, and no button has a shape, size, radius, font, or color outside the system.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-color-consistency" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>At 1440 width with draft, acknowledged, and resolved threads,</span>
+<span data-acceptance-observable>every pin, pill, dock thread, and thread card border for the same status uses the same token pair (color on soft background), and no two statuses share a color.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-mark-levels" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>With Jev markers at important, neutral, and passed levels,</span>
+<span data-acceptance-observable>marker colors are <code>--ui-marker-important</code> #d1242f, <code>--ui-marker</code> #767b85, and <code>--ui-marker-pass</code> #1a7f37 with their current shapes and sizes.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-contrast" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>For every chrome text-on-background combination,</span>
+<span data-acceptance-observable>normal text meets 4.5:1 contrast ratio and meaningful non-text boundaries (status pill borders, active thread borders, pin outlines) meet 3:1.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-no-content-change" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>At 1440 and 390 widths on a spec with the shared stylesheet,</span>
+<span data-acceptance-observable>the spec document content (headings, prose, tables, figures, code blocks, section borders, page background) renders identically to the current main branch: the spec.css tokens and DOC_CSS article.spec rules are unchanged.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-dark-mode" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>In dark mode (prefers-color-scheme: dark),</span>
+<span data-acceptance-observable>all chrome surfaces, text, and borders use token overrides from the dark <code>:root</code> block, and no literal light-mode color leaks through.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-coordinate" data-story="story-token-reuse">
+<span data-acceptance-scenario>Given the diff of this branch against main,</span>
+<span data-acceptance-observable>only CSS const string content in runtime.js is changed (no JS logic, no function signatures, no event handling), and both copies of runtime.js are identical.</span>
+</p>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<div class="sec-head">
+<span class="sec-num">03</span>
+<h2 data-anchor="boundaries-heading">Modular boundaries</h2>
+<p class="sec-note" data-anchor="boundaries-note">Self-contained CSS refactor.</p>
+</div>
+
+<p data-modular-boundary data-anchor="boundary-css-const">
+<span data-boundary-responsibility>The CSS const strings in runtime.js own all spec page chrome styling: layout, color, typography, and responsive rules for the annotation overlay (toolbar, panel, dock, pins, pills, popovers, toasts, banners, badges, error overlay, range bar, index link, Jev notes, orphan hints, composer, settings).</span>
+<span data-boundary-seam>The caller-facing seam is the set of CSS class names and data attributes already used in mountUI() and render functions. No class name changes; the same selectors get new property values from tokens.</span>
+<span data-boundary-dependency>Self-contained: no new external dependency. The token block is a CSS custom property declaration within the same file.</span>
+<span data-boundary-scope>Observable scope: every chrome element on a spec page uses the unified token set. The spec document's own content styling is outside this boundary.</span>
+</p>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-anchor="audit">
+<div class="sec-head">
+<span class="sec-num">04</span>
+<h2 data-anchor="audit-heading">Audit</h2>
+<p class="sec-note" data-anchor="audit-note">What the screenshots at 1440 and 390 show.</p>
+</div>
+
+<figure data-anchor="audit-buttons">
+<h3 data-anchor="audit-buttons-heading">Buttons: six shapes, no system</h3>
+<div class="table-scroll">
+<table data-anchor="audit-buttons-table">
+<thead><tr><th>Class</th><th>Radius</th><th>Font</th><th>Border</th><th>Fill</th></tr></thead>
+<tbody>
+<tr data-anchor="audit-hx-btn"><td><code>.hx-btn</code></td><td>6px</td><td>600 12px</td><td>1px #ccc</td><td>#fff</td></tr>
+<tr data-anchor="audit-hx-btn-pri"><td><code>.hx-btn.pri</code></td><td>6px</td><td>600 12px</td><td>1px #22242a</td><td>#22242a</td></tr>
+<tr data-anchor="audit-range-change"><td><code>.hx-range-change</code></td><td>6px</td><td>700 12px</td><td>1px #2947c7</td><td>#fff</td></tr>
+<tr data-anchor="audit-range-apply"><td><code>.hx-range-form button</code></td><td>5px</td><td>700 12px</td><td>1px #2947c7</td><td>#2947c7</td></tr>
+<tr data-anchor="audit-toolbar-btn"><td><code>.hx-toolbar button</code></td><td>8px</td><td>600 12.5px</td><td>none</td><td>transparent</td></tr>
+<tr data-anchor="audit-panel-toggle"><td><code>.hx-panel-toggle</code></td><td>7px</td><td>18px</td><td>1px #ccc</td><td>#fff</td></tr>
+<tr data-anchor="audit-panel-gear"><td><code>.hx-panel-gear</code></td><td>7px</td><td>14px</td><td>1px #ccc</td><td>#fff</td></tr>
+<tr data-anchor="audit-dock-open"><td><code>.hx-dock-open</code></td><td>7px</td><td>16px</td><td>1px #d4d3ce</td><td>#fff</td></tr>
+<tr data-anchor="audit-dock-thread"><td><code>.hx-dock-thread</code></td><td>7px</td><td>700 11px</td><td>1px #d4d3ce</td><td>#fff</td></tr>
+<tr data-anchor="audit-banner-btn"><td><code>.hx-banner button</code></td><td>6px</td><td>inherit</td><td>1px #fff</td><td>transparent</td></tr>
+<tr data-anchor="audit-pop-btn"><td><code>.hx-jev-pop .hx-btn</code></td><td>6px</td><td>11.5px</td><td>#2947c7</td><td>#fff</td></tr>
+<tr data-anchor="audit-disclosure"><td><code>.hx-disclosure</code></td><td>4px</td><td>15px</td><td>none</td><td>transparent</td></tr>
+</tbody>
+</table>
+</div>
+<figcaption data-anchor="audit-buttons-caption">Six radii (0, 4, 5, 6, 7, 8), four font sizes (10.5, 11.5, 12, 12.5), five border colors, two filled-primary colors (#22242a, #2947c7) doing the same job.
+Placement inconsistent: Change base is blue outline, Apply is blue fill, Hand off is dark fill, Accept spec on mobile is bare text.</figcaption>
+</figure>
+
+<figure data-anchor="audit-colors">
+<h3 data-anchor="audit-colors-heading">Colors: ~40 unique values, many ad hoc</h3>
+<div class="table-scroll">
+<table data-anchor="audit-colors-table">
+<thead><tr><th>Role</th><th>Values found</th><th>Count</th></tr></thead>
+<tbody>
+<tr data-anchor="audit-color-black"><td>Near-black text</td><td>#22242a #171719 #303036</td><td>3</td></tr>
+<tr data-anchor="audit-color-grey-text"><td>Grey text</td><td>#888 #999 #5a5a63 #5c5c63 #555 #444 #777</td><td>7</td></tr>
+<tr data-anchor="audit-color-border"><td>Border grey</td><td>#ddd #ccc #d9d8d3 #d4d3ce #e1e0dc #e0c77a #303036</td><td>7</td></tr>
+<tr data-anchor="audit-color-surface"><td>Surface grey</td><td>#fff #f4f3ef #e8e7e2 #efeee9</td><td>4</td></tr>
+<tr data-anchor="audit-color-amber"><td>Amber (draft status)</td><td>#b47308 #9a6100 #d98e04 #6d4b05 #78520a #76500a</td><td>6</td></tr>
+<tr data-anchor="audit-color-blue"><td>Blue</td><td>#264f9e #315fbd #2947c7</td><td>3</td></tr>
+<tr data-anchor="audit-color-green"><td>Green</td><td>#3d8c40 #2f6b32 #0e7264</td><td>3</td></tr>
+<tr data-anchor="audit-color-red"><td>Red</td><td>#b42318 #8b1a1a #7b2525 #d1242f</td><td>4</td></tr>
+</tbody>
+</table>
+</div>
+<figcaption data-anchor="audit-colors-caption">Same draft status uses #d98e04 on pins, #b47308 on pills, #9a6100 on dock threads.
+Index tokens (#333333, #525252, #dfdfdf) not used anywhere in chrome.</figcaption>
+</figure>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-anchor="design">
+<div class="sec-head">
+<span class="sec-num">05</span>
+<h2 data-anchor="design-heading">Design</h2>
+<p class="sec-note" data-anchor="design-note">One token block, one button system, one color per meaning.</p>
+</div>
+
+<div data-anchor="token-block">
+<h3 data-anchor="token-block-heading">Token block</h3>
+<p data-anchor="token-block-rule">The spec page chrome CSS const (the <code>CSS</code> string in runtime.js) opens with one <code>:root</code> block headed <code>/* ui tokens */</code>, holding exactly the <a href="./lane-hosting.spec.html#index-tokens">index tokens</a> plus the additions in the table below.
+Every chrome rule uses only these variables.
+No literal color, font size, weight, spacing, or radius value appears in a chrome rule.
+The spec document's own content styling (DOC_CSS <code>article.spec</code> rules and spec.css) is unchanged and keeps its own <code>--spec-*</code> tokens.</p>
+
+<div class="table-scroll">
+<table data-anchor="token-additions">
+<caption>Additions to the index token set for spec page chrome</caption>
+<thead><tr><th>Token</th><th>Value</th><th>Why</th></tr></thead>
+<tbody>
+<tr data-anchor="token-draft"><td><code>--ui-draft</code>, <code>--ui-draft-soft</code></td><td><code>#b0540e</code>, <code>#faf4ef</code></td><td>Draft/pending status. Reuses <code>--ui-attention</code> pair: drafts are unfinished work that needs attention.</td></tr>
+<tr data-anchor="token-ack"><td><code>--ui-ack</code>, <code>--ui-ack-soft</code></td><td><code>#1d4ed8</code>, <code>#eff3ff</code></td><td>Acknowledged status. One blue, 4.5:1 on white. Replaces three ad hoc blues (#264f9e, #315fbd, #2947c7).</td></tr>
+<tr data-anchor="token-resolved"><td><code>--ui-resolved</code>, <code>--ui-resolved-soft</code></td><td><code>#005c32</code>, <code>#e6efea</code></td><td>Resolved status. Reuses <code>--ui-pass</code> pair.</td></tr>
+<tr data-anchor="token-error"><td><code>--ui-error</code></td><td><code>#a5000f</code></td><td>Error overlay background. Reuses <code>--ui-fail</code>.</td></tr>
+<tr data-anchor="token-marker"><td><code>--ui-marker</code>, <code>--ui-marker-important</code>, <code>--ui-marker-pass</code></td><td><code>#767b85</code>, <code>#d1242f</code>, <code>#1a7f37</code></td><td>Jev markers. Agreed mark level colors, unchanged.</td></tr>
+<tr data-anchor="token-pin"><td><code>--ui-pin-ring</code></td><td><code>rgba(176, 84, 14, 0.25)</code></td><td>Active pin and thread ring glow. Derived from <code>--ui-draft</code>.</td></tr>
+<tr data-anchor="token-shadow"><td><code>--ui-shadow</code></td><td><code>rgba(51, 51, 51, 0.14)</code></td><td>Toolbar, dock, panel box shadow. One shadow token from <code>--ui-ink</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="token-dark-mode">Dark mode: the chrome's <code>@media(prefers-color-scheme:dark)</code> block overrides these tokens with dark equivalents.
+The index is light-only; this spec adds the dark overrides for the chrome tokens only, keeping the existing dark palette direction (dark surfaces, light text).</p>
+</div>
+
+<div data-anchor="button-system">
+<h3 data-anchor="button-system-heading">Button system</h3>
+<p data-anchor="button-system-rule">Every chrome button is one of four variants.
+All share: <code>font-family: var(--ui-font)</code>, <code>font-size: var(--ui-text-xs)</code> (12px), <code>font-weight: 600</code>, <code>border-radius: var(--ui-radius-sm)</code> (6px), <code>min-height: 32px</code> desktop / <code>44px</code> mobile, <code>padding: var(--ui-space-2) var(--ui-space-3)</code> (8px 12px).
+Focus: <code>outline: 2px solid var(--ui-focus); outline-offset: 2px</code>.</p>
+
+<div class="table-scroll">
+<table data-anchor="button-variants">
+<thead><tr><th>Variant</th><th>Class</th><th>Fill</th><th>Text</th><th>Border</th><th>Use</th></tr></thead>
+<tbody>
+<tr data-anchor="btn-primary"><td>Primary</td><td><code>.hx-btn.pri</code></td><td><code>var(--ui-ink)</code></td><td><code>var(--ui-page)</code></td><td><code>var(--ui-ink)</code></td><td>Hand off, Accept spec, Apply, Move comment here</td></tr>
+<tr data-anchor="btn-secondary"><td>Secondary</td><td><code>.hx-btn</code></td><td><code>var(--ui-surface)</code></td><td><code>var(--ui-ink)</code></td><td><code>var(--ui-border)</code></td><td>Change base, Cancel, Edit, Reply, Resolve, Go to, Reload, Reconcile</td></tr>
+<tr data-anchor="btn-icon"><td>Icon</td><td><code>.hx-btn-icon</code></td><td><code>var(--ui-surface)</code></td><td><code>var(--ui-muted)</code></td><td><code>var(--ui-border)</code></td><td>Panel toggle, gear, dock open, dock thread, disclosure</td></tr>
+<tr data-anchor="btn-text"><td>Text link</td><td><code>.hx-btn-text</code></td><td>transparent</td><td><code>var(--ui-ink)</code></td><td>none</td><td>Popover +N warnings, dismiss X, toolbar Comment/Reading view</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="button-placement">Placement rule: a bar, panel footer, or popover action row puts the primary action rightmost and a cancel or secondary action left of it.
+A single primary action fills available width on mobile.
+Icon buttons are always square (<code>var(--ui-space-6)</code> desktop, 44px mobile).</p>
+</div>
+
+<div data-anchor="color-map">
+<h3 data-anchor="color-map-heading">Color map</h3>
+<p data-anchor="color-map-rule">Every chrome color value maps to exactly one token.
+The table below is the complete mapping; no chrome rule uses a value outside it.</p>
+
+<div class="table-scroll">
+<table data-anchor="color-map-table">
+<thead><tr><th>Meaning</th><th>Token</th><th>Replaces</th></tr></thead>
+<tbody>
+<tr data-anchor="map-page"><td>Page background</td><td><code>--ui-page</code> #ffffff</td><td>#fff, #faf9f6</td></tr>
+<tr data-anchor="map-surface"><td>Cards, panels, inputs, popovers</td><td><code>--ui-surface</code> #ffffff</td><td>#fff, #f4f3ef, #efeee9</td></tr>
+<tr data-anchor="map-ink"><td>Primary text, headings</td><td><code>--ui-ink</code> #333333</td><td>#22242a, #171719, #303036, #222, #444</td></tr>
+<tr data-anchor="map-muted"><td>Secondary text, captions, status line</td><td><code>--ui-muted</code> #525252</td><td>#888, #999, #5a5a63, #5c5c63, #555, #777</td></tr>
+<tr data-anchor="map-border"><td>Borders, separators, hairlines</td><td><code>--ui-border</code> #dfdfdf</td><td>#ddd, #ccc, #d9d8d3, #d4d3ce, #e1e0dc, #e2e0d8, #e0c77a, #d9d8d3</td></tr>
+<tr data-anchor="map-draft"><td>Draft/pending pin, pill, dock, ring</td><td><code>--ui-draft</code> #b0540e</td><td>#d98e04, #b47308, #9a6100, #6d4b05, #78520a, #76500a</td></tr>
+<tr data-anchor="map-draft-soft"><td>Draft/pending tint backgrounds</td><td><code>--ui-draft-soft</code> #faf4ef</td><td>#fbf3e2, #fff8e9, #fff7d6</td></tr>
+<tr data-anchor="map-ack"><td>Acknowledged pin, pill, dock</td><td><code>--ui-ack</code> #1d4ed8</td><td>#264f9e, #315fbd, #2947c7</td></tr>
+<tr data-anchor="map-ack-soft"><td>Acknowledged tint backgrounds</td><td><code>--ui-ack-soft</code> #eff3ff</td><td>#e8eefb, #edf2ff, #e8edf9, #cbd5ee</td></tr>
+<tr data-anchor="map-resolved"><td>Resolved pin, pill, dock</td><td><code>--ui-resolved</code> #005c32</td><td>#3d8c40, #2f6b32, #0e7264, #69a76b</td></tr>
+<tr data-anchor="map-resolved-soft"><td>Resolved tint backgrounds</td><td><code>--ui-resolved-soft</code> #e6efea</td><td>#e8f2e8, #e3f2e0, #f1f8f1, #e8f2e8</td></tr>
+<tr data-anchor="map-error"><td>Error overlay, error text</td><td><code>--ui-error</code> = <code>--ui-fail</code> #a5000f</td><td>#8b1a1a, #7b2525, #b42318</td></tr>
+<tr data-anchor="map-banner"><td>Banner (spec updated)</td><td><code>--ui-pass</code> #005c32</td><td>#12897c</td></tr>
+<tr data-anchor="map-marker"><td>Neutral marker</td><td><code>--ui-marker</code> #767b85</td><td>unchanged</td></tr>
+<tr data-anchor="map-marker-imp"><td>Important marker</td><td><code>--ui-marker-important</code> #d1242f</td><td>unchanged</td></tr>
+<tr data-anchor="map-marker-pass"><td>Passed marker</td><td><code>--ui-marker-pass</code> #1a7f37</td><td>unchanged</td></tr>
+<tr data-anchor="map-focus-ring"><td>Focus ring</td><td><code>--ui-focus</code> #262626</td><td>#f59e0b (amber focus ring replaced by dark ring, matching index)</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<div data-anchor="type-system">
+<h3 data-anchor="type-system-heading">Typography</h3>
+<p data-anchor="type-system-rule">Chrome text uses only the index type scale.
+<code>var(--ui-text-xs)</code> 12px: pills, badges, captions, toolbar status, note meta, popover text, dock threads.
+<code>var(--ui-text-sm)</code> 14px: panel body, thread messages, composer textarea, range bar text, Jev note.
+<code>var(--ui-text-md)</code> 16px: mobile composer textarea (iOS zoom prevention).
+<code>var(--ui-text-lg)</code> 20px: panel toggle glyph.
+Weights: 400 body, 600 emphasis and buttons, never 700 or 750.</p>
+</div>
+
+<div data-anchor="spacing-system">
+<h3 data-anchor="spacing-system-heading">Spacing and geometry</h3>
+<p data-anchor="spacing-system-rule">Chrome spacing uses only the index spacing scale: 4, 8, 12, 16, 24, 32px.
+Border radii: <code>var(--ui-radius)</code> 8px for containers (panel, toolbar, dock, popover, toast), <code>var(--ui-radius-sm)</code> 6px for buttons and inputs, <code>var(--ui-radius-pill)</code> 999px for pills and badges.
+Pin border-radius is unchanged (teardrop shape).</p>
+</div>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-anchor="surfaces">
+<div class="sec-head">
+<span class="sec-num">06</span>
+<h2 data-anchor="surfaces-heading">Surface rules</h2>
+<p class="sec-note" data-anchor="surfaces-note">Every chrome surface, by element.</p>
+</div>
+
+<div data-anchor="surface-toolbar">
+<h3 data-anchor="surface-toolbar-heading">Toolbar</h3>
+<p data-anchor="surface-toolbar-rule">Background <code>var(--ui-surface)</code>, border <code>1px solid var(--ui-border)</code>, radius <code>var(--ui-radius)</code>, shadow <code>0 8px 28px var(--ui-shadow)</code>.
+Buttons are text-link variant.
+Active (aria-pressed=true): background <code>var(--ui-draft-soft)</code>, color <code>var(--ui-draft)</code>.
+Status text: <code>var(--ui-muted)</code> <code>var(--ui-text-xs)</code>.</p>
+</div>
+
+<div data-anchor="surface-panel">
+<h3 data-anchor="surface-panel-heading">Thread panel</h3>
+<p data-anchor="surface-panel-rule">Background <code>var(--ui-page)</code>, border-left <code>1px solid var(--ui-border)</code>.
+Panel head: border-bottom <code>var(--ui-border)</code>, font-weight 600.
+Settings: background <code>var(--ui-page)</code>, border-bottom <code>var(--ui-border)</code>.
+Thread cards: background <code>var(--ui-surface)</code>, border <code>1px solid var(--ui-border)</code>, radius <code>var(--ui-radius)</code>.
+Active thread: border-color <code>var(--ui-draft)</code>.
+Hand-off bar: border-top <code>var(--ui-border)</code>; primary button rightmost.</p>
+</div>
+
+<div data-anchor="surface-dock">
+<h3 data-anchor="surface-dock-heading">Thread dock</h3>
+<p data-anchor="surface-dock-rule">Background <code>var(--ui-surface)</code> with backdrop-filter, border <code>1px solid var(--ui-border)</code>, radius 11px (keeps its distinctive rounded shape).
+Open and thread buttons are icon variant.
+Thread number buttons carry status tint: draft <code>border-color: var(--ui-draft); color: var(--ui-draft); background: var(--ui-draft-soft)</code>.
+Acknowledged: <code>var(--ui-ack)</code> pair.
+Resolved: <code>var(--ui-resolved)</code> pair.
+Unread badge: background <code>var(--ui-ack)</code>, color <code>var(--ui-page)</code>.</p>
+</div>
+
+<div data-anchor="surface-range-bar">
+<h3 data-anchor="surface-range-bar-heading">Range bar</h3>
+<p data-anchor="surface-range-bar-rule">Background <code>var(--ui-ack-soft)</code>, border <code>1px solid var(--ui-ack)</code> at 0.3 opacity, radius <code>var(--ui-radius)</code>.
+Change base: secondary button.
+Commit picker: commit rows are text-link buttons; selected row has border-color <code>var(--ui-resolved)</code>, background <code>var(--ui-resolved-soft)</code>.
+Apply: primary button.
+Input: border <code>var(--ui-border)</code>, radius <code>var(--ui-radius-sm)</code>.</p>
+</div>
+
+<div data-anchor="surface-pins">
+<h3 data-anchor="surface-pins-heading">Pins</h3>
+<p data-anchor="surface-pins-rule">Pin shape unchanged (teardrop).
+Draft/pending: background <code>var(--ui-draft)</code>.
+Acknowledged: background <code>var(--ui-ack)</code>.
+Resolved: background <code>var(--ui-surface)</code>, border <code>2px solid var(--ui-resolved)</code>, color <code>var(--ui-resolved)</code>.
+Active ring: <code>0 0 0 3px var(--ui-pin-ring)</code>.</p>
+</div>
+
+<div data-anchor="surface-pills">
+<h3 data-anchor="surface-pills-heading">Pills</h3>
+<p data-anchor="surface-pills-rule">Radius <code>var(--ui-radius-pill)</code>.
+Font <code>var(--ui-text-xs)</code> weight 600, uppercase, tracking 0.05em.
+Draft/pending: color <code>var(--ui-draft)</code>, background <code>var(--ui-draft-soft)</code>.
+Acknowledged: color <code>var(--ui-ack)</code>, background <code>var(--ui-ack-soft)</code>.
+Resolved: color <code>var(--ui-resolved)</code>, background <code>var(--ui-resolved-soft)</code>.</p>
+</div>
+
+<div data-anchor="surface-popover">
+<h3 data-anchor="surface-popover-heading">Jev popover</h3>
+<p data-anchor="surface-popover-rule">Background <code>var(--ui-surface)</code>, border <code>1px solid var(--ui-ink)</code>, radius <code>var(--ui-radius)</code>, shadow <code>0 8px 28px var(--ui-shadow)</code>.
+Text: <code>var(--ui-ink)</code>.
+Attention text: <code>var(--ui-fail)</code>.
+Neutral text: <code>var(--ui-muted)</code>.
+Meta, sentence: <code>var(--ui-muted)</code>.
+Link: <code>var(--ui-ack)</code> underlined.
+Action buttons: secondary variant with border-color <code>var(--ui-ack)</code>, color <code>var(--ui-ack)</code>.</p>
+</div>
+
+<div data-anchor="surface-jev-note">
+<h3 data-anchor="surface-jev-note-heading">Jev note</h3>
+<p data-anchor="surface-jev-note-rule">Background <code>var(--ui-draft-soft)</code>, border <code>1px solid var(--ui-draft)</code> at 0.4 opacity, radius <code>var(--ui-radius)</code>.
+Text: <code>var(--ui-draft)</code>.
+Reconcile/offer button: secondary variant.</p>
+</div>
+
+<div data-anchor="surface-toast">
+<h3 data-anchor="surface-toast-heading">Toast</h3>
+<p data-anchor="surface-toast-rule">Background <code>var(--ui-ink)</code>, color <code>var(--ui-page)</code>, radius <code>var(--ui-radius)</code>.
+Font <code>var(--ui-text-xs)</code> weight 600.</p>
+</div>
+
+<div data-anchor="surface-banner">
+<h3 data-anchor="surface-banner-heading">Banner</h3>
+<p data-anchor="surface-banner-rule">Background <code>var(--ui-pass)</code>, color <code>var(--ui-page)</code>.
+Button: secondary variant with border-color and color <code>var(--ui-page)</code>.</p>
+</div>
+
+<div data-anchor="surface-error">
+<h3 data-anchor="surface-error-heading">Error overlay</h3>
+<p data-anchor="surface-error-rule">Background <code>var(--ui-error)</code>, color <code>var(--ui-page)</code>.
+Font <code>var(--ui-text-xs)</code> monospace.</p>
+</div>
+
+<div data-anchor="surface-index-link">
+<h3 data-anchor="surface-index-link-heading">Index link</h3>
+<p data-anchor="surface-index-link-rule">Background <code>var(--ui-surface)</code>, border <code>1px solid var(--ui-border)</code>, radius <code>var(--ui-radius)</code>.
+Text: <code>var(--ui-resolved)</code> weight 600 <code>var(--ui-text-xs)</code>.
+Hover: background <code>var(--ui-page)</code>.</p>
+</div>
+
+<div data-anchor="surface-orphan">
+<h3 data-anchor="surface-orphan-heading">Orphan hint</h3>
+<p data-anchor="surface-orphan-rule">Border-left <code>3px solid var(--ui-draft)</code>, background <code>var(--ui-draft-soft)</code>, color <code>var(--ui-draft)</code>.
+Buttons: secondary variant.</p>
+</div>
+
+<div data-anchor="surface-badge">
+<h3 data-anchor="surface-badge-heading">Agent badge</h3>
+<p data-anchor="surface-badge-rule">Background <code>var(--ui-resolved-soft)</code>, color <code>var(--ui-resolved)</code>, radius <code>var(--ui-radius-pill)</code>.
+Font <code>var(--ui-text-xs)</code> weight 600 uppercase.</p>
+</div>
+
+<div data-anchor="surface-composer">
+<h3 data-anchor="surface-composer-heading">Composer</h3>
+<p data-anchor="surface-composer-rule">Textarea: border <code>1px solid var(--ui-border)</code>, radius <code>var(--ui-radius-sm)</code>, background <code>var(--ui-surface)</code>, color <code>var(--ui-ink)</code>.
+Font <code>var(--ui-text-sm)</code> desktop, <code>var(--ui-text-md)</code> mobile (iOS zoom prevention).
+Buttons below: primary (send) rightmost, secondary (cancel) left.</p>
+</div>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-anchor="coordinate">
+<div class="sec-head">
+<span class="sec-num">07</span>
+<h2 data-anchor="coordinate-heading">Coordinate lanes</h2>
+<p class="sec-note" data-anchor="coordinate-note">What changes, what does not, how merges work.</p>
+</div>
+
+<p data-anchor="coordinate-rule">This spec changes only the CSS const strings in runtime.js: <code>CSS</code>, and the chrome portion of <code>DOC_CSS</code> (the dark mode overrides for the overlay, not the <code>article.spec</code> rules).
+No JS logic changes.
+<a href="https://github.com/0xTomDaniel/spec-chat/pull/91">#91</a> (jev-yes-no) and the Reconcile offer detail lane both add or change JS logic and may add CSS rules.
+Merge conflicts will be in the CSS template strings.
+Resolution: take this branch's token block and color/button values; take the other branch's new selectors and rules, rewriting their literal values to use the tokens.</p>
+
+<p data-anchor="coordinate-copies">runtime.js exists in two identical copies: <code>skill/review-spec/assets/viz/runtime.js</code> (source) and <code>docs/specs/.viz/runtime.js</code> (committed for offline use).
+Both are updated together.</p>
+
+</section>
+
+</article>
+</body>
+</html>
