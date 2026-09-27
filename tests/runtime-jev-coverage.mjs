@@ -34,6 +34,11 @@ assert.deepEqual(coverageFlags([
 ]), [{ anchor: 'story-one', side: 'story', state: 'gap', label: 'No criterion covers this' },
     { anchor: 'story-two', side: 'story', state: 'gap', label: 'No criterion covers this' },
     { anchor: 'criterion-one', side: 'criterion', state: 'gap', label: 'No story backs this' }]);
+// A pair not yet answered shows nothing yet, never a gap (#state-pending).
+assert.deepEqual(coverageGapFlags([
+  { kind: 'coverage', id: 'story::criterion-a', state: 'pending', label: null },
+  { kind: 'coverage', id: 'story::criterion-b', state: 'label', label: 'unrelated' },
+]), [{ anchor: 'criterion-b', side: 'criterion', state: 'gap', label: 'No story backs this' }]);
 assert.match(runtime, /No criterion covers this/);
 assert.match(runtime, /No story backs this/);
 

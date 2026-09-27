@@ -3,6 +3,7 @@
 import importlib.util
 import subprocess
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -15,6 +16,21 @@ _spec.loader.exec_module(jev)
 
 SPEC = "docs/specs/shared.spec.html"
 OWN = "docs/specs/own.spec.html"
+
+
+def wait_asks(service, timeout=10):
+    """Wait until no background ask is in flight (#fast-marks-background)."""
+    deadline = time.monotonic() + timeout
+    while service._asking and time.monotonic() < deadline:
+        time.sleep(0.005)
+    assert not service._asking, "background asks still in flight"
+
+
+def settled(service, *args):
+    """A read after the first read's background asks have been recorded."""
+    service.response(*args)
+    wait_asks(service)
+    return service.response(*args)
 
 
 class FakeProvider:
@@ -63,7 +79,7 @@ class CorpusTest(unittest.TestCase):
         questions = jev.build_corpus_questions(current, baseline, OWN, "base", "head",
                                                [{"path": "lane/docs/specs/other.spec.html", "source": other}])
         service.questions = lambda *args, **kwargs: questions
-        items = service.response({}, "", "", "base", [])["items"]
+        items = settled(service, {}, "", "", "base", [])["items"]
         by_target = {item["target"]: item for item in items}
         self.assertEqual(by_target["non-goal-text"]["state"], "label")
         self.assertEqual(by_target["non-goal-text"]["label"], "contradicts")
@@ -178,6 +194,8 @@ class CorpusTest(unittest.TestCase):
         dirs = [ROOT / "skill" / "review-spec" / "assets" / "jev"]
         service = jev.JevService(state_dir=self.dir / "state", provider=provider, api_key="fake", question_dirs=dirs)
         read = lambda s: s.response(mounts[0], str(lane_a / SPEC), "a/" + SPEC, base, events, "reading", mounts)
+        read(service)
+        wait_asks(service)
         first = read(service)
         self.assertTrue(first["items"])
 

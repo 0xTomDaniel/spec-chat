@@ -3,6 +3,7 @@ import json
 import re
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -13,6 +14,21 @@ SPEC = ROOT / "docs/specs/jev-suggestions.spec.html"
 spec = importlib.util.spec_from_file_location("jev_audience_test", ROOT / "tools" / "jev.py")
 jev = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(jev)
+
+
+def wait_asks(service, timeout=10):
+    """Wait until no background ask is in flight (#fast-marks-background)."""
+    deadline = time.monotonic() + timeout
+    while service._asking and time.monotonic() < deadline:
+        time.sleep(0.005)
+    assert not service._asking, "background asks still in flight"
+
+
+def settled(service, *args):
+    """A read after the first read's background asks have been recorded."""
+    service.response(*args)
+    wait_asks(service)
+    return service.response(*args)
 
 
 class AlwaysInternals:
@@ -136,7 +152,7 @@ class AudienceBuilderTest(unittest.TestCase):
             service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
             questions = jev.build_audience_questions(source, "spec.html", "base", "head")
             service.questions = lambda *args, **kwargs: questions
-            result = service.response({}, "", "", "base", [], "reading")
+            result = settled(service, {}, "", "", "base", [], "reading")
         items = {item["id"]: item for item in result["items"] if item["kind"] == "audience"}
         self.assertFalse(structural & set(items))
         self.assertTrue(criteria <= set(items))

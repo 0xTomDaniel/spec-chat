@@ -11,7 +11,7 @@ import subprocess
 import threading
 import uuid
 from collections import OrderedDict
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
@@ -804,7 +804,7 @@ BUILDERS = {"type": build_type_questions, "orphan": build_orphan_questions, "res
 # Board route (worklane-provider #jev-board): change type answers that quiet the review highlight.
 MATERIAL_NO = frozenset({"cosmetic", "clarification"})
 MATERIAL_YES = frozenset({"scope", "behavioral"})
-BOARD_ASK_WORKERS = 4
+ASK_WORKERS = 4
 
 
 def changed_leaf_clauses(current: str | bytes, baseline: str | bytes | None) -> list[tuple[str, str, str]]:
@@ -964,6 +964,11 @@ class JevService:
         self._board_idle = threading.Event()
         self._board_idle.set()
         self._board_thread: threading.Thread | None = None
+
+        # Background asks (#fast-marks-background): one in flight per question key, shared by both routes.
+        self._ask_lock = threading.Lock()
+        self._asking: dict[str, Future] = {}
+        self._ask_pool = ThreadPoolExecutor(max_workers=ASK_WORKERS, thread_name_prefix="spec-chat-jev-ask")
 
     @property
     def _kept(self) -> _Kept:
@@ -1163,8 +1168,7 @@ class JevService:
                 answer, misses = self._board_from_records(rows)
                 self._board_answer = answer
                 if misses:
-                    with ThreadPoolExecutor(max_workers=BOARD_ASK_WORKERS) as pool:
-                        list(pool.map(self._ask_quietly, misses))
+                    wait(self._ask_misses(misses))
                     self._board_answer, _ = self._board_from_records(rows)
             except Exception:
                 pass
@@ -1172,24 +1176,40 @@ class JevService:
                 if not self._board_wake.is_set():
                     self._board_idle.set()
 
-    def _ask_quietly(self, question: Mapping[str, Any]) -> None:
+    def _held(self, question: Mapping[str, Any], misses: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+        """The held record, whatever its outcome; reads never re-ask unchanged inputs. A miss is collected."""
+        key = self.seam.key(question)
+        record = self.seam.store.get(key)
+        if record is None:
+            misses.setdefault(key, dict(question))
+        return record
+
+    def _ask_misses(self, misses: Mapping[str, dict[str, Any]]) -> list[Future]:
+        """Ask each miss, by key, once in the background; a question already in flight is not asked again."""
+        futures = []
+        with self._ask_lock:
+            for key, question in misses.items():
+                if key not in self._asking:
+                    self._asking[key] = self._ask_pool.submit(self._ask_quietly, key, question)
+                futures.append(self._asking[key])
+        return futures
+
+    def _ask_quietly(self, key: str, question: Mapping[str, Any]) -> None:
         try:
             self.seam.ask(question)
         except Exception:
             pass
+        finally:
+            with self._ask_lock:
+                self._asking.pop(key, None)
 
-    def _board_from_records(self, rows: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    def _board_from_records(self, rows: Any) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
         rows = [row for row in rows or () if isinstance(row, Mapping) and row.get("slug") and row.get("spec")]
         sets = self.seam.question_sets
         misses: dict[str, dict[str, Any]] = {}
 
         def held(question: Mapping[str, Any]) -> dict[str, Any] | None:
-            # Any held record answers, unavailable included: board reads never re-ask unchanged inputs.
-            key = self.seam.key(question)
-            record = self.seam.store.get(key)
-            if record is None:
-                misses.setdefault(key, dict(question))
-            return record
+            return self._held(question, misses)
 
         answer_rows = []
         clauses: dict[str, list[dict[str, str]]] = {}
@@ -1210,7 +1230,7 @@ class JevService:
                 if _confident_label(held(question)) == "contradicts":
                     pairs.add(question["pair"])
         answer = {"jev": "on", "rows": answer_rows, "conflicts": [{"a": a, "b": b} for a, b in sorted(pairs)]}
-        return answer, list(misses.values())
+        return answer, misses
 
     def response(self, mount: Mapping[str, Any], target: str, relative: str, base: str,
                  events: list[Mapping[str, Any]], view: str = "", served_mounts: Any = None,
@@ -1219,16 +1239,21 @@ class JevService:
             return {"jev": "off", "items": [], "levels": dict(MARK_LEVELS)}
         asked = self.questions(mount, target, relative, base, events, view, served_mounts, base_commit)
         questions = [question for question in asked if question["kind"] in self.seam.question_sets]
+        misses: dict[str, dict[str, Any]] = {}
 
         def answer(question):
             if question["kind"] == "coverage" and (question.get("story") is None or question.get("criterion") is None):
-                return question, {"outcome": "shown", "answer": {"label": "unrelated"}, "record_id": None}
-            return question, self.seam.ask(question)
+                return {"outcome": "shown", "answer": {"label": "unrelated"}, "record_id": None}
+            return self._held(question, misses)
 
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            answers = list(pool.map(answer, questions))
+        answers = [(question, answer(question)) for question in questions]
+        self._ask_misses(misses)
         items = []
         for question, record in answers:
+            if record is None:
+                items.append({"kind": question["kind"], "id": question["id"], "state": "pending", "label": None,
+                              "target": question.get("target"), "record": None})
+                continue
             outcome = record.get("outcome")
             if outcome == "oversize":
                 continue

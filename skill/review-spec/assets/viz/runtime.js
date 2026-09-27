@@ -197,30 +197,58 @@ function clearJev() {
   state.jev.items = [];
   state.jev.levels = {};
   state.jev.base = null;
+  scheduleJevPoll();
   renderJev();
   renderPanel();
   renderPins();
 }
 
-async function requestJev(base) {
+// Background answers (#fast-marks-background): while any item is pending and the page is shown, read the
+// same base again in 2 s; a newer request, a base change, or hiding the page cancels it, and showing resumes it.
+let jevPollTimer = 0;
+
+function scheduleJevPoll() {
+  clearTimeout(jevPollTimer);
+  jevPollTimer = 0;
+  if (state.jev.status !== 'on' || document.hidden || !state.jev.items.some(item => item.state === 'pending')) return;
+  const request = state.jev.request;
+  const base = state.jev.base;
+  jevPollTimer = setTimeout(() => {
+    jevPollTimer = 0;
+    if (request === state.jev.request && base === state.jev.base && !document.hidden) requestJev(base, true);
+  }, 2000);
+}
+
+document.addEventListener('visibilitychange', scheduleJevPoll);
+
+// refresh: a re-read for pending items; it shows only what changed and keeps the page as is when it fails.
+async function requestJev(base, refresh = false) {
   if (!['http:', 'https:'].includes(location.protocol) || !base) return;
   const request = ++state.jev.request;
-  state.jev.status = 'loading';
-  state.jev.base = String(base);
-  renderJev();
+  if (!refresh) {
+    state.jev.status = 'loading';
+    state.jev.base = String(base);
+    renderJev();
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120000);
   try {
     const result = await fetchJev(base, controller.signal);
     if (request !== state.jev.request) return;
-    state.jev.status = result.jev === 'off' ? 'off' : 'on';
+    const status = result.jev === 'off' ? 'off' : 'on';
+    const same = refresh && status === state.jev.status
+      && JSON.stringify([result.items, result.levels]) === JSON.stringify([state.jev.items, state.jev.levels]);
+    state.jev.status = status;
     state.jev.items = result.items;
     state.jev.levels = result.levels;
+    scheduleJevPoll();
+    if (same) return;
     renderJev();
     renderPanel();
     renderPins();
   } catch (_) {
     if (request !== state.jev.request) return;
+    if (refresh) { scheduleJevPoll(); return; }
     state.jev.status = 'unavailable';
     state.jev.items = [];
     state.jev.levels = {};
@@ -446,7 +474,7 @@ function coverageGapFlags(items) {
   const values = new Map();
   const ensure = (anchor, side) => {
     const key = side + ':' + anchor;
-    if (!values.has(key)) values.set(key, { anchor, side, verifies: false, unsure: false, unavailable: false });
+    if (!values.has(key)) values.set(key, { anchor, side, verifies: false, unsure: false, unavailable: false, pending: false });
     return values.get(key);
   };
   for (const item of Array.isArray(items) ? items : []) {
@@ -458,15 +486,17 @@ function coverageGapFlags(items) {
     const verifies = item.state === 'label' && item.label === 'verifies';
     const unsure = item.state === 'unsure' || (item.state === 'label' && item.label === 'unsure');
     const unavailable = item.state === 'unavailable';
+    const pending = item.state === 'pending';
     for (const value of [story, criterion]) {
       value.verifies ||= verifies;
       value.unsure ||= unsure;
       value.unavailable ||= unavailable;
+      value.pending ||= pending;
     }
   }
   return [...values.values()].flatMap(value => {
     if (!value.anchor) return [];
-    if (value.verifies) return [];
+    if (value.verifies || value.pending) return [];
     if (value.unsure) return [{ anchor: value.anchor, side: value.side, state: 'unsure', label: 'unsure' }];
     if (value.unavailable) return [{ anchor: value.anchor, side: value.side, state: 'unavailable', label: 'Jev unavailable' }];
     return [{ anchor: value.anchor, side: value.side, state: 'gap',

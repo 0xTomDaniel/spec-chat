@@ -49,6 +49,106 @@ class SlowProvider:
         return {"answers": {next(iter(payload["questions"])): {"choice": "behavioral", "confidence": 0.9}}}
 
 
+def wait_asks(service, timeout=10):
+    """Wait until no background ask is in flight (#fast-marks-background)."""
+    deadline = time.monotonic() + timeout
+    while service._asking and time.monotonic() < deadline:
+        time.sleep(0.005)
+    assert not service._asking, "background asks still in flight"
+
+
+def settled(service, *args):
+    """A read after the first read's background asks have been recorded."""
+    service.response(*args)
+    wait_asks(service)
+    return service.response(*args)
+
+
+class GatedProvider:
+    """Blocks every ask until released; counts calls."""
+
+    def __init__(self, fail=False):
+        self.release = threading.Event()
+        self.fail = fail
+        self.calls = 0
+        self.lock = threading.Lock()
+
+    def decide(self, payload):
+        with self.lock:
+            self.calls += 1
+        self.release.wait(10)
+        if self.fail:
+            raise RuntimeError("provider failed")
+        return {"answers": {next(iter(payload["questions"])): {"choice": "behavioral", "confidence": 0.9}}}
+
+
+class JevBackgroundTest(unittest.TestCase):
+    """jev-suggestions #fast-marks-background, #state-pending, #state-error, #acceptance-background."""
+
+    def service(self, directory, provider):
+        service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
+        questions = [{"kind": "type", "id": str(index), "state": {"after": str(index)},
+                      "sources": [], "revision": "head"} for index in range(20)]
+        service.questions = lambda *args, **kwargs: questions
+        return service
+
+    def read(self, service):
+        return service.response({}, "", "", "base", [])
+
+    def test_first_read_is_pending_and_never_waits_for_jev(self):
+        provider = GatedProvider()
+        with tempfile.TemporaryDirectory() as directory:
+            service = self.service(directory, provider)
+            try:
+                started = time.monotonic()
+                first = self.read(service)
+                self.assertLess(time.monotonic() - started, 0.2)
+                self.assertEqual([item["state"] for item in first["items"]], ["pending"] * 20)
+                self.assertTrue(all(item["label"] is None and item["record"] is None for item in first["items"]))
+                self.assertEqual(len(service._asking), 20)
+            finally:
+                provider.release.set()
+            wait_asks(service)
+            second = self.read(service)
+        self.assertEqual([item["state"] for item in second["items"]], ["label"] * 20)
+        self.assertEqual(provider.calls, 20)
+
+    def test_read_while_asks_are_in_flight_starts_none(self):
+        provider = GatedProvider()
+        with tempfile.TemporaryDirectory() as directory:
+            service = self.service(directory, provider)
+            try:
+                self.read(service)
+                asking = dict(service._asking)
+                again = self.read(service)
+                self.assertEqual(service._asking, asking)
+                self.assertEqual([item["state"] for item in again["items"]], ["pending"] * 20)
+            finally:
+                provider.release.set()
+            wait_asks(service)
+            self.read(service)
+            wait_asks(service)
+        self.assertEqual(provider.calls, 20)
+
+    def test_failed_twice_is_held_unavailable_until_inputs_change(self):
+        provider = GatedProvider(fail=True)
+        provider.release.set()
+        with tempfile.TemporaryDirectory() as directory:
+            service = self.service(directory, provider)
+            held = settled(service, {}, "", "", "base", [])
+            self.assertEqual([item["state"] for item in held["items"]], ["unavailable"] * 20)
+            self.assertEqual(provider.calls, 40)
+            again = self.read(service)
+            self.assertFalse(service._asking)
+            self.assertEqual(again, held)
+            self.assertEqual(provider.calls, 40)
+            changed = [{"kind": "type", "id": "0", "state": {"after": "changed"}, "sources": [], "revision": "head"}]
+            service.questions = lambda *args, **kwargs: changed
+            self.assertEqual(self.read(service)["items"][0]["state"], "pending")
+            wait_asks(service)
+        self.assertEqual(provider.calls, 42)
+
+
 class JevSeamTest(unittest.TestCase):
     def question_sets(self):
         return {"type": jev.QuestionSet("type", 1, "Classify the change.",
@@ -138,7 +238,7 @@ class JevSeamTest(unittest.TestCase):
             service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
             question = {"kind": "resolved", "id": "thread", "state": {}, "sources": [], "revision": "head"}
             service.questions = lambda *args, **kwargs: [question]
-            result = service.response({}, "", "", "base", [])
+            result = settled(service, {}, "", "", "base", [])
         self.assertEqual(result["items"][0]["state"], "none")
         self.assertIsNone(result["items"][0]["label"])
 
@@ -158,7 +258,7 @@ class JevSeamTest(unittest.TestCase):
                 service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
                 question = {"kind": kind, "id": "clause", "state": {"after": choice}, "sources": [], "revision": "head"}
                 service.questions = lambda *args, **kwargs: [question]
-                result = service.response({}, "", "", "base", [])
+                result = settled(service, {}, "", "", "base", [])
             self.assertEqual(result["levels"], jev.MARK_LEVELS)
             self.assertEqual(result["items"][0].get("level"), level, (kind, choice, confidence))
         # Changing one table row changes the JSON.
@@ -167,7 +267,7 @@ class JevSeamTest(unittest.TestCase):
             service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
             question = {"kind": "corpus", "id": "clause", "state": {"after": "x"}, "sources": [], "revision": "head"}
             service.questions = lambda *args, **kwargs: [question]
-            result = service.response({}, "", "", "base", [])
+            result = settled(service, {}, "", "", "base", [])
         self.assertEqual((result["levels"]["oversteps"], result["items"][0]["level"]), ("important", "important"))
 
     def test_response_asks_uncached_questions_in_parallel(self):
@@ -177,7 +277,7 @@ class JevSeamTest(unittest.TestCase):
             questions = [{"kind": "type", "id": str(index), "state": {"after": str(index)},
                           "sources": [], "revision": "head"} for index in range(4)]
             service.questions = lambda *args, **kwargs: questions
-            result = service.response({}, "", "", "base", [])
+            result = settled(service, {}, "", "", "base", [])
         self.assertEqual(len(result["items"]), 4)
         self.assertEqual(provider.calls, 4)
         self.assertGreater(provider.max_active, 1)
@@ -332,7 +432,7 @@ class JevSeamTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
             service.questions = lambda *args: [question]
-            result = service.response({}, "", "", "", [], "")
+            result = settled(service, {}, "", "", "", [], "")
             stored = (Path(directory) / "records.jsonl").read_text()
         record = json.loads(stored.strip().splitlines()[-1])
         self.assertEqual(record["answer"]["label"], "new-section")
@@ -368,7 +468,7 @@ class JevSeamTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
             service.questions = lambda *args: [question]
-            result = service.response({}, "", "", "", [], "")
+            result = settled(service, {}, "", "", "", [], "")
         self.assertEqual(result["items"][0]["label"], label)
         self.assertEqual(result["items"][0]["target"], "new-section")
 
@@ -383,7 +483,7 @@ class JevSeamTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
             service.questions = lambda *args: [question]
-            result = service.response({}, "", "", "", [], "")
+            result = settled(service, {}, "", "", "", [], "")
         self.assertEqual(result["items"], [{"kind": "orphan", "id": "u1", "state": "none",
                                             "label": None, "target": None, "record": unittest.mock.ANY}])
 
