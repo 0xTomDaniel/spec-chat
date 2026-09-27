@@ -172,6 +172,8 @@ async function fetchJev(base, signal) {
       target: item.target == null ? null : String(item.target),
       record: item.record == null ? null : String(item.record),
       level: item.level == null ? null : String(item.level),
+      side: item.side == null ? null : String(item.side),
+      other: item.other == null ? null : String(item.other), // lane items name the other slug (#acceptance-cross-lane)
       word: item.word == null ? null : String(item.word),
       escalated: item.escalated === true,
     })) : [],
@@ -1188,13 +1190,16 @@ function goToJevTarget(target) {
  * adds a source and note buttons add actions, without touching placement.
  */
 const JEV_NOTE_GROUPS = ['evidence', 'conflict', 'coverage', 'rule', 'type', 'neutral'];
-const JEV_RECONCILE_LABELS = new Set(['Contradicts', 'Oversteps']);
+const JEV_RECONCILE_LABELS = new Set(['Contradicts', 'Oversteps', 'Overstepped by']);
+// Cross-lane labels (#cross-lane-finding); a pending lane item is an unanswered question and never a note.
+const JEV_LANE_LABELS = { contradicts: 'Contradicts', oversteps: 'Oversteps', 'overstepped by': 'Overstepped by' };
 const jevNoteSources = [jevSuggestionNotes, evidenceNotes];
 const jevPopoverState = { element: null, marker: null, closeTimer: 0, wired: false };
 
-// A derived mark's level from the server's levels table in one response state; the runtime holds no mapping of its own.
+// A derived mark's level from the human column of the server's levels table in one response state (#markers-levels-source);
+// the runtime holds no mapping of its own.
 function markLevel(source, kind) {
-  const level = source && source.levels && source.levels[kind];
+  const level = source && source.levels && source.levels[kind] && source.levels[kind].human;
   return typeof level === 'string' ? level : null;
 }
 
@@ -1281,20 +1286,32 @@ function jevSuggestionNotes() {
     }
     return notes;
   }
-  if (!jevGitFocus()) return notes;
   const reconcile = [];
-  for (const flag of corpusFlags(state.jev.items)) {
-    if (flag.state !== 'label') { notes.push(jevNeutralNote(flag.anchor, flag.state, 'corpus')); continue; }
-    const link = corpusTargetLink(flag.target);
-    const note = { anchor: flag.anchor, group: 'conflict', state: 'label', text: flag.label + (link ? ' ' + link.text : ''),
-      href: link ? link.href : null, level: flag.level, actions: [] };
-    if (link && JEV_RECONCILE_LABELS.has(flag.label)) {
-      note.actions.push(jevDraftAction('Ask agent to reconcile', 'Reconcile this clause with ' + link.text + '.'));
-      reconcile.push({ note, line: '#' + flag.anchor + ' ' + note.text });
+  // One conflict note; a reconcile link (draft) is the full target so the agent can open it (#note-reconcile).
+  const conflict = (anchor, label, level, text, href, draftLink) => {
+    const note = { anchor, group: 'conflict', state: 'label', text, href, level, actions: [] };
+    if (draftLink && JEV_RECONCILE_LABELS.has(label)) {
+      note.actions.push(jevDraftAction('Ask agent to reconcile', 'Reconcile this clause with ' + draftLink + '.'));
+      reconcile.push({ note, line: '#' + anchor + ' ' + label + ' ' + draftLink });
     }
     notes.push(note);
+  };
+  // Cross-lane marks compare against target main, not the Git focus base, so they show in either view (#cross-lane-finding).
+  for (const item of state.jev.items) {
+    const label = item && item.kind === 'lane' && item.state === 'label' && item.id ? JEV_LANE_LABELS[item.label] : null;
+    const link = label ? corpusTargetLink(item.target) : null;
+    if (!link) continue;
+    conflict(String(item.id), label, item.level || null, label + ' ' + item.other + ' #' + link.href.slice(link.href.indexOf('#') + 1),
+      link.href, link.text);
+  }
+  const gitFocus = jevGitFocus();
+  for (const flag of gitFocus ? corpusFlags(state.jev.items) : []) {
+    if (flag.state !== 'label') { notes.push(jevNeutralNote(flag.anchor, flag.state, 'corpus')); continue; }
+    const link = corpusTargetLink(flag.target);
+    conflict(flag.anchor, flag.label, flag.level, flag.label + (link ? ' ' + link.text : ''), link ? link.href : null, link && link.text);
   }
   jevReconcileAll(reconcile);
+  if (!gitFocus) return notes;
   for (const item of state.jev.items) {
     if (item.kind !== 'type' || !item.id) continue;
     if (neutral(item)) notes.push(jevNeutralNote(item.id, item.state, 'type'));
