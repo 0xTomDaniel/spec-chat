@@ -144,15 +144,15 @@ class JevBackgroundTest(unittest.TestCase):
         service = self.service(provider)
         held = self.settled(service)
         self.assertEqual([item["state"] for item in held["items"]], ["unavailable"] * 20)
-        self.assertEqual(provider.calls, 40)
+        self.assertEqual(provider.calls, 20)
         again = self.read(service)
         self.assertEqual(again, held)
-        self.assertEqual(provider.calls, 40)
+        self.assertEqual(provider.calls, 20)
         changed = [{"kind": "type", "id": "0", "state": {"after": "changed"}, "sources": [], "revision": "head"}]
         service.questions = lambda *args, **kwargs: changed
         self.assertEqual(self.read(service)["items"][0]["state"], "pending")
         self.settled(service)
-        self.assertEqual(provider.calls, 42)
+        self.assertEqual(provider.calls, 21)
 
     def test_failed_ask_waits_its_pause_then_the_first_read_asks_again(self):
         """jev-suggestions #state-error: the one retry rule; no read asks during the pause, and no read waits."""
@@ -162,11 +162,11 @@ class JevBackgroundTest(unittest.TestCase):
         with patch.object(jev, "_wall", lambda: now[0]):
             service = self.service(provider, count=1)
             self.assertEqual(self.settled(service)["items"][0]["state"], "unavailable")
-            self.assertEqual(provider.calls, 2)  # the seam's one retry inside the ask
+            self.assertEqual(provider.calls, 1)  # one call per ask: no retry inside it
             now[0] += jev.RETRY_PAUSE - 1
             self.assertEqual(self.read(service)["items"][0]["state"], "unavailable")
             time.sleep(0.05)
-            self.assertEqual(provider.calls, 2)
+            self.assertEqual(provider.calls, 1)
             now[0] += 2
             provider.fail = False
             provider.release.clear()
@@ -177,10 +177,10 @@ class JevBackgroundTest(unittest.TestCase):
             self.assertEqual(again["items"][0]["state"], "pending")
             provider.release.set()
             self.assertEqual(self.settled(service)["items"][0]["state"], "label")
-            self.assertEqual(provider.calls, 3)
+            self.assertEqual(provider.calls, 2)
 
     def test_provider_wait_is_the_pause(self):
-        """A rate-limit Retry-After past its bounded retries sets the pause, not the 60 s default."""
+        """A rate-limit Retry-After sets the pause, not the 60 s default."""
         now = [1000.0]
 
         class Limited(GatedProvider):
@@ -221,7 +221,7 @@ class JevBackgroundTest(unittest.TestCase):
         self.assertEqual(self.read(service)["items"][0]["state"], "pending")
         service._held = collect
         self.assertEqual(self.settled(service)["items"][0]["state"], "unavailable")
-        self.assertEqual(provider.calls, 2)
+        self.assertEqual(provider.calls, 1)
 
     def test_off_record_is_asked_again_once_a_key_is_present(self):
         """The key went away while asks were queued: `off` is not an answer, so it is never held."""
@@ -286,12 +286,12 @@ class JevSeamTest(unittest.TestCase):
             self.assertNotIn("secret text", encoded)
             self.assertNotIn("fake", encoded)
 
-    def test_failure_retries_once_then_records_unavailable(self):
+    def test_failure_is_one_call_then_records_unavailable(self):
         provider = FakeProvider(error=True)
         seam = jev.JevSeam(self.question_sets(), provider=provider, api_key="fake")
         result = seam.ask({"kind": "type", "id": "rule", "state": {}, "sources": [], "revision": "head"})
         self.assertEqual(result["outcome"], "unavailable")
-        self.assertEqual(len(provider.calls), 2)
+        self.assertEqual(len(provider.calls), 1)
         self.assertEqual(len(seam.store.by_key), 1)
 
     def test_same_question_uses_record_cache(self):
@@ -313,7 +313,7 @@ class JevSeamTest(unittest.TestCase):
         self.assertEqual(len(provider.calls), 1)
 
     def test_failed_and_off_records_are_retried(self):
-        provider = FakeProvider(RuntimeError("first"), RuntimeError("second"),
+        provider = FakeProvider(RuntimeError("first"),
                                 {"answers": {"type": {"choice": "behavioral", "confidence": 0.9}}})
         seam = jev.JevSeam(self.question_sets(), provider=provider, api_key="fake")
         question = {"kind": "type", "state": {"after": "new"}, "sources": [], "revision": "head"}
@@ -321,7 +321,7 @@ class JevSeamTest(unittest.TestCase):
         recovered = seam.ask(question)
         self.assertEqual(failed["outcome"], "unavailable")
         self.assertEqual(recovered["outcome"], "shown")
-        self.assertEqual(len(provider.calls), 3)
+        self.assertEqual(len(provider.calls), 2)
 
         off = jev.JevSeam(self.question_sets(), provider=provider, api_key="")
         first_off = off.ask(question)

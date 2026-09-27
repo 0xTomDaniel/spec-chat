@@ -184,7 +184,7 @@ class BoardTest(unittest.TestCase):
         _, second = self.settle(service, rows)
         self.assertEqual(second["rows"][0]["material"], "unknown")
         asked = len(provider.calls)
-        self.assertEqual(asked, 2)  # each question asked once, never re-asked by the second read
+        self.assertEqual(asked, 1)  # each question asked once, never re-asked by the second read
         service.board(rows)
         self.idle(service)
         self.assertEqual(len(provider.calls), asked)  # same key: no provider call

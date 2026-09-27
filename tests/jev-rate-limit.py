@@ -1,13 +1,15 @@
-"""OpenRouter 429: wait per Retry-After, bounded, and retry, for Jev and the general LLM fallback
-(project-rules #q-fallback, #bootstrap-table: a first-registration warm-up finishes in one start)."""
+"""OpenRouter 429 under the one retry rule (jev-suggestions #state-error, project-rules #q-fallback): one call per
+ask, never a sleep in a worker; the record's pause is the provider's given wait, else RETRY_PAUSE."""
 
 import importlib.util
 import json
 import threading
+import time
 import unittest
 import unittest.mock
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -67,76 +69,85 @@ def question(text="Every change adds its onboarding section."):
     return {"kind": "scope", "state": {"criterion": text}, "sources": ["a.spec.html#c"], "revision": None}
 
 
+PERSISTENT = 10 ** 6
+
+
 class RateLimit(unittest.TestCase):
-    def serve(self, limited, retry_after="1"):
+    def serve(self, limited, retry_after="30"):
         server = FakeOpenRouter(limited, retry_after)
         self.addCleanup(server.close)
-        waits = []
         provider = jev.OpenRouterProvider("test-key", endpoint=server.url + "/decisions",
-                                          chat_endpoint=server.url + "/chat", sleep=waits.append)
-        return server, provider, waits
+                                          chat_endpoint=server.url + "/chat")
+        return server, provider
 
-    def test_jev_and_fallback_wait_and_retry(self):
-        server, provider, waits = self.serve({"/decisions": 2, "/chat": 2}, "3")
-        seam = jev.JevSeam({"scope": scope_set()}, provider=provider, api_key="test-key")
-        record = seam.ask(question())
-        self.assertEqual(record["outcome"], "shown")
-        self.assertTrue(record["escalated"])
-        self.assertEqual(record["answer"]["label"], "every feature")
-        self.assertEqual(server.hits, ["/decisions"] * 3 + ["/chat"] * 3)
-        self.assertEqual(waits, [3.0] * 4)
-
-    def test_wait_is_bounded(self):
-        server, provider, waits = self.serve({"/decisions": 1}, "86400")
-        provider.decide({"model": jev.MODEL, "questions": {"scope": {}}, "state": {}})
-        self.assertEqual(waits, [jev.RATE_LIMIT_MAX_WAIT])
-
-    def test_missing_retry_after_waits_default(self):
-        server, provider, waits = self.serve({"/chat": 1}, None)
-        provider.complete({"model": "m", "messages": []})
-        self.assertEqual(waits, [jev.RATE_LIMIT_DEFAULT_WAIT])
-
-    def test_http_date(self):
-        self.assertEqual(jev.retry_after_seconds("Wed, 21 Oct 2015 07:28:00 GMT", now=lambda: 1445412470.0), 10.0)
-        self.assertEqual(jev.retry_after_seconds("soon"), jev.RATE_LIMIT_DEFAULT_WAIT)
-        self.assertEqual(jev.retry_after_seconds("-5"), 0.0)
-
-    def test_retries_are_bounded_then_unavailable(self):
-        server, provider, waits = self.serve({"/decisions": 1000}, "0")
-        seam = jev.JevSeam({"scope": scope_set(False)}, provider=provider, api_key="test-key")
-        record = seam.ask(question())
-        self.assertEqual(record["outcome"], "unavailable")
-        # The seam's one retry, each bounded by the provider's rate-limit retries.
-        self.assertEqual(len(server.hits), 2 * (jev.RATE_LIMIT_RETRIES + 1))
-
-    def test_last_retry_after_is_the_records_pause(self):
-        """jev-suggestions #state-error: past the bounded retries, the provider's wait (uncapped) is the pause."""
-        server, provider, waits = self.serve({"/decisions": 1000}, "600")
-        seam = jev.JevSeam({"scope": scope_set(False)}, provider=provider, api_key="test-key")
+    def ask(self, seam, q=None):
         with unittest.mock.patch.object(jev, "_wall", lambda: 1000.0):
-            record = seam.ask(question())
+            started = time.monotonic()
+            record = seam.ask(q or question())
+            self.assertLess(time.monotonic() - started, 1.0)  # no wait in the worker
+            return record, jev.pause_left(record)
+
+    def test_persistent_429_is_one_call_and_the_given_wait_is_the_pause(self):
+        server, provider = self.serve({"/decisions": PERSISTENT}, "30")
+        record, pause = self.ask(jev.JevSeam({"scope": scope_set(False)}, provider=provider, api_key="test-key"))
+        self.assertEqual(record["outcome"], "unavailable")
+        self.assertEqual(server.hits, ["/decisions"])
+        self.assertEqual(pause, 30.0)
+
+    def test_given_wait_is_never_capped(self):
+        server, provider = self.serve({"/decisions": PERSISTENT}, "600")
+        record, pause = self.ask(jev.JevSeam({"scope": scope_set(False)}, provider=provider, api_key="test-key"))
+        self.assertEqual((len(server.hits), pause), (1, 600.0))
+
+    def test_429_without_a_wait_pauses_the_default(self):
+        for header in (None, "soon"):
+            server, provider = self.serve({"/decisions": PERSISTENT}, header)
+            record, pause = self.ask(jev.JevSeam({"scope": scope_set(False)}, provider=provider, api_key="test-key"))
             self.assertEqual(record["outcome"], "unavailable")
-            self.assertEqual(jev.pause_left(record), 600.0)
-        with self.assertRaises(jev.ProviderWait) as raised:
-            provider.decide({})
-        self.assertEqual(raised.exception.wait, 600.0)
+            self.assertEqual((len(server.hits), pause), (1, jev.RETRY_PAUSE))
 
-    def test_no_given_wait_pauses_the_default(self):
-        waits = []
-        provider = jev.OpenRouterProvider("k", endpoint="http://127.0.0.1:9/decisions", sleep=waits.append)
+    def test_http_date_wait(self):
+        self.assertEqual(jev.given_wait("Wed, 21 Oct 2015 07:28:00 GMT", now=lambda: 1445412470.0), 10.0)
+        self.assertIsNone(jev.given_wait("soon"))
+        self.assertEqual(jev.given_wait("-5"), 0.0)
+
+    def test_escalated_rule_check_is_one_call_per_stage(self):
+        server, provider = self.serve({"/chat": PERSISTENT}, "45")
+        seam = jev.JevSeam({"scope": scope_set()}, provider=provider, api_key="test-key")
+        record, pause = self.ask(seam)
+        self.assertEqual((record["outcome"], record["escalated"]), ("unavailable", True))
+        self.assertEqual(server.hits, ["/decisions", "/chat"])
+        self.assertEqual(pause, 45.0)
+        # asked again after its pause: only the general LLM, once
+        record, pause = self.ask(seam)
+        self.assertEqual(server.hits, ["/decisions", "/chat", "/chat"])
+        self.assertEqual(pause, 45.0)
+        server.limited["/chat"] = 0
+        record, _ = self.ask(seam)
+        self.assertEqual((record["outcome"], record["answer"]["label"]), ("shown", "every feature"))
+        self.assertEqual(server.hits, ["/decisions"] + ["/chat"] * 3)
+
+    def test_other_errors_are_one_call_and_pause_the_default(self):
+        provider = jev.OpenRouterProvider("k", endpoint="http://127.0.0.1:9/decisions")
         seam = jev.JevSeam({"scope": scope_set(False)}, provider=provider, api_key="k")
-        with unittest.mock.patch.object(jev, "urlopen", side_effect=jev.HTTPError(provider.endpoint, 500, "boom", {}, None)), \
-                unittest.mock.patch.object(jev, "_wall", lambda: 1000.0):
-            record = seam.ask(question())
-            self.assertEqual(jev.pause_left(record), jev.RETRY_PAUSE)
+        failing = unittest.mock.Mock(side_effect=jev.HTTPError(provider.endpoint, 500, "boom", {}, None))
+        with unittest.mock.patch.object(jev, "urlopen", failing):
+            record, pause = self.ask(seam)
+        self.assertEqual((failing.call_count, pause), (1, jev.RETRY_PAUSE))
 
-    def test_other_errors_do_not_wait(self):
-        waits = []
-        provider = jev.OpenRouterProvider("k", endpoint="http://127.0.0.1:9/decisions", sleep=waits.append)
-        with unittest.mock.patch.object(jev, "urlopen", side_effect=jev.HTTPError(provider.endpoint, 500, "boom", {}, None)):
-            with self.assertRaises(RuntimeError):
-                provider.decide({})
-        self.assertEqual(waits, [])
+    def test_stop_returns_promptly_with_asks_rate_limited(self):
+        server, provider = self.serve({"/decisions": PERSISTENT}, "30")
+        with tempfile.TemporaryDirectory() as tmp:
+            service = jev.JevService(state_dir=tmp, provider=provider, api_key="test-key")
+            questions = [{"kind": "type", "id": str(i), "state": {"after": str(i)}, "sources": [], "revision": "head"}
+                         for i in range(20)]
+            service.questions = lambda *args, **kwargs: questions
+            first = service.response({}, "", "", "base", [])
+            self.assertTrue(all(item["state"] == "pending" for item in first["items"]))
+            started = time.monotonic()
+            service.stop()
+            self.assertLess(time.monotonic() - started, 2.0)
+        self.assertLessEqual(len(server.hits), 20)
 
 
 if __name__ == "__main__":

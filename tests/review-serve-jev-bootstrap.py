@@ -230,6 +230,30 @@ class BootstrapTest(unittest.TestCase):
         status = self.settle(again)
         self.assertEqual((status["state"], status["specs_to_reconcile"]), ("done", 2))
 
+    def test_rate_limited_warm_up_asks_pause_and_never_sleep(self):
+        """jev-suggestions #state-error: a warm-up ask that 429s is one call, gets the given wait as its pause,
+        and is asked again later; no worker waits (old code slept 30 s per 429)."""
+        import unittest.mock
+        provider = jev.OpenRouterProvider("fake", endpoint="http://127.0.0.1:9/decisions")
+        limited = unittest.mock.Mock(side_effect=lambda request, timeout: (_ for _ in ()).throw(
+            jev.HTTPError(request.full_url, 429, "limited", {"Retry-After": "45"}, None)))
+        with unittest.mock.patch.object(jev, "urlopen", limited), \
+                unittest.mock.patch.object(jev, "_wall", lambda: 1000.0):
+            service = self.service(provider)
+            started = time.monotonic()
+            self.assertEqual(service.warm([self.row()]), ["proj"])
+            deadline = time.monotonic() + 5
+            while (service.onboarding_status("proj") or {}).get("state") == "running" and time.monotonic() < deadline:
+                threading.Event().wait(0.01)
+            self.assertLess(time.monotonic() - started, 2.0)
+            self.assertEqual(service.onboarding_status("proj")["state"], "failed")
+            records = [json.loads(line) for line in (self.dir / "state" / "records.jsonl").read_text().splitlines()]
+            self.assertEqual(limited.call_count, len(records))
+            self.assertTrue(records and all(r["outcome"] == "unavailable" and jev.pause_left(r) == 45.0 for r in records))
+        again = self.service(FakeProvider())
+        self.assertEqual(again.warm([self.row()]), ["proj"])
+        self.assertEqual(self.settle(again)["state"], "done")
+
     def test_unreadable_onboarding_is_never_overwritten(self):
         path = self.dir / "state" / "onboarding.toml"
         path.parent.mkdir(parents=True)

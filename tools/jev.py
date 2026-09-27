@@ -32,11 +32,6 @@ DEFAULT_LLM_MODEL = "anthropic/claude-sonnet-5"
 GENERAL_LLM_TIMEOUT = 90.0
 DEFAULT_THRESHOLD = 0.4
 DEFAULT_MAX_INPUT_TOKENS = 32000
-# OpenRouter 429: wait per Retry-After, each wait capped, a few times, so a first-registration warm-up
-# finishes in one start (project-rules #bootstrap-table); past the bound the ask is unavailable as before.
-RATE_LIMIT_RETRIES = 5
-RATE_LIMIT_MAX_WAIT = 30.0
-RATE_LIMIT_DEFAULT_WAIT = 2.0
 RETRYABLE_OUTCOMES = frozenset({"off", "unavailable"})
 # The one retry rule (jev-suggestions #state-error): a failed ask is asked again after a pause, the provider's
 # given wait, else this many seconds; the pause is written on its record, so no worker waits it out.
@@ -308,20 +303,13 @@ def given_wait(value: str | None, now: Callable[[], float] = time.time) -> float
     return max(wait, 0.0) if math.isfinite(wait) else None
 
 
-def retry_after_seconds(value: str | None, now: Callable[[], float] = time.time) -> float:
-    """Retry-After capped at RATE_LIMIT_MAX_WAIT; missing or unreadable waits the default."""
-    wait = given_wait(value, now)
-    return min(RATE_LIMIT_DEFAULT_WAIT if wait is None else wait, RATE_LIMIT_MAX_WAIT)
-
-
 class OpenRouterProvider:
     def __init__(self, api_key: str, *, endpoint: str = OPENROUTER_DECISIONS_URL, chat_endpoint: str = OPENROUTER_CHAT_URL,
-                 timeout: float = 15.0, sleep: Callable[[float], None] = time.sleep):
+                 timeout: float = 15.0):
         self._api_key = api_key.strip()
         self.endpoint = endpoint
         self.chat_endpoint = chat_endpoint
         self.timeout = timeout
-        self._sleep = sleep
 
     def decide(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         return self._post(self.endpoint, payload)
@@ -331,28 +319,22 @@ class OpenRouterProvider:
         return self._post(self.chat_endpoint, payload, GENERAL_LLM_TIMEOUT)
 
     def _post(self, endpoint: str, payload: Mapping[str, Any], timeout: float | None = None) -> Mapping[str, Any]:
+        """One call, never a wait: a 429 raises its given wait for the record's pause (jev-suggestions #state-error)."""
         data = json.dumps(_jsonable(payload), ensure_ascii=False).encode("utf-8")
-        for attempt in range(RATE_LIMIT_RETRIES + 1):
-            request = Request(endpoint, data=data,
-                              headers={"Authorization": "Bearer " + self._api_key, "Content-Type": "application/json"},
-                              method="POST")
-            try:
-                with urlopen(request, timeout=timeout or self.timeout) as response:
-                    value = json.loads(response.read().decode("utf-8"))
-                break
-            except HTTPError as exc:
-                if exc.code != 429:
-                    raise RuntimeError("OpenRouter decision request failed") from exc
-                header = exc.headers.get("Retry-After") if exc.headers else None
-                exc.close()
-                if attempt == RATE_LIMIT_RETRIES:
-                    wait = given_wait(header)
-                    if wait is None:
-                        raise RuntimeError("OpenRouter decision request failed") from exc
-                    raise ProviderWait("OpenRouter rate limited", wait) from exc
-                self._sleep(retry_after_seconds(header))
-            except (URLError, TimeoutError, OSError, UnicodeError, ValueError) as exc:
+        request = Request(endpoint, data=data,
+                          headers={"Authorization": "Bearer " + self._api_key, "Content-Type": "application/json"},
+                          method="POST")
+        try:
+            with urlopen(request, timeout=timeout or self.timeout) as response:
+                value = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            wait = given_wait(exc.headers.get("Retry-After") if exc.headers else None) if exc.code == 429 else None
+            exc.close()
+            if wait is None:
                 raise RuntimeError("OpenRouter decision request failed") from exc
+            raise ProviderWait("OpenRouter rate limited", wait) from exc
+        except (URLError, TimeoutError, OSError, UnicodeError, ValueError) as exc:
+            raise RuntimeError("OpenRouter decision request failed") from exc
         if not isinstance(value, Mapping):
             raise RuntimeError("OpenRouter decision was not an object")
         return value
@@ -493,19 +475,14 @@ class JevSeam:
         answer = None
         failure = None
         model = MODEL
-        for _ in range(2):
-            try:
-                if hasattr(provider, "decide"):
-                    response = provider.decide(payload)
-                else:
-                    response = provider(payload)
-                label, confidence, probabilities, model = _parse_provider_answer(response, kind)
-                answer = {"label": label, "probabilities": probabilities, "confidence": confidence}
-                if isinstance(question.get("candidate_anchors"), Mapping):
-                    answer = _anchor_answer(answer, question["candidate_anchors"])
-                break
-            except Exception as exc:
-                failure = exc
+        try:
+            response = provider.decide(payload) if hasattr(provider, "decide") else provider(payload)
+            label, confidence, probabilities, model = _parse_provider_answer(response, kind)
+            answer = {"label": label, "probabilities": probabilities, "confidence": confidence}
+            if isinstance(question.get("candidate_anchors"), Mapping):
+                answer = _anchor_answer(answer, question["candidate_anchors"])
+        except Exception as exc:
+            failure = exc
         if answer is None:
             return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
                                 {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model,
@@ -529,19 +506,17 @@ class JevSeam:
                 "provider": {"require_parameters": True}}
 
     def _general(self, question: Mapping[str, Any], key: str, qset: QuestionSet, provider: Any) -> dict[str, Any]:
-        """The same question to the box's general LLM, with one retry like Jev; its answer decides (project-rules #q-fallback)."""
+        """The same question to the box's general LLM, one call like Jev; its answer decides (project-rules #q-fallback)."""
         kind = str(question.get("kind", "type"))
         sources, revision = question.get("sources", []), question.get("revision")
         model = self.llm_model()
         payload = self.general_payload(question, qset, model)
         label = None
         failure = None
-        for _ in range(2):
-            try:
-                label = json.loads(provider.complete(payload)["choices"][0]["message"]["content"])["choice"]
-                break
-            except Exception as exc:
-                failure = exc
+        try:
+            label = json.loads(provider.complete(payload)["choices"][0]["message"]["content"])["choice"]
+        except Exception as exc:
+            failure = exc
         if label is None:
             return self._record(key, kind, qset, sources, revision,
                                 {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model, True,

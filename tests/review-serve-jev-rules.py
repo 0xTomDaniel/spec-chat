@@ -272,14 +272,6 @@ class RulesTest(unittest.TestCase):
             self.assertEqual(onboarding(self.read(service))["state"], "none")
             self.assertEqual(len(provider.general_calls), asked + 1)
 
-    def test_general_failure_is_retried_once_like_jev(self):
-        self.seed()
-        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("missed", 0.2)},
-                                general={("rule", ONBOARDING): [RuntimeError("timeout"), "covered"]})
-        item = next(i for i in self.rules(self.read(self.service(provider))) if i["target"].endswith("#acceptance-onboarding"))
-        self.assertEqual(item["state"], "none")
-        self.assertEqual(len([c for c in provider.general_calls if json.loads(c["messages"][-1]["content"]).get("rule") == ONBOARDING]), 2)
-
     def test_unavailable_scope_yields_no_rule_item_and_is_asked_again(self):
         self.seed()
         provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.2), LOCAL: ("this feature", 0.2)},
