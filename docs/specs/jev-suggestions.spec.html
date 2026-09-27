@@ -83,6 +83,7 @@
 <p data-acceptance-criterion data-anchor="acceptance-lane-leaf" data-story="story-lane-topk"><span data-acceptance-scenario>When a slug's changed clauses include headings, figures, and TBD text,</span> <span data-acceptance-observable>those are excluded from cross-lane questions by the same <a href="#acceptance-leaf-filter">leaf filter</a> as draft checks.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-test-host" data-story="story-no-noise"><span data-acceptance-scenario>When a slug is registered with the <code>--test</code> flag,</span> <span data-acceptance-observable>its records are written to a separate test store, not the live <code>records.jsonl</code>, and its clauses are not candidates for any live slug's draft checks or cross-lane checks.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-measure" data-story="story-measure"><span data-acceptance-scenario>When the audit's labelled cases (270 wrong, 15 right, 2 missed) are run through the new pairing and leaf filter on the same question sets and provider,</span> <span data-acceptance-observable>the wrong-flag count drops by at least 80% (at most 54 wrong), the 15 right flags are still shown, and the 2 missed real conflicts are still asked.</span></p>
+<p data-anchor="acceptance-rules-note">Onboarding: not a new user surface; the pairing, gate, and leaf filter changes are internal to the existing Jev seam and do not change what a reviewer sees or does.</p>
 </section>
 
 <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
