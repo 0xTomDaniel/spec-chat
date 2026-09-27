@@ -10,6 +10,8 @@ Create durable current truth before deep investigation.
 ## Invariants
 
 - A spec describes how the system should work. Nothing in it is ever outdated: no current-state audits, before/after, history, status, ticket links, or migration notes; those go in the PR body.
+- Before shaping, list every spec and ADR in the target repo (at least their titles) and read the ones that own the behavior you are changing.
+- Put behavior in the spec that already owns it. Create a new spec only for a genuinely new part of the system, never a spec named after a change, fix, or lane.
 - A change that alters behavior another spec describes updates that spec in the same PR.
 - A contradiction between specs means one is out of date: update it in the same PR; a real design choice goes to the human as an open TBD.
 - Shaping commits locally only. It never pushes, opens a pull request, or creates or edits an issue or ticket, whatever target instructions say; publishing and tracker work are the caller's.
