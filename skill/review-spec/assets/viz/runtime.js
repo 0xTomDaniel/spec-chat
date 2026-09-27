@@ -57,7 +57,7 @@ const state = {
   handoffPosting: false,
   lastTbd: null,         // open TBD marker focused by the last TBD open activation
   range: { baseline: null, loaded: null, loading: false, pickerOpen: false }, // loaded: anchor signatures of the page as served
-  jev: { status: 'idle', items: [], levels: {}, offer: null, base: null, request: 0, poll: 0 }, // levels: the server's mark kind -> level table
+  jev: { status: 'idle', items: [], levels: {}, offer: null, base: null, request: 0 }, // levels: the server's mark kind -> level table
   evidence: { criteria: null, levels: {}, hostOrigin: null }, // criteria: anchor -> entry once /api/evidence answers, null shows nothing;
   // hostOrigin: the BB plugin frame that announced itself
   readingView: false,
@@ -197,50 +197,65 @@ function findAnchor(anchorId) {
 
 function clearJev() {
   state.jev.request += 1;
-  clearTimeout(state.jev.poll);
   state.jev.status = 'idle';
   state.jev.items = [];
   state.jev.levels = {};
   state.jev.offer = null;
   state.jev.base = null;
+  scheduleJevPoll();
   renderJev();
   renderPanel();
   renderPins();
 }
 
-// While any item is pending the page asks again and swaps answers in place (project-rules #pending-poll).
-const JEV_POLL_MS = 2000;
+// Background answers (#fast-marks-background): while any item is pending and the page is shown, read the
+// same base again in 2 s; a newer request, a base change, or hiding the page cancels it, and showing resumes it.
+let jevPollTimer = 0;
 
-async function requestJev(base, poll = false) {
+function scheduleJevPoll() {
+  clearTimeout(jevPollTimer);
+  jevPollTimer = 0;
+  if (state.jev.status !== 'on' || document.hidden || !state.jev.items.some(item => item.state === 'pending')) return;
+  const request = state.jev.request;
+  const base = state.jev.base;
+  jevPollTimer = setTimeout(() => {
+    jevPollTimer = 0;
+    if (request === state.jev.request && base === state.jev.base && !document.hidden) requestJev(base, true);
+  }, 2000);
+}
+
+document.addEventListener('visibilitychange', scheduleJevPoll);
+
+// refresh: a re-read for pending items; it shows only what changed and keeps the page as is when it fails.
+async function requestJev(base, refresh = false) {
   if (!['http:', 'https:'].includes(location.protocol) || !base) return;
-  clearTimeout(state.jev.poll);
   const request = ++state.jev.request;
-  if (!poll) {
+  if (!refresh) {
     state.jev.status = 'loading';
     state.jev.base = String(base);
     renderJev();
   }
-  const again = () => { state.jev.poll = setTimeout(() => { if (request === state.jev.request) requestJev(base, true); }, JEV_POLL_MS); };
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120000);
   try {
     const result = await fetchJev(base, controller.signal);
     if (request !== state.jev.request) return;
     const status = result.jev === 'off' ? 'off' : 'on';
-    const same = poll && status === state.jev.status &&
-      JSON.stringify([result.items, result.offer]) === JSON.stringify([state.jev.items, state.jev.offer]);
+    const same = refresh && status === state.jev.status
+      && JSON.stringify([result.items, result.levels, result.offer])
+      === JSON.stringify([state.jev.items, state.jev.levels, state.jev.offer]);
     state.jev.status = status;
     state.jev.items = result.items;
     state.jev.levels = result.levels;
     state.jev.offer = result.offer;
-    if (result.items.some(item => item.state === 'pending')) again();
-    if (same) return; // an unchanged poll leaves the page, and any open popover, as it is
+    scheduleJevPoll();
+    if (same) return;
     renderJev();
     renderPanel();
     renderPins();
   } catch (_) {
     if (request !== state.jev.request) return;
-    if (poll) { again(); return; } // a failed poll keeps the last answer and asks again
+    if (refresh) { scheduleJevPoll(); return; }
     state.jev.status = 'unavailable';
     state.jev.items = [];
     state.jev.levels = {};
@@ -467,7 +482,7 @@ function coverageGapFlags(items) {
   const values = new Map();
   const ensure = (anchor, side) => {
     const key = side + ':' + anchor;
-    if (!values.has(key)) values.set(key, { anchor, side, verifies: false, unavailable: false });
+    if (!values.has(key)) values.set(key, { anchor, side, verifies: false, unavailable: false, pending: false });
     return values.get(key);
   };
   for (const item of Array.isArray(items) ? items : []) {
@@ -478,14 +493,16 @@ function coverageGapFlags(items) {
     const criterion = ensure(pair.criterion, 'criterion');
     const verifies = item.state === 'label' && item.label === 'verifies';
     const unavailable = item.state === 'unavailable';
+    const pending = item.state === 'pending';
     for (const value of [story, criterion]) {
       value.verifies ||= verifies;
       value.unavailable ||= unavailable;
+      value.pending ||= pending;
     }
   }
   return [...values.values()].flatMap(value => {
     if (!value.anchor) return [];
-    if (value.verifies) return [];
+    if (value.verifies || value.pending) return [];
     if (value.unavailable) return [{ anchor: value.anchor, side: value.side, state: 'unavailable', label: 'Jev unavailable' }];
     return [{ anchor: value.anchor, side: value.side, state: 'gap',
       label: value.side === 'story' ? 'No criterion covers this' : 'No story backs this' }];
@@ -1709,19 +1726,51 @@ function wireJevPopover() {
 // project-rules #bootstrap-offer: one page note after warm-up. Reconcile drafts one comment; sending it or
 // dismissing the note records the offer, after which the server never returns it again for this project.
 function jevOfferNote(offer) {
-  const note = document.createElement('p');
+  const note = document.createElement('div');
   note.className = 'hx-jev-note hx-jev-offer';
   const count = Number(offer.count);
   note.appendChild(document.createElement('span')).textContent =
     count + (count === 1 ? ' existing spec misses' : ' existing specs miss') + ' project rules: reconcile?';
+  const specs = Array.isArray(offer.specs) ? offer.specs : [];
+  // Disclosure toggle: collapsed detail list of each spec and its missed rules.
+  const toggle = note.appendChild(document.createElement('button'));
+  toggle.type = 'button';
+  toggle.className = 'hx-disclosure';
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-label', 'Show spec details');
+  toggle.textContent = '\u25b8';
+  const detail = note.appendChild(document.createElement('div'));
+  detail.className = 'hx-jev-offer-detail';
+  detail.hidden = true;
+  for (const entry of specs) {
+    const row = detail.appendChild(document.createElement('div'));
+    row.className = 'hx-jev-offer-spec';
+    const specLink = row.appendChild(document.createElement('a'));
+    specLink.href = '/' + String(entry.spec || '');
+    specLink.textContent = String(entry.spec || '');
+    for (const r of (Array.isArray(entry.rules) ? entry.rules : [])) {
+      const ruleLink = row.appendChild(document.createElement('a'));
+      ruleLink.href = '/' + String(r.target || '');
+      ruleLink.className = 'hx-jev-offer-rule';
+      ruleLink.textContent = String(r.word || '') + '?';
+    }
+  }
+  toggle.addEventListener('click', event => {
+    event.stopPropagation();
+    const expanded = detail.hidden;
+    detail.hidden = !expanded;
+    toggle.setAttribute('aria-expanded', String(expanded));
+    toggle.textContent = expanded ? '\u25be' : '\u25b8';
+    toggle.setAttribute('aria-label', expanded ? 'Hide spec details' : 'Show spec details');
+  });
   const record = action => {
     state.jev.offer = null;
     renderJev();
     fetch('/api/jev/offer?' + new URLSearchParams({ path: location.pathname.replace(/^\//, '') }),
       { method: 'POST', body: JSON.stringify({ offer: action }) }).catch(() => {});
   };
-  const lines = (Array.isArray(offer.specs) ? offer.specs : []).map(entry => [String(entry.spec || ''),
-    ...(Array.isArray(entry.rules) ? entry.rules : []).map(rule => String(rule.word || '') + '? ' + String(rule.target || ''))].join(' '));
+  const lines = specs.map(entry => [String(entry.spec || ''),
+    ...(Array.isArray(entry.rules) ? entry.rules : []).map(r => String(r.word || '') + '? ' + String(r.target || ''))].join(' '));
   const reconcile = note.appendChild(document.createElement('button'));
   reconcile.type = 'button';
   reconcile.className = 'hx-btn';
@@ -1973,10 +2022,15 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-jev-marker:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}
 .hx-jev-marker[data-pending=true]{background:transparent;border:2px solid #767b85;border-right-color:transparent;animation:hx-jev-spin 1s linear infinite}
 @keyframes hx-jev-spin{to{transform:rotate(360deg)}}
-.hx-jev-offer{display:flex;align-items:center;gap:8px}
+.hx-jev-offer{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
 .hx-jev-offer span{flex:1 1 auto}
 .hx-jev-offer .hx-btn{margin:0;font-size:11.5px;padding:3px 8px}
 .hx-jev-offer-dismiss{margin:0;padding:0 4px;border:0;background:none;color:inherit;font:700 14px/1 system-ui,sans-serif;cursor:pointer}
+.hx-jev-offer-detail{width:100%;font:12px/1.5 system-ui,sans-serif;padding-left:4px}
+.hx-jev-offer-detail[hidden]{display:none}
+.hx-jev-offer-spec{margin:2px 0}
+.hx-jev-offer-spec a{color:#2947c7;text-decoration:underline;text-underline-offset:2px}
+.hx-jev-offer-rule{margin-left:8px;font-size:11px;color:#5a5a63}
 .hx-jev-pop{position:fixed;z-index:880;box-sizing:border-box;width:max-content;min-width:180px;max-width:min(340px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;padding:8px 10px;border:1px solid #303036;border-radius:8px;background:#ffffff;color:#303036;box-shadow:0 8px 28px rgba(30,30,40,.18);font:13px/1.4 system-ui,sans-serif}
 .hx-jev-pop[hidden]{display:none}
 .hx-jev-pop-notes{margin:0;padding:0;list-style:none;display:grid;gap:6px}

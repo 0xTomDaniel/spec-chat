@@ -3,6 +3,7 @@ import json
 import re
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -13,6 +14,16 @@ SPEC = ROOT / "docs/specs/jev-suggestions.spec.html"
 spec = importlib.util.spec_from_file_location("jev_audience_test", ROOT / "tools" / "jev.py")
 jev = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(jev)
+
+
+def settled(service, *args, timeout=10):
+    """Re-read, as the page does, until no item is pending (#fast-marks-background)."""
+    deadline = time.monotonic() + timeout
+    while True:
+        result = service.response(*args)
+        if not any(item["state"] == "pending" for item in result["items"]) or time.monotonic() > deadline:
+            return result
+        time.sleep(0.01)
 
 
 class AlwaysInternals:
@@ -136,7 +147,7 @@ class AudienceBuilderTest(unittest.TestCase):
             service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
             questions = jev.build_audience_questions(source, "spec.html", "base", "head")
             service.questions = lambda *args, **kwargs: questions
-            result = service.response({}, "", "", "base", [], "reading")
+            result = settled(service, {}, "", "", "base", [], "reading")
         items = {item["id"]: item for item in result["items"] if item["kind"] == "audience"}
         self.assertFalse(structural & set(items))
         self.assertTrue(criteria <= set(items))

@@ -105,7 +105,7 @@ class ChainTest(unittest.TestCase):
         provider = Down({})
         result = self.seam(provider).ask_chain(draft_check()["chain"])
         self.assertEqual(result["outcome"], "unavailable")
-        self.assertEqual(provider.calls, ["contradicts", "contradicts"])
+        self.assertEqual(provider.calls, ["contradicts"])
 
     def test_change_type_yes_is_behavior_no_is_no_behavior_change(self):
         for choice, label in (("yes", "behavior"), ("no", "no-behavior-change")):
