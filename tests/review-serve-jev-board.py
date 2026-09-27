@@ -76,13 +76,21 @@ class BoardTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
+        self.services = []
 
     def tearDown(self):
+        for service in self.services:  # stop asking before the state directory goes
+            service.stop()
         self.tmp.cleanup()
+
+    def jev_service(self, **kwargs):
+        service = jev.JevService(**kwargs)
+        self.services.append(service)
+        return service
 
     def service(self, answer):
         provider = FakeProvider(answer)
-        service = jev.JevService(state_dir=self.dir / "state", provider=provider, api_key="fake")
+        service = self.jev_service(state_dir=self.dir / "state", provider=provider, api_key="fake")
         return service, provider
 
     def idle(self, service):
@@ -167,7 +175,7 @@ class BoardTest(unittest.TestCase):
         self.assertEqual(service.board(rows)["rows"], [{"id": rows[0]["id"], "material": "no"}])
         self.idle(service)
 
-    def test_unavailable_record_is_reused_until_inputs_change(self):
+    def test_unavailable_record_is_reused_during_its_pause(self):
         def failing(kind, state):
             raise OSError("jev down")
 
@@ -176,7 +184,7 @@ class BoardTest(unittest.TestCase):
         _, second = self.settle(service, rows)
         self.assertEqual(second["rows"][0]["material"], "unknown")
         asked = len(provider.calls)
-        self.assertEqual(asked, 2)  # each question asked once, never re-asked by the second read
+        self.assertEqual(asked, 1)  # each question asked once, never re-asked by the second read
         service.board(rows)
         self.idle(service)
         self.assertEqual(len(provider.calls), asked)  # same key: no provider call
@@ -186,7 +194,7 @@ class BoardTest(unittest.TestCase):
         self.assertGreater(len(provider.calls), asked)  # new head asks again
 
     def test_off_without_key(self):
-        service = jev.JevService(state_dir=self.dir / "state", api_key="")
+        service = self.jev_service(state_dir=self.dir / "state", api_key="")
         self.assertEqual(service.board(self.one_row()), {"jev": "off", "rows": [], "conflicts": []})
 
     def test_bad_base_is_unknown(self):
@@ -272,9 +280,9 @@ class BoardTest(unittest.TestCase):
 
     def wait_asks(self, service):
         deadline = time.monotonic() + 10
-        while service._rule_inflight and time.monotonic() < deadline:
+        while service._asking and time.monotonic() < deadline:
             time.sleep(0.01)
-        self.assertFalse(service._rule_inflight)
+        self.assertFalse(service._asking)
 
     def test_lane_items_on_both_specs_after_answers(self):
         rows = self.cross_lane()
