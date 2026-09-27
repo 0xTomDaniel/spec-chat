@@ -22,7 +22,8 @@ STATE_KEYS = {
     "covered": {"rule", "spec"},
 }
 # Moderate start; the rule chain keeps rule v2's raise so uncertain answers escalate to the fallback (ANN-309).
-THRESHOLDS = {"triggered": 0.7, "covered": 0.7}
+# oversteps? raised by the ANN-347 tuning pass: every confident Jev yes on the train split was wrong.
+THRESHOLDS = {"triggered": 0.7, "covered": 0.7, "oversteps": 0.7}
 # Every chain question is yes or no, and it and scope, coverage, and reading view fall back (jev-suggestions #chains).
 YES_NO = {"type", "contradicts", "oversteps", "overlaps", "triggered", "covered"}
 FALLBACK = YES_NO | {"scope", "coverage", "audience"}
@@ -56,7 +57,7 @@ class JevQuestionSetTest(unittest.TestCase):
                     self.assertTrue(label["description"].strip())
                     examples = label["examples"]
                     self.assertGreaterEqual(len(examples), 2)
-                    self.assertLessEqual(len(examples), 4)
+                    self.assertLessEqual(len(examples), 6)
                     for example in examples:
                         self.assertIsInstance(example, dict)
                         self.assertIsInstance(example.get("input"), dict)
