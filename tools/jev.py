@@ -985,6 +985,11 @@ def build_board_conflict_questions(clauses: Mapping[str, list[Mapping[str, Any]]
     return result
 
 
+def _final(record: Mapping[str, Any] | None) -> bool:
+    """A record that stands: neither missing nor off, unavailable, or escalated."""
+    return record is not None and record.get("outcome") not in REPLACEABLE_OUTCOMES
+
+
 def _confident_label(record: Mapping[str, Any] | None) -> str | None:
     if not record or record.get("outcome") != "shown":
         return None
@@ -1358,7 +1363,7 @@ class JevService:
         record = self.seam.store.get(key)
         with self._rule_lock:
             inflight = key in self._rule_inflight
-        if record is not None and record.get("outcome") not in REPLACEABLE_OUTCOMES:
+        if _final(record):
             return "final", record
         if record is None or record.get("outcome") == ESCALATED or inflight:
             return "pending", record
@@ -1387,6 +1392,10 @@ class JevService:
         for scope in build_scope_questions(served):
             rule = build_rule_question(scope, current, path, base, revision, mark)
             state, record = self._rule_held(scope)
+            if state == "unavailable":
+                # An undecided scope is no rule yet: ask again, show nothing (non-goals: no scope mark).
+                self._rule_submit(scope, rule)
+                continue
             if state == "final":
                 if _confident_label(record) != RULE_SCOPE:
                     continue
@@ -1424,15 +1433,21 @@ class JevService:
             return [], []
 
     def _onboarding(self) -> dict[str, Any]:
+        """onboarding.toml, empty when missing; raises OSError or ValueError when unreadable, so no write
+        ever replaces a file it could not read (install's status and other projects' tables)."""
         try:
-            value = tomllib.loads(self.onboarding_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            text = self.onboarding_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
             return {}
-        return value
+        return tomllib.loads(text)
 
     def onboarding_status(self, project: str) -> dict[str, Any] | None:
-        """One project's warm-up table in onboarding.toml (#bootstrap-status); None before the first warm-up."""
-        table = self._onboarding().get(ONBOARDING_TABLE)
+        """One project's warm-up table in onboarding.toml (#bootstrap-status); None before the first warm-up
+        or while the file cannot be read."""
+        try:
+            table = self._onboarding().get(ONBOARDING_TABLE)
+        except (OSError, ValueError):
+            return None
         value = table.get(project) if isinstance(table, dict) else None
         return value if isinstance(value, dict) else None
 
@@ -1466,10 +1481,14 @@ class JevService:
             with self._status_lock:
                 if project in self._warm_started:
                     continue
-                self._warm_started.add(project)
                 if (self.onboarding_status(project) or {}).get("state") == "done":
+                    self._warm_started.add(project)
                     continue
-                self._write_status(project, status)
+                try:
+                    self._write_status(project, status)
+                except (OSError, ValueError):
+                    continue  # unreadable onboarding.toml: never overwritten; the next change or start retries
+                self._warm_started.add(project)
             threading.Thread(target=self._warm_project, args=(project, members, status), daemon=True,
                              name="spec-chat-jev-warm").start()
             started.append(project)
@@ -1508,7 +1527,8 @@ class JevService:
             commit, specs = self._main_specs(rows)
             scopes = build_scope_questions(specs)
             with ThreadPoolExecutor(max_workers=RULE_ASK_WORKERS, thread_name_prefix="spec-chat-jev-warm") as pool:
-                labels = [_confident_label(record) for record in pool.map(self._ask_or_none, scopes)]
+                decided = list(pool.map(self._ask_or_none, scopes))
+                labels = [_confident_label(record) for record in decided]
                 rules = [scope for scope, label in zip(scopes, labels) if label == RULE_SCOPE]
                 checks = []
                 for spec in specs:
@@ -1520,6 +1540,10 @@ class JevService:
                             checks.append((spec["path"], scope,
                                            build_rule_question(scope, spec["source"], spec["path"], commit, commit, mark)))
                 answers = list(pool.map(self._ask_or_none, [check[2] for check in checks]))
+            # Done only once every ask ended in a final outcome; an outage or bad key leaves it for the next start.
+            unfinished = sum(not _final(record) for record in decided + answers)
+            if unfinished:
+                raise RuntimeError("%d of %d answers not final" % (unfinished, len(decided) + len(answers)))
             missed: dict[str, list[dict[str, str]]] = {}
             for (path, scope, _), record in zip(checks, answers):
                 if _confident_label(record) == RULE_MISSED:
@@ -1535,7 +1559,10 @@ class JevService:
             status.update({"state": "failed", "error": str(exc) or type(exc).__name__})
         status["finished_at"] = _now()
         with self._status_lock:
-            self._write_status(project, status)
+            try:
+                self._write_status(project, status)
+            except (OSError, ValueError):
+                pass  # unreadable onboarding.toml is never overwritten; the next start warms again
 
     def offer(self, project: Any) -> dict[str, Any] | None:
         """The one-time reconcile offer (#bootstrap-offer): after warm-up, N above zero, never sent or dismissed."""

@@ -216,6 +216,43 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(on.warm([self.row()]), ["proj"])
         self.assertEqual(self.settle(on)["state"], "done")
 
+    def test_outage_leaves_project_not_done_and_next_start_warms(self):
+        class Down:
+            def decide(self, payload):
+                raise RuntimeError("down")
+
+        service = self.service(Down())
+        self.assertEqual(service.warm([self.row()]), ["proj"])
+        self.assertNotEqual(self.settle(service)["state"], "done")
+        self.assertIsNone(self.page(service, [self.row()])["offer"])
+        again = self.service(FakeProvider())
+        self.assertEqual(again.warm([self.row()]), ["proj"])
+        status = self.settle(again)
+        self.assertEqual((status["state"], status["specs_to_reconcile"]), ("done", 2))
+
+    def test_unreadable_onboarding_is_never_overwritten(self):
+        path = self.dir / "state" / "onboarding.toml"
+        path.parent.mkdir(parents=True)
+        broken = 'status = "done"\n[project.other\nstate = "done"\n'
+        path.write_text(broken)
+        service = self.service(FakeProvider())
+        self.assertEqual(service.warm([self.row()]), [])
+        self.assertFalse(service.record_offer("proj", "sent"))
+        self.assertEqual(path.read_text(), broken)
+        path.write_text('status = "done"\n')  # repaired: the next change warms and keeps install's status
+        self.assertEqual(service.warm([self.row()]), ["proj"])
+        self.assertEqual(self.settle(service)["state"], "done")
+        self.assertEqual(tomllib.loads(path.read_text())["status"], "done")
+
+    def test_failed_warm_start_never_fails_server_start(self):
+        state = serve.MountState((), None)
+
+        def fail(rows):
+            raise OSError("state dir not writable")
+
+        state.on_change = fail
+        state.changed()  # main runs the startup warm-up through this same guarded hook
+
     def test_registration_in_the_running_server_starts_warm_up_and_offer_is_recorded(self):
         registry = self.dir / "registry.toml"
 

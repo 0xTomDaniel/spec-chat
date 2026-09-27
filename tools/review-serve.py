@@ -209,12 +209,16 @@ class MountState:
             return self.records
         self.records = tuple(records)
         self.signature = signature
+        self.changed()
+        return self.records
+
+    def changed(self):
+        """Run on_change with the current rows; a failed warm-up start never fails a request or server start."""
         if self.on_change:
             try:
                 self.on_change(self.records)
-            except Exception as exc:  # a failed warm-up start never fails the request that reloaded rows
+            except Exception as exc:
                 print("review-serve: registry change hook failed: %r" % exc, file=sys.stderr, flush=True)
-        return self.records
 
 
 def _single_mount(root):
@@ -1125,7 +1129,7 @@ def main(argv=None):
                             llm_model=lambda: jev_llm_model(server.state_dir))
     # Bootstrap (project-rules #bootstrap-home): a project's first registration starts its warm-up here.
     state.on_change = server.jev.warm
-    server.jev.warm(state.records)
+    state.changed()
     server.wake_controller = WakeController(server)
     wake_thread = threading.Thread(target=server.wake_controller.run, name="spec-chat-wake", daemon=True)
     wake_thread.start()

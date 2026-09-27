@@ -234,6 +234,19 @@ class RulesTest(unittest.TestCase):
         self.assertEqual((item["state"], item["label"]), ("none", None))
         self.assertEqual(len(provider.asked("rule")), jev_calls)  # Jev is not asked again, only the LLM
 
+    def test_unavailable_scope_yields_no_rule_item_and_is_asked_again(self):
+        self.seed()
+        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.2), LOCAL: ("this feature", 0.2)},
+                                rule={ONBOARDING: ("missed", 0.95)},
+                                general={("scope", ONBOARDING): RuntimeError("down"), ("scope", LOCAL): RuntimeError("down")})
+        service = self.service(provider)
+        self.assertEqual(self.rules(self.read(service)), [])
+        provider.general.update({("scope", ONBOARDING): "every feature", ("scope", LOCAL): "this feature"})
+        self.read(service, settle=False)
+        rules = self.rules(self.read(service))
+        self.assertEqual([(i["target"], i["state"]) for i in rules],
+                         [("specs/onboarding.spec.html#acceptance-onboarding", "label")])
+
     def test_pending_says_whether_escalated(self):
         self.seed()
         gate = threading.Event()
