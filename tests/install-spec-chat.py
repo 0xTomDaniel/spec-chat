@@ -127,5 +127,37 @@ class InstallSpecChatTest(unittest.TestCase):
         self.assertEqual(rows[1], rows[0])
 
 
+    # --- F-S1: undo stops the review server -----------------------------------
+
+    def test_undo_stops_the_review_server(self):
+        """F-S1: --undo stops the review server it started."""
+        self.run_install("--specs", str(self.specs), "--review", str(self.spec))
+        registry = tomllib.loads(
+            (self.state / "spec-chat/hosting/default/registry.toml").read_text()
+        )
+        pid = registry["process"]["pid"]
+        # server should be alive before undo
+        os.kill(pid, 0)
+        result = self.run_install("--undo")
+        self.assertIn("stopped review server", result.stdout)
+        with self.assertRaises(OSError):
+            os.kill(pid, 0)
+
+    # --- F-S2: undo leaves git-tracked assets --------------------------------
+
+    def test_undo_leaves_git_tracked_assets(self):
+        """F-S2: --undo does not delete .viz/.style when tracked by git."""
+        self.run_install("--specs", str(self.specs), "--review", str(self.spec))
+        self.assertTrue((self.specs / ".viz").is_dir())
+        self.assertTrue((self.specs / ".style").is_dir())
+        # Commit the assets so they become git-tracked
+        subprocess.run(["git", "-C", str(self.repo), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "add runtime"], check=True)
+        result = self.run_install("--undo")
+        self.assertTrue((self.specs / ".viz").is_dir(), ".viz was deleted despite being git-tracked")
+        self.assertTrue((self.specs / ".style").is_dir(), ".style was deleted despite being git-tracked")
+        self.assertIn("left git-tracked", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
