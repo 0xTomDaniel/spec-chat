@@ -379,7 +379,6 @@
 <h2>Measure</h2>
 <p data-anchor="measure-data">The data is the draft-check, change-type, and rule-check questions this box's served specs give today, split by spec into a train half and a test half, with a yes/no truth for every test question labelled by hand before either run.</p>
 <p data-anchor="measure-pass">One pass: the yes/no sets are written and tuned on the train half only, then the old multi-way sets and the new chains each answer the test half once, with no change after that run.</p>
-<p data-anchor="measure-seed">This spec's own first draft check is part of the data: the old multi-way set drew 27 <code>Contradicts</code> marks on it; the few that were real are fixed above, and the rest, such as the chain rows against the clauses they replace, are the false marks this change removes.</p>
 <p data-anchor="measure-report">The pull request reports per question: unsure rate, the share of Jev answers below threshold before any fallback, and accuracy, the share of final answers matching the truth, with an old multi-way label read as the yes/no it implies.</p>
 <p data-anchor="measure-bar">Every yes/no question that shows a mark reaches 80% accuracy on the test half. A question below it gets one more train-only tuning pass; if it is still below, its label shows as a grey note with no level until it reaches 80%.</p>
 </section>
