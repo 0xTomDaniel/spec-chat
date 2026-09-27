@@ -12,7 +12,6 @@ import json
 import mimetypes
 import os
 import re
-import shutil
 import signal
 import socket
 import stat
@@ -45,9 +44,9 @@ SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
 SAFE_CURSOR_RE = re.compile(r"[^/\\]+\Z")
 EVENT_RE = re.compile(r"[A-Za-z0-9._-]{1,128}\Z")
 WAKE_POLL_SECONDS = 3
-WAKE_SAY_TIMEOUT_SECONDS = 10
-# Herdr typed the prompt but did not observe the pane react; retyping would duplicate it.
-TYPED_UNCONFIRMED_CODES = frozenset({"agent_prompt_stalled"})
+WAKE_CHECK_TIMEOUT_SECONDS = 5
+WAKE_SEND_TIMEOUT_SECONDS = 10
+WAKE_PLACEHOLDER_RE = re.compile(r"\{(owner|artifact|message)\}")
 EVIDENCE_TIMEOUT_SECONDS = 30
 EVIDENCE_FIELDS = ("match", "verdict", "judgment", "pr", "capturedAt", "onMain", "artifact", "bundle", "proven", "view")
 
@@ -189,6 +188,7 @@ class MountState:
         self.path = os.path.realpath(path) if path else None
         self.records = tuple(records)
         self.signature = self._signature() if self.path else None
+        self.on_change = None  # called with the new rows after each registry reload
 
     def _signature(self):
         try:
@@ -209,7 +209,16 @@ class MountState:
             return self.records
         self.records = tuple(records)
         self.signature = signature
+        self.changed()
         return self.records
+
+    def changed(self):
+        """Run on_change with the current rows; a failed warm-up start never fails a request or server start."""
+        if self.on_change:
+            try:
+                self.on_change(self.records)
+            except Exception as exc:
+                print("review-serve: registry change hook failed: %r" % exc, file=sys.stderr, flush=True)
 
 
 def _single_mount(root):
@@ -485,63 +494,72 @@ def _wake_batch(resource):
     return tuple(pending[:last + 1])
 
 
-class HerdrTimeout(Exception):
-    """The Herdr command outlived its timeout and its process group was killed."""
+def read_provider(state, name, *, private=False):
+    """providers/<name>.toml in the service state, read at each use (review-service #providers).
+
+    Absent, unreadable, or (when private) not mode 0600 is None: the capability is quietly off."""
+    if not state:
+        return None
+    try:
+        with open(os.path.join(state, "providers", name + ".toml"), "rb") as stream:
+            if private and stat.S_IMODE(os.fstat(stream.fileno()).st_mode) != 0o600:
+                return None
+            return tomllib.load(stream)
+    except (OSError, ValueError):
+        return None
 
 
-def _herdr(*argv, timeout):
-    """Run one Herdr command: CompletedProcess, None when it cannot start, HerdrTimeout on timeout."""
+def evidence_provider(state):
+    """The evidence provider's base URL, or None when it is not plugged."""
+    url = (read_provider(state, "evidence") or {}).get("url")
+    return url.strip() if isinstance(url, str) and url.strip() else None
+
+
+def jev_provider(state):
+    """The Jev provider's model key, or "" when it is not plugged; the file must be mode 0600."""
+    key = (read_provider(state, "jev", private=True) or {}).get("key")
+    return key.strip() if isinstance(key, str) else ""
+
+
+def jev_llm_model(state):
+    """The box's one general LLM name, llm_model beside the Jev key, or "" for Jev's default (project-rules #q-fallback)."""
+    model = (read_provider(state, "jev", private=True) or {}).get("llm_model")
+    return model.strip() if isinstance(model, str) else ""
+
+
+def wake_provider(state):
+    """The wake provider's (check, send) argument lists, or None when it is not plugged."""
+    provider = read_provider(state, "wake") or {}
+    commands = tuple(provider.get(key) for key in ("check", "send"))
+    for argv in commands:
+        if not isinstance(argv, list) or not argv or not all(isinstance(arg, str) for arg in argv):
+            return None
+    return commands
+
+
+class WakeTimeout(Exception):
+    """The wake command outlived its timeout and its process group was killed."""
+
+
+def run_wake(argv, values, *, timeout):
+    """Run one wake provider command with its placeholders filled: exit code, None when it cannot start."""
+    argv = [WAKE_PLACEHOLDER_RE.sub(lambda match: values[match.group(1)], arg) for arg in argv]
     try:
         process = subprocess.Popen(
-            argv, text=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, start_new_session=True,
+            argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, start_new_session=True,
         )
     except OSError:
         return None
     try:
-        stdout, stderr = process.communicate(timeout=timeout)
+        return process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except OSError:
             pass
-        process.communicate()
-        raise HerdrTimeout(argv[0]) from None
-    return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
-
-
-def _herdr_error_code(text):
-    """Return the Herdr JSON error.code found in command output, or None."""
-    candidates = [text] + text.splitlines()
-    for candidate in candidates:
-        try:
-            code = json.loads(candidate)["error"]["code"]
-        except (KeyError, TypeError, ValueError):
-            continue
-        if isinstance(code, str):
-            return code
-    return None
-
-
-def herdr_owner_status(owner):
-    """Resolve an owner pane through Herdr: its agent_status, or None when unresolved."""
-    try:
-        result = _herdr("herdr", "agent", "get", owner, timeout=5)
-    except HerdrTimeout:
-        return None
-    if result is None or result.returncode:
-        return None
-    try:
-        agent = json.loads(result.stdout)["result"]["agent"]
-    except (KeyError, TypeError, ValueError):
-        return None
-    if not isinstance(agent, dict) or agent.get("pane_id") != owner:
-        return None
-    return str(agent.get("agent_status") or "unknown")
-
-
-def herdr_installed():
-    return bool(shutil.which("herdr") and shutil.which("herdr-say"))
+        process.wait()
+        raise WakeTimeout(argv[0]) from None
 
 
 class WakeController:
@@ -559,33 +577,26 @@ class WakeController:
             return self.states.get(resource_id)
 
     def _deliver(self, resource, batch):
-        if not herdr_installed():
+        commands = wake_provider(self.server.state_dir)
+        if commands is None:
             return "unavailable"
-        owner = resource["owner"]
-        agent_status = herdr_owner_status(owner)
-        if agent_status is None:
-            return "failed"
-        if agent_status == "working":
-            return "deferred"
+        check, send = commands
         message = (
             f"Spec Chat human spec review hand-off ready: spec {resource['spec_file']}, "
             f"collection {resource['narrow_root']}, cursor {resource['cursor_name']}, {len(batch)} events. "
             "Run the zero-wait scan, process the batch, then park."
         )
+        values = {"owner": resource["owner"], "artifact": resource["spec_file"], "message": message}
         try:
-            result = _herdr(
-                "herdr-say", "--kind", "command", "--artifact", resource["spec_file"], owner, message,
-                timeout=WAKE_SAY_TIMEOUT_SECONDS,
-            )
-        except HerdrTimeout:
-            return "sent"  # typed, delivery unconfirmed: never retype the same batch
-        if result is None:
+            if run_wake(check, values, timeout=WAKE_CHECK_TIMEOUT_SECONDS) != 0:
+                return "failed"
+        except WakeTimeout:
             return "failed"
-        if result.returncode in (0, 75):
-            return {0: "sent", 75: "deferred"}[result.returncode]
-        if _herdr_error_code(result.stderr or "") in TYPED_UNCONFIRMED_CODES:
-            return "sent"
-        return "failed"
+        try:
+            code = run_wake(send, values, timeout=WAKE_SEND_TIMEOUT_SECONDS)
+        except WakeTimeout:
+            return "sent"  # sending, delivery unconfirmed: never resend the same batch
+        return {0: "sent", 75: "deferred"}.get(code, "failed")
 
     def _poll_row(self, resource):
         resource_id = resource["id"]
@@ -920,10 +931,10 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
         if not base or base.startswith("-"):
             return self._json({"error": "invalid base"}, 400)
         try:
-            subprocess.check_call(
+            base_commit = subprocess.check_output(
                 ("git", "-C", mount["root"], "rev-parse", "--verify", base + "^{commit}"),
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
+                stderr=subprocess.DEVNULL, text=True,
+            ).strip()
         except (OSError, subprocess.CalledProcessError):
             return self._json({"error": "invalid base"}, 400)
         review = target + ".review"
@@ -932,7 +943,8 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
         if events is None:
             return self._json({"error": "unsafe spool path"}, 400)
         try:
-            return self._json(self.server.jev.response(mount, target, relative, base, events, view, self.mounts))
+            return self._json(self.server.jev.response(mount, target, relative, base, events, view, self.mounts,
+                                                       base_commit=base_commit))
         except (OSError, RuntimeError, ValueError):
             return self._json({"error": "jev unavailable"}, 503)
 
@@ -941,7 +953,7 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
         mount, target, _ = self._resolve_path(query.get("path", [""])[0], spec_only=True)
         if not mount:
             return self._json({"error": "bad path"}, 400)
-        base = os.environ.get("SPEC_CHAT_EVIDENCE_URL", "").strip()
+        base = evidence_provider(self.server.state_dir)
         if not base:
             return self._json({"criteria": None, "levels": MARK_LEVELS})
         try:
@@ -960,6 +972,22 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
         try:
             return self._json(self.server.jev.board(self.mounts))
         except (OSError, RuntimeError, ValueError):
+            return self._json({"error": "jev unavailable"}, 503)
+
+    def _post_offer(self, query, body):
+        """Record the page's one-time reconcile offer sent or dismissed (project-rules #bootstrap-offer)."""
+        mount, _, _ = self._resolve_path(query.get("path", [""])[0], spec_only=True)
+        if not mount:
+            return self._json({"error": "bad path"}, 400)
+        try:
+            action = json.loads(body).get("offer")
+        except (ValueError, AttributeError):
+            return self._json({"error": "bad json"}, 400)
+        if action not in ("sent", "dismissed"):
+            return self._json({"error": "offer must be sent or dismissed"}, 400)
+        try:
+            return self._json({"ok": self.server.jev.record_offer(mount.get("project"), action)})
+        except OSError:
             return self._json({"error": "jev unavailable"}, 503)
 
     def _post_event(self, query, body):
@@ -1044,6 +1072,8 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
         except ValueError:
             return self.send_error(400)
         parsed = urlparse(self.path)
+        if parsed.path == "/api/jev/offer":
+            return self._post_offer(parse_qs(parsed.query), body)
         if parsed.path != "/api/events":
             return self._json({"error": "not found"}, 404)
         return self._post_event(parse_qs(parsed.query), body)
@@ -1095,7 +1125,12 @@ def main(argv=None):
         print("review-serve: %s" % exc, file=sys.stderr)
         return 2
     server.mount_state = state
-    server.jev = JevService()
+    server.state_dir = os.path.dirname(os.path.abspath(args.registry)) if args.registry else None
+    server.jev = JevService(api_key=lambda: jev_provider(server.state_dir),
+                            llm_model=lambda: jev_llm_model(server.state_dir))
+    # Bootstrap (project-rules #bootstrap-home): a project's first registration starts its warm-up here.
+    state.on_change = server.jev.warm
+    state.changed()
     server.wake_controller = WakeController(server)
     wake_thread = threading.Thread(target=server.wake_controller.run, name="spec-chat-wake", daemon=True)
     wake_thread.start()

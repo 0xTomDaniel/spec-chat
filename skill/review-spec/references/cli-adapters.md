@@ -19,7 +19,7 @@ it when the next human message arrives.
 Use when the host proves that completion of the yielded tool call re-enters the same open authoring turn.
 
 ```sh
-scripts/review-control.sh yielded <spec-root> .cursor-<cli-or-session> 3600 3
+scripts/review-control.sh yielded <spec-root> .cursor-owner 3600 3
 ```
 
 Keep the turn open and silent while parked.
@@ -31,28 +31,28 @@ Codex may use it only through a yielded tool wait that keeps the current turn ac
 If Stop, cancellation, timeout ownership, or final response closes the turn, this state ends immediately.
 
 The review-control wrapper holds one nonblocking local kernel lock for the canonical collection root and cursor name.
-A user-owned absolute runtime namespace remains identical across Herdr panes and ordinary shells even when their environment variables differ.
+A user-owned absolute runtime namespace remains identical across multiplexer panes and ordinary shells even when their environment variables differ.
 A second yielded owner fails visibly; process exit releases the lock automatically.
 This is not a lease, heartbeat, fencing protocol, or persistent coordinator.
 
 ## Host-wake
 
 Use for a finished-looking idle experience when the long-lived review host can prompt the owner pane.
-Registering the resource with the lane record owner pane id is the whole wake setup:
+Registering the spec with the lane command and the owner pane id is the whole wake setup:
 
 ```sh
-scripts/review-host.py register --slug <lane-key> \
-  --resource <project>=<root>:<spec-path>@<base> \
-  --owner <owner-pane-id> --checker <checker> --cursor-name .cursor-<cli-or-session>
+scripts/review-host.py register --slug <lane-key> --owner <pane> <spec path>
 ```
 
-Registration prints `wake=verified owner=<pane>` only when `herdr agent get` resolves that pane, and `wake=unavailable owner=<pane>` otherwise; registration never fails on wake.
+The host watches the default cursor, `.cursor-owner`.
+
+Registration prints `wake=verified owner=<pane>` only when the registered wake provider's `check` (`providers/wake.toml` in the service state) exits 0 for that pane, and `wake=unavailable owner=<pane>` otherwise; registration never fails on wake.
 `wake=verified` selects `host-wake` and allows a final response.
 `wake=unavailable` selects `manual-resume`.
-The owner is the pane id, never an agent or tab name.
+The owner is the pane id, never an agent or tab name; only the wake provider knows how to reach it.
 
-The host polls every registered spool every 3 seconds and runs `herdr-say` to the row's owner pane once per unchanged completed hand-off batch.
-It defers while the owner is working or `herdr-say` exits 75, and retries each poll after a failed resolve or delivery, so a re-registered owner is woken.
+The host polls every registered spool every 3 seconds and runs the wake provider's `send` for the row's owner pane once per unchanged completed hand-off batch.
+It defers while `send` exits 75, and retries each poll after a failed `check` or `send`, so a re-registered owner is woken.
 It never reads comments, edits the spec, writes the spool, advances cursors, or starts another processor.
 The woken owner performs the zero-wait scan, batch transaction, cursor advance, and parks.
 

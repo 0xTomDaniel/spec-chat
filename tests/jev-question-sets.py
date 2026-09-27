@@ -14,7 +14,12 @@ STATE_KEYS = {
     "corpus": {"before", "after", "target", "target_non_goal"},
     "coverage": {"story", "criterion"},
     "audience": {"clause"},
+    "lane": {"first", "second"},
+    "scope": {"criterion"},
+    "rule": {"rule", "spec"},
 }
+# Moderate start; rule raised so uncertain misses escalate to the fallback (ANN-309, rule v2).
+THRESHOLDS = {"rule": 0.7}
 
 
 class JevQuestionSetTest(unittest.TestCase):
@@ -32,8 +37,10 @@ class JevQuestionSetTest(unittest.TestCase):
                 data = json.loads(path.read_text(encoding="utf-8"))
                 self.assertEqual(data["id"], path.stem)
                 self.assertIsInstance(data["version"], int)
+                # #q-fallback: a set only allows the fallback; the model is the box's llm_model.
+                self.assertIn(data.get("fallback", False), (True, False))
                 self.assertTrue(data["instructions"].strip())
-                self.assertEqual(data["threshold"], 0.4)
+                self.assertEqual(data["threshold"], THRESHOLDS.get(path.stem, 0.4))
                 labels = data["labels"]
                 self.assertIsInstance(labels, list)
                 self.assertGreater(len(labels), 0)

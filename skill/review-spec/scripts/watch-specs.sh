@@ -7,7 +7,7 @@
 set -eu
 
 ROOT=$1
-CURSOR_NAME=${2:-.cursor-codex}
+CURSOR_NAME=${2:-.cursor-owner}
 TMO=${3:-240}
 POLL=${4:-2}
 

@@ -132,7 +132,7 @@ for (const value of [new Error('down'), { ok: false, json: async () => ({}) }, {
 }
 assert.ok(fetches.every(url => url === '/api/evidence?path=specs%2Fdemo.spec.html'), fetches.join());
 
-// The server's levels table as /api/evidence returns it (tools/jev.py MARK_LEVELS).
+// The server's two-column levels table as /api/evidence returns it (tools/jev.py MARK_LEVELS); color reads its human column.
 const levels = JSON.parse(execFileSync('python3', ['-c', 'import json, sys; sys.path.insert(0, "tools"); from jev import MARK_LEVELS; print(json.dumps(MARK_LEVELS))'], { cwd: root, encoding: 'utf8' }));
 answer = json({ levels, criteria: {
   passed: entry(),
@@ -177,9 +177,13 @@ assert.deepEqual(marked('passed'), ['passed', 'reworded', 'plain', 'lane']);
 assert.equal(marker('none').dataset.attention + marker('none').dataset.passed, 'falsefalse');
 assert.equal(markersOf('story').length, 0);
 // #acceptance-levels-api: evidence color follows the response's levels table; changing one row changes the color.
-state.evidence.levels = { ...levels, 'qa-stale': 'warning' };
+state.evidence.levels = { ...levels, 'qa-stale': { human: 'warning', agent: 'important' } };
 renderJev();
 assert.deepEqual(marked('attention'), ['failed', 'failed-reworded']);
+// #markers-levels-source: the agent column never colors a marker.
+state.evidence.levels = Object.fromEntries(Object.entries(levels).map(([k, v]) => [k, { ...v, agent: 'warning' }]));
+renderJev();
+assert.deepEqual(marked('attention'), ['failed', 'failed-reworded', 'material', 'unsure', 'uncommitted']);
 state.evidence.levels = levels;
 renderJev();
 // Notes add no text to the spec and move nothing: each criterion keeps its text, plus one marker.

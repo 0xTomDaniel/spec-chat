@@ -17,19 +17,31 @@ Your job in review mode: reconcile hand-off batches, route material authoring th
 
 ## Remote hosting lifecycle
 
-Register a lane's review resources with --slug <lane key>, where the lane key is the issue key lowercased with the hyphen removed (ANN-45 -> ann45). They stay registered until lane teardown, and teardown deletes the row: review-host remove deletes it rather than keeping it as lifecycle removed.
+A lane registers its specs with one command, the lane command:
+
+```sh
+scripts/review-host.py register --slug <lane-key> --owner <pane> <spec path>
+```
+
+Repeat the spec path for more specs. The lane key and owner pane id come from the caller. The command names no exposure: the box's review service already owns it (see `### Box setup`). A plain spec path infers project, root, and base from Git; `--base <ref>` overrides the base, and `--resource PROJECT_ID=ROOT:SPEC_PATH@BASE` still works. Rows stay registered until lane teardown, and teardown deletes the row: `review-host remove` deletes it rather than keeping it as lifecycle removed.
+
+The lane's cursor is `.cursor-owner`, the one the review host watches by default. Every loop command below uses it.
+
+### Box setup
+
+By the box owner, once, outside any lane: `--public <host>` (listen there on an approved ingress port; the page has no login), `--private` (loopback, reached with the printed `ssh -L` tunnel), and `--proof-host <host>` (public proof host for a wildcard bind). Approved ports come from `SPEC_CHAT_APPROVED_INGRESS_PORTS` or readable host firewall rules. The registry keeps the bind across restarts. `--state-dir` names a separate, isolated service for tests or deliberate isolation; lanes do not pass it. `scripts/install-spec-chat` runs box setup; see the README.
 
 ## The loop
 
 1. **Reconnect before parking.** On every newly started or resumed spec-chat turn, first run one immediate, read-only collection scan:
 
    ```
-   scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 0 3
+   scripts/watch-specs.sh <spec-root> .cursor-owner 0 3
    ```
 
    Exit 0 prints tab-separated `<html-path> <human-event-filename>` rows for the first ready page; exit 3 means the backlog is empty. A ready result contains every unprocessed event through the newest completed hand-off, in filename/event order. Do not reuse, poll, or wait on a watcher/tool session cancelled with the prior turn, and do not start detached Codex processing automatically—the detached process could race the interactive thread.
 
-2. **Drain the reported batch.** Read each event file in the printed order. Rehydrate context from FILES — the current spec, the unresolved events, `<spec>.review/context.md` — not from what you remember of the chat. Chat history is never the review database; files are what survive compaction, session changes, CLI switches, and stopped turns. Fold each thread before acting: human `reply` events continue the existing conversation, and human `edit` events replace the message named by `supersedes`. Ignore superseded text. Each `handoff` event is a human spec review: for a hosted spec, run `scripts/review-host.py reviewed --id <resource id>` before editing (on spec acceptance, after the Status line update; see `## Statuses`); it commits the spec if dirty and sets the row `base` to that commit, else HEAD.
+2. **Drain the reported batch.** Read each event file in the printed order. Rehydrate context from FILES (the current spec, the unresolved events, `<spec>.review/context.md`), not from what you remember of the chat. Chat history is never the review database; files are what survive compaction, session changes, CLI switches, and stopped turns. Fold each thread before acting: human `reply` events continue the existing conversation, and human `edit` events replace the message named by `supersedes`. Ignore superseded text. Each `handoff` event is a human spec review: for a hosted spec, run `scripts/review-host.py reviewed --id <resource id>` before editing; it commits the spec if dirty and sets the row `base` to that commit, else HEAD.
 
 3. **Classify before editing, then apply each comment** to the spec in place. Questions and atomic corrections that do not change behavior or information architecture remain review-only. A batch is material when it adds or changes a behavior cluster, user outcome, flow, state model, module boundary, acceptance family, spatial contract, or the page's information architecture. Before a material edit, load `spec-chat-shape` and apply its complete authoring contract to the affected spec. The existence or age of the spec never exempts it. If the current page cannot carry the new material with readable visual density, restructure it instead of appending prose, cards, or one catch-all diagram. An informational comment may use `change: "no spec change"`; answer through the channel without forcing an edit.
 
@@ -48,15 +60,15 @@ Register a lane's review resources with --slug <lane key>, where the lane key is
 7. **Advance that spec's cursor only after the entire reported batch was successfully processed and every reply was emitted**, by APPENDING exactly the filenames the scan reported:
 
    ```
-   printf '%s\n' <file1> <file2> >> <spec>.review/.cursor-<cli-or-session>
+   printf '%s\n' <file1> <file2> >> <spec>.review/.cursor-owner
    ```
 
    Never regenerate the cursor with `ls` — events that arrived while you were processing would be silently marked as seen and skipped. Never advance it after a partial or failed drain; leaving it unchanged makes the next turn recover the same durable batch. This append-only rule is the lossless commit point.
 
 8. **Reconcile to empty, then select one terminal control state.** Repeat the zero-wait scan and steps 2–7 until it exits 3, then choose exactly one:
 
-   - `turn-yielded`: run `scripts/review-control.sh yielded <spec-root> .cursor-<cli-or-session> 3600 3` through a verified same-turn yield and keep this turn open. A final response is forbidden.
-   - `host-wake`: register the resource with `scripts/review-host.py register --owner <owner-pane-id> --cursor-name .cursor-<cli-or-session>`, using the lane record owner pane id, never an agent or tab name. Re-register an existing row with its current `base` from `registry.toml` as `@<row base>`, never the lane start base. Final is allowed only when registration printed `wake=verified owner=<pane>`; the review host then prompts that pane once per hand-off batch. `wake=unavailable` selects `manual-resume`.
+   - `turn-yielded`: run `scripts/review-control.sh yielded <spec-root> .cursor-owner 3600 3` through a verified same-turn yield and keep this turn open. A final response is forbidden.
+   - `host-wake`: register the spec with the lane command, using the owner pane id, never an agent or tab name. Pass no `--base`: re-registering an existing row keeps its recorded base. Final is allowed only when registration printed `wake=verified owner=<pane>`; the review host then prompts that pane once per hand-off batch. `wake=unavailable` selects `manual-resume`.
    - `manual-resume`: run `scripts/review-control.sh manual`, return a final response that explicitly requires a new human chat message, and claim no automatic wake. Keep the same review server and checker alive while waiting. The new message resumes the checker against that URL.
 
    `<spec-root>` is normally the repository's shared `docs/` collection root.
@@ -100,7 +112,7 @@ A resolved thread remains expandable. When its latest message is from the agent,
 
 If a hand-off remains unacknowledged past the existing timeout, the browser states that automatic wake did not occur and instructs the human to send a new chat message to resume.
 
-When every thread is resolved and no open TBD remains (any `data-spec-tbd` whose value is not `later`), the no-draft action becomes **Accept spec**, spec acceptance (formerly called Finish review). It writes the existing empty hand-off. Reconcile it and settle any final durable change. Update the spec's Status line first, then run `scripts/review-host.py reviewed --id <resource id> --accepted`, so the reviewed base includes it; advance the exact cursor. Never change an accepted spec's meaning without a new human review; directed edits the accepted spec itself calls for are delivery, and markup-only changes a validator requires are recorded with review-host reviewed. Every sent hand-off, a comment batch or spec acceptance, is a human spec review. Spec acceptance is the spool fact for delivery approval under the reviewed canonical spec; host rows remain until lane teardown. It does not accept an implementation PR, approve a merge, promote to preproduction, or approve live traffic.
+When every thread is resolved and no open TBD remains (any `data-spec-tbd` whose value is not `later`), the no-draft action becomes **Accept spec**, spec acceptance (formerly called Finish review). It writes the existing empty hand-off. Reconcile it and settle any final durable change. Run `scripts/review-host.py reviewed --id <resource id> --accepted`; the spec carries no Status line. Advance the exact cursor. Never change an accepted spec's meaning without a new human review; directed edits the accepted spec itself calls for are delivery, and markup-only changes a validator requires are recorded with review-host reviewed. Every sent hand-off, a comment batch or spec acceptance, is a human spec review. Spec acceptance is the spool fact for delivery approval under the reviewed canonical spec; host rows remain until lane teardown. It does not accept an implementation PR, approve a merge, promote to preproduction, or approve live traffic.
 
 ## Event schema
 
@@ -136,7 +148,7 @@ Whichever transport is in play, host the spec with `assets/review-serve.py`.
 Do not substitute `python3 -m http.server` or another static file server: it serves the page but provides no annotation spool, no `/api/baseline`, no capability check, and no review URL contract, so the review layer silently never works.
 
 - **Local browser, same machine**: nothing to run; the page connects to the folder directly (file:// + FSA). Browser security does not reliably persist write permission. When an IndexedDB handle returns `prompt`, the runtime shows **Resume review** and requests write permission on the already-selected handle; **Choose different folder** remains a separate picker fallback for a moved tree, wrong prior scope, or Chromium shell that does not surface the regrant prompt. Chromium can follow the native directory picker with a separate **Allow this site to edit files?** browser window; the runtime must name that step and visibly wait for it because shells such as Arc may not layer it over the spec window. The grant accepts ANY ancestor folder of the spec — pick it in the dialog or drag it from Finder onto the page; the runtime walks down to the spec's folder itself and remembers the ancestor. Caveats: Chromium refuses grants on the top-level roots themselves (home, Documents, Desktop, Downloads — children beneath them are fine), so suggest a workspace/projects folder one level down; if the granted tree contains two same-named specs at matching sub-paths the runtime refuses to guess and asks for a narrower grant. The spec's exact path also lands on the clipboard when the picker opens (⌘⇧G + paste in the macOS panel). If the user wants zero prompts or uses Safari or Firefox, run `assets/review-serve.py` on loopback; the HTTP transport auto-connects.
-- **Remote browser**: use `scripts/review-host.py register` with one or more `--resource PROJECT_ID=ROOT:SPEC_PATH@BASE` entries and the lane `--slug`. It keeps one `registry.toml` with a `[process]` table (pid, port, bind) and resource rows, binds `assets/review-serve.py`, and checks exact resource bytes plus `/api/baseline`. By default the page is private: it listens on loopback and prints the `ssh -L <port>:127.0.0.1:<port> <box>` tunnel. `--public <host>` (for example the box's Tailscale address) listens there on an approved ingress port instead, and warns that anyone who can reach it can read and comment without logging in; `--private` returns to loopback. The record keeps the bind, so a restart keeps the choice. A live registered server is reused unchanged; a `--public` or `--private` that differs from its bind fails, so stop it and register again to change it. Use `remove` to delete a resource row and `stop` to stop the server.
+- **Remote browser**: register with the lane command (`## Remote hosting lifecycle`). It joins the box's review service, which keeps one `registry.toml` with a `[process]` table (pid, port, bind, host, url) and resource rows, serves `assets/review-serve.py`, and checks exact resource bytes plus `/api/baseline` before printing the URL. Exposure is box setup's: a private service prints the `ssh -L <port>:127.0.0.1:<port> <box>` tunnel; a public one warns that anyone who can reach it can read and comment without logging in. A live service is reused unchanged. Use `remove` to delete a resource row.
 
 ## Scaffolding spec-chat into a repo
 
@@ -158,7 +170,7 @@ It never writes a review server into the target: every launch runs this skill's 
 Treat a preflight failure as a review blocker.
 Commit migrated assets locally before presenting a shaping review.
 If the server was already running when runtime migration occurred, restart it through
-review-host stop/register and rerun host checks before handoff. This is a
+review-host stop and the lane command, then rerun host checks before handoff. This is a
 runtime change; ordinary edits to a served spec do not require a restart.
 
 **Exception — module-loading migration**: if an existing repo's runtime is loaded with `<script type="module">` (or its `runtime.js` still contains `import.meta.url`), it predates the classic-script fix and is broken on `file://` (browsers CORS-block module scripts there — the annotation layer silently never loads). On contact, replace the vendored `.viz/runtime.js` with this skill's copy and switch every page to a classic `<script defer>` tag using the correct relative path described above.
@@ -166,10 +178,10 @@ runtime change; ordinary edits to a served spec do not require a restart.
 ## Starting a review when asked
 
 1. Confirm the page exists, run `scripts/preflight.py`, and identify the shared collection root (normally the repository's `docs/` directory, not the page's immediate `docs/specs/`, `docs/specs/<domain>/`, or `docs/adr/` directory; use the narrowest common ancestor for a legacy or explicitly different layout).
-2. Start `assets/review-serve.py` when HTTP review is required. For remote review, use `scripts/review-host.py register` with the resource and lane slug; it binds loopback by default, or `--public <host>` on a free approved port when the developer asks for it. Verify the served runtime advertises the required capabilities and `/api/baseline` succeeds for the exact page and review base. Keep that server and URL through ordinary edits, rerunning exact served-byte and `/api/baseline` checks for the same base after each edit. Restart only for a root, collection, process, port, runtime, or ownership change, or when the server is dead.
+2. Start `assets/review-serve.py` when HTTP review is required. For remote review, register with the lane command; exposure is box setup's. Verify the served runtime advertises the required capabilities and `/api/baseline` succeeds for the exact page and review base. Keep that server and URL through ordinary edits, rerunning exact served-byte and `/api/baseline` checks for the same base after each edit. Restart only for a root, collection, process, port, runtime, or ownership change, or when the server is dead.
 3. Present the verified review URL. For a private page on another machine, also give the printed `ssh -L` tunnel. Do not hand back a GitHub link.
-4. On both an initial start and any resumed/reconnected turn, run `scripts/watch-specs.sh <spec-root> .cursor-<cli-or-session> 0 3`; drain, reply, and cursor each ready batch, then repeat until exit 3.
-5. After reconciliation is empty, establish `turn-yielded`, verified `host-wake` through `scripts/review-host.py register`, or `manual-resume` through `scripts/review-control.sh`.
+4. On both an initial start and any resumed/reconnected turn, run `scripts/watch-specs.sh <spec-root> .cursor-owner 0 3`; drain, reply, and cursor each ready batch, then repeat until exit 3.
+5. After reconciliation is empty, establish `turn-yielded`, verified `host-wake` through the lane command, or `manual-resume` through `scripts/review-control.sh`.
 6. State the selected control state truthfully. Never say watching, attached, or active after final unless `host-wake` is verified.
 
 ## Mobile review contract
