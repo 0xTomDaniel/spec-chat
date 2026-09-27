@@ -403,7 +403,8 @@ def require_fields(record: Mapping[str, Any]) -> None:
         raise LauncherError("resource missing required field: " + ", ".join(missing))
 
 
-def validate_records(records: Sequence[Mapping[str, Any]]) -> None:
+def validate_records(records: Sequence[Mapping[str, Any]], stale_ids: frozenset[str] = frozenset()) -> None:
+    """Structural checks always run. Filesystem checks (worktree, spec file, base commit) are skipped for stale_ids."""
     ids: set[str] = set()
     stable: set[str] = set()
     for record in records:
@@ -417,24 +418,25 @@ def validate_records(records: Sequence[Mapping[str, Any]]) -> None:
         root = Path(record["root"])
         if not root.is_absolute():
             raise LauncherError(f"resource root must be absolute: {rid}")
-        top = resource_toplevel(root)
-        if root.resolve() != top:
-            raise LauncherError(f"resource root must be worktree toplevel: {rid}")
-        narrow = Path(record["narrow_root"]).resolve()
-        if not narrow.is_dir() or not path_inside(narrow, top, strict=True):
-            raise LauncherError(f"resource collection is invalid: {rid}")
         spec = record["spec"].replace("\\", "/")
         if spec.startswith("/") or not spec.endswith(".spec.html"):
             raise LauncherError(f"resource spec path is invalid: {spec}")
-        spec_file = (top / spec).resolve()
-        if not path_inside(spec_file, narrow, strict=True) or not spec_file.is_file():
-            raise LauncherError(f"resource spec is missing or outside its collection: {rid}")
+        if rid not in stale_ids:
+            top = resource_toplevel(root)
+            if root.resolve() != top:
+                raise LauncherError(f"resource root must be worktree toplevel: {rid}")
+            narrow = Path(record["narrow_root"]).resolve()
+            if not narrow.is_dir() or not path_inside(narrow, top, strict=True):
+                raise LauncherError(f"resource collection is invalid: {rid}")
+            spec_file = (top / spec).resolve()
+            if not path_inside(spec_file, narrow, strict=True) or not spec_file.is_file():
+                raise LauncherError(f"resource spec is missing or outside its collection: {rid}")
+            run_git(root, "rev-parse", "--verify", record["base"] + "^{commit}")
+        if not SAFE_CURSOR_RE.fullmatch(record["cursor_name"]):
+            raise LauncherError(f"invalid cursor name: {record['cursor_name']}")
         key = row_path(record)
         if key in stable:
             raise LauncherError(f"duplicate stable resource path: {key}")
-        run_git(root, "rev-parse", "--verify", record["base"] + "^{commit}")
-        if not SAFE_CURSOR_RE.fullmatch(record["cursor_name"]):
-            raise LauncherError(f"invalid cursor name: {record['cursor_name']}")
         ids.add(rid)
         stable.add(key)
 
@@ -478,8 +480,9 @@ def read_registry_document(path: Path, validate: bool = True) -> dict[str, Any]:
     return {"resource": result, "process": process}
 
 
-def write_registry(path: Path, records: Sequence[Mapping[str, Any]], process: Mapping[str, Any] | None = None) -> None:
-    validate_records(records)
+def write_registry(path: Path, records: Sequence[Mapping[str, Any]], process: Mapping[str, Any] | None = None,
+                   stale_ids: frozenset[str] = frozenset()) -> None:
+    validate_records(records, stale_ids)
     cleaned = [{key: record[key] for key in RESOURCE_FIELDS if key in record} for record in records]
     atomic_write(path, dump_registry(process, cleaned))
 
@@ -752,17 +755,17 @@ def register(args: argparse.Namespace) -> int:
             additions.append(registry_record(item, old))
             item.update(additions[-1])
         replacement_ids = {item["id"] for item in additions}
-        kept = []
+        stale_ids: set[str] = set()
         for item in existing:
             if item["id"] in replacement_ids:
                 continue
             reason = is_row_stale(item)
             if reason:
-                print(f"review-host: warning: dropping stale row {item['id']}: {reason}", file=sys.stderr)
-                continue
-            kept.append(item)
-        candidate = kept + additions
-        validate_records(candidate)
+                print(f"review-host: warning: stale row {item['id']}: {reason}", file=sys.stderr)
+                stale_ids.add(item["id"])
+        candidate = [item for item in existing if item["id"] not in replacement_ids] + additions
+        stale = frozenset(stale_ids)
+        validate_records(candidate, stale)
         child: subprocess.Popen[str] | None = None
         try:
             live = process and process_owns_registry(process["pid"], registry)
@@ -779,7 +782,7 @@ def register(args: argparse.Namespace) -> int:
             if live:
                 url = process.get("url") or running_url(log_path)
                 process = {**process, "url": url}
-                write_registry(registry, candidate, process)
+                write_registry(registry, candidate, process, stale)
                 for item in parsed:
                     prove_resource(url, item)
                 print_access(url, bind)
@@ -788,7 +791,7 @@ def register(args: argparse.Namespace) -> int:
 
             bind, host, recorded_port = plan or start_plan(args, process)
             port = select_start_port(bind, recorded_port)
-            write_registry(registry, candidate)
+            write_registry(registry, candidate, stale_ids=stale)
             command = server_command(registry, bind, port, host)
             with log_path.open("w", encoding="utf-8") as log:
                 child = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
@@ -811,7 +814,7 @@ def register(args: argparse.Namespace) -> int:
                 prove_resource(url, item)
             process = {"pid": child.pid, "port": urllib.parse.urlsplit(url).port or port, "bind": bind,
                        "host": host, "url": url}
-            write_registry(registry, candidate, process)
+            write_registry(registry, candidate, process, stale)
             print_access(url, bind)
             print_urls(url, additions, state)
             return 0

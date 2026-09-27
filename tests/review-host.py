@@ -244,7 +244,7 @@ class ReviewHostTest(unittest.TestCase):
         self.assertFalse(review_host.process_owns_registry(pid, Path(state) / "registry.toml"))
 
     def test_remove_succeeds_when_registered_spec_file_is_deleted(self):
-        """ANN-359 review-service #acceptance-remove-stale."""
+        """review-service #acceptance-remove-stale."""
         state = self.work / "state"
         started = self.run_cli(*self.register_args(state), state=state)
         self.assertEqual(started.returncode, 0, started.stderr)
@@ -254,18 +254,20 @@ class ReviewHostTest(unittest.TestCase):
         self.assertEqual(removed.returncode, 0, removed.stderr)
         self.assertEqual(self.registry(state).get("resource", []), [])
 
-    def test_register_drops_stale_row_and_reports_it(self):
-        """ANN-359 review-service #acceptance-stale-skip."""
+    def test_register_keeps_stale_row_and_reports_it(self):
+        """review-service #acceptance-stale-skip."""
         state = self.work / "state"
         first = self.run_cli(*self.register_args(state, spec="review"), state=state)
         self.assertEqual(first.returncode, 0, first.stderr)
+        stale_id = self.registry(state)["resource"][0]["id"]
         self.spec.unlink()
         second = self.run_cli(*self.register_args(state, slug="lane2", spec="second"), state=state)
         self.assertEqual(second.returncode, 0, second.stderr)
         rows = self.registry(state)["resource"]
-        self.assertEqual(len(rows), 1, f"expected only the new row, got: {[r['id'] for r in rows]}")
-        self.assertEqual(rows[0]["slug"], "lane2")
-        self.assertIn("dropping stale row", second.stderr)
+        ids = {row["id"] for row in rows}
+        self.assertIn(stale_id, ids, "stale row must be kept in the registry")
+        self.assertEqual(len(rows), 2)
+        self.assertIn("stale row", second.stderr)
 
     def test_stop_then_register_replaces_resource_and_restarts_server(self):
         state = self.work / "state"
