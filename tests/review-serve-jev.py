@@ -49,19 +49,14 @@ class SlowProvider:
         return {"answers": {next(iter(payload["questions"])): {"choice": "behavioral", "confidence": 0.9}}}
 
 
-def wait_asks(service, timeout=10):
-    """Wait until no background ask is in flight (#fast-marks-background)."""
+def settled(service, *args, timeout=10):
+    """Re-read, as the page does, until no item is pending (#fast-marks-background)."""
     deadline = time.monotonic() + timeout
-    while service._asking and time.monotonic() < deadline:
-        time.sleep(0.005)
-    assert not service._asking, "background asks still in flight"
-
-
-def settled(service, *args):
-    """A read after the first read's background asks have been recorded."""
-    service.response(*args)
-    wait_asks(service)
-    return service.response(*args)
+    while True:
+        result = service.response(*args)
+        if not any(item["state"] == "pending" for item in result["items"]) or time.monotonic() > deadline:
+            return result
+        time.sleep(0.01)
 
 
 class GatedProvider:
@@ -85,68 +80,136 @@ class GatedProvider:
 class JevBackgroundTest(unittest.TestCase):
     """jev-suggestions #fast-marks-background, #state-pending, #state-error, #acceptance-background."""
 
-    def service(self, directory, provider):
-        service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.services = []
+
+    def tearDown(self):
+        for service in self.services:
+            service.stop()
+        self.tmp.cleanup()
+
+    def service(self, provider, count=20, api_key="fake"):
+        service = jev.JevService(state_dir=self.tmp.name, provider=provider, api_key=api_key)
+        self.services.append(service)
         questions = [{"kind": "type", "id": str(index), "state": {"after": str(index)},
-                      "sources": [], "revision": "head"} for index in range(20)]
+                      "sources": [], "revision": "head"} for index in range(count)]
         service.questions = lambda *args, **kwargs: questions
         return service
 
     def read(self, service):
         return service.response({}, "", "", "base", [])
 
+    def settled(self, service):
+        return settled(service, {}, "", "", "base", [])
+
+    def records(self):
+        path = Path(self.tmp.name) / "records.jsonl"
+        return path.read_text().splitlines() if path.exists() else []
+
     def test_first_read_is_pending_and_never_waits_for_jev(self):
         provider = GatedProvider()
-        with tempfile.TemporaryDirectory() as directory:
-            service = self.service(directory, provider)
-            try:
-                started = time.monotonic()
-                first = self.read(service)
-                self.assertLess(time.monotonic() - started, 0.2)
-                self.assertEqual([item["state"] for item in first["items"]], ["pending"] * 20)
-                self.assertTrue(all(item["label"] is None and item["record"] is None for item in first["items"]))
-                self.assertEqual(len(service._asking), 20)
-            finally:
-                provider.release.set()
-            wait_asks(service)
-            second = self.read(service)
+        service = self.service(provider)
+        try:
+            started = time.monotonic()
+            first = self.read(service)
+            self.assertLess(time.monotonic() - started, 0.2)
+            self.assertEqual([item["state"] for item in first["items"]], ["pending"] * 20)
+            self.assertTrue(all(item["label"] is None and item["record"] is None for item in first["items"]))
+            self.assertEqual(len(service._asking), 20)
+        finally:
+            provider.release.set()
+        second = self.settled(service)
         self.assertEqual([item["state"] for item in second["items"]], ["label"] * 20)
         self.assertEqual(provider.calls, 20)
 
     def test_read_while_asks_are_in_flight_starts_none(self):
         provider = GatedProvider()
-        with tempfile.TemporaryDirectory() as directory:
-            service = self.service(directory, provider)
-            try:
-                self.read(service)
-                asking = dict(service._asking)
-                again = self.read(service)
-                self.assertEqual(service._asking, asking)
-                self.assertEqual([item["state"] for item in again["items"]], ["pending"] * 20)
-            finally:
-                provider.release.set()
-            wait_asks(service)
+        service = self.service(provider)
+        try:
             self.read(service)
-            wait_asks(service)
+            asking = dict(service._asking)
+            again = self.read(service)
+            self.assertEqual(service._asking, asking)
+            self.assertEqual([item["state"] for item in again["items"]], ["pending"] * 20)
+        finally:
+            provider.release.set()
+        self.settled(service)
+        self.read(service)
         self.assertEqual(provider.calls, 20)
 
     def test_failed_twice_is_held_unavailable_until_inputs_change(self):
         provider = GatedProvider(fail=True)
         provider.release.set()
-        with tempfile.TemporaryDirectory() as directory:
-            service = self.service(directory, provider)
-            held = settled(service, {}, "", "", "base", [])
-            self.assertEqual([item["state"] for item in held["items"]], ["unavailable"] * 20)
-            self.assertEqual(provider.calls, 40)
-            again = self.read(service)
-            self.assertFalse(service._asking)
-            self.assertEqual(again, held)
-            self.assertEqual(provider.calls, 40)
-            changed = [{"kind": "type", "id": "0", "state": {"after": "changed"}, "sources": [], "revision": "head"}]
-            service.questions = lambda *args, **kwargs: changed
-            self.assertEqual(self.read(service)["items"][0]["state"], "pending")
-            wait_asks(service)
+        service = self.service(provider)
+        held = self.settled(service)
+        self.assertEqual([item["state"] for item in held["items"]], ["unavailable"] * 20)
+        self.assertEqual(provider.calls, 40)
+        again = self.read(service)
+        self.assertEqual(again, held)
+        self.assertEqual(provider.calls, 40)
+        changed = [{"kind": "type", "id": "0", "state": {"after": "changed"}, "sources": [], "revision": "head"}]
+        service.questions = lambda *args, **kwargs: changed
+        self.assertEqual(self.read(service)["items"][0]["state"], "pending")
+        self.settled(service)
         self.assertEqual(provider.calls, 42)
+
+    def test_failed_ask_that_lands_mid_read_is_not_asked_again(self):
+        """A read collects a miss; that key's ask fails and leaves before the read submits: not resubmitted."""
+        provider = GatedProvider(fail=True)
+        provider.release.set()
+        service = self.service(provider, count=1)
+        collect = service._held
+
+        def held_then_answered(question, misses):
+            record = collect(question, misses)
+            service.seam.ask(question)  # the in-flight ask records `unavailable` and leaves _asking
+            return record
+
+        service._held = held_then_answered
+        self.assertEqual(self.read(service)["items"][0]["state"], "pending")
+        service._held = collect
+        self.assertEqual(self.settled(service)["items"][0]["state"], "unavailable")
+        self.assertEqual(provider.calls, 2)
+
+    def test_off_record_is_asked_again_once_a_key_is_present(self):
+        """The key went away while asks were queued: `off` is not an answer, so it is never held."""
+        key = [""]
+        provider = GatedProvider()
+        provider.release.set()
+        service = self.service(provider, count=1, api_key=lambda: key[0])
+        self.read(service)
+        service.stop()  # waits for the ask: it recorded `off`
+        self.assertEqual(json.loads(self.records()[-1])["outcome"], "off")
+        service = self.service(provider, count=1, api_key=lambda: key[0])
+        key[0] = "fake"
+        self.assertEqual(self.settled(service)["items"][0]["state"], "label")
+        self.assertEqual(provider.calls, 1)
+
+    def test_stop_drops_queued_asks_and_nothing_writes_after_it(self):
+        provider = GatedProvider()
+        service = self.service(provider)
+        try:
+            self.read(service)
+            queued = [future for future in service._asking.values() if not future.running()]
+            stopper = threading.Thread(target=service.stop)
+            stopper.start()
+            deadline = time.monotonic() + 10
+            while not all(future.cancelled() or future.running() for future in queued) and time.monotonic() < deadline:
+                time.sleep(0.005)
+        finally:
+            provider.release.set()
+        stopper.join(10)
+        self.assertFalse(stopper.is_alive())
+        self.assertLessEqual(provider.calls, jev.ASK_WORKERS)
+        self.assertEqual(len(self.records()), provider.calls)  # in-flight asks finished their record
+        written = self.records()
+        after = self.read(service)
+        self.assertEqual({item["state"] for item in after["items"]}, {"pending", "label"})
+        time.sleep(0.05)
+        self.assertEqual(self.records(), written)
+        self.assertEqual(provider.calls, len(written))
+        service.stop()  # idempotent
 
 
 class JevSeamTest(unittest.TestCase):

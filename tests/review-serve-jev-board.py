@@ -76,13 +76,21 @@ class BoardTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
+        self.services = []
 
     def tearDown(self):
+        for service in self.services:  # stop asking before the state directory goes
+            service.stop()
         self.tmp.cleanup()
+
+    def jev_service(self, **kwargs):
+        service = jev.JevService(**kwargs)
+        self.services.append(service)
+        return service
 
     def service(self, answer):
         provider = FakeProvider(answer)
-        service = jev.JevService(state_dir=self.dir / "state", provider=provider, api_key="fake")
+        service = self.jev_service(state_dir=self.dir / "state", provider=provider, api_key="fake")
         return service, provider
 
     def idle(self, service):
@@ -186,7 +194,7 @@ class BoardTest(unittest.TestCase):
         self.assertGreater(len(provider.calls), asked)  # new head asks again
 
     def test_off_without_key(self):
-        service = jev.JevService(state_dir=self.dir / "state", api_key="")
+        service = self.jev_service(state_dir=self.dir / "state", api_key="")
         self.assertEqual(service.board(self.one_row()), {"jev": "off", "rows": [], "conflicts": []})
 
     def test_bad_base_is_unknown(self):

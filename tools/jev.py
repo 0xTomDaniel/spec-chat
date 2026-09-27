@@ -966,9 +966,21 @@ class JevService:
         self._board_thread: threading.Thread | None = None
 
         # Background asks (#fast-marks-background): one in flight per question key, shared by both routes.
+        # The pool lives as long as the service: stop() drops queued asks and waits only for in-flight ones.
         self._ask_lock = threading.Lock()
         self._asking: dict[str, Future] = {}
-        self._ask_pool = ThreadPoolExecutor(max_workers=ASK_WORKERS, thread_name_prefix="spec-chat-jev-ask")
+        self._ask_pool: ThreadPoolExecutor | None = ThreadPoolExecutor(
+            max_workers=ASK_WORKERS, thread_name_prefix="spec-chat-jev-ask")
+
+    def stop(self) -> None:
+        """Stop asking: later reads ask nothing, queued asks are dropped, in-flight asks finish their record."""
+        with self._ask_lock:
+            pool, self._ask_pool = self._ask_pool, None
+            if pool is not None:
+                pool.shutdown(wait=False, cancel_futures=True)
+            self._asking.clear()
+        if pool is not None:
+            pool.shutdown(wait=True)
 
     @property
     def _kept(self) -> _Kept:
@@ -1179,17 +1191,27 @@ class JevService:
     def _held(self, question: Mapping[str, Any], misses: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
         """The held record, whatever its outcome; reads never re-ask unchanged inputs. A miss is collected."""
         key = self.seam.key(question)
-        record = self.seam.store.get(key)
+        record = self._held_record(key)
         if record is None:
             misses.setdefault(key, dict(question))
         return record
 
+    def _held_record(self, key: str) -> dict[str, Any] | None:
+        """A held record. `off` is no answer (the key was missing when asked), so it is asked again."""
+        record = self.seam.store.get(key)
+        return None if record is None or record.get("outcome") == "off" else record
+
     def _ask_misses(self, misses: Mapping[str, dict[str, Any]]) -> list[Future]:
-        """Ask each miss, by key, once in the background; a question already in flight is not asked again."""
+        """Ask each miss, by key, once in the background; a question in flight or since answered is not asked again."""
         futures = []
         with self._ask_lock:
+            if self._ask_pool is None:
+                return futures
             for key, question in misses.items():
                 if key not in self._asking:
+                    # An ask records before it leaves _asking: a key absent from both is truly unasked.
+                    if self._held_record(key) is not None:
+                        continue
                     self._asking[key] = self._ask_pool.submit(self._ask_quietly, key, question)
                 futures.append(self._asking[key])
         return futures

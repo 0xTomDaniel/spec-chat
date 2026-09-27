@@ -16,19 +16,14 @@ jev = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(jev)
 
 
-def wait_asks(service, timeout=10):
-    """Wait until no background ask is in flight (#fast-marks-background)."""
+def settled(service, *args, timeout=10):
+    """Re-read, as the page does, until no item is pending (#fast-marks-background)."""
     deadline = time.monotonic() + timeout
-    while service._asking and time.monotonic() < deadline:
-        time.sleep(0.005)
-    assert not service._asking, "background asks still in flight"
-
-
-def settled(service, *args):
-    """A read after the first read's background asks have been recorded."""
-    service.response(*args)
-    wait_asks(service)
-    return service.response(*args)
+    while True:
+        result = service.response(*args)
+        if not any(item["state"] == "pending" for item in result["items"]) or time.monotonic() > deadline:
+            return result
+        time.sleep(0.01)
 
 
 class AlwaysInternals:

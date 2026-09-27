@@ -1104,6 +1104,7 @@ def main(argv=None):
         server.wake_controller.stop_event.set()
         wake_thread.join(timeout=1)
         server.server_close()
+        server.jev.stop()
     return 0
 
 

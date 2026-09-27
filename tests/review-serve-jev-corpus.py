@@ -18,19 +18,14 @@ SPEC = "docs/specs/shared.spec.html"
 OWN = "docs/specs/own.spec.html"
 
 
-def wait_asks(service, timeout=10):
-    """Wait until no background ask is in flight (#fast-marks-background)."""
+def settled(service, *args, timeout=10):
+    """Re-read, as the page does, until no item is pending (#fast-marks-background)."""
     deadline = time.monotonic() + timeout
-    while service._asking and time.monotonic() < deadline:
-        time.sleep(0.005)
-    assert not service._asking, "background asks still in flight"
-
-
-def settled(service, *args):
-    """A read after the first read's background asks have been recorded."""
-    service.response(*args)
-    wait_asks(service)
-    return service.response(*args)
+    while True:
+        result = service.response(*args)
+        if not any(item["state"] == "pending" for item in result["items"]) or time.monotonic() > deadline:
+            return result
+        time.sleep(0.01)
 
 
 class FakeProvider:
@@ -64,9 +59,17 @@ class CorpusTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
+        self.services = []
 
     def tearDown(self):
+        for service in self.services:  # stop asking before the state directory goes
+            service.stop()
         self.tmp.cleanup()
+
+    def jev_service(self, **kwargs):
+        service = jev.JevService(**kwargs)
+        self.services.append(service)
+        return service
 
     def test_contradicts_shows_and_overlaps_is_recorded_but_hidden(self):
         baseline = page("The service reads review events.")
@@ -75,7 +78,7 @@ class CorpusTest(unittest.TestCase):
         labels = {"The service never writes review events.": "contradicts",
                   "The service writes review events.": "overlaps"}
         provider = FakeProvider(labels)
-        service = jev.JevService(state_dir=self.dir / "state", provider=provider, api_key="fake")
+        service = self.jev_service(state_dir=self.dir / "state", provider=provider, api_key="fake")
         questions = jev.build_corpus_questions(current, baseline, OWN, "base", "head",
                                                [{"path": "lane/docs/specs/other.spec.html", "source": other}])
         service.questions = lambda *args, **kwargs: questions
@@ -192,11 +195,9 @@ class CorpusTest(unittest.TestCase):
             "createdAt": "2020-01-01T00:00:00Z"}}]
         provider = FakeProvider({})
         dirs = [ROOT / "skill" / "review-spec" / "assets" / "jev"]
-        service = jev.JevService(state_dir=self.dir / "state", provider=provider, api_key="fake", question_dirs=dirs)
+        service = self.jev_service(state_dir=self.dir / "state", provider=provider, api_key="fake", question_dirs=dirs)
         read = lambda s: s.response(mounts[0], str(lane_a / SPEC), "a/" + SPEC, base, events, "reading", mounts)
-        read(service)
-        wait_asks(service)
-        first = read(service)
+        first = settled(service, mounts[0], str(lane_a / SPEC), "a/" + SPEC, base, events, "reading", mounts)
         self.assertTrue(first["items"])
 
         parses, gits = [], []
@@ -222,7 +223,7 @@ class CorpusTest(unittest.TestCase):
         self.assertTrue(all("rev-parse" in argv for argv in gits), gits)
         resolved = sorted(argv[-1].removesuffix("^{commit}") for argv in gits)
         self.assertEqual(resolved, sorted([base, "HEAD", "origin/main", "origin/main"]))
-        self.assertEqual(read(jev.JevService(state_dir=self.dir / "state", provider=provider, api_key="fake",
+        self.assertEqual(read(self.jev_service(state_dir=self.dir / "state", provider=provider, api_key="fake",
                                              question_dirs=dirs)), first)  # same as a cold read
 
         (lane_a / OWN).write_text(page("Own rule now writes review events."), encoding="utf-8")
@@ -240,10 +241,10 @@ class CorpusTest(unittest.TestCase):
         events = [{"name": "1-comment.json", "actor": "human", "body": {  # message after HEAD: text at HEAD
             "id": "u1", "event": "comment", "actor": "human", "anchorId": "rule", "text": "Reads or writes?",
             "createdAt": "2099-01-01T00:00:00Z"}}]
-        service = jev.JevService(state_dir=self.dir / "state", provider=FakeProvider({}), api_key="fake",
+        service = self.jev_service(state_dir=self.dir / "state", provider=FakeProvider({}), api_key="fake",
                                  question_dirs=[ROOT / "skill" / "review-spec" / "assets" / "jev"])
         read = lambda: service.questions(mounts[0], str(lane / SPEC), "h/" + SPEC, base, events, "reading", mounts)
-        cold = jev.JevService(state_dir=self.dir / "cold", provider=FakeProvider({}), api_key="fake",
+        cold = self.jev_service(state_dir=self.dir / "cold", provider=FakeProvider({}), api_key="fake",
                               question_dirs=[ROOT / "skill" / "review-spec" / "assets" / "jev"])
         expected = cold.questions(mounts[0], str(lane / SPEC), "h/" + SPEC, base, events, "reading", mounts)
         return service, read, expected
