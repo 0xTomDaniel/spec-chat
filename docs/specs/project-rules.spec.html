@@ -13,8 +13,7 @@
 <header data-anchor="header">
 <h1 data-anchor="title">Project-wide rules at shaping</h1>
 <nav data-anchor="breadcrumbs">docs / specs / project-rules.spec.html</nav>
-<p data-anchor="source-issues">Source issues: <a href="https://linear.app/annotateanything/issue/ANN-272">ANN-272</a>.</p>
-<p data-anchor="context">Some acceptance criteria apply to every feature, such as <q>every change to what a user sees or does adds its onboarding section</q>. They live in one spec that shaping never reads, so they get missed. This spec lets Jev find them and check a spec under shaping against them. Extends <a href="./jev-suggestions.spec.html">Jev review suggestions</a>: its seam, records, cache, markers, popovers, and note buttons apply unchanged, and marks are one-word notes as its <a href="./jev-suggestions.spec.html#neutral-questions">one-word questions</a> and <a href="./jev-suggestions.spec.html#neutral-questions-rule">unsure note style</a> define (ANN-258, spec accepted at <code>82bdd34</code>, delivering on PR #83).</p>
+<p data-anchor="context">Some acceptance criteria apply to every feature, such as <q>every change to what a user sees or does adds its onboarding section</q>. They live in one spec that shaping never reads, so they get missed. This spec lets Jev find them and check a spec under shaping against them. Extends <a href="./jev-suggestions.spec.html">Jev review suggestions</a>: its seam, records, cache, markers, popovers, and note buttons apply unchanged, and marks are one-word notes as its <a href="./jev-suggestions.spec.html#neutral-questions">one-word questions</a> and <a href="./jev-suggestions.spec.html#neutral-questions-rule">unsure note style</a> define.</p>
 </header>
 
 <section data-spec-section="user-stories" data-anchor="user-stories">
@@ -62,7 +61,7 @@
 </tbody>
 </table>
 </div>
-<p data-anchor="q-fallback">An answer below threshold, to either question, sends the same question once to a general LLM through OpenRouter, when its question set allows fallback. The model id is the box's one LLM name, <code>llm_model</code> in the Jev provider file beside its key, as <a href="./review-service.spec.html#providers-jev">review service providers</a> define (ANN-257, #82), default <code>anthropic/claude-sonnet-5</code>; question sets name no model, and nothing is read from the environment; its answer decides and is recorded with the same key. If that call fails, the item shows <code>Jev unavailable</code> as <a href="./jev-suggestions.spec.html#shared">every suggestion</a> defines, and is asked again on the next load.</p>
+<p data-anchor="q-fallback">An answer below threshold, to either question, sends the same question once to a general LLM through OpenRouter, when its question set allows fallback. The model id is the box's one LLM name, <code>llm_model</code> in the Jev provider file beside its key, as <a href="./review-service.spec.html#providers-jev">review service providers</a> define, default <code>anthropic/claude-sonnet-5</code>; question sets name no model, and nothing is read from the environment; its answer decides and is recorded with the same key. If that call fails, the item shows <code>Jev unavailable</code> as <a href="./jev-suggestions.spec.html#shared">every suggestion</a> defines, and is asked again on the next load.</p>
 <p data-anchor="q-rule-def">A project-wide rule is a criterion whose decided scope is <code>every feature</code>. A spec is never checked against its own criteria.</p>
 <p data-anchor="q-legacy">A spec without <code>data-acceptance-criterion</code> clauses holds no rules.</p>
 <p data-anchor="q-disposable">The records are derived and disposable: they hold no project knowledge, and deleting them costs only recomputation from the specs.</p>
@@ -103,7 +102,7 @@ rules      onboarding.spec.html#acceptance-onboarding
 pending    0</pre>
 <p data-anchor="agent-read-order">The shaping skill step runs after <code>review-host register</code> and before the link is sent: wait until no item is <code>pending</code>, read, solve every important mark, commit, and read again after each fix; then send the link.</p>
 <ol data-anchor="agent-once">
-<li data-anchor="agent-once-levels">The agent keys on each item's <code>level</code> field, <code>important</code> or <code>warning</code>, set from the single <a href="./jev-suggestions.spec.html#markers-levels">mark levels table</a> (ANN-258) that also colors the page; it keeps no list of kinds of its own. A rule miss is <a href="./jev-suggestions.spec.html#level-important">important</a>.</li>
+<li data-anchor="agent-once-levels">The agent keys on each item's <code>level</code> field, <code>important</code> or <code>warning</code>, set from the single <a href="./jev-suggestions.spec.html#markers-levels">mark levels table</a> that also colors the page; it keeps no list of kinds of its own. A rule miss is <a href="./jev-suggestions.spec.html#level-important">important</a>.</li>
 <li data-anchor="agent-once-solved">Each important mark ends in exactly one of: fixed in the spec; a reason line in the spec, such as <q>Onboarding: not needed, this changes no screen</q>; or a thread for the human when it is bigger than a simple edit, which counts as solved for hand-off.</li>
 <li data-anchor="agent-once-other">Fixes follow the reconcile rule in <a href="../../skill/shape-spec/SKILL.md">shape-spec</a>.</li>
 <li data-anchor="agent-once-stop">The pass stops naturally, with no cap: if a fix raises a new important mark on the same clause, the agent opens a thread instead of fixing again.</li>
@@ -127,7 +126,7 @@ pending    0</pre>
 </div>
 <p data-anchor="bootstrap-offer">The offer is one page note on that project's next review page after warm-up; <code>Reconcile</code> drafts one comment through the existing reconcile flow, <code>Reconcile each spec with its missed rules:</code> then one line per spec, <code>&lt;spec&gt; &lt;word&gt;? &lt;rule link&gt;</code>; the agent answers it per the reconcile rule.</p>
 <p data-anchor="bootstrap-home">The bootstrap is part of Spec Chat's onboarding, its own first run: the first <code>review-host register</code> of a project starts it, and Spec Chat alone runs it end to end. No peer's setup starts, waits for, or completes it.</p>
-<p data-anchor="bootstrap-status">Spec Chat publishes warm-up status through its one <a href="./review-service.spec.html#published-onboarding"><code>onboarding.toml</code></a> in its own state, as ANN-257 (#82) defines, with one table per project: warm-up state, criteria classified, rules found, N specs to reconcile, and whether the offer was sent or dismissed. There is no separate status file. Anyone may read it; it names no peer and is derived like the records.</p>
+<p data-anchor="bootstrap-status">Spec Chat publishes warm-up status through its one <a href="./review-service.spec.html#published-onboarding"><code>onboarding.toml</code></a> in its own state, as the review service defines, with one table per project: warm-up state, criteria classified, rules found, N specs to reconcile, and whether the offer was sent or dismissed. There is no separate status file. Anyone may read it; it names no peer and is derived like the records.</p>
 <p data-anchor="bootstrap-once">Sending or dismissing the offer is recorded in that project's table; with N zero, or Jev off, no offer shows.</p>
 </section>
 
