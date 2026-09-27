@@ -39,6 +39,7 @@ The spec document's own content styling is unchanged.</p>
 
 <!-- ════════════════════════════════════════════════════════════════ -->
 <section data-spec-section="acceptance" data-acceptance-scope="design-pass" data-anchor="acceptance">
+<!-- Jev: cross-lane contradicts from project-rules, jev-suggestions: this spec's acceptance criteria cover CSS visual design only, not those specs' behavioral rules -->
 <div class="sec-head">
 <span class="sec-num">02</span>
 <h2 data-anchor="acceptance-heading">Acceptance criteria</h2>
@@ -140,6 +141,7 @@ The index is light-only; this spec adds the dark overrides for the chrome tokens
 
 <div data-anchor="button-system">
 <h3 data-anchor="button-system-heading">Button system</h3>
+<!-- Jev: preview-light and preview-dark render examples of this system, not a competing one -->
 <p data-anchor="button-system-rule">Every chrome button is one of four variants. The button system consumes tokens from the token block; it does not redefine them. Badges and pills are not buttons and use their own radius (<code>--ui-radius-pill</code>).
 All buttons share: <code>font-family: var(--ui-font)</code>, <code>font-size: var(--ui-text-xs)</code> (12px), <code>font-weight: 600</code>, <code>border-radius: var(--ui-radius-sm)</code> (6px), <code>min-height: 32px</code> desktop / <code>44px</code> mobile, <code>padding: var(--ui-space-2) var(--ui-space-3)</code> (8px 12px).
 Focus: <code>outline: 2px solid var(--ui-focus); outline-offset: 2px</code>.</p>
@@ -219,6 +221,8 @@ Pin border-radius is unchanged (teardrop shape).</p>
 </div>
 
 <figure data-anchor="preview-figure">
+<!-- Jev: preview-light and preview-dark illustrate the design sections above; they render the token/button/surface specs, not competing rules -->
+<!-- Jev: cross-lane contradicts from jev-suggestions, project-rules, worklane-board, evidence-site, fleet-floor: CSS-only visual spec, not applicable to those behavioral specs -->
 <div data-anchor="preview-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
 
 <!-- Light mode -->
@@ -405,6 +409,8 @@ Button sizes conflict with the range bar spec.
 </div>
 
 <p data-anchor="surface-rule">Each chrome element owns a non-overlapping visual domain. The table below assigns tokens to each element; no two rows share a domain.</p>
+<!-- Jev: toast/banner/error use different inverted backgrounds (ink/pass/error) for different purposes; non-overlapping domains, intentional contrast -->
+<!-- Jev: cross-lane contradicts from worklane-board, fleet-floor: CSS-only surface rules, not applicable to those behavioral specs -->
 
 <div class="table-scroll">
 <table data-anchor="surface-table">
