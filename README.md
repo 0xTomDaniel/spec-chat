@@ -41,6 +41,12 @@ Canonical contract: [remote hosting lifecycle](skill/review-spec/SKILL.md#remote
 - BB is a laptop client. Box hosting boot never requires, installs, or starts BB. BB consumes two public URLs: the Spec Chat URL and the evidence URL.
 - No external probe, tunnel, VPN, or client-machine setup. Public URLs are not authentication boundaries and never enter Linear, pull requests, or other public durable records.
 
+### Writing a project rule
+
+A project rule is an acceptance criterion that applies to every feature, such as *"When any change adds a screen or alters what a user can do, the change ships with its help center article."* Jev finds these automatically and checks every spec under shaping against them ([project-wide rules](docs/specs/project-rules.spec.html)).
+
+To make a criterion a project rule, include explicit every-feature wording in the criterion text: *every feature*, *every change*, *any change*, or equivalent. Jev reads the text and decides; no tag, list, or declaration is needed.
+
 ## Repo layout (planned)
 
 ```
