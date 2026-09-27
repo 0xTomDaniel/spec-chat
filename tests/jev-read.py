@@ -18,14 +18,14 @@ ON = {
     "jev": "on",
     "items": [
         {"kind": "rule", "id": "acceptance", "state": "label", "label": "missed", "target": RULE,
-         "word": "onboarding", "record": "r1", "level": "important"},
+         "word": "onboarding", "record": "r1", "level": "important", "agent_level": "important"},
         {"kind": "corpus", "id": "save-rule", "state": "label", "label": "contradicts",
-         "target": "non-goal-offline", "record": "r2", "level": "important"},
-        {"kind": "type", "id": "a", "state": "label", "label": "behavioral", "target": None, "record": "r3", "level": "warning"},
-        {"kind": "type", "id": "b", "state": "label", "label": "scope", "target": None, "record": "r4", "level": "warning"},
-        {"kind": "type", "id": "save-rule", "state": "label", "label": "cosmetic", "target": None, "record": "r5", "level": "warning"},
-        {"kind": "audience", "id": "c", "state": "label", "label": "internals", "target": None, "record": "r6", "level": "warning"},
-        {"kind": "audience", "id": "d", "state": "label", "label": "internals", "target": None, "record": "r7", "level": "warning"},
+         "target": "non-goal-offline", "record": "r2", "level": "important", "agent_level": "important"},
+        {"kind": "type", "id": "a", "state": "label", "label": "behavioral", "target": None, "record": "r3", "level": "warning", "agent_level": "warning"},
+        {"kind": "type", "id": "b", "state": "label", "label": "scope", "target": None, "record": "r4", "level": "warning", "agent_level": "warning"},
+        {"kind": "type", "id": "save-rule", "state": "label", "label": "cosmetic", "target": None, "record": "r5", "level": "warning", "agent_level": "warning"},
+        {"kind": "audience", "id": "c", "state": "label", "label": "internals", "target": None, "record": "r6", "level": "warning", "agent_level": "warning"},
+        {"kind": "audience", "id": "d", "state": "label", "label": "internals", "target": None, "record": "r7", "level": "warning", "agent_level": "warning"},
         {"kind": "corpus", "id": "e", "state": "none", "label": None, "target": "x", "record": "r8"},
         {"kind": "coverage", "id": "f", "state": "label", "label": "verifies", "target": "g", "record": "r9"},
     ],
@@ -90,8 +90,23 @@ class JevReadTest(unittest.TestCase):
         ])
         self.assertNotIn("{", out.stdout)
 
-    def test_level_absent_is_neither_mark_nor_warning(self):
-        server = self.serve({"jev": "on", "items": [dict(item, level=None) for item in ON["items"]], "rules": []})
+    def test_keys_on_agent_level_not_level(self):
+        items = [
+            {"kind": "corpus", "id": "over", "state": "label", "label": "oversteps", "target": "non-goal-x",
+             "record": "r1", "level": "warning", "agent_level": "important"},
+            {"kind": "corpus", "id": "rev", "state": "label", "label": "contradicts", "target": "y",
+             "record": "r2", "level": "important", "agent_level": "warning"},
+        ]
+        server = self.serve({"jev": "on", "items": items, "rules": []})
+        self.assertEqual(run(server.url + "/specs/b.spec.html?base=abc").stdout.splitlines(), [
+            "important  over  oversteps  important  #non-goal-x",
+            "warnings   corpus 1",
+            "rules      none",
+            "pending    0",
+        ])
+
+    def test_agent_level_absent_is_neither_mark_nor_warning(self):
+        server = self.serve({"jev": "on", "items": [dict(item, agent_level=None) for item in ON["items"]], "rules": []})
         out = run(server.url + "/specs/b.spec.html?base=abc")
         self.assertEqual(out.stdout.splitlines(), ["warnings  0", "rules     none", "pending   0"])
 

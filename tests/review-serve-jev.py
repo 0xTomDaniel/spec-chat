@@ -144,15 +144,21 @@ class JevSeamTest(unittest.TestCase):
 
     def test_levels_table_is_one_server_source_on_every_response(self):
         # jev-suggestions#markers-levels: Important and Warning mark kinds, fixed by kind.
-        self.assertEqual({kind for kind, level in jev.MARK_LEVELS.items() if level == "important"},
-                         {"contradicts", "missed", "no-criterion", "no-story", "qa-failed", "qa-stale"})
-        self.assertEqual(set(jev.MARK_LEVELS.values()), {"important", "warning"})
+        # #markers-levels-audience: a human and an agent column per kind; the agent level is never quieter.
+        important = {"contradicts", "missed", "no-criterion", "no-story", "qa-failed", "qa-stale"}
+        self.assertEqual({kind for kind, level in jev.MARK_LEVELS.items() if level["human"] == "important"}, important)
+        self.assertEqual({kind for kind, level in jev.MARK_LEVELS.items() if level["agent"] == "important"}, important | {"oversteps"})
+        for kind, level in jev.MARK_LEVELS.items():
+            self.assertEqual(set(level), {"human", "agent"}, kind)
+            self.assertLessEqual({level["human"], level["agent"]}, {"important", "warning"}, kind)
+            self.assertFalse(level["human"] == "important" and level["agent"] == "warning", kind)
         with tempfile.TemporaryDirectory() as directory:
             off = jev.JevService(state_dir=directory, provider=None, api_key="")
             self.assertEqual(off.response({}, "", "", "base", []), {"jev": "off", "items": [], "levels": jev.MARK_LEVELS})
-        for kind, choice, confidence, level in (("corpus", "contradicts", 0.9, "important"), ("corpus", "oversteps", 0.9, "warning"),
-                                                 ("corpus", "unrelated", 0.9, None), ("type", "scope", 0.9, "warning"),
-                                                 ("corpus", "contradicts", 0.01, None)):
+        for kind, choice, confidence, level, agent_level in (("corpus", "contradicts", 0.9, "important", "important"),
+                                                              ("corpus", "oversteps", 0.9, "warning", "important"),
+                                                              ("corpus", "unrelated", 0.9, None, None), ("type", "scope", 0.9, "warning", "warning"),
+                                                              ("corpus", "contradicts", 0.01, None, None)):
             provider = FakeProvider({"answers": {kind: {"choice": choice, "confidence": confidence}}})
             with tempfile.TemporaryDirectory() as directory:
                 service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
@@ -161,14 +167,15 @@ class JevSeamTest(unittest.TestCase):
                 result = service.response({}, "", "", "base", [])
             self.assertEqual(result["levels"], jev.MARK_LEVELS)
             self.assertEqual(result["items"][0].get("level"), level, (kind, choice, confidence))
+            self.assertEqual(result["items"][0].get("agent_level"), agent_level, (kind, choice, confidence))
         # Changing one table row changes the JSON.
         provider = FakeProvider({"answers": {"corpus": {"choice": "oversteps", "confidence": 0.9}}})
-        with tempfile.TemporaryDirectory() as directory, patch.dict(jev.MARK_LEVELS, {"oversteps": "important"}):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(jev.MARK_LEVELS, {"oversteps": {"human": "important", "agent": "important"}}):
             service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
             question = {"kind": "corpus", "id": "clause", "state": {"after": "x"}, "sources": [], "revision": "head"}
             service.questions = lambda *args, **kwargs: [question]
             result = service.response({}, "", "", "base", [])
-        self.assertEqual((result["levels"]["oversteps"], result["items"][0]["level"]), ("important", "important"))
+        self.assertEqual((result["levels"]["oversteps"]["human"], result["items"][0]["level"]), ("important", "important"))
 
     def test_response_asks_uncached_questions_in_parallel(self):
         provider = SlowProvider()
