@@ -289,13 +289,22 @@ def _anchor_answer(answer: Mapping[str, Any], candidate_anchors: Mapping[str, An
     return {"label": ids.get(answer.get("label")), "probabilities": probabilities, "confidence": answer.get("confidence")}
 
 
+def _key_reader(api_key: str | Callable[[], str] | None) -> Callable[[], str]:
+    """The model key, read at each use: a callable (the review server's jev provider) or a fixed string.
+    The environment is never read (review-service #providers-no-env)."""
+    if callable(api_key):
+        return lambda: (api_key() or "").strip()
+    fixed = (api_key or "").strip()
+    return lambda: fixed
+
+
 class JevSeam:
     def __init__(self, question_sets: Mapping[str, QuestionSet] | None = None, *, provider: Any = None,
-                 api_key: str | None = None, record_store: JudgmentStore | None = None,
+                 api_key: str | Callable[[], str] | None = None, record_store: JudgmentStore | None = None,
                  clock: Callable[[], str] = _now, max_input_tokens: int = DEFAULT_MAX_INPUT_TOKENS):
         self.question_sets = dict(question_sets or load_question_sets())
-        self.api_key = (api_key if api_key is not None else os.environ.get("OPENROUTER_API_KEY", "")).strip()
-        self.provider = provider if provider is not None else (OpenRouterProvider(self.api_key) if self.api_key else None)
+        self.api_key = _key_reader(api_key)
+        self._provider = provider
         self.store = record_store or JudgmentStore()
         self.clock = clock
         self.max_input_tokens = max_input_tokens
@@ -350,17 +359,19 @@ class JevSeam:
         if (len(_canonical(payload)) + 3) // 4 > self.max_input_tokens:
             return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
                                 {"label": None, "probabilities": {}, "confidence": None}, "oversize")
-        if not self.api_key or self.provider is None:
+        api_key = self.api_key()
+        provider = self._provider if self._provider is not None else (OpenRouterProvider(api_key) if api_key else None)
+        if not api_key or provider is None:
             return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
                                 {"label": None, "probabilities": {}, "confidence": None}, "off")
         answer = None
         model = MODEL
         for _ in range(2):
             try:
-                if hasattr(self.provider, "decide"):
-                    response = self.provider.decide(payload)
+                if hasattr(provider, "decide"):
+                    response = provider.decide(payload)
                 else:
-                    response = self.provider(payload)
+                    response = provider(payload)
                 label, confidence, probabilities, model = _parse_provider_answer(response, kind)
                 answer = {"label": label, "probabilities": probabilities, "confidence": confidence}
                 if isinstance(question.get("candidate_anchors"), Mapping):
@@ -377,8 +388,8 @@ class JevSeam:
 
 # Shaped sections whose clauses are for you by structure, never asked (spec #reading-structural).
 AUDIENCE_STRUCTURAL_SECTIONS = frozenset({"user-stories", "modular-boundaries"})
-# Page header clauses and status or source issue sections: never asked nor compared (spec #corpus-meta).
-CORPUS_META_ANCHORS = frozenset({"status", "source-issues"})
+# Page header clauses and source issue sections: never asked nor compared (spec #corpus-meta).
+CORPUS_META_ANCHORS = frozenset({"source-issues"})
 CONTAINER_TAGS = frozenset({"article", "div", "figure", "footer", "header", "main", "nav", "ol", "section", "table", "tbody", "thead", "tfoot", "ul"})
 
 
@@ -867,9 +878,9 @@ def default_state_dir() -> Path:
 
 
 class JevService:
-    def __init__(self, *, state_dir: str | Path | None = None, provider: Any = None, api_key: str | None = None,
-                 question_dirs: list[str | Path] | None = None):
-        self.api_key = (api_key if api_key is not None else os.environ.get("OPENROUTER_API_KEY", "")).strip()
+    def __init__(self, *, state_dir: str | Path | None = None, provider: Any = None,
+                 api_key: str | Callable[[], str] | None = None, question_dirs: list[str | Path] | None = None):
+        self.api_key = _key_reader(api_key)
         self.provider = provider
         self.question_sets = load_question_sets(*(question_dirs or []))
         path = Path(state_dir) / "records.jsonl" if state_dir else default_state_dir() / "records.jsonl"
@@ -887,7 +898,7 @@ class JevService:
 
     @property
     def enabled(self) -> bool:
-        return bool(self.question_sets) and (bool(self.api_key) or self.provider is not None)
+        return bool(self.question_sets) and (bool(self.api_key()) or self.provider is not None)
 
     def _served_specs(self, mounts: Any, current: str, page: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
         """Other specs (#corpus-others): the lane's own served specs as served, plus main's copy of every

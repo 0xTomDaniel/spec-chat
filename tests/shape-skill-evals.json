@@ -7,11 +7,11 @@
       "eval_name": "prompt-first-durable-seed",
       "prompt": "Start shaping this brand-new feature in Spec Chat: let reviewers compare alternative checkout retry policies.",
       "expectations": [
-        "Creates the work branch and links only the issue the caller names, creating none",
+        "Creates the work branch and links, creates, or edits no issue or ticket",
         "Runs a short docs-only pass, then commits, validates, hosts, and sends the review link before code or test inspection",
         "Writes one concise current spec seed",
         "Uses an existing governing spec or creates a minimal capability spec",
-        "Adds the source issue link to every materially changed spec"
+        "Names no ticket and no pane in any changed spec"
       ]
     },
     {
