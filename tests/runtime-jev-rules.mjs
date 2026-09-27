@@ -203,9 +203,41 @@ const offer = { count: 2, specs: [
 state.jev.offer = offer;
 show([]);
 const offerNote = () => body.querySelectorAll('.hx-jev-note');
-assert.deepEqual(offerNote().map(n => n.textContent), ['2 existing specs miss project rules: reconcile?Reconcile×']);
+assert.match(offerNote()[0].querySelector('span').textContent, /^2 existing specs miss project rules: reconcile\?$/);
 assert.equal(body.children[0], offerNote()[0], 'a page note before the spec');
-offerNote()[0].querySelectorAll('button')[0].fire('click');
+
+// Disclosure toggle: collapsed by default with detail hidden.
+const disclosureBtn = offerNote()[0].querySelectorAll('.hx-disclosure')[0];
+assert.equal(disclosureBtn.getAttribute('aria-expanded'), 'false', 'disclosure collapsed by default');
+assert.equal(disclosureBtn.textContent, '▸', 'collapsed triangle');
+const detailDiv = offerNote()[0].querySelectorAll('.hx-jev-offer-detail')[0];
+assert.equal(detailDiv.hidden, true, 'detail hidden by default');
+
+// Expanding shows spec links and rule links.
+disclosureBtn.fire('click');
+assert.equal(disclosureBtn.getAttribute('aria-expanded'), 'true', 'expanded after click');
+assert.equal(disclosureBtn.textContent, '▾', 'expanded triangle');
+assert.equal(detailDiv.hidden, false, 'detail visible after click');
+const specRows = detailDiv.querySelectorAll('.hx-jev-offer-spec');
+assert.equal(specRows.length, 2, 'one row per spec');
+const specLinks = specRows[0].querySelectorAll('a');
+assert.equal(specLinks[0].textContent, 'docs/specs/a.spec.html');
+assert.equal(specLinks[0].href, '/docs/specs/a.spec.html');
+assert.equal(specLinks[1].textContent, 'onboarding?');
+assert.equal(specLinks[1].href, '/' + target);
+assert.equal(specLinks[2].textContent, 'qa?');
+assert.equal(specLinks[2].href, '/docs/specs/qa.spec.html#acceptance-qa');
+const specLinks2 = specRows[1].querySelectorAll('a');
+assert.equal(specLinks2[0].textContent, 'docs/specs/c.spec.html');
+assert.equal(specLinks2[1].textContent, 'onboarding?');
+
+// Collapsing again hides detail.
+disclosureBtn.fire('click');
+assert.equal(disclosureBtn.getAttribute('aria-expanded'), 'false', 'collapsed again');
+assert.equal(detailDiv.hidden, true, 'detail hidden again');
+
+// Reconcile still works (button[1] after disclosure button[0]).
+offerNote()[0].querySelectorAll('button')[1].fire('click');
 const [anchor, , , draft, onSent] = composed.pop();
 assert.equal(anchor, 'title');
 assert.equal(draft, 'Reconcile each spec with its missed rules:\n' +
@@ -219,7 +251,8 @@ assert.deepEqual(posted.pop(), ['/api/jev/offer?path=docs%2Fspecs%2Fb.spec.html'
 state.jev.offer = { ...offer, count: 1 };
 renderJev();
 assert.match(offerNote()[0].textContent, /^1 existing spec misses project rules: reconcile\?/);
-const dismiss = offerNote()[0].querySelectorAll('button')[1];
+// Dismiss still works (button[2] after disclosure[0] and reconcile[1]).
+const dismiss = offerNote()[0].querySelectorAll('button')[2];
 assert.equal(dismiss.getAttribute('aria-label'), 'Dismiss');
 dismiss.fire('click');
 assert.equal(offerNote().length, 0);
