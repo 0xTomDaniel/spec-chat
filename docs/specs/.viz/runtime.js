@@ -1212,18 +1212,22 @@ function jevDraftAction(label, text) {
   return { label, run: note => { closeJevPopover(); openComposer(note.anchor, null, null, text); } };
 }
 
-// #note-reconcile-all: n Important and m Warning reconcile notes, with n >= 1 and n + m >= 2, each get
-// Reconcile all (n) listing the Important clauses, plus a +m warnings link adding the Warning ones.
-function jevReconcileAll(reconcile) {
+// #batch: the one popover batch. entries are { note, line, warning } for one per-item button kind. With n listed
+// (non-warning) entries, n >= 1 and all entries >= 2, the first note of each clause gets <label> (n), drafting
+// <heading> then the listed lines in page order, and, when m warnings exist, a +m link drafting all of them.
+function jevBatch(entries, label, heading) {
   const order = new Map([...document.querySelectorAll('[data-anchor]')].map((el, index) => [el.dataset.anchor, index]));
-  reconcile.sort((a, b) => (order.get(a.note.anchor) ?? Infinity) - (order.get(b.note.anchor) ?? Infinity));
-  const important = reconcile.filter(entry => entry.note.level === 'important');
-  const m = reconcile.length - important.length;
-  if (!important.length || reconcile.length < 2) return;
-  const draft = entries => ['Reconcile each clause with its link:', ...entries.map(entry => entry.line)].join('\n');
-  for (const { note } of reconcile) {
-    note.actions.push(jevDraftAction('Reconcile all (' + important.length + ')', draft(important)));
-    if (m) note.actions.push({ ...jevDraftAction('+' + m + (m === 1 ? ' warning' : ' warnings'), draft(reconcile)), link: true });
+  entries.sort((a, b) => (order.get(a.note.anchor) ?? Infinity) - (order.get(b.note.anchor) ?? Infinity));
+  const listed = entries.filter(entry => !entry.warning);
+  const m = entries.length - listed.length;
+  if (!listed.length || entries.length < 2) return;
+  const draft = chosen => [heading, ...chosen.map(entry => entry.line)].join('\n');
+  const shown = new Set();
+  for (const { note } of entries) {
+    if (shown.has(note.anchor)) continue;
+    shown.add(note.anchor);
+    note.actions.push(jevDraftAction(label + ' (' + listed.length + ')', draft(listed)));
+    if (m) note.actions.push({ ...jevDraftAction('+' + m + (m === 1 ? ' warning' : ' warnings'), draft(entries)), link: true });
   }
 }
 
@@ -1268,17 +1272,22 @@ function jevRuleNote(item) {
 function jevSuggestionNotes() {
   if (state.jev.status !== 'on') return [];
   const notes = [];
+  const gaps = [];
   for (const item of state.jev.items) {
     const note = item.kind === 'rule' ? jevRuleNote(item) : null;
     if (note) notes.push(note);
   }
   for (const flag of coverageGapFlags(state.jev.items)) {
-    notes.push(flag.state !== 'gap' ? jevNeutralNote(flag.anchor, flag.state, flag.side) : { anchor: flag.anchor, group: 'coverage', state: 'label', text: flag.label,
+    if (flag.state !== 'gap') { notes.push(jevNeutralNote(flag.anchor, flag.state, flag.side)); continue; }
+    const note = { anchor: flag.anchor, group: 'coverage', state: 'label', text: flag.label,
       level: markLevel(state.jev, flag.side === 'story' ? 'no-criterion' : 'no-story'),
       actions: [flag.side === 'story'
         ? jevDraftAction('Ask for a criterion', 'Add an acceptance criterion that verifies this story.')
-        : jevDraftAction('Ask for a story', 'Name or add the user story this criterion verifies.')] });
+        : jevDraftAction('Ask for a story', 'Name or add the user story this criterion verifies.')] };
+    gaps.push({ note, line: '#' + flag.anchor + ' ' + flag.label });
+    notes.push(note);
   }
+  jevBatch(gaps, 'Ask about all gaps', 'Add a criterion for each story, or name the story for each criterion:');
   const neutral = item => item.state === 'unsure' || item.state === 'unavailable';
   if (state.readingView) {
     for (const item of state.jev.items) {
@@ -1292,7 +1301,7 @@ function jevSuggestionNotes() {
     const note = { anchor, group: 'conflict', state: 'label', text, href, level, actions: [] };
     if (draftLink && JEV_RECONCILE_LABELS.has(label)) {
       note.actions.push(jevDraftAction('Ask agent to reconcile', 'Reconcile this clause with ' + draftLink + '.'));
-      reconcile.push({ note, line: '#' + anchor + ' ' + label + ' ' + draftLink });
+      reconcile.push({ note, line: '#' + anchor + ' ' + label + ' ' + draftLink, warning: level !== 'important' });
     }
     notes.push(note);
   };
@@ -1310,7 +1319,7 @@ function jevSuggestionNotes() {
     const link = corpusTargetLink(flag.target);
     conflict(flag.anchor, flag.label, flag.level, flag.label + (link ? ' ' + link.text : ''), link ? link.href : null, link && link.text);
   }
-  jevReconcileAll(reconcile);
+  jevBatch(reconcile, 'Reconcile all', 'Reconcile each clause with its link:');
   if (!gitFocus) return notes;
   for (const item of state.jev.items) {
     if (item.kind !== 'type' || !item.id) continue;
@@ -1418,6 +1427,7 @@ function evidenceNotes() {
   const criteria = state.evidence && state.evidence.criteria;
   if (!criteria) return [];
   const notes = [];
+  const stale = [];
   for (const element of document.querySelectorAll('[data-acceptance-criterion]')) {
     const anchor = element.dataset.anchor;
     if (!anchor) continue;
@@ -1438,11 +1448,14 @@ function evidenceNotes() {
       if (text === 'QA stale') {
         const date = commitDate(entry.capturedAt);
         const since = [pr, date].filter(Boolean).join(', ');
-        note.actions = [jevDraftAction('Ask for re-proof', anchor + ' changed since its evidence' + (since ? ' (' + since + ')' : '') + ': please recapture it.')];
+        const cited = since ? ' (' + since + ')' : '';
+        note.actions = [jevDraftAction('Ask for re-proof', anchor + ' changed since its evidence' + cited + ': please recapture it.')];
+        stale.push({ note, line: anchor + cited });
       }
     }
     notes.push(note);
   }
+  jevBatch(stale, 'Re-proof all stale', 'Re-proof each criterion, changed since its evidence:');
   return notes;
 }
 
@@ -2359,7 +2372,7 @@ function renderPanel() {
     d.className = 'hx-thread' + (state.activeThread === th.id ? ' active' : '') + (collapsed ? ' resolved-collapsed' : '');
     // A resolved thread shows its own resolved indicator, never a resolved-in-spirit Jev label.
     const resolvedHint = th.status === 'resolved' ? null : jevItem('resolved', th.id);
-    const orphanHint = jevItem('orphan', th.id);
+    const orphanHint = openOrphanHint(th);
     const threadJevState = [orphanHint, resolvedHint].find(item => item && ['unsure', 'unavailable'].includes(item.state));
     d.innerHTML = '<div class="hx-thread-summary"><div class="hx-anchor">' + esc(label(b)) + '</div>' +
       '<span class="hx-pill" data-s="' + th.status + '">' + th.status + '</span>' +
@@ -2417,6 +2430,18 @@ function renderPanel() {
     });
     wrap.appendChild(d);
   }
+  const movable = threads.map(th => ({ th, hint: openOrphanHint(th) }))
+    .filter(m => m.hint && m.hint.state === 'label' && m.hint.target)
+    .map(m => ({ th: m.th, target: m.hint.target }));
+  if (movable.length >= 2) {
+    const moveAll = document.createElement('button');
+    moveAll.className = 'hx-btn';
+    moveAll.dataset.act = 'orphan-move-all';
+    moveAll.textContent = 'Move all (' + movable.length + ')';
+    moveAll.disabled = movable.some(m => state.movingOrphans.has(m.th.id));
+    moveAll.addEventListener('click', e => { e.stopPropagation(); moveOrphans(movable); });
+    wrap.appendChild(moveAll);
+  }
   const hinted = threads.filter(looksResolved);
   if (hinted.length) {
     const all = document.createElement('button');
@@ -2472,6 +2497,11 @@ function scrollToJevAnchor(anchorId) {
   else location.hash = encodeURIComponent(anchorId);
 }
 
+// A resolved orphan is settled (#settle-orphan): it shows only its resolved indicator, no Jev guess.
+function openOrphanHint(th) {
+  return th.status === 'resolved' ? null : jevItem('orphan', th.id);
+}
+
 function orphanHintElement(th, orphanHint) {
   if (!orphanHint || orphanHint.state !== 'label' || !orphanHint.target) return null;
   const hint = document.createElement('div');
@@ -2484,9 +2514,6 @@ function orphanHintElement(th, orphanHint) {
   go.dataset.act = 'orphan-go';
   go.textContent = 'Go to';
   go.addEventListener('click', e => { e.stopPropagation(); goToJevTarget(orphanHint.target); });
-  hint.append(copy, go);
-  // A resolved thread was already moved or closed: offer no second move.
-  if (th.status === 'resolved') return hint;
   const move = document.createElement('button');
   move.type = 'button';
   move.className = 'hx-btn pri';
@@ -2494,36 +2521,47 @@ function orphanHintElement(th, orphanHint) {
   move.textContent = state.movingOrphans.has(th.id) ? 'Moving…' : 'Move comment here';
   move.disabled = state.movingOrphans.has(th.id);
   move.addEventListener('click', e => { e.stopPropagation(); moveOrphan(th, orphanHint.target); });
-  hint.append(move);
+  hint.append(copy, go, move);
   return hint;
 }
 
-async function moveOrphan(th, target) {
-  if (!th || !target || state.movingOrphans.has(th.id)) return;
-  state.movingOrphans.add(th.id);
+// Move comment here and Move all post the same comment and resolve events per thread.
+async function moveOrphans(moves) {
+  moves = moves.filter(m => m.th && m.target && !state.movingOrphans.has(m.th.id));
+  if (!moves.length) return;
+  for (const { th } of moves) state.movingOrphans.add(th.id);
   renderPanel();
-  const original = th.ev.body || {};
-  const quote = original.quote || original.text || '';
+  let moved = 0;
   try {
-    await state.transport.postEvent({
-      id: humanId('u'), event: 'comment', anchorId: target, target: null,
-      quote, text: original.text || 'Moved comment', actor: 'human',
-      createdAt: new Date().toISOString(), schemaVersion: 1,
-    });
-    await state.transport.postEvent({
-      id: humanId('s'), event: 'status', respondsTo: th.id, threadId: th.id,
-      status: 'resolved', actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1,
-    });
-    toast('Comment moved to #' + target);
+    for (const { th, target } of moves) {
+      const original = th.ev.body || {};
+      const quote = original.quote || original.text || '';
+      await state.transport.postEvent({
+        id: humanId('u'), event: 'comment', anchorId: target, target: null,
+        quote, text: original.text || 'Moved comment', actor: 'human',
+        createdAt: new Date().toISOString(), schemaVersion: 1,
+      });
+      await state.transport.postEvent({
+        id: humanId('s'), event: 'status', respondsTo: th.id, threadId: th.id,
+        status: 'resolved', actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1,
+      });
+      moved++;
+    }
+    toast(moves.length === 1 ? 'Comment moved to #' + moves[0].target : 'Moved ' + moved + ' comments');
     state.activeThread = null;
     await refresh();
   } catch (_) {
     toast('Could not move comment');
+    if (moved) await refresh();
   } finally {
-    state.movingOrphans.delete(th.id);
+    for (const { th } of moves) state.movingOrphans.delete(th.id);
     renderPanel();
     renderPins();
   }
+}
+
+function moveOrphan(th, target) {
+  return moveOrphans([{ th, target }]);
 }
 
 const chartInfoFor = b => {

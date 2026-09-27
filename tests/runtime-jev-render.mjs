@@ -274,8 +274,8 @@ assert.deepEqual(pop().querySelector('.hx-jev-pop-actions').children.map(c => [c
   [['BUTTON', 'hx-btn'], ['SPAN', 'hx-jev-pop-batch']]);
 assert.deepEqual(pop().querySelector('.hx-jev-pop-batch').children.map(c => [c.className, c.textContent]),
   [['hx-btn', 'Reconcile all (1)'], ['hx-jev-pop-more', '+1 warning']]);
-assert.deepEqual(noteButtons('crowded'), [['No criterion covers this', ['Ask for a criterion']], ['Scope', ['Comment on this change']], ['conflict?', []]]);
-assert.deepEqual(noteButtons('criterion-gap'), [['No story backs this', ['Ask for a story']]]);
+assert.deepEqual(noteButtons('crowded'), [['No criterion covers this', ['Ask for a criterion', 'Ask about all gaps (3)']], ['Scope', ['Comment on this change']], ['conflict?', []]]);
+assert.deepEqual(noteButtons('criterion-gap'), [['No story backs this', ['Ask for a story', 'Ask about all gaps (3)']]]);
 assert.deepEqual(noteButtons('row'), [['Behavior', ['Comment on this change']]]);
 for (const a of ['typo', 'type-unsure', 'story-unsure', 'story-down', 'criterion-down']) {
   assert.ok(noteButtons(a).every(([, buttons]) => buttons.length === 0), a + ' shows no button');
@@ -325,6 +325,24 @@ withCorpus([item('corpus', 'rule', 'label', 'contradicts', 'a'), item('corpus', 
   assert.deepEqual(clickMore('typo', '+2 warnings'), ['typo', null, null,
     'Reconcile each clause with its link:\n#rule Contradicts #a\n#typo Oversteps #c\n#overstep Oversteps #b']);
 });
+// #acceptance-reconcile-all: a popover whose clause has several reconcile notes shows the pair once.
+withCorpus([item('corpus', 'rule', 'label', 'contradicts', 'a'), item('corpus', 'rule', 'label', 'oversteps', 'b')], () => {
+  assert.deepEqual(noteButtons('rule').map(([, buttons]) => buttons),
+    [['Ask agent to reconcile', 'Reconcile all (1)', '+1 warning'], ['Ask agent to reconcile'], ['Comment on this change']]);
+  assert.deepEqual(clickMore('rule', '+1 warning'), ['rule', null, null,
+    'Reconcile each clause with its link:\n#rule Contradicts #a\n#rule Oversteps #b']);
+});
+// #proof-batch and #acceptance-gaps-all: two gaps give each popover Ask about all gaps (2), both lines in page order; one gives none.
+withCorpus([item('coverage', 'story-gap::criterion-gap', 'label', 'unrelated')], () => {
+  assert.deepEqual(noteButtons('story-gap'), [['No criterion covers this', ['Ask for a criterion', 'Ask about all gaps (2)']]]);
+  assert.deepEqual(noteButtons('criterion-gap'), [['No story backs this', ['Ask for a story', 'Ask about all gaps (2)']]]);
+  assert.equal(pop().querySelectorAll('.hx-jev-pop-more').length, 0, 'gaps carry no +m link');
+  const draft = 'Add a criterion for each story, or name the story for each criterion:\n#story-gap No criterion covers this\n#criterion-gap No story backs this';
+  assert.deepEqual(clickNote('criterion-gap', 'Ask about all gaps (2)'), ['criterion-gap', null, null, draft]);
+  assert.deepEqual(clickNote('story-gap', 'Ask about all gaps (2)'), ['story-gap', null, null, draft]);
+});
+withCorpus([item('coverage', 'story-gap::criterion-gap', 'label', 'unrelated'), item('coverage', 'story-gap::quiet', 'label', 'verifies')],
+  () => assert.deepEqual(noteButtons('criterion-gap'), [['No story backs this', ['Ask for a story']]], 'one gap shows only its own button'));
 // #acceptance-cross-lane: lane items name the other slug and link its served clause; color from the item level only;
 // Oversteps and Overstepped by are Warnings for the reconcile batch; pending items never render.
 const Y = 'ann2/docs/specs/y.spec.html';
@@ -422,15 +440,32 @@ renderJev();
 assert.equal(body.querySelectorAll('.hx-jev-marker').length, 0, 'Jev off clears markers');
 assert.deepEqual(body.querySelectorAll('.hx-jev-note').map(n => n.textContent), ['Jev off']);
 
-// After Move comment here resolves the orphaned thread, its card offers no second move,
-// even while the old orphan suggestion is still in state until the next Jev fetch.
+// An open orphan card shows the guess with Go to and Move comment here; a resolved one gets no guess (openOrphanHint).
 const orphanHintElement = Function('document', 'state', 'goToJevTarget', 'moveOrphan',
-  slice('function orphanHintElement(', '\n\nasync function moveOrphan(') + '; return orphanHintElement;',
+  slice('function orphanHintElement(', '\n\n// Move comment here and Move all') + '; return orphanHintElement;',
 )(document, { movingOrphans: new Set() }, () => {}, () => {});
 const suggestion = { kind: 'orphan', id: 'thread-1', state: 'label', label: 'Moved section', target: 'moved-section', record: 'r9' };
 const acts = el => el.querySelectorAll('button').map(b => b.dataset.act);
 assert.deepEqual(acts(orphanHintElement({ id: 'thread-1', status: 'pending' }, suggestion)), ['orphan-go', 'orphan-move']);
-assert.deepEqual(acts(orphanHintElement({ id: 'thread-1', status: 'resolved' }, suggestion)), ['orphan-go']);
 assert.equal(orphanHintElement({ id: 'thread-1', status: 'pending' }, null), null);
+
+// #settle-gap and #settle-conflict: once the next head has the counterpart and answers no finding, the marks are gone.
+state.jev.status = 'on';
+location.search = '?focus=changes';
+state.jev.items = suggestionItems;
+renderJev();
+marker('story-gap');
+assert.ok(holder('rule').querySelector('.hx-jev-marker').jevNotes.some(n => n.group === 'conflict'));
+state.jev.items = [
+  ...typeItems.filter(i => i.id !== 'rule'),
+  item('corpus', 'rule', 'label', 'unrelated', 'non-goal-text'),
+  item('corpus', 'overstep', 'label', 'unrelated', 'other#scope'),
+  item('coverage', 'story-gap::criterion-gap', 'label', 'verifies'),
+];
+renderJev();
+for (const a of ['rule', 'story-gap', 'criterion-gap']) assert.equal(markersOf(a).length, 0, a + ' settles to no mark');
+assert.ok(!markersOf('overstep').length || markersOf('overstep')[0].jevNotes.every(n => n.group !== 'conflict'), 'no conflict label left');
+state.jev.items = suggestionItems;
+renderJev();
 
 console.log('runtime Jev render tests passed');
