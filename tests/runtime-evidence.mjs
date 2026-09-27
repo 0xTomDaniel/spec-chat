@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -131,7 +132,9 @@ for (const value of [new Error('down'), { ok: false, json: async () => ({}) }, {
 }
 assert.ok(fetches.every(url => url === '/api/evidence?path=specs%2Fdemo.spec.html'), fetches.join());
 
-answer = json({ criteria: {
+// The server's levels table as /api/evidence returns it (tools/jev.py MARK_LEVELS).
+const levels = JSON.parse(execFileSync('python3', ['-c', 'import json, sys; sys.path.insert(0, "tools"); from jev import MARK_LEVELS; print(json.dumps(MARK_LEVELS))'], { cwd: root, encoding: 'utf8' }));
+answer = json({ levels, criteria: {
   passed: entry(),
   failed: entry({ verdict: 'fail', pr: 12, capturedAt: ago(3 * 3600000 + 5000) }),
   reworded: entry({ match: false, judgment: 'cosmetic' }),
@@ -157,22 +160,28 @@ const note = anchor => {
 };
 const linked = (label, context, extra = {}) => ({ group: 'evidence', label, labelTag: 'A', artifact: VIEW, target: '_blank',
   context, bundle: ['bundle', E + '/bundles/b', '_blank'], ...extra });
-assert.deepEqual(note('passed'), linked('Passed', '#58 · 9 d'));
-assert.deepEqual(note('failed'), linked('Failed', '#12 · 3 h'));
-assert.deepEqual(note('reworded'), linked('Passed · reworded', '#58 · 9 d'));
-assert.deepEqual(note('failed-reworded'), linked('Failed · reworded', '#58 · 9 d'));
-assert.deepEqual(note('material'), linked('Stale', '#58 · 9 d · not on main'));
-assert.deepEqual(note('unsure'), linked('Stale', '#58 · 9 d'));
-assert.deepEqual(note('uncommitted'), linked('Stale', '#58 · 9 d'));
-assert.deepEqual(note('lane'), linked('Passed', '#58 · 9 d · not on main'));
-assert.deepEqual(note('plain'), linked('Passed', '5 m', { labelTag: 'SPAN', artifact: null, target: null }));
-assert.deepEqual(note('none'), { group: 'evidence', label: 'Not yet', labelTag: 'SPAN', artifact: null, target: null, context: null, bundle: null });
-// Failed and Stale get the colored !, Passed the green check, Not yet the gray dot; stories get no evidence.
+assert.deepEqual(note('passed'), linked('QA passed', '#58 · 9 d'));
+assert.deepEqual(note('failed'), linked('QA failed', '#12 · 3 h'));
+assert.deepEqual(note('reworded'), linked('QA passed · reworded', '#58 · 9 d'));
+assert.deepEqual(note('failed-reworded'), linked('QA failed · reworded', '#58 · 9 d'));
+assert.deepEqual(note('material'), linked('QA stale', '#58 · 9 d · not on main'));
+assert.deepEqual(note('unsure'), linked('QA stale', '#58 · 9 d'));
+assert.deepEqual(note('uncommitted'), linked('QA stale', '#58 · 9 d'));
+assert.deepEqual(note('lane'), linked('QA passed', '#58 · 9 d · not on main'));
+assert.deepEqual(note('plain'), linked('QA passed', '5 m', { labelTag: 'SPAN', artifact: null, target: null }));
+assert.deepEqual(note('none'), { group: 'evidence', label: 'No QA yet', labelTag: 'SPAN', artifact: null, target: null, context: null, bundle: null });
+// QA failed and QA stale get the colored !, QA passed the green check, No QA yet the gray dot; stories get no evidence.
 const marked = key => body.querySelectorAll('.hx-jev-marker').filter(m => m.dataset[key] === 'true').map(m => m.closest('[data-anchor]').dataset.anchor);
 assert.deepEqual(marked('attention'), ['failed', 'failed-reworded', 'material', 'unsure', 'uncommitted']);
 assert.deepEqual(marked('passed'), ['passed', 'reworded', 'plain', 'lane']);
 assert.equal(marker('none').dataset.attention + marker('none').dataset.passed, 'falsefalse');
 assert.equal(markersOf('story').length, 0);
+// #acceptance-levels-api: evidence color follows the response's levels table; changing one row changes the color.
+state.evidence.levels = { ...levels, 'qa-stale': 'warning' };
+renderJev();
+assert.deepEqual(marked('attention'), ['failed', 'failed-reworded']);
+state.evidence.levels = levels;
+renderJev();
 // Notes add no text to the spec and move nothing: each criterion keeps its text, plus one marker.
 assert.deepEqual(article.children.map(e => e.textContent), textBefore);
 for (const a of criteria) assert.deepEqual(holder(a).children.map(c => c.tagName), ['BUTTON']);
@@ -187,7 +196,7 @@ for (const a of ['reworded', 'failed-reworded', 'material', 'unsure', 'uncommitt
   assert.deepEqual(diffOf(a), [['SPAN', 'Criterion'], ['DEL', 'old text'], ['INS', a]], a);
 for (const a of ['passed', 'failed', 'lane', 'none']) assert.equal(diffOf(a), null, a);
 assert.deepEqual(evidenceDiff('a b c d', 'a x c d e').map(p => p.op + ':' + p.text), ['same:a', 'del:b', 'ins:x', 'same:c d', 'ins:e']);
-// Only Stale gets Ask for re-proof; it drafts the fixed text in the composer and writes nothing.
+// Only QA stale gets Ask for re-proof; it drafts the fixed text in the composer and writes nothing.
 const actionsOf = anchor => row(anchor).querySelectorAll('.hx-btn').map(b => b.textContent);
 for (const a of ['passed', 'failed', 'reworded', 'failed-reworded', 'lane', 'plain', 'none']) assert.deepEqual(actionsOf(a), [], a);
 for (const a of ['material', 'unsure', 'uncommitted']) assert.deepEqual(actionsOf(a), ['Ask for re-proof'], a);

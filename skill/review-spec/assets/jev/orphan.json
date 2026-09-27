@@ -1,6 +1,6 @@
 {
   "id": "orphan",
-  "version": 5,
+  "version": 6,
   "instructions": "Choose the one current anchor whose text best matches the orphaned human comment quote and its context. The candidates are deterministic current sections supplied with the question under readable labels. Choose none when no candidate is a credible move for the passage. Do not infer a new anchor or treat a deleted passage as moved.",
   "labels": [
     {
@@ -9,25 +9,25 @@
       "examples": [
         {
           "input": {
-            "quote": "Workbench visual reference",
+            "quote": "Dashboard visual reference",
             "candidates": [
-              "Visual direction: the documented workbench UI reference uses a narrow icon...",
-              "Embedded service pages The annotateanything plugin adds two BB sidebar pages...",
+              "Visual direction: the documented dashboard UI reference uses a narrow icon...",
+              "Embedded service pages The host plugin adds two BB sidebar pages...",
               "Completed foundation decision and receipt ANN-14 and ANN-15 completed the..."
             ]
           },
-          "label": "Visual direction: the documented workbench UI reference uses a narrow icon..."
+          "label": "Visual direction: the documented dashboard UI reference uses a narrow icon..."
         },
         {
           "input": {
             "quote": "Operator selects Terminal BB selects its native Terminal surface. The plugin performs no terminal action and changes no terminal input or session state. BB owns terminal loading and recovery.",
             "candidates": [
               "Project and embedding contract The plugin consumes one local configuration...",
-              "Embedded service pages The annotateanything plugin adds two BB sidebar pages...",
-              "Modular boundaries Runtime dependency direction 01 / annotateanythingValidated...",
+              "Embedded service pages The host plugin adds two BB sidebar pages...",
+              "Modular boundaries Runtime dependency direction 01 / host pluginValidated...",
               "Acceptance criteria Given one valid local project record, both pages show the...",
               "Given one valid local project record, both pages show the same project name...",
-              "annotateanything plugin Responsibility: validate project settings, decide...",
+              "Host plugin Responsibility: validate project settings, decide...",
               "Independent embedded pages Spec Chat and Evidence remain separate configured...",
               "Situation Observable behavior Recovery or ownership First visit to a configured..."
             ]
@@ -67,7 +67,7 @@
               "Acceptance criteria Given one valid local project record, both pages show the...",
               "Given one valid local project record, both pages show the same project name...",
               "Project and embedding contract The plugin consumes one local configuration...",
-              "Embedded service pages The annotateanything plugin adds two BB sidebar pages..."
+              "Embedded service pages The host plugin adds two BB sidebar pages..."
             ]
           },
           "label": "none"

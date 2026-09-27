@@ -34,10 +34,10 @@ def git(root, *args):
     return subprocess.check_output(("git", "-C", str(root), *args), text=True).strip()
 
 
-def page(rule, header_status="Status: draft."):
+def page(rule, header_context="Context words."):
     return ('<header data-anchor="header"><h1 data-anchor="title">Page</h1>'
-            f'<p data-anchor="source-issues">Source issues: ANN-1.</p><p data-anchor="status">{header_status}</p>'
-            '<p data-anchor="context">Context words.</p></header>'
+            '<p data-anchor="source-issues">Source issues: ANN-1.</p>'
+            f'<p data-anchor="context">{header_context}</p></header>'
             f'<section data-anchor="rules"><p data-anchor="rule">{rule}</p></section>'
             '<section data-anchor="non-goals"><p data-anchor="non-goal-text">The service never writes review events.</p></section>'
             '<section data-anchor="traceability-source-issues"><p data-anchor="status-line">Lane status line.</p></section>')
@@ -74,16 +74,16 @@ class CorpusTest(unittest.TestCase):
         self.assertEqual(recorded["answer"]["label"], "overlaps")
         self.assertTrue(all(item["label"] in {None, "contradicts", "oversteps"} for item in items))
 
-    def test_header_and_status_clauses_are_neither_asked_nor_compared(self):
+    def test_header_and_source_issue_clauses_are_neither_asked_nor_compared(self):
         baseline = page("The service reads review events.")
-        current = page("The service writes review events.", "Status: accepted.").replace(
-            "Lane status line.", "Lane status line changed.").replace("Context words.", "Context changed.")
+        current = page("The service writes review events.", "Context changed.").replace(
+            "Lane status line.", "Lane status line changed.")
         other = page("Other rule.").replace('data-anchor="', 'data-anchor="x-')
         questions = jev.build_corpus_questions(current, baseline, OWN, "base", "head",
                                                [{"path": "other.spec.html", "source": other}])
         self.assertEqual({q["id"] for q in questions}, {"rule"})
         targets = {q["target"] for q in questions}
-        for meta in ("title", "status", "source-issues", "context", "status-line"):
+        for meta in ("title", "source-issues", "context", "status-line"):
             self.assertNotIn(meta, targets)
             self.assertNotIn("other.spec.html#x-" + meta, targets)
         self.assertIn("other.spec.html#x-rule", targets)
@@ -145,7 +145,7 @@ class CorpusTest(unittest.TestCase):
     def test_question_count_drops_against_multi_lane_registry(self):
         leaves = "".join(f'<p data-anchor="c{i}">Clause {i} about review events.</p>' for i in range(12))
         before = page("The service reads review events.") + f'<section data-anchor="more">{leaves}</section>'
-        after = before.replace("reads review", "writes review").replace("Status: draft.", "Status: next.")
+        after = before.replace("reads review", "writes review").replace("Context words.", "Context next.")
         lane_a = self.repo("a", {SPEC: after}, {SPEC: before})
         lanes = [lane_a] + [self.worktree(lane_a, f"l{n}", {SPEC: after.replace("Clause", f"Lane {n} clause")})
                             for n in range(4)]

@@ -39,7 +39,7 @@
       "examples": [
         {
           "input": {
-            "clause": "The lock uses one user-owned absolute runtime namespace independent of shell environment variables so Herdr panes and ordinary shells contend on the same identity."
+            "clause": "The lock uses one user-owned absolute runtime namespace independent of shell environment variables so multiplexer panes and ordinary shells contend on the same identity."
           },
           "label": "internals"
         },
