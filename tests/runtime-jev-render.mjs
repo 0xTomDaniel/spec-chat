@@ -301,7 +301,7 @@ assert.deepEqual(clickNote('overstep', 'Reconcile all (1)'), ['overstep', null, 
   'Reconcile each clause with its link:\n#rule Contradicts #non-goal-text']);
 assert.deepEqual(clickMore('rule', '+1 warning'), ['rule', null, null,
   'Reconcile each clause with its link:\n#rule Contradicts #non-goal-text\n#overstep Oversteps other#scope']);
-// Batch visibility (#status-ann258): n >= 1 and n + m >= 2; n = 0 shows neither; m = 0 shows no link.
+// Batch visibility (#note-reconcile-all): n >= 1 and n + m >= 2; n = 0 shows neither; m = 0 shows no link.
 const withCorpus = (corpus, check) => {
   state.jev.items = [...typeItems, ...corpus];
   renderJev();
