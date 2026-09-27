@@ -175,7 +175,7 @@ class BoardTest(unittest.TestCase):
         self.assertEqual(service.board(rows)["rows"], [{"id": rows[0]["id"], "material": "no"}])
         self.idle(service)
 
-    def test_unavailable_record_is_reused_until_inputs_change(self):
+    def test_unavailable_record_is_reused_during_its_pause(self):
         def failing(kind, state):
             raise OSError("jev down")
 

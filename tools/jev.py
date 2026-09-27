@@ -38,6 +38,10 @@ RATE_LIMIT_RETRIES = 5
 RATE_LIMIT_MAX_WAIT = 30.0
 RATE_LIMIT_DEFAULT_WAIT = 2.0
 RETRYABLE_OUTCOMES = frozenset({"off", "unavailable"})
+# The one retry rule (jev-suggestions #state-error): a failed ask is asked again after a pause, the provider's
+# given wait, else this many seconds; the pause is written on its record, so no worker waits it out.
+RETRY_PAUSE = 60.0
+_wall = time.time
 # Jev was below threshold on a set with a general LLM fallback (project-rules #q-fallback): the LLM decides next.
 ESCALATED = "escalated"
 REPLACEABLE_OUTCOMES = RETRYABLE_OUTCOMES | {ESCALATED}
@@ -115,6 +119,29 @@ def _canonical(value: Any) -> str:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _instant(seconds: float) -> str:
+    return datetime.fromtimestamp(seconds, timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def pause_left(record: Mapping[str, Any] | None) -> float:
+    """Seconds until a failed record may be asked again; 0 for any other record or a pause that has ended."""
+    if not record or record.get("outcome") != "unavailable":
+        return 0.0
+    try:
+        retry_at = datetime.fromisoformat(str(record["retry_at"]).replace("Z", "+00:00")).timestamp()
+    except (KeyError, TypeError, ValueError):
+        return 0.0
+    return max(retry_at - _wall(), 0.0)
+
+
+class ProviderWait(RuntimeError):
+    """A provider failure that says how long to wait before asking again (a rate-limit Retry-After)."""
+
+    def __init__(self, message: str, wait: float):
+        super().__init__(message)
+        self.wait = wait
 
 
 class QuestionSet:
@@ -269,18 +296,22 @@ class JudgmentStore:
             return record
 
 
-def retry_after_seconds(value: str | None, now: Callable[[], float] = time.time) -> float:
-    """Retry-After as seconds or an HTTP date, capped at RATE_LIMIT_MAX_WAIT; missing or unreadable waits the default."""
+def given_wait(value: str | None, now: Callable[[], float] = time.time) -> float | None:
+    """Retry-After as seconds or an HTTP date; None when missing or unreadable."""
     try:
         wait = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         try:
             wait = parsedate_to_datetime(str(value)).timestamp() - now()
         except (TypeError, ValueError, IndexError, OverflowError):
-            wait = RATE_LIMIT_DEFAULT_WAIT
-    if not math.isfinite(wait):
-        wait = RATE_LIMIT_DEFAULT_WAIT
-    return min(max(wait, 0.0), RATE_LIMIT_MAX_WAIT)
+            return None
+    return max(wait, 0.0) if math.isfinite(wait) else None
+
+
+def retry_after_seconds(value: str | None, now: Callable[[], float] = time.time) -> float:
+    """Retry-After capped at RATE_LIMIT_MAX_WAIT; missing or unreadable waits the default."""
+    wait = given_wait(value, now)
+    return min(RATE_LIMIT_DEFAULT_WAIT if wait is None else wait, RATE_LIMIT_MAX_WAIT)
 
 
 class OpenRouterProvider:
@@ -310,11 +341,16 @@ class OpenRouterProvider:
                     value = json.loads(response.read().decode("utf-8"))
                 break
             except HTTPError as exc:
-                if exc.code != 429 or attempt == RATE_LIMIT_RETRIES:
+                if exc.code != 429:
                     raise RuntimeError("OpenRouter decision request failed") from exc
-                wait = retry_after_seconds(exc.headers.get("Retry-After") if exc.headers else None)
+                header = exc.headers.get("Retry-After") if exc.headers else None
                 exc.close()
-                self._sleep(wait)
+                if attempt == RATE_LIMIT_RETRIES:
+                    wait = given_wait(header)
+                    if wait is None:
+                        raise RuntimeError("OpenRouter decision request failed") from exc
+                    raise ProviderWait("OpenRouter rate limited", wait) from exc
+                self._sleep(retry_after_seconds(header))
             except (URLError, TimeoutError, OSError, UnicodeError, ValueError) as exc:
                 raise RuntimeError("OpenRouter decision request failed") from exc
         if not isinstance(value, Mapping):
@@ -387,8 +423,12 @@ class JevSeam:
         return self._provider if self._provider is not None else OpenRouterProvider(api_key)
 
     def _record(self, key: str, kind: str, qset: QuestionSet, sources: Any, revision: Any,
-                answer: Mapping[str, Any], outcome: str, model: str = MODEL, escalated: bool = False) -> dict[str, Any]:
-        extra = {"escalated": True} if escalated else {}
+                answer: Mapping[str, Any], outcome: str, model: str = MODEL, escalated: bool = False,
+                failure: BaseException | None = None) -> dict[str, Any]:
+        extra: dict[str, Any] = {"escalated": True} if escalated else {}
+        if outcome == "unavailable":
+            wait = getattr(failure, "wait", None)
+            extra["retry_at"] = _instant(_wall() + (RETRY_PAUSE if wait is None else wait))
         return self.store.append({**extra,
             "record_id": "judgment-" + uuid.uuid4().hex,
             "cache_key": key,
@@ -451,6 +491,7 @@ class JevSeam:
             return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
                                 {"label": None, "probabilities": {}, "confidence": None}, "off")
         answer = None
+        failure = None
         model = MODEL
         for _ in range(2):
             try:
@@ -463,11 +504,12 @@ class JevSeam:
                 if isinstance(question.get("candidate_anchors"), Mapping):
                     answer = _anchor_answer(answer, question["candidate_anchors"])
                 break
-            except Exception:
-                continue
+            except Exception as exc:
+                failure = exc
         if answer is None:
             return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
-                                {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model)
+                                {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model,
+                                failure=failure)
         outcome = "shown" if answer["confidence"] is not None and answer["confidence"] >= qset.threshold else "unsure"
         if outcome == "unsure" and qset.fallback:
             self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, ESCALATED, model)
@@ -493,15 +535,17 @@ class JevSeam:
         model = self.llm_model()
         payload = self.general_payload(question, qset, model)
         label = None
+        failure = None
         for _ in range(2):
             try:
                 label = json.loads(provider.complete(payload)["choices"][0]["message"]["content"])["choice"]
                 break
-            except Exception:
-                continue
+            except Exception as exc:
+                failure = exc
         if label is None:
             return self._record(key, kind, qset, sources, revision,
-                                {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model, True)
+                                {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model, True,
+                                failure)
         return self._record(key, kind, qset, sources, revision,
                             {"label": label, "probabilities": {}, "confidence": None}, "shown", model, True)
 
@@ -1460,7 +1504,7 @@ class JevService:
                     self._board_idle.set()
 
     def _held(self, question: Mapping[str, Any], misses: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
-        """The held record, whatever its outcome; reads never re-ask unchanged inputs. A miss is collected."""
+        """The held record; a failed one only during its pause (#state-error). A miss is collected."""
         key = self.seam.key(question)
         record = self._held_record(key)
         if record is None:
@@ -1468,9 +1512,14 @@ class JevService:
         return record
 
     def _held_record(self, key: str) -> dict[str, Any] | None:
-        """A held record. `off` is no answer (the key was missing when asked), so it is asked again."""
+        """A held record. `off` is no answer (the key was missing when asked), so it is asked again, and a
+        failed one answers only until its pause ends (#state-error)."""
         record = self.seam.store.get(key)
-        return None if record is None or record.get("outcome") == "off" else record
+        if record is None or record.get("outcome") == "off":
+            return None
+        if record.get("outcome") == "unavailable" and not pause_left(record):
+            return None
+        return record
 
     def _ask_misses(self, misses: Mapping[str, dict[str, Any]]) -> list[Future]:
         """Ask each miss, by key, once in the background; a question in flight or since answered is not asked again."""
@@ -1535,14 +1584,14 @@ class JevService:
             self.seam.ask(rule)
 
     def _rule_held(self, question: Mapping[str, Any]) -> tuple[str, dict[str, Any] | None]:
-        """final, pending, or unavailable, with the held record; never asks."""
+        """final, pending (to ask or in flight), or unavailable during its pause, with the record; never asks."""
         key = self.seam.key(question)
         record = self.seam.store.get(key)
         with self._ask_lock:
             inflight = key in self._asking
         if _final(record):
             return "final", record
-        if record is None or record.get("outcome") == ESCALATED or inflight:
+        if inflight or self._held_record(key) is None or record.get("outcome") == ESCALATED:
             return "pending", record
         return "unavailable", record
 
@@ -1574,8 +1623,7 @@ class JevService:
         for scope, rule in zip(scopes, self._build("rule", scopes, current, path, base, revision, mark)):
             state, record = self._rule_held(scope)
             if state == "unavailable":
-                # An undecided scope is no rule yet: ask again, show nothing (non-goals: no scope mark).
-                self._rule_submit(scope, rule)
+                # An undecided scope is no rule yet: show nothing (non-goals: no scope mark) until its pause ends.
                 continue
             if state == "final":
                 if _confident_label(record) != RULE_SCOPE:
@@ -1584,7 +1632,7 @@ class JevService:
                 state, record = self._rule_held(rule)
                 if state == "final" and record.get("outcome") == "oversize":
                     continue
-            if state != "final":
+            if state == "pending":
                 self._rule_submit(scope, rule)
             label = _confident_label(record) if state == "final" else None
             item = {"kind": "rule", "id": mark, "target": scope["target"], "word": scope["word"],

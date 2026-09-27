@@ -138,7 +138,7 @@ class JevBackgroundTest(unittest.TestCase):
         self.read(service)
         self.assertEqual(provider.calls, 20)
 
-    def test_failed_twice_is_held_unavailable_until_inputs_change(self):
+    def test_failed_is_held_unavailable_during_its_pause_and_changed_inputs_ask_at_once(self):
         provider = GatedProvider(fail=True)
         provider.release.set()
         service = self.service(provider)
@@ -153,6 +153,57 @@ class JevBackgroundTest(unittest.TestCase):
         self.assertEqual(self.read(service)["items"][0]["state"], "pending")
         self.settled(service)
         self.assertEqual(provider.calls, 42)
+
+    def test_failed_ask_waits_its_pause_then_the_first_read_asks_again(self):
+        """jev-suggestions #state-error: the one retry rule; no read asks during the pause, and no read waits."""
+        now = [1000.0]
+        provider = GatedProvider(fail=True)
+        provider.release.set()
+        with patch.object(jev, "_wall", lambda: now[0]):
+            service = self.service(provider, count=1)
+            self.assertEqual(self.settled(service)["items"][0]["state"], "unavailable")
+            self.assertEqual(provider.calls, 2)  # the seam's one retry inside the ask
+            now[0] += jev.RETRY_PAUSE - 1
+            self.assertEqual(self.read(service)["items"][0]["state"], "unavailable")
+            time.sleep(0.05)
+            self.assertEqual(provider.calls, 2)
+            now[0] += 2
+            provider.fail = False
+            provider.release.clear()
+            started = time.monotonic()
+            self.assertEqual(self.read(service)["items"][0]["state"], "pending")
+            self.assertLess(time.monotonic() - started, 0.2)
+            again = self.read(service)  # in flight: not asked twice
+            self.assertEqual(again["items"][0]["state"], "pending")
+            provider.release.set()
+            self.assertEqual(self.settled(service)["items"][0]["state"], "label")
+            self.assertEqual(provider.calls, 3)
+
+    def test_provider_wait_is_the_pause(self):
+        """A rate-limit Retry-After past its bounded retries sets the pause, not the 60 s default."""
+        now = [1000.0]
+
+        class Limited(GatedProvider):
+            def decide(self, payload):
+                with self.lock:
+                    self.calls += 1
+                if self.fail:
+                    raise jev.ProviderWait("rate limited", 300.0)
+                return {"answers": {next(iter(payload["questions"])): {"choice": "behavioral", "confidence": 0.9}}}
+
+        provider = Limited(fail=True)
+        with patch.object(jev, "_wall", lambda: now[0]):
+            service = self.service(provider, count=1)
+            self.assertEqual(self.settled(service)["items"][0]["state"], "unavailable")
+            calls = provider.calls
+            now[0] += jev.RETRY_PAUSE + 1
+            self.assertEqual(self.read(service)["items"][0]["state"], "unavailable")
+            time.sleep(0.05)
+            self.assertEqual(provider.calls, calls)
+            now[0] += 300
+            provider.fail = False
+            self.assertEqual(self.settled(service)["items"][0]["state"], "label")
+            self.assertEqual(provider.calls, calls + 1)
 
     def test_failed_ask_that_lands_mid_read_is_not_asked_again(self):
         """A read collects a miss; that key's ask fails and leaves before the read submits: not resubmitted."""

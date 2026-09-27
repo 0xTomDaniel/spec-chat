@@ -109,6 +109,27 @@ class RateLimit(unittest.TestCase):
         # The seam's one retry, each bounded by the provider's rate-limit retries.
         self.assertEqual(len(server.hits), 2 * (jev.RATE_LIMIT_RETRIES + 1))
 
+    def test_last_retry_after_is_the_records_pause(self):
+        """jev-suggestions #state-error: past the bounded retries, the provider's wait (uncapped) is the pause."""
+        server, provider, waits = self.serve({"/decisions": 1000}, "600")
+        seam = jev.JevSeam({"scope": scope_set(False)}, provider=provider, api_key="test-key")
+        with unittest.mock.patch.object(jev, "_wall", lambda: 1000.0):
+            record = seam.ask(question())
+            self.assertEqual(record["outcome"], "unavailable")
+            self.assertEqual(jev.pause_left(record), 600.0)
+        with self.assertRaises(jev.ProviderWait) as raised:
+            provider.decide({})
+        self.assertEqual(raised.exception.wait, 600.0)
+
+    def test_no_given_wait_pauses_the_default(self):
+        waits = []
+        provider = jev.OpenRouterProvider("k", endpoint="http://127.0.0.1:9/decisions", sleep=waits.append)
+        seam = jev.JevSeam({"scope": scope_set(False)}, provider=provider, api_key="k")
+        with unittest.mock.patch.object(jev, "urlopen", side_effect=jev.HTTPError(provider.endpoint, 500, "boom", {}, None)), \
+                unittest.mock.patch.object(jev, "_wall", lambda: 1000.0):
+            record = seam.ask(question())
+            self.assertEqual(jev.pause_left(record), jev.RETRY_PAUSE)
+
     def test_other_errors_do_not_wait(self):
         waits = []
         provider = jev.OpenRouterProvider("k", endpoint="http://127.0.0.1:9/decisions", sleep=waits.append)
