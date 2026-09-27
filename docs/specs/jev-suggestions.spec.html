@@ -29,6 +29,7 @@
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-fast-marks">As a reviewer, Jev marks appear without a visible wait after the page renders, even while the box is busy.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-note-action">As a reviewer, each actionable Jev note offers one button that drafts the comment it calls for, which I edit and send myself; with several conflicts on the page, one button drafts them all.</p>
 <p data-user-story data-user-facing="false" data-anchor="story-levels-api">As an agent reading <code>/api/jev</code>, every mark tells me its level, <code>important</code> or <code>warning</code>, the same level the reviewer sees as color; a neutral note carries none.</p>
+<p data-anchor="story-neutral-tbd" data-spec-tbd="open">TBD: Jev still flags <code>story-neutral</code> against <code>story-no-walls</code> after one fix. Recommendation: keep both; unsure notes remain only for coverage and reading view, which have no fallback.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-no-walls">As a reviewer, I never see a wall of <code>conflict?</code> marks: every Jev question is a yes or no, an unsure answer is settled by the general LLM, and Warning marks read light red, apart from grey neutral notes.</p>
 <p data-user-story data-user-facing="false" data-anchor="story-measured">As the operator, I know each yes/no question's unsure rate and accuracy on this box's specs, before and after the change.</p>
 <p data-user-story data-user-facing="false" data-anchor="story-record">As the operator, I can see for any suggestion which model, question set, and sources produced it, and with what confidence.</p>
@@ -195,6 +196,7 @@
 </table>
 </div>
 <p data-anchor="type-material">A registry row's published <code>material</code> is <code>yes</code> when any changed root section answers yes, <code>no</code> when every one answers no, and <code>unknown</code> when any is unavailable, unanswered, or off; an unsure answer is first settled by the LLM fallback.</p>
+<p data-anchor="type-material-tbd" data-spec-tbd="open">TBD: the peer worklane provider spec (<code>#jev-material</code>) still derives <code>material</code> from the four old labels, which Jev flags against this chain. Recommendation: that spec's owner replaces the mapping with a link here when this lands; this spec names no peer and edits none.</p>
 </section>
 
 <section data-anchor="chains">
