@@ -1,6 +1,6 @@
 {
   "id": "overlaps",
-  "version": 2,
+  "version": 3,
   "instructions": "Compare the changed clause with the linked clause; they neither contradict nor overstep each other. Do they say the same thing? Answer yes when both clauses describe the same behavior, surface, or responsibility. Answer no when they describe different things, even if related. A criterion or test that checks the behavior the other clause states says the same thing: yes.",
   "threshold": 0.4,
   "fallback": true,
@@ -30,6 +30,14 @@
             "before": "",
             "after": "Given a saved filter, choosing it from the toolbar applies it.",
             "target": "Saved filters appear in the toolbar list and apply when chosen."
+          },
+          "label": "yes"
+        },
+        {
+          "input": {
+            "before": "A link calls the panel with one subPath for the resource.",
+            "after": "A link calls the panel with one subPath for the resource, dropping a leading slash.",
+            "target": "Clicking that link shows the page with that exact resource, via its configured address and the subPath."
           },
           "label": "yes"
         }
