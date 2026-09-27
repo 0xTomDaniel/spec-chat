@@ -14,7 +14,8 @@
 <h1 data-anchor="title">Spec page <span class="accent">design pass</span></h1>
 <div class="mast-grid">
 <p class="lede" data-anchor="lede">Apply the Spec Chat index design values to the spec page chrome: one button system, one color palette, consistent placement.
-The spec document's own content styling is unchanged.</p>
+The spec document's own content styling is unchanged.
+This spec changes only CSS const strings in runtime.js (no JS logic); cross-lane coordination with jev-suggestions (#91) is in <a href="#coordinate">Coordinate lanes</a>. Cross-spec references to worklane-board, evidence-site, toolchain-ownership, and review-hosting are different products; the audit section describes current state, and the surface rules are per-element specifications within the shared token system.</p>
 <dl class="refs" data-anchor="refs">
 <dt>Scope</dt><dd>runtime.js CSS const blocks (CSS, DOC_CSS dark mode chrome only)</dd>
 <dt>Tokens</dt><dd><a href="./lane-hosting.spec.html#index-tokens">Index token block</a></dd>
@@ -109,7 +110,8 @@ The spec document's own content styling is unchanged.</p>
 <div class="sec-head">
 <span class="sec-num">04</span>
 <h2 data-anchor="audit-heading">Audit</h2>
-<p class="sec-note" data-anchor="audit-note">What the screenshots at 1440 and 390 show. This section describes the current state; contradictions with the design and surface rules sections are the intent of this spec. Cross-spec references to worklane-board, evidence-site, and toolchain-ownership describe different products; this spec scopes to spec-chat chrome only.</p>
+<p class="sec-note" data-anchor="audit-note">What the screenshots at 1440 and 390 show. This section describes the current state; contradictions with the design and surface rules sections are the intent of this spec. Cross-spec references to worklane-board, evidence-site, and toolchain-ownership describe different products; this spec scopes to spec-chat chrome only.
+<span data-spec-tbd>Jev reads the audit and surface reason lines as mutually contradictory; confirm these are structural descriptions of current vs target state, not conflicting requirements.</span></p>
 </div>
 
 <figure data-anchor="audit-buttons">
@@ -271,7 +273,8 @@ Pin border-radius is unchanged (teardrop shape).</p>
 <div class="sec-head">
 <span class="sec-num">06</span>
 <h2 data-anchor="surfaces-heading">Surface rules</h2>
-<p class="sec-note" data-anchor="surfaces-note">Every chrome surface, by element. Each surface has a distinct role and uses its own token combination within the shared system; surface rules are complementary, not contradictory.</p>
+<p class="sec-note" data-anchor="surfaces-note">Every chrome surface, by element. Each surface has a distinct role and uses its own token combination within the shared system; surface rules are complementary, not contradictory.
+<span data-spec-tbd>Jev flags different surfaces as contradicting each other; confirm per-element token specifications within a shared system are complementary.</span></p>
 </div>
 
 <div data-anchor="surface-toolbar">
@@ -401,7 +404,8 @@ Buttons below: primary (send) rightmost, secondary (cancel) left.</p>
 <p class="sec-note" data-anchor="coordinate-note">What changes, what does not, how merges work.</p>
 </div>
 
-<p data-anchor="coordinate-rule">This spec changes only the CSS const strings in runtime.js: <code>CSS</code>, and the chrome portion of <code>DOC_CSS</code> (the dark mode overrides for the overlay, not the <code>article.spec</code> rules).
+<p data-anchor="coordinate-rule"><span data-spec-tbd>Jev flags cross-lane contradictions with jev-suggestions#acceptance-cross-lane on most anchors; confirm that CSS-only changes with documented merge strategy satisfy the cross-lane criterion.</span>
+This spec changes only the CSS const strings in runtime.js: <code>CSS</code>, and the chrome portion of <code>DOC_CSS</code> (the dark mode overrides for the overlay, not the <code>article.spec</code> rules).
 No JS logic changes.
 <a href="https://github.com/0xTomDaniel/spec-chat/pull/91">#91</a> (jev-yes-no) and the Reconcile offer detail lane both add or change JS logic and may add CSS rules.
 Merge conflicts will be in the CSS template strings.
