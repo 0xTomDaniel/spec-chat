@@ -228,6 +228,15 @@ assert.deepEqual(posted, [
   [{ type: 'spec-chat-open-evidence', bundle: 'b' }, 'https://bb.example'],
 ]);
 
+// #acceptance-reproof-settle: once evidence of the current text lands, the next read shows its label; the stale note,
+// its diff, and its re-proof button are gone.
+answer = json({ levels, criteria: { material: entry({ proven: 'material', pr: 61, capturedAt: ago(5 * 60000 + 5000) }) } });
+await requestEvidence();
+assert.deepEqual(note('material'), linked('QA passed', '#61 · 5 m'));
+assert.equal(diffOf('material'), null);
+assert.deepEqual(actionsOf('material'), []);
+assert.equal(marker('material').dataset.attention, 'false');
+
 // Evidence is listed first beside other Jev notes, and Jev rerenders keep it.
 state.jev.status = 'on';
 state.jev.items = [{ kind: 'coverage', id: 'story::passed', state: 'label', label: 'unrelated', target: null, record: 'r' }];
