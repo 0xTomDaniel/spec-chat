@@ -1,6 +1,6 @@
 {
   "id": "coverage",
-  "version": 3,
+  "version": 4,
   "instructions": "For one user story and one acceptance criterion, decide whether the criterion verifies the story. Choose verifies only when the criterion's observable result directly covers the story. Choose unrelated when it does not or when one side is missing.",
   "labels": [
     {
@@ -68,5 +68,6 @@
       ]
     }
   ],
-  "threshold": 0.4
+  "threshold": 0.4,
+  "fallback": true
 }

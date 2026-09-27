@@ -101,9 +101,9 @@ class BoardTest(unittest.TestCase):
         base = repo(root, SPEC, section(before), section(after))
         return [row(root, "ann1", SPEC, base)]
 
-    def test_cosmetic_change_is_not_material_and_below_threshold_is_unknown(self):
+    def test_no_behavior_change_is_not_material_and_unsettled_unsure_is_unknown(self):
         rows = self.one_row()
-        service, _ = self.service(lambda kind, state: ("cosmetic", 0.9))
+        service, _ = self.service(lambda kind, state: ("no", 0.9))
         first, second = self.settle(service, rows)
         self.assertEqual(first, {"jev": "on", "rows": [], "conflicts": []})  # unanswered is unknown
         self.assertEqual(second["rows"], [{"id": rows[0]["id"], "material": "no"}])
@@ -112,22 +112,23 @@ class BoardTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
         rows = self.one_row()
-        service, _ = self.service(lambda kind, state: ("cosmetic", 0.1))
+        service, _ = self.service(lambda kind, state: ("no", 0.1))
         _, second = self.settle(service, rows)
         self.assertEqual(second["rows"][0]["material"], "unknown")
 
-    def test_confident_behavioral_is_material(self):
+    def test_behavior_change_is_material(self):
         rows = self.one_row()
-        service, _ = self.service(lambda kind, state: ("behavioral", 0.9))
+        service, _ = self.service(lambda kind, state: ("yes", 0.9))
         _, second = self.settle(service, rows)
         self.assertEqual(second["rows"][0]["material"], "yes")
 
     def test_material_combines_answers(self):
         shown = lambda label: {"outcome": "shown", "answer": {"label": label}}
-        self.assertEqual(jev.material([shown("cosmetic"), shown("clarification")]), "no")
-        self.assertEqual(jev.material([shown("cosmetic"), None]), "unknown")
-        self.assertEqual(jev.material([shown("cosmetic"), {"outcome": "unsure", "answer": {"label": "scope"}}]), "unknown")
-        self.assertEqual(jev.material([None, shown("scope")]), "yes")
+        no, yes = shown("no-behavior-change"), shown("behavior")
+        self.assertEqual(jev.material([no, no]), "no")
+        self.assertEqual(jev.material([no, None]), "unknown")
+        self.assertEqual(jev.material([no, {"outcome": "unavailable", "answer": {"label": None}}]), "unknown")
+        self.assertEqual(jev.material([None, yes]), "yes")
         self.assertEqual(jev.material([{"outcome": "off", "answer": {"label": None}}]), "unknown")
 
     def test_answer_never_waits_for_jev(self):
@@ -135,7 +136,7 @@ class BoardTest(unittest.TestCase):
 
         def blocked(kind, state):
             gate.wait(5)
-            return ("cosmetic", 0.9)
+            return ("no", 0.9)
 
         rows = self.one_row()
         service, provider = self.service(blocked)
@@ -153,7 +154,7 @@ class BoardTest(unittest.TestCase):
     def test_answer_never_builds_questions(self):
         gate = threading.Event()
         rows = self.one_row()
-        service, _ = self.service(lambda kind, state: ("cosmetic", 0.9))
+        service, _ = self.service(lambda kind, state: ("no", 0.9))
         slow = service._material_questions
         service._material_questions = lambda row: (gate.wait(5), slow(row))[1]
         started = time.monotonic()
@@ -192,7 +193,7 @@ class BoardTest(unittest.TestCase):
     def test_bad_base_is_unknown(self):
         rows = self.one_row()
         rows[0]["base"] = "no-such-ref"
-        service, provider = self.service(lambda kind, state: ("cosmetic", 0.9))
+        service, provider = self.service(lambda kind, state: ("no", 0.9))
         _, second = self.settle(service, rows)
         self.assertEqual(second["rows"][0]["material"], "unknown")
         self.assertFalse([call for call in provider.calls if "type" in call["questions"]])
@@ -209,27 +210,25 @@ class BoardTest(unittest.TestCase):
         rows = self.lanes()
 
         def answer(kind, state):
-            if kind == "corpus":
-                return ("contradicts", 0.9)
-            return ("behavioral", 0.9)
+            return ("yes", 0.9)  # contradicts? and does it change behavior?
 
         service, provider = self.service(answer)
         first, second = self.settle(service, rows)
         self.assertEqual(first["conflicts"], [])
         self.assertEqual(second["conflicts"], [{"a": "ann1/" + SPEC, "b": "ann2/" + SPEC}])
-        corpus = [call for call in provider.calls if "corpus" in call["questions"]]
+        corpus = [call for call in provider.calls if "contradicts" in call["questions"]]
         self.assertEqual(len(corpus), 1)  # one unordered pair of changed leaves, asked once
         self.assertEqual(corpus[0]["state"], {"before": "Keep.", "after": "Cards sort by age.",
-                                              "target": "Cards sort by title."})
+                                              "target": "Cards sort by title.", "target_non_goal": False})
         self.assertNotIn("Cards", json.dumps(second))
 
     def test_only_confident_contradicts_lists(self):
-        for label, confidence in (("overlaps", 0.9), ("oversteps", 0.9), ("contradicts", 0.1)):
+        for label, confidence in (("no", 0.9), ("yes", 0.1)):
             with self.subTest(label=label, confidence=confidence):
                 self.tearDown()
                 self.setUp()
                 rows = self.lanes()
-                service, _ = self.service(lambda kind, state: (label, confidence) if kind == "corpus" else ("scope", 0.9))
+                service, _ = self.service(lambda kind, state: (label, confidence) if kind == "contradicts" else ("yes", 0.9))
                 _, second = self.settle(service, rows)
                 self.assertEqual(second["conflicts"], [])
 
@@ -237,13 +236,13 @@ class BoardTest(unittest.TestCase):
         rows = self.lanes()
         rows[1]["slug"] = "ann1"
         rows[1]["path"] = "ann1b/" + SPEC
-        service, provider = self.service(lambda kind, state: ("contradicts", 0.9))
+        service, provider = self.service(lambda kind, state: ("yes", 0.9))
         self.settle(service, rows)
-        self.assertFalse([call for call in provider.calls if "corpus" in call["questions"]])
+        self.assertFalse([call for call in provider.calls if "contradicts" in call["questions"]])
 
     def test_route_serves_board_without_parameters(self):
         rows = self.one_row()
-        service, _ = self.service(lambda kind, state: ("cosmetic", 0.9))
+        service, _ = self.service(lambda kind, state: ("no", 0.9))
         server = serve.ReviewThreadingHTTPServer(("127.0.0.1", 0), serve.MountHandler)
         server.mount_state = serve.MountState(rows)
         server.jev = service
@@ -272,7 +271,7 @@ class BoardTest(unittest.TestCase):
         base = rows[0]["base"]
         rows[0]["root"] = str(Path(rows[0]["root"]).resolve())
         rows[0]["narrow_root"] = str(Path(rows[0]["root"]) / "docs")
-        service, _ = self.service(lambda kind, state: ("cosmetic", 0.9))
+        service, _ = self.service(lambda kind, state: ("no", 0.9))
         server = serve.ReviewThreadingHTTPServer(("127.0.0.1", 0), serve.MountHandler)
         server.mount_state = serve.MountState(rows)
         server.jev = service

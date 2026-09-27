@@ -1,0 +1,53 @@
+{
+  "id": "overlaps",
+  "version": 1,
+  "instructions": "Compare the changed clause with the linked clause; they neither contradict nor overstep each other. Do they say the same thing? Answer yes when both clauses describe the same behavior, surface, or responsibility. Answer no when they describe different things, even if related.",
+  "threshold": 0.4,
+  "fallback": true,
+  "labels": [
+    {
+      "name": "yes",
+      "description": "Both clauses describe the same behavior, surface, or responsibility.",
+      "examples": [
+        {
+          "input": {
+            "before": "The server stores one judgment record for each question.",
+            "after": "The records are the cache.",
+            "target": "The records are the cache: each is keyed by a hash of its question inputs and set version."
+          },
+          "label": "yes"
+        },
+        {
+          "input": {
+            "before": "A confident flag adds a label.",
+            "after": "A confident flag adds a label on the changed clause.",
+            "target": "A confident flag adds a small label on the changed clause."
+          },
+          "label": "yes"
+        }
+      ]
+    },
+    {
+      "name": "no",
+      "description": "The clauses describe different behavior, even if related.",
+      "examples": [
+        {
+          "input": {
+            "before": "The cache key includes the source revision.",
+            "after": "The cache key includes the source revision and set version.",
+            "target": "Mobile markers stay visible at narrow widths."
+          },
+          "label": "no"
+        },
+        {
+          "input": {
+            "before": "The page shows a comment label.",
+            "after": "The page shows a comment label with text.",
+            "target": "The compared base determines the Git focus."
+          },
+          "label": "no"
+        }
+      ]
+    }
+  ]
+}

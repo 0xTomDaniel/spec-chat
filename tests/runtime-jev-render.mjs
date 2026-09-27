@@ -147,7 +147,7 @@ const colored = () => body.querySelectorAll('.hx-jev-marker').filter(m => m.data
   .map(m => m.closest('[data-anchor]').dataset.anchor);
 assert.deepEqual(colored(), ['rule', 'crowded', 'story-gap', 'criterion-gap']);
 assert.deepEqual(holder('rule').querySelector('.hx-jev-marker').jevNotes.map(n => [n.text, n.level]),
-  [['Contradicts #non-goal-text', 'important'], ['Behavior', 'warning']]);
+  [['Contradicts #non-goal-text', 'important'], ['Behavior', null]]);
 // #acceptance-levels-api: color follows the server table; changing one row changes the color with no runtime mapping.
 state.jev.levels = { ...levels, 'no-criterion': 'warning', 'no-story': 'warning', oversteps: 'important' };
 state.jev.items = suggestionItems.map(i => i.label === 'oversteps' ? { ...i, level: 'important' } : i);

@@ -64,10 +64,12 @@ class FakeProvider:
             state = payload["state"]
             if kind == "scope":
                 label = self.scope.get(state["criterion"], "this feature")
-            elif kind == "rule":
-                label = "missed" if any(word in state["spec"] for word in self.missed) else "covered"
+            elif kind == "triggered":
+                label = "yes"
+            elif kind == "covered":
+                label = "no" if any(word in state["spec"] for word in self.missed) else "yes"
             else:
-                label = "unrelated"
+                label = "no"
             return {"answers": {kind: {"choice": label, "confidence": 0.95}}}
         finally:
             with self.lock:
@@ -146,7 +148,7 @@ class BootstrapTest(unittest.TestCase):
                                                {"spec": "docs/specs/import.spec.html", "rules": [rule]}])
         self.assertIsNone(status.get("offer"))
         # the home spec is never checked against its own rule; every other spec is
-        checked = sorted(c["state"]["spec"].split("\n")[-1] for c in provider.calls if "rule" in c["questions"])
+        checked = sorted(c["state"]["spec"].split("\n")[-1] for c in provider.calls if "triggered" in c["questions"])
         self.assertEqual(len(checked), 3)
         # one table per project in Spec Chat's one onboarding.toml; no separate status file
         text = service.onboarding_path.read_text(encoding="utf-8")
@@ -186,7 +188,7 @@ class BootstrapTest(unittest.TestCase):
                 break
             time.sleep(0.01)
         self.assertEqual([(i["state"], i["word"]) for i in rules], [("label", "onboarding")])
-        self.assertEqual([c for c in provider.calls[calls:] if set(c["questions"]) & {"scope", "rule"}], [])
+        self.assertEqual([c for c in provider.calls[calls:] if set(c["questions"]) & {"scope", "triggered", "covered"}], [])
         offer = result["offer"]
         self.assertEqual(offer["count"], 2)
         self.assertEqual([entry["spec"] for entry in offer["specs"]],

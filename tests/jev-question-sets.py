@@ -11,14 +11,20 @@ STATE_KEYS = {
     "type": {"before", "after"},
     "orphan": {"quote", "candidates"},
     "resolved": {"comment", "before", "after"},
-    "corpus": {"before", "after", "target", "target_non_goal"},
+    "contradicts": {"before", "after", "target", "target_non_goal"},
+    "oversteps": {"before", "after", "target"},
+    "overlaps": {"before", "after", "target"},
     "coverage": {"story", "criterion"},
     "audience": {"clause"},
     "scope": {"criterion"},
-    "rule": {"rule", "spec"},
+    "triggered": {"rule", "spec"},
+    "covered": {"rule", "spec"},
 }
-# Moderate start; rule raised so uncertain misses escalate to the fallback (ANN-309, rule v2).
-THRESHOLDS = {"rule": 0.7}
+# Moderate start; the rule chain keeps rule v2's raise so uncertain answers escalate to the fallback (ANN-309).
+THRESHOLDS = {"triggered": 0.7, "covered": 0.7}
+# Every chain question is yes or no, and it and scope, coverage, and reading view fall back (jev-suggestions #chains).
+YES_NO = {"type", "contradicts", "oversteps", "overlaps", "triggered", "covered"}
+FALLBACK = YES_NO | {"scope", "coverage", "audience"}
 
 
 class JevQuestionSetTest(unittest.TestCase):
@@ -37,7 +43,7 @@ class JevQuestionSetTest(unittest.TestCase):
                 self.assertEqual(data["id"], path.stem)
                 self.assertIsInstance(data["version"], int)
                 # #q-fallback: a set only allows the fallback; the model is the box's llm_model.
-                self.assertIn(data.get("fallback", False), (True, False))
+                self.assertIs(data.get("fallback", False), path.stem in FALLBACK)
                 self.assertTrue(data["instructions"].strip())
                 self.assertEqual(data["threshold"], THRESHOLDS.get(path.stem, 0.4))
                 labels = data["labels"]
@@ -61,6 +67,8 @@ class JevQuestionSetTest(unittest.TestCase):
                         else:
                             self.assertEqual(example["label"], label["name"])
                 self.assertNotIn("unsure", names)
+                if path.stem in YES_NO:
+                    self.assertEqual(names, ["yes", "no"])
                 self.assertEqual(len(names), len(set(names)))
 
     def test_examples_reuse_no_text_of_the_spec_under_qa(self):

@@ -1,0 +1,61 @@
+{
+  "id": "oversteps",
+  "version": 1,
+  "instructions": "Compare the changed clause with the linked clause; they do not contradict. Does the changed clause reach into the linked clause's territory? Answer yes when the changed clause adds a behavior or responsibility inside the boundary the linked clause states for itself or its owner. Answer no when it stays within its own scope, restates the linked clause, or shares no boundary with it.",
+  "threshold": 0.4,
+  "fallback": true,
+  "labels": [
+    {
+      "name": "yes",
+      "description": "The changed clause extends into the scope or boundary the linked clause owns.",
+      "examples": [
+        {
+          "input": {
+            "before": "Reading view dims internal clauses in the browser.",
+            "after": "Reading view changes provider thresholds on the server.",
+            "target": "The browser runtime owns reading view and consumes the route."
+          },
+          "label": "yes"
+        },
+        {
+          "input": {
+            "before": "The route returns suggestion items.",
+            "after": "The route edits the spec when a label is confident.",
+            "target": "No suggestion edits a spec; only a human click writes."
+          },
+          "label": "yes"
+        }
+      ]
+    },
+    {
+      "name": "no",
+      "description": "The changed clause stays in its own scope, restates the linked clause, or shares no boundary with it.",
+      "examples": [
+        {
+          "input": {
+            "before": "The server stores one judgment record for each question.",
+            "after": "The records are the cache.",
+            "target": "The records are the cache: each is keyed by a hash of its question inputs and set version."
+          },
+          "label": "no"
+        },
+        {
+          "input": {
+            "before": "The cache key includes the source revision.",
+            "after": "The cache key includes the source revision and set version.",
+            "target": "Mobile markers stay visible at narrow widths."
+          },
+          "label": "no"
+        },
+        {
+          "input": {
+            "before": "The page shows a comment label.",
+            "after": "The page shows a comment label with text.",
+            "target": "The compared base determines the Git focus."
+          },
+          "label": "no"
+        }
+      ]
+    }
+  ]
+}
