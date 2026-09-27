@@ -4,7 +4,7 @@
 Reads GET /api/jev for the spec and base the review link serves, from the running server, and prints:
 one line per important mark, warning counts by kind with the count of answers Jev was unsure of and the
 general LLM settled (jev-suggestions #markers-agent-unsure), the rules checked, the pending count; or `off`.
-`--anchor <id>` prints full detail for that anchor only. Marks are keyed on each item's `level`.
+`--anchor <id>` prints full detail for that anchor only. Marks are keyed on each item's `agent_level` (jev-suggestions #markers-levels-source).
 """
 
 from __future__ import annotations
@@ -70,8 +70,8 @@ def summary(result: dict[str, Any]) -> list[str]:
     if result.get("jev") == "off":
         return ["off"]
     marks = [["important", str(item.get("id") or ""), _mark(item), "important", _target(item)]
-             for item in items(result) if item.get("level") == "important"]
-    counts = Counter(str(item.get("kind") or "") for item in items(result) if item.get("level") == "warning")
+             for item in items(result) if item.get("agent_level") == "important"]
+    counts = Counter(str(item.get("kind") or "") for item in items(result) if item.get("agent_level") == "warning")
     warnings = ", ".join(f"{kind} {count}" for kind, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
     unsure = sum(item["unsure"] for item in items(result) if isinstance(item.get("unsure"), int))
     if unsure:

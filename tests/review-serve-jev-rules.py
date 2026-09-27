@@ -158,12 +158,13 @@ class RulesTest(unittest.TestCase):
         self.seed()
         provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("missed", 0.95)})
         result = self.read(self.service(provider))
-        self.assertEqual(result["levels"]["missed"], "important")
-        self.assertEqual([item.get("level") for item in self.rules(result)], ["important"])
+        self.assertEqual(result["levels"]["missed"], {"human": "important", "agent": "important"})
+        self.assertEqual([(item.get("level"), item.get("agent_level")) for item in self.rules(result)], [("important", "important")])
         # the row alone sets it: changing the table changes the item
-        with unittest.mock.patch.dict(jev.MARK_LEVELS, {"missed": "warning"}):
+        with unittest.mock.patch.dict(jev.MARK_LEVELS, {"missed": {"human": "warning", "agent": "important"}}):
             result = self.read(self.service(provider))
-        self.assertEqual((result["levels"]["missed"], self.rules(result)[0]["level"]), ("warning", "warning"))
+        self.assertEqual((result["levels"]["missed"]["human"], self.rules(result)[0]["level"], self.rules(result)[0]["agent_level"]),
+                         ("warning", "warning", "important"))
         # covered or pending notes carry no level
         self.write("b.spec.html", spec(("b-one", FEATURE), body="Covered body."))
         covered = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("covered", 0.95)})

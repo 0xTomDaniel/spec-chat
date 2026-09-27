@@ -136,10 +136,12 @@ class ChainTest(unittest.TestCase):
         self.assertEqual(jev.material([no, record(None, "unavailable")]), "unknown")
 
     def test_levels_hold_only_important_and_warning_kinds(self):
+        important = {"human": "important", "agent": "important"}
         self.assertEqual(jev.MARK_LEVELS, {
-            "contradicts": "important", "missed": "important", "no-criterion": "important",
-            "no-story": "important", "qa-failed": "important", "qa-stale": "important",
-            "overlaps": "warning", "oversteps": "warning"})
+            "contradicts": important, "missed": important, "no-criterion": important,
+            "no-story": important, "qa-failed": important, "qa-stale": important,
+            "overlaps": {"human": "warning", "agent": "warning"},
+            "oversteps": {"human": "warning", "agent": "important"}})
 
 
 if __name__ == "__main__":
