@@ -9,10 +9,12 @@ import os
 import re
 import subprocess
 import threading
+import time
 import tomllib
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -29,6 +31,11 @@ DEFAULT_LLM_MODEL = "anthropic/claude-sonnet-5"
 GENERAL_LLM_TIMEOUT = 90.0
 DEFAULT_THRESHOLD = 0.4
 DEFAULT_MAX_INPUT_TOKENS = 32000
+# OpenRouter 429: wait per Retry-After, each wait capped, a few times, so a first-registration warm-up
+# finishes in one start (project-rules #bootstrap-table); past the bound the ask is unavailable as before.
+RATE_LIMIT_RETRIES = 5
+RATE_LIMIT_MAX_WAIT = 30.0
+RATE_LIMIT_DEFAULT_WAIT = 2.0
 RETRYABLE_OUTCOMES = frozenset({"off", "unavailable"})
 # Jev was below threshold on a set with a general LLM fallback (project-rules #q-fallback): the LLM decides next.
 ESCALATED = "escalated"
@@ -261,29 +268,54 @@ class JudgmentStore:
             return record
 
 
+def retry_after_seconds(value: str | None, now: Callable[[], float] = time.time) -> float:
+    """Retry-After as seconds or an HTTP date, capped at RATE_LIMIT_MAX_WAIT; missing or unreadable waits the default."""
+    try:
+        wait = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        try:
+            wait = parsedate_to_datetime(str(value)).timestamp() - now()
+        except (TypeError, ValueError, IndexError, OverflowError):
+            wait = RATE_LIMIT_DEFAULT_WAIT
+    if not math.isfinite(wait):
+        wait = RATE_LIMIT_DEFAULT_WAIT
+    return min(max(wait, 0.0), RATE_LIMIT_MAX_WAIT)
+
+
 class OpenRouterProvider:
-    def __init__(self, api_key: str, *, endpoint: str = OPENROUTER_DECISIONS_URL, timeout: float = 15.0):
+    def __init__(self, api_key: str, *, endpoint: str = OPENROUTER_DECISIONS_URL, chat_endpoint: str = OPENROUTER_CHAT_URL,
+                 timeout: float = 15.0, sleep: Callable[[float], None] = time.sleep):
         self._api_key = api_key.strip()
         self.endpoint = endpoint
+        self.chat_endpoint = chat_endpoint
         self.timeout = timeout
+        self._sleep = sleep
 
     def decide(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         return self._post(self.endpoint, payload)
 
     def complete(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         """General LLM chat completion through OpenRouter (project-rules #q-fallback)."""
-        return self._post(OPENROUTER_CHAT_URL, payload, GENERAL_LLM_TIMEOUT)
+        return self._post(self.chat_endpoint, payload, GENERAL_LLM_TIMEOUT)
 
     def _post(self, endpoint: str, payload: Mapping[str, Any], timeout: float | None = None) -> Mapping[str, Any]:
-        request = Request(endpoint,
-                          data=json.dumps(_jsonable(payload), ensure_ascii=False).encode("utf-8"),
-                          headers={"Authorization": "Bearer " + self._api_key, "Content-Type": "application/json"},
-                          method="POST")
-        try:
-            with urlopen(request, timeout=timeout or self.timeout) as response:
-                value = json.loads(response.read().decode("utf-8"))
-        except (HTTPError, URLError, TimeoutError, OSError, UnicodeError, ValueError) as exc:
-            raise RuntimeError("OpenRouter decision request failed") from exc
+        data = json.dumps(_jsonable(payload), ensure_ascii=False).encode("utf-8")
+        for attempt in range(RATE_LIMIT_RETRIES + 1):
+            request = Request(endpoint, data=data,
+                              headers={"Authorization": "Bearer " + self._api_key, "Content-Type": "application/json"},
+                              method="POST")
+            try:
+                with urlopen(request, timeout=timeout or self.timeout) as response:
+                    value = json.loads(response.read().decode("utf-8"))
+                break
+            except HTTPError as exc:
+                if exc.code != 429 or attempt == RATE_LIMIT_RETRIES:
+                    raise RuntimeError("OpenRouter decision request failed") from exc
+                wait = retry_after_seconds(exc.headers.get("Retry-After") if exc.headers else None)
+                exc.close()
+                self._sleep(wait)
+            except (URLError, TimeoutError, OSError, UnicodeError, ValueError) as exc:
+                raise RuntimeError("OpenRouter decision request failed") from exc
         if not isinstance(value, Mapping):
             raise RuntimeError("OpenRouter decision was not an object")
         return value
