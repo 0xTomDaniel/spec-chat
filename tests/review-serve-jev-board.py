@@ -237,14 +237,53 @@ class BoardTest(unittest.TestCase):
         self.assertEqual(set(lane[0]["questions"]["contradicts"]["criteria"]), {"yes", "no"})
         self.assertNotIn("Cards", json.dumps(second))
 
+    def test_mutual_overstep_marks_both_clauses(self):
+        """A mutual overstep marks each clause both Oversteps and Overstepped by."""
+        rows = self.lanes()
+
+        def answer(kind, state):
+            if kind not in DRAFT:
+                return ("yes", 0.9)
+            if kind == "oversteps":
+                return ("yes", 0.9)
+            return ("no", 0.9)
+
+        service, provider = self.service(answer)
+        _, second = self.settle(service, rows)
+        y = "ann2/" + SPEC
+        self.assertEqual(second["conflicts"], [{"a": "ann1/" + SPEC, "b": y}])
+        lane = self.lane_calls(provider, LANES)
+        age, title = "Cards sort by age.", "Cards sort by title."
+        asked = [(next(iter(call["questions"])), call["state"]["after"]) for call in lane]
+        self.assertEqual(asked, [("contradicts", age), ("oversteps", age), ("oversteps", title)])
+        # Page items: each side gets both marks
+        self.wait_asks(service)
+        x_items = self.lane_items(self.page(service, rows, 0))
+        y_items = self.lane_items(self.page(service, rows, 1))
+        self.wait_asks(service)
+        strip = lambda items: [{k: v for k, v in item.items() if k != "record"} for item in items]
+        self.assertEqual(strip(x_items), [
+            {"kind": "lane", "id": "rule", "state": "label", "label": "oversteps", "side": "first", "other": "ann2",
+             "target": y + "#rule", "level": "warning", "agent_level": "important"},
+            {"kind": "lane", "id": "rule", "state": "label", "label": "overstepped by", "side": "first", "other": "ann2",
+             "target": y + "#rule", "level": "warning", "agent_level": "important"},
+        ])
+        self.assertEqual(strip(y_items), [
+            {"kind": "lane", "id": "rule", "state": "label", "label": "overstepped by", "side": "second", "other": "ann1",
+             "target": "ann1/" + SPEC + "#rule", "level": "warning", "agent_level": "important"},
+            {"kind": "lane", "id": "rule", "state": "label", "label": "oversteps", "side": "second", "other": "ann1",
+             "target": "ann1/" + SPEC + "#rule", "level": "warning", "agent_level": "important"},
+        ])
+        self.assertTrue(all(item["record"] for item in x_items + y_items))
+
     def test_findings_are_contradicts_or_either_overstep(self):
         age, title = "Cards sort by age.", "Cards sort by title."
         # Each case: the one question answering yes (kind, after), its confidence, whether the pair is listed,
         # and the questions asked.
         contradicts, forth, back, overlaps = (("contradicts", age), ("oversteps", age), ("oversteps", title),
                                               ("overlaps", age))
-        # contradicts? once, oversteps? each way, overlaps? only when every earlier answer is no; the first yes stops.
-        cases = ((contradicts, 0.9, True, [contradicts]), (forth, 0.9, True, [contradicts, forth]),
+        # contradicts? once, both oversteps?, overlaps? only when all three are no.
+        cases = ((contradicts, 0.9, True, [contradicts]), (forth, 0.9, True, [contradicts, forth, back]),
                  (back, 0.9, True, [contradicts, forth, back]), (overlaps, 0.9, False, [contradicts, forth, back, overlaps]),
                  (None, 0.9, False, [contradicts, forth, back, overlaps]),
                  (contradicts, 0.1, False, [contradicts]))  # unsure, and the general LLM is unavailable
@@ -314,8 +353,8 @@ class BoardTest(unittest.TestCase):
                          [("a", "pending", y + "#b"), ("a", "pending", y + "#d"),
                           ("c", "pending", y + "#b"), ("c", "pending", y + "#d")])
         self.wait_asks(service)
-        # a-b stops at contradicts?, c-d at oversteps?, a-d and c-b ask all four.
-        self.assertEqual(len(self.lane_calls(provider, CROSS)), 1 + 2 + 4 + 4)
+        # a-b stops at contradicts?, c-d asks both oversteps?, a-d and c-b ask all four.
+        self.assertEqual(len(self.lane_calls(provider, CROSS)), 1 + 3 + 4 + 4)
         x_items = self.lane_items(self.page(service, rows, 0))
         y_items = self.lane_items(self.page(service, rows, 1))
         strip = lambda items: [{k: v for k, v in item.items() if k != "record"} for item in items]
@@ -362,7 +401,7 @@ class BoardTest(unittest.TestCase):
         self.wait_asks(service)
         self.idle(service)
         lane = self.lane_calls(provider, CROSS)
-        self.assertEqual(len(lane), 1 + 2 + 4 + 4)
+        self.assertEqual(len(lane), 1 + 3 + 4 + 4)
         self.assertEqual(len({json.dumps([call["questions"], call["state"]], sort_keys=True) for call in lane}), len(lane))
 
     def test_single_root_page_has_no_lane_items(self):

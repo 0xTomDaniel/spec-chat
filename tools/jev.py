@@ -536,6 +536,69 @@ def chain_result(chain: list[Mapping[str, Any]], get: Callable[[Mapping[str, Any
     raise ValueError("a chain's last step decides both answers")
 
 
+def lane_result(steps: list[Mapping[str, Any]], get: Callable[[Mapping[str, Any]], Mapping[str, Any] | None]) -> list[dict[str, Any]]:
+    """Walk a lane check (#cross-lane-question): contradicts? once; if no, both oversteps? directions,
+    each asked regardless of the other; each yes is its own finding; overlaps? only when all three are no.
+    Returns a list of results, each shaped like chain_result's output."""
+    unsure = 0
+    # contradicts? (step 0)
+    record = get(steps[0])
+    if record is None:
+        return [{"outcome": None, "answer": {"label": None}, "record_id": None, "unsure": 0, "step": steps[0]}]
+    outcome = record.get("outcome")
+    if outcome != "shown":
+        return [{"outcome": outcome, "answer": {"label": None}, "record_id": record.get("record_id"),
+                 "unsure": 0, "step": steps[0]}]
+    unsure += bool(record.get("escalated"))
+    answer = record.get("answer")
+    label = answer.get("label") if isinstance(answer, Mapping) else None
+    if label == "yes":
+        return [{"outcome": "shown", "answer": {"label": steps[0]["then"]["yes"]},
+                 "record_id": record.get("record_id"), "unsure": unsure}]
+    # Both oversteps directions (steps 1, 2): each asked regardless of the other
+    findings: list[dict[str, Any]] = []
+    pending: dict[str, Any] | None = None
+    for step in steps[1:3]:
+        record = get(step)
+        if record is None:
+            pending = pending or {"outcome": None, "answer": {"label": None}, "record_id": None,
+                                  "unsure": unsure, "step": step}
+            continue
+        outcome = record.get("outcome")
+        if outcome != "shown":
+            pending = pending or {"outcome": outcome, "answer": {"label": None},
+                                  "record_id": record.get("record_id"), "unsure": unsure, "step": step}
+            continue
+        unsure += bool(record.get("escalated"))
+        ans = record.get("answer")
+        lbl = ans.get("label") if isinstance(ans, Mapping) else None
+        if lbl == "yes":
+            findings.append({"outcome": "shown", "answer": {"label": step["then"]["yes"]},
+                             "record_id": record.get("record_id"), "unsure": unsure})
+    if findings:
+        if pending:
+            findings.append(pending)
+        return findings
+    if pending:
+        return [pending]
+    # overlaps? (step 3): only when all three are no
+    record = get(steps[3])
+    if record is None:
+        return [{"outcome": None, "answer": {"label": None}, "record_id": None, "unsure": unsure, "step": steps[3]}]
+    outcome = record.get("outcome")
+    if outcome != "shown":
+        return [{"outcome": outcome, "answer": {"label": None}, "record_id": record.get("record_id"),
+                 "unsure": unsure, "step": steps[3]}]
+    unsure += bool(record.get("escalated"))
+    ans = record.get("answer")
+    lbl = ans.get("label") if isinstance(ans, Mapping) else None
+    then = steps[3]["then"]
+    if lbl in then:
+        return [{"outcome": "shown", "answer": {"label": then[lbl]},
+                 "record_id": record.get("record_id"), "unsure": unsure}]
+    raise ValueError("a lane check's last step decides both answers")
+
+
 def _step(question: dict[str, Any], **then: str | None) -> dict[str, Any]:
     """A chain step: its question, and the label each answer ends the chain with; an answer left out asks on."""
     question["then"] = then
@@ -1082,8 +1145,8 @@ def build_board_conflict_questions(clauses: Mapping[str, list[Mapping[str, Any]]
 
 
 def lane_check(left: str, a: Mapping[str, Any], right: str, b: Mapping[str, Any]) -> dict[str, Any]:
-    """The draft-check chain for a cross-lane pair (#cross-lane-question): contradicts? once, oversteps? first
-    over second then second over first, overlaps? only when every earlier answer is no; the first yes decides."""
+    """The lane check for a cross-lane pair (#cross-lane-question): contradicts? once, oversteps? both
+    directions, overlaps? only when all three are no. Walked by lane_result, not chain_result."""
     first, second = a["path"] + "#" + a["anchor"], b["path"] + "#" + b["anchor"]
     steps = draft_check(a["anchor"], a["before"], a["after"], second, b["after"],
                         path=a["path"], base=a["base"], revision="working-tree")["chain"]
@@ -1576,37 +1639,62 @@ class JevService:
         for chain in self._lane_questions(rows):
             if own not in chain["pair"]:
                 continue
-            result = chain_result(chain["chain"], final)
-            state, record = ("final", result) if result["outcome"] is not None else self._rule_held(result["step"])
-            if state == "pending":
-                # Unasked or with the general LLM: ask on in the background; a held unavailable answer is never
-                # re-asked (#cross-lane-async).
-                self._submit(tuple(self.seam.key(step) for step in chain["chain"]), self._ask_quietly, chain)
-            elif state != "final" or (marks := LANE_FINDINGS.get(_confident_label(record))) is None:
-                continue
-            for index, (_, path, anchor) in enumerate(chain["sides"]):
-                if path != own:
+            results = lane_result(chain["chain"], final)
+            # Emit finding items
+            for result in results:
+                marks = LANE_FINDINGS.get(_confident_label(result))
+                if marks is None:
                     continue
-                other = chain["sides"][1 - index]
-                item = {"kind": "lane", "id": anchor, "state": "pending" if state == "pending" else "label",
-                        "label": None if state == "pending" else marks[index], "side": ("first", "second")[index],
-                        "other": other[0], "target": other[1] + "#" + other[2],
-                        "record": None if state == "pending" else record.get("record_id")}
-                if state == "pending":
-                    item["escalated"] = _escalated(record)
-                else:
+                for index, (_, path, anchor) in enumerate(chain["sides"]):
+                    if path != own:
+                        continue
+                    other = chain["sides"][1 - index]
                     level = MARK_LEVELS["oversteps" if marks[index] == "overstepped by" else marks[index]]
+                    item = {"kind": "lane", "id": anchor, "state": "label", "label": marks[index],
+                            "side": ("first", "second")[index], "other": other[0],
+                            "target": other[1] + "#" + other[2], "record": result.get("record_id")}
                     item["level"], item["agent_level"] = level["human"], level["agent"]
-                    if record.get("unsure"):
-                        item["unsure"] = record["unsure"]
-                items.append(item)
+                    if result.get("unsure"):
+                        item["unsure"] = result["unsure"]
+                    items.append(item)
+            # Pending: submit and emit pending items only when no finding yet
+            pending_r = next((r for r in results if r.get("outcome") is None), None)
+            if pending_r is not None and pending_r.get("step"):
+                state_r, record_r = self._rule_held(pending_r["step"])
+                if state_r == "pending":
+                    self._submit(tuple(self.seam.key(step) for step in chain["chain"]),
+                                 self._ask_quietly, chain)
+                has_finding = any(_confident_label(r) in LANE_FINDINGS for r in results)
+                if state_r == "pending" and not has_finding:
+                    for index, (_, path, anchor) in enumerate(chain["sides"]):
+                        if path != own:
+                            continue
+                        other = chain["sides"][1 - index]
+                        item = {"kind": "lane", "id": anchor, "state": "pending", "label": None,
+                                "side": ("first", "second")[index], "other": other[0],
+                                "target": other[1] + "#" + other[2], "record": None}
+                        item["escalated"] = _escalated(record_r)
+                        items.append(item)
         return items
 
     def _ask_quietly(self, item: Mapping[str, Any]) -> None:
         try:
-            self.seam.answer(item)
+            if item.get("kind") == "lane" and "chain" in item:
+                self._ask_lane_steps(item["chain"])
+            else:
+                self.seam.answer(item)
         except Exception:
             pass
+
+    def _ask_lane_steps(self, steps: list[Mapping[str, Any]]) -> None:
+        """Ask a lane check: contradicts? once, both oversteps?, overlaps? when all no."""
+        r = self.seam.ask(steps[0])
+        if _confident_label(r) != "no":
+            return
+        a = self.seam.ask(steps[1])
+        b = self.seam.ask(steps[2])
+        if _confident_label(a) == "no" and _confident_label(b) == "no":
+            self.seam.ask(steps[3])
 
     def _board_from_records(self, rows: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         rows = [row for row in rows or () if isinstance(row, Mapping) and row.get("slug") and row.get("spec")]
@@ -1628,9 +1716,16 @@ class JevService:
                 questions = None
             answer_rows.append({"id": str(row.get("id", "")),
                                 "material": "unknown" if questions is None else material([held_chain(q) for q in questions])})
-        pairs = {chain["pair"] for chain in self._lane_questions(rows)
-                 if _confident_label(held_chain(chain)) in LANE_FINDINGS}
-        answer = {"jev": "on", "rows": answer_rows, "conflicts": [{"a": a, "b": b} for a, b in sorted(pairs)]}
+        get_held = lambda step: self.seam.store.get(self.seam.key(step))
+        conflict_pairs: set[tuple[str, str]] = set()
+        for chain in self._lane_questions(rows):
+            results = lane_result(chain["chain"], get_held)
+            for r in results:
+                if r.get("outcome") is None and "step" in r:
+                    misses.setdefault(self.seam.key(r["step"]), dict(chain))
+            if any(_confident_label(r) in LANE_FINDINGS for r in results):
+                conflict_pairs.add(chain["pair"])
+        answer = {"jev": "on", "rows": answer_rows, "conflicts": [{"a": a, "b": b} for a, b in sorted(conflict_pairs)]}
         return answer, list(misses.values())
 
     def _rule_task(self, scope: Mapping[str, Any], rule: Mapping[str, Any] | None) -> None:
@@ -1944,5 +2039,5 @@ class JevService:
 __all__ = ["BUILDERS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MARK_LEVELS", "MODEL",
            "OPENROUTER_DECISIONS_URL", "OpenRouterProvider", "QuestionSet",
            "build_audience_questions", "build_board_conflict_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_rule_question", "build_scope_questions", "build_type_questions", "chain_result", "changed_leaf_clauses", "draft_check",
-           "extract_anchors",
+           "extract_anchors", "lane_result",
            "load_question_sets", "material", "rule_mark_anchor", "rule_word", "spec_text"]
