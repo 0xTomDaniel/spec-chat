@@ -25,6 +25,8 @@ OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 # The box's one general LLM name when the Jev provider file has no llm_model (project-rules #q-fallback).
 DEFAULT_LLM_MODEL = "anthropic/claude-sonnet-5"
+# Its own budget: the general LLM reasons before its label (up to ~40 s live), past Jev's 15 s decisions.
+GENERAL_LLM_TIMEOUT = 90.0
 DEFAULT_THRESHOLD = 0.4
 DEFAULT_MAX_INPUT_TOKENS = 32000
 RETRYABLE_OUTCOMES = frozenset({"off", "unavailable"})
@@ -270,15 +272,15 @@ class OpenRouterProvider:
 
     def complete(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         """General LLM chat completion through OpenRouter (project-rules #q-fallback)."""
-        return self._post(OPENROUTER_CHAT_URL, payload)
+        return self._post(OPENROUTER_CHAT_URL, payload, GENERAL_LLM_TIMEOUT)
 
-    def _post(self, endpoint: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    def _post(self, endpoint: str, payload: Mapping[str, Any], timeout: float | None = None) -> Mapping[str, Any]:
         request = Request(endpoint,
                           data=json.dumps(_jsonable(payload), ensure_ascii=False).encode("utf-8"),
                           headers={"Authorization": "Bearer " + self._api_key, "Content-Type": "application/json"},
                           method="POST")
         try:
-            with urlopen(request, timeout=self.timeout) as response:
+            with urlopen(request, timeout=timeout or self.timeout) as response:
                 value = json.loads(response.read().decode("utf-8"))
         except (HTTPError, URLError, TimeoutError, OSError, UnicodeError, ValueError) as exc:
             raise RuntimeError("OpenRouter decision request failed") from exc
@@ -298,16 +300,6 @@ def _parse_provider_answer(value: Mapping[str, Any], question_name: str) -> tupl
     if confidence is not None and (not math.isfinite(confidence) or not 0 <= confidence <= 1):
         raise RuntimeError("provider response has invalid confidence")
     return label.strip(), confidence, probabilities, str(value.get("model", MODEL))
-
-
-def _parse_general_answer(value: Mapping[str, Any], labels: Any) -> str:
-    """The general LLM's one label, from a chat completion whose content is {"choice": label}."""
-    content = value["choices"][0]["message"]["content"]
-    match = re.search(r"\{.*\}", str(content), re.S)
-    label = json.loads(match.group(0) if match else content).get("choice")
-    if not isinstance(label, str) or label.strip() not in labels:
-        raise RuntimeError("general answer has no known choice")
-    return label.strip()
 
 
 def _anchor_answer(answer: Mapping[str, Any], candidate_anchors: Mapping[str, Any]) -> dict[str, Any]:
@@ -450,26 +442,31 @@ class JevSeam:
         return self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, outcome, model)
 
     def general_payload(self, question: Mapping[str, Any], qset: QuestionSet, model: str) -> dict[str, Any]:
+        """One allowed label by construction: a strict enum schema, served only by providers that enforce it."""
         labels = qset.criteria()
-        system = {"question": qset.instructions, "labels": labels, "examples": qset.examples(),
-                  "answer": 'Reply with only a JSON object {"choice": <one label>}.'}
+        system = {"question": qset.instructions, "labels": labels, "examples": qset.examples()}
+        schema = {"type": "object", "properties": {"choice": {"type": "string", "enum": list(labels)}},
+                  "required": ["choice"], "additionalProperties": False}
         return {"model": model,
                 "messages": [{"role": "system", "content": _canonical(system)},
                              {"role": "user", "content": _canonical(question.get("state", {}))}],
-                "response_format": {"type": "json_object"}}
+                "response_format": {"type": "json_schema", "json_schema": {"name": "answer", "strict": True, "schema": schema}},
+                "provider": {"require_parameters": True}}
 
     def _general(self, question: Mapping[str, Any], key: str, qset: QuestionSet, provider: Any) -> dict[str, Any]:
-        """The same question, once, to the box's general LLM; its answer decides (project-rules #q-fallback)."""
+        """The same question to the box's general LLM, with one retry like Jev; its answer decides (project-rules #q-fallback)."""
         kind = str(question.get("kind", "type"))
         sources, revision = question.get("sources", []), question.get("revision")
         model = self.llm_model()
-        try:
-            if hasattr(provider, "complete"):
-                response = provider.complete(self.general_payload(question, qset, model))
-            else:
-                raise RuntimeError("provider has no general LLM")
-            label = _parse_general_answer(response, qset.criteria())
-        except Exception:
+        payload = self.general_payload(question, qset, model)
+        label = None
+        for _ in range(2):
+            try:
+                label = json.loads(provider.complete(payload)["choices"][0]["message"]["content"])["choice"]
+                break
+            except Exception:
+                continue
+        if label is None:
             return self._record(key, kind, qset, sources, revision,
                                 {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model, True)
         return self._record(key, kind, qset, sources, revision,

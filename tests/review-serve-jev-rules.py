@@ -66,6 +66,8 @@ class FakeProvider:
         state = json.loads(payload["messages"][-1]["content"])
         kind = "scope" if "criterion" in state else "rule"
         answer = self.general.get((kind, state.get("criterion", state.get("rule"))))
+        if isinstance(answer, list):  # one answer per call, the last repeating
+            answer = answer.pop(0) if len(answer) > 1 else answer[0]
         if isinstance(answer, BaseException):
             raise answer
         return {"model": payload["model"], "choices": [{"message": {"content": json.dumps({"choice": answer})}}]}
@@ -212,6 +214,10 @@ class RulesTest(unittest.TestCase):
         self.assertFalse([i for i in result["items"] if i["state"] == "unsure"])
         self.assertEqual(len([c for c in provider.general_calls if json.loads(c["messages"][-1]["content"]).get("rule") == ONBOARDING]), 1)
         self.assertEqual({c["model"] for c in provider.general_calls}, {jev.DEFAULT_LLM_MODEL})
+        rule_call = next(c for c in provider.general_calls if "rule" in json.loads(c["messages"][-1]["content"]))
+        schema = rule_call["response_format"]["json_schema"]
+        self.assertTrue(schema["strict"] and rule_call["provider"]["require_parameters"])
+        self.assertEqual(schema["schema"]["properties"]["choice"]["enum"], ["missed", "covered", "not triggered"])
         records = [json.loads(line) for line in (Path(self.tmp.name) / "state" / "records.jsonl").read_text().splitlines()]
         decided = [r for r in records if r.get("escalated") and r["outcome"] == "shown"]
         self.assertTrue(decided and all(r["model"] != jev.MODEL for r in decided))
@@ -233,6 +239,14 @@ class RulesTest(unittest.TestCase):
         item = next(i for i in self.rules(self.read(service)) if i["target"].endswith("#acceptance-onboarding"))
         self.assertEqual((item["state"], item["label"]), ("none", None))
         self.assertEqual(len(provider.asked("rule")), jev_calls)  # Jev is not asked again, only the LLM
+
+    def test_general_failure_is_retried_once_like_jev(self):
+        self.seed()
+        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("missed", 0.2)},
+                                general={("rule", ONBOARDING): [RuntimeError("timeout"), "covered"]})
+        item = next(i for i in self.rules(self.read(self.service(provider))) if i["target"].endswith("#acceptance-onboarding"))
+        self.assertEqual(item["state"], "none")
+        self.assertEqual(len([c for c in provider.general_calls if json.loads(c["messages"][-1]["content"]).get("rule") == ONBOARDING]), 2)
 
     def test_unavailable_scope_yields_no_rule_item_and_is_asked_again(self):
         self.seed()
