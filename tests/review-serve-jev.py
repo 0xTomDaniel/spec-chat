@@ -177,7 +177,11 @@ class JevBackgroundTest(unittest.TestCase):
         key = [""]
         provider = GatedProvider()
         provider.release.set()
-        service = self.service(provider, count=1, api_key=lambda: key[0])
+
+        def read_key():  # present when the page reads (Jev on), removed by the time the ask runs
+            return key[0] or ("fake" if threading.current_thread() is threading.main_thread() else "")
+
+        service = self.service(provider, count=1, api_key=read_key)
         self.read(service)
         service.stop()  # waits for the ask: it recorded `off`
         self.assertEqual(json.loads(self.records()[-1])["outcome"], "off")

@@ -986,8 +986,7 @@ BUILDERS = {"type": build_type_questions, "orphan": build_orphan_questions, "res
 # Board route (worklane-provider #jev-board): change type answers that quiet the review highlight.
 MATERIAL_NO = frozenset({"cosmetic", "clarification"})
 MATERIAL_YES = frozenset({"scope", "behavioral"})
-ASK_WORKERS = 4
-RULE_ASK_WORKERS = 8
+ASK_WORKERS = 8
 
 
 def changed_leaf_clauses(current: str | bytes, baseline: str | bytes | None) -> list[tuple[str, str, str]]:
@@ -1219,17 +1218,13 @@ class JevService:
         self._board_idle.set()
         self._board_thread: threading.Thread | None = None
 
-        # Background asks (#fast-marks-background): one in flight per question key, shared by both routes.
+        # Background asks (#fast-marks-background): one in flight per question key, shared by every route,
+        # rule checks included (project-rules #pending).
         # The pool lives as long as the service: stop() drops queued asks and waits only for in-flight ones.
         self._ask_lock = threading.Lock()
         self._asking: dict[str, Future] = {}
         self._ask_pool: ThreadPoolExecutor | None = ThreadPoolExecutor(
             max_workers=ASK_WORKERS, thread_name_prefix="spec-chat-jev-ask")
-
-        # Rule checks (project-rules #pending): asked in the background, answered from records.
-        self._rule_pool = ThreadPoolExecutor(max_workers=RULE_ASK_WORKERS, thread_name_prefix="spec-chat-jev-rule")
-        self._rule_lock = threading.Lock()
-        self._rule_inflight: set[str] = set()
 
         # Bootstrap (project-rules #bootstrap): one background warm-up per project, its table in onboarding.toml.
         self._status_lock = threading.Lock()
@@ -1493,13 +1488,18 @@ class JevService:
         return futures
 
     def _ask_quietly(self, key: str, question: Mapping[str, Any]) -> None:
+        self._asked_quietly((key,), lambda: self.seam.ask(question))
+
+    def _asked_quietly(self, keys: tuple[str, ...], ask: Callable[[], Any]) -> None:
+        """Run a background ask; the keys it holds leave _asking only after it records."""
         try:
-            self.seam.ask(question)
+            ask()
         except Exception:
             pass
         finally:
             with self._ask_lock:
-                self._asking.pop(key, None)
+                for key in keys:
+                    self._asking.pop(key, None)
 
     def _board_from_records(self, rows: Any) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
         rows = [row for row in rows or () if isinstance(row, Mapping) and row.get("slug") and row.get("spec")]
@@ -1530,22 +1530,16 @@ class JevService:
         answer = {"jev": "on", "rows": answer_rows, "conflicts": [{"a": a, "b": b} for a, b in sorted(pairs)]}
         return answer, misses
 
-    def _rule_task(self, keys: tuple[str, ...], scope: Mapping[str, Any], rule: Mapping[str, Any] | None) -> None:
-        try:
-            if _confident_label(self.seam.ask(scope)) == RULE_SCOPE and rule is not None:
-                self.seam.ask(rule)
-        except Exception:
-            pass
-        finally:
-            with self._rule_lock:
-                self._rule_inflight.difference_update(keys)
+    def _rule_task(self, scope: Mapping[str, Any], rule: Mapping[str, Any] | None) -> None:
+        if _confident_label(self.seam.ask(scope)) == RULE_SCOPE and rule is not None:
+            self.seam.ask(rule)
 
     def _rule_held(self, question: Mapping[str, Any]) -> tuple[str, dict[str, Any] | None]:
         """final, pending, or unavailable, with the held record; never asks."""
         key = self.seam.key(question)
         record = self.seam.store.get(key)
-        with self._rule_lock:
-            inflight = key in self._rule_inflight
+        with self._ask_lock:
+            inflight = key in self._asking
         if _final(record):
             return "final", record
         if record is None or record.get("outcome") == ESCALATED or inflight:
@@ -1553,12 +1547,16 @@ class JevService:
         return "unavailable", record
 
     def _rule_submit(self, scope: Mapping[str, Any], rule: Mapping[str, Any]) -> None:
-        keys = (self.seam.key(scope), self.seam.key(rule))
-        with self._rule_lock:
-            if keys[1] in self._rule_inflight:
+        """Ask a scope, then its rule, on the one ask pool; a rule in flight is not asked again."""
+        with self._ask_lock:
+            rule_key = self.seam.key(rule)
+            if self._ask_pool is None or rule_key in self._asking:
                 return
-            self._rule_inflight.update(keys)
-        self._rule_pool.submit(self._rule_task, keys, scope, rule)
+            # The task holds only keys no other ask holds, so each ask releases exactly its own.
+            keys = tuple(key for key in (self.seam.key(scope), rule_key) if key not in self._asking)
+            future = self._ask_pool.submit(self._asked_quietly, keys, lambda: self._rule_task(scope, rule))
+            for key in keys:
+                self._asking[key] = future
 
     def rule_items(self, current: bytes, old: bytes | None, path: str, base: str, revision: Any,
                    served: Any) -> tuple[list[dict[str, Any]], list[str]]:
@@ -1700,7 +1698,7 @@ class JevService:
         try:
             commit, specs = self._main_specs(rows)
             scopes = list(self._built("scope", specs))
-            with ThreadPoolExecutor(max_workers=RULE_ASK_WORKERS, thread_name_prefix="spec-chat-jev-warm") as pool:
+            with ThreadPoolExecutor(max_workers=ASK_WORKERS, thread_name_prefix="spec-chat-jev-warm") as pool:
                 decided = list(pool.map(self._ask_or_none, scopes))
                 labels = [_confident_label(record) for record in decided]
                 rules = [scope for scope, label in zip(scopes, labels) if label == RULE_SCOPE]

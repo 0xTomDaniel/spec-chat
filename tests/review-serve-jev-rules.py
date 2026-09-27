@@ -305,6 +305,39 @@ class RulesTest(unittest.TestCase):
         self.assertEqual((self.rules(result), result["rules"]), ([], []))
         self.assertEqual(provider.asked("rule"), [])
 
+    def test_rule_asks_share_the_one_ask_pool_and_stop_drops_them(self):
+        """Rule and suggestion asks go through one pool (jev-suggestions #fast-marks-background, project-rules #pending)."""
+        self.seed()
+        gate = threading.Event()
+
+        class Gated(FakeProvider):
+            def decide(self, payload):
+                gate.wait(10)
+                return super().decide(payload)
+
+        provider = Gated()
+        with unittest.mock.patch.object(jev, "ASK_WORKERS", 1):
+            service = self.service(provider)
+        try:
+            first = self.rules(self.read(service, settle=False))
+            self.assertTrue(first and all(i["state"] == "pending" for i in first))
+            queued = list(service._asking.values())
+            self.assertGreater(len(queued), 1)
+            self.assertFalse(hasattr(service, "_rule_pool"))
+            stopper = threading.Thread(target=service.stop)
+            stopper.start()
+            deadline = time.time() + 10
+            while not all(f.cancelled() or f.running() for f in queued) and time.time() < deadline:
+                time.sleep(0.005)
+        finally:
+            gate.set()
+        stopper.join(10)
+        self.assertFalse(stopper.is_alive())
+        self.assertEqual(len(provider.calls), 1)  # the in-flight scope ask; queued ones were dropped
+        self.read(service, settle=False)
+        time.sleep(0.05)
+        self.assertEqual(len(provider.calls), 1)  # nothing asks after stop
+
     def test_off_returns_off(self):
         self.seed()
         service = jev.JevService(state_dir=Path(self.tmp.name) / "state", api_key="")

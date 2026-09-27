@@ -165,14 +165,14 @@ assert.match(runtime, /\.hx-jev-marker\[data-pending=true\]\{[^}]*animation:hx-j
 assert.match(runtime, /@media\(prefers-reduced-motion:reduce\)\{[^@]*\.hx-jev-marker\[data-pending=true\]\{animation:none\}/);
 
 // #pending-poll: while any item is pending the page asks again; a failed poll keeps the last answer.
-const pollCode = slice('async function fetchJev(', '\n\nfunction jevItem(') + '\n' + slice('// While any item is pending', '\n\n// One evidence read');
+const pollCode = slice('async function fetchJev(', '\n\nfunction jevItem(') + '\n' + slice('// Background answers', '\n\n// One evidence read');
 const timers = [];
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const replies = [];
-const pollState = { readingView: false, jev: { request: 0, status: 'idle', items: [], levels: {}, offer: null, base: null, poll: 0 } };
+const pollState = { readingView: false, jev: { request: 0, status: 'idle', items: [], levels: {}, offer: null, base: null } };
 const renders = [];
-const { requestJev } = Function('state', 'location', 'fetch', 'setTimeout', 'clearTimeout', 'AbortController', 'renderJev', 'renderPanel',
-  'renderPins', 'jevParams', pollCode + '; return { requestJev };')(pollState, { protocol: 'http:' },
+const { requestJev } = Function('document', 'state', 'location', 'fetch', 'setTimeout', 'clearTimeout', 'AbortController', 'renderJev', 'renderPanel',
+  'renderPins', 'jevParams', pollCode + '; return { requestJev };')({ hidden: false, addEventListener() {} }, pollState, { protocol: 'http:' },
   async () => { const next = replies.shift(); if (next instanceof Error) throw next; return { ok: true, json: async () => next }; },
   (fn, ms) => { if (ms !== 120000) timers.push(fn); return timers.length; }, () => {}, AbortController, () => renders.push(pollState.jev.status), () => {}, () => {}, () => '');
 const pending = { kind: 'rule', id: 'acceptance', state: 'pending', target, word: 'onboarding', escalated: true };
