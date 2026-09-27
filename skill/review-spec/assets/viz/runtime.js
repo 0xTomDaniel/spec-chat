@@ -57,8 +57,8 @@ const state = {
   handoffPosting: false,
   lastTbd: null,         // open TBD marker focused by the last TBD open activation
   range: { baseline: null, loaded: null, loading: false, pickerOpen: false }, // loaded: anchor signatures of the page as served
-  jev: { status: 'idle', items: [], base: null, request: 0 },
-  evidence: { criteria: null, hostOrigin: null }, // criteria: anchor -> entry once /api/evidence answers, null shows nothing;
+  jev: { status: 'idle', items: [], levels: {}, base: null, request: 0 }, // levels: the server's mark kind -> level table
+  evidence: { criteria: null, levels: {}, hostOrigin: null }, // criteria: anchor -> entry once /api/evidence answers, null shows nothing;
   // hostOrigin: the BB plugin frame that announced itself
   readingView: false,
   movingOrphans: new Set(),
@@ -171,12 +171,20 @@ async function fetchJev(base, signal) {
       label: item.label == null ? null : String(item.label),
       target: item.target == null ? null : String(item.target),
       record: item.record == null ? null : String(item.record),
+      level: item.level == null ? null : String(item.level),
     })) : [],
+    levels: result ? result.levels : null, // the server's levels table (#markers-levels-source); markLevel reads it
   };
 }
 
 function jevItem(kind, id) {
   return state.jev.items.find(item => item.kind === kind && item.id === String(id)) || null;
+}
+
+// Jev's resolved-in-spirit hint, shown only while the thread is open; once resolved its own indicator replaces it.
+function looksResolved(th) {
+  const hint = jevItem('resolved', th.id);
+  return Boolean(th.status !== 'resolved' && hint && hint.state === 'label' && hint.label === 'resolved in spirit');
 }
 
 function findAnchor(anchorId) {
@@ -187,6 +195,7 @@ function clearJev() {
   state.jev.request += 1;
   state.jev.status = 'idle';
   state.jev.items = [];
+  state.jev.levels = {};
   state.jev.base = null;
   renderJev();
   renderPanel();
@@ -206,6 +215,7 @@ async function requestJev(base) {
     if (request !== state.jev.request) return;
     state.jev.status = result.jev === 'off' ? 'off' : 'on';
     state.jev.items = result.items;
+    state.jev.levels = result.levels;
     renderJev();
     renderPanel();
     renderPins();
@@ -213,6 +223,7 @@ async function requestJev(base) {
     if (request !== state.jev.request) return;
     state.jev.status = 'unavailable';
     state.jev.items = [];
+    state.jev.levels = {};
     renderJev();
     renderPanel();
     renderPins();
@@ -228,6 +239,7 @@ async function requestEvidence() {
     const result = response.ok ? await response.json() : null;
     const criteria = result && result.criteria;
     if (!criteria || typeof criteria !== 'object' || Array.isArray(criteria)) return;
+    state.evidence.levels = result.levels;
     state.evidence.criteria = criteria;
     renderJev();
   } catch (_) {}
@@ -1026,6 +1038,22 @@ function advanceTbd(st, open) {
   return st.lastTbd = nextOpenTbd(open, st.lastTbd);
 }
 
+// Open TBDs and the addressed anchor share one highlight; the addressed one keeps it while it is the address.
+function renderHighlight() {
+  const openTbds = openTbdMarkers(document.querySelectorAll('[data-spec-tbd]'));
+  const handoffState = reviewHandoffState(state.threads, openTbds.length > 0);
+  const addressed = addressPlace();
+  renderTbdHighlight(document, tbdHighlightBlocks(handoffState, openTbds).concat(addressed ? [findAnchor(addressed.anchor)] : []));
+  return handoffState;
+}
+
+// Arrival at an anchor (a conflict link on this or another spec, or Go to) scrolls to it and highlights it as an open TBD is.
+function arriveAtAddress() {
+  renderHighlight();
+  const addressed = addressPlace();
+  if (addressed) findAnchor(addressed.anchor).scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
 function renderTbdHighlight(root, blocks) {
   const keep = new Set(blocks);
   root.querySelectorAll('.hx-tbd-open').forEach(el => { if (!keep.has(el)) el.classList.remove('hx-tbd-open'); });
@@ -1103,7 +1131,7 @@ function corpusFlags(items) {
     const label = labels[String(item.label || '').toLowerCase()];
     if (label) {
       confident.add(anchor);
-      result.push({ anchor, state: 'label', label,
+      result.push({ anchor, state: 'label', label, level: item.level || null,
         target: item.target == null ? null : String(item.target) });
     }
   }
@@ -1136,13 +1164,19 @@ function goToJevTarget(target) {
 /* ---------------- Jev markers ----------------
  * Jev never changes spec layout: each noted anchor gets one margin marker, and
  * one shared popover lists that anchor's notes. A note source returns
- * { anchor, group, state, text, href, attention, actions }; criterion evidence
+ * { anchor, group, state, text, href, level, actions }; criterion evidence
  * adds a source and note buttons add actions, without touching placement.
  */
 const JEV_NOTE_GROUPS = ['evidence', 'conflict', 'coverage', 'type', 'neutral'];
-const JEV_ATTENTION_LABELS = new Set(['Contradicts', 'Oversteps']);
+const JEV_RECONCILE_LABELS = new Set(['Contradicts', 'Oversteps']);
 const jevNoteSources = [jevSuggestionNotes, evidenceNotes];
 const jevPopoverState = { element: null, marker: null, closeTimer: 0, wired: false };
+
+// A derived mark's level from the server's levels table in one response state; the runtime holds no mapping of its own.
+function markLevel(source, kind) {
+  const level = source && source.levels && source.levels[kind];
+  return typeof level === 'string' ? level : null;
+}
 
 function jevGitFocus() {
   return new URLSearchParams(location.search).get('focus') === 'changes' || document.body.classList.contains('hx-focus-active');
@@ -1153,15 +1187,43 @@ function jevDraftAction(label, text) {
   return { label, run: note => { closeJevPopover(); openComposer(note.anchor, null, null, text); } };
 }
 
-function jevNeutralNote(anchor, stateName) {
-  return { anchor, group: 'neutral', state: stateName, text: stateName === 'unsure' ? 'unsure' : 'Jev unavailable' };
+// #note-reconcile-all: n Important and m Warning reconcile notes, with n >= 1 and n + m >= 2, each get
+// Reconcile all (n) listing the Important clauses, plus a +m warnings link adding the Warning ones.
+function jevReconcileAll(reconcile) {
+  const order = new Map([...document.querySelectorAll('[data-anchor]')].map((el, index) => [el.dataset.anchor, index]));
+  reconcile.sort((a, b) => (order.get(a.note.anchor) ?? Infinity) - (order.get(b.note.anchor) ?? Infinity));
+  const important = reconcile.filter(entry => entry.note.level === 'important');
+  const m = reconcile.length - important.length;
+  if (!important.length || reconcile.length < 2) return;
+  const draft = entries => ['Reconcile each clause with its link:', ...entries.map(entry => entry.line)].join('\n');
+  for (const { note } of reconcile) {
+    note.actions.push(jevDraftAction('Reconcile all (' + important.length + ')', draft(important)));
+    if (m) note.actions.push({ ...jevDraftAction('+' + m + (m === 1 ? ' warning' : ' warnings'), draft(reconcile)), link: true });
+  }
+}
+
+// Each Jev question has one unsure word and its hover sentence (jev-suggestions #neutral-questions), so a neutral note never reads as QA.
+const JEV_QUESTIONS = {
+  type: ['scope?', 'whether this is scope or behavior'],
+  criterion: ['story?', 'which story this criterion verifies'],
+  story: ['criterion?', 'which criterion verifies this story'],
+  corpus: ['conflict?', 'whether this conflicts with another clause'],
+  audience: ['reader?', 'whether this is for readers or internals'],
+};
+function jevNeutralNote(anchor, stateName, question) {
+  const [word, tail] = JEV_QUESTIONS[question];
+  const unsure = stateName === 'unsure';
+  return { anchor, group: 'neutral', state: stateName, text: unsure ? word : 'Jev unavailable',
+    sentence: (unsure ? 'Jev is unsure ' : 'Jev could not check ') + tail,
+    level: unsure ? markLevel(state.jev, 'unsure') : null };
 }
 
 function jevSuggestionNotes() {
   if (state.jev.status !== 'on') return [];
   const notes = [];
   for (const flag of coverageGapFlags(state.jev.items)) {
-    notes.push(flag.state !== 'gap' ? jevNeutralNote(flag.anchor, flag.state) : { anchor: flag.anchor, group: 'coverage', state: 'label', text: flag.label,
+    notes.push(flag.state !== 'gap' ? jevNeutralNote(flag.anchor, flag.state, flag.side) : { anchor: flag.anchor, group: 'coverage', state: 'label', text: flag.label,
+      level: markLevel(state.jev, flag.side === 'story' ? 'no-criterion' : 'no-story'),
       actions: [flag.side === 'story'
         ? jevDraftAction('Ask for a criterion', 'Add an acceptance criterion that verifies this story.')
         : jevDraftAction('Ask for a story', 'Name or add the user story this criterion verifies.')] });
@@ -1169,24 +1231,30 @@ function jevSuggestionNotes() {
   const neutral = item => item.state === 'unsure' || item.state === 'unavailable';
   if (state.readingView) {
     for (const item of state.jev.items) {
-      if (item.kind === 'audience' && item.id && neutral(item)) notes.push(jevNeutralNote(item.id, item.state));
+      if (item.kind === 'audience' && item.id && neutral(item)) notes.push(jevNeutralNote(item.id, item.state, 'audience'));
     }
     return notes;
   }
   if (!jevGitFocus()) return notes;
+  const reconcile = [];
   for (const flag of corpusFlags(state.jev.items)) {
-    if (flag.state !== 'label') { notes.push(jevNeutralNote(flag.anchor, flag.state)); continue; }
+    if (flag.state !== 'label') { notes.push(jevNeutralNote(flag.anchor, flag.state, 'corpus')); continue; }
     const link = corpusTargetLink(flag.target);
-    notes.push({ anchor: flag.anchor, group: 'conflict', state: 'label', text: flag.label + (link ? ' ' + link.text : ''),
-      href: link ? link.href : null, attention: JEV_ATTENTION_LABELS.has(flag.label),
-      actions: link && JEV_ATTENTION_LABELS.has(flag.label) ? [jevDraftAction('Ask agent to reconcile', 'Reconcile this clause with ' + link.text + '.')] : [] });
+    const note = { anchor: flag.anchor, group: 'conflict', state: 'label', text: flag.label + (link ? ' ' + link.text : ''),
+      href: link ? link.href : null, level: flag.level, actions: [] };
+    if (link && JEV_RECONCILE_LABELS.has(flag.label)) {
+      note.actions.push(jevDraftAction('Ask agent to reconcile', 'Reconcile this clause with ' + link.text + '.'));
+      reconcile.push({ note, line: '#' + flag.anchor + ' ' + note.text });
+    }
+    notes.push(note);
   }
+  jevReconcileAll(reconcile);
   for (const item of state.jev.items) {
     if (item.kind !== 'type' || !item.id) continue;
-    if (neutral(item)) notes.push(jevNeutralNote(item.id, item.state));
+    if (neutral(item)) notes.push(jevNeutralNote(item.id, item.state, 'type'));
     else if (item.state === 'label' && jevDisplayLabel(item)) {
       const text = jevDisplayLabel(item);
-      notes.push({ anchor: item.id, group: 'type', state: 'label', text,
+      notes.push({ anchor: item.id, group: 'type', state: 'label', text, level: item.level || null,
         actions: text === 'Scope' || text === 'Behavior' ? [jevDraftAction('Comment on this change', 'About this change: ')] : [] });
     }
   }
@@ -1194,12 +1262,13 @@ function jevSuggestionNotes() {
 }
 
 /* Criterion evidence (criterion-evidence spec): one note per acceptance criterion once evidence loads. */
+// Every label names QA, so evidence never reads as a Jev note beside it (#chip-labels).
 function evidenceLabel(entry) {
-  if (!entry) return 'Not yet';
-  if (entry.uncommitted) return 'Stale';
-  const verdict = entry.verdict === 'fail' ? 'Failed' : 'Passed';
+  if (!entry) return 'No QA yet';
+  if (entry.uncommitted) return 'QA stale';
+  const verdict = entry.verdict === 'fail' ? 'QA failed' : 'QA passed';
   if (entry.match) return verdict;
-  return entry.judgment === 'cosmetic' ? verdict + ' \u00b7 reworded' : 'Stale';
+  return entry.judgment === 'cosmetic' ? verdict + ' \u00b7 reworded' : 'QA stale';
 }
 
 function evidenceAge(capturedAt, now = Date.now()) {
@@ -1291,8 +1360,9 @@ function evidenceNotes() {
     if (!anchor) continue;
     const entry = Object.prototype.hasOwnProperty.call(criteria, anchor) && criteria[anchor] && typeof criteria[anchor] === 'object' ? criteria[anchor] : null;
     const text = evidenceLabel(entry);
-    const note = { anchor, group: 'evidence', state: text === 'Not yet' ? 'none' : 'label', text, attention: text === 'Stale' || text.startsWith('Failed'),
-      passed: text.startsWith('Passed') };
+    const note = { anchor, group: 'evidence', state: text === 'No QA yet' ? 'none' : 'label', text,
+      level: text === 'QA stale' ? markLevel(state.evidence, 'qa-stale') : text.startsWith('QA failed') ? markLevel(state.evidence, 'qa-failed') : null,
+      passed: text.startsWith('QA passed') };
     if (entry) {
       const pr = Number.isInteger(entry.pr) ? '#' + entry.pr : '';
       const context = [pr, evidenceAge(entry.capturedAt), entry.onMain === false ? 'not on main' : ''].filter(Boolean).join(' · ');
@@ -1301,8 +1371,8 @@ function evidenceNotes() {
       const bundleId = evidenceBundleId(view) || evidenceBundleId(bundle);
       Object.assign(note, { href: view, external: true, context, open: evidenceOpen(bundleId, evidenceCriterionKey(view)),
         link: bundle ? { text: 'bundle', href: bundle, open: evidenceOpen(bundleId, null) } : null });
-      if (text !== 'Passed' && text !== 'Failed' && typeof entry.proven === 'string') note.diff = evidenceDiff(entry.proven, evidenceReadText(element));
-      if (text === 'Stale') {
+      if (text !== 'QA passed' && text !== 'QA failed' && typeof entry.proven === 'string') note.diff = evidenceDiff(entry.proven, evidenceReadText(element));
+      if (text === 'QA stale') {
         const date = commitDate(entry.capturedAt);
         const since = [pr, date].filter(Boolean).join(', ');
         note.actions = [jevDraftAction('Ask for re-proof', anchor + ' changed since its evidence' + (since ? ' (' + since + ')' : '') + ': please recapture it.')];
@@ -1320,7 +1390,7 @@ function jevNotesByAnchor() {
       if (!note || !note.anchor || !note.text || !JEV_NOTE_GROUPS.includes(note.group)) continue;
       const anchor = String(note.anchor);
       const notes = byAnchor.get(anchor) || [];
-      if (note.group === 'neutral' && notes.some(other => other.group === 'neutral' && other.text === note.text)) continue;
+      if (note.group === 'neutral' && notes.some(other => other.group === 'neutral' && other.sentence === note.sentence)) continue;
       notes.push(note);
       byAnchor.set(anchor, notes);
     }
@@ -1333,10 +1403,10 @@ function mountJevMarker(holder, notes) {
   const marker = document.createElement('button');
   marker.type = 'button';
   marker.className = 'hx-jev-marker';
-  const attention = notes.some(note => note.attention);
+  const attention = notes.some(note => note.level === 'important');
   marker.dataset.attention = String(attention);
   marker.dataset.passed = String(!attention && notes.some(note => note.group === 'evidence' && note.passed));
-  marker.setAttribute('aria-label', 'Jev notes: ' + notes.map(note => note.text).join('; '));
+  marker.setAttribute('aria-label', 'Jev notes: ' + notes.map(note => note.sentence || note.text).join('; '));
   marker.setAttribute('aria-haspopup', 'dialog');
   marker.setAttribute('aria-expanded', 'false');
   marker.jevNotes = notes;
@@ -1412,7 +1482,7 @@ function renderJevNote(note) {
   row.className = 'hx-jev-pop-note';
   row.dataset.group = note.group;
   row.dataset.state = note.state || 'label';
-  row.dataset.attention = String(Boolean(note.attention));
+  row.dataset.attention = String(note.level === 'important');
   const text = document.createElement(note.href ? 'a' : 'span');
   text.className = 'hx-jev-pop-text';
   if (note.href) text.href = note.href;
@@ -1420,6 +1490,16 @@ function renderJevNote(note) {
   if (note.href && note.open) text.addEventListener('click', event => { if (note.open()) event.preventDefault(); });
   text.textContent = note.text;
   row.appendChild(text);
+  // A neutral note's sentence is its accessible name and shows in the popover on hover or focus.
+  if (note.sentence) {
+    text.setAttribute('role', 'note');
+    text.setAttribute('tabindex', '0');
+    text.setAttribute('aria-label', note.sentence);
+    const sentence = row.appendChild(document.createElement('span'));
+    sentence.className = 'hx-jev-pop-sentence';
+    sentence.setAttribute('aria-hidden', 'true');
+    sentence.textContent = note.sentence;
+  }
   if (note.context || (note.link && note.link.href)) {
     const meta = document.createElement('span');
     meta.className = 'hx-jev-pop-meta';
@@ -1450,10 +1530,16 @@ function renderJevNote(note) {
     for (const action of actions) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = 'hx-btn';
+      button.className = action.link ? 'hx-jev-pop-more' : 'hx-btn';
       button.textContent = action.label;
       button.addEventListener('click', event => { event.stopPropagation(); if (action.run) action.run(note); });
-      slot.appendChild(button);
+      // A link action sits on its button's line: both share one unwrapped group.
+      const before = action.link && slot.lastElementChild;
+      if (before && before.tagName === 'BUTTON') {
+        const group = slot.appendChild(document.createElement('span'));
+        group.className = 'hx-jev-pop-batch';
+        group.append(before, button);
+      } else slot.appendChild(button);
     }
     row.appendChild(slot);
   }
@@ -1489,6 +1575,8 @@ function closeJevPopover() {
 }
 
 // Desktop: beside the marker, below or above, never over the toolbar, dock, or open panel.
+// Its box is measured with every note sentence shown and that room is kept. Above the marker it is anchored by
+// its bottom edge, so the unhovered box hugs the marker and a hover sentence grows it upward into the kept room.
 // Narrow screens: CSS makes it a sheet above the toolbar.
 function placeJevPopover() {
   const pop = jevPopoverState.element;
@@ -1496,14 +1584,17 @@ function placeJevPopover() {
   if (!pop || !marker || pop.hidden) return;
   pop.style.left = '';
   pop.style.top = '';
+  pop.style.bottom = '';
+  pop.style.width = '';
   if (window.matchMedia('(max-width: 640px)').matches) return;
   const anchor = marker.getBoundingClientRect();
   if (!marker.isConnected || anchor.bottom < 0 || anchor.top > innerHeight) { closeJevPopover(); return; }
   const controls = [...document.querySelectorAll('.hx-toolbar,.hx-thread-dock,.hx-panel.open,.hx-service-index-link,.hx-banner')]
     .filter(control => getComputedStyle(control).visibility !== 'hidden' && getComputedStyle(control).opacity !== '0')
     .map(control => control.getBoundingClientRect()).filter(rect => rect.width && rect.height);
-  const width = pop.offsetWidth;
-  const height = pop.offsetHeight;
+  pop.dataset.measure = '';
+  const { width, height } = pop.getBoundingClientRect();
+  delete pop.dataset.measure;
   const panel = document.querySelector('.hx-panel.open');
   const rightLimit = innerWidth - 8 - (panel ? panel.getBoundingClientRect().width : 0);
   const left = Math.max(8, Math.min(anchor.right - width, rightLimit - width));
@@ -1512,7 +1603,9 @@ function placeJevPopover() {
   const candidates = [anchor.bottom + 8, anchor.top - 8 - height];
   const top = candidates.find(value => fits(value) && !covers(value)) ?? candidates.find(fits) ?? Math.max(8, candidates[0]);
   pop.style.left = Math.round(left) + 'px';
-  pop.style.top = Math.round(top) + 'px';
+  if (top === candidates[1]) pop.style.bottom = Math.round(innerHeight - anchor.top + 8) + 'px';
+  else pop.style.top = Math.round(top) + 'px';
+  pop.style.width = width + 'px';
 }
 
 function wireJevPopover() {
@@ -1781,6 +1874,8 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-jev-pop-note[data-attention=true] .hx-jev-pop-text{color:#b42318}
 .hx-jev-pop-note[data-group=neutral] .hx-jev-pop-text{font-weight:600;color:#5a5a63}
 a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
+.hx-jev-pop-sentence{display:none;font-size:12px;color:#5a5a63;overflow-wrap:anywhere}
+.hx-jev-pop[data-measure] .hx-jev-pop-sentence,.hx-jev-pop-note:hover .hx-jev-pop-sentence,.hx-jev-pop-note:focus-within .hx-jev-pop-sentence{display:block}
 .hx-jev-pop-meta{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;font-size:12px;color:#5a5a63;overflow-wrap:anywhere}
 .hx-jev-pop-link{color:#2947c7;text-decoration:underline;text-underline-offset:2px}
 .hx-jev-pop-diff{font-size:12px;color:#303036;overflow-wrap:anywhere}
@@ -1788,18 +1883,19 @@ a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
 .hx-jev-pop-diff ins{text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:2px}
 .hx-jev-pop-actions{display:flex;flex-wrap:wrap;gap:4px}
 .hx-jev-pop-actions .hx-btn{margin:0;font-size:11.5px;padding:4px 8px;border-color:#2947c7;background:#ffffff;color:#2947c7}
+.hx-jev-pop-batch{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.hx-jev-pop-more{margin:0;padding:0 2px;border:0;background:none;font:inherit;font-size:11.5px;color:#2947c7;text-decoration:underline;text-underline-offset:2px;cursor:pointer;align-self:center}
 @media(prefers-color-scheme:dark){
 .hx-jev-pop{border-color:#5b5f68;background:#24272c;color:#e8e7e2}
 .hx-jev-pop-text{color:#e8e7e2}
 .hx-jev-pop-note[data-attention=true] .hx-jev-pop-text{color:#ffb4ab}
 .hx-jev-pop-note[data-group=neutral] .hx-jev-pop-text{color:#b8bbc5}
-.hx-jev-pop-meta{color:#b8bbc5}
+.hx-jev-pop-meta,.hx-jev-pop-sentence{color:#b8bbc5}
 .hx-jev-pop-link{color:#aebcff}
 .hx-jev-pop-diff{color:#e8e7e2}
 .hx-jev-pop-actions .hx-btn{background:#17191d;border-color:#7d91ff;color:#aebcff}
+.hx-jev-pop-more{color:#aebcff}
 }
-.hx-jev-target-flash{animation:hx-jev-flash 1.2s ease-out}
-@keyframes hx-jev-flash{0%{box-shadow:0 0 0 4px rgba(41,71,199,.42)}100%{box-shadow:0 0 0 14px rgba(41,71,199,0)}}
 .hx-jev-thread-label{flex:0 0 auto;color:#2f6b32;background:#e8f2e8;border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700;white-space:nowrap}
 .hx-jev-thread-label[data-state=unsure]{color:#78520a;background:#fff0c2}
 .hx-jev-thread-label[data-state=unavailable]{color:#7b2525;background:#f8dddd}
@@ -1823,6 +1919,7 @@ body.hx-panel-open{padding-right:0;overflow:hidden}
 .hx-panel-gear{top:6px;right:8px;width:44px;height:44px;touch-action:manipulation}
 .hx-thread-dock{top:calc(8px + env(safe-area-inset-top));right:8px;padding:4px}
 .hx-service-index-link{top:calc(8px + env(safe-area-inset-top));left:8px;max-width:calc(100vw - 68px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body.hx-panel-open .hx-service-index-link{display:none}
 .hx-dock-open,.hx-dock-thread{width:44px;height:44px;touch-action:manipulation}
 .hx-dock-threads{max-height:calc(100dvh - 68px)}
 .hx-threads{padding:12px;overscroll-behavior:contain}
@@ -1840,7 +1937,7 @@ tr[data-anchor]:has(> .hx-pin[data-column]) > :has(> .hx-jev-marker){padding-rig
 .hx-jev-note{margin:8px 16px 0}
 .hx-jev-marker::before{inset:-14px 0 -14px -28px}
 .hx-jev-pop{left:12px;right:12px;top:auto;bottom:calc(10px + var(--hx-dock-space,64px) + 8px + env(safe-area-inset-bottom));width:auto;max-width:none;max-height:40dvh;padding:10px 12px}
-.hx-jev-pop-actions .hx-btn{min-height:44px}
+.hx-jev-pop-actions .hx-btn,.hx-jev-pop-more{min-height:44px}
 .hx-banner{align-items:flex-start;flex-wrap:wrap;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;text-align:center}
 .hx-banner button{min-height:44px;padding:8px 12px;touch-action:manipulation}
 .hx-toast{bottom:calc(112px + env(safe-area-inset-bottom));max-width:calc(100vw - 24px);box-sizing:border-box;text-align:center}
@@ -2144,13 +2241,13 @@ function renderPanel() {
     const collapsed = resolvedThreadCollapsed(th, state.expandedResolved);
     const d = document.createElement('div');
     d.className = 'hx-thread' + (state.activeThread === th.id ? ' active' : '') + (collapsed ? ' resolved-collapsed' : '');
-    const resolvedHint = jevItem('resolved', th.id);
+    // A resolved thread shows its own resolved indicator, never a resolved-in-spirit Jev label.
+    const resolvedHint = th.status === 'resolved' ? null : jevItem('resolved', th.id);
     const orphanHint = jevItem('orphan', th.id);
-    const looksResolved = Boolean(resolvedHint && resolvedHint.state === 'label' && resolvedHint.label === 'resolved in spirit');
     const threadJevState = [orphanHint, resolvedHint].find(item => item && ['unsure', 'unavailable'].includes(item.state));
     d.innerHTML = '<div class="hx-thread-summary"><div class="hx-anchor">' + esc(label(b)) + '</div>' +
       '<span class="hx-pill" data-s="' + th.status + '">' + th.status + '</span>' +
-      (looksResolved ? '<span class="hx-jev-thread-label">Looks resolved</span>' : '') +
+      (looksResolved(th) ? '<span class="hx-jev-thread-label">Looks resolved</span>' : '') +
       (threadJevState ? '<span class="hx-jev-thread-label" data-state="' + threadJevState.state + '">' + esc(jevDisplayLabel(threadJevState)) + '</span>' : '') +
       (th.status === 'resolved' ? '<button class="hx-disclosure" data-act="disclosure" aria-expanded="' + String(!collapsed) + '" aria-label="' + (collapsed ? 'Show' : 'Hide') + ' resolved thread">' + (collapsed ? '▸' : '▾') + '</button>' : '') + '</div>' +
       (collapsed ? '<div class="hx-thread-preview">' + esc(b.text || 'Resolved comment') + '</div>' : '');
@@ -2182,11 +2279,11 @@ function renderPanel() {
         reply.addEventListener('click', e => { e.stopPropagation(); startReply(th, replyAction.message); });
         d.appendChild(reply);
       }
-      for (const action of threadResolveButtons(th, looksResolved)) {
+      if (th.status === 'acknowledged') {
         const resolve = document.createElement('button');
         resolve.className = 'hx-btn';
-        resolve.dataset.act = action.act;
-        resolve.textContent = action.label;
+        resolve.dataset.act = 'resolve';
+        resolve.textContent = '✓ Resolve';
         resolve.addEventListener('click', e => { e.stopPropagation(); resolveThread(th); });
         d.appendChild(resolve);
       }
@@ -2204,10 +2301,17 @@ function renderPanel() {
     });
     wrap.appendChild(d);
   }
-  const openTbds = openTbdMarkers(document.querySelectorAll('[data-spec-tbd]'));
-  const handoffState = reviewHandoffState(state.threads, openTbds.length > 0);
+  const hinted = threads.filter(looksResolved);
+  if (hinted.length) {
+    const all = document.createElement('button');
+    all.className = 'hx-btn';
+    all.dataset.act = 'resolve-all';
+    all.textContent = 'Resolve all (' + hinted.length + ')';
+    all.addEventListener('click', e => { e.stopPropagation(); resolveThreads(hinted); });
+    wrap.appendChild(all);
+  }
+  const handoffState = renderHighlight();
   const drafts = handoffState.drafts;
-  renderTbdHighlight(document, tbdHighlightBlocks(handoffState, openTbds));
   document.getElementById('hx-drafts').textContent = handoffState.finish ? 'Ready to accept' : drafts + ' draft' + (drafts === 1 ? '' : 's');
   const desktopHandoff = document.getElementById('hx-handoff');
   desktopHandoff.disabled = !handoffState.enabled;
@@ -2219,19 +2323,18 @@ function renderPanel() {
   renderThreadHighlight();
 }
 
-// A Looks resolved card's Resolve thread and the card's own resolve control share one path.
-function threadResolveButtons(th, looksResolved) {
-  const buttons = [];
-  if (looksResolved && th.status !== 'resolved') buttons.push({ act: 'jev-resolve', label: 'Resolve thread' });
-  if (th.status === 'acknowledged') buttons.push({ act: 'resolve', label: '✓ Resolve' });
-  return buttons;
-}
-
-async function resolveThread(th) {
-  await state.transport.postEvent({ id: humanId('s'), event: 'status', respondsTo: th.id, threadId: th.id, status: 'resolved', actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
-  state.expandedResolved.delete(th.id);
+// A card's own resolve control and Resolve all post the same resolve event.
+async function resolveThreads(threads) {
+  for (const th of threads) {
+    await state.transport.postEvent({ id: humanId('s'), event: 'status', respondsTo: th.id, threadId: th.id, status: 'resolved', actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
+    state.expandedResolved.delete(th.id);
+  }
   toast('Resolved');
   refresh();
+}
+
+function resolveThread(th) {
+  return resolveThreads([th]);
 }
 
 function selectThread(th, scroll) {
@@ -2249,11 +2352,8 @@ function scrollToThread(b) {
 }
 
 function scrollToJevAnchor(anchorId) {
-  const holder = findAnchor(anchorId);
-  if (!holder) return;
-  holder.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  holder.classList.remove('hx-jev-target-flash');
-  requestAnimationFrame(() => holder.classList.add('hx-jev-target-flash'));
+  if (location.hash.slice(1) === encodeURIComponent(anchorId)) arriveAtAddress();
+  else location.hash = encodeURIComponent(anchorId);
 }
 
 function orphanHintElement(th, orphanHint) {
@@ -2503,21 +2603,21 @@ function renderPins() {
     const pin = document.createElement('button');
     pin.className = 'hx-pin' + (state.activeThread === th.id ? ' active' : '');
     pin.dataset.s = th.status;
-    const looksResolved = Boolean(jevItem('resolved', th.id) && jevItem('resolved', th.id).state === 'label' && jevItem('resolved', th.id).label === 'resolved in spirit');
+    const hinted = looksResolved(th);
     pin.textContent = '';
     const number = document.createElement('span');
     number.className = 'hx-pin-number';
     number.textContent = n;
     pin.appendChild(number);
-    if (looksResolved) {
+    if (hinted) {
       pin.dataset.jev = 'resolved';
       const marker = document.createElement('span');
       marker.className = 'hx-pin-jev';
       marker.textContent = 'Looks resolved';
       pin.appendChild(marker);
     }
-    pin.title = (looksResolved ? 'Looks resolved · ' : '') + label(b);
-    pin.setAttribute('aria-label', (looksResolved ? 'Looks resolved: ' : '') + label(b));
+    pin.title = (hinted ? 'Looks resolved · ' : '') + label(b);
+    pin.setAttribute('aria-label', (hinted ? 'Looks resolved: ' : '') + label(b));
     pin.style.top = pos.top + 'px';
     if (pos.column) pin.dataset.column = '';
     const pinSize = window.matchMedia('(max-width: 640px)').matches ? 44 : 24;
@@ -2686,6 +2786,8 @@ function keepPlace() {
   await hydrateIslands();
   adoptForeignCharts();
   restorePlace();
+  renderHighlight();
+  window.addEventListener('hashchange', arriveAtAddress);
   // spec scripts can create/recreate charts at any time; rescan when canvases appear
   let adoptTimer = null;
   new MutationObserver(muts => {

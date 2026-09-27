@@ -28,6 +28,22 @@ RETRYABLE_OUTCOMES = frozenset({"off", "unavailable"})
 # Jev was below threshold on a set with a general LLM fallback (project-rules #q-fallback): the LLM decides next.
 ESCALATED = "escalated"
 REPLACEABLE_OUTCOMES = RETRYABLE_OUTCOMES | {ESCALATED}
+# Mark levels (jev-suggestions#markers-levels): the single source, mark kind to level, fixed by kind and never by confidence.
+# Item labels key it directly; the browser keys derived marks (coverage gaps, QA evidence, unsure words) by the other names.
+MARK_LEVELS = {
+    "contradicts": "important",
+    "no-criterion": "important",
+    "no-story": "important",
+    "qa-failed": "important",
+    "qa-stale": "important",
+    "overlaps": "warning",
+    "oversteps": "warning",
+    "unsure": "warning",
+    "scope": "warning",
+    "behavioral": "warning",
+    "clarification": "warning",
+    "cosmetic": "warning",
+}
 VOID_ELEMENTS = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"})
 IMPLIED_ENDS = {
     "li": {"li"}, "dt": {"dt", "dd"}, "dd": {"dt", "dd"},
@@ -1475,7 +1491,7 @@ class JevService:
     def response(self, mount: Mapping[str, Any], target: str, relative: str, base: str,
                  events: list[Mapping[str, Any]], view: str = "", served_mounts: Any = None) -> dict[str, Any]:
         if not self.enabled:
-            return {"jev": "off", "items": []}
+            return {"jev": "off", "items": [], "levels": dict(MARK_LEVELS)}
         rule_items, rules = self._rules(mount, target, relative, base, served_mounts)
         questions = [question for question in self.questions(mount, target, relative, base, events, view, served_mounts)
                      if question["kind"] in self.seam.question_sets]
@@ -1510,13 +1526,17 @@ class JevService:
             target_anchor = question.get("target")
             if question["kind"] == "orphan" and state == "label":
                 target_anchor, label = label, anchors[label]
-            items.append({"kind": question["kind"], "id": question["id"], "state": state,
-                          "label": label if state == "label" else None,
-                          "target": target_anchor, "record": record.get("record_id")})
-        return {"jev": "on", "items": items + rule_items, "rules": rules, "offer": self.offer(mount.get("project"))}
+            item = {"kind": question["kind"], "id": question["id"], "state": state,
+                    "label": label if state == "label" else None,
+                    "target": target_anchor, "record": record.get("record_id")}
+            if state == "label" and question["kind"] != "orphan" and label in MARK_LEVELS:
+                item["level"] = MARK_LEVELS[label]
+            items.append(item)
+        return {"jev": "on", "items": items + rule_items, "rules": rules, "offer": self.offer(mount.get("project")),
+                "levels": dict(MARK_LEVELS)}
 
 
-__all__ = ["BUILDERS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MODEL",
+__all__ = ["BUILDERS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MARK_LEVELS", "MODEL",
            "OPENROUTER_DECISIONS_URL", "OpenRouterProvider", "QuestionSet",
            "build_audience_questions", "build_board_conflict_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_rule_question", "build_scope_questions", "build_type_questions", "changed_leaf_clauses", "extract_anchors",
            "load_question_sets", "material", "rule_mark_anchor", "rule_word", "spec_text"]
