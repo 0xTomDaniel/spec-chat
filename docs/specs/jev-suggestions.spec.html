@@ -25,11 +25,10 @@
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-corpus">As a reviewer, a changed clause that contradicts or oversteps another clause in this or another spec is flagged with a link to it; following the link lands me on that clause, highlighted.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-coverage">As a reviewer, a story no criterion verifies and a criterion no story backs are flagged while shaping.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-reading">As a reader, a reading view dims the internals in place, so the clauses written for me stand out and nothing moves or hides.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-neutral">As a reviewer, when Jev is off, failing, or unsure on a question with no LLM fallback, a one-word muted note names the question Jev could not answer, with the full sentence on hover, so I never mistake it for QA evidence, and the page otherwise works as today.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-neutral">As a reviewer, when Jev is off or failing, or unsure on coverage or reading view, a one-word muted note names the question Jev could not answer, with the full sentence on hover, so I never mistake it for QA evidence, and the page otherwise works as today.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-fast-marks">As a reviewer, Jev marks appear without a visible wait after the page renders, even while the box is busy.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-note-action">As a reviewer, each actionable Jev note offers one button that drafts the comment it calls for, which I edit and send myself; with several conflicts on the page, one button drafts them all.</p>
 <p data-user-story data-user-facing="false" data-anchor="story-levels-api">As an agent reading <code>/api/jev</code>, every mark tells me its level, <code>important</code> or <code>warning</code>, the same level the reviewer sees as color; a neutral note carries none.</p>
-<p data-anchor="story-neutral-tbd" data-spec-tbd="open">TBD: Jev still flags <code>story-neutral</code> against <code>story-no-walls</code> after one fix. Recommendation: keep both; unsure notes remain only for coverage and reading view, which have no fallback.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-no-walls">As a reviewer, I never see a wall of <code>conflict?</code> marks: every Jev question is a yes or no, an unsure answer is settled by the general LLM, and Warning marks read light red, apart from grey neutral notes.</p>
 <p data-user-story data-user-facing="false" data-anchor="story-measured">As the operator, I know each yes/no question's unsure rate and accuracy on this box's specs, before and after the change.</p>
 <p data-user-story data-user-facing="false" data-anchor="story-record">As the operator, I can see for any suggestion which model, question set, and sources produced it, and with what confidence.</p>
@@ -196,7 +195,7 @@
 </table>
 </div>
 <p data-anchor="type-material">A registry row's published <code>material</code> is <code>yes</code> when any changed root section answers yes, <code>no</code> when every one answers no, and <code>unknown</code> when any is unavailable, unanswered, or off; an unsure answer is first settled by the LLM fallback.</p>
-<p data-anchor="type-material-tbd" data-spec-tbd="open">TBD: the peer worklane provider spec (<code>#jev-material</code>) still derives <code>material</code> from the four old labels, which Jev flags against this chain. Recommendation: that spec's owner replaces the mapping with a link here when this lands; this spec names no peer and edits none.</p>
+<p data-anchor="type-material-tbd" data-spec-tbd="open">TBD: AnnotateAnything's worklane provider spec (<code>#jev-material</code>) still defines <code>material</code> with the four old labels, so it goes stale when this lands. Spec Chat produces the field, so the definition above should be the only one. Recommendation: one-line AnnotateAnything pull request replacing that clause with a link here, opened by this lane when this lands. Approve, or say who owns it?</p>
 </section>
 
 <section data-anchor="chains">
@@ -258,7 +257,7 @@
 <p data-anchor="markers-arrival">A conflict link or <code>Go to</code> that lands on a clause of this or another spec scrolls to it and gives it the open-TBD outline (<a href="./prompt-first-shaping.spec.html#finish-ready">TBD open</a>) while that clause is the page address; it adds no highlight style of its own.</p>
 <figure data-anchor="markers-figure">
 <div class="rail-wrap" data-anchor="markers-figure-scroll">
-<svg viewBox="0 0 760 220" style="min-width: 600px" role="img" aria-label="A spec section with two clauses. The first clause has a neutral grey dot in the right margin. The second has a red dot with an exclamation glyph; its open popover lists Contradicts #non-goal-text with an Ask agent to reconcile button, and Behavior change with a Comment on this change button.">
+<svg viewBox="0 0 760 220" style="min-width: 600px" role="img" aria-label="A spec section with two clauses. The first clause has a neutral grey dot in the right margin. The second has a red dot with an exclamation glyph; its open popover lists Contradicts #non-goal-text with an Ask agent to reconcile button, and Behavior with a Comment on this change button.">
 <text x="12" y="34" fill="#171719" font-size="14">The picker lists at most 20 commits that changed this spec.</text>
 <circle cx="560" cy="29" r="6" fill="#8a8f99"></circle>
 <text x="12" y="74" fill="#171719" font-size="14">The picker also lists commits from other branches.</text>
@@ -268,7 +267,7 @@
 <text x="414" y="110" fill="#b42318" font-size="13" font-weight="700">Contradicts #non-goal-head</text>
 <rect x="414" y="118" width="184" height="24" rx="4" fill="#ffffff" stroke="#2947c7"></rect>
 <text x="424" y="135" fill="#2947c7" font-size="12" font-weight="700">Ask agent to reconcile</text>
-<text x="414" y="166" fill="#303036" font-size="13" font-weight="700">Behavior change</text>
+<text x="414" y="166" fill="#303036" font-size="13" font-weight="700">Behavior</text>
 <rect x="414" y="174" width="200" height="24" rx="4" fill="#ffffff" stroke="#2947c7"></rect>
 <text x="424" y="191" fill="#2947c7" font-size="12" font-weight="700">Comment on this change</text>
 </svg>
@@ -335,11 +334,11 @@
 <p data-anchor="proof-first-test">First failing test: a fake provider answer below threshold returns unsure and appends an unsure record.</p>
 <p data-anchor="proof-chain-test">First failing chain test: with a fake provider answering <code>yes</code> to <q>contradicts?</q>, a draft check makes no second call and returns <code>Contradicts</code>; answering <code>no</code> below threshold to <q>oversteps?</q>, it makes one general LLM call and continues from its answer.</p>
 <p data-anchor="proof-evidence">Evidence: seam and runtime tests behind fakes, one live run per question set against real Jev, and a QA bundle on a real spec change.</p>
+<p data-anchor="onboarding-reason">Onboarding: not needed, this changes marker colors and note words only, with no new screen or step.</p>
 </section>
 
 <section data-anchor="non-goals">
 <h2>Non-goals</h2>
-<p data-anchor="onboarding-reason">Onboarding: not needed, this changes marker colors and note words only, with no new screen or step.</p>
 <p data-anchor="non-goal-text">Generated text of any kind (ANN-96), other providers, budget rules, specs outside the served collection, and Jev questions beyond those listed here.</p>
 </section>
 
