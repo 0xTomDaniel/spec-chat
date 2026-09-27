@@ -1,0 +1,34 @@
+{
+  "id": "rule",
+  "version": 3,
+  "instructions": "Read one project-wide rule and the full text of one product spec. Choose not triggered when nothing the spec changes falls under the rule. Choose covered when the spec triggers the rule and meets it, either with a criterion or clause that does what the rule asks, or with a line saying why the rule does not apply. Choose missed when the spec makes a change the rule applies to and says nothing that meets it or explains why it does not apply.",
+  "threshold": 0.7,
+  "fallback": true,
+  "labels": [
+    {
+      "name": "missed",
+      "description": "The spec makes a change the rule applies to, and neither meets the rule nor says why it does not apply.",
+      "examples": [
+        {"input": {"rule": "When any change adds a screen or alters what a user can do, the change ships with its help center article.", "spec": "Saved filters. Users can save the current filter set under a name from the toolbar. Acceptance: when a user saves a filter, it appears in the saved list."}, "label": "missed"},
+        {"input": {"rule": "Every new API endpoint is listed in the public changelog before release.", "spec": "Bulk tags. A new POST /v2/tags/bulk endpoint applies one tag to many items. Acceptance: a request with 100 ids tags all 100."}, "label": "missed"}
+      ]
+    },
+    {
+      "name": "covered",
+      "description": "The spec triggers the rule and meets it, or says in one line why it does not apply.",
+      "examples": [
+        {"input": {"rule": "When any change adds a screen or alters what a user can do, the change ships with its help center article.", "spec": "Saved filters. Users can save the current filter set under a name. Acceptance: when a user saves a filter, it appears in the saved list; the help center gains a Saved filters article."}, "label": "covered"},
+        {"input": {"rule": "Every new API endpoint is listed in the public changelog before release.", "spec": "Bulk tags. A new internal endpoint applies one tag to many items. Changelog: not needed, the endpoint is internal and never public."}, "label": "covered"},
+        {"input": {"rule": "When a change alters what a human sees or does, its PR carries a QA evidence bundle before the merge ask.", "spec": "Rule notes. The review page shows a missed note when a spec skips a project rule. Acceptance: a spec that skips a rule shows one missed note. Evidence: seam tests behind fakes and a QA bundle on a real spec."}, "label": "covered"}
+      ]
+    },
+    {
+      "name": "not triggered",
+      "description": "Nothing the spec changes falls under the rule.",
+      "examples": [
+        {"input": {"rule": "When any change adds a screen or alters what a user can do, the change ships with its help center article.", "spec": "Faster cache. The server keeps parsed templates in memory. Acceptance: a second render of one template does not read the disk."}, "label": "not triggered"},
+        {"input": {"rule": "Every new API endpoint is listed in the public changelog before release.", "spec": "Dark theme. The settings page offers a dark theme toggle. Acceptance: toggling it switches every page to dark colors."}, "label": "not triggered"}
+      ]
+    }
+  ]
+}

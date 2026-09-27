@@ -29,11 +29,22 @@ Create durable current truth before deep investigation.
 3. Read only target instructions, the spec index, clearly related specs or ADRs, and directly relevant product docs. Update the governing spec or create a minimal spec containing only real behavior; keep only governing links, not a research bibliography.
 4. Add `data-spec-contract="shaped-sections-v1"` to every new or materially revised governing article, then include exactly one visible `User stories`, `Acceptance criteria`, and `Modular boundaries` section from [references/authoring.md](references/authoring.md), in that order. Keep the exact Acceptance criteria heading. Scope may come from optional descriptive metadata, anchors, and surrounding source context; it is not an MVP-labelled heading. Every modular boundary names responsibility, caller-facing seam, dependency direction, and observable scope, including self-contained single-module specs. Run the validator as a structural gate, not only a style check.
 5. Commit the seed locally, run `python3 scripts/validate-style.py <repository> <spec-html> <exact-review-base>`, and stop on failure.
-6. For a remote or cross-machine reviewer, use `spec-chat-review` to start the direct server for the narrow collection and verify the served resource and exact baseline; keep that server and URL for the review lifetime. For a same-machine reviewer, use the supported local transport instead; no host is required. Send the review link at once, before inspecting code, tests, or configuration.
+6. For a remote or cross-machine reviewer, use `spec-chat-review` to start the direct server for the narrow collection and verify the served resource and exact baseline; keep that server and URL for the review lifetime. For a same-machine reviewer, use the supported local transport instead; no host is required. Run the Jev check below, then send the review link at once, before inspecting code, tests, or configuration.
 7. Deepen only from relevant code, tests, configuration, and branch state. Resolve discoverable questions before asking the human. Keep the spec always-most-recent and remove stale prose or resolved TBDs.
 8. Keep every changed user outcome current in the target-declared story source or governing spec, including the guided-journey declaration defined by [references/authoring.md](references/authoring.md). Do not duplicate canonical story declarations into a tracker or generated Markdown catalog. For cross-module behavior, reconcile stable responsibilities, seams, and dependency direction with the target-declared architecture source while keeping issue-specific detail in the spec.
 9. Classify acceptance criteria as clear, gap, or not needed. Back clear criteria with identified rules, mark material gaps `data-spec-tbd`, and remove unnecessary criteria. A deferred criterion does not satisfy the governing Acceptance criteria section.
 10. Add an ADR only for a hard-to-reverse, surprising decision with a real tradeoff. For behavior changes, name the deep-module seam, smallest first failing test, and observable evidence; docs-only work skips this, while unsuitable tests require a narrow waiver and alternative proof.
+
+## Jev check
+
+After registering with `spec-chat-review`'s lane command and before the link is sent (project-rules#agent-read), read the review link's Jev checks with `spec-chat-review`'s `scripts/jev-read.py '<review-url>' --wait 120`: one line per important mark, warning counts by kind, rules checked, pending count, or `off`. `--anchor <id>` prints one anchor's full detail.
+
+- `off`: send the link at once.
+- Key only on each mark's `level`; keep no list of kinds.
+- End every `important` mark in exactly one of: a spec fix, a reason line in the spec (for example `Onboarding: not needed, this changes no screen`), or, when it is bigger than a simple edit, an open TBD you write at that clause (Review shaping TBD rule, open value), never a thread; it blocks `Accept spec` until the human settles it and counts as solved for hand-off. Fixes take the direction of the reconcile rule under Review shaping. Commit and read again after each fix.
+- If a fix raises a new important mark on the same clause, write an open TBD at that clause instead of editing it again.
+- Never act on warnings, never hide them, and never edit a spec only to change a Jev answer or its confidence. Marks are advice and never block `Accept spec`.
+- Start the hand-off message with `N warnings not acted on: <the read's counts by kind>`, then name the rules checked as home spec and anchor, for visibility only.
 
 ## Review shaping
 

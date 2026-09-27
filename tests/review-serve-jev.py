@@ -145,7 +145,7 @@ class JevSeamTest(unittest.TestCase):
     def test_levels_table_is_one_server_source_on_every_response(self):
         # jev-suggestions#markers-levels: Important and Warning mark kinds, fixed by kind.
         self.assertEqual({kind for kind, level in jev.MARK_LEVELS.items() if level == "important"},
-                         {"contradicts", "no-criterion", "no-story", "qa-failed", "qa-stale"})
+                         {"contradicts", "missed", "no-criterion", "no-story", "qa-failed", "qa-stale"})
         self.assertEqual(set(jev.MARK_LEVELS.values()), {"important", "warning"})
         with tempfile.TemporaryDirectory() as directory:
             off = jev.JevService(state_dir=directory, provider=None, api_key="")

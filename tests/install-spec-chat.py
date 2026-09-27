@@ -90,6 +90,13 @@ class InstallSpecChatTest(unittest.TestCase):
         registry = tomllib.loads((self.state / "spec-chat/hosting/default/registry.toml").read_text())
         self.assertEqual(registry.get("resource", []), [])
 
+    def test_rerun_keeps_the_review_service_warm_up_tables(self):
+        self.onboarding.parent.mkdir(parents=True)
+        self.onboarding.write_text('status = "pending"\n\n[project.example]\nstate = "done"\nspecs_to_reconcile = 2\n')
+        self.run_install()
+        self.assertEqual(self.status()["status"], "pending")
+        self.assertEqual(self.status()["project"], {"example": {"state": "done", "specs_to_reconcile": 2}})
+
     def test_box_setup_moves_a_live_private_service_to_public(self):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
             try:

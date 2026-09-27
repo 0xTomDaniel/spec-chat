@@ -188,6 +188,7 @@ class MountState:
         self.path = os.path.realpath(path) if path else None
         self.records = tuple(records)
         self.signature = self._signature() if self.path else None
+        self.on_change = None  # called with the new rows after each registry reload
 
     def _signature(self):
         try:
@@ -208,7 +209,16 @@ class MountState:
             return self.records
         self.records = tuple(records)
         self.signature = signature
+        self.changed()
         return self.records
+
+    def changed(self):
+        """Run on_change with the current rows; a failed warm-up start never fails a request or server start."""
+        if self.on_change:
+            try:
+                self.on_change(self.records)
+            except Exception as exc:
+                print("review-serve: registry change hook failed: %r" % exc, file=sys.stderr, flush=True)
 
 
 def _single_mount(root):
@@ -509,6 +519,12 @@ def jev_provider(state):
     """The Jev provider's model key, or "" when it is not plugged; the file must be mode 0600."""
     key = (read_provider(state, "jev", private=True) or {}).get("key")
     return key.strip() if isinstance(key, str) else ""
+
+
+def jev_llm_model(state):
+    """The box's one general LLM name, llm_model beside the Jev key, or "" for Jev's default (project-rules #q-fallback)."""
+    model = (read_provider(state, "jev", private=True) or {}).get("llm_model")
+    return model.strip() if isinstance(model, str) else ""
 
 
 def wake_provider(state):
@@ -958,6 +974,22 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
         except (OSError, RuntimeError, ValueError):
             return self._json({"error": "jev unavailable"}, 503)
 
+    def _post_offer(self, query, body):
+        """Record the page's one-time reconcile offer sent or dismissed (project-rules #bootstrap-offer)."""
+        mount, _, _ = self._resolve_path(query.get("path", [""])[0], spec_only=True)
+        if not mount:
+            return self._json({"error": "bad path"}, 400)
+        try:
+            action = json.loads(body).get("offer")
+        except (ValueError, AttributeError):
+            return self._json({"error": "bad json"}, 400)
+        if action not in ("sent", "dismissed"):
+            return self._json({"error": "offer must be sent or dismissed"}, 400)
+        try:
+            return self._json({"ok": self.server.jev.record_offer(mount.get("project"), action)})
+        except OSError:
+            return self._json({"error": "jev unavailable"}, 503)
+
     def _post_event(self, query, body):
         mount, review = self._route_review(query)
         actor = query.get("actor", ["human"])[0]
@@ -1040,6 +1072,8 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
         except ValueError:
             return self.send_error(400)
         parsed = urlparse(self.path)
+        if parsed.path == "/api/jev/offer":
+            return self._post_offer(parse_qs(parsed.query), body)
         if parsed.path != "/api/events":
             return self._json({"error": "not found"}, 404)
         return self._post_event(parse_qs(parsed.query), body)
@@ -1092,7 +1126,11 @@ def main(argv=None):
         return 2
     server.mount_state = state
     server.state_dir = os.path.dirname(os.path.abspath(args.registry)) if args.registry else None
-    server.jev = JevService(api_key=lambda: jev_provider(server.state_dir))
+    server.jev = JevService(api_key=lambda: jev_provider(server.state_dir),
+                            llm_model=lambda: jev_llm_model(server.state_dir))
+    # Bootstrap (project-rules #bootstrap-home): a project's first registration starts its warm-up here.
+    state.on_change = server.jev.warm
+    state.changed()
     server.wake_controller = WakeController(server)
     wake_thread = threading.Thread(target=server.wake_controller.run, name="spec-chat-wake", daemon=True)
     wake_thread.start()

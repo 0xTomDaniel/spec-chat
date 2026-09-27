@@ -83,7 +83,7 @@
 <thead><tr><th>Name</th><th>Keys</th><th>Capability</th></tr></thead>
 <tbody>
 <tr data-anchor="providers-evidence"><td><code>evidence</code></td><td><code>url</code>: base URL answering <code>/criteria</code></td><td><a href="./criterion-evidence.spec.html#read-config">Criterion evidence</a>; replaces <code>SPEC_CHAT_EVIDENCE_URL</code>.</td></tr>
-<tr data-anchor="providers-jev"><td><code>jev</code></td><td><code>key</code>: model API key; file mode 0600</td><td><a href="./jev-suggestions.spec.html">Jev suggestions</a>; replaces <code>OPENROUTER_API_KEY</code>.</td></tr>
+<tr data-anchor="providers-jev"><td><code>jev</code></td><td><code>key</code>: model API key; file mode 0600. Optional <code>llm_model</code>: the box's one LLM model id for Jev fallback, default <code>anthropic/claude-sonnet-5</code></td><td><a href="./jev-suggestions.spec.html">Jev suggestions</a> and its <a href="./project-rules.spec.html#q-fallback">LLM fallback</a>; replaces <code>OPENROUTER_API_KEY</code>.</td></tr>
 <tr data-anchor="providers-wake"><td><code>wake</code></td><td><code>check</code> and <code>send</code>: argument lists with <code>{owner}</code>, <code>{artifact}</code>, <code>{message}</code> placeholders</td><td><a href="./host-wake.spec.html#wake-rule">Host wake</a>: <code>check</code> exit 0 means the owner resolves; <code>send</code> exit 0 sent, 75 deferred, other failed. Replaces the built-in pane tool calls: the host reaches owner panes only through the registered waker, and Spec Chat names no pane tool.</td></tr>
 </tbody>
 </table>

@@ -145,7 +145,11 @@ def install(args: argparse.Namespace, prefix: Path, state: Path) -> None:
         if any(manifest.values()):
             write_manifest(manifest_path, manifest)
     status = "done" if done else "pending"
-    write_if_changed(onboarding_path, f'status = "{status}"\ndoc = {toml_list([DOC])[1:-1]}\n')
+    # Keep the review service's per-project warm-up tables (project-rules #bootstrap-status) below ours.
+    old_text = onboarding_path.read_text(encoding="utf-8") if onboarding_path.exists() else ""
+    tables = re.search(r"^\[", old_text, re.M)
+    tail = "\n" + old_text[tables.start():] if tables else ""
+    write_if_changed(onboarding_path, f'status = "{status}"\ndoc = {toml_list([DOC])[1:-1]}\n' + tail)
     print(f"spec-chat onboarding {status}: {onboarding_path}")
     if status == "pending":
         print("next: install-spec-chat --specs <spec folder> --review <first .spec.html>")
