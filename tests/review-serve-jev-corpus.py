@@ -4,6 +4,7 @@ import importlib.util
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -158,6 +159,120 @@ class CorpusTest(unittest.TestCase):
         self.assertLess(len(now), len(every_copy))
         self.assertEqual({q["id"] for q in now}, {"rule"})
         self.assertFalse([q for q in now if q["target"].startswith(("l1/", "l2/", "l3/", "l4/"))])
+
+    def test_repeat_read_parses_no_spec_and_runs_git_only_to_resolve_refs(self):
+        """#acceptance-fast: unchanged spec, spool, and served files reuse kept builder results."""
+        main = {SPEC: page("The service reads review events."), OWN: page("Own rule."),
+                "docs/specs/lane-b.spec.html": page("Lane b rule on main.")}
+        lane_a = self.repo("a", {SPEC: page("The service writes review events.")}, main)
+        base = git(lane_a, "rev-parse", "HEAD")
+        lane_b = self.worktree(lane_a, "b", {"docs/specs/lane-b.spec.html": page("Lane b working copy.")})
+        other = self.repo("d", {}, {"docs/specs/d.spec.html": page("Another repository reads review events.")})
+        mounts = [self.row(lane_a, "a", SPEC), self.row(lane_a, "a", OWN),
+                  self.row(lane_b, "b", "docs/specs/lane-b.spec.html"),
+                  self.row(other, "d", "docs/specs/d.spec.html")]
+        events = [{"name": "1-comment.json", "actor": "human", "body": {
+            "id": "u1", "event": "comment", "actor": "human", "anchorId": "rule", "text": "Reads or writes?",
+            "createdAt": "2020-01-01T00:00:00Z"}}]
+        provider = FakeProvider({})
+        dirs = [ROOT / "skill" / "review-spec" / "assets" / "jev"]
+        service = jev.JevService(state_dir=self.dir / "state", provider=provider, api_key="fake", question_dirs=dirs)
+        read = lambda s: s.response(mounts[0], str(lane_a / SPEC), "a/" + SPEC, base, events, "reading", mounts)
+        first = read(service)
+        self.assertTrue(first["items"])
+
+        parses, gits = [], []
+        feed, run, check_output = jev._AnchorParser.feed, subprocess.run, subprocess.check_output
+
+        def counted_feed(parser, data):
+            parses.append(len(data))
+            return feed(parser, data)
+
+        def counted(real):
+            def call(argv, *args, **kwargs):
+                if argv and argv[0] == "git":
+                    gits.append(tuple(argv))
+                return real(argv, *args, **kwargs)
+            return call
+
+        with patch.object(jev._AnchorParser, "feed", counted_feed), \
+                patch.object(jev.subprocess, "run", counted(run)), \
+                patch.object(jev.subprocess, "check_output", counted(check_output)):
+            second = read(service)
+        self.assertEqual(second, first)
+        self.assertEqual(parses, [])
+        self.assertTrue(all("rev-parse" in argv for argv in gits), gits)
+        resolved = sorted(argv[-1].removesuffix("^{commit}") for argv in gits)
+        self.assertEqual(resolved, sorted([base, "HEAD", "origin/main", "origin/main"]))
+        self.assertEqual(read(jev.JevService(state_dir=self.dir / "state", provider=provider, api_key="fake",
+                                             question_dirs=dirs)), first)  # same as a cold read
+
+        (lane_a / OWN).write_text(page("Own rule now writes review events."), encoding="utf-8")
+        with patch.object(jev._AnchorParser, "feed", counted_feed):
+            read(service)
+        self.assertTrue(parses)  # a changed served file is read fresh
+
+    def healing_setup(self):
+        main = {SPEC: page("The service reads review events."), OWN: page("Own rule.")}
+        lane = self.repo("h", {SPEC: page("The service writes review events.")}, main)
+        base = git(lane, "rev-parse", "HEAD")
+        git(lane, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qam", "lane")
+        other = self.worktree(lane, "o", {})  # same project: its row must dedupe against this page
+        mounts = [self.row(lane, "h", SPEC), self.row(lane, "h", OWN), self.row(other, "o", SPEC)]
+        events = [{"name": "1-comment.json", "actor": "human", "body": {  # message after HEAD: text at HEAD
+            "id": "u1", "event": "comment", "actor": "human", "anchorId": "rule", "text": "Reads or writes?",
+            "createdAt": "2099-01-01T00:00:00Z"}}]
+        service = jev.JevService(state_dir=self.dir / "state", provider=FakeProvider({}), api_key="fake",
+                                 question_dirs=[ROOT / "skill" / "review-spec" / "assets" / "jev"])
+        read = lambda: service.questions(mounts[0], str(lane / SPEC), "h/" + SPEC, base, events, "reading", mounts)
+        cold = jev.JevService(state_dir=self.dir / "cold", provider=FakeProvider({}), api_key="fake",
+                              question_dirs=[ROOT / "skill" / "review-spec" / "assets" / "jev"])
+        expected = cold.questions(mounts[0], str(lane / SPEC), "h/" + SPEC, base, events, "reading", mounts)
+        return service, read, expected
+
+    def test_git_read_that_fails_once_is_retried_next_read(self):
+        """A timeout, OSError, or failed git exit is never kept: the next read heals."""
+        run = subprocess.run
+        failures = {
+            "timeout": lambda argv: (_ for _ in ()).throw(subprocess.TimeoutExpired(argv, 5)),
+            "oserror": lambda argv: (_ for _ in ()).throw(OSError("fork failed")),
+            "exit": lambda argv: subprocess.CompletedProcess(argv, 128, b"", b""),
+        }
+        for name, fail in failures.items():
+            for verb in ("show", "log", "--git-common-dir"):
+                with self.subTest(failure=name, verb=verb):
+                    self.tearDown()
+                    self.setUp()
+                    service, read, expected = self.healing_setup()
+                    if name == "exit" and verb == "show":
+                        continue  # a clean nonzero show is a definite "path absent"
+                    left = [1]
+
+                    def flaky(argv, *args, **kwargs):
+                        if left and argv and argv[0] == "git" and verb in argv:
+                            left.pop()
+                            return fail(argv)
+                        return run(argv, *args, **kwargs)
+
+                    with patch.object(jev.subprocess, "run", flaky):
+                        read()
+                    self.assertFalse(left)
+                    self.assertEqual(read(), expected)
+
+    def test_builder_that_raised_is_rebuilt_next_read(self):
+        service, read, expected = self.healing_setup()
+        original, calls = jev.BUILDERS["type"], []
+
+        def flaky(*args):
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError("transient")
+            return original(*args)
+
+        with patch.dict(jev.BUILDERS, {"type": flaky}):
+            self.assertNotIn("type", {q["kind"] for q in read()})
+            self.assertEqual(read(), expected)
+        self.assertEqual(len(calls), 2)
 
 
 if __name__ == "__main__":

@@ -915,10 +915,10 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
         if not base or base.startswith("-"):
             return self._json({"error": "invalid base"}, 400)
         try:
-            subprocess.check_call(
+            base_commit = subprocess.check_output(
                 ("git", "-C", mount["root"], "rev-parse", "--verify", base + "^{commit}"),
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
+                stderr=subprocess.DEVNULL, text=True,
+            ).strip()
         except (OSError, subprocess.CalledProcessError):
             return self._json({"error": "invalid base"}, 400)
         review = target + ".review"
@@ -927,7 +927,8 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
         if events is None:
             return self._json({"error": "unsafe spool path"}, 400)
         try:
-            return self._json(self.server.jev.response(mount, target, relative, base, events, view, self.mounts))
+            return self._json(self.server.jev.response(mount, target, relative, base, events, view, self.mounts,
+                                                       base_commit=base_commit))
         except (OSError, RuntimeError, ValueError):
             return self._json({"error": "jev unavailable"}, 503)
 
