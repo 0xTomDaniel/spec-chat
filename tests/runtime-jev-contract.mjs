@@ -64,7 +64,7 @@ assert.doesNotMatch(runtime, /async function loadJev\(/, 'coverage shares the ma
 assert.doesNotMatch(runtime, /const jevState/, 'coverage shares the main Jev state');
 assert.match(runtime, /renderPanel\(\);\n  renderPins\(\);/, 'base changes clear thread and pin Jev displays');
 
-const moveStart = runtime.indexOf('async function moveOrphan(');
+const moveStart = runtime.indexOf('async function moveOrphans(');
 const moveEnd = runtime.indexOf('\n\nconst chartInfoFor', moveStart);
 assert.ok(moveStart >= 0 && moveEnd > moveStart, 'runtime exposes orphan move action');
 const posted = [];
@@ -73,12 +73,14 @@ const moveState = {
   transport: { postEvent: async event => posted.push(event) },
   activeThread: 'thread-1',
 };
-const moveOrphan = Function('state', 'humanId', 'renderPanel', 'toast', 'refresh', 'renderPins', runtime.slice(moveStart, moveEnd) + '; return moveOrphan;')(
+let moveRefreshes = 0;
+const toasts = [];
+const { moveOrphan, moveOrphans } = Function('state', 'humanId', 'renderPanel', 'toast', 'refresh', 'renderPins', runtime.slice(moveStart, moveEnd) + '; return { moveOrphan, moveOrphans };')(
   moveState,
   prefix => prefix + 'fixed',
   () => {},
-  () => {},
-  async () => {},
+  text => toasts.push(text),
+  async () => { moveRefreshes++; },
   () => {},
 );
 await moveOrphan({ id: 'thread-1', ev: { body: { quote: 'old quote', text: 'Original note' } } }, 'new-section');
@@ -89,6 +91,33 @@ assert.equal(posted[0].quote, 'old quote');
 assert.equal(posted[0].text, 'Original note');
 assert.equal(posted[1].event, 'status');
 assert.equal(posted[1].status, 'resolved');
+
+// #acceptance-move-all: Move all (n) moves each thread exactly as its own Move comment here, nothing else.
+const moveEvents = () => posted.map(e => ({ ...e, createdAt: null }));
+const threadA = { id: 'thread-a', ev: { body: { quote: 'quote a', text: 'Note a' } } };
+const threadB = { id: 'thread-b', ev: { body: { text: 'Note b' } } };
+posted.length = 0;
+await moveOrphan(threadA, 'sec-a');
+await moveOrphan(threadB, 'sec-b');
+const oneByOne = moveEvents();
+posted.length = 0;
+moveRefreshes = 0;
+await moveOrphans([{ th: threadA, target: 'sec-a' }, { th: threadB, target: 'sec-b' }]);
+assert.deepEqual(moveEvents(), oneByOne, 'the batch posts the same events as each card, in order');
+assert.deepEqual(posted.map(e => e.respondsTo || e.anchorId), ['sec-a', 'thread-a', 'sec-b', 'thread-b'], 'no other thread changes');
+assert.equal(moveRefreshes, 1, 'one refresh per click');
+assert.equal(toasts.at(-1), 'Moved 2 comments');
+assert.equal(moveState.movingOrphans.size, 0);
+
+// #settle-orphan: a resolved orphan is settled, so its card offers no Jev orphan guess at all.
+const openStart = runtime.indexOf('function openOrphanHint(');
+assert.ok(openStart >= 0, 'runtime exposes the open orphan guess');
+const openOrphanHint = Function('jevItem', runtime.slice(openStart, runtime.indexOf('\n}\n', openStart) + 2) + '; return openOrphanHint;')(
+  (kind, id) => kind === 'orphan' ? { kind, id, state: id === 'unsure' ? 'unsure' : 'label', label: 'x', target: 'moved' } : null);
+assert.equal(openOrphanHint({ id: 't', status: 'pending' }).target, 'moved');
+assert.equal(openOrphanHint({ id: 't', status: 'acknowledged' }).target, 'moved');
+assert.equal(openOrphanHint({ id: 't', status: 'resolved' }), null, 'no Possibly moved to, Go to, or move button once resolved');
+assert.equal(openOrphanHint({ id: 'unsure', status: 'resolved' }), null, 'no unsure Jev label once resolved');
 
 // #acceptance-note-draft: a draft button only opens the existing composer with fixed text; nothing is written.
 const composerStart = runtime.indexOf('function openComposer(');
@@ -128,6 +157,9 @@ assert.doesNotMatch(runtime, /Resolve thread|jev-resolve/, 'no card has its own 
 assert.match(panel, /if \(th\.status === 'acknowledged'\) \{[\s\S]*?'✓ Resolve'[\s\S]*?resolveThread\(th\)/, "each card's own resolve control is unchanged");
 assert.match(panel, /const hinted = threads\.filter\(looksResolved\);\n\s+if \(hinted\.length\) \{[\s\S]*?'Resolve all \(' \+ hinted\.length \+ '\)'[\s\S]*?resolveThreads\(hinted\)[\s\S]*?wrap\.appendChild\(all\);\n  \}\n  const handoffState/,
   'Resolve all (n) sits after every card, only when a thread looks resolved');
+assert.match(panel, /const orphanHint = openOrphanHint\(th\);/, 'cards read the orphan guess only while open');
+assert.match(panel, /const movable = threads\.map\(th => \(\{ th, hint: openOrphanHint\(th\) \}\)\)\s*\.filter\(m => m\.hint && m\.hint\.state === 'label' && m\.hint\.target\)\s*\.map\(m => \(\{ th: m\.th, target: m\.hint\.target \}\)\);\n\s+if \(movable\.length >= 2\) \{[\s\S]*?'Move all \(' \+ movable\.length \+ '\)'[\s\S]*?moveOrphans\(movable\)[\s\S]*?wrap\.appendChild\(moveAll\);\n  \}\n  const hinted/,
+  'Move all (n) sits at the bottom of the list beside Resolve all, only with two or more open orphans');
 
 // #acceptance-resolved-tag: the tag shows only while the thread is open; once resolved its own indicator replaces it.
 const looksStart = runtime.indexOf('function looksResolved(');
