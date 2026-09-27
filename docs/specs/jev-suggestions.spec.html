@@ -25,11 +25,11 @@
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-corpus">As a reviewer, a changed clause that contradicts or oversteps another clause in this or another spec is flagged with a link to it; following the link lands me on that clause, highlighted.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-coverage">As a reviewer, a story no criterion verifies and a criterion no story backs are flagged while shaping.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-reading">As a reader, a reading view dims the internals in place, so the clauses written for me stand out and nothing moves or hides.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-neutral">As a reviewer, when Jev is off, unsure, or failing, a one-word muted note names the question Jev could not answer, with the full sentence on hover, so I never mistake it for QA evidence, and the page otherwise works as today.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-neutral">As a reviewer, when Jev is off, failing, or unsure on a question with no LLM fallback, a one-word muted note names the question Jev could not answer, with the full sentence on hover, so I never mistake it for QA evidence, and the page otherwise works as today.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-fast-marks">As a reviewer, Jev marks appear without a visible wait after the page renders, even while the box is busy.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-note-action">As a reviewer, each actionable Jev note offers one button that drafts the comment it calls for, which I edit and send myself; with several conflicts on the page, one button drafts them all.</p>
-<p data-user-story data-user-facing="false" data-anchor="story-levels-api">As an agent reading <code>/api/jev</code>, every mark tells me its level, <code>important</code> or <code>warning</code>, the same level the reviewer sees as color.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-no-walls">As a reviewer, I never see a wall of <code>conflict?</code> marks: every Jev question is a yes or no, an unsure answer is settled by the general LLM, and warnings read light red, apart from grey neutral notes.</p>
+<p data-user-story data-user-facing="false" data-anchor="story-levels-api">As an agent reading <code>/api/jev</code>, every mark tells me its level, <code>important</code> or <code>warning</code>, the same level the reviewer sees as color; a neutral note carries none.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-no-walls">As a reviewer, I never see a wall of <code>conflict?</code> marks: every Jev question is a yes or no, an unsure answer is settled by the general LLM, and Warning marks read light red, apart from grey neutral notes.</p>
 <p data-user-story data-user-facing="false" data-anchor="story-measured">As the operator, I know each yes/no question's unsure rate and accuracy on this box's specs, before and after the change.</p>
 <p data-user-story data-user-facing="false" data-anchor="story-record">As the operator, I can see for any suggestion which model, question set, and sources produced it, and with what confidence.</p>
 </section>
@@ -194,6 +194,7 @@
 </tbody>
 </table>
 </div>
+<p data-anchor="type-material">A registry row's published <code>material</code> is <code>yes</code> when any changed root section answers yes, <code>no</code> when every one answers no, and <code>unknown</code> when any is unavailable, unanswered, or off; an unsure answer is first settled by the LLM fallback.</p>
 </section>
 
 <section data-anchor="chains">
@@ -237,7 +238,7 @@
 </div>
 <p data-anchor="markers-levels-source">The review server owns this table as its single source, as mark kind to <code>important</code> or <code>warning</code>. It returns it as <code>levels</code> in <code>/api/jev</code> and <code>/api/evidence</code>, and puts <code>level</code> on each <code>/api/jev</code> item whose label is a mark kind. The browser colors every marker, including derived coverage gaps and evidence, from those responses and holds no mapping of its own.</p>
 <p data-anchor="markers-color">The level is fixed by mark kind, never by confidence. A marker is a colored <code>!</code> when any of its notes is Important; else a small green check when its evidence is <code>QA passed</code> or <code>QA passed · reworded</code>, which has no level; else a quiet grey dot. else a light red dot when any note is Warning; else a quiet grey dot. The first that applies wins, and hover opens the popover for every kind. Both levels are advice only: color changes nothing else, with no folding, counts, or new UI.</p>
-<p data-anchor="markers-agent-unsure">An unsure item has no level and reads grey to the reviewer; the <a href="../../skill/review-spec/SKILL.md">agent read</a> counts it among its warnings as <code>unsure</code>, beside the Warning kinds.</p>
+<p data-anchor="markers-agent-unsure">An unsure item is a neutral note with no level, grey to the reviewer; the <a href="../../skill/review-spec/SKILL.md">agent read</a> still prints its count as <code>unsure N</code> on its warnings line, so the agent sees it without acting on it.</p>
 <p data-anchor="markers-open">Hover or keyboard focus opens its popover, a tap opens it on touch, and moving away, Escape, or a tap elsewhere closes it; the popover never covers review controls.</p>
 <p data-anchor="markers-content">A popover lists, in this order, evidence (<a href="./criterion-evidence.spec.html#chip">criterion evidence</a>), conflicts, coverage, change type, and unsure questions or <code>Jev unavailable</code>, each note with its <a href="#note-actions">note button</a>. Every note is one short line of a few words; the popover adds no box, rule, or heading between notes.</p>
 <div class="table-scroll" data-anchor="neutral-questions-scroll">
@@ -323,6 +324,7 @@
 <h2>Measure</h2>
 <p data-anchor="measure-data">The data is the draft-check, change-type, and rule-check questions this box's served specs give today, split by spec into a train half and a test half, with a yes/no truth for every test question labelled by hand before either run.</p>
 <p data-anchor="measure-pass">One pass: the yes/no sets are written and tuned on the train half only, then the old multi-way sets and the new chains each answer the test half once, with no change after that run.</p>
+<p data-anchor="measure-seed">This spec's own first draft check is part of the data: the old multi-way set drew 27 <code>Contradicts</code> marks on it; the few that were real are fixed above, and the rest, such as the chain rows against the clauses they replace, are the false marks this change removes.</p>
 <p data-anchor="measure-report">The pull request reports per question: unsure rate, the share of Jev answers below threshold before any fallback, and accuracy, the share of final answers matching the truth, with an old multi-way label read as the yes/no it implies.</p>
 </section>
 
@@ -335,6 +337,7 @@
 
 <section data-anchor="non-goals">
 <h2>Non-goals</h2>
+<p data-anchor="onboarding-reason">Onboarding: not needed, this changes marker colors and note words only, with no new screen or step.</p>
 <p data-anchor="non-goal-text">Generated text of any kind (ANN-96), other providers, budget rules, specs outside the served collection, and Jev questions beyond those listed here.</p>
 </section>
 
