@@ -93,15 +93,15 @@ class AsymmetricThresholdTest(unittest.TestCase):
         self.assertFalse(record.get("escalated"))
 
     def test_silent_no_full_chain(self):
-        """All draft-check P(yes) below verify: chain continues through all questions, no mark."""
+        """Same-spec: about(yes) then contradicts P(yes) below verify ends chain, no mark."""
         chain = draft_check()["chain"]
         provider = AsymmetricProvider(
-            p_yes_map={"about": 0.95, "contradicts": 0.50, "oversteps": 0.50, "overlaps": 0.50})
+            p_yes_map={"about": 0.95, "contradicts": 0.50})
         result = self.seam(provider).ask_chain(chain)
         self.assertIsNone(result["answer"]["label"])
         self.assertEqual(result["outcome"], "shown")
         self.assertEqual(provider.complete_calls, [])
-        self.assertEqual(sorted(provider.decide_calls), ["about", "contradicts", "overlaps", "oversteps"])
+        self.assertEqual(sorted(provider.decide_calls), ["about", "contradicts"])
 
 
 class VerifierTest(unittest.TestCase):
