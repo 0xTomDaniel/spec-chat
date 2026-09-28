@@ -339,37 +339,42 @@ class OpenRouterProvider:
 
 
 class ClaudeCliProvider:
-    """One-shot headless claude -p subprocess for general LLM fallback (jev-seam RULE 09)."""
+    """One-shot isolated claude -p subprocess for general LLM fallback (jev-seam RULE 09).
 
-    def __init__(self, *, timeout: float = GENERAL_LLM_TIMEOUT):
+    Runs --bare --settings (isolated: no CLAUDE.md, no hooks, no user context;
+    auth via apiKeyHelper in settings.json) with --json-schema for structured output
+    and --output-format json for the envelope. The envelope's ``result`` field carries
+    the model's text, parsed as the answer JSON."""
+
+    def __init__(self, *, command: str = "claude", timeout: float = GENERAL_LLM_TIMEOUT,
+                 settings_path: str | None = None):
+        self.command = command
         self.timeout = timeout
+        self.settings_path = settings_path or str(Path.home() / ".claude" / "settings.json")
 
     def complete(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
-        """General LLM via claude CLI; returns the same response shape as OpenRouter chat completions."""
+        """General LLM via isolated claude CLI; same response shape as OpenRouter chat completions."""
         messages = payload.get("messages", [])
-        system = ""
-        user = ""
+        parts: list[str] = []
         for msg in messages:
-            role = msg.get("role")
             content = str(msg.get("content", ""))
-            if role == "system":
-                system = content
-            elif role == "user":
-                user = content
+            if content:
+                parts.append(content)
         schema = payload.get("response_format", {}).get("json_schema", {}).get("schema")
-        if schema:
-            user += "\n\nRespond with ONLY a JSON object matching this schema:\n" + json.dumps(schema, ensure_ascii=False)
+        prompt = "\n\n".join(parts)
         model = str(payload.get("model", ""))
-        cmd = ["claude", "-p", "--output-format", "json"]
+        cmd = [self.command, "-p", "--bare", "--settings", self.settings_path, "--output-format", "json"]
         if model:
             cmd.extend(["--model", model])
-        if system:
-            cmd.extend(["--append-system-prompt", system])
+        if schema:
+            cmd.extend(["--json-schema", json.dumps(schema, ensure_ascii=False)])
         try:
-            result = subprocess.run(cmd, input=user, capture_output=True, text=True, timeout=self.timeout)
+            result = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
+                                    timeout=self.timeout, cwd="/tmp")
             if result.returncode != 0:
                 raise RuntimeError("claude CLI exited %d" % result.returncode)
-            text = str(json.loads(result.stdout).get("result", ""))
+            envelope = json.loads(result.stdout)
+            text = str(envelope.get("result", ""))
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError("claude CLI timed out") from exc
         except (OSError, ValueError) as exc:
