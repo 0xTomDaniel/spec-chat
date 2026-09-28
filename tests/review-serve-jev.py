@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("review_serve_jev_test", ROOT / "tools" / "jev.py")
+spec = importlib.util.spec_from_file_location("review_serve_jev_test", ROOT / "skill" / "review-spec" / "assets" / "jev.py")
 jev = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(jev)
 

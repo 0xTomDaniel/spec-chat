@@ -267,7 +267,7 @@ class WakeControllerTest(unittest.TestCase):
         self.assertIsNone(self.status())
 
     def test_no_pane_tool_is_named(self):
-        roots = [ROOT / "skill", ROOT / "tools", ROOT / "DESIGN.md", ROOT / "README.md"]
+        roots = [ROOT / "skill", ROOT / "DESIGN.md", ROOT / "README.md"]
         roots += [path for path in (ROOT / "docs/specs").glob("*.spec.html")]
         for root in roots:
             for path in ([root] if root.is_file() else root.rglob("*")):

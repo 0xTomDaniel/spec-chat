@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SET = ROOT / "skill/review-spec/assets/jev/audience.json"
 SPEC = ROOT / "docs/specs/jev-suggestions.spec.html"
-spec = importlib.util.spec_from_file_location("jev_audience_test", ROOT / "tools" / "jev.py")
+spec = importlib.util.spec_from_file_location("jev_audience_test", ROOT / "skill" / "review-spec" / "assets" / "jev.py")
 jev = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(jev)
 

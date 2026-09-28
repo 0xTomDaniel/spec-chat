@@ -97,8 +97,8 @@ const code = [
   slice('function jevDisplayLabel(', '\n\nfunction goToJevTarget('),
   slice('/* ---------------- Jev markers', '\n\n/* ---------------- UI'),
 ].join('\n\n');
-// The server's two-column levels table as /api/jev returns it (tools/jev.py MARK_LEVELS); items carry level, the human column, as the server sets it.
-const levels = JSON.parse(execFileSync('python3', ['-c', 'import json, sys; sys.path.insert(0, "tools"); from jev import MARK_LEVELS; print(json.dumps(MARK_LEVELS))'], { cwd: root, encoding: 'utf8' }));
+// The server's two-column levels table as /api/jev returns it (skill/review-spec/assets/jev.py MARK_LEVELS); items carry level, the human column, as the server sets it.
+const levels = JSON.parse(execFileSync('python3', ['-c', 'import json, sys; sys.path.insert(0, "skill/review-spec/assets"); from jev import MARK_LEVELS; print(json.dumps(MARK_LEVELS))'], { cwd: root, encoding: 'utf8' }));
 const item = (kind, id, stateName, label = null, target = null) => ({ kind, id, state: stateName, label, target, record: 'r',
   level: stateName === 'label' && kind !== 'orphan' && label in levels ? levels[label].human : null });
 const typeItems = [
