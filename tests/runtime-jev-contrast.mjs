@@ -42,13 +42,27 @@ const DARK = '@media(prefers-color-scheme:dark)';
 const docRules = parse(literal('DOC_CSS'));
 const sharedRules = parse(literal('FOCUS_CSS') + literal('CSS') + readingCssFor(true));
 const overlayRules = parse(literal('FOCUS_CSS') + literal('CSS') + readingCssFor(false));
+// Resolve CSS custom properties from :root declarations
+const rootVars = { light: {}, dark: {} };
+for (const r of parse(literal('CSS'))) {
+  if (r.sel !== ':root') continue;
+  const target = r.media === DARK ? rootVars.dark : rootVars.light;
+  for (const [k, v] of Object.entries(r.decls)) if (k.startsWith('--')) target[k] = v;
+}
+function resolveVar(value, dark) {
+  if (value == null) return value;
+  return value.replace(/var\(([^,)]+)\)/g, (_, name) => {
+    const n = name.trim();
+    return (dark && rootVars.dark[n]) || rootVars.light[n] || _;
+  });
+}
 function decl(rules, sel, prop, dark) {
   let value = null;
   for (const r of rules) {
     if (r.sel !== sel || !(prop in r.decls)) continue;
     if (r.media === null || (dark && r.media === DARK)) value = r.decls[prop];
   }
-  return value;
+  return resolveVar(value, dark);
 }
 
 const hex = v => { const m = String(v).match(/#([0-9a-f]{6})\b/i); return m ? [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16)) : null; };

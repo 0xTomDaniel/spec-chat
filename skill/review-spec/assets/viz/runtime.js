@@ -1868,7 +1868,7 @@ const CSS = `
 .hx-range-form button:disabled{cursor:wait;opacity:.5}
 .hx-range-error{margin:var(--ui-space-1) 0 0;color:var(--ui-error);font-size:var(--ui-text-xs)}
 @media(prefers-color-scheme:dark){
-:root{--ui-page:#1a1a1a;--ui-surface:#242424;--ui-ink:#e0e0e0;--ui-muted:#999999;--ui-border:#3a3a3a;--ui-focus:#cccccc;--ui-link:#e0e0e0;--ui-action:#cccccc;--ui-pass:#3daa6e;--ui-pass-soft:#1a2e22;--ui-fail:#e05560;--ui-fail-soft:#2e1a1c;--ui-attention:#e5873a;--ui-attention-soft:#2e2218;--ui-draft:#e5873a;--ui-draft-soft:#2e2218;--ui-ack:#6b8aed;--ui-ack-soft:#1a2040;--ui-resolved:#3daa6e;--ui-resolved-soft:#1a2e22;--ui-error:#e05560;--ui-marker:#999999;--ui-marker-important:#e05560;--ui-marker-pass:#3daa6e;--ui-pin-ring:rgba(229,135,58,0.25);--ui-shadow:rgba(0,0,0,0.4)}
+:root{--ui-page:#1a1a1a;--ui-surface:#242424;--ui-ink:#e0e0e0;--ui-muted:#999999;--ui-border:#3a3a3a;--ui-focus:#cccccc;--ui-link:#e0e0e0;--ui-action:#cccccc;--ui-pass:#3daa6e;--ui-pass-soft:#1a2e22;--ui-fail:#ffb4ab;--ui-fail-soft:#2e1a1c;--ui-attention:#e5873a;--ui-attention-soft:#2e2218;--ui-draft:#e5873a;--ui-draft-soft:#2e2218;--ui-ack:#6b8aed;--ui-ack-soft:#1a2040;--ui-resolved:#3daa6e;--ui-resolved-soft:#1a2e22;--ui-error:#ffb4ab;--ui-pin-ring:rgba(229,135,58,0.25);--ui-shadow:rgba(0,0,0,0.4)}
 }
 @media(max-width:640px){
 .hx-range-bar{margin:var(--ui-space-2) var(--ui-space-4) 0;padding:var(--ui-space-2)}
