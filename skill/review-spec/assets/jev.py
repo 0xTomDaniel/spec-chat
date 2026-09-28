@@ -1507,6 +1507,10 @@ class JevService:
         path = self.state_dir / "records.jsonl"
         self.seam = JevSeam(self.question_sets, provider=provider, api_key=api_key, llm_model=llm_model,
                             record_store=JudgmentStore(path))
+        # Test store (#test-hosts): a second JudgmentStore for test-flagged slugs, beside the live one.
+        test_path = self.state_dir / "records-test.jsonl"
+        self.test_seam = JevSeam(self.question_sets, provider=provider, api_key=api_key, llm_model=llm_model,
+                                 record_store=JudgmentStore(test_path))
 
         # Board state (#jev-board-answer): the last answer and the rows the board thread answers next.
         self._board_lock = threading.Lock()
@@ -1542,6 +1546,12 @@ class JevService:
         for t in self._warm_threads:
             t.join(timeout=5)
         self._warm_threads.clear()
+
+    def _seam_for(self, mount: Mapping[str, Any] | None = None) -> "JevSeam":
+        """The live seam, or the test seam when the mount is test-flagged (#test-hosts)."""
+        if mount and mount.get("test"):
+            return self.test_seam
+        return self.seam
 
     @property
     def _kept(self) -> _Kept:
@@ -1774,26 +1784,30 @@ class JevService:
                 if not self._board_wake.is_set():
                     self._board_idle.set()
 
-    def _held(self, question: Mapping[str, Any], misses: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    def _held(self, question: Mapping[str, Any], misses: dict[str, dict[str, Any]],
+              seam: "JevSeam | None" = None) -> dict[str, Any] | None:
         """The held record; a failed one only during its pause (#state-error). A miss is collected."""
-        key = self.seam.key(question)
-        record = self._held_record(key)
+        seam = seam or self.seam
+        key = seam.key(question)
+        record = self._held_record(key, seam)
         if record is None:
             misses.setdefault(key, dict(question))
         return record
 
-    def _held_record(self, key: str) -> dict[str, Any] | None:
+    def _held_record(self, key: str, seam: "JevSeam | None" = None) -> dict[str, Any] | None:
         """A held record. `off` is no answer (the key was missing when asked), so it is asked again, and a
         failed one answers only until its pause ends (#state-error)."""
-        record = self.seam.store.get(key)
+        store = (seam or self.seam).store
+        record = store.get(key)
         if record is None or record.get("outcome") == "off":
             return None
         if record.get("outcome") == "unavailable" and not pause_left(record):
             return None
         return record
 
-    def _ask_misses(self, misses: Mapping[str, dict[str, Any]]) -> list[Future]:
+    def _ask_misses(self, misses: Mapping[str, dict[str, Any]], seam: "JevSeam | None" = None) -> list[Future]:
         """Ask each miss, by key, once in the background; a question in flight or since answered is not asked again."""
+        seam = seam or self.seam
         futures = []
         with self._ask_lock:
             if self._ask_pool is None:
@@ -1801,19 +1815,20 @@ class JevService:
             for key, question in misses.items():
                 if key not in self._asking:
                     # An ask records before it leaves _asking: a key absent from both is truly unasked.
-                    if self._held_record(key) is not None:
+                    if self._held_record(key, seam) is not None:
                         continue
-                    self._asking[key] = self._ask_pool.submit(self._ask_quietly, key, question)
+                    self._asking[key] = self._ask_pool.submit(self._ask_quietly, key, question, seam)
                 futures.append(self._asking[key])
         return futures
 
-    def _ask_quietly(self, key: str, question: Mapping[str, Any]) -> None:
+    def _ask_quietly(self, key: str, question: Mapping[str, Any], seam: "JevSeam | None" = None) -> None:
+        seam = seam or self.seam
         if question.get("kind") == "lane" and "chain" in question:
-            self._asked_quietly((key,), lambda: self._ask_lane_steps(question["chain"]))
+            self._asked_quietly((key,), lambda: self._ask_lane_steps(question["chain"], seam))
         elif "chain" in question:
-            self._asked_quietly((key,), lambda: self.seam.ask_chain(question["chain"]))
+            self._asked_quietly((key,), lambda: seam.ask_chain(question["chain"]))
         else:
-            self._asked_quietly((key,), lambda: self.seam.ask(question))
+            self._asked_quietly((key,), lambda: seam.ask(question))
 
     def _asked_quietly(self, keys: tuple[str, ...], ask: Callable[[], Any]) -> None:
         """Run a background ask; the keys it holds leave _asking only after it records."""
@@ -1826,15 +1841,18 @@ class JevService:
                 for key in keys:
                     self._asking.pop(key, None)
 
-    def _lane_questions(self, rows: Any) -> list[dict[str, Any]]:
+    def _lane_questions(self, rows: Any, *, exclude_test: bool = True) -> list[dict[str, Any]]:
         """Cross-lane questions over every registry row's changed clauses (#cross-lane-clauses), kept by
-        content (#fast-marks): a read resolves each repository's target main once and reparses nothing unchanged."""
+        content (#fast-marks): a read resolves each repository's target main once and reparses nothing unchanged.
+        Test-flagged slugs are excluded from cross-lane checks (#cross-lane-test-host)."""
         if not {"contradicts", "oversteps", "overlaps"} <= set(self.seam.question_sets):
             return []
         clauses: dict[str, list[dict[str, str]]] = {}
         mains: dict[str, str | None] = {}
         for row in rows or ():
             if not isinstance(row, Mapping) or not row.get("slug") or not row.get("spec"):
+                continue
+            if exclude_test and row.get("test"):
                 continue
             try:
                 clauses.setdefault(str(row["slug"]), []).extend(self._changed_clauses(row, mains))
@@ -1846,8 +1864,9 @@ class JevService:
             return []
 
     def _lane_items(self, mount: Mapping[str, Any], rows: Any) -> list[dict[str, Any]]:
-        """`lane` items on this page's own clauses from held records; misses are asked after answering."""
-        if not mount.get("slug") or not mount.get("spec"):
+        """`lane` items on this page's own clauses from held records; misses are asked after answering.
+        Test-flagged slugs are excluded (#cross-lane-test-host)."""
+        if not mount.get("slug") or not mount.get("spec") or mount.get("test"):
             return []
         own = self._row_parts(mount)[2]
 
@@ -1896,30 +1915,33 @@ class JevService:
                         items.append(item)
         return items
 
-    def _ask_lane_steps(self, steps: list[Mapping[str, Any]]) -> None:
+    def _ask_lane_steps(self, steps: list[Mapping[str, Any]], seam: "JevSeam | None" = None) -> None:
         """Ask a lane check: contradicts? once, both oversteps?, overlaps? when all no."""
-        r = self.seam.ask(steps[0])
+        seam = seam or self.seam
+        r = seam.ask(steps[0])
         if _confident_label(r) != "no":
             return
-        a = self.seam.ask(steps[1])
-        b = self.seam.ask(steps[2])
+        a = seam.ask(steps[1])
+        b = seam.ask(steps[2])
         if _confident_label(a) == "no" and _confident_label(b) == "no":
-            self.seam.ask(steps[3])
+            seam.ask(steps[3])
 
-    def _lane_submit(self, chain: Mapping[str, Any]) -> None:
+    def _lane_submit(self, chain: Mapping[str, Any], seam: "JevSeam | None" = None) -> None:
         """Ask a lane chain in the background; deduped by its steps' keys."""
+        seam = seam or self.seam
         with self._ask_lock:
             if self._ask_pool is None:
                 return
-            keys = tuple(self.seam.key(step) for step in chain["chain"])
+            keys = tuple(seam.key(step) for step in chain["chain"])
             if any(k in self._asking for k in keys):
                 return
-            future = self._ask_pool.submit(self._asked_quietly, keys, lambda: self._ask_lane_steps(chain["chain"]))
+            future = self._ask_pool.submit(self._asked_quietly, keys, lambda: self._ask_lane_steps(chain["chain"], seam))
             for k in keys:
                 self._asking[k] = future
 
     def _board_from_records(self, rows: Any) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
-        rows = [row for row in rows or () if isinstance(row, Mapping) and row.get("slug") and row.get("spec")]
+        rows = [row for row in rows or () if isinstance(row, Mapping) and row.get("slug") and row.get("spec")
+                and not row.get("test")]
         sets = self.seam.question_sets
         misses: dict[str, dict[str, Any]] = {}
 
@@ -1950,50 +1972,56 @@ class JevService:
         answer = {"jev": "on", "rows": answer_rows, "conflicts": [{"a": a, "b": b} for a, b in sorted(conflict_pairs)]}
         return answer, misses
 
-    def _rule_task(self, scope: Mapping[str, Any], rule: Mapping[str, Any] | None) -> None:
-        if _confident_label(self.seam.ask(scope)) == RULE_SCOPE and rule is not None:
-            self.seam.ask_chain(rule["chain"])
+    def _rule_task(self, scope: Mapping[str, Any], rule: Mapping[str, Any] | None,
+                   seam: "JevSeam | None" = None) -> None:
+        seam = seam or self.seam
+        if _confident_label(seam.ask(scope)) == RULE_SCOPE and rule is not None:
+            seam.ask_chain(rule["chain"])
 
-    def _ask_submit(self, question: Mapping[str, Any]) -> None:
+    def _ask_submit(self, question: Mapping[str, Any], seam: "JevSeam | None" = None) -> None:
         """Ask a single question on the shared pool; a question in flight is not asked again."""
-        key = self.seam.key(question)
+        seam = seam or self.seam
+        key = seam.key(question)
         with self._ask_lock:
             if self._ask_pool is None or key in self._asking:
                 return
-            self._asking[key] = self._ask_pool.submit(self._asked_quietly, (key,), lambda: self.seam.ask(question))
+            self._asking[key] = self._ask_pool.submit(self._asked_quietly, (key,), lambda: seam.ask(question))
 
-    def _rule_held(self, question: Mapping[str, Any]) -> tuple[str, dict[str, Any] | None]:
+    def _rule_held(self, question: Mapping[str, Any], seam: "JevSeam | None" = None) -> tuple[str, dict[str, Any] | None]:
         """final, pending (to ask or in flight), or unavailable during its pause, with the record; never asks."""
-        key = self.seam.key(question)
-        record = self.seam.store.get(key)
+        seam = seam or self.seam
+        key = seam.key(question)
+        record = seam.store.get(key)
         with self._ask_lock:
             inflight = key in self._asking
         if _final(record):
             return "final", record
-        if inflight or self._held_record(key) is None or record.get("outcome") == ESCALATED:
+        if inflight or self._held_record(key, seam) is None or record.get("outcome") == ESCALATED:
             return "pending", record
         return "unavailable", record
 
-    def _rule_submit(self, scope: Mapping[str, Any], rule: Mapping[str, Any]) -> None:
+    def _rule_submit(self, scope: Mapping[str, Any], rule: Mapping[str, Any], seam: "JevSeam | None" = None) -> None:
         """Ask a scope, then its rule chain, on the one ask pool; a rule in flight is not asked again."""
+        seam = seam or self.seam
         with self._ask_lock:
-            rule_keys = tuple(self.seam.key(step) for step in rule["chain"])
+            rule_keys = tuple(seam.key(step) for step in rule["chain"])
             last_key = rule_keys[-1]
             if self._ask_pool is None or last_key in self._asking:
                 return
             # The task holds only keys no other ask holds, so each ask releases exactly its own.
-            keys = tuple(key for key in (self.seam.key(scope), *rule_keys) if key not in self._asking)
-            future = self._ask_pool.submit(self._asked_quietly, keys, lambda: self._rule_task(scope, rule))
+            keys = tuple(key for key in (seam.key(scope), *rule_keys) if key not in self._asking)
+            future = self._ask_pool.submit(self._asked_quietly, keys, lambda: self._rule_task(scope, rule, seam))
             for key in keys:
                 self._asking[key] = future
 
     def rule_items(self, current: bytes, old: bytes | None, path: str, base: str, revision: Any,
-                   served: Any) -> tuple[list[dict[str, Any]], list[str]]:
+                   served: Any, seam: "JevSeam | None" = None) -> tuple[list[dict[str, Any]], list[str]]:
         """Rule items for a spec that differs from its compared base, and the rules checked (#marks, #pending).
 
         Answers come from held records only; misses are asked in the background and show as pending, with
         escalated true once Jev was unsure and the general LLM has the question."""
-        sets = self.seam.question_sets
+        seam = seam or self.seam
+        sets = seam.question_sets
         mark = self._built("mark", current)
         if not {"scope", "triggered", "covered"} <= set(sets) or mark is None or old == current:
             return [], []
@@ -2001,11 +2029,11 @@ class JevService:
         rules: list[str] = []
         scopes = self._build("scope", served)
         def final(question: Mapping[str, Any]) -> dict[str, Any] | None:
-            state, record = self._rule_held(question)
+            state, record = self._rule_held(question, seam)
             return record if state == "final" else None
 
         for scope, rule in zip(scopes, self._build("rule", scopes, current, path, base, revision, mark)):
-            state, record = self._rule_held(scope)
+            state, record = self._rule_held(scope, seam)
             if state == "unavailable":
                 # An undecided scope is no rule yet: show nothing (non-goals: no scope mark) until its pause ends.
                 continue
@@ -2020,11 +2048,11 @@ class JevService:
                     continue
                 unsure = result["unsure"]
                 if result["outcome"] is None:
-                    state, record = self._rule_held(result["step"])
+                    state, record = self._rule_held(result["step"], seam)
                 else:
                     record = result
             if state == "pending":
-                self._rule_submit(scope, rule)
+                self._rule_submit(scope, rule, seam)
             label = _confident_label(record) if state == "final" else None
             item = {"kind": "rule", "id": mark, "target": scope["target"], "word": scope["word"],
                     "state": "label" if label == RULE_MISSED else ("none" if state == "final" else state),
@@ -2039,9 +2067,10 @@ class JevService:
             items.append(item)
         return items, sorted(set(rules))
 
-    def _rules(self, relative: str, base: str, facts: Mapping[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
+    def _rules(self, relative: str, base: str, facts: Mapping[str, Any],
+                seam: "JevSeam | None" = None) -> tuple[list[dict[str, Any]], list[str]]:
         try:
-            return self.rule_items(facts["current"], facts["old"], relative, base, facts["head"], facts["served"])
+            return self.rule_items(facts["current"], facts["old"], relative, base, facts["head"], facts["served"], seam)
         except Exception:
             return [], []
 
@@ -2084,7 +2113,7 @@ class JevService:
             return []
         projects: dict[str, list[Mapping[str, Any]]] = {}
         for row in rows or []:
-            if isinstance(row, Mapping) and row.get("project") and row.get("root"):
+            if isinstance(row, Mapping) and row.get("project") and row.get("root") and not row.get("test"):
                 projects.setdefault(str(row["project"]), []).append(row)
         started = []
         for project, members in projects.items():
@@ -2225,29 +2254,30 @@ class JevService:
                  base_commit: str | None = None) -> dict[str, Any]:
         if not self.enabled:
             return {"jev": "off", "items": [], "levels": dict(MARK_LEVELS)}
+        seam = self._seam_for(mount)
         try:
             facts = self._read_facts(mount, target, base, served_mounts, base_commit)
         except Exception:
             facts = None  # no rules; questions reads again and fails as it always has
-        rule_items, rules = self._rules(relative, base, facts) if facts else ([], [])
+        rule_items, rules = self._rules(relative, base, facts, seam) if facts else ([], [])
         asked = self.questions(mount, target, relative, base, events, view, served_mounts, base_commit, facts)
         questions = [question for question in asked
-                     if all(step["kind"] in self.seam.question_sets for step in question.get("chain", [question]))]
+                     if all(step["kind"] in seam.question_sets for step in question.get("chain", [question]))]
         misses: dict[str, dict[str, Any]] = {}
 
         def answer(question):
             if question["kind"] == "coverage" and (question.get("story") is None or question.get("criterion") is None):
                 return {"outcome": "shown", "answer": {"label": "unrelated"}, "record_id": None}
             if "chain" in question:
-                result = chain_result(question["chain"], lambda step: self._held_record(self.seam.key(step)))
+                result = chain_result(question["chain"], lambda step: self._held_record(seam.key(step), seam))
                 if result["outcome"] is None:
-                    misses.setdefault(self.seam.key(result["step"]), dict(question))
+                    misses.setdefault(seam.key(result["step"]), dict(question))
                     return None
                 return result
-            return self._held(question, misses)
+            return self._held(question, misses, seam)
 
         answers = [(question, answer(question)) for question in questions]
-        self._ask_misses(misses)
+        self._ask_misses(misses, seam)
         items = []
         for question, record in answers:
             if record is None:
@@ -2259,7 +2289,7 @@ class JevService:
                 continue
             answer = record.get("answer", {})
             label = answer.get("label") if isinstance(answer, Mapping) else None
-            allowed = set(question.get("display_labels", question.get("criteria", {}))) or set(self.seam.question_set(question["kind"]).criteria())
+            allowed = set(question.get("display_labels", question.get("criteria", {}))) or set(seam.question_set(question["kind"]).criteria())
             if question["kind"] == "resolved":
                 allowed = {"resolved in spirit"}
             if question["kind"] == "orphan":
@@ -2285,8 +2315,9 @@ class JevService:
             if unsure:
                 item["unsure"] = unsure
             items.append(item)
+        offer = None if mount.get("test") else self.offer(mount.get("project"))
         return {"jev": "on", "items": items + rule_items + self._lane_items(mount, served_mounts), "rules": rules,
-                "offer": self.offer(mount.get("project")), "levels": dict(MARK_LEVELS)}
+                "offer": offer, "levels": dict(MARK_LEVELS)}
 
 
 __all__ = ["BUILDERS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MARK_LEVELS", "MODEL",

@@ -39,7 +39,7 @@ PROCESS_FIELDS = ("pid", "port", "bind", "host", "url")
 DEFAULT_CURSOR = ".cursor-owner"
 RESOURCE_FIELDS = (
     "id", "slug", "project", "root", "narrow_root", "spec", "path", "base", "accepted", "owner", "checker",
-    "cursor_name", "registered_at", "updated_at",
+    "cursor_name", "test", "registered_at", "updated_at",
 )
 
 
@@ -364,7 +364,10 @@ def registry_record(resource: Mapping[str, Any], old: Mapping[str, Any] | None =
     defaulted = resource.get("defaulted", ())
     given = {key: resource[key] for key in fields if key not in defaulted}
     defaults = {key: resource[key] for key in defaulted}
-    return {"registered_at": stamp, **defaults, **(old or {}), **given, "updated_at": stamp}
+    result = {"registered_at": stamp, **defaults, **(old or {}), **given, "updated_at": stamp}
+    if resource.get("test"):
+        result["test"] = True
+    return result
 
 
 def row_path(record: Mapping[str, Any]) -> str:
@@ -744,6 +747,9 @@ def register(args: argparse.Namespace) -> int:
     state = state_dir(args)
     registry, log_path, _ = paths(state)
     parsed = parse_resources(args)
+    if args.test:
+        for item in parsed:
+            item["test"] = True
     with state_lock(state):
         old_bytes = registry.read_bytes() if registry.exists() else None
         # Rows being replaced may point at a deleted root; only the resulting candidate set is validated.
@@ -889,6 +895,8 @@ def build_parser() -> argparse.ArgumentParser:
     visibility.add_argument("--public", metavar="HOST", help="listen on HOST instead of loopback; the page has no login")
     visibility.add_argument("--private", action="store_true", help="listen on loopback even if a public bind is recorded")
     sub.add_argument("--proof-host", help="public proof host when --public binds a wildcard address")
+    sub.add_argument("--test", action="store_true", default=False,
+                     help="register as a test slug; records go to a separate test store")
     sub = commands.add_parser("remove")
     sub.add_argument("--id", required=True)
     sub.add_argument("--state-dir", required=False)

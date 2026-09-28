@@ -212,8 +212,8 @@ class JevBackgroundTest(unittest.TestCase):
         service = self.service(provider, count=1)
         collect = service._held
 
-        def held_then_answered(question, misses):
-            record = collect(question, misses)
+        def held_then_answered(question, misses, seam=None):
+            record = collect(question, misses, seam)
             service.seam.ask(question)  # the in-flight ask records `unavailable` and leaves _asking
             return record
 
