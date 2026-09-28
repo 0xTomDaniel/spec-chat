@@ -21,7 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 HOST = ROOT / "skill/review-spec/scripts/review-host.py"
-SKILLS = {"spec-chat-shape": ROOT / "skill/shape-spec", "spec-chat-review": ROOT / "skill/review-spec"}
+SKILLS = {"spec-chat-shape": ROOT / "skill/shape-spec", "spec-chat-review": ROOT / "skill/review-spec", "repair-specs": ROOT / "skill/repair-specs"}
 SKILL_DIRS = (".claude/skills", ".codex/skills")
 ASSETS = {".viz": ROOT / "skill/review-spec/assets/viz", ".style": ROOT / "skill/shape-spec/assets/style"}
 DOC = (ROOT / "README.md").as_uri() + "#install-and-onboarding"
