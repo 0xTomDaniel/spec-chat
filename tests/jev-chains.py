@@ -75,7 +75,7 @@ class ChainTest(unittest.TestCase):
         items = [item for item in jev.build_corpus_questions(source, BASE, "spec.html", "base", "head")
                  if item["target"] == "non-goal"]
         self.assertEqual([step["kind"] for step in items[0]["chain"]], ["about", "contradicts-nongoal"])
-        self.assertNotIn("target_non_goal", items[0]["chain"][1]["state"])
+        self.assertTrue(items[0]["chain"][1]["state"]["target_non_goal"])
         provider = FakeProvider({"about": ("yes", 0.95)})
         self.assertIsNone(self.seam(provider).ask_chain(items[0]["chain"])["answer"]["label"])
         self.assertEqual(provider.calls, ["about", "contradicts-nongoal"])
