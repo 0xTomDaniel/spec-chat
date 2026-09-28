@@ -75,11 +75,11 @@ class ChainTest(unittest.TestCase):
         source = CURRENT.replace("</section>", '</section><section data-anchor="non-goals"><p data-anchor="non-goal">Offline.</p></section>')
         items = [item for item in jev.build_corpus_questions(source, BASE, "spec.html", "base", "head")
                  if item["target"] == "non-goal"]
-        self.assertEqual([step["kind"] for step in items[0]["chain"]], ["about", "contradicts"])
-        self.assertTrue(items[0]["chain"][1]["state"]["target_non_goal"])
+        self.assertEqual([step["kind"] for step in items[0]["chain"]], ["about", "contradicts-nongoal"])
+        self.assertNotIn("target_non_goal", items[0]["chain"][1]["state"])
         provider = FakeProvider({"about": ("yes", 0.95)})
         self.assertIsNone(self.seam(provider).ask_chain(items[0]["chain"])["answer"]["label"])
-        self.assertEqual(provider.calls, ["about", "contradicts"])
+        self.assertEqual(provider.calls, ["about", "contradicts-nongoal"])
 
     def test_every_chain_record_is_yes_or_no_and_one_record_per_question(self):
         provider = FakeProvider({"about": ("yes", 0.95), "contradicts": ("no", 0.95), "oversteps": ("no", 0.95), "overlaps": ("no", 0.1)},

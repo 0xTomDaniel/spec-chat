@@ -139,13 +139,16 @@ class ProviderWait(RuntimeError):
 
 class QuestionSet:
     def __init__(self, identifier: str, version: Any, instructions: str = "", labels: Any = None,
-                 threshold: float = DEFAULT_THRESHOLD, fallback: bool = False):
+                 threshold: float = DEFAULT_THRESHOLD, fallback: bool = False,
+                 show_cutoff: float | None = None, verify_cutoff: float | None = None):
         self.id = identifier
         self.fallback = fallback
         self.version = version
         self.instructions = instructions
         self.labels = [] if labels is None else labels
         self.threshold = threshold
+        self.show_cutoff = show_cutoff
+        self.verify_cutoff = verify_cutoff
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any], fallback_id: str) -> "QuestionSet":
@@ -160,7 +163,18 @@ class QuestionSet:
         fallback = raw.get("fallback", False)
         if not isinstance(fallback, bool):
             raise ValueError("question set fallback is true or false; sets name no model")
-        return cls(identifier, version, str(raw.get("instructions", "")), labels, threshold, fallback)
+        show_cutoff = raw.get("show_cutoff")
+        verify_cutoff = raw.get("verify_cutoff")
+        if show_cutoff is not None:
+            show_cutoff = float(show_cutoff)
+            if not math.isfinite(show_cutoff) or not 0 <= show_cutoff <= 1:
+                raise ValueError("invalid show_cutoff")
+        if verify_cutoff is not None:
+            verify_cutoff = float(verify_cutoff)
+            if not math.isfinite(verify_cutoff) or not 0 <= verify_cutoff <= 1:
+                raise ValueError("invalid verify_cutoff")
+        return cls(identifier, version, str(raw.get("instructions", "")), labels, threshold, fallback,
+                   show_cutoff, verify_cutoff)
 
     def criteria(self) -> dict[str, str]:
         if isinstance(self.labels, Mapping):
@@ -222,6 +236,10 @@ class QuestionSet:
                   "labels": _jsonable(self.labels), "threshold": self.threshold}
         if self.fallback:
             result["fallback"] = True
+        if self.show_cutoff is not None:
+            result["show_cutoff"] = self.show_cutoff
+        if self.verify_cutoff is not None:
+            result["verify_cutoff"] = self.verify_cutoff
         return result
 
 
@@ -841,6 +859,23 @@ def _match_score(source: str, target: str) -> tuple[int, int]:
     return overlap, int((overlap * 1000) / union) if union else 0
 
 
+def _doc_freqs(clause_texts: list[str]) -> dict[str, int]:
+    """Count of clauses containing each word, across the spec collection (#candidate-ranking)."""
+    freqs: dict[str, int] = {}
+    for text in clause_texts:
+        for word in _anchor_words(text):
+            freqs[word] = freqs.get(word, 0) + 1
+    return freqs
+
+
+def _rarity_score(source_words: set[str], target_words: set[str], freqs: dict[str, int]) -> float:
+    """Rarity-weighted overlap: each shared word weighted by 1/log(1+doc_freq) (#candidate-ranking)."""
+    shared = source_words & target_words
+    if not shared:
+        return 0.0
+    return sum(1.0 / math.log(1 + freqs.get(word, 1)) for word in shared)
+
+
 def _candidate_sort(source: str, anchors: Mapping[str, Mapping[str, Any]], keys: list[str]) -> list[str]:
     return sorted(keys, key=lambda key: (-_match_score(source, str(anchors[key].get("text", "")))[0],
                                          -_match_score(source, str(anchors[key].get("text", "")))[1], key))
@@ -910,6 +945,10 @@ def _is_non_goal(anchor: str, anchors: Mapping[str, Mapping[str, Any]]) -> bool:
     return False
 
 
+TOPK_SAME = 5
+TOPK_CROSS = 5
+
+
 def build_corpus_questions(current: str | bytes, baseline: str | bytes | None, path: str = "spec", base: str = "",
                            revision: Any = "head", served_specs: Any = None) -> list[dict[str, Any]]:
     """Build one corpus question for each changed leaf and candidate clause."""
@@ -925,6 +964,12 @@ def build_corpus_questions(current: str | bytes, baseline: str | bytes | None, p
             continue
         other_specs.append((other_path, extract_anchors(source)))
 
+    # Collect all clause texts for document frequency (#candidate-ranking).
+    all_texts: list[str] = [str(now[k].get("text", "")) for k in leaves]
+    for _, other_anchors in other_specs:
+        all_texts.extend(str(other_anchors[k].get("text", "")) for k in _corpus_leaf_anchors(other_anchors))
+    freqs = _doc_freqs(all_texts)
+
     result = []
     for anchor in leaves:
         after = str(now[anchor].get("text", ""))
@@ -932,23 +977,26 @@ def build_corpus_questions(current: str | bytes, baseline: str | bytes | None, p
         if before == after:
             continue
 
+        source_words = _anchor_words(after)
         own_keys = [key for key in _corpus_leaf_anchors(now) if key != anchor]
-        own_ranked = _candidate_sort(after, now, own_keys)
-        non_goals = [key for key in own_ranked if _is_non_goal(key, now)]
-        own_keys = own_ranked[:8]
+        # Rank same-spec candidates by rarity-weighted overlap.
+        own_scored = sorted(own_keys, key=lambda k: (-_rarity_score(source_words, _anchor_words(str(now[k].get("text", ""))), freqs), k))
+        non_goals = [key for key in own_scored if _is_non_goal(key, now)]
+        own_keys = own_scored[:TOPK_SAME]
         for key in non_goals:
             if key not in own_keys:
                 own_keys.append(key)
         candidates = [(key, str(now[key].get("text", "")), key in non_goals, now) for key in own_keys]
 
-        cross: list[tuple[int, int, str, str, str, bool, dict]] = []
+        # Rank cross-spec candidates by rarity-weighted overlap.
+        cross: list[tuple[float, str, str, str, bool, dict]] = []
         for other_path, other_anchors in other_specs:
             for key in _corpus_leaf_anchors(other_anchors):
                 text = str(other_anchors[key].get("text", ""))
-                overlap, ratio = _match_score(after, text)
-                cross.append((-overlap, -ratio, other_path, key, text, _is_non_goal(key, other_anchors), other_anchors))
-        cross.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
-        candidates.extend((other_path + "#" + key, text, non_goal, ca) for _, _, other_path, key, text, non_goal, ca in cross[:8])
+                score = _rarity_score(source_words, _anchor_words(text), freqs)
+                cross.append((-score, other_path, key, text, _is_non_goal(key, other_anchors), other_anchors))
+        cross.sort(key=lambda item: (item[0], item[1], item[2]))
+        candidates.extend((other_path + "#" + key, text, non_goal, ca) for _, other_path, key, text, non_goal, ca in cross[:TOPK_CROSS])
 
         ctx = anchor_context(anchor, now)
         for target, target_text, non_goal, target_anchors in candidates:
@@ -979,9 +1027,10 @@ def draft_check(anchor: str, before: str, after: str, target: str, target_text: 
         pair["context"] = dict(context)
     if target_context:
         pair["target_context"] = dict(target_context)
-    # Jev sees only text: without this fact a clause adding what a non-goal excludes reads as related.
+    # Non-goal candidates use their own question set (#qset-examples), not a conditional instruction.
+    contradicts_kind = "contradicts-nongoal" if target_non_goal else "contradicts"
     steps = [gate,
-             _step(_question("contradicts", anchor, {**pair, "target_non_goal": target_non_goal},
+             _step(_question(contradicts_kind, anchor, pair,
                              path, base, revision, target), yes="contradicts")]
     if target_non_goal:
         steps[1]["then"]["no"] = None

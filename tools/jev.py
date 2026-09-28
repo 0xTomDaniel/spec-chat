@@ -139,13 +139,16 @@ class ProviderWait(RuntimeError):
 
 class QuestionSet:
     def __init__(self, identifier: str, version: Any, instructions: str = "", labels: Any = None,
-                 threshold: float = DEFAULT_THRESHOLD, fallback: bool = False):
+                 threshold: float = DEFAULT_THRESHOLD, fallback: bool = False,
+                 show_cutoff: float | None = None, verify_cutoff: float | None = None):
         self.id = identifier
         self.fallback = fallback
         self.version = version
         self.instructions = instructions
         self.labels = [] if labels is None else labels
         self.threshold = threshold
+        self.show_cutoff = show_cutoff
+        self.verify_cutoff = verify_cutoff
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any], fallback_id: str) -> "QuestionSet":
@@ -160,7 +163,18 @@ class QuestionSet:
         fallback = raw.get("fallback", False)
         if not isinstance(fallback, bool):
             raise ValueError("question set fallback is true or false; sets name no model")
-        return cls(identifier, version, str(raw.get("instructions", "")), labels, threshold, fallback)
+        show_cutoff = raw.get("show_cutoff")
+        verify_cutoff = raw.get("verify_cutoff")
+        if show_cutoff is not None:
+            show_cutoff = float(show_cutoff)
+            if not math.isfinite(show_cutoff) or not 0 <= show_cutoff <= 1:
+                raise ValueError("invalid show_cutoff")
+        if verify_cutoff is not None:
+            verify_cutoff = float(verify_cutoff)
+            if not math.isfinite(verify_cutoff) or not 0 <= verify_cutoff <= 1:
+                raise ValueError("invalid verify_cutoff")
+        return cls(identifier, version, str(raw.get("instructions", "")), labels, threshold, fallback,
+                   show_cutoff, verify_cutoff)
 
     def criteria(self) -> dict[str, str]:
         if isinstance(self.labels, Mapping):
@@ -222,6 +236,10 @@ class QuestionSet:
                   "labels": _jsonable(self.labels), "threshold": self.threshold}
         if self.fallback:
             result["fallback"] = True
+        if self.show_cutoff is not None:
+            result["show_cutoff"] = self.show_cutoff
+        if self.verify_cutoff is not None:
+            result["verify_cutoff"] = self.verify_cutoff
         return result
 
 
@@ -1009,9 +1027,10 @@ def draft_check(anchor: str, before: str, after: str, target: str, target_text: 
         pair["context"] = dict(context)
     if target_context:
         pair["target_context"] = dict(target_context)
-    # Jev sees only text: without this fact a clause adding what a non-goal excludes reads as related.
+    # Non-goal candidates use their own question set (#qset-examples), not a conditional instruction.
+    contradicts_kind = "contradicts-nongoal" if target_non_goal else "contradicts"
     steps = [gate,
-             _step(_question("contradicts", anchor, {**pair, "target_non_goal": target_non_goal},
+             _step(_question(contradicts_kind, anchor, pair,
                              path, base, revision, target), yes="contradicts")]
     if target_non_goal:
         steps[1]["then"]["no"] = None
