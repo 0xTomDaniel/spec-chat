@@ -236,7 +236,7 @@ class RulesTest(unittest.TestCase):
         # once per chain question: triggered? then covered?
         self.assertEqual((len(provider.general_asked("triggered")), len(provider.general_asked("covered"))), (1, 1))
         self.assertEqual(onboarding[0]["unsure"], 2)
-        self.assertEqual({c["model"] for c in provider.general_calls}, {jev.DEFAULT_LLM_MODEL})
+        self.assertEqual({c["model"] for c in provider.general_calls}, {""})
         rule_call = provider.general_asked("covered")[0]
         schema = rule_call["response_format"]["json_schema"]
         self.assertTrue(schema["strict"] and rule_call["provider"]["require_parameters"])
