@@ -193,7 +193,7 @@
 <p data-anchor="source-guided-impact">Each changed user-facing story declares in canonical HTML whether it requires a guided-journey extension; no declaration is copied into lifecycle tracking or generated catalogs.</p>
 <p data-anchor="source-linear-story-boundary">Linear carries issue lifecycle and governing links, not canonical story or guided-journey declaration text.</p>
 <p data-anchor="source-markdown-story-boundary">Markdown story catalogs remain generated downstream QA output.</p>
-<p data-anchor="source-issues">Every canonical spec links each issue whose accepted work materially changed that spec file.</p>
+<p data-anchor="source-issues">Specs carry no ticket or issue link; git history is the provenance record.</p>
 <p data-anchor="source-pr">The evolving draft change request carries durable commits and history, but it is not a required human spec-review surface.</p>
 <p data-anchor="source-spool">The actor-segregated review spool owns comments, replies, hand-offs, and their causal order.</p>
 <p data-anchor="source-context">The existing review context file carries only concise cold-recovery facts that have not yet become canonical behavior.</p>
@@ -325,7 +325,7 @@
 <p data-anchor="flow-seed">The agent writes one concise current issue seed and one concise current spec seed before deeper grilling.</p>
 <p data-anchor="flow-existing-spec">When a relevant canonical spec exists, the agent edits it in place.</p>
 <p data-anchor="flow-new-spec">When no relevant spec exists, the agent creates a minimal durable capability or domain spec with only sections that contain real behavior.</p>
-<p data-anchor="flow-no-issue-link">The spec adds the originating issue to its concise source-issues list when accepted work changes that file.</p>
+<p data-anchor="flow-no-issue-link">The spec carries no ticket or issue link; git history is the provenance record.</p>
 <p data-anchor="flow-pr">The first seed is committed locally, passes the structural validator, is hosted, and its review link is sent at once; the caller publishes the issue, branch, and draft change request in parallel.</p>
 <p data-anchor="flow-deepen">After the link is sent, the agent inspects only relevant code, tests, configuration, and branch state before asking questions those sources can answer.</p>
 <p data-anchor="flow-conflict">A conflict between durable sources stops shaping visibly instead of being resolved from chat or model memory.</p>
@@ -795,8 +795,6 @@
 <h2>References</h2>
 <p data-anchor="reference-design">Product design history: <a href="https://github.com/0xTomDaniel/spec-chat/blob/70e22934dc418c7971fde5772a6d9fcc904e892f/DESIGN.md">DESIGN.md at the shaping baseline</a>.</p>
 <p data-anchor="reference-review-skill">Current review procedure baseline: <a href="https://github.com/varelaseb/spec-chat/blob/cae844f1b85ce39911ab9db7f6bb03c37d434bac/skill/review-spec/SKILL.md">skill/review-spec/SKILL.md at the mobile-review commit</a>.</p>
-<p data-anchor="reference-source-issues">Source issues: <a href="https://github.com/0xTomDaniel/spec-chat/issues/21">#21 Add prompt-first shaping and portable Spec Chat handoffs</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/22">#22 Prevent stale review capabilities in existing repositories</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/24">#24 Raise generated spec visual quality and contrast</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/26">#26 Generalize visual richness without lowering quality</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/28">#28 Make review wake ownership explicit and reliable</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/32">#32 Make implementation ticket graphs canonical in Spec Chat shaping</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/36">#36 Prevent material review edits from bypassing visual quality</a>; <a href="https://github.com/0xTomDaniel/spec-chat/issues/38">#38 Require guided-journey declarations on changed user stories</a>; <a href="https://linear.app/annotateanything/issue/ANN-111">ANN-111 Later TBDs do not block spec acceptance; open TBD highlights its block; human spec review and spec acceptance vocabulary</a>; <a href="https://linear.app/annotateanything/issue/ANN-131">ANN-131 Review host wakes the owner pane on hand-off</a>; <a href="https://linear.app/annotateanything/issue/ANN-140">ANN-140 Backfill spec order and story tags</a>; <a href="https://linear.app/annotateanything/issue/ANN-207">ANN-207 Faster shaping: hand off at the draft</a>.</p>
-<p data-anchor="reference-source-rule">Every later issue that materially changes this file is appended to the source-issues list, and unrelated issues are never added.</p>
 </section>
 
 </article>
