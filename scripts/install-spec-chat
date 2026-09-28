@@ -75,7 +75,26 @@ def link(source: Path, target: Path, added: list[str]) -> None:
     if target.is_symlink() and target.resolve() == source.resolve():
         return
     if target.exists() or target.is_symlink():
-        raise InstallError(f"refusing to replace: {target}")
+        if target.is_symlink():
+            resolved = target.resolve()
+            probe = str(resolved if resolved.is_dir() else resolved.parent)
+            theirs = subprocess.run(
+                ["git", "-C", probe, "remote", "get-url", "origin"],
+                text=True, capture_output=True,
+            )
+            ours = subprocess.run(
+                ["git", "-C", str(ROOT), "remote", "get-url", "origin"],
+                text=True, capture_output=True,
+            )
+            if (theirs.returncode == 0 and ours.returncode == 0
+                    and theirs.stdout.strip()
+                    and theirs.stdout.strip() == ours.stdout.strip()):
+                print(f"adopted: {target} -> {resolved}")
+                return
+        what = os.readlink(target) if target.is_symlink() else (
+            "directory" if target.is_dir() else "file")
+        print(f"skipped: {target} (occupied by {what})")
+        return
     target.parent.mkdir(parents=True, exist_ok=True)
     target.symlink_to(source)
     added.append(str(target))
