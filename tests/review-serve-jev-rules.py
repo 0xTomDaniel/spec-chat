@@ -33,8 +33,20 @@ def spec(*criteria, body=""):
             f'<section data-anchor="behavior"><p data-anchor="body">{body}</p></section>')
 
 
+SETS = jev.load_question_sets(ROOT / "skill" / "review-spec" / "assets" / "jev")
+# The rule check is a chain (#q-rule): triggered? then covered?; the maps below name the outcome it reaches.
+RULE_ANSWERS = {"triggered": {"not triggered": "no", "covered": "yes", "missed": "yes"},
+                "covered": {"not triggered": "yes", "covered": "yes", "missed": "no"}}
+
+
+def general_kind(payload):
+    question = json.loads(payload["messages"][0]["content"])["question"]
+    return next(name for name, qset in SETS.items() if qset.instructions == question)
+
+
 class FakeProvider:
-    """Jev answers from scope and rule maps; the general LLM from its own map; every payload is kept."""
+    """Jev answers from scope and rule maps; the general LLM from its own map; every payload is kept.
+    A rule map value is the rule check's outcome, missed, covered, or not triggered, answered per chain question."""
 
     def __init__(self, scope=None, rule=None, general=None, confidence=0.95, gate=None):
         self.scope, self.rule, self.general = dict(scope or {}), dict(rule or {}), dict(general or {})
@@ -50,10 +62,11 @@ class FakeProvider:
         state = payload["state"]
         if kind == "scope":
             label, confidence = self.scope.get(state["criterion"], ("this feature", self.confidence))
-        elif kind == "rule":
+        elif kind in RULE_ANSWERS:
             label, confidence = self.rule.get(state["rule"], ("not triggered", self.confidence))
             if callable(label):
                 label = label(state["spec"])
+            label = RULE_ANSWERS[kind][label]
         else:
             label, confidence = "unrelated", 0.95
         return {"answers": {kind: {"choice": label, "confidence": confidence}}}
@@ -64,16 +77,23 @@ class FakeProvider:
         with self.lock:
             self.general_calls.append(payload)
         state = json.loads(payload["messages"][-1]["content"])
-        kind = "scope" if "criterion" in state else "rule"
-        answer = self.general.get((kind, state.get("criterion", state.get("rule"))))
+        kind = general_kind(payload)
+        answer = self.general.get(("scope" if kind == "scope" else "rule", state.get("criterion", state.get("rule"))))
         if isinstance(answer, list):  # one answer per call, the last repeating
             answer = answer.pop(0) if len(answer) > 1 else answer[0]
         if isinstance(answer, BaseException):
             raise answer
+        answer = RULE_ANSWERS.get(kind, {}).get(answer, answer)
         return {"model": payload["model"], "choices": [{"message": {"content": json.dumps({"choice": answer})}}]}
 
     def asked(self, kind):
+        """Jev calls for one question; rule is the rule check's first, triggered?."""
+        kind = "triggered" if kind == "rule" else kind
         return [call for call in self.calls if kind in call["questions"]]
+
+    def general_asked(self, kind, rule=ONBOARDING):
+        return [call for call in self.general_calls
+                if general_kind(call) == kind and json.loads(call["messages"][-1]["content"]).get("rule") == rule]
 
 
 class RulesTest(unittest.TestCase):
@@ -213,12 +233,14 @@ class RulesTest(unittest.TestCase):
         onboarding = [i for i in self.rules(result) if i["target"].endswith("#acceptance-onboarding")]
         self.assertEqual([(i["state"], i["label"]) for i in onboarding], [("label", "missed")])
         self.assertFalse([i for i in result["items"] if i["state"] == "unsure"])
-        self.assertEqual(len([c for c in provider.general_calls if json.loads(c["messages"][-1]["content"]).get("rule") == ONBOARDING]), 1)
+        # once per chain question: triggered? then covered?
+        self.assertEqual((len(provider.general_asked("triggered")), len(provider.general_asked("covered"))), (1, 1))
+        self.assertEqual(onboarding[0]["unsure"], 2)
         self.assertEqual({c["model"] for c in provider.general_calls}, {jev.DEFAULT_LLM_MODEL})
-        rule_call = next(c for c in provider.general_calls if "rule" in json.loads(c["messages"][-1]["content"]))
+        rule_call = provider.general_asked("covered")[0]
         schema = rule_call["response_format"]["json_schema"]
         self.assertTrue(schema["strict"] and rule_call["provider"]["require_parameters"])
-        self.assertEqual(schema["schema"]["properties"]["choice"]["enum"], ["missed", "covered", "not triggered"])
+        self.assertEqual(schema["schema"]["properties"]["choice"]["enum"], ["yes", "no"])
         records = [json.loads(line) for line in (Path(self.tmp.name) / "state" / "records.jsonl").read_text().splitlines()]
         decided = [r for r in records if r.get("escalated") and r["outcome"] == "shown"]
         self.assertTrue(decided and all(r["model"] != jev.MODEL for r in decided))
@@ -227,38 +249,65 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(self.rules(self.read(reopened)), self.rules(result))
         self.assertEqual((len(provider.calls), len(provider.general_calls)), calls)
 
-    def test_general_failure_is_unavailable_and_asked_again_next_load(self):
+    def test_failed_rule_check_waits_its_pause_then_is_asked_again(self):
+        """project-rules #q-fallback cites jev-suggestions #state-error: the one retry rule, never every load."""
         self.seed()
+        now = [1000.0]
         provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("missed", 0.2)},
                                 general={("rule", ONBOARDING): RuntimeError("down")})
-        service = self.service(provider)
-        item = next(i for i in self.rules(self.read(service)) if i["target"].endswith("#acceptance-onboarding"))
-        self.assertEqual(item["state"], "unavailable")
-        provider.general[("rule", ONBOARDING)] = "not triggered"
-        jev_calls = len(provider.asked("rule"))
-        self.read(service, settle=False)
-        item = next(i for i in self.rules(self.read(service)) if i["target"].endswith("#acceptance-onboarding"))
-        self.assertEqual((item["state"], item["label"]), ("none", None))
-        self.assertEqual(len(provider.asked("rule")), jev_calls)  # Jev is not asked again, only the LLM
+        onboarding = lambda result: next(i for i in self.rules(result) if i["target"].endswith("#acceptance-onboarding"))
+        general = lambda: len([c for c in provider.general_calls if json.loads(c["messages"][-1]["content"]).get("rule") == ONBOARDING])
+        with unittest.mock.patch.object(jev, "_wall", lambda: now[0]):
+            service = self.service(provider)
+            self.assertEqual(onboarding(self.read(service))["state"], "unavailable")
+            asked, jev_calls = general(), len(provider.asked("rule"))
+            provider.general[("rule", ONBOARDING)] = "not triggered"
+            now[0] += jev.RETRY_PAUSE - 1
+            for _ in range(2):
+                self.assertEqual(onboarding(self.read(service, settle=False))["state"], "unavailable")
+            time.sleep(0.05)
+            self.assertEqual(general(), asked)
+            now[0] += 2
+            started = time.time()
+            self.assertEqual(onboarding(self.read(service, settle=False))["state"], "pending")
+            self.assertLess(time.time() - started, 0.5)
+            item = onboarding(self.read(service))
+            self.assertEqual((item["state"], item["label"]), ("none", None))
+            self.assertEqual(general(), asked + 1)
+            self.assertEqual(len(provider.asked("rule")), jev_calls)  # Jev is not asked again, only the LLM
 
-    def test_general_failure_is_retried_once_like_jev(self):
+    def test_failed_rule_check_honors_the_provider_wait(self):
         self.seed()
+        now = [1000.0]
         provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("missed", 0.2)},
-                                general={("rule", ONBOARDING): [RuntimeError("timeout"), "covered"]})
-        item = next(i for i in self.rules(self.read(self.service(provider))) if i["target"].endswith("#acceptance-onboarding"))
-        self.assertEqual(item["state"], "none")
-        self.assertEqual(len([c for c in provider.general_calls if json.loads(c["messages"][-1]["content"]).get("rule") == ONBOARDING]), 2)
+                                general={("rule", ONBOARDING): jev.ProviderWait("rate limited", 300.0)})
+        onboarding = lambda result: next(i for i in self.rules(result) if i["target"].endswith("#acceptance-onboarding"))
+        with unittest.mock.patch.object(jev, "_wall", lambda: now[0]):
+            service = self.service(provider)
+            self.assertEqual(onboarding(self.read(service))["state"], "unavailable")
+            asked = len(provider.general_calls)
+            provider.general[("rule", ONBOARDING)] = "covered"
+            now[0] += jev.RETRY_PAUSE + 1
+            self.assertEqual(onboarding(self.read(service, settle=False))["state"], "unavailable")
+            time.sleep(0.05)
+            self.assertEqual(len(provider.general_calls), asked)
+            now[0] += 300
+            self.assertEqual(onboarding(self.read(service))["state"], "none")
+            self.assertEqual(len(provider.general_calls), asked + 2)  # triggered retry + covered escalation
 
     def test_unavailable_scope_yields_no_rule_item_and_is_asked_again(self):
         self.seed()
         provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.2), LOCAL: ("this feature", 0.2)},
                                 rule={ONBOARDING: ("missed", 0.95)},
                                 general={("scope", ONBOARDING): RuntimeError("down"), ("scope", LOCAL): RuntimeError("down")})
-        service = self.service(provider)
-        self.assertEqual(self.rules(self.read(service)), [])
-        provider.general.update({("scope", ONBOARDING): "every feature", ("scope", LOCAL): "this feature"})
-        self.read(service, settle=False)
-        rules = self.rules(self.read(service))
+        now = [1000.0]
+        with unittest.mock.patch.object(jev, "_wall", lambda: now[0]):
+            service = self.service(provider)
+            self.assertEqual(self.rules(self.read(service)), [])
+            provider.general.update({("scope", ONBOARDING): "every feature", ("scope", LOCAL): "this feature"})
+            self.assertEqual(self.rules(self.read(service)), [])  # during its pause: nothing shown, nothing asked
+            now[0] += jev.RETRY_PAUSE + 1
+            rules = self.rules(self.read(service))
         self.assertEqual([(i["target"], i["state"]) for i in rules],
                          [("specs/onboarding.spec.html#acceptance-onboarding", "label")])
 
@@ -305,6 +354,39 @@ class RulesTest(unittest.TestCase):
         result = self.read(self.service(provider))
         self.assertEqual((self.rules(result), result["rules"]), ([], []))
         self.assertEqual(provider.asked("rule"), [])
+
+    def test_rule_asks_share_the_one_ask_pool_and_stop_drops_them(self):
+        """Rule and suggestion asks go through one pool (jev-suggestions #fast-marks-background, project-rules #pending)."""
+        self.seed()
+        gate = threading.Event()
+
+        class Gated(FakeProvider):
+            def decide(self, payload):
+                gate.wait(10)
+                return super().decide(payload)
+
+        provider = Gated()
+        with unittest.mock.patch.object(jev, "ASK_WORKERS", 1):
+            service = self.service(provider)
+        try:
+            first = self.rules(self.read(service, settle=False))
+            self.assertTrue(first and all(i["state"] == "pending" for i in first))
+            queued = list(service._asking.values())
+            self.assertGreater(len(queued), 1)
+            self.assertFalse(hasattr(service, "_rule_pool"))
+            stopper = threading.Thread(target=service.stop)
+            stopper.start()
+            deadline = time.time() + 10
+            while not all(f.cancelled() or f.running() for f in queued) and time.time() < deadline:
+                time.sleep(0.005)
+        finally:
+            gate.set()
+        stopper.join(10)
+        self.assertFalse(stopper.is_alive())
+        self.assertEqual(len(provider.calls), 1)  # the in-flight scope ask; queued ones were dropped
+        self.read(service, settle=False)
+        time.sleep(0.05)
+        self.assertEqual(len(provider.calls), 1)  # nothing asks after stop
 
     def test_off_returns_off(self):
         self.seed()

@@ -14,13 +14,13 @@ const { coverageGapFlags, coverageFlags } = Function(
 
 const flags = coverageGapFlags([
   { kind: 'coverage', id: 'story-gap::criterion-verified', state: 'label', label: 'unrelated' },
-  { kind: 'coverage', id: 'story-gap::criterion-unsure', state: 'unsure', label: null },
+  { kind: 'coverage', id: 'story-gap::criterion-down', state: 'unavailable', label: null },
   { kind: 'coverage', id: 'story-covered::criterion-verified', state: 'label', label: 'verifies' },
   { kind: 'coverage', id: 'story-covered::criterion-gap', state: 'label', label: 'unrelated' },
 ]);
 assert.deepEqual(flags, [
-  { anchor: 'story-gap', side: 'story', state: 'unsure', label: 'unsure' },
-  { anchor: 'criterion-unsure', side: 'criterion', state: 'unsure', label: 'unsure' },
+  { anchor: 'story-gap', side: 'story', state: 'unavailable', label: 'Jev unavailable' },
+  { anchor: 'criterion-down', side: 'criterion', state: 'unavailable', label: 'Jev unavailable' },
   { anchor: 'criterion-gap', side: 'criterion', state: 'gap', label: 'No story backs this' },
 ]);
 assert.deepEqual(coverageFlags([
@@ -34,6 +34,11 @@ assert.deepEqual(coverageFlags([
 ]), [{ anchor: 'story-one', side: 'story', state: 'gap', label: 'No criterion covers this' },
     { anchor: 'story-two', side: 'story', state: 'gap', label: 'No criterion covers this' },
     { anchor: 'criterion-one', side: 'criterion', state: 'gap', label: 'No story backs this' }]);
+// A pair not yet answered shows nothing yet, never a gap (#state-pending).
+assert.deepEqual(coverageGapFlags([
+  { kind: 'coverage', id: 'story::criterion-a', state: 'pending', label: null },
+  { kind: 'coverage', id: 'story::criterion-b', state: 'label', label: 'unrelated' },
+]), [{ anchor: 'criterion-b', side: 'criterion', state: 'gap', label: 'No story backs this' }]);
 assert.match(runtime, /No criterion covers this/);
 assert.match(runtime, /No story backs this/);
 

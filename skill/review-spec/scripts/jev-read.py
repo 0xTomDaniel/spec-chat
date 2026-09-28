@@ -2,7 +2,8 @@
 """Compact agent read of a review link's Jev checks (project-rules #agent-read).
 
 Reads GET /api/jev for the spec and base the review link serves, from the running server, and prints:
-one line per important mark, warning counts by kind, the rules checked, the pending count; or `off`.
+one line per important mark, warning counts by kind with the count of answers Jev was unsure of and the
+general LLM settled (jev-suggestions #markers-agent-unsure), the rules checked, the pending count; or `off`.
 `--anchor <id>` prints full detail for that anchor only. Marks are keyed on each item's `agent_level` (jev-suggestions #markers-levels-source).
 """
 
@@ -72,6 +73,9 @@ def summary(result: dict[str, Any]) -> list[str]:
              for item in items(result) if item.get("agent_level") == "important"]
     counts = Counter(str(item.get("kind") or "") for item in items(result) if item.get("agent_level") == "warning")
     warnings = ", ".join(f"{kind} {count}" for kind, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+    unsure = sum(item["unsure"] for item in items(result) if isinstance(item.get("unsure"), int))
+    if unsure:
+        warnings = ", ".join(filter(None, (warnings, f"unsure {unsure}")))
     rules = ", ".join(str(rule) for rule in result.get("rules") or [])
     tail = [["warnings", warnings or "0"], ["rules", rules or "none"], ["pending", str(pending(result))]]
     return (_table(marks) if marks else []) + _table(tail, len("important") if marks else 0)

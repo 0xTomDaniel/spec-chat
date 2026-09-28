@@ -66,6 +66,18 @@ def row(root, slug, spec, base):
 
 
 SPEC = "docs/specs/board.spec.html"
+DRAFT = {"contradicts", "oversteps", "overlaps"}
+
+
+# Each slug's changed clause texts, lower slug first.
+LANES = ({"Cards sort by age."}, {"Cards sort by title."})
+CROSS = ({"Cards sort by age.", "The board edits specs."}, {"Cards sort by title.", "Only the spec owner edits specs."})
+
+
+def crosses(state, texts):
+    """A draft-check state pairing a changed clause of each slug."""
+    pair = {state["after"], state["target"]}
+    return bool(pair & texts[0] and pair & texts[1])
 
 
 def section(text, leaf="rule"):
@@ -76,13 +88,21 @@ class BoardTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
+        self.services = []
 
     def tearDown(self):
+        for service in self.services:  # stop asking before the state directory goes
+            service.stop()
         self.tmp.cleanup()
+
+    def jev_service(self, **kwargs):
+        service = jev.JevService(**kwargs)
+        self.services.append(service)
+        return service
 
     def service(self, answer):
         provider = FakeProvider(answer)
-        service = jev.JevService(state_dir=self.dir / "state", provider=provider, api_key="fake")
+        service = self.jev_service(state_dir=self.dir / "state", provider=provider, api_key="fake")
         return service, provider
 
     def idle(self, service):
@@ -101,9 +121,9 @@ class BoardTest(unittest.TestCase):
         base = repo(root, SPEC, section(before), section(after))
         return [row(root, "ann1", SPEC, base)]
 
-    def test_cosmetic_change_is_not_material_and_below_threshold_is_unknown(self):
+    def test_no_behavior_change_is_not_material_and_unsettled_unsure_is_unknown(self):
         rows = self.one_row()
-        service, _ = self.service(lambda kind, state: ("cosmetic", 0.9))
+        service, _ = self.service(lambda kind, state: ("no", 0.9))
         first, second = self.settle(service, rows)
         self.assertEqual(first, {"jev": "on", "rows": [], "conflicts": []})  # unanswered is unknown
         self.assertEqual(second["rows"], [{"id": rows[0]["id"], "material": "no"}])
@@ -112,22 +132,23 @@ class BoardTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
         rows = self.one_row()
-        service, _ = self.service(lambda kind, state: ("cosmetic", 0.1))
+        service, _ = self.service(lambda kind, state: ("no", 0.1))
         _, second = self.settle(service, rows)
         self.assertEqual(second["rows"][0]["material"], "unknown")
 
-    def test_confident_behavioral_is_material(self):
+    def test_behavior_change_is_material(self):
         rows = self.one_row()
-        service, _ = self.service(lambda kind, state: ("behavioral", 0.9))
+        service, _ = self.service(lambda kind, state: ("yes", 0.9))
         _, second = self.settle(service, rows)
         self.assertEqual(second["rows"][0]["material"], "yes")
 
     def test_material_combines_answers(self):
         shown = lambda label: {"outcome": "shown", "answer": {"label": label}}
-        self.assertEqual(jev.material([shown("cosmetic"), shown("clarification")]), "no")
-        self.assertEqual(jev.material([shown("cosmetic"), None]), "unknown")
-        self.assertEqual(jev.material([shown("cosmetic"), {"outcome": "unsure", "answer": {"label": "scope"}}]), "unknown")
-        self.assertEqual(jev.material([None, shown("scope")]), "yes")
+        no, yes = shown("no-behavior-change"), shown("behavior")
+        self.assertEqual(jev.material([no, no]), "no")
+        self.assertEqual(jev.material([no, None]), "unknown")
+        self.assertEqual(jev.material([no, {"outcome": "unavailable", "answer": {"label": None}}]), "unknown")
+        self.assertEqual(jev.material([None, yes]), "yes")
         self.assertEqual(jev.material([{"outcome": "off", "answer": {"label": None}}]), "unknown")
 
     def test_answer_never_waits_for_jev(self):
@@ -135,7 +156,7 @@ class BoardTest(unittest.TestCase):
 
         def blocked(kind, state):
             gate.wait(5)
-            return ("cosmetic", 0.9)
+            return ("no", 0.9)
 
         rows = self.one_row()
         service, provider = self.service(blocked)
@@ -153,7 +174,7 @@ class BoardTest(unittest.TestCase):
     def test_answer_never_builds_questions(self):
         gate = threading.Event()
         rows = self.one_row()
-        service, _ = self.service(lambda kind, state: ("cosmetic", 0.9))
+        service, _ = self.service(lambda kind, state: ("no", 0.9))
         slow = service._material_questions
         service._material_questions = lambda row: (gate.wait(5), slow(row))[1]
         started = time.monotonic()
@@ -167,7 +188,7 @@ class BoardTest(unittest.TestCase):
         self.assertEqual(service.board(rows)["rows"], [{"id": rows[0]["id"], "material": "no"}])
         self.idle(service)
 
-    def test_unavailable_record_is_reused_until_inputs_change(self):
+    def test_unavailable_record_is_reused_during_its_pause(self):
         def failing(kind, state):
             raise OSError("jev down")
 
@@ -176,7 +197,7 @@ class BoardTest(unittest.TestCase):
         _, second = self.settle(service, rows)
         self.assertEqual(second["rows"][0]["material"], "unknown")
         asked = len(provider.calls)
-        self.assertEqual(asked, 2)  # each question asked once, never re-asked by the second read
+        self.assertEqual(asked, 1)  # each question asked once, never re-asked by the second read
         service.board(rows)
         self.idle(service)
         self.assertEqual(len(provider.calls), asked)  # same key: no provider call
@@ -186,13 +207,13 @@ class BoardTest(unittest.TestCase):
         self.assertGreater(len(provider.calls), asked)  # new head asks again
 
     def test_off_without_key(self):
-        service = jev.JevService(state_dir=self.dir / "state", api_key="")
+        service = self.jev_service(state_dir=self.dir / "state", api_key="")
         self.assertEqual(service.board(self.one_row()), {"jev": "off", "rows": [], "conflicts": []})
 
     def test_bad_base_is_unknown(self):
         rows = self.one_row()
         rows[0]["base"] = "no-such-ref"
-        service, provider = self.service(lambda kind, state: ("cosmetic", 0.9))
+        service, provider = self.service(lambda kind, state: ("no", 0.9))
         _, second = self.settle(service, rows)
         self.assertEqual(second["rows"][0]["material"], "unknown")
         self.assertFalse([call for call in provider.calls if "type" in call["questions"]])
@@ -205,37 +226,91 @@ class BoardTest(unittest.TestCase):
         (b / other).write_text(section("Unchanged elsewhere.", "else"), encoding="utf-8")
         return [row(a, "ann1", SPEC, base_a), row(b, "ann2", SPEC, base_b)]
 
+    @staticmethod
+    def lane_calls(provider, texts):
+        """Draft-check questions asked of a cross-lane pair: one clause from each slug's changed texts."""
+        return [call for call in provider.calls if set(call["questions"]) <= DRAFT and crosses(call["state"], texts)]
+
     def test_confident_contradiction_lists_pair_once(self):
         rows = self.lanes()
-
-        def answer(kind, state):
-            if kind == "lane":
-                return ("contradicts", 0.9)
-            return ("behavioral", 0.9)
-
-        service, provider = self.service(answer)
+        service, provider = self.service(lambda kind, state: ("yes", 0.9))  # contradicts?, changes behavior?
         first, second = self.settle(service, rows)
         self.assertEqual(first["conflicts"], [])
         self.assertEqual(second["conflicts"], [{"a": "ann1/" + SPEC, "b": "ann2/" + SPEC}])
-        lane = [call for call in provider.calls if "lane" in call["questions"]]
-        self.assertEqual(len(lane), 1)  # one unordered pair of changed leaves, asked once, lower slug first
-        self.assertEqual(lane[0]["state"], {"first": "Cards sort by age.", "second": "Cards sort by title."})
-        self.assertEqual(set(lane[0]["questions"]["lane"]["criteria"]),
-                         {"contradicts", "first oversteps second", "second oversteps first", "overlaps", "unrelated"})
-        self.assertFalse([call for call in provider.calls if "corpus" in call["questions"]])
+        lane = self.lane_calls(provider, LANES)
+        # One unordered pair of changed leaves, asked once, lower slug first; a yes to contradicts? stops the chain.
+        self.assertEqual([next(iter(call["questions"])) for call in lane], ["contradicts"])
+        self.assertEqual(lane[0]["state"], {"before": "Keep.", "after": "Cards sort by age.",
+                                            "target": "Cards sort by title.", "target_non_goal": False})
+        self.assertEqual(set(lane[0]["questions"]["contradicts"]["criteria"]), {"yes", "no"})
         self.assertNotIn("Cards", json.dumps(second))
 
+    def test_mutual_overstep_marks_both_clauses(self):
+        """A mutual overstep marks each clause both Oversteps and Overstepped by."""
+        rows = self.lanes()
+
+        def answer(kind, state):
+            if kind not in DRAFT:
+                return ("yes", 0.9)
+            if kind == "oversteps":
+                return ("yes", 0.9)
+            return ("no", 0.9)
+
+        service, provider = self.service(answer)
+        _, second = self.settle(service, rows)
+        y = "ann2/" + SPEC
+        self.assertEqual(second["conflicts"], [{"a": "ann1/" + SPEC, "b": y}])
+        lane = self.lane_calls(provider, LANES)
+        age, title = "Cards sort by age.", "Cards sort by title."
+        asked = [(next(iter(call["questions"])), call["state"]["after"]) for call in lane]
+        self.assertEqual(asked, [("contradicts", age), ("oversteps", age), ("oversteps", title)])
+        # Page items: each side gets both marks
+        self.wait_asks(service)
+        x_items = self.lane_items(self.page(service, rows, 0))
+        y_items = self.lane_items(self.page(service, rows, 1))
+        self.wait_asks(service)
+        strip = lambda items: [{k: v for k, v in item.items() if k != "record"} for item in items]
+        self.assertEqual(strip(x_items), [
+            {"kind": "lane", "id": "rule", "state": "label", "label": "oversteps", "side": "first", "other": "ann2",
+             "target": y + "#rule", "level": "warning", "agent_level": "important"},
+            {"kind": "lane", "id": "rule", "state": "label", "label": "overstepped by", "side": "first", "other": "ann2",
+             "target": y + "#rule", "level": "warning", "agent_level": "important"},
+        ])
+        self.assertEqual(strip(y_items), [
+            {"kind": "lane", "id": "rule", "state": "label", "label": "overstepped by", "side": "second", "other": "ann1",
+             "target": "ann1/" + SPEC + "#rule", "level": "warning", "agent_level": "important"},
+            {"kind": "lane", "id": "rule", "state": "label", "label": "oversteps", "side": "second", "other": "ann1",
+             "target": "ann1/" + SPEC + "#rule", "level": "warning", "agent_level": "important"},
+        ])
+        self.assertTrue(all(item["record"] for item in x_items + y_items))
+
     def test_findings_are_contradicts_or_either_overstep(self):
-        cases = (("contradicts", 0.9, True), ("first oversteps second", 0.9, True), ("second oversteps first", 0.9, True),
-                 ("overlaps", 0.9, False), ("unrelated", 0.9, False), ("contradicts", 0.1, False))
-        for label, confidence, listed in cases:
-            with self.subTest(label=label, confidence=confidence):
+        age, title = "Cards sort by age.", "Cards sort by title."
+        # Each case: the one question answering yes (kind, after), its confidence, whether the pair is listed,
+        # and the questions asked.
+        contradicts, forth, back, overlaps = (("contradicts", age), ("oversteps", age), ("oversteps", title),
+                                              ("overlaps", age))
+        # contradicts? once, both oversteps?, overlaps? only when all three are no.
+        cases = ((contradicts, 0.9, True, [contradicts]), (forth, 0.9, True, [contradicts, forth, back]),
+                 (back, 0.9, True, [contradicts, forth, back]), (overlaps, 0.9, False, [contradicts, forth, back, overlaps]),
+                 (None, 0.9, False, [contradicts, forth, back, overlaps]),
+                 (contradicts, 0.1, False, [contradicts]))  # unsure, and the general LLM is unavailable
+        for yes, confidence, listed, expected in cases:
+            with self.subTest(yes=yes, confidence=confidence):
                 self.tearDown()
                 self.setUp()
                 rows = self.lanes()
-                service, _ = self.service(lambda kind, state: (label, confidence) if kind == "lane" else ("scope", 0.9))
+
+                def answer(kind, state):
+                    if kind not in DRAFT:
+                        return ("yes", 0.9)
+                    return ("yes", confidence) if (kind, state["after"]) == yes else ("no", 0.9)
+
+                service, provider = self.service(answer)
                 _, second = self.settle(service, rows)
                 self.assertEqual(second["conflicts"], [{"a": "ann1/" + SPEC, "b": "ann2/" + SPEC}] if listed else [])
+                asked = [(next(iter(call["questions"])), call["state"]["after"]) for call in self.lane_calls(provider, LANES)]
+                self.assertEqual(asked, expected)
 
     def cross_lane(self):
         """#acceptance-cross-lane: X changes a and c, Y changes b and d, against target main."""
@@ -252,14 +327,14 @@ class BoardTest(unittest.TestCase):
 
     @staticmethod
     def cross_answer(kind, state):
-        if kind != "lane":
-            return ("unrelated", 0.9) if kind in ("corpus", "coverage") else ("cosmetic", 0.9)
-        pair = (state["first"], state["second"])
-        if pair == ("Cards sort by age.", "Cards sort by title."):
-            return ("contradicts", 0.9)
-        if pair == ("The board edits specs.", "Only the spec owner edits specs."):
-            return ("first oversteps second", 0.9)
-        return ("overlaps", 0.9)
+        if kind not in DRAFT:
+            return ("unrelated", 0.9) if kind == "coverage" else ("no", 0.9)
+        pair = (state["after"], state["target"])
+        if kind == "contradicts" and pair == ("Cards sort by age.", "Cards sort by title."):
+            return ("yes", 0.9)
+        if kind == "oversteps" and pair == ("The board edits specs.", "Only the spec owner edits specs."):
+            return ("yes", 0.9)
+        return ("no", 0.9)
 
     def page(self, service, rows, index):
         mount = rows[index]
@@ -272,9 +347,9 @@ class BoardTest(unittest.TestCase):
 
     def wait_asks(self, service):
         deadline = time.monotonic() + 10
-        while service._rule_inflight and time.monotonic() < deadline:
+        while service._asking and time.monotonic() < deadline:
             time.sleep(0.01)
-        self.assertFalse(service._rule_inflight)
+        self.assertFalse(service._asking)
 
     def test_lane_items_on_both_specs_after_answers(self):
         rows = self.cross_lane()
@@ -286,7 +361,8 @@ class BoardTest(unittest.TestCase):
                          [("a", "pending", y + "#b"), ("a", "pending", y + "#d"),
                           ("c", "pending", y + "#b"), ("c", "pending", y + "#d")])
         self.wait_asks(service)
-        self.assertEqual(len([call for call in provider.calls if "lane" in call["questions"]]), 4)
+        # a-b stops at contradicts?, c-d asks both oversteps?, a-d and c-b ask all four.
+        self.assertEqual(len(self.lane_calls(provider, CROSS)), 1 + 3 + 4 + 4)
         x_items = self.lane_items(self.page(service, rows, 0))
         y_items = self.lane_items(self.page(service, rows, 1))
         strip = lambda items: [{k: v for k, v in item.items() if k != "record"} for item in items]
@@ -318,7 +394,7 @@ class BoardTest(unittest.TestCase):
         gate = threading.Event()
 
         def blocked(kind, state):
-            if kind == "lane":
+            if kind in DRAFT and crosses(state, CROSS):
                 gate.wait(5)
             return self.cross_answer(kind, state)
 
@@ -332,7 +408,9 @@ class BoardTest(unittest.TestCase):
         gate.set()
         self.wait_asks(service)
         self.idle(service)
-        self.assertEqual(len([call for call in provider.calls if "lane" in call["questions"]]), 4)
+        lane = self.lane_calls(provider, CROSS)
+        self.assertEqual(len(lane), 1 + 3 + 4 + 4)
+        self.assertEqual(len({json.dumps([call["questions"], call["state"]], sort_keys=True) for call in lane}), len(lane))
 
     def test_single_root_page_has_no_lane_items(self):
         rows = self.cross_lane()
@@ -342,19 +420,19 @@ class BoardTest(unittest.TestCase):
         response = service.response(mount, rows[0]["spec_file"], "specs/board.spec.html", rows[0]["base"], [], "", [mount])
         self.assertEqual(self.lane_items(response), [])
         self.wait_asks(service)
-        self.assertFalse([call for call in provider.calls if "lane" in call["questions"]])
+        self.assertFalse(self.lane_calls(provider, CROSS))
 
     def test_same_slug_clauses_are_never_paired(self):
         rows = self.lanes()
         rows[1]["slug"] = "ann1"
         rows[1]["path"] = "ann1b/" + SPEC
-        service, provider = self.service(lambda kind, state: ("contradicts", 0.9))
+        service, provider = self.service(lambda kind, state: ("yes", 0.9))
         self.settle(service, rows)
-        self.assertFalse([call for call in provider.calls if "lane" in call["questions"]])
+        self.assertFalse(self.lane_calls(provider, LANES))
 
     def test_route_serves_board_without_parameters(self):
         rows = self.one_row()
-        service, _ = self.service(lambda kind, state: ("cosmetic", 0.9))
+        service, _ = self.service(lambda kind, state: ("no", 0.9))
         server = serve.ReviewThreadingHTTPServer(("127.0.0.1", 0), serve.MountHandler)
         server.mount_state = serve.MountState(rows)
         server.jev = service
@@ -383,7 +461,7 @@ class BoardTest(unittest.TestCase):
         base = rows[0]["base"]
         rows[0]["root"] = str(Path(rows[0]["root"]).resolve())
         rows[0]["narrow_root"] = str(Path(rows[0]["root"]) / "docs")
-        service, _ = self.service(lambda kind, state: ("cosmetic", 0.9))
+        service, _ = self.service(lambda kind, state: ("no", 0.9))
         server = serve.ReviewThreadingHTTPServer(("127.0.0.1", 0), serve.MountHandler)
         server.mount_state = serve.MountState(rows)
         server.jev = service
