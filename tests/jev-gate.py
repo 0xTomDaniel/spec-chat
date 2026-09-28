@@ -37,7 +37,13 @@ class FakeProvider:
         with self.lock:
             kind = self.calls[-1]
             self.general_calls.append(kind)
-        return {"choices": [{"message": {"content": json.dumps({"choice": self.general[kind]})}}]}
+        label = self.general[kind]
+        # Verifier format (#verifier): answer + quoted spans
+        result = {"answer": label}
+        if label == "yes":
+            result["clause_span"] = "clause conflict"
+            result["target_span"] = "target conflict"
+        return {"choices": [{"message": {"content": json.dumps(result)}}]}
 
 
 def draft_check():
@@ -283,12 +289,13 @@ class ProviderTypeTest(unittest.TestCase):
         self.assertEqual(provider.timeout, jev.GENERAL_LLM_TIMEOUT)
 
     def test_fallback_path_uses_provider_type(self):
-        """When provider_type is openrouter, the fallback calls the primary's complete(), not ClaudeCliProvider."""
-        primary = FakeProvider({"contradicts": ("no", 0.1)}, general={"contradicts": "yes"})
+        """When provider_type is openrouter, the verifier calls the primary's complete(), not ClaudeCliProvider."""
+        # P(yes)=0.8 lands in verify band [0.7, 0.9) so the verifier is called (#asymmetric)
+        primary = FakeProvider({"contradicts": ("yes", 0.8)}, general={"contradicts": "yes"})
         seam = jev.JevSeam(SETS, provider=primary, api_key="fake", provider_type="openrouter")
         question = draft_check()["chain"][1]  # the contradicts step
         result = seam.ask(question)
-        # Below threshold with fallback set: calls primary's complete()
+        # Verify band: calls primary's complete() for verification
         self.assertEqual(primary.general_calls, ["contradicts"])
         self.assertEqual(result["answer"]["label"], "yes")
 
@@ -331,8 +338,9 @@ class ProviderTypeTest(unittest.TestCase):
         self.assertNotIn("escalated", result)
 
     def test_record_source_llm_for_fallback(self):
-        """Fallback LLM answers carry source: 'llm' (jev-seam #record-source)."""
-        primary = FakeProvider({"contradicts": ("no", 0.1)}, general={"contradicts": "yes"})
+        """Verifier answers carry source: 'llm' (jev-seam #record-source)."""
+        # P(yes)=0.8 in verify band [0.7, 0.9): goes to verifier (#asymmetric)
+        primary = FakeProvider({"contradicts": ("yes", 0.8)}, general={"contradicts": "yes"})
         seam = jev.JevSeam(SETS, provider=primary, api_key="fake")
         question = draft_check()["chain"][1]
         result = seam.ask(question)

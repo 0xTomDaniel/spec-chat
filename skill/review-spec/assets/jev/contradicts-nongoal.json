@@ -1,0 +1,55 @@
+{
+  "id": "contradicts-nongoal",
+  "version": 1,
+  "instructions": "The linked clause lists items its spec excludes as non-goals. Does the changed clause add or require something the non-goal excludes? Answer yes only when you can name the specific listed item the changed clause adds or requires. Answer no when the changed clause does not add any item the non-goal lists, even when the wording overlaps.",
+  "threshold": 0.4,
+  "fallback": true,
+  "show_cutoff": 0.90,
+  "verify_cutoff": 0.70,
+  "labels": [
+    {
+      "name": "yes",
+      "description": "The changed clause adds or requires something the non-goal linked clause excludes.",
+      "examples": [
+        {
+          "input": {
+            "before": "",
+            "after": "The report page exports every report as a CSV file on a nightly schedule.",
+            "target": "Bulk export, scheduled reports, or email digests."
+          },
+          "label": "yes"
+        },
+        {
+          "input": {
+            "before": "",
+            "after": "The dashboard sends a daily email digest of key metrics to all team members.",
+            "target": "Automated notifications, email digests, or push alerts."
+          },
+          "label": "yes"
+        }
+      ]
+    },
+    {
+      "name": "no",
+      "description": "No conflict: the changed clause does not add any item the non-goal lists, even when the wording relates to the same area.",
+      "examples": [
+        {
+          "input": {
+            "before": "",
+            "after": "The report header shows the report's owner and its creation date.",
+            "target": "Changing a report's owner, comparing two arbitrary reports, or browsing archived reports."
+          },
+          "label": "no"
+        },
+        {
+          "input": {
+            "before": "",
+            "after": "The settings page lists all notification channels the user has configured.",
+            "target": "Automated notifications, email digests, or push alerts."
+          },
+          "label": "no"
+        }
+      ]
+    }
+  ]
+}

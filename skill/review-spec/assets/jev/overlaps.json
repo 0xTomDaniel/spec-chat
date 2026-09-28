@@ -1,27 +1,21 @@
 {
   "id": "overlaps",
-  "version": 3,
+  "version": 4,
   "instructions": "Compare the changed clause with the linked clause; they neither contradict nor overstep each other. Do they say the same thing? Answer yes when both clauses describe the same behavior, surface, or responsibility. Answer no when they describe different things, even if related. A criterion or test that checks the behavior the other clause states says the same thing: yes.",
   "threshold": 0.4,
   "fallback": true,
+  "show_cutoff": 0.90,
+  "verify_cutoff": 0.70,
   "labels": [
     {
       "name": "yes",
-      "description": "Both clauses describe the same behavior, surface, or responsibility.",
+      "description": "Both clauses describe the same behavior, surface, or responsibility. A criterion or test that checks the behavior the other clause states says the same thing.",
       "examples": [
         {
           "input": {
             "before": "The server stores one judgment record for each question.",
             "after": "The records are the cache.",
             "target": "The records are the cache: each is keyed by a hash of its question inputs and set version."
-          },
-          "label": "yes"
-        },
-        {
-          "input": {
-            "before": "A confident flag adds a label.",
-            "after": "A confident flag adds a label on the changed clause.",
-            "target": "A confident flag adds a small label on the changed clause."
           },
           "label": "yes"
         },
@@ -35,9 +29,9 @@
         },
         {
           "input": {
-            "before": "A link calls the panel with one subPath for the resource.",
-            "after": "A link calls the panel with one subPath for the resource, dropping a leading slash.",
-            "target": "Clicking that link shows the page with that exact resource, via its configured address and the subPath."
+            "before": "",
+            "after": "Decided by the human, 2026-09-24: the page uses BB's Terminal icon. The plugin's sidebar rows are exactly Spec, Proof, Terminal, Human inbox, in that order.",
+            "target": "The Human inbox row, titled Human inbox since ANN-236 and formerly Kanban, is a normal plugin page, not an embedded service page."
           },
           "label": "yes"
         }
@@ -45,7 +39,7 @@
     },
     {
       "name": "no",
-      "description": "The clauses describe different behavior, even if related.",
+      "description": "The clauses describe different behavior, even if related. Pairs that restate, extend, belong to another layer, are sibling rows of one table, or name a Jev label word such as overlaps are no when they describe different things.",
       "examples": [
         {
           "input": {
@@ -60,6 +54,14 @@
             "before": "The page shows a comment label.",
             "after": "The page shows a comment label with text.",
             "target": "The compared base determines the Git focus."
+          },
+          "label": "no"
+        },
+        {
+          "input": {
+            "before": "The export route returns CSV.",
+            "after": "The export route returns CSV and names the file after the report.",
+            "target": "The report header shows the report's owner and its creation date."
           },
           "label": "no"
         }
