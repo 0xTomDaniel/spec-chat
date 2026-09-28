@@ -22,6 +22,7 @@
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-miss">As a reviewer of a spec under shaping, a project-wide rule the spec triggers but does not cover shows one compact mark linking the rule, and it clears once the spec either covers the rule or says in one line why it does not apply.</p>
 <p data-user-story data-user-facing="false" data-anchor="story-agent">As the shaping agent, I read every Jev check on my spec as compact text without a browser, solve every important mark, and hand off the review link naming the rules checked and listing the warnings I did not act on.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-bootstrap">As a reviewer on a project new to Spec Chat, I am offered once to reconcile the existing specs that miss project rules.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-explicit-rule">As a spec author, a criterion counts as a project-wide rule only when its own text says it applies to every feature, so I control which criteria become rules by including or omitting that wording.</p>
 </section>
 
 <section data-spec-section="acceptance" data-acceptance-scope="project-rules" data-anchor="acceptance">
@@ -40,6 +41,10 @@
 <p data-acceptance-criterion data-anchor="acceptance-advice" data-story="story-agent story-miss"><span data-acceptance-scenario>When a spec still has Jev marks, including a <code>missed</code> note, as the human reviews it,</span> <span data-acceptance-observable><code>Accept spec</code> proceeds unchanged, and no spec edit exists only to change a Jev answer or its confidence.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-warm" data-story="story-bootstrap"><span data-acceptance-scenario>When a project is registered with the review service for the first time, with no other tool installed,</span> <span data-acceptance-observable><code>register</code> returns without waiting, a background warm-up classifies every criterion and checks every spec in parallel, and later pages reuse its records without new calls, and <code>onboarding.toml</code> shows the rules classified and N specs to reconcile for that project.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-offer" data-story="story-bootstrap"><span data-acceptance-scenario>When the warm-up finds N existing specs that miss a rule, and the reviewer opens a page of that project,</span> <span data-acceptance-observable>the page shows <q>N existing specs miss project rules: reconcile?</q> once with a disclosure toggle collapsed by default; expanding it lists each spec with its missed rules, the spec name linking to the spec and each rule word linking to the rule's home clause; <code>Reconcile</code> opens the composer with one draft listing each spec and its missed rules with links, nothing is written until the reviewer sends, and after it is sent or dismissed it never shows again for that project.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-explicit-rule" data-story="story-explicit-rule"><span data-acceptance-scenario>When a criterion's text says <q>every feature</q>, <q>every change</q>, <q>any change</q>, or equivalent every-feature wording,</span> <span data-acceptance-observable>the scope question still asks Jev, and Jev's answer decides, as today; the explicit wording makes Jev's answer reliable, not a new mechanism.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-no-false-rule" data-story="story-explicit-rule"><span data-acceptance-scenario>When a criterion describes how one feature behaves and does not say it applies to every feature,</span> <span data-acceptance-observable>Jev answers <code>this feature</code> and it is never a project rule.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-warm-explicit" data-story="story-bootstrap"><span data-acceptance-scenario>When the first-run warm-up classifies every criterion,</span> <span data-acceptance-observable>it uses the same scope question and Jev answer as any other rule check; criteria without explicit every-feature wording are classified <code>this feature</code> and produce no rule, no offer, and no miss mark.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-onboarding-doc" data-story="story-explicit-rule"><span data-acceptance-scenario>When a reviewer reads Spec Chat's onboarding documentation,</span> <span data-acceptance-observable>one section says how to write a project rule: include explicit every-feature wording in the criterion text, such as <q>When any change adds a screen, it ships with its help center article.</q></span></p>
 </section>
 
 <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
@@ -130,6 +135,12 @@ pending    0</pre>
 <p data-anchor="bootstrap-once">Sending or dismissing the offer is recorded in that project's table; with N zero, or Jev off, no offer shows.</p>
 </section>
 
+<section data-anchor="explicit-rules">
+<h2>Explicit rule wording</h2>
+<p data-anchor="explicit-rule-principle">A criterion counts as a project-wide rule only when Jev, reading its text, answers <code>every feature</code>. The mechanism is unchanged: the existing scope question and its fallback decide. A real project-wide rule is written in its home spec with explicit every-feature wording so Jev's answer is reliable. A criterion that describes how one feature behaves and does not say it applies to every feature is answered <code>this feature</code> and is never a rule.</p>
+<p data-anchor="explicit-rule-no-new-mechanism">No new mechanism is added. The scope question set, the Jev fallback, the rule-check question, records, and caching are unchanged. The improvement is in the criterion text, not the code.</p>
+</section>
+
 <section data-anchor="proof">
 <h2>Proof</h2>
 <p data-anchor="proof-first">First failing test: with a fake provider answering <code>every feature</code> for one criterion of spec A and <code>missed</code> for spec B, <code>/api/jev</code> for B returns one <code>rule</code> item targeting A's criterion.</p>
@@ -138,7 +149,7 @@ pending    0</pre>
 
 <section data-anchor="non-goals">
 <h2>Non-goals</h2>
-<p data-anchor="non-goal-list">Tags, rule lists, side files, or Spec Chat state holding project knowledge; rules from outside the served specs; generated mark text; a scope mark or an unsure rule mark; clearing a miss by thread; checking specs not under review after bootstrap; any bootstrap step in a peer's setup.</p>
+<p data-anchor="non-goal-list">Tags, rule lists, side files, or Spec Chat state holding project knowledge; rules from outside the served specs; generated mark text; a scope mark or an unsure rule mark; clearing a miss by thread; checking specs not under review after bootstrap; any bootstrap step in a peer's setup; changes to the scope question set's instructions, labels, or threshold.</p>
 </section>
 
 </article>

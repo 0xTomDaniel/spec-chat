@@ -1,0 +1,37 @@
+{
+  "id": "about",
+  "version": 1,
+  "instructions": "Are these two clauses about the same thing? Answer yes when both clauses describe the same route, field, element, command, term, surface, or responsibility. Answer no when the clauses are about different things, different layers, or different surfaces.",
+  "threshold": 0.4,
+  "fallback": true,
+  "labels": [
+    {
+      "name": "yes",
+      "description": "Both clauses describe the same route, field, element, command, term, surface, or responsibility.",
+      "examples": [
+        {
+          "input": {"first": {"text": "The upload endpoint validates file size before storing."}, "second": {"text": "Files over 10 MB are rejected at the upload boundary."}},
+          "label": "yes"
+        },
+        {
+          "input": {"first": {"text": "Session tokens expire after 30 minutes of inactivity."}, "second": {"text": "A session that has been idle for the configured timeout is invalidated."}},
+          "label": "yes"
+        }
+      ]
+    },
+    {
+      "name": "no",
+      "description": "The clauses are about different things, different layers, or different surfaces.",
+      "examples": [
+        {
+          "input": {"first": {"text": "The dashboard shows a bar chart of daily active users."}, "second": {"text": "The export endpoint writes CSV with one row per transaction."}},
+          "label": "no"
+        },
+        {
+          "input": {"first": {"text": "Error pages render a support link in the footer."}, "second": {"text": "The worker retries failed jobs up to three times with backoff."}},
+          "label": "no"
+        }
+      ]
+    }
+  ]
+}

@@ -388,6 +388,59 @@ class RulesTest(unittest.TestCase):
         time.sleep(0.05)
         self.assertEqual(len(provider.calls), 1)  # nothing asks after stop
 
+    def test_explicit_every_feature_wording_asks_jev_which_decides_not_a_new_mechanism(self):
+        """acceptance-explicit-rule: criteria with 'every change', 'any change', 'every feature' wording
+        are scoped by the same scope question; Jev's answer decides; no new mechanism bypasses it."""
+        ANY_CHANGE = "When any change adds a public endpoint, it ships its rate-limit test."
+        EVERY_FEATURE_RULE = "Every feature that alters what a user sees ships with its accessibility check."
+        self.write("onboarding.spec.html", spec(
+            ("acceptance-onboarding", ONBOARDING),
+            ("endpoints", ANY_CHANGE),
+            ("accessibility", EVERY_FEATURE_RULE)))
+        self.write("b.spec.html", spec(("b-one", "Old criterion."), body="Old body."))
+        self.base = self.commit()
+        self.write("b.spec.html", spec(("b-one", FEATURE), body="The report page gains an export button."))
+        provider = FakeProvider(
+            scope={ONBOARDING: ("every feature", 0.95),
+                   ANY_CHANGE: ("every feature", 0.95),
+                   EVERY_FEATURE_RULE: ("every feature", 0.95)},
+            rule={ONBOARDING: ("missed", 0.95), ANY_CHANGE: ("covered", 0.95),
+                  EVERY_FEATURE_RULE: ("missed", 0.95)})
+        result = self.read(self.service(provider))
+        # All three are rules; Jev's scope question decided each, no new mechanism bypassed it
+        self.assertEqual(sorted(result["rules"]),
+                         sorted(["specs/onboarding.spec.html#acceptance-onboarding",
+                                 "specs/onboarding.spec.html#endpoints",
+                                 "specs/onboarding.spec.html#accessibility"]))
+        scope_criteria = {c["state"]["criterion"] for c in provider.asked("scope")}
+        for criterion in (ONBOARDING, ANY_CHANGE, EVERY_FEATURE_RULE):
+            self.assertIn(criterion, scope_criteria, "scope question asked Jev for each criterion")
+        # Only missed rules show a mark; covered ones do not
+        shown = [item for item in self.rules(result) if item["state"] == "label"]
+        self.assertEqual(sorted(item["target"] for item in shown),
+                         sorted(["specs/onboarding.spec.html#acceptance-onboarding",
+                                 "specs/onboarding.spec.html#accessibility"]))
+
+    def test_criterion_without_every_feature_wording_is_never_a_project_rule(self):
+        """acceptance-no-false-rule: feature-local criteria, even with 'every' or 'all', are 'this feature'."""
+        FEATURE_EVERY = "Every row of the billing table shows its due date and amount."
+        FEATURE_ALL = "The validator checks all fields of the submitted form."
+        self.write("billing.spec.html", spec(("billing-rows", FEATURE_EVERY), ("billing-validate", FEATURE_ALL)))
+        self.write("b.spec.html", spec(("b-one", "Old criterion."), body="Old body."))
+        self.base = self.commit()
+        self.write("b.spec.html", spec(("b-one", FEATURE), body="The report page gains an export button."))
+        provider = FakeProvider(
+            scope={FEATURE_EVERY: ("this feature", 0.95), FEATURE_ALL: ("this feature", 0.95)},
+            rule={FEATURE_EVERY: ("missed", 0.95), FEATURE_ALL: ("missed", 0.95)})
+        result = self.read(self.service(provider))
+        # Neither becomes a rule; Jev answered "this feature" for both
+        self.assertEqual(result["rules"], [])
+        self.assertEqual(self.rules(result), [])
+        # Rule check was never asked (they are not rules)
+        rule_texts = [c["state"]["rule"] for c in provider.asked("rule")]
+        self.assertNotIn(FEATURE_EVERY, rule_texts)
+        self.assertNotIn(FEATURE_ALL, rule_texts)
+
     def test_off_returns_off(self):
         self.seed()
         service = jev.JevService(state_dir=Path(self.tmp.name) / "state", api_key="")

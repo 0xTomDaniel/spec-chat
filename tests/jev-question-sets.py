@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SETS = ROOT / "skill" / "review-spec" / "assets" / "jev"
 EXPECTED = {"type.json", "orphan.json", "resolved.json"}
 STATE_KEYS = {
+    "about": {"first", "second"},
     "type": {"before", "after"},
     "orphan": {"quote", "candidates"},
     "resolved": {"comment", "before", "after"},
@@ -24,7 +25,7 @@ STATE_KEYS = {
 # oversteps? raised by the ANN-347 tuning pass: every confident Jev yes on the train split was wrong.
 THRESHOLDS = {"triggered": 0.7, "covered": 0.7, "oversteps": 0.7}
 # Every chain question is yes or no, and it and scope, coverage, and reading view fall back (jev-suggestions #chains).
-YES_NO = {"type", "contradicts", "oversteps", "overlaps", "triggered", "covered"}
+YES_NO = {"about", "type", "contradicts", "oversteps", "overlaps", "triggered", "covered"}
 FALLBACK = YES_NO | {"scope", "coverage", "audience"}
 
 
