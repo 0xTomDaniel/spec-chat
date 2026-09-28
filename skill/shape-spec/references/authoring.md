@@ -35,8 +35,8 @@ story is named by at least one criterion.
   <section data-spec-section="acceptance" data-acceptance-scope="traceability" data-anchor="acceptance">
     <h2>Acceptance criteria</h2>
     <p data-acceptance-criterion data-anchor="acceptance-name" data-story="story-name">
-      <span data-acceptance-scenario>When ...</span>
-      <span data-acceptance-observable>The page ...</span>
+      <span data-acceptance-scenario>Given ... When ...</span>
+      <span data-acceptance-observable>Then the page ...</span>
     </p>
   </section>
   <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
@@ -58,6 +58,13 @@ requirements of the governing spec. Their scope is carried by the descriptive
 `data-acceptance-scope` when useful, anchors, and surrounding source context;
 these scope hints are optional and descriptive, and no MVP-labelled heading is required. A deferred or `data-spec-tbd`
 criterion cannot satisfy the governing Acceptance criteria section.
+
+Write each acceptance criterion as an observable Given/When/Then: the
+scenario states the starting situation (Given) and the action (When), and the
+observable states the visible result (Then). A criterion in this shape is
+clear to read and checkable: anyone can set up the Given, do the When, and see
+whether the Then holds. Use plain language; quote a UI name when it helps.
+Existing criteria convert when a change touches them.
 
 A `data-spec-tbd` marker is open unless its value is `later`. Open TBDs block
 spec acceptance and are highlighted in review. `data-spec-tbd="later"` marks a
