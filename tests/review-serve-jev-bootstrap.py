@@ -284,6 +284,24 @@ class BootstrapTest(unittest.TestCase):
         state.on_change = fail
         state.changed()  # main runs the startup warm-up through this same guarded hook
 
+    def test_warm_up_classifies_with_same_scope_question_no_rule_without_explicit_wording(self):
+        """acceptance-warm-explicit: warm-up uses same scope question and Jev answer; criteria
+        without explicit every-feature wording are 'this feature', no rule, no offer, no miss."""
+        provider = FakeProvider(scope={ONBOARDING: "this feature"})  # no explicit wording -> "this feature"
+        service = self.service(provider)
+        service.warm([self.row()])
+        status = self.settle(service)
+        self.assertEqual(status["state"], "done")
+        self.assertEqual(status["rules"], [])
+        self.assertEqual(status["specs_to_reconcile"], 0)
+        self.assertIsNone(self.page(service, [self.row()])["offer"])
+        # The scope question was still asked for each criterion (same mechanism, not bypassed)
+        scope_calls = [c for c in provider.calls if "scope" in c["questions"]]
+        self.assertGreater(len(scope_calls), 0, "scope question asked during warm-up")
+        # No rule check was asked (no rules to check)
+        rule_calls = [c for c in provider.calls if "triggered" in c["questions"] or "covered" in c["questions"]]
+        self.assertEqual(rule_calls, [])
+
     def test_registration_in_the_running_server_starts_warm_up_and_offer_is_recorded(self):
         registry = self.dir / "registry.toml"
 
