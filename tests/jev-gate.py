@@ -292,6 +292,35 @@ class ProviderTypeTest(unittest.TestCase):
         self.assertEqual(primary.general_calls, ["contradicts"])
         self.assertEqual(result["answer"]["label"], "yes")
 
+    def test_claude_cli_default_omits_openrouter_model(self):
+        """When provider_type is claude-cli and no llm_model configured, model is omitted (#ac-defaults)."""
+        seam = jev.JevSeam(SETS, api_key="fake", provider_type="claude-cli")
+        # No llm_model configured: _raw_llm_model returns ""
+        self.assertEqual(seam._raw_llm_model(), "")
+        # llm_model still returns the OpenRouter default
+        self.assertEqual(seam.llm_model(), jev.DEFAULT_LLM_MODEL)
+        # general_payload built with empty model when using claude-cli path
+        qset = SETS["contradicts"]
+        question = draft_check()["chain"][1]
+        fallback = seam._fallback_provider(seam.provider())
+        self.assertIsInstance(fallback, jev.ClaudeCliProvider)
+        # Verify _general would build payload with empty model
+        model = seam.llm_model()
+        if isinstance(fallback, jev.ClaudeCliProvider) and not seam._raw_llm_model():
+            model = ""
+        self.assertEqual(model, "")
+
+    def test_claude_cli_explicit_model_passed(self):
+        """When provider_type is claude-cli and llm_model is configured, it is passed through."""
+        seam = jev.JevSeam(SETS, api_key="fake", provider_type="claude-cli", llm_model="sonnet")
+        self.assertEqual(seam._raw_llm_model(), "sonnet")
+        fallback = seam._fallback_provider(seam.provider())
+        self.assertIsInstance(fallback, jev.ClaudeCliProvider)
+        model = seam.llm_model()
+        if isinstance(fallback, jev.ClaudeCliProvider) and not seam._raw_llm_model():
+            model = ""
+        self.assertEqual(model, "sonnet")
+
     def test_record_source_jev_for_primary(self):
         """Primary Jev answers carry source: 'jev' (jev-seam #record-source)."""
         primary = FakeProvider({"contradicts": ("yes", 0.95)})

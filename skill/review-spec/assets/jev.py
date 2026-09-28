@@ -416,9 +416,17 @@ def _key_reader(api_key: str | Callable[[], str] | None) -> Callable[[], str]:
 
 
 def _model_reader(llm_model: str | Callable[[], str] | None) -> Callable[[], str]:
-    """The general LLM model id, read at each use like the key: the Jev provider's llm_model, else the default."""
+    """The general LLM model id, read at each use like the key: the Jev provider's llm_model, else the default.
+
+    The default is the OpenRouter model constant; when the fallback is claude-cli,
+    _general omits it so the CLI picks its own default (#ac-defaults)."""
     read = _key_reader(llm_model)
     return lambda: read() or DEFAULT_LLM_MODEL
+
+
+def _raw_model(llm_model: str | Callable[[], str] | None) -> Callable[[], str]:
+    """The model value from config only, "" when unconfigured. Used to detect the OpenRouter default."""
+    return _key_reader(llm_model)
 
 
 def _provider_type_reader(provider_type: str | Callable[[], str] | None) -> Callable[[], str]:
@@ -438,6 +446,7 @@ class JevSeam:
         self.question_sets = dict(question_sets or load_question_sets())
         self.api_key = _key_reader(api_key)
         self.llm_model = _model_reader(llm_model)
+        self._raw_llm_model = _raw_model(llm_model)
         self.provider_type = _provider_type_reader(provider_type)
         self._provider = provider
         self.store = record_store or JudgmentStore()
@@ -569,9 +578,13 @@ class JevSeam:
         """The same question to the box's general LLM, one call like Jev; its answer decides (project-rules #q-fallback)."""
         kind = str(question.get("kind", "type"))
         sources, revision = question.get("sources", []), question.get("revision")
-        model = self.llm_model()
-        payload = self.general_payload(question, qset, model)
         fallback = self._fallback_provider(provider)
+        # When the fallback is claude-cli and no model is explicitly configured,
+        # omit it so the CLI picks its own default (#ac-defaults).
+        model = self.llm_model()
+        if isinstance(fallback, ClaudeCliProvider) and not self._raw_llm_model():
+            model = ""
+        payload = self.general_payload(question, qset, model)
         label = None
         failure = None
         try:
