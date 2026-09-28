@@ -1,6 +1,6 @@
 """Leaf filter: exclude non-claims from corpus/cross-lane pairing (spec #leaf-exclusions, #proof-leaf)."""
 import os, sys, unittest
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "skill", "review-spec", "assets"))
 import jev
 
 # Minimal spec with one real claim and one of each excluded category.

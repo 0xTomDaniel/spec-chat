@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "skill" / "review-spec" / "assets"
-_spec = importlib.util.spec_from_file_location("review_serve_jev_bootstrap_test", ROOT / "tools" / "jev.py")
+_spec = importlib.util.spec_from_file_location("review_serve_jev_bootstrap_test", ROOT / "skill" / "review-spec" / "assets" / "jev.py")
 jev = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(jev)
 sys.path.insert(0, str(ASSETS))
