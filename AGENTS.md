@@ -13,7 +13,6 @@ docs/specs/.style/   shared visual-spec styles
 skill/shape-spec/    shaping skill, validator, references
 skill/review-spec/   review skill, review-host, watch, server assets
 scripts/             install-spec-chat (onboarding entry point)
-tools/               byte-identical copies of skill/review-spec/assets/*.py
 tests/               all tests (Python, Node, shell)
 DESIGN.md            consensus design document
 ```
@@ -81,12 +80,11 @@ installs its own (`npm install --no-save --prefix /tmp/pw playwright-core` then
 
 All other `runtime-*.mjs` tests run in Node without a browser.
 
-## Tool and runtime copies
+## Runtime copies
 
-`tools/*.py` must be byte-identical to `skill/review-spec/assets/*.py`.
 `docs/specs/.viz/runtime.js` must be byte-identical to
-`skill/review-spec/assets/viz/runtime.js`. Both invariants are tested by
-`tests/tool-copies.sh` and `tests/review-spec-scripts.sh`.
+`skill/review-spec/assets/viz/runtime.js`. This invariant is tested by
+`tests/review-spec-scripts.sh`.
 
 ## Spec format
 
