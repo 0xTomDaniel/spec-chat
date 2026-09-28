@@ -64,6 +64,7 @@ class InstallSpecChatTest(unittest.TestCase):
         for base in (".claude/skills", ".codex/skills"):
             self.assertEqual((self.home / base / "spec-chat-review").resolve(), ROOT / "skill/review-spec")
             self.assertEqual((self.home / base / "spec-chat-shape").resolve(), ROOT / "skill/shape-spec")
+            self.assertEqual((self.home / base / "repair-specs").resolve(), ROOT / "skill/repair-specs")
         self.assertEqual(self.status()["status"], "pending")
         self.assertTrue(self.status()["doc"].endswith("README.md#install-and-onboarding"))
 
@@ -84,6 +85,7 @@ class InstallSpecChatTest(unittest.TestCase):
         self.assertFalse(self.onboarding.exists())
         for base in (".claude/skills", ".codex/skills"):
             self.assertFalse((self.home / base / "spec-chat-review").is_symlink())
+            self.assertFalse((self.home / base / "repair-specs").is_symlink())
         self.assertFalse((self.specs / ".viz").exists())
         self.assertTrue(foreign.is_symlink())
         self.assertTrue(self.spec.is_file())
