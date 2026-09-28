@@ -1225,13 +1225,14 @@ def build_corpus_questions(current: str | bytes, baseline: str | bytes | None, p
                 rule = "same-spec"
             pair_info = {"rule": rule, "rank": rank_index, "gate": "yes"}
             result.append(draft_check(anchor, before, after, target, target_text, target_non_goal=non_goal,
+                                      same_spec=(rule == "same-spec"),
                                       path=path, base=base, revision=revision,
                                       context=ctx, target_context=tctx, pairing=pair_info))
     return result
 
 
 def draft_check(anchor: str, before: str, after: str, target: str, target_text: str, *,
-                target_non_goal: bool = False, path: str, base: str, revision: Any,
+                target_non_goal: bool = False, same_spec: bool = False, path: str, base: str, revision: Any,
                 context: Mapping[str, Any] | None = None, target_context: Mapping[str, Any] | None = None,
                 pairing: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """The draft-check chain for one clause and candidate (#corpus-labels, #gate-chain): about? gate first,
@@ -1256,7 +1257,7 @@ def draft_check(anchor: str, before: str, after: str, target: str, target_text: 
     steps = [gate,
              _step(_question(contradicts_kind, anchor, pair,
                              path, base, revision, target), yes="contradicts")]
-    if target_non_goal:
+    if target_non_goal or same_spec:
         steps[1]["then"]["no"] = None
     else:
         steps += [_step(_question("oversteps", anchor, pair, path, base, revision, target), yes="oversteps"),

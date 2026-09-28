@@ -94,23 +94,22 @@ class GateTest(unittest.TestCase):
         self.assertEqual(result["answer"]["label"], "contradicts")
 
     def test_gate_yes_full_chain(self):
-        """#gate-chain: full sequence about?(yes) then contradicts?(no) then oversteps?"""
-        provider = FakeProvider({"about": ("yes", 0.95), "contradicts": ("no", 0.95),
-                                 "oversteps": ("yes", 0.95)})
+        """#gate-chain: same-spec about?(yes) then contradicts?(no) ends the chain."""
+        provider = FakeProvider({"about": ("yes", 0.95), "contradicts": ("no", 0.95)})
         result = self.seam(provider).ask_chain(draft_check()["chain"])
-        self.assertEqual(provider.calls, ["about", "contradicts", "oversteps"])
-        self.assertEqual(result["answer"]["label"], "oversteps")
+        self.assertEqual(provider.calls, ["about", "contradicts"])
+        self.assertIsNone(result["answer"]["label"])
 
     def test_gate_no_fewer_provider_calls(self):
         """#acceptance-gate-cost: a no gate skips the chain, so fewer provider calls."""
         provider = FakeProvider({"about": ("no", 0.95)})
         self.seam(provider).ask_chain(draft_check()["chain"])
-        self.assertEqual(len(provider.calls), 1)  # only about, no contradicts/oversteps/overlaps
+        self.assertEqual(len(provider.calls), 1)  # only about, no contradicts
 
     def test_gate_display_labels_exclude_gate(self):
-        """Gate answer is not a display label; only contradicts/oversteps/overlaps show."""
+        """Gate answer is not a display label; same-spec shows only contradicts."""
         item = draft_check()
-        self.assertEqual(item["display_labels"], ["contradicts", "oversteps", "overlaps"])
+        self.assertEqual(item["display_labels"], ["contradicts"])
 
     def test_gate_cache_by_content_hash(self):
         """#acceptance-gate-cache: same clause pair reuses cached gate record."""
