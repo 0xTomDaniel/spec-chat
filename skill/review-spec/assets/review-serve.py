@@ -522,15 +522,9 @@ def jev_provider(state):
 
 
 def jev_llm_model(state):
-    """The box's one general LLM name, llm_model beside the Jev key, or "" for Jev's default (project-rules #q-fallback)."""
+    """The box's one general LLM model, llm_model beside the Jev key, or "" (CLI picks its own default)."""
     model = (read_provider(state, "jev", private=True) or {}).get("llm_model")
     return model.strip() if isinstance(model, str) else ""
-
-
-def jev_provider_type(state):
-    """The general LLM provider type: 'openrouter' or 'claude-cli' (default, jev-seam #ac-defaults)."""
-    value = (read_provider(state, "jev", private=True) or {}).get("provider")
-    return value.strip() if isinstance(value, str) and value.strip() else "claude-cli"
 
 
 def wake_provider(state):
@@ -1133,8 +1127,7 @@ def main(argv=None):
     server.mount_state = state
     server.state_dir = os.path.dirname(os.path.abspath(args.registry)) if args.registry else None
     server.jev = JevService(api_key=lambda: jev_provider(server.state_dir),
-                            llm_model=lambda: jev_llm_model(server.state_dir),
-                            provider_type=lambda: jev_provider_type(server.state_dir))
+                            llm_model=lambda: jev_llm_model(server.state_dir))
     # Bootstrap (project-rules #bootstrap-home): a project's first registration starts its warm-up here.
     state.on_change = server.jev.warm
     state.changed()

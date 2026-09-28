@@ -25,9 +25,6 @@ from urllib.request import Request, urlopen
 
 MODEL = "typesafe/jev-1.13"
 OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
-OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
-# The box's one general LLM name when the Jev provider file has no llm_model (project-rules #q-fallback).
-DEFAULT_LLM_MODEL = "anthropic/claude-sonnet-5"
 # Its own budget: the general LLM reasons before its label (up to ~40 s live), past Jev's 15 s decisions.
 GENERAL_LLM_TIMEOUT = 90.0
 DEFAULT_THRESHOLD = 0.4
@@ -358,19 +355,16 @@ def given_wait(value: str | None, now: Callable[[], float] = time.time) -> float
 
 
 class OpenRouterProvider:
-    def __init__(self, api_key: str, *, endpoint: str = OPENROUTER_DECISIONS_URL, chat_endpoint: str = OPENROUTER_CHAT_URL,
+    """Jev Decisions only; general LLM calls run through the Claude CLI (jev-seam #rule-cli-only)."""
+
+    def __init__(self, api_key: str, *, endpoint: str = OPENROUTER_DECISIONS_URL,
                  timeout: float = 15.0):
         self._api_key = api_key.strip()
         self.endpoint = endpoint
-        self.chat_endpoint = chat_endpoint
         self.timeout = timeout
 
     def decide(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         return self._post(self.endpoint, payload)
-
-    def complete(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
-        """General LLM chat completion through OpenRouter (project-rules #q-fallback)."""
-        return self._post(self.chat_endpoint, payload, GENERAL_LLM_TIMEOUT)
 
     def _post(self, endpoint: str, payload: Mapping[str, Any], timeout: float | None = None) -> Mapping[str, Any]:
         """One call, never a wait: a 429 raises its given wait for the record's pause (jev-suggestions #state-error)."""
@@ -477,12 +471,8 @@ def _key_reader(api_key: str | Callable[[], str] | None) -> Callable[[], str]:
 
 
 def _model_reader(llm_model: str | Callable[[], str] | None) -> Callable[[], str]:
-    """The general LLM model id, read at each use like the key: the Jev provider's llm_model, else the default.
-
-    The default is the OpenRouter model constant; when the fallback is claude-cli,
-    _general omits it so the CLI picks its own default (#ac-defaults)."""
-    read = _key_reader(llm_model)
-    return lambda: read() or DEFAULT_LLM_MODEL
+    """The general LLM model id from config, "" when unconfigured (CLI picks its own default)."""
+    return _key_reader(llm_model)
 
 
 def _extract_inputs(question: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -508,30 +498,14 @@ def _extract_inputs(question: Mapping[str, Any]) -> dict[str, Any] | None:
     return inputs if inputs else None
 
 
-def _raw_model(llm_model: str | Callable[[], str] | None) -> Callable[[], str]:
-    """The model value from config only, "" when unconfigured. Used to detect the OpenRouter default."""
-    return _key_reader(llm_model)
-
-
-def _provider_type_reader(provider_type: str | Callable[[], str] | None) -> Callable[[], str]:
-    """The general LLM provider type, read at each use: 'openrouter' or 'claude-cli' (default, jev-seam #ac-defaults)."""
-    if callable(provider_type):
-        return lambda: (provider_type() or "claude-cli").strip()
-    fixed = (provider_type or "claude-cli").strip()
-    return lambda: fixed
-
-
 class JevSeam:
     def __init__(self, question_sets: Mapping[str, QuestionSet] | None = None, *, provider: Any = None,
                  api_key: str | Callable[[], str] | None = None, llm_model: str | Callable[[], str] | None = None,
-                 provider_type: str | Callable[[], str] | None = None,
                  record_store: JudgmentStore | None = None,
                  clock: Callable[[], str] = _now, max_input_tokens: int = DEFAULT_MAX_INPUT_TOKENS):
         self.question_sets = dict(question_sets or load_question_sets())
         self.api_key = _key_reader(api_key)
         self.llm_model = _model_reader(llm_model)
-        self._raw_llm_model = _raw_model(llm_model)
-        self.provider_type = _provider_type_reader(provider_type)
         self._provider = provider
         self.store = record_store or JudgmentStore()
         self.clock = clock
@@ -550,12 +524,10 @@ class JevSeam:
         return self._provider if self._provider is not None else OpenRouterProvider(api_key)
 
     def _fallback_provider(self, primary: Any) -> Any:
-        """The provider for the general LLM fallback: the injected provider (tests), else by provider_type."""
+        """The general LLM provider: the injected provider (tests), else always ClaudeCliProvider (#rule-cli-only)."""
         if self._provider is not None:
             return primary
-        if self.provider_type() == "claude-cli":
-            return ClaudeCliProvider()
-        return primary
+        return ClaudeCliProvider()
 
     def _record(self, key: str, kind: str, qset: QuestionSet, sources: Any, revision: Any,
                 answer: Mapping[str, Any], outcome: str, model: str = MODEL, escalated: bool = False,
@@ -706,11 +678,9 @@ class JevSeam:
         inputs = _extract_inputs(question) if kind in DRAFT_CHECK_KINDS else None
         pairing = question.get("pairing") if kind in DRAFT_CHECK_KINDS else None
         fallback = self._fallback_provider(provider)
-        # When the fallback is claude-cli and no model is explicitly configured,
-        # omit it so the CLI picks its own default (#ac-defaults).
+        # The general LLM always runs through the CLI (#rule-cli-only);
+        # unconfigured llm_model is "" so the CLI picks its own default.
         model = self.llm_model()
-        if isinstance(fallback, ClaudeCliProvider) and not self._raw_llm_model():
-            model = ""
         payload = self.general_payload(question, qset, model)
         label = None
         failure = None
@@ -1877,7 +1847,6 @@ def default_state_dir() -> Path:
 class JevService:
     def __init__(self, *, state_dir: str | Path | None = None, provider: Any = None,
                  api_key: str | Callable[[], str] | None = None, llm_model: str | Callable[[], str] | None = None,
-                 provider_type: str | Callable[[], str] | None = None,
                  question_dirs: list[str | Path] | None = None, onboarding_path: str | Path | None = None):
         self.question_sets = load_question_sets(*(question_dirs or []))
         self.state_dir = Path(state_dir) if state_dir else default_state_dir()
@@ -1886,11 +1855,11 @@ class JevService:
             self.state_dir / "onboarding.toml" if state_dir else spec_chat_state() / "onboarding.toml")
         path = self.state_dir / "records.jsonl"
         self.seam = JevSeam(self.question_sets, provider=provider, api_key=api_key, llm_model=llm_model,
-                            provider_type=provider_type, record_store=JudgmentStore(path))
+                            record_store=JudgmentStore(path))
         # Test store (#test-hosts): a second JudgmentStore for test-flagged slugs, beside the live one.
         test_path = self.state_dir / "records-test.jsonl"
         self.test_seam = JevSeam(self.question_sets, provider=provider, api_key=api_key, llm_model=llm_model,
-                                 provider_type=provider_type, record_store=JudgmentStore(test_path))
+                                 record_store=JudgmentStore(test_path))
 
         # Board state (#jev-board-answer): the last answer and the rows the board thread answers next.
         self._board_lock = threading.Lock()
