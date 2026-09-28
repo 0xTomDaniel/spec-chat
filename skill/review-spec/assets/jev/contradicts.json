@@ -1,20 +1,21 @@
 {
   "id": "contradicts",
-  "version": 2,
+  "version": 3,
   "instructions": "Compare the changed clause with the linked clause. Does the changed clause contradict the linked clause? When target_non_goal is true, the linked clause lists items its spec excludes: answer yes only when you can name the listed item the changed clause adds or requires, even when the wording matches; if you cannot name one, answer no. Otherwise answer yes only when the changed behavior conflicts with the linked clause. Restating, extending, or merely relating to it is no.",
   "threshold": 0.4,
   "fallback": true,
+  "show_cutoff": 0.90,
+  "verify_cutoff": 0.70,
   "labels": [
     {
       "name": "yes",
-      "description": "The changed clause conflicts with the linked clause, or adds or requires something a non-goal linked clause excludes.",
+      "description": "The changed clause conflicts with the linked clause: what it states is incompatible with what the linked clause states.",
       "examples": [
         {
           "input": {
             "before": "The base end is the commit whose spec bytes are compared, which is the selected base or, for a spec absent there, its first committed seed.",
             "after": "The base end is the selected base commit; a spec absent there is entirely new, as focus defines.",
-            "target": "The baseline response retains the selected commit in base and identifies the actual HTML snapshot in htmlBase; a file absent from the selected base uses its stable first committed seed, or null when still uncommitted.",
-            "target_non_goal": false
+            "target": "The baseline response retains the selected commit in base and identifies the actual HTML snapshot in htmlBase; a file absent from the selected base uses its stable first committed seed, or null when still uncommitted."
           },
           "label": "yes"
         },
@@ -22,17 +23,7 @@
           "input": {
             "before": "Only human clicks write spool events.",
             "after": "The agent automatically writes a move event.",
-            "target": "Only a human click on Move comment here writes, using existing events.",
-            "target_non_goal": false
-          },
-          "label": "yes"
-        },
-        {
-          "input": {
-            "before": "",
-            "after": "The report page exports every report as a CSV file on a nightly schedule.",
-            "target": "Bulk export, scheduled reports, or email digests.",
-            "target_non_goal": true
+            "target": "Only a human click on Move comment here writes, using existing events."
           },
           "label": "yes"
         }
@@ -40,32 +31,13 @@
     },
     {
       "name": "no",
-      "description": "No conflict: the changed clause restates, extends, relates to, or is unrelated to the linked clause, or adds nothing a non-goal excludes.",
+      "description": "No conflict: the changed clause restates, extends, belongs to another layer, is a sibling row of one table, names a Jev label word such as contradicts or oversteps, or is unrelated to the linked clause.",
       "examples": [
-        {
-          "input": {
-            "before": "",
-            "after": "The report header shows the report's owner and its creation date.",
-            "target": "Changing a report's owner, comparing two arbitrary reports, or browsing archived reports.",
-            "target_non_goal": true
-          },
-          "label": "no"
-        },
         {
           "input": {
             "before": "The server stores one judgment record for each question.",
             "after": "The records are the cache.",
-            "target": "The records are the cache: each is keyed by a hash of its question inputs and set version.",
-            "target_non_goal": false
-          },
-          "label": "no"
-        },
-        {
-          "input": {
-            "before": "Reading view dims internal clauses in the browser.",
-            "after": "Reading view changes provider thresholds on the server.",
-            "target": "The browser runtime owns reading view and consumes the route.",
-            "target_non_goal": false
+            "target": "The records are the cache: each is keyed by a hash of its question inputs and set version."
           },
           "label": "no"
         },
@@ -73,8 +45,23 @@
           "input": {
             "before": "The row links to the Reports page contract.",
             "after": "The row links to the Insights page contract.",
-            "target": "The Insights page, formerly Reports, reads the same data.",
-            "target_non_goal": false
+            "target": "The Insights page, formerly Reports, reads the same data."
+          },
+          "label": "no"
+        },
+        {
+          "input": {
+            "before": "",
+            "after": "4 No token from rows 1 to 3, waiting_on spec review. One lane token at Spec review, owed to you.",
+            "target": "5 No token from rows 1 to 3, waiting_on QA review or merge. One lane token at QA and merge, owed to you."
+          },
+          "label": "no"
+        },
+        {
+          "input": {
+            "before": "",
+            "after": "As an operator, an existing single-bundle evidence service keeps working as before.",
+            "target": "As an operator, I can run one annotateanything evidence service for many independent evidence bundles, each with its own stable path, exact bytes, and bundle identity."
           },
           "label": "no"
         }

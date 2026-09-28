@@ -30,6 +30,8 @@ GENERAL_LLM_TIMEOUT = 90.0
 DEFAULT_THRESHOLD = 0.4
 DEFAULT_MAX_INPUT_TOKENS = 32000
 RETRYABLE_OUTCOMES = frozenset({"off", "unavailable"})
+# Draft-check question kinds that carry provenance fields (#record-inputs, #record-pairing).
+DRAFT_CHECK_KINDS = frozenset({"contradicts", "contradicts-nongoal", "oversteps", "overlaps"})
 # The one retry rule (jev-suggestions #state-error): a failed ask is asked again after a pause, the provider's
 # given wait, else this many seconds; the pause is written on its record, so no worker waits it out.
 RETRY_PAUSE = 60.0
@@ -37,6 +39,10 @@ _wall = time.time
 # Jev was below threshold on a set with a general LLM fallback (project-rules #q-fallback): the LLM decides next.
 ESCALATED = "escalated"
 REPLACEABLE_OUTCOMES = RETRYABLE_OUTCOMES | {ESCALATED}
+# Draft-check P(yes) below the verify cutoff (jev-suggestions #asymmetric-silent): recorded, no mark, no escalation.
+SILENT_NO = "silent-no"
+# Outcomes that let a chain continue: the question was answered (#chains, #asymmetric).
+CHAIN_CONTINUE = frozenset({"shown", SILENT_NO})
 # Mark levels (jev-suggestions#markers-levels): the single source, mark kind to a human and an agent level, fixed by kind and never
 # by confidence; the agent level is never quieter (#markers-levels-audience). Item labels key it directly; the browser keys derived
 # marks (coverage gaps, QA evidence, unsure words) by the other names and reads only the human column.
@@ -136,13 +142,16 @@ class ProviderWait(RuntimeError):
 
 class QuestionSet:
     def __init__(self, identifier: str, version: Any, instructions: str = "", labels: Any = None,
-                 threshold: float = DEFAULT_THRESHOLD, fallback: bool = False):
+                 threshold: float = DEFAULT_THRESHOLD, fallback: bool = False,
+                 show_cutoff: float | None = None, verify_cutoff: float | None = None):
         self.id = identifier
         self.fallback = fallback
         self.version = version
         self.instructions = instructions
         self.labels = [] if labels is None else labels
         self.threshold = threshold
+        self.show_cutoff = show_cutoff
+        self.verify_cutoff = verify_cutoff
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any], fallback_id: str) -> "QuestionSet":
@@ -157,7 +166,18 @@ class QuestionSet:
         fallback = raw.get("fallback", False)
         if not isinstance(fallback, bool):
             raise ValueError("question set fallback is true or false; sets name no model")
-        return cls(identifier, version, str(raw.get("instructions", "")), labels, threshold, fallback)
+        show_cutoff = raw.get("show_cutoff")
+        verify_cutoff = raw.get("verify_cutoff")
+        if show_cutoff is not None:
+            show_cutoff = float(show_cutoff)
+            if not math.isfinite(show_cutoff) or not 0 <= show_cutoff <= 1:
+                raise ValueError("invalid show_cutoff")
+        if verify_cutoff is not None:
+            verify_cutoff = float(verify_cutoff)
+            if not math.isfinite(verify_cutoff) or not 0 <= verify_cutoff <= 1:
+                raise ValueError("invalid verify_cutoff")
+        return cls(identifier, version, str(raw.get("instructions", "")), labels, threshold, fallback,
+                   show_cutoff, verify_cutoff)
 
     def criteria(self) -> dict[str, str]:
         if isinstance(self.labels, Mapping):
@@ -219,6 +239,10 @@ class QuestionSet:
                   "labels": _jsonable(self.labels), "threshold": self.threshold}
         if self.fallback:
             result["fallback"] = True
+        if self.show_cutoff is not None:
+            result["show_cutoff"] = self.show_cutoff
+        if self.verify_cutoff is not None:
+            result["verify_cutoff"] = self.verify_cutoff
         return result
 
 
@@ -265,7 +289,7 @@ class JudgmentStore:
                 if isinstance(record, Mapping) and record.get("cache_key"):
                     record = dict(record)
                     current = self.by_key.get(record["cache_key"])
-                    if current is None or current.get("outcome") in REPLACEABLE_OUTCOMES:
+                    if current is None or current.get("outcome") in REPLACEABLE_OUTCOMES or "resolution" in record:
                         self.by_key[record["cache_key"]] = record
 
     def get(self, key: str) -> dict[str, Any] | None:
@@ -284,6 +308,38 @@ class JudgmentStore:
                 with self.path.open("a", encoding="utf-8") as stream:
                     stream.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
             return record
+
+    def resolve(self, record_id: str, resolution: str, reason: str | None = None,
+                confirmed: bool | None = None) -> dict[str, Any] | None:
+        """Set resolution and confirmed on an existing record (#record-resolution, #record-confirmed).
+
+        A 'fixed' resolution auto-confirms as a true positive (#measure-feedback).
+        The amended record is appended to the JSONL so it survives a restart."""
+        with self.lock:
+            for key, record in self.by_key.items():
+                if record.get("record_id") != record_id:
+                    continue
+                updated = dict(record)
+                res: dict[str, Any] = {"status": resolution}
+                if reason:
+                    res["reason"] = reason
+                updated["resolution"] = res
+                if confirmed is not None:
+                    updated["confirmed"] = confirmed
+                elif resolution == "fixed":
+                    updated["confirmed"] = True
+                self.by_key[key] = updated
+                if self.path:
+                    self.path.parent.mkdir(parents=True, exist_ok=True)
+                    with self.path.open("a", encoding="utf-8") as stream:
+                        stream.write(json.dumps(updated, ensure_ascii=False, sort_keys=True) + "\n")
+                return updated
+        return None
+
+    def confirmed_records(self) -> list[dict[str, Any]]:
+        """All confirmed records for regression replay (#measure-regression)."""
+        with self.lock:
+            return [dict(r) for r in self.by_key.values() if r.get("confirmed")]
 
 
 def given_wait(value: str | None, now: Callable[[], float] = time.time) -> float | None:
@@ -419,6 +475,29 @@ def _model_reader(llm_model: str | Callable[[], str] | None) -> Callable[[], str
     return _key_reader(llm_model)
 
 
+def _extract_inputs(question: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Extract inputs for draft-check records (#record-inputs): clause text, target text, context."""
+    state = question.get("state", {})
+    if not isinstance(state, Mapping):
+        return None
+    inputs: dict[str, Any] = {}
+    if "after" in state:
+        inputs["clause_text"] = state["after"]
+    if "target" in state:
+        inputs["target_text"] = state["target"]
+    ctx = state.get("context")
+    if isinstance(ctx, Mapping):
+        for k in ("surface", "section", "columns"):
+            if k in ctx:
+                inputs[k] = ctx[k]
+    tctx = state.get("target_context")
+    if isinstance(tctx, Mapping):
+        tc = {k: tctx[k] for k in ("surface", "section", "columns") if k in tctx}
+        if tc:
+            inputs["target_context"] = tc
+    return inputs if inputs else None
+
+
 class JevSeam:
     def __init__(self, question_sets: Mapping[str, QuestionSet] | None = None, *, provider: Any = None,
                  api_key: str | Callable[[], str] | None = None, llm_model: str | Callable[[], str] | None = None,
@@ -452,12 +531,13 @@ class JevSeam:
 
     def _record(self, key: str, kind: str, qset: QuestionSet, sources: Any, revision: Any,
                 answer: Mapping[str, Any], outcome: str, model: str = MODEL, escalated: bool = False,
-                failure: BaseException | None = None) -> dict[str, Any]:
+                failure: BaseException | None = None, inputs: Mapping[str, Any] | None = None,
+                pairing: Mapping[str, Any] | None = None, verifier: Mapping[str, Any] | None = None) -> dict[str, Any]:
         extra: dict[str, Any] = {"escalated": True, "source": "llm"} if escalated else {"source": "jev"}
         if outcome == "unavailable":
             wait = getattr(failure, "wait", None)
             extra["retry_at"] = _instant(_wall() + (RETRY_PAUSE if wait is None else wait))
-        return self.store.append({**extra,
+        record: dict[str, Any] = {**extra,
             "record_id": "judgment-" + uuid.uuid4().hex,
             "cache_key": key,
             "model": model,
@@ -469,7 +549,20 @@ class JevSeam:
             "threshold": qset.threshold,
             "outcome": outcome,
             "time": self.clock(),
-        })
+        }
+        # Cutoffs for draft-check questions (#record-outcome)
+        if qset.show_cutoff is not None:
+            record["show_cutoff"] = qset.show_cutoff
+        if qset.verify_cutoff is not None:
+            record["verify_cutoff"] = qset.verify_cutoff
+        # Provenance fields (#record-inputs, #record-pairing, #record-verifier)
+        if inputs is not None:
+            record["inputs"] = _jsonable(inputs)
+        if pairing is not None:
+            record["pairing"] = _jsonable(pairing)
+        if verifier is not None:
+            record["verifier"] = _jsonable(verifier)
+        return self.store.append(record)
 
     def key(self, question: Mapping[str, Any]) -> str:
         qset = self.question_set(str(question.get("kind", "type")))
@@ -499,10 +592,18 @@ class JevSeam:
         held = self.store.get(key)
         if held and held.get("outcome") not in REPLACEABLE_OUTCOMES:
             return held
+        # Provenance (#record-inputs, #record-pairing, #record-verifier)
+        inputs = _extract_inputs(question) if kind in DRAFT_CHECK_KINDS else None
+        pairing = question.get("pairing") if kind in DRAFT_CHECK_KINDS else None
+        verifier_info = question.get("verifier") if kind in DRAFT_CHECK_KINDS else None
         provider = self.provider()
-        if held and qset.fallback and provider is not None and (
+        # Escalated fast-path: draft checks go to the verifier (#verifier); others to the general LLM.
+        if held and provider is not None and (
                 held.get("outcome") == ESCALATED or held.get("escalated")):
-            return self._general(question, key, qset, provider)
+            if qset.show_cutoff is not None:
+                return self._verify(question, key, qset, provider)
+            elif qset.fallback:
+                return self._general(question, key, qset, provider)
         criteria = qset.criteria_payload()
         dynamic = question.get("criteria")
         if isinstance(dynamic, Mapping):
@@ -514,10 +615,12 @@ class JevSeam:
                    "state": _jsonable(question.get("state", {}))}
         if (len(_canonical(payload)) + 3) // 4 > self.max_input_tokens:
             return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
-                                {"label": None, "probabilities": {}, "confidence": None}, "oversize")
+                                {"label": None, "probabilities": {}, "confidence": None}, "oversize",
+                                inputs=inputs, pairing=pairing)
         if provider is None:
             return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
-                                {"label": None, "probabilities": {}, "confidence": None}, "off")
+                                {"label": None, "probabilities": {}, "confidence": None}, "off",
+                                inputs=inputs, pairing=pairing)
         answer = None
         failure = None
         model = MODEL
@@ -532,12 +635,29 @@ class JevSeam:
         if answer is None:
             return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
                                 {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model,
-                                failure=failure)
+                                failure=failure, inputs=inputs, pairing=pairing, verifier=verifier_info)
+        if qset.show_cutoff is not None:
+            # Asymmetric threshold for draft-check questions (#asymmetric).
+            p_yes = answer["probabilities"].get("yes")
+            if p_yes is None:
+                p_yes = answer.get("confidence", 0.0) if answer.get("label") == "yes" else 0.0
+            if p_yes >= qset.show_cutoff:
+                return self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, "shown", model,
+                                    inputs=inputs, pairing=pairing, verifier=verifier_info)
+            elif qset.verify_cutoff is not None and p_yes >= qset.verify_cutoff:
+                self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, ESCALATED, model,
+                             inputs=inputs, pairing=pairing)
+                return self._verify(question, key, qset, provider)
+            else:
+                return self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, SILENT_NO, model,
+                                    inputs=inputs, pairing=pairing)
         outcome = "shown" if answer["confidence"] is not None and answer["confidence"] >= qset.threshold else "unsure"
         if outcome == "unsure" and qset.fallback:
-            self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, ESCALATED, model)
+            self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, ESCALATED, model,
+                         inputs=inputs, pairing=pairing)
             return self._general(question, key, qset, provider)
-        return self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, outcome, model)
+        return self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, outcome, model,
+                            inputs=inputs, pairing=pairing, verifier=verifier_info)
 
     def general_payload(self, question: Mapping[str, Any], qset: QuestionSet, model: str) -> dict[str, Any]:
         """One allowed label by construction: a strict enum schema, served only by providers that enforce it."""
@@ -555,6 +675,8 @@ class JevSeam:
         """The same question to the box's general LLM, one call like Jev; its answer decides (project-rules #q-fallback)."""
         kind = str(question.get("kind", "type"))
         sources, revision = question.get("sources", []), question.get("revision")
+        inputs = _extract_inputs(question) if kind in DRAFT_CHECK_KINDS else None
+        pairing = question.get("pairing") if kind in DRAFT_CHECK_KINDS else None
         fallback = self._fallback_provider(provider)
         # The general LLM always runs through the CLI (#rule-cli-only);
         # unconfigured llm_model is "" so the CLI picks its own default.
@@ -571,9 +693,65 @@ class JevSeam:
         if label is None:
             return self._record(key, kind, qset, sources, revision,
                                 {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model, True,
-                                failure)
+                                failure, inputs=inputs, pairing=pairing)
         return self._record(key, kind, qset, sources, revision,
-                            {"label": label, "probabilities": {}, "confidence": None}, "shown", model, True)
+                            {"label": label, "probabilities": {}, "confidence": None}, "shown", model, True,
+                            inputs=inputs, pairing=pairing)
+
+    def verifier_payload(self, question: Mapping[str, Any], qset: QuestionSet, model: str) -> dict[str, Any]:
+        """Verifier payload (#verifier): both clauses with context; strict schema requiring quoted spans."""
+        state = question.get("state", {})
+        verify_input: dict[str, Any] = {"clause": state.get("after", ""), "target": state.get("target", "")}
+        if state.get("context"):
+            verify_input["clause_context"] = state["context"]
+        if state.get("target_context"):
+            verify_input["target_context"] = state["target_context"]
+        system = {"question": qset.instructions,
+                  "verify": "If yes, quote the exact span from the clause and the target that conflict. If no, leave spans empty."}
+        schema = {"type": "object",
+                  "properties": {"answer": {"type": "string", "enum": ["yes", "no"]},
+                                 "clause_span": {"type": "string"}, "target_span": {"type": "string"}},
+                  "required": ["answer", "clause_span", "target_span"], "additionalProperties": False}
+        return {"model": model,
+                "messages": [{"role": "system", "content": _canonical(system)},
+                             {"role": "user", "content": _canonical(verify_input)}],
+                "response_format": {"type": "json_schema", "json_schema": {"name": "answer", "strict": True, "schema": schema}},
+                "provider": {"require_parameters": True}}
+
+    def _verify(self, question: Mapping[str, Any], key: str, qset: QuestionSet, provider: Any) -> dict[str, Any]:
+        """Draft-check verify band (#verifier): call general LLM with both clauses; show only if yes + quoted spans."""
+        kind = str(question.get("kind", "type"))
+        sources, revision = question.get("sources", []), question.get("revision")
+        inputs = _extract_inputs(question) if kind in DRAFT_CHECK_KINDS else None
+        pairing = question.get("pairing") if kind in DRAFT_CHECK_KINDS else None
+        fallback = self._fallback_provider(provider)
+        model = self.llm_model()
+        if isinstance(fallback, ClaudeCliProvider) and not self._raw_llm_model():
+            model = ""
+        payload = self.verifier_payload(question, qset, model)
+        label = None
+        failure = None
+        try:
+            response = fallback.complete(payload)
+            result = json.loads(response["choices"][0]["message"]["content"])
+            clause_span = (result.get("clause_span") or "").strip()
+            target_span = (result.get("target_span") or "").strip()
+            if result.get("answer") == "yes" and clause_span and target_span:
+                label = "yes"
+            else:
+                label = "no"
+        except Exception as exc:
+            failure = exc
+        if label is None:
+            return self._record(key, kind, qset, sources, revision,
+                                {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model, True,
+                                failure, inputs=inputs, pairing=pairing)
+        answer: dict[str, Any] = {"label": label, "probabilities": {}, "confidence": None}
+        if label == "yes":
+            answer["clause_span"] = clause_span
+            answer["target_span"] = target_span
+        return self._record(key, kind, qset, sources, revision, answer, "shown", model, True,
+                            inputs=inputs, pairing=pairing)
 
     def ask_chain(self, chain: list[Mapping[str, Any]]) -> dict[str, Any]:
         """Ask a chain's yes/no questions in order, each only when the answer so far needs it (#chains)."""
@@ -582,6 +760,14 @@ class JevSeam:
     def answer(self, item: Mapping[str, Any]) -> dict[str, Any]:
         """One item's answer: its chain's, else its one question's record."""
         return self.ask_chain(item["chain"]) if "chain" in item else self.ask(item)
+
+
+def _chain_label(record: Mapping[str, Any]) -> str | None:
+    """The label the chain walks on: a silent-no is a no for chain purposes (#asymmetric)."""
+    if record.get("outcome") == SILENT_NO:
+        return "no"
+    answer = record.get("answer")
+    return answer.get("label") if isinstance(answer, Mapping) else None
 
 
 def chain_result(chain: list[Mapping[str, Any]], get: Callable[[Mapping[str, Any]], Mapping[str, Any] | None]) -> dict[str, Any]:
@@ -595,12 +781,11 @@ def chain_result(chain: list[Mapping[str, Any]], get: Callable[[Mapping[str, Any
         if record is None:
             return {"outcome": None, "answer": {"label": None}, "record_id": None, "unsure": unsure, "step": step}
         outcome = record.get("outcome")
-        if outcome != "shown":
+        if outcome not in CHAIN_CONTINUE:
             return {"outcome": outcome, "answer": {"label": None}, "record_id": record.get("record_id"),
                     "unsure": unsure, "step": step}
         unsure += bool(record.get("escalated"))
-        answer = record.get("answer")
-        label = answer.get("label") if isinstance(answer, Mapping) else None
+        label = _chain_label(record)
         then = step["then"]
         if label not in YES_NO or label in then:
             return {"outcome": "shown", "answer": {"label": then.get(label)}, "record_id": record.get("record_id"),
@@ -618,12 +803,11 @@ def lane_result(steps: list[Mapping[str, Any]], get: Callable[[Mapping[str, Any]
     if record is None:
         return [{"outcome": None, "answer": {"label": None}, "record_id": None, "unsure": 0, "step": steps[0]}]
     outcome = record.get("outcome")
-    if outcome != "shown":
+    if outcome not in CHAIN_CONTINUE:
         return [{"outcome": outcome, "answer": {"label": None}, "record_id": record.get("record_id"),
                  "unsure": 0, "step": steps[0]}]
     unsure += bool(record.get("escalated"))
-    answer = record.get("answer")
-    label = answer.get("label") if isinstance(answer, Mapping) else None
+    label = _chain_label(record)
     if label != "yes":
         return [{"outcome": "shown", "answer": {"label": None},
                  "record_id": record.get("record_id"), "unsure": unsure}]
@@ -632,12 +816,11 @@ def lane_result(steps: list[Mapping[str, Any]], get: Callable[[Mapping[str, Any]
     if record is None:
         return [{"outcome": None, "answer": {"label": None}, "record_id": None, "unsure": unsure, "step": steps[1]}]
     outcome = record.get("outcome")
-    if outcome != "shown":
+    if outcome not in CHAIN_CONTINUE:
         return [{"outcome": outcome, "answer": {"label": None}, "record_id": record.get("record_id"),
                  "unsure": unsure, "step": steps[1]}]
     unsure += bool(record.get("escalated"))
-    answer = record.get("answer")
-    label = answer.get("label") if isinstance(answer, Mapping) else None
+    label = _chain_label(record)
     if label == "yes":
         return [{"outcome": "shown", "answer": {"label": steps[1]["then"]["yes"]},
                  "record_id": record.get("record_id"), "unsure": unsure}]
@@ -651,13 +834,12 @@ def lane_result(steps: list[Mapping[str, Any]], get: Callable[[Mapping[str, Any]
                                   "unsure": unsure, "step": step}
             continue
         outcome = record.get("outcome")
-        if outcome != "shown":
+        if outcome not in CHAIN_CONTINUE:
             pending = pending or {"outcome": outcome, "answer": {"label": None},
                                   "record_id": record.get("record_id"), "unsure": unsure, "step": step}
             continue
         unsure += bool(record.get("escalated"))
-        ans = record.get("answer")
-        lbl = ans.get("label") if isinstance(ans, Mapping) else None
+        lbl = _chain_label(record)
         if lbl == "yes":
             findings.append({"outcome": "shown", "answer": {"label": step["then"]["yes"]},
                              "record_id": record.get("record_id"), "unsure": unsure})
@@ -672,12 +854,11 @@ def lane_result(steps: list[Mapping[str, Any]], get: Callable[[Mapping[str, Any]
     if record is None:
         return [{"outcome": None, "answer": {"label": None}, "record_id": None, "unsure": unsure, "step": steps[4]}]
     outcome = record.get("outcome")
-    if outcome != "shown":
+    if outcome not in CHAIN_CONTINUE:
         return [{"outcome": outcome, "answer": {"label": None}, "record_id": record.get("record_id"),
                  "unsure": unsure, "step": steps[4]}]
     unsure += bool(record.get("escalated"))
-    ans = record.get("answer")
-    lbl = ans.get("label") if isinstance(ans, Mapping) else None
+    lbl = _chain_label(record)
     then = steps[4]["then"]
     if lbl in then:
         return [{"outcome": "shown", "answer": {"label": then[lbl]},
@@ -894,6 +1075,23 @@ def _match_score(source: str, target: str) -> tuple[int, int]:
     return overlap, int((overlap * 1000) / union) if union else 0
 
 
+def _doc_freqs(clause_texts: list[str]) -> dict[str, int]:
+    """Count of clauses containing each word, across the spec collection (#candidate-ranking)."""
+    freqs: dict[str, int] = {}
+    for text in clause_texts:
+        for word in _anchor_words(text):
+            freqs[word] = freqs.get(word, 0) + 1
+    return freqs
+
+
+def _rarity_score(source_words: set[str], target_words: set[str], freqs: dict[str, int]) -> float:
+    """Rarity-weighted overlap: each shared word weighted by 1/log(1+doc_freq) (#candidate-ranking)."""
+    shared = source_words & target_words
+    if not shared:
+        return 0.0
+    return sum(1.0 / math.log(1 + freqs.get(word, 1)) for word in shared)
+
+
 def _candidate_sort(source: str, anchors: Mapping[str, Mapping[str, Any]], keys: list[str]) -> list[str]:
     return sorted(keys, key=lambda key: (-_match_score(source, str(anchors[key].get("text", "")))[0],
                                          -_match_score(source, str(anchors[key].get("text", "")))[1], key))
@@ -963,6 +1161,10 @@ def _is_non_goal(anchor: str, anchors: Mapping[str, Mapping[str, Any]]) -> bool:
     return False
 
 
+TOPK_SAME = 5
+TOPK_CROSS = 5
+
+
 def build_corpus_questions(current: str | bytes, baseline: str | bytes | None, path: str = "spec", base: str = "",
                            revision: Any = "head", served_specs: Any = None) -> list[dict[str, Any]]:
     """Build one corpus question for each changed leaf and candidate clause."""
@@ -978,6 +1180,12 @@ def build_corpus_questions(current: str | bytes, baseline: str | bytes | None, p
             continue
         other_specs.append((other_path, extract_anchors(source)))
 
+    # Collect all clause texts for document frequency (#candidate-ranking).
+    all_texts: list[str] = [str(now[k].get("text", "")) for k in leaves]
+    for _, other_anchors in other_specs:
+        all_texts.extend(str(other_anchors[k].get("text", "")) for k in _corpus_leaf_anchors(other_anchors))
+    freqs = _doc_freqs(all_texts)
+
     result = []
     for anchor in leaves:
         after = str(now[anchor].get("text", ""))
@@ -985,36 +1193,47 @@ def build_corpus_questions(current: str | bytes, baseline: str | bytes | None, p
         if before == after:
             continue
 
+        source_words = _anchor_words(after)
         own_keys = [key for key in _corpus_leaf_anchors(now) if key != anchor]
-        own_ranked = _candidate_sort(after, now, own_keys)
-        non_goals = [key for key in own_ranked if _is_non_goal(key, now)]
-        own_keys = own_ranked[:8]
+        # Rank same-spec candidates by rarity-weighted overlap.
+        own_scored = sorted(own_keys, key=lambda k: (-_rarity_score(source_words, _anchor_words(str(now[k].get("text", ""))), freqs), k))
+        non_goals = [key for key in own_scored if _is_non_goal(key, now)]
+        own_keys = own_scored[:TOPK_SAME]
         for key in non_goals:
             if key not in own_keys:
                 own_keys.append(key)
         candidates = [(key, str(now[key].get("text", "")), key in non_goals, now) for key in own_keys]
 
-        cross: list[tuple[int, int, str, str, str, bool, dict]] = []
+        # Rank cross-spec candidates by rarity-weighted overlap.
+        cross: list[tuple[float, str, str, str, bool, dict]] = []
         for other_path, other_anchors in other_specs:
             for key in _corpus_leaf_anchors(other_anchors):
                 text = str(other_anchors[key].get("text", ""))
-                overlap, ratio = _match_score(after, text)
-                cross.append((-overlap, -ratio, other_path, key, text, _is_non_goal(key, other_anchors), other_anchors))
-        cross.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
-        candidates.extend((other_path + "#" + key, text, non_goal, ca) for _, _, other_path, key, text, non_goal, ca in cross[:8])
+                score = _rarity_score(source_words, _anchor_words(text), freqs)
+                cross.append((-score, other_path, key, text, _is_non_goal(key, other_anchors), other_anchors))
+        cross.sort(key=lambda item: (item[0], item[1], item[2]))
+        candidates.extend((other_path + "#" + key, text, non_goal, ca) for _, other_path, key, text, non_goal, ca in cross[:TOPK_CROSS])
 
         ctx = anchor_context(anchor, now)
-        for target, target_text, non_goal, target_anchors in candidates:
+        for rank_index, (target, target_text, non_goal, target_anchors) in enumerate(candidates):
             tctx = anchor_context(target.split("#")[-1], target_anchors)
+            if non_goal:
+                rule = "non-goal"
+            elif "#" in str(target):
+                rule = "cross-spec"
+            else:
+                rule = "same-spec"
+            pair_info = {"rule": rule, "rank": rank_index, "gate": "yes"}
             result.append(draft_check(anchor, before, after, target, target_text, target_non_goal=non_goal,
                                       path=path, base=base, revision=revision,
-                                      context=ctx, target_context=tctx))
+                                      context=ctx, target_context=tctx, pairing=pair_info))
     return result
 
 
 def draft_check(anchor: str, before: str, after: str, target: str, target_text: str, *,
                 target_non_goal: bool = False, path: str, base: str, revision: Any,
-                context: Mapping[str, Any] | None = None, target_context: Mapping[str, Any] | None = None) -> dict[str, Any]:
+                context: Mapping[str, Any] | None = None, target_context: Mapping[str, Any] | None = None,
+                pairing: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """The draft-check chain for one clause and candidate (#corpus-labels, #gate-chain): about? gate first,
     then contradicts?, then oversteps?, then overlaps?, the first yes decides; a non-goal candidate is asked
     only contradicts? after the gate."""
@@ -1027,14 +1246,15 @@ def draft_check(anchor: str, before: str, after: str, target: str, target_text: 
         second_obj.update(target_context)
     gate = _step(_question("about", anchor, {"first": first_obj, "second": second_obj},
                            path, base, revision, target), no=None)
-    pair: dict[str, Any] = {"before": before, "after": after, "target": target_text}
+    pair: dict[str, Any] = {"before": before, "after": after, "target": target_text, "target_non_goal": target_non_goal}
     if context:
         pair["context"] = dict(context)
     if target_context:
         pair["target_context"] = dict(target_context)
-    # Jev sees only text: without this fact a clause adding what a non-goal excludes reads as related.
+    # Non-goal candidates use their own question set (#qset-examples), not a conditional instruction.
+    contradicts_kind = "contradicts-nongoal" if target_non_goal else "contradicts"
     steps = [gate,
-             _step(_question("contradicts", anchor, {**pair, "target_non_goal": target_non_goal},
+             _step(_question(contradicts_kind, anchor, pair,
                              path, base, revision, target), yes="contradicts")]
     if target_non_goal:
         steps[1]["then"]["no"] = None
@@ -1044,6 +1264,10 @@ def draft_check(anchor: str, before: str, after: str, target: str, target_text: 
     sources = [path + "#" + anchor, target]
     for step in steps:
         step["sources"] = sources
+    # Attach pairing to post-gate steps (#record-pairing)
+    if pairing:
+        for step in steps[1:]:
+            step["pairing"] = dict(pairing)
     return _chain("corpus", anchor, target, sources, {"base": base, "head": revision}, steps)
 
 
@@ -1320,6 +1544,46 @@ def build_rule_questions(scopes: list[Mapping[str, Any]], current: str | bytes, 
     return [build_rule_question(scope, current, path, base, revision, mark) for scope in scopes]
 
 
+def regression_check(confirmed: list[Mapping[str, Any]], question_sets: Mapping[str, QuestionSet],
+                     prior_precision: float = 0.0, prior_recall: float = 0.0) -> tuple[bool, dict[str, Any]]:
+    """Replay confirmed labels through threshold logic and compare to prior metrics (#measure-regression).
+
+    Each entry: {kind, answer: {label, probabilities, confidence}, ground_truth: "yes"|"no"}.
+    Returns (passed, metrics_dict). Passed is True when precision and recall are at least as good."""
+    tp = fp = fn = tn = 0
+    for entry in confirmed:
+        kind = entry.get("kind")
+        qset = question_sets.get(kind) if kind else None
+        if not qset:
+            continue
+        answer = entry.get("answer", {})
+        probs = answer.get("probabilities", {}) if isinstance(answer, Mapping) else {}
+        confidence = answer.get("confidence") if isinstance(answer, Mapping) else None
+        p_yes = probs.get("yes", 0.0) if isinstance(probs, Mapping) else 0.0
+        if qset.show_cutoff is not None:
+            shown = p_yes >= qset.show_cutoff
+        elif confidence is not None:
+            shown = confidence >= qset.threshold
+        else:
+            shown = False
+        gt = entry.get("ground_truth", "yes")
+        if shown and gt == "yes":
+            tp += 1
+        elif shown and gt == "no":
+            fp += 1
+        elif not shown and gt == "yes":
+            fn += 1
+        else:
+            tn += 1
+    total_shown = tp + fp
+    total_pos = tp + fn
+    precision = tp / total_shown if total_shown > 0 else 1.0
+    recall = tp / total_pos if total_pos > 0 else 1.0
+    passed = precision >= prior_precision and recall >= prior_recall
+    return passed, {"tp": tp, "fp": fp, "fn": fn, "tn": tn,
+                    "precision": precision, "recall": recall}
+
+
 BUILDERS = {"type": build_type_questions, "orphan": build_orphan_questions, "resolved": build_resolved_questions,
             "coverage": build_coverage_questions, "audience": build_audience_questions,
             "corpus": build_corpus_questions, "scope": build_scope_questions, "rule": build_rule_questions,
@@ -1406,7 +1670,12 @@ def _escalated(record: Mapping[str, Any] | None) -> bool:
 
 
 def _confident_label(record: Mapping[str, Any] | None) -> str | None:
-    if not record or record.get("outcome") != "shown":
+    if not record:
+        return None
+    outcome = record.get("outcome")
+    if outcome == SILENT_NO:
+        return "no"
+    if outcome != "shown":
         return None
     answer = record.get("answer")
     label = answer.get("label") if isinstance(answer, Mapping) else None
@@ -2403,9 +2672,9 @@ class JevService:
                 "offer": offer, "levels": dict(MARK_LEVELS)}
 
 
-__all__ = ["BUILDERS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MARK_LEVELS", "MODEL",
-           "OPENROUTER_DECISIONS_URL", "OpenRouterProvider", "QuestionSet",
+__all__ = ["BUILDERS", "CHAIN_CONTINUE", "DRAFT_CHECK_KINDS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MARK_LEVELS", "MODEL",
+           "OPENROUTER_DECISIONS_URL", "OpenRouterProvider", "QuestionSet", "SILENT_NO",
            "anchor_context",
            "build_audience_questions", "build_board_conflict_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_rule_question", "build_scope_questions", "build_type_questions", "chain_result", "changed_leaf_clauses", "draft_check",
            "extract_anchors", "lane_result",
-           "load_question_sets", "material", "rule_mark_anchor", "rule_word", "spec_text"]
+           "load_question_sets", "material", "regression_check", "rule_mark_anchor", "rule_word", "spec_text"]

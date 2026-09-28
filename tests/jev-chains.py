@@ -57,13 +57,12 @@ class ChainTest(unittest.TestCase):
         self.assertEqual(provider.calls, ["about", "contradicts"])
         self.assertEqual(result["answer"]["label"], "contradicts")
         self.assertEqual(result["outcome"], "shown")
-        # no below threshold to oversteps?: one general LLM call, and the chain continues from its answer.
-        provider = FakeProvider({"about": ("yes", 0.95), "contradicts": ("no", 0.95), "oversteps": ("no", 0.1)}, general={"oversteps": "yes"})
+        # P(yes) below verify cutoff for draft checks: silent no, no fallback, chain continues (#asymmetric).
+        provider = FakeProvider({"about": ("yes", 0.95), "contradicts": ("no", 0.95), "oversteps": ("no", 0.1)})
         result = self.seam(provider).ask_chain(draft_check()["chain"])
-        self.assertEqual(provider.calls, ["about", "contradicts", "oversteps"])
-        self.assertEqual(provider.general_calls, ["oversteps"])
-        self.assertEqual(result["answer"]["label"], "oversteps")
-        self.assertEqual(result["unsure"], 1)
+        self.assertEqual(provider.calls, ["about", "contradicts", "oversteps", "overlaps"])
+        self.assertEqual(provider.general_calls, [])
+        self.assertIsNone(result["answer"]["label"])
         provider = FakeProvider({"about": ("yes", 0.95), "contradicts": ("no", 0.95), "oversteps": ("no", 0.1)}, general={"oversteps": "no"})
         result = self.seam(provider).ask_chain(draft_check()["chain"])
         self.assertEqual(provider.calls, ["about", "contradicts", "oversteps", "overlaps"])
@@ -75,11 +74,11 @@ class ChainTest(unittest.TestCase):
         source = CURRENT.replace("</section>", '</section><section data-anchor="non-goals"><p data-anchor="non-goal">Offline.</p></section>')
         items = [item for item in jev.build_corpus_questions(source, BASE, "spec.html", "base", "head")
                  if item["target"] == "non-goal"]
-        self.assertEqual([step["kind"] for step in items[0]["chain"]], ["about", "contradicts"])
+        self.assertEqual([step["kind"] for step in items[0]["chain"]], ["about", "contradicts-nongoal"])
         self.assertTrue(items[0]["chain"][1]["state"]["target_non_goal"])
         provider = FakeProvider({"about": ("yes", 0.95)})
         self.assertIsNone(self.seam(provider).ask_chain(items[0]["chain"])["answer"]["label"])
-        self.assertEqual(provider.calls, ["about", "contradicts"])
+        self.assertEqual(provider.calls, ["about", "contradicts-nongoal"])
 
     def test_every_chain_record_is_yes_or_no_and_one_record_per_question(self):
         provider = FakeProvider({"about": ("yes", 0.95), "contradicts": ("no", 0.95), "oversteps": ("no", 0.95), "overlaps": ("no", 0.1)},

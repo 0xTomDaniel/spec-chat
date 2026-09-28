@@ -37,7 +37,13 @@ class FakeProvider:
         with self.lock:
             kind = self.calls[-1]
             self.general_calls.append(kind)
-        return {"choices": [{"message": {"content": json.dumps({"choice": self.general[kind]})}}]}
+        label = self.general[kind]
+        # Verifier format (#verifier): answer + quoted spans
+        result = {"answer": label}
+        if label == "yes":
+            result["clause_span"] = "clause conflict"
+            result["target_span"] = "target conflict"
+        return {"choices": [{"message": {"content": json.dumps(result)}}]}
 
 
 def draft_check():
@@ -281,8 +287,9 @@ class ClaudeCliOnlyTest(unittest.TestCase):
         self.assertEqual(seam.llm_model(), "sonnet")
 
     def test_fallback_path_uses_injected_complete(self):
-        """Below-threshold answer on fallback set calls injected provider's complete()."""
-        primary = FakeProvider({"contradicts": ("no", 0.1)}, general={"contradicts": "yes"})
+        """Verify band answer calls injected provider's complete(), not ClaudeCliProvider (#asymmetric)."""
+        # P(yes)=0.8 lands in verify band [0.7, 0.9) so the verifier is called
+        primary = FakeProvider({"contradicts": ("yes", 0.8)}, general={"contradicts": "yes"})
         seam = jev.JevSeam(SETS, provider=primary, api_key="fake")
         question = draft_check()["chain"][1]
         result = seam.ask(question)
@@ -299,8 +306,9 @@ class ClaudeCliOnlyTest(unittest.TestCase):
         self.assertNotIn("escalated", result)
 
     def test_record_source_llm_for_fallback(self):
-        """Fallback LLM answers carry source: 'llm' (jev-seam #record-source)."""
-        primary = FakeProvider({"contradicts": ("no", 0.1)}, general={"contradicts": "yes"})
+        """Verifier answers carry source: 'llm' (jev-seam #record-source)."""
+        # P(yes)=0.8 in verify band [0.7, 0.9): goes to verifier (#asymmetric)
+        primary = FakeProvider({"contradicts": ("yes", 0.8)}, general={"contradicts": "yes"})
         seam = jev.JevSeam(SETS, provider=primary, api_key="fake")
         question = draft_check()["chain"][1]
         result = seam.ask(question)

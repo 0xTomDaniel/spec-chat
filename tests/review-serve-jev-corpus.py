@@ -41,7 +41,9 @@ class FakeProvider:
         kind = next(iter(payload["questions"]))
         if kind == "about":
             return {"answers": {kind: {"choice": "yes", "confidence": 0.95}}}
-        label = "yes" if self.labels.get(payload["state"].get("target")) == kind else "no"
+        # contradicts-nongoal uses its own question set but labels as contradicts (#qset-examples)
+        match_kind = "contradicts" if kind == "contradicts-nongoal" else kind
+        label = "yes" if self.labels.get(payload["state"].get("target")) == match_kind else "no"
         return {"answers": {kind: {"choice": label, "confidence": 0.95}}}
 
 
@@ -95,11 +97,12 @@ class CorpusTest(unittest.TestCase):
         self.assertEqual((restated["state"], restated["label"], restated["level"]), ("label", "overlaps", "warning"))
         unrelated = by_target["lane/docs/specs/other.spec.html#unrelated"]
         self.assertEqual((unrelated["state"], unrelated["label"]), ("none", None))
-        # The non-goal is asked about? then contradicts? alone; the restated clause about? then all three, each its own yes/no record.
+        # The non-goal is asked about? then contradicts-nongoal? alone (#qset-examples);
+        # the restated clause about? then all three, each its own yes/no record.
         asked = [(next(iter(call["questions"])), call["state"].get("target")) for call in provider.calls
                  if next(iter(call["questions"])) != "about"]
         self.assertEqual([kind for kind, target in asked if target == "The service never writes review events."],
-                         ["contradicts"])
+                         ["contradicts-nongoal"])
         self.assertEqual([kind for kind, target in asked if target == "The service writes review events."],
                          ["contradicts", "oversteps", "overlaps"])
         self.assertEqual({record["answer"]["label"] for record in service.seam.store.by_key.values()}, {"yes", "no"})

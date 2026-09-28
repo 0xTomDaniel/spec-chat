@@ -1,9 +1,11 @@
 {
   "id": "oversteps",
-  "version": 2,
+  "version": 3,
   "instructions": "Compare the changed clause with the linked clause; they do not contradict. Does the changed clause reach into the linked clause's territory? Answer yes only when the linked clause states that a behavior, decision, or responsibility belongs to it or to a named owner, and the changed clause makes a different module, route, or spec do or decide that thing. Answer no when the changed clause stays within its own scope, restates, tests, motivates, or depends on the linked clause, describes the same thing at another layer, or merely shares words or a topic with it. An acceptance criterion, test, or user story about the linked clause's behavior is no.",
   "threshold": 0.7,
   "fallback": true,
+  "show_cutoff": 0.90,
+  "verify_cutoff": 0.70,
   "labels": [
     {
       "name": "yes",
@@ -37,29 +39,13 @@
     },
     {
       "name": "no",
-      "description": "The changed clause stays in its own scope, restates the linked clause, or shares no boundary with it.",
+      "description": "The changed clause stays in its own scope, restates the linked clause, extends it without crossing a boundary, belongs to another layer, is a sibling row of one table, names a Jev label word such as oversteps, or shares no boundary with the linked clause. An acceptance criterion, test, or user story about the linked clause's behavior is no.",
       "examples": [
         {
           "input": {
             "before": "The server stores one judgment record for each question.",
             "after": "The records are the cache.",
             "target": "The records are the cache: each is keyed by a hash of its question inputs and set version."
-          },
-          "label": "no"
-        },
-        {
-          "input": {
-            "before": "The cache key includes the source revision.",
-            "after": "The cache key includes the source revision and set version.",
-            "target": "Mobile markers stay visible at narrow widths."
-          },
-          "label": "no"
-        },
-        {
-          "input": {
-            "before": "The page shows a comment label.",
-            "after": "The page shows a comment label with text.",
-            "target": "The compared base determines the Git focus."
           },
           "label": "no"
         },
@@ -74,16 +60,16 @@
         {
           "input": {
             "before": "",
-            "after": "As an analyst, I reopen a saved filter from the toolbar.",
-            "target": "Saved filters appear in the toolbar list and apply when chosen."
+            "after": "As an operator on the Mac, I can install the plugin candidate for one exact PR SHA with one command, replacing whatever annotateanything build is installed.",
+            "target": "One exact PR SHA becomes one immutable plugin candidate a human can install on the Mac BB app, smoke, and remove with one receipt."
           },
           "label": "no"
         },
         {
           "input": {
-            "before": "The export route returns CSV.",
-            "after": "The export route returns CSV and names the file after the report.",
-            "target": "The report header shows the report's owner and its creation date."
+            "before": "",
+            "after": "As an operator, the Factory page opens without waiting for a fresh /lanes read: it shows the fleet as last read at once, then catches up, and never blanks.",
+            "target": "The page opens from its open snapshot, then reads /lanes once the floor is ready and every 5 seconds after; each read that changes a lane adds a move to the timeline."
           },
           "label": "no"
         }

@@ -12,7 +12,8 @@ STATE_KEYS = {
     "type": {"before", "after"},
     "orphan": {"quote", "candidates"},
     "resolved": {"comment", "before", "after"},
-    "contradicts": {"before", "after", "target", "target_non_goal"},
+    "contradicts": {"before", "after", "target"},
+    "contradicts-nongoal": {"before", "after", "target"},
     "oversteps": {"before", "after", "target"},
     "overlaps": {"before", "after", "target"},
     "coverage": {"story", "criterion"},
@@ -25,7 +26,7 @@ STATE_KEYS = {
 # oversteps? raised by the ANN-347 tuning pass: every confident Jev yes on the train split was wrong.
 THRESHOLDS = {"triggered": 0.7, "covered": 0.7, "oversteps": 0.7}
 # Every chain question is yes or no, and it and scope, coverage, and reading view fall back (jev-suggestions #chains).
-YES_NO = {"about", "type", "contradicts", "oversteps", "overlaps", "triggered", "covered"}
+YES_NO = {"about", "type", "contradicts", "contradicts-nongoal", "oversteps", "overlaps", "triggered", "covered"}
 FALLBACK = YES_NO | {"scope", "coverage", "audience"}
 
 
