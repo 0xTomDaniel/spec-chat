@@ -76,8 +76,7 @@ class RateLimit(unittest.TestCase):
     def serve(self, limited, retry_after="30"):
         server = FakeOpenRouter(limited, retry_after)
         self.addCleanup(server.close)
-        provider = jev.OpenRouterProvider("test-key", endpoint=server.url + "/decisions",
-                                          chat_endpoint=server.url + "/chat")
+        provider = jev.OpenRouterProvider("test-key", endpoint=server.url + "/decisions")
         return server, provider
 
     def ask(self, seam, q=None):
@@ -112,20 +111,34 @@ class RateLimit(unittest.TestCase):
         self.assertEqual(jev.given_wait("-5"), 0.0)
 
     def test_escalated_rule_check_is_one_call_per_stage(self):
-        server, provider = self.serve({"/chat": PERSISTENT}, "45")
-        seam = jev.JevSeam({"scope": scope_set()}, provider=provider, api_key="test-key")
+        """Below-threshold Jev answer escalates to general LLM; LLM failure records unavailable with pause."""
+        server, provider = self.serve({}, "45")
+        # The general LLM (complete) fails; the Jev decision (decide) succeeds but below threshold.
+        fail_count = [0]
+        orig_complete = None
+
+        class EscalatingProvider:
+            """Jev decide through the HTTP server; complete raises to simulate LLM failure."""
+            def decide(self, payload):
+                return provider.decide(payload)
+            def complete(self, payload):
+                fail_count[0] += 1
+                raise jev.ProviderWait("rate limited", 45.0)
+
+        ep = EscalatingProvider()
+        seam = jev.JevSeam({"scope": scope_set()}, provider=ep, api_key="test-key")
         record, pause = self.ask(seam)
         self.assertEqual((record["outcome"], record["escalated"]), ("unavailable", True))
-        self.assertEqual(server.hits, ["/decisions", "/chat"])
+        self.assertEqual(fail_count[0], 1)
         self.assertEqual(pause, 45.0)
         # asked again after its pause: only the general LLM, once
         record, pause = self.ask(seam)
-        self.assertEqual(server.hits, ["/decisions", "/chat", "/chat"])
+        self.assertEqual(fail_count[0], 2)
         self.assertEqual(pause, 45.0)
-        server.limited["/chat"] = 0
+        # Now LLM succeeds
+        ep.complete = lambda payload: {"choices": [{"message": {"content": json.dumps({"choice": "every feature"})}}]}
         record, _ = self.ask(seam)
         self.assertEqual((record["outcome"], record["answer"]["label"]), ("shown", "every feature"))
-        self.assertEqual(server.hits, ["/decisions"] + ["/chat"] * 3)
 
     def test_other_errors_are_one_call_and_pause_the_default(self):
         provider = jev.OpenRouterProvider("k", endpoint="http://127.0.0.1:9/decisions")

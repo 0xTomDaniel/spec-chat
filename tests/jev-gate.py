@@ -243,38 +243,20 @@ class LaneGateTest(unittest.TestCase):
         self.assertEqual(provider.calls, ["about", "contradicts"])
 
 
-class ProviderTypeTest(unittest.TestCase):
-    """provider_type selects fallback provider: openrouter (default) or claude-cli."""
+class ClaudeCliOnlyTest(unittest.TestCase):
+    """General LLM always runs through Claude CLI; OpenRouter is Jev Decisions only (#rule-cli-only)."""
 
-    def test_default_provider_type_is_claude_cli(self):
-        reader = jev._provider_type_reader(None)
-        self.assertEqual(reader(), "claude-cli")
-
-    def test_provider_type_from_string(self):
-        reader = jev._provider_type_reader("claude-cli")
-        self.assertEqual(reader(), "claude-cli")
-
-    def test_provider_type_from_callable(self):
-        reader = jev._provider_type_reader(lambda: "claude-cli")
-        self.assertEqual(reader(), "claude-cli")
-
-    def test_fallback_provider_openrouter_returns_primary(self):
-        primary = FakeProvider({"about": ("yes", 0.95)})
-        seam = jev.JevSeam(SETS, provider=primary, api_key="fake", provider_type="openrouter")
-        self.assertIs(seam._fallback_provider(primary), primary)
-
-    def test_fallback_provider_claude_cli_returns_cli(self):
-        """Without an injected provider, provider_type='claude-cli' selects ClaudeCliProvider."""
-        seam = jev.JevSeam(SETS, api_key="fake", provider_type="claude-cli")
+    def test_fallback_always_cli_without_injected(self):
+        """Without an injected provider, _fallback_provider always returns ClaudeCliProvider."""
+        seam = jev.JevSeam(SETS, api_key="fake")
         primary = seam.provider()
         fallback = seam._fallback_provider(primary)
         self.assertIsInstance(fallback, jev.ClaudeCliProvider)
-        self.assertIsNot(fallback, primary)
 
-    def test_fallback_provider_injected_ignores_type(self):
-        """An injected provider (test double) is used for both decide and complete regardless of provider_type."""
+    def test_fallback_injected_returns_primary(self):
+        """An injected provider (test double) is used for both decide and complete."""
         primary = FakeProvider({"about": ("yes", 0.95)})
-        seam = jev.JevSeam(SETS, provider=primary, api_key="fake", provider_type="claude-cli")
+        seam = jev.JevSeam(SETS, provider=primary, api_key="fake")
         self.assertIs(seam._fallback_provider(primary), primary)
 
     def test_claude_cli_provider_has_complete(self):
@@ -282,44 +264,30 @@ class ProviderTypeTest(unittest.TestCase):
         self.assertTrue(hasattr(provider, "complete"))
         self.assertEqual(provider.timeout, jev.GENERAL_LLM_TIMEOUT)
 
-    def test_fallback_path_uses_provider_type(self):
-        """When provider_type is openrouter, the fallback calls the primary's complete(), not ClaudeCliProvider."""
+    def test_openrouter_provider_has_no_complete(self):
+        """OpenRouterProvider has decide() only; no complete() method (#rule-cli-only)."""
+        provider = jev.OpenRouterProvider("fake")
+        self.assertTrue(hasattr(provider, "decide"))
+        self.assertFalse(hasattr(provider, "complete"))
+
+    def test_model_reader_empty_when_unconfigured(self):
+        """No llm_model configured: reader returns '' so CLI picks its own default."""
+        seam = jev.JevSeam(SETS, api_key="fake")
+        self.assertEqual(seam.llm_model(), "")
+
+    def test_model_reader_explicit_value(self):
+        """Configured llm_model is passed through."""
+        seam = jev.JevSeam(SETS, api_key="fake", llm_model="sonnet")
+        self.assertEqual(seam.llm_model(), "sonnet")
+
+    def test_fallback_path_uses_injected_complete(self):
+        """Below-threshold answer on fallback set calls injected provider's complete()."""
         primary = FakeProvider({"contradicts": ("no", 0.1)}, general={"contradicts": "yes"})
-        seam = jev.JevSeam(SETS, provider=primary, api_key="fake", provider_type="openrouter")
-        question = draft_check()["chain"][1]  # the contradicts step
+        seam = jev.JevSeam(SETS, provider=primary, api_key="fake")
+        question = draft_check()["chain"][1]
         result = seam.ask(question)
-        # Below threshold with fallback set: calls primary's complete()
         self.assertEqual(primary.general_calls, ["contradicts"])
         self.assertEqual(result["answer"]["label"], "yes")
-
-    def test_claude_cli_default_omits_openrouter_model(self):
-        """When provider_type is claude-cli and no llm_model configured, model is omitted (#ac-defaults)."""
-        seam = jev.JevSeam(SETS, api_key="fake", provider_type="claude-cli")
-        # No llm_model configured: _raw_llm_model returns ""
-        self.assertEqual(seam._raw_llm_model(), "")
-        # llm_model still returns the OpenRouter default
-        self.assertEqual(seam.llm_model(), jev.DEFAULT_LLM_MODEL)
-        # general_payload built with empty model when using claude-cli path
-        qset = SETS["contradicts"]
-        question = draft_check()["chain"][1]
-        fallback = seam._fallback_provider(seam.provider())
-        self.assertIsInstance(fallback, jev.ClaudeCliProvider)
-        # Verify _general would build payload with empty model
-        model = seam.llm_model()
-        if isinstance(fallback, jev.ClaudeCliProvider) and not seam._raw_llm_model():
-            model = ""
-        self.assertEqual(model, "")
-
-    def test_claude_cli_explicit_model_passed(self):
-        """When provider_type is claude-cli and llm_model is configured, it is passed through."""
-        seam = jev.JevSeam(SETS, api_key="fake", provider_type="claude-cli", llm_model="sonnet")
-        self.assertEqual(seam._raw_llm_model(), "sonnet")
-        fallback = seam._fallback_provider(seam.provider())
-        self.assertIsInstance(fallback, jev.ClaudeCliProvider)
-        model = seam.llm_model()
-        if isinstance(fallback, jev.ClaudeCliProvider) and not seam._raw_llm_model():
-            model = ""
-        self.assertEqual(model, "sonnet")
 
     def test_record_source_jev_for_primary(self):
         """Primary Jev answers carry source: 'jev' (jev-seam #record-source)."""
