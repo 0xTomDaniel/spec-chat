@@ -517,7 +517,7 @@
 <p data-anchor="measure-replay">Live replay: the eval set's pairs are replayed through the current pipeline, including candidate ranking, gate, Jev questions, asymmetric threshold, and verifier. No simulated filter effects; each pair makes the calls the pipeline makes.</p>
 <p data-anchor="measure-report">The pull request reports per stage (candidate ranking, gate, Jev threshold, verifier) and per question: pairs asked, prevalence, TP, FP, FN, precision and recall of shown marks, with Wilson score intervals. Cutoffs are tuned on the train partition for precision at or above 80% at maximum recall, then reported unchanged on the test partition.</p>
 <p data-anchor="measure-bar">Every draft-check question that shows a mark reaches 80% precision on the test partition, with all known true positives kept. A question below 80% gets one more train-only tuning pass; if it is still below, its mark shows as a grey note with no level until it reaches 80%.</p>
-<p data-anchor="measure-seed">Baseline: 0.7% precision (17 TP in 2304 flagged marks, 95% CI 0.5% to 1.2%) at 100% recall on known TPs (17/17, 95% CI 82% to 100%). Estimated prevalence among asked pairs: 0.024%. To reach 80% precision at this prevalence, the false-positive rate must be below 0.006%.</p>
+<p data-anchor="measure-baseline">The baseline is the first live replay of the frozen eval set through the current pipeline before any tuning. It reports the same per-stage metrics as tuning runs. Estimated prevalence among all asked pairs: 0.024% (17 known TPs in ~71k pairs). To reach 80% precision at this prevalence, the false-positive rate must be below 0.006%.</p>
 </section>
 
 <section data-anchor="proof">
