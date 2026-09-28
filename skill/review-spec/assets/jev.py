@@ -1190,7 +1190,7 @@ def draft_check(anchor: str, before: str, after: str, target: str, target_text: 
         second_obj.update(target_context)
     gate = _step(_question("about", anchor, {"first": first_obj, "second": second_obj},
                            path, base, revision, target), no=None)
-    pair: dict[str, Any] = {"before": before, "after": after, "target": target_text}
+    pair: dict[str, Any] = {"before": before, "after": after, "target": target_text, "target_non_goal": target_non_goal}
     if context:
         pair["context"] = dict(context)
     if target_context:
