@@ -57,7 +57,7 @@ const state = {
   handoffPosting: false,
   lastTbd: null,         // open TBD marker focused by the last TBD open activation
   range: { baseline: null, loaded: null, loading: false, pickerOpen: false }, // loaded: anchor signatures of the page as served
-  jev: { status: 'idle', items: [], levels: {}, offer: null, base: null, request: 0, poll: 0 }, // levels: the server's mark kind -> level table
+  jev: { status: 'idle', items: [], levels: {}, offer: null, base: null, request: 0 }, // levels: the server's mark kind -> level table
   evidence: { criteria: null, levels: {}, hostOrigin: null }, // criteria: anchor -> entry once /api/evidence answers, null shows nothing;
   // hostOrigin: the BB plugin frame that announced itself
   readingView: false,
@@ -145,11 +145,10 @@ function baselineParams(base) {
   return params;
 }
 
+// The change type's two answers (jev-suggestions #change-type).
 const JEV_TYPE_LABELS = {
-  scope: 'Scope',
-  behavioral: 'Behavior',
-  clarification: 'Clarification',
-  cosmetic: 'Cosmetic',
+  behavior: 'Behavior',
+  'no-behavior-change': 'No behavior change',
 };
 
 function jevParams(base) {
@@ -198,50 +197,65 @@ function findAnchor(anchorId) {
 
 function clearJev() {
   state.jev.request += 1;
-  clearTimeout(state.jev.poll);
   state.jev.status = 'idle';
   state.jev.items = [];
   state.jev.levels = {};
   state.jev.offer = null;
   state.jev.base = null;
+  scheduleJevPoll();
   renderJev();
   renderPanel();
   renderPins();
 }
 
-// While any item is pending the page asks again and swaps answers in place (project-rules #pending-poll).
-const JEV_POLL_MS = 2000;
+// Background answers (#fast-marks-background): while any item is pending and the page is shown, read the
+// same base again in 2 s; a newer request, a base change, or hiding the page cancels it, and showing resumes it.
+let jevPollTimer = 0;
 
-async function requestJev(base, poll = false) {
+function scheduleJevPoll() {
+  clearTimeout(jevPollTimer);
+  jevPollTimer = 0;
+  if (state.jev.status !== 'on' || document.hidden || !state.jev.items.some(item => item.state === 'pending')) return;
+  const request = state.jev.request;
+  const base = state.jev.base;
+  jevPollTimer = setTimeout(() => {
+    jevPollTimer = 0;
+    if (request === state.jev.request && base === state.jev.base && !document.hidden) requestJev(base, true);
+  }, 2000);
+}
+
+document.addEventListener('visibilitychange', scheduleJevPoll);
+
+// refresh: a re-read for pending items; it shows only what changed and keeps the page as is when it fails.
+async function requestJev(base, refresh = false) {
   if (!['http:', 'https:'].includes(location.protocol) || !base) return;
-  clearTimeout(state.jev.poll);
   const request = ++state.jev.request;
-  if (!poll) {
+  if (!refresh) {
     state.jev.status = 'loading';
     state.jev.base = String(base);
     renderJev();
   }
-  const again = () => { state.jev.poll = setTimeout(() => { if (request === state.jev.request) requestJev(base, true); }, JEV_POLL_MS); };
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120000);
   try {
     const result = await fetchJev(base, controller.signal);
     if (request !== state.jev.request) return;
     const status = result.jev === 'off' ? 'off' : 'on';
-    const same = poll && status === state.jev.status &&
-      JSON.stringify([result.items, result.offer]) === JSON.stringify([state.jev.items, state.jev.offer]);
+    const same = refresh && status === state.jev.status
+      && JSON.stringify([result.items, result.levels, result.offer])
+      === JSON.stringify([state.jev.items, state.jev.levels, state.jev.offer]);
     state.jev.status = status;
     state.jev.items = result.items;
     state.jev.levels = result.levels;
     state.jev.offer = result.offer;
-    if (result.items.some(item => item.state === 'pending')) again();
-    if (same) return; // an unchanged poll leaves the page, and any open popover, as it is
+    scheduleJevPoll();
+    if (same) return;
     renderJev();
     renderPanel();
     renderPins();
   } catch (_) {
     if (request !== state.jev.request) return;
-    if (poll) { again(); return; } // a failed poll keeps the last answer and asks again
+    if (refresh) { scheduleJevPoll(); return; }
     state.jev.status = 'unavailable';
     state.jev.items = [];
     state.jev.levels = {};
@@ -468,7 +482,7 @@ function coverageGapFlags(items) {
   const values = new Map();
   const ensure = (anchor, side) => {
     const key = side + ':' + anchor;
-    if (!values.has(key)) values.set(key, { anchor, side, verifies: false, unsure: false, unavailable: false });
+    if (!values.has(key)) values.set(key, { anchor, side, verifies: false, unavailable: false, pending: false });
     return values.get(key);
   };
   for (const item of Array.isArray(items) ? items : []) {
@@ -478,18 +492,17 @@ function coverageGapFlags(items) {
     const story = ensure(pair.story, 'story');
     const criterion = ensure(pair.criterion, 'criterion');
     const verifies = item.state === 'label' && item.label === 'verifies';
-    const unsure = item.state === 'unsure' || (item.state === 'label' && item.label === 'unsure');
     const unavailable = item.state === 'unavailable';
+    const pending = item.state === 'pending';
     for (const value of [story, criterion]) {
       value.verifies ||= verifies;
-      value.unsure ||= unsure;
       value.unavailable ||= unavailable;
+      value.pending ||= pending;
     }
   }
   return [...values.values()].flatMap(value => {
     if (!value.anchor) return [];
-    if (value.verifies) return [];
-    if (value.unsure) return [{ anchor: value.anchor, side: value.side, state: 'unsure', label: 'unsure' }];
+    if (value.verifies || value.pending) return [];
     if (value.unavailable) return [{ anchor: value.anchor, side: value.side, state: 'unavailable', label: 'Jev unavailable' }];
     return [{ anchor: value.anchor, side: value.side, state: 'gap',
       label: value.side === 'story' ? 'No criterion covers this' : 'No story backs this' }];
@@ -1124,25 +1137,16 @@ function jevDisplayLabel(item) {
   if (!item) return '';
   if (item.state === 'unsure') return 'unsure';
   if (item.state === 'unavailable') return 'Jev unavailable';
-  const raw = String(item.label || '').toLowerCase();
-  return JEV_TYPE_LABELS[raw] || item.label || '';
+  return item.label || '';
 }
 
 function corpusFlags(items) {
   const labels = { contradicts: 'Contradicts', overlaps: 'Overlaps', oversteps: 'Oversteps' };
-  const seenUnsure = new Set();
   const seenUnavailable = new Set();
-  const confident = new Set();
   const result = [];
   for (const item of Array.isArray(items) ? items : []) {
     if (!item || item.kind !== 'corpus' || !item.id) continue;
     const anchor = String(item.id);
-    if (item.state === 'unsure') {
-      if (seenUnsure.has(anchor)) continue;
-      seenUnsure.add(anchor);
-      result.push({ anchor, state: 'unsure', label: 'unsure', target: null });
-      continue;
-    }
     if (item.state === 'unavailable') {
       if (seenUnavailable.has(anchor)) continue;
       seenUnavailable.add(anchor);
@@ -1151,13 +1155,10 @@ function corpusFlags(items) {
     }
     if (item.state !== 'label') continue;
     const label = labels[String(item.label || '').toLowerCase()];
-    if (label) {
-      confident.add(anchor);
-      result.push({ anchor, state: 'label', label, level: item.level || null,
-        target: item.target == null ? null : String(item.target) });
-    }
+    if (label) result.push({ anchor, state: 'label', label, level: item.level || null,
+      target: item.target == null ? null : String(item.target) });
   }
-  return result.filter(flag => flag.state !== 'unsure' || !confident.has(flag.anchor));
+  return result;
 }
 
 function corpusTargetLink(target) {
@@ -1231,20 +1232,17 @@ function jevBatch(entries, label, heading) {
   }
 }
 
-// Each Jev question has one unsure word and its hover sentence (jev-suggestions #neutral-questions), so a neutral note never reads as QA.
+// Jev unavailable names what Jev could not check in its hover sentence (jev-suggestions #neutral-questions); an unsure
+// answer is settled by the LLM fallback in the seam, so the browser never shows one.
 const JEV_QUESTIONS = {
-  type: ['scope?', 'whether this is scope or behavior'],
-  criterion: ['story?', 'which story this criterion verifies'],
-  story: ['criterion?', 'which criterion verifies this story'],
-  corpus: ['conflict?', 'whether this conflicts with another clause'],
-  audience: ['reader?', 'whether this is for readers or internals'],
+  type: 'whether this changes behavior',
+  criterion: 'which story this criterion verifies',
+  story: 'which criterion verifies this story',
+  corpus: 'whether this conflicts with another clause',
+  audience: 'whether this is for readers or internals',
 };
-function jevNeutralNote(anchor, stateName, question) {
-  const [word, tail] = JEV_QUESTIONS[question];
-  const unsure = stateName === 'unsure';
-  return { anchor, group: 'neutral', state: stateName, text: unsure ? word : 'Jev unavailable',
-    sentence: (unsure ? 'Jev is unsure ' : 'Jev could not check ') + tail,
-    level: unsure ? markLevel(state.jev, 'unsure') : null };
+function jevNeutralNote(anchor, question) {
+  return { anchor, group: 'neutral', state: 'unavailable', text: 'Jev unavailable', sentence: 'Jev could not check ' + JEV_QUESTIONS[question], level: null };
 }
 
 // project-rules #marks: a missed rule is its fixed word linking the rule, not muted, with Ask to cover; a check
@@ -1278,7 +1276,7 @@ function jevSuggestionNotes() {
     if (note) notes.push(note);
   }
   for (const flag of coverageGapFlags(state.jev.items)) {
-    if (flag.state !== 'gap') { notes.push(jevNeutralNote(flag.anchor, flag.state, flag.side)); continue; }
+    if (flag.state !== 'gap') { notes.push(jevNeutralNote(flag.anchor, flag.side)); continue; }
     const note = { anchor: flag.anchor, group: 'coverage', state: 'label', text: flag.label,
       level: markLevel(state.jev, flag.side === 'story' ? 'no-criterion' : 'no-story'),
       actions: [flag.side === 'story'
@@ -1288,10 +1286,9 @@ function jevSuggestionNotes() {
     notes.push(note);
   }
   jevBatch(gaps, 'Ask about all gaps', 'Add a criterion for each story, or name the story for each criterion:');
-  const neutral = item => item.state === 'unsure' || item.state === 'unavailable';
   if (state.readingView) {
     for (const item of state.jev.items) {
-      if (item.kind === 'audience' && item.id && neutral(item)) notes.push(jevNeutralNote(item.id, item.state, 'audience'));
+      if (item.kind === 'audience' && item.id && item.state === 'unavailable') notes.push(jevNeutralNote(item.id, 'audience'));
     }
     return notes;
   }
@@ -1315,7 +1312,7 @@ function jevSuggestionNotes() {
   }
   const gitFocus = jevGitFocus();
   for (const flag of gitFocus ? corpusFlags(state.jev.items) : []) {
-    if (flag.state !== 'label') { notes.push(jevNeutralNote(flag.anchor, flag.state, 'corpus')); continue; }
+    if (flag.state !== 'label') { notes.push(jevNeutralNote(flag.anchor, 'corpus')); continue; }
     const link = corpusTargetLink(flag.target);
     conflict(flag.anchor, flag.label, flag.level, flag.label + (link ? ' ' + link.text : ''), link ? link.href : null, link && link.text);
   }
@@ -1323,11 +1320,11 @@ function jevSuggestionNotes() {
   if (!gitFocus) return notes;
   for (const item of state.jev.items) {
     if (item.kind !== 'type' || !item.id) continue;
-    if (neutral(item)) notes.push(jevNeutralNote(item.id, item.state, 'type'));
-    else if (item.state === 'label' && jevDisplayLabel(item)) {
-      const text = jevDisplayLabel(item);
-      notes.push({ anchor: item.id, group: 'type', state: 'label', text, level: item.level || null,
-        actions: text === 'Scope' || text === 'Behavior' ? [jevDraftAction('Comment on this change', 'About this change: ')] : [] });
+    if (item.state === 'unavailable') notes.push(jevNeutralNote(item.id, 'type'));
+    else if (item.state === 'label' && JEV_TYPE_LABELS[item.label]) {
+      const text = JEV_TYPE_LABELS[item.label];
+      notes.push({ anchor: item.id, group: 'type', state: 'label', text, level: null,
+        actions: item.label === 'behavior' ? [jevDraftAction('Comment on this change', 'About this change: ')] : [] });
     }
   }
   return notes;
@@ -1481,7 +1478,10 @@ function mountJevMarker(holder, notes) {
   marker.className = 'hx-jev-marker';
   const attention = notes.some(note => note.level === 'important');
   marker.dataset.attention = String(attention);
-  marker.dataset.passed = String(!attention && notes.some(note => note.group === 'evidence' && note.passed));
+  const passed = !attention && notes.some(note => note.group === 'evidence' && note.passed);
+  marker.dataset.passed = String(passed);
+  // #markers-color: a light red dot when any note is Warning at the human level, below ! and the green check.
+  marker.dataset.warning = String(!attention && !passed && notes.some(note => note.level === 'warning'));
   // Only escalated checks here: the marker is the pending wheel, its hover sentence its name (project-rules #pending).
   const pending = notes.every(note => note.state === 'pending');
   marker.dataset.pending = String(pending);
@@ -1726,19 +1726,51 @@ function wireJevPopover() {
 // project-rules #bootstrap-offer: one page note after warm-up. Reconcile drafts one comment; sending it or
 // dismissing the note records the offer, after which the server never returns it again for this project.
 function jevOfferNote(offer) {
-  const note = document.createElement('p');
+  const note = document.createElement('div');
   note.className = 'hx-jev-note hx-jev-offer';
   const count = Number(offer.count);
   note.appendChild(document.createElement('span')).textContent =
     count + (count === 1 ? ' existing spec misses' : ' existing specs miss') + ' project rules: reconcile?';
+  const specs = Array.isArray(offer.specs) ? offer.specs : [];
+  // Disclosure toggle: collapsed detail list of each spec and its missed rules.
+  const toggle = note.appendChild(document.createElement('button'));
+  toggle.type = 'button';
+  toggle.className = 'hx-disclosure';
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-label', 'Show spec details');
+  toggle.textContent = '\u25b8';
+  const detail = note.appendChild(document.createElement('div'));
+  detail.className = 'hx-jev-offer-detail';
+  detail.hidden = true;
+  for (const entry of specs) {
+    const row = detail.appendChild(document.createElement('div'));
+    row.className = 'hx-jev-offer-spec';
+    const specLink = row.appendChild(document.createElement('a'));
+    specLink.href = '/' + String(entry.spec || '');
+    specLink.textContent = String(entry.spec || '');
+    for (const r of (Array.isArray(entry.rules) ? entry.rules : [])) {
+      const ruleLink = row.appendChild(document.createElement('a'));
+      ruleLink.href = '/' + String(r.target || '');
+      ruleLink.className = 'hx-jev-offer-rule';
+      ruleLink.textContent = String(r.word || '') + '?';
+    }
+  }
+  toggle.addEventListener('click', event => {
+    event.stopPropagation();
+    const expanded = detail.hidden;
+    detail.hidden = !expanded;
+    toggle.setAttribute('aria-expanded', String(expanded));
+    toggle.textContent = expanded ? '\u25be' : '\u25b8';
+    toggle.setAttribute('aria-label', expanded ? 'Hide spec details' : 'Show spec details');
+  });
   const record = action => {
     state.jev.offer = null;
     renderJev();
     fetch('/api/jev/offer?' + new URLSearchParams({ path: location.pathname.replace(/^\//, '') }),
       { method: 'POST', body: JSON.stringify({ offer: action }) }).catch(() => {});
   };
-  const lines = (Array.isArray(offer.specs) ? offer.specs : []).map(entry => [String(entry.spec || ''),
-    ...(Array.isArray(entry.rules) ? entry.rules : []).map(rule => String(rule.word || '') + '? ' + String(rule.target || ''))].join(' '));
+  const lines = specs.map(entry => [String(entry.spec || ''),
+    ...(Array.isArray(entry.rules) ? entry.rules : []).map(r => String(r.word || '') + '? ' + String(r.target || ''))].join(' '));
   const reconcile = note.appendChild(document.createElement('button'));
   reconcile.type = 'button';
   reconcile.className = 'hx-btn';
@@ -1779,7 +1811,7 @@ function renderJev() {
   }
   if (state.jev.status === 'on' && state.jev.offer) pageNote(jevOfferNote(state.jev.offer));
 
-  // Dims are the only in-text Jev display: reading view internals and Git focus cosmetic changes.
+  // Dims are the only in-text Jev display: reading view internals and Git focus No behavior change sections.
   const gitFocus = jevGitFocus();
   for (const item of state.jev.items) {
     if (!item.id || item.state !== 'label') continue;
@@ -1788,8 +1820,8 @@ function renderJev() {
     if (state.readingView) {
       if (item.kind !== 'audience') continue;
       if (item.state === 'label' && item.label === 'internals') holder.dataset.hxAudience = 'internals';
-    } else if (gitFocus && item.kind === 'type' && String(item.label).toLowerCase() === 'cosmetic') {
-      holder.dataset.hxJevType = 'cosmetic';
+    } else if (gitFocus && item.kind === 'type' && item.label === 'no-behavior-change') {
+      holder.dataset.hxJevType = 'no-behavior-change';
     }
   }
   for (const [anchor, notes] of jevNotesByAnchor()) {
@@ -1819,7 +1851,7 @@ article.spec header{border-color:#33363c}
 article.spec nav{color:#74767e}
 article.spec a{color:#34a899}
 [data-render-target]{border-color:#33363c;background:#1d2024}
-body [data-hx-jev-type=cosmetic]{color:#b9c0ca!important}
+body [data-hx-jev-type=no-behavior-change]{color:#b9c0ca!important}
 }
 @media(max-width:640px){
 :where(body){padding-bottom:calc(112px + env(safe-area-inset-bottom))}
@@ -1981,14 +2013,15 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-badge{font:600 var(--ui-text-xs) var(--ui-font);text-transform:uppercase;letter-spacing:.04em;color:var(--ui-resolved);background:var(--ui-resolved-soft);border-radius:var(--ui-radius-pill);padding:2px 7px;margin-left:var(--ui-space-2);vertical-align:middle}
 /* jev note */
 .hx-jev-note{box-sizing:border-box;max-width:720px;margin:var(--ui-space-3) auto 0;padding:var(--ui-space-1) 10px;border:1px solid rgba(176,84,14,0.4);border-radius:var(--ui-radius);background:var(--ui-draft-soft);color:var(--ui-draft);font:600 var(--ui-text-xs)/1.35 var(--ui-font)}
-[data-hx-jev-type=cosmetic]{color:#586069!important}
-[data-hx-jev-type=cosmetic] :is(h1,h2,h3,h4,h5,h6,p,li,td,th,blockquote,code,strong,em,a){color:inherit!important}
+[data-hx-jev-type=no-behavior-change]{color:#586069!important}
+[data-hx-jev-type=no-behavior-change] :is(h1,h2,h3,h4,h5,h6,p,li,td,th,blockquote,code,strong,em,a){color:inherit!important}
 /* jev markers */
 .hx-jev-marker{position:absolute;top:.35em;left:calc(100% + 10px);z-index:640;box-sizing:border-box;width:10px;height:10px;margin:0;padding:0;border:0;border-radius:50%;background:var(--ui-marker);color:#ffffff;cursor:pointer;display:grid;place-items:center;font:800 10px/1 var(--ui-font)}
 .hx-jev-marker::before{content:"";position:absolute;inset:-10px 0 -10px -16px}
 .hx-jev-marker[data-attention=true]{width:14px;height:14px;background:var(--ui-marker-important)}
 .hx-jev-marker[data-attention=true]::after{content:"!"}
 .hx-jev-marker[data-passed=true]{width:14px;height:14px;background:var(--ui-marker-pass)}
+.hx-jev-marker[data-warning=true]{background:#e5534b}
 .hx-jev-marker[data-passed=true]::after{content:"\\2713"}
 .hx-jev-marker[data-inset=true]{left:auto;right:0}
 .hx-jev-marker:hover,.hx-jev-marker[aria-expanded=true]{box-shadow:0 0 0 3px rgba(29,78,216,.22)}
@@ -1996,10 +2029,15 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-jev-marker[data-pending=true]{background:transparent;border:2px solid var(--ui-marker);border-right-color:transparent;animation:hx-jev-spin 1s linear infinite}
 @keyframes hx-jev-spin{to{transform:rotate(360deg)}}
 /* jev offer */
-.hx-jev-offer{display:flex;align-items:center;gap:var(--ui-space-2)}
+.hx-jev-offer{display:flex;align-items:center;flex-wrap:wrap;gap:var(--ui-space-2)}
 .hx-jev-offer span{flex:1 1 auto}
 .hx-jev-offer .hx-btn{margin:0;font-size:var(--ui-text-xs);padding:3px var(--ui-space-2)}
 .hx-jev-offer-dismiss{margin:0;padding:0 var(--ui-space-1);border:0;background:none;color:inherit;font:600 14px/1 var(--ui-font);cursor:pointer}
+.hx-jev-offer-detail{width:100%;font:var(--ui-text-xs)/1.5 var(--ui-font);padding-left:var(--ui-space-1)}
+.hx-jev-offer-detail[hidden]{display:none}
+.hx-jev-offer-spec{margin:2px 0}
+.hx-jev-offer-spec a{color:var(--ui-link);text-decoration:underline;text-underline-offset:2px}
+.hx-jev-offer-rule{margin-left:var(--ui-space-2);font-size:var(--ui-text-xs);color:var(--ui-muted)}
 /* jev popover */
 .hx-jev-pop{position:fixed;z-index:880;box-sizing:border-box;width:max-content;min-width:180px;max-width:min(340px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;padding:var(--ui-space-2) 10px;border:1px solid var(--ui-ink);border-radius:var(--ui-radius);background:var(--ui-surface);color:var(--ui-ink);box-shadow:0 8px 28px var(--ui-shadow);font:var(--ui-text-sm)/1.4 var(--ui-font)}
 .hx-jev-pop[hidden]{display:none}

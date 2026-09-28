@@ -1,0 +1,56 @@
+{
+  "id": "triggered",
+  "version": 1,
+  "instructions": "Read one project-wide rule and the full text of one product spec. Does the spec trigger the rule? Answer yes when the spec makes a change the rule applies to, whether or not it meets the rule. Answer no when nothing the spec changes falls under the rule.",
+  "threshold": 0.7,
+  "fallback": true,
+  "labels": [
+    {
+      "name": "yes",
+      "description": "The spec makes a change the rule applies to.",
+      "examples": [
+        {
+          "input": {
+            "rule": "When any change adds a screen or alters what a user can do, the change ships with its help center article.",
+            "spec": "Saved filters. Users can save the current filter set under a name from the toolbar. Acceptance: when a user saves a filter, it appears in the saved list."
+          },
+          "label": "yes"
+        },
+        {
+          "input": {
+            "rule": "Every new API endpoint is listed in the public changelog before release.",
+            "spec": "Bulk tags. A new internal endpoint applies one tag to many items. Changelog: not needed, the endpoint is internal and never public."
+          },
+          "label": "yes"
+        },
+        {
+          "input": {
+            "rule": "When a change alters what a human sees or does, its PR carries a QA evidence bundle before the merge ask.",
+            "spec": "Rule notes. The review page shows a missed note when a spec skips a project rule. Acceptance: a spec that skips a rule shows one missed note. Evidence: seam tests behind fakes and a QA bundle on a real spec."
+          },
+          "label": "yes"
+        }
+      ]
+    },
+    {
+      "name": "no",
+      "description": "Nothing the spec changes falls under the rule.",
+      "examples": [
+        {
+          "input": {
+            "rule": "When any change adds a screen or alters what a user can do, the change ships with its help center article.",
+            "spec": "Faster cache. The server keeps parsed templates in memory. Acceptance: a second render of one template does not read the disk."
+          },
+          "label": "no"
+        },
+        {
+          "input": {
+            "rule": "Every new API endpoint is listed in the public changelog before release.",
+            "spec": "Dark theme. The settings page offers a dark theme toggle. Acceptance: toggling it switches every page to dark colors."
+          },
+          "label": "no"
+        }
+      ]
+    }
+  ]
+}

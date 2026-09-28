@@ -21,11 +21,12 @@ ON = {
          "word": "onboarding", "record": "r1", "level": "important", "agent_level": "important"},
         {"kind": "corpus", "id": "save-rule", "state": "label", "label": "contradicts",
          "target": "non-goal-offline", "record": "r2", "level": "important", "agent_level": "important"},
-        {"kind": "type", "id": "a", "state": "label", "label": "behavioral", "target": None, "record": "r3", "level": "warning", "agent_level": "warning"},
-        {"kind": "type", "id": "b", "state": "label", "label": "scope", "target": None, "record": "r4", "level": "warning", "agent_level": "warning"},
-        {"kind": "type", "id": "save-rule", "state": "label", "label": "cosmetic", "target": None, "record": "r5", "level": "warning", "agent_level": "warning"},
-        {"kind": "audience", "id": "c", "state": "label", "label": "internals", "target": None, "record": "r6", "level": "warning", "agent_level": "warning"},
-        {"kind": "audience", "id": "d", "state": "label", "label": "internals", "target": None, "record": "r7", "level": "warning", "agent_level": "warning"},
+        {"kind": "corpus", "id": "a", "state": "label", "label": "overlaps", "target": "x", "record": "r3", "level": "warning", "agent_level": "warning", "unsure": 1},
+        {"kind": "corpus", "id": "b", "state": "label", "label": "overlaps", "target": "y", "record": "r4", "level": "warning", "agent_level": "warning"},
+        {"kind": "corpus", "id": "save-rule", "state": "label", "label": "overlaps", "target": "z", "record": "r5", "level": "warning", "agent_level": "warning"},
+        {"kind": "type", "id": "save-rule", "state": "label", "label": "no-behavior-change", "target": None, "record": "r10", "unsure": 1},
+        {"kind": "audience", "id": "c", "state": "label", "label": "internals", "target": None, "record": "r6", "unsure": 2},
+        {"kind": "type", "id": "d", "state": "label", "label": "behavior", "target": None, "record": "r7"},
         {"kind": "corpus", "id": "e", "state": "none", "label": None, "target": "x", "record": "r8"},
         {"kind": "coverage", "id": "f", "state": "label", "label": "verifies", "target": "g", "record": "r9"},
     ],
@@ -84,7 +85,7 @@ class JevReadTest(unittest.TestCase):
         self.assertEqual(out.stdout.splitlines(), [
             "important  acceptance  rule         important  " + RULE,
             "important  save-rule   contradicts  important  #non-goal-offline",
-            "warnings   type 3, audience 2",
+            "warnings   corpus 3, unsure 4",
             "rules      " + RULE,
             "pending    0",
         ])
@@ -106,7 +107,7 @@ class JevReadTest(unittest.TestCase):
         ])
 
     def test_agent_level_absent_is_neither_mark_nor_warning(self):
-        server = self.serve({"jev": "on", "items": [dict(item, agent_level=None) for item in ON["items"]], "rules": []})
+        server = self.serve({"jev": "on", "items": [dict(item, agent_level=None, unsure=None) for item in ON["items"]], "rules": []})
         out = run(server.url + "/specs/b.spec.html?base=abc")
         self.assertEqual(out.stdout.splitlines(), ["warnings  0", "rules     none", "pending   0"])
 
@@ -129,9 +130,9 @@ class JevReadTest(unittest.TestCase):
         out = run(server.url + "/specs/b.spec.html?base=abc", "--anchor", "save-rule").stdout
         self.assertIn("label  contradicts", out)
         self.assertIn("record  r2", out)
-        self.assertIn("label  cosmetic", out)
+        self.assertIn("label  no-behavior-change", out)
         self.assertNotIn("acceptance", out)
-        self.assertNotIn("behavioral", out)
+        self.assertNotIn("record  r7", out)
         self.assertEqual(run(server.url + "/specs/b.spec.html?base=abc", "--anchor", "zz").stdout, "zz  no items\n")
 
     def test_server_error_fails_loudly(self):

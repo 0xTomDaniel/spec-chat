@@ -3,6 +3,7 @@
 import importlib.util
 import subprocess
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -17,8 +18,18 @@ SPEC = "docs/specs/shared.spec.html"
 OWN = "docs/specs/own.spec.html"
 
 
+def settled(service, *args, timeout=10):
+    """Re-read, as the page does, until no item is pending (#fast-marks-background)."""
+    deadline = time.monotonic() + timeout
+    while True:
+        result = service.response(*args)
+        if not any(item["state"] == "pending" for item in result["items"]) or time.monotonic() > deadline:
+            return result
+        time.sleep(0.01)
+
+
 class FakeProvider:
-    """Answers corpus questions by target text; records every payload."""
+    """Answers yes to a draft-check question when labels maps its target text to that question; else no."""
 
     def __init__(self, labels):
         self.labels = labels
@@ -27,7 +38,7 @@ class FakeProvider:
     def decide(self, payload):
         self.calls.append(payload)
         kind = next(iter(payload["questions"]))
-        label = self.labels.get(payload["state"].get("target"), "unrelated") if kind == "corpus" else "cosmetic"
+        label = "yes" if self.labels.get(payload["state"].get("target")) == kind else "no"
         return {"answers": {kind: {"choice": label, "confidence": 0.95}}}
 
 
@@ -48,32 +59,46 @@ class CorpusTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
+        self.services = []
 
     def tearDown(self):
+        for service in self.services:  # stop asking before the state directory goes
+            service.stop()
         self.tmp.cleanup()
 
-    def test_contradicts_shows_and_overlaps_is_recorded_but_hidden(self):
+    def jev_service(self, **kwargs):
+        service = jev.JevService(**kwargs)
+        self.services.append(service)
+        return service
+
+    def test_non_goal_contradicts_restated_overlaps_and_unrelated_shows_nothing(self):
         baseline = page("The service reads review events.")
         current = page("The service writes review events.")
-        other = '<section data-anchor="o"><p data-anchor="restated">The service writes review events.</p></section>'
+        other = ('<section data-anchor="o"><p data-anchor="restated">The service writes review events.</p>'
+                 '<p data-anchor="unrelated">Mobile markers stay visible at narrow widths.</p></section>')
         labels = {"The service never writes review events.": "contradicts",
                   "The service writes review events.": "overlaps"}
         provider = FakeProvider(labels)
-        service = jev.JevService(state_dir=self.dir / "state", provider=provider, api_key="fake")
+        service = self.jev_service(state_dir=self.dir / "state", provider=provider, api_key="fake")
         questions = jev.build_corpus_questions(current, baseline, OWN, "base", "head",
                                                [{"path": "lane/docs/specs/other.spec.html", "source": other}])
         service.questions = lambda *args, **kwargs: questions
-        items = service.response({}, "", "", "base", [])["items"]
+        items = settled(service, {}, "", "", "base", [])["items"]
         by_target = {item["target"]: item for item in items}
         self.assertEqual(by_target["non-goal-text"]["state"], "label")
         self.assertEqual(by_target["non-goal-text"]["label"], "contradicts")
+        self.assertEqual(by_target["non-goal-text"]["level"], "important")
         restated = by_target["lane/docs/specs/other.spec.html#restated"]
-        self.assertEqual(restated["state"], "none")
-        self.assertIsNone(restated["label"])
-        recorded = service.seam.store.get(service.seam.key(
-            next(q for q in questions if q["target"] == "lane/docs/specs/other.spec.html#restated")))
-        self.assertEqual(recorded["answer"]["label"], "overlaps")
-        self.assertTrue(all(item["label"] in {None, "contradicts", "oversteps"} for item in items))
+        self.assertEqual((restated["state"], restated["label"], restated["level"]), ("label", "overlaps", "warning"))
+        unrelated = by_target["lane/docs/specs/other.spec.html#unrelated"]
+        self.assertEqual((unrelated["state"], unrelated["label"]), ("none", None))
+        # The non-goal is asked contradicts? alone; the restated clause all three, each its own yes/no record.
+        asked = [(next(iter(call["questions"])), call["state"]["target"]) for call in provider.calls]
+        self.assertEqual([kind for kind, target in asked if target == "The service never writes review events."],
+                         ["contradicts"])
+        self.assertEqual([kind for kind, target in asked if target == "The service writes review events."],
+                         ["contradicts", "oversteps", "overlaps"])
+        self.assertEqual({record["answer"]["label"] for record in service.seam.store.by_key.values()}, {"yes", "no"})
 
     def test_header_and_source_issue_clauses_are_neither_asked_nor_compared(self):
         baseline = page("The service reads review events.")
@@ -176,9 +201,9 @@ class CorpusTest(unittest.TestCase):
             "createdAt": "2020-01-01T00:00:00Z"}}]
         provider = FakeProvider({})
         dirs = [ROOT / "skill" / "review-spec" / "assets" / "jev"]
-        service = jev.JevService(state_dir=self.dir / "state", provider=provider, api_key="fake", question_dirs=dirs)
+        service = self.jev_service(state_dir=self.dir / "state", provider=provider, api_key="fake", question_dirs=dirs)
         read = lambda s: s.response(mounts[0], str(lane_a / SPEC), "a/" + SPEC, base, events, "reading", mounts)
-        first = read(service)
+        first = settled(service, mounts[0], str(lane_a / SPEC), "a/" + SPEC, base, events, "reading", mounts)
         self.assertTrue(first["items"])
 
         parses, gits = [], []
@@ -206,7 +231,7 @@ class CorpusTest(unittest.TestCase):
         # Cross-lane target main (#cross-lane-clauses) is each repository's origin/HEAD, resolved once per read.
         self.assertEqual(resolved, sorted([base, "HEAD", "origin/main", "origin/main",
                                            "refs/remotes/origin/HEAD", "refs/remotes/origin/HEAD"]))
-        self.assertEqual(read(jev.JevService(state_dir=self.dir / "state", provider=provider, api_key="fake",
+        self.assertEqual(read(self.jev_service(state_dir=self.dir / "state", provider=provider, api_key="fake",
                                              question_dirs=dirs)), first)  # same as a cold read
 
         (lane_a / OWN).write_text(page("Own rule now writes review events."), encoding="utf-8")
@@ -224,10 +249,10 @@ class CorpusTest(unittest.TestCase):
         events = [{"name": "1-comment.json", "actor": "human", "body": {  # message after HEAD: text at HEAD
             "id": "u1", "event": "comment", "actor": "human", "anchorId": "rule", "text": "Reads or writes?",
             "createdAt": "2099-01-01T00:00:00Z"}}]
-        service = jev.JevService(state_dir=self.dir / "state", provider=FakeProvider({}), api_key="fake",
+        service = self.jev_service(state_dir=self.dir / "state", provider=FakeProvider({}), api_key="fake",
                                  question_dirs=[ROOT / "skill" / "review-spec" / "assets" / "jev"])
         read = lambda: service.questions(mounts[0], str(lane / SPEC), "h/" + SPEC, base, events, "reading", mounts)
-        cold = jev.JevService(state_dir=self.dir / "cold", provider=FakeProvider({}), api_key="fake",
+        cold = self.jev_service(state_dir=self.dir / "cold", provider=FakeProvider({}), api_key="fake",
                               question_dirs=[ROOT / "skill" / "review-spec" / "assets" / "jev"])
         expected = cold.questions(mounts[0], str(lane / SPEC), "h/" + SPEC, base, events, "reading", mounts)
         return service, read, expected

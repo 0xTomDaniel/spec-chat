@@ -64,10 +64,12 @@ class FakeProvider:
             state = payload["state"]
             if kind == "scope":
                 label = self.scope.get(state["criterion"], "this feature")
-            elif kind == "rule":
-                label = "missed" if any(word in state["spec"] for word in self.missed) else "covered"
+            elif kind == "triggered":
+                label = "yes"
+            elif kind == "covered":
+                label = "no" if any(word in state["spec"] for word in self.missed) else "yes"
             else:
-                label = "unrelated"
+                label = "no"
             return {"answers": {kind: {"choice": label, "confidence": 0.95}}}
         finally:
             with self.lock:
@@ -81,6 +83,7 @@ class BootstrapTest(unittest.TestCase):
         self.root = self.dir / "repo"
         self.specs = self.root / "docs" / "specs"
         self.specs.mkdir(parents=True)
+        self._services: list = []
         git(self.root, "init", "-q", "-b", "main")
         self.write("onboarding.spec.html", spec(("acceptance-onboarding", ONBOARDING), ("local", LOCAL)))
         self.write("export.spec.html", spec(("export-one", FEATURE), body="The report page gains an export button."))
@@ -92,6 +95,8 @@ class BootstrapTest(unittest.TestCase):
         self.main = self.commit()
 
     def tearDown(self):
+        for svc in self._services:
+            svc.stop()
         self.tmp.cleanup()
 
     def write(self, name, text):
@@ -103,7 +108,9 @@ class BootstrapTest(unittest.TestCase):
         return git(self.root, "rev-parse", "HEAD")
 
     def service(self, provider, api_key="fake"):
-        return jev.JevService(state_dir=self.dir / "state", provider=provider, api_key=api_key)
+        svc = jev.JevService(state_dir=self.dir / "state", provider=provider, api_key=api_key)
+        self._services.append(svc)
+        return svc
 
     def row(self, spec_name="export.spec.html", project="proj"):
         return {"id": "spec:%s:%s::docs/specs/%s" % (project, project, spec_name), "slug": project,
@@ -146,7 +153,7 @@ class BootstrapTest(unittest.TestCase):
                                                {"spec": "docs/specs/import.spec.html", "rules": [rule]}])
         self.assertIsNone(status.get("offer"))
         # the home spec is never checked against its own rule; every other spec is
-        checked = sorted(c["state"]["spec"].split("\n")[-1] for c in provider.calls if "rule" in c["questions"])
+        checked = sorted(c["state"]["spec"].split("\n")[-1] for c in provider.calls if "triggered" in c["questions"])
         self.assertEqual(len(checked), 3)
         # one table per project in Spec Chat's one onboarding.toml; no separate status file
         text = service.onboarding_path.read_text(encoding="utf-8")
@@ -186,7 +193,7 @@ class BootstrapTest(unittest.TestCase):
                 break
             time.sleep(0.01)
         self.assertEqual([(i["state"], i["word"]) for i in rules], [("label", "onboarding")])
-        self.assertEqual([c for c in provider.calls[calls:] if set(c["questions"]) & {"scope", "rule"}], [])
+        self.assertEqual([c for c in provider.calls[calls:] if set(c["questions"]) & {"scope", "triggered", "covered"}], [])
         offer = result["offer"]
         self.assertEqual(offer["count"], 2)
         self.assertEqual([entry["spec"] for entry in offer["specs"]],
@@ -229,6 +236,30 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(again.warm([self.row()]), ["proj"])
         status = self.settle(again)
         self.assertEqual((status["state"], status["specs_to_reconcile"]), ("done", 2))
+
+    def test_rate_limited_warm_up_asks_pause_and_never_sleep(self):
+        """jev-suggestions #state-error: a warm-up ask that 429s is one call, gets the given wait as its pause,
+        and is asked again later; no worker waits (old code slept 30 s per 429)."""
+        import unittest.mock
+        provider = jev.OpenRouterProvider("fake", endpoint="http://127.0.0.1:9/decisions")
+        limited = unittest.mock.Mock(side_effect=lambda request, timeout: (_ for _ in ()).throw(
+            jev.HTTPError(request.full_url, 429, "limited", {"Retry-After": "45"}, None)))
+        with unittest.mock.patch.object(jev, "urlopen", limited), \
+                unittest.mock.patch.object(jev, "_wall", lambda: 1000.0):
+            service = self.service(provider)
+            started = time.monotonic()
+            self.assertEqual(service.warm([self.row()]), ["proj"])
+            deadline = time.monotonic() + 5
+            while (service.onboarding_status("proj") or {}).get("state") == "running" and time.monotonic() < deadline:
+                threading.Event().wait(0.01)
+            self.assertLess(time.monotonic() - started, 2.0)
+            self.assertEqual(service.onboarding_status("proj")["state"], "failed")
+            records = [json.loads(line) for line in (self.dir / "state" / "records.jsonl").read_text().splitlines()]
+            self.assertEqual(limited.call_count, len(records))
+            self.assertTrue(records and all(r["outcome"] == "unavailable" and jev.pause_left(r) == 45.0 for r in records))
+        again = self.service(FakeProvider())
+        self.assertEqual(again.warm([self.row()]), ["proj"])
+        self.assertEqual(self.settle(again)["state"], "done")
 
     def test_unreadable_onboarding_is_never_overwritten(self):
         path = self.dir / "state" / "onboarding.toml"

@@ -9,6 +9,11 @@ Create durable current truth before deep investigation.
 
 ## Invariants
 
+- A spec describes how the system should work. Nothing in it is ever outdated: no current-state audits, before/after, history, status, ticket links, or migration notes; those go in the PR body.
+- Before shaping, list every spec and ADR in the target repo (at least their titles) and read the ones that own the behavior you are changing.
+- Put behavior in the spec that already owns it. Create a new spec only for a genuinely new part of the system, never a spec named after a change, fix, or lane.
+- A change that alters behavior another spec describes updates that spec in the same PR.
+- A contradiction between specs means one is out of date: update it in the same PR; a real design choice goes to the human as an open TBD.
 - Shaping commits locally only. It never pushes, opens a pull request, or creates or edits an issue or ticket, whatever target instructions say; publishing and tracker work are the caller's.
 - Specs and ADRs name no ticket and no pane; the caller's tracker keeps the ticket to spec link.
 - The canonical spec owns what the result must do: current stories, behavior, edge cases, interaction contracts, and acceptance.
@@ -41,7 +46,7 @@ After registering with `spec-chat-review`'s lane command and before the link is 
 
 - `off`: send the link at once.
 - Key only on each mark's `level`; keep no list of kinds.
-- End every `important` mark in exactly one of: a spec fix, a reason line in the spec (for example `Onboarding: not needed, this changes no screen`), or, when it is bigger than a simple edit, an open TBD you write at that clause (Review shaping TBD rule, open value), never a thread; it blocks `Accept spec` until the human settles it and counts as solved for hand-off. Fixes take the direction of the reconcile rule under Review shaping. Commit and read again after each fix.
+- End every `important` mark in exactly one of: a spec fix, a reason line in the spec (for example `Onboarding: not needed, this changes no screen`), or, when it is bigger than a simple edit, an open TBD you write at that clause (Review shaping TBD rule, open value), never a thread; it blocks `Accept spec` until the human settles it and counts as solved for hand-off. A contradiction between specs means one is out of date: update that one in the same PR. If it is a real design choice, open a TBD for the human. If Jev is wrong, don't edit either spec; list it in the hand-off as dismissed with a reason. Fixes take the direction of the reconcile rule under Review shaping. Commit and read again after each fix.
 - If a fix raises a new important mark on the same clause, write an open TBD at that clause instead of editing it again.
 - Never act on warnings, never hide them, and never edit a spec only to change a Jev answer or its confidence. Marks are advice and never block `Accept spec`.
 - Start the hand-off message with `N warnings not acted on: <the read's counts by kind>`, then name the rules checked as home spec and anchor, for visibility only.

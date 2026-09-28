@@ -1,6 +1,6 @@
 {
   "id": "audience",
-  "version": 4,
+  "version": 5,
   "instructions": "Classify one leaf clause of a spec for a reading view. Choose for you when the clause is user-facing or behavioral (what a user sees or what the result does), or states highly important architecture (a hard-to-reverse boundary, a dependency direction, or a key interface). Choose internals for everything else: implementation detail, mechanics, proofs, fixture or test detail, and minor structure. An acceptance criterion is usually for you; choose internals only when it is about proof or fixture mechanics.",
   "labels": [
     {
@@ -64,5 +64,6 @@
       ]
     }
   ],
-  "threshold": 0.4
+  "threshold": 0.4,
+  "fallback": true
 }
