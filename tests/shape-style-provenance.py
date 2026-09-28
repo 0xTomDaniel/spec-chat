@@ -40,7 +40,7 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
         link = f'<link rel="stylesheet" href="{href}">' if href else ""
         self.spec.write_text(f"<!doctype html><html><head>{link}{extra}{local}</head><body>{body}</body></html>\n")
 
-    def write_shaped_spec(self, story=DEFAULT_STORY, scope="traceability", current="", acceptance_heading="Acceptance criteria", acceptance_extra=' data-story="story"', boundary_extra="", boundary_scope="Observable scope is this review"):
+    def write_shaped_spec(self, story=DEFAULT_STORY, scope="traceability", current="", acceptance_heading="Acceptance criteria", acceptance_extra=' data-story="story"', boundary_extra="", boundary_scope="Observable scope is this review", scenario_text="When the rule is exercised", observable_text="The observable result is recorded"):
         current_attr = f' data-current-slice="{current}"' if current else ""
         body = f"""<article class=\"spec\" data-spec-contract=\"shaped-sections-v1\"{current_attr}>
 <section data-spec-section=\"user-stories\" data-anchor=\"user-stories\">
@@ -48,7 +48,7 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
 </section>
 <section data-spec-section=\"acceptance\" data-acceptance-scope=\"{scope}\" data-anchor=\"acceptance\">
 <h2>{acceptance_heading}</h2>
-<p data-acceptance-criterion data-anchor=\"acceptance-rule\"{acceptance_extra}><span data-acceptance-scenario>When the rule is exercised</span><span data-acceptance-observable>The observable result is recorded</span></p>
+<p data-acceptance-criterion data-anchor=\"acceptance-rule\"{acceptance_extra}><span data-acceptance-scenario>{scenario_text}</span><span data-acceptance-observable>{observable_text}</span></p>
 </section>
 <section data-spec-section=\"modular-boundaries\" data-anchor=\"modular-boundaries\">
 <h2>Modular boundaries</h2>
@@ -354,6 +354,39 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("stories=unchanged", result.stdout)
+
+    def test_rejects_criterion_scenario_without_when_keyword(self):
+        base = self.empty_base()
+        self.write_shaped_spec(scenario_text="Given the system is ready")
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("acceptance-rule scenario needs a When keyword", result.stderr)
+
+    def test_accepts_criterion_scenario_with_given_and_when(self):
+        base = self.empty_base()
+        self.write_shaped_spec(scenario_text="Given an active session, When the user clicks submit")
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_rejects_criterion_observable_without_substantive_outcome(self):
+        base = self.empty_base()
+        self.write_shaped_spec(observable_text="done")
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("acceptance-rule observable needs a verifiable outcome", result.stderr)
+
+    def test_accepts_criterion_with_well_formed_gwt(self):
+        base = self.empty_base()
+        self.write_shaped_spec(
+            scenario_text="Given a configured environment, When the validator runs",
+            observable_text="the report shows all checks passed with no errors",
+        )
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":

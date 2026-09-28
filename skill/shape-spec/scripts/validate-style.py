@@ -279,6 +279,12 @@ def validate_shape_sections(parser):
                 return f"{label} acceptance criterion {criterion['anchor']} needs an observable scenario"
             if not criterion["fields"].get("observable"):
                 return f"{label} acceptance criterion {criterion['anchor']} needs an observable outcome"
+            scenario_text = criterion["fields"]["scenario"]
+            if not re.search(r'\bWhen\b', scenario_text):
+                return f"{label} acceptance criterion {criterion['anchor']} scenario needs a When keyword"
+            observable_text = criterion["fields"]["observable"]
+            if len(observable_text.split()) < 2:
+                return f"{label} acceptance criterion {criterion['anchor']} observable needs a verifiable outcome"
 
     story_anchors = {story["anchor"] for story in parser.stories}
     claimed = set()
