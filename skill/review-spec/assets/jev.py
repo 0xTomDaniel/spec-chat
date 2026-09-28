@@ -379,7 +379,12 @@ class ClaudeCliProvider:
             raise RuntimeError("claude CLI timed out") from exc
         except (OSError, ValueError) as exc:
             raise RuntimeError("claude CLI failed") from exc
-        return {"choices": [{"message": {"content": text}}], "model": model}
+        # Extract the actual model from the CLI envelope (modelUsage key, #ac-record).
+        actual = model
+        usage = envelope.get("modelUsage")
+        if isinstance(usage, dict) and usage:
+            actual = str(next(iter(usage))) or model
+        return {"choices": [{"message": {"content": text}}], "model": actual}
 
 
 def _parse_provider_answer(value: Mapping[str, Any], question_name: str) -> tuple[str, float | None, dict[str, float], str]:
@@ -588,7 +593,9 @@ class JevSeam:
         label = None
         failure = None
         try:
-            label = json.loads(fallback.complete(payload)["choices"][0]["message"]["content"])["choice"]
+            response = fallback.complete(payload)
+            model = str(response.get("model", "")) or model
+            label = json.loads(response["choices"][0]["message"]["content"])["choice"]
         except Exception as exc:
             failure = exc
         if label is None:
