@@ -650,6 +650,16 @@ class _AnchorParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.stack: list[tuple[str, str | None, bool]] = []
         self.values: dict[str, dict[str, Any]] = {}
+        # Context tracking (jev-suggestions #context): title, section headings, table columns.
+        self.title = ""
+        self._title_parts: list[str] = []
+        self._in_h1 = False
+        self._heading_for: str | None = None
+        self._heading_parts: list[str] = []
+        self._in_thead: str | None = None
+        self._thead_columns: list[str] = []
+        self._column_parts: list[str] = []
+        self._in_column = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]):
         tag = tag.lower()
@@ -659,6 +669,27 @@ class _AnchorParser(HTMLParser):
         attrs = dict(attrs)
         structural = (bool(self.stack) and self.stack[-1][2]) or attrs.get("data-spec-section") in AUDIENCE_STRUCTURAL_SECTIONS
         anchor = attrs.get("data-anchor")
+        # h1 title capture (#context-surface)
+        if tag == "h1" and not self.title and not self._in_h1:
+            self._in_h1 = True
+            self._title_parts = []
+        # Section heading capture (#context-section): first h2/h3 inside a section anchor
+        if tag in ("h2", "h3") and not self._heading_for:
+            for item in reversed(self.stack):
+                if item[1] and item[1] in self.values and self.values[item[1]].get("section") and not self.values[item[1]].get("heading"):
+                    self._heading_for = item[1]
+                    self._heading_parts = []
+                    break
+        # thead column capture (#context-columns)
+        if tag == "thead" and self._in_thead is None:
+            for item in reversed(self.stack):
+                if item[1] and item[1] in self.values and self.values[item[1]]["tag"] == "table":
+                    self._in_thead = item[1]
+                    self._thead_columns = []
+                    break
+        if self._in_thead is not None and tag in ("th", "td") and not self._in_column:
+            self._in_column = True
+            self._column_parts = []
         if anchor:
             parent = next((item[1] for item in reversed(self.stack) if item[1]), None)
             meta = (tag == "header" or anchor in CORPUS_META_ANCHORS or anchor.endswith("-source-issues") or any(item[0] == "header" for item in self.stack)
@@ -699,9 +730,29 @@ class _AnchorParser(HTMLParser):
         self.handle_endtag(tag)
 
     def handle_endtag(self, tag: str):
+        tag_lower = tag.lower()
+        if tag_lower == "h1" and self._in_h1:
+            self._in_h1 = False
+            self.title = " ".join("".join(self._title_parts).split())
+        if tag_lower in ("h2", "h3") and self._heading_for:
+            self.values[self._heading_for]["heading"] = " ".join("".join(self._heading_parts).split())
+            self._heading_for = None
+        if self._in_column and tag_lower in ("th", "td"):
+            self._thead_columns.append(" ".join("".join(self._column_parts).split()))
+            self._in_column = False
+        if tag_lower == "thead" and self._in_thead is not None:
+            if self._thead_columns:
+                self.values[self._in_thead]["columns"] = list(self._thead_columns)
+            self._in_thead = None
         _close_explicit(self.stack, tag)
 
     def handle_data(self, data: str):
+        if self._in_h1:
+            self._title_parts.append(data)
+        if self._heading_for:
+            self._heading_parts.append(data)
+        if self._in_column:
+            self._column_parts.append(data)
         if any(item[0] in {"script", "style"} for item in self.stack):
             return
         seen = set()
@@ -715,9 +766,50 @@ class _AnchorParser(HTMLParser):
 def extract_anchors(source: str | bytes | None) -> dict[str, dict[str, Any]]:
     parser = _AnchorParser()
     parser.feed((source or b"").decode("utf-8", "replace") if isinstance(source, bytes) else (source or ""))
+    title = parser.title
     for value in parser.values.values():
         value["text"] = " ".join("".join(value["text"]).split())
+        value["title"] = title
     return parser.values
+
+
+def anchor_context(anchor: str, anchors: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+    """Build clause context for an anchor (#context): surface, section, columns."""
+    value = anchors.get(anchor, {})
+    ctx: dict[str, Any] = {}
+    title = value.get("title", "")
+    if title:
+        ctx["surface"] = title
+    # Walk parents to find nearest section with a heading (#context-section)
+    current = anchor
+    while current:
+        info = anchors.get(current, {})
+        if info.get("section") and info.get("heading"):
+            ctx["section"] = info["heading"]
+            break
+        current = info.get("parent")
+    # Column headers: walk parents to find a table with columns (#context-columns)
+    tag = value.get("tag", "")
+    in_table = tag in ("tr", "td", "th")
+    current = anchor if not in_table else None
+    while current:
+        info = anchors.get(current, {})
+        if info.get("tag") == "table":
+            in_table = True
+            break
+        current = info.get("parent")
+    if in_table:
+        current = anchor
+        while current:
+            info = anchors.get(current, {})
+            if info.get("columns"):
+                ctx["columns"] = info["columns"]
+                break
+            if info.get("tag") == "table" and info.get("columns"):
+                ctx["columns"] = info["columns"]
+                break
+            current = info.get("parent")
+    return ctx
 
 
 def _anchor_words(text: str) -> set[str]:
@@ -833,28 +925,36 @@ def build_corpus_questions(current: str | bytes, baseline: str | bytes | None, p
         for key in non_goals:
             if key not in own_keys:
                 own_keys.append(key)
-        candidates = [(key, str(now[key].get("text", "")), key in non_goals) for key in own_keys]
+        candidates = [(key, str(now[key].get("text", "")), key in non_goals, now) for key in own_keys]
 
-        cross: list[tuple[int, int, str, str, str]] = []
-        for other_path, anchors in other_specs:
-            for key in _corpus_leaf_anchors(anchors):
-                text = str(anchors[key].get("text", ""))
+        cross: list[tuple[int, int, str, str, str, bool, dict]] = []
+        for other_path, other_anchors in other_specs:
+            for key in _corpus_leaf_anchors(other_anchors):
+                text = str(other_anchors[key].get("text", ""))
                 overlap, ratio = _match_score(after, text)
-                cross.append((-overlap, -ratio, other_path, key, text, _is_non_goal(key, anchors)))
-        cross.sort()
-        candidates.extend((other_path + "#" + key, text, non_goal) for _, _, other_path, key, text, non_goal in cross[:8])
+                cross.append((-overlap, -ratio, other_path, key, text, _is_non_goal(key, other_anchors), other_anchors))
+        cross.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
+        candidates.extend((other_path + "#" + key, text, non_goal, ca) for _, _, other_path, key, text, non_goal, ca in cross[:8])
 
-        for target, target_text, non_goal in candidates:
+        ctx = anchor_context(anchor, now)
+        for target, target_text, non_goal, target_anchors in candidates:
+            tctx = anchor_context(target.split("#")[-1], target_anchors)
             result.append(draft_check(anchor, before, after, target, target_text, target_non_goal=non_goal,
-                                      path=path, base=base, revision=revision))
+                                      path=path, base=base, revision=revision,
+                                      context=ctx, target_context=tctx))
     return result
 
 
 def draft_check(anchor: str, before: str, after: str, target: str, target_text: str, *,
-                target_non_goal: bool = False, path: str, base: str, revision: Any) -> dict[str, Any]:
+                target_non_goal: bool = False, path: str, base: str, revision: Any,
+                context: Mapping[str, Any] | None = None, target_context: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """The draft-check chain for one clause and candidate (#corpus-labels): contradicts?, then oversteps?, then
     overlaps?, the first yes decides; a non-goal candidate is asked only contradicts?."""
-    pair = {"before": before, "after": after, "target": target_text}
+    pair: dict[str, Any] = {"before": before, "after": after, "target": target_text}
+    if context:
+        pair["context"] = dict(context)
+    if target_context:
+        pair["target_context"] = dict(target_context)
     # Jev sees only text: without this fact a clause adding what a non-goal excludes reads as related.
     steps = [_step(_question("contradicts", anchor, {**pair, "target_non_goal": target_non_goal},
                              path, base, revision, target), yes="contradicts")]
@@ -892,7 +992,11 @@ def build_type_questions(current: str | bytes, baseline: str | bytes | None, pat
         if before == after:
             continue
         # Does it change behavior? (#change-type): yes is Behavior, no is No behavior change.
-        step = _step(_question("type", anchor, {"before": before, "after": after}, path, base, revision, anchor),
+        state: dict[str, Any] = {"before": before, "after": after}
+        ctx = anchor_context(anchor, now)
+        if ctx:
+            state["context"] = ctx
+        step = _step(_question("type", anchor, state, path, base, revision, anchor),
                      yes="behavior", no="no-behavior-change")
         result.append(_chain("type", anchor, anchor, step["sources"], step["revision"], [step]))
     return result
@@ -1180,10 +1284,18 @@ def lane_check(left: str, a: Mapping[str, Any], right: str, b: Mapping[str, Any]
     """The lane check for a cross-lane pair (#cross-lane-question): contradicts? once, oversteps? both
     directions, overlaps? only when all three are no. Walked by lane_result, not chain_result."""
     first, second = a["path"] + "#" + a["anchor"], b["path"] + "#" + b["anchor"]
+    a_ctx = a.get("context") or {}
+    b_ctx = b.get("context") or {}
     steps = draft_check(a["anchor"], a["before"], a["after"], second, b["after"],
-                        path=a["path"], base=a["base"], revision="working-tree")["chain"]
+                        path=a["path"], base=a["base"], revision="working-tree",
+                        context=a_ctx, target_context=b_ctx)["chain"]
     steps[1]["then"] = {"yes": "first oversteps second"}
-    back = _step(_question("oversteps", b["anchor"], {"before": b["before"], "after": b["after"], "target": a["after"]},
+    back_state: dict[str, Any] = {"before": b["before"], "after": b["after"], "target": a["after"]}
+    if b_ctx:
+        back_state["context"] = dict(b_ctx)
+    if a_ctx:
+        back_state["target_context"] = dict(a_ctx)
+    back = _step(_question("oversteps", b["anchor"], back_state,
                            b["path"], b["base"], "working-tree", first), yes="second oversteps first")
     back["sources"] = [second, first]
     steps.insert(2, back)
@@ -1608,7 +1720,7 @@ class JevService:
         head = _commit(root, "HEAD") or "working-tree"
         return build_type_questions(current, _git_read(root, "show", base + ":" + spec), path, base, head)
 
-    def _changed_clauses(self, row: Mapping[str, Any], mains: dict[str, str | None] | None = None) -> list[dict[str, str]]:
+    def _changed_clauses(self, row: Mapping[str, Any], mains: dict[str, str | None] | None = None) -> list[dict[str, Any]]:
         """Changed leaf clauses against target main, the row root's origin/HEAD as last fetched, resolved once
         per repository in mains when given."""
         root, spec, path, current = self._row_parts(row)
@@ -1620,8 +1732,15 @@ class JevService:
         if base is None:
             return []
         old = self._at(root, base, spec)
-        return [{"path": path, "anchor": anchor, "before": before, "after": after, "base": base}
-                for anchor, before, after in self._built("changed", current, old)]
+        now = extract_anchors(current)
+        result = []
+        for anchor, before, after in self._built("changed", current, old):
+            ctx = anchor_context(anchor, now)
+            entry: dict[str, Any] = {"path": path, "anchor": anchor, "before": before, "after": after, "base": base}
+            if ctx:
+                entry["context"] = ctx
+            result.append(entry)
+        return result
 
     def board(self, rows: Any) -> dict[str, Any]:
         """GET /api/jev/board (#jev-board-answer): the last answer at once; the board thread refreshes it."""
@@ -2172,6 +2291,7 @@ class JevService:
 
 __all__ = ["BUILDERS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MARK_LEVELS", "MODEL",
            "OPENROUTER_DECISIONS_URL", "OpenRouterProvider", "QuestionSet",
+           "anchor_context",
            "build_audience_questions", "build_board_conflict_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_rule_question", "build_scope_questions", "build_type_questions", "chain_result", "changed_leaf_clauses", "draft_check",
            "extract_anchors", "lane_result",
            "load_question_sets", "material", "rule_mark_anchor", "rule_word", "spec_text"]
