@@ -292,6 +292,24 @@ class ProviderTypeTest(unittest.TestCase):
         self.assertEqual(primary.general_calls, ["contradicts"])
         self.assertEqual(result["answer"]["label"], "yes")
 
+    def test_record_source_jev_for_primary(self):
+        """Primary Jev answers carry source: 'jev' (jev-seam #record-source)."""
+        primary = FakeProvider({"contradicts": ("yes", 0.95)})
+        seam = jev.JevSeam(SETS, provider=primary, api_key="fake")
+        question = draft_check()["chain"][1]
+        result = seam.ask(question)
+        self.assertEqual(result["source"], "jev")
+        self.assertNotIn("escalated", result)
+
+    def test_record_source_llm_for_fallback(self):
+        """Fallback LLM answers carry source: 'llm' (jev-seam #record-source)."""
+        primary = FakeProvider({"contradicts": ("no", 0.1)}, general={"contradicts": "yes"})
+        seam = jev.JevSeam(SETS, provider=primary, api_key="fake")
+        question = draft_check()["chain"][1]
+        result = seam.ask(question)
+        self.assertEqual(result["source"], "llm")
+        self.assertTrue(result["escalated"])
+
 
 if __name__ == "__main__":
     unittest.main()

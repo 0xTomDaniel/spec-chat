@@ -462,7 +462,7 @@ class JevSeam:
     def _record(self, key: str, kind: str, qset: QuestionSet, sources: Any, revision: Any,
                 answer: Mapping[str, Any], outcome: str, model: str = MODEL, escalated: bool = False,
                 failure: BaseException | None = None) -> dict[str, Any]:
-        extra: dict[str, Any] = {"escalated": True} if escalated else {}
+        extra: dict[str, Any] = {"escalated": True, "source": "llm"} if escalated else {"source": "jev"}
         if outcome == "unavailable":
             wait = getattr(failure, "wait", None)
             extra["retry_at"] = _instant(_wall() + (RETRY_PAUSE if wait is None else wait))
