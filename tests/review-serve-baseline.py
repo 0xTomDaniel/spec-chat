@@ -123,7 +123,7 @@ class BaselineRouteTest(unittest.TestCase):
     def test_runtime_navigation_is_fixed_top_and_server_preserves_raw_spec_bytes(self):
         runtime = (ROOT / "skill" / "review-spec" / "assets" / "viz" / "runtime.js").read_text()
         self.assertIn("document.body.insertBefore(indexLink, document.body.firstChild)", runtime)
-        self.assertRegex(runtime, r"\.hx-service-index-link\{position:fixed;top:12px;left:12px;z-index:1000;")
+        self.assertRegex(runtime, r"\.hx-service-index-link\{position:fixed;top:var\(--ui-space-3\);left:var\(--ui-space-3\);z-index:1000;")
         self.assertIn(".hx-service-index-link", runtime)
         self.assertRegex(runtime, r"e\.target\.closest\('[^']*\.hx-service-index-link")
 

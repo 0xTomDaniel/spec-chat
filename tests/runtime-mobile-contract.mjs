@@ -16,8 +16,8 @@ assert.match(runtime, /article\.spec pre\{white-space:pre-wrap;overflow-wrap:any
 assert.match(runtime, /Math\.max\(0, Math\.min\(pos\.left, holder\.clientWidth - pinSize\)\)/, 'mobile pins are clamped inside their anchored holder');
 assert.match(runtime, /if \(marker\.getBoundingClientRect\(\)\.right > document\.documentElement\.clientWidth\) marker\.dataset\.inset = 'true'/, 'Jev markers move inside the column edge when the margin cannot hold them');
 assert.match(runtime, /\.hx-jev-marker\[data-inset=true\]\{left:auto;right:0\}/, 'inset Jev markers sit at the content column edge');
-assert.match(runtime, /@media\(max-width:640px\)\{[^]*\.hx-jev-pop\{left:12px;right:12px;top:auto;bottom:calc\(10px \+ var\(--hx-dock-space,64px\)/, 'mobile Jev popover is a sheet above the review controls');
-assert.match(runtime, /\.hx-composer textarea\{min-height:120px;font-size:16px/, 'mobile composer avoids browser input zoom');
+assert.match(runtime, /@media\(max-width:640px\)\{[^]*\.hx-jev-pop\{left:var\(--ui-space-3\);right:var\(--ui-space-3\);top:auto;bottom:calc\(10px \+ var\(--hx-dock-space,64px\)/, 'mobile Jev popover is a sheet above the review controls');
+assert.match(runtime, /\.hx-composer textarea\{min-height:120px;font-size:var\(--ui-text-md\)/, 'mobile composer avoids browser input zoom');
 assert.match(runtime, /\.hx-dock-open,\.hx-dock-thread\{width:44px;height:44px/, 'mobile conversation controls meet the touch target floor');
 assert.match(runtime, /openPanel\(!window\.matchMedia\('\(max-width: 640px\)'\)\.matches\)/, 'mobile comment mode exposes the document before target selection');
 assert.match(runtime, /class="hx-mobile-handoff" id="hx-mobile-handoff"/, 'mobile toolbar exposes handoff beside comment mode');
