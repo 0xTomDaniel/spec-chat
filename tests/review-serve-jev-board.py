@@ -327,6 +327,8 @@ class BoardTest(unittest.TestCase):
 
     @staticmethod
     def cross_answer(kind, state):
+        if kind == "about":
+            return ("yes", 0.9)
         if kind not in DRAFT:
             return ("unrelated", 0.9) if kind == "coverage" else ("no", 0.9)
         pair = (state["after"], state["target"])

@@ -556,11 +556,11 @@ def chain_result(chain: list[Mapping[str, Any]], get: Callable[[Mapping[str, Any
 
 
 def lane_result(steps: list[Mapping[str, Any]], get: Callable[[Mapping[str, Any]], Mapping[str, Any] | None]) -> list[dict[str, Any]]:
-    """Walk a lane check (#cross-lane-question): contradicts? once; if no, both oversteps? directions,
-    each asked regardless of the other; each yes is its own finding; overlaps? only when all three are no.
-    Returns a list of results, each shaped like chain_result's output."""
+    """Walk a lane check (#cross-lane-question, #gate-lane): about? gate first; if yes, contradicts? once;
+    if no, both oversteps? directions, each asked regardless of the other; each yes is its own finding;
+    overlaps? only when all three are no. Returns a list of results, each shaped like chain_result's output."""
     unsure = 0
-    # contradicts? (step 0)
+    # Gate (step 0): about? yes continues, no/unsure ends with nothing (#gate-lane)
     record = get(steps[0])
     if record is None:
         return [{"outcome": None, "answer": {"label": None}, "record_id": None, "unsure": 0, "step": steps[0]}]
@@ -571,13 +571,27 @@ def lane_result(steps: list[Mapping[str, Any]], get: Callable[[Mapping[str, Any]
     unsure += bool(record.get("escalated"))
     answer = record.get("answer")
     label = answer.get("label") if isinstance(answer, Mapping) else None
-    if label == "yes":
-        return [{"outcome": "shown", "answer": {"label": steps[0]["then"]["yes"]},
+    if label != "yes":
+        return [{"outcome": "shown", "answer": {"label": None},
                  "record_id": record.get("record_id"), "unsure": unsure}]
-    # Both oversteps directions (steps 1, 2): each asked regardless of the other
+    # contradicts? (step 1)
+    record = get(steps[1])
+    if record is None:
+        return [{"outcome": None, "answer": {"label": None}, "record_id": None, "unsure": unsure, "step": steps[1]}]
+    outcome = record.get("outcome")
+    if outcome != "shown":
+        return [{"outcome": outcome, "answer": {"label": None}, "record_id": record.get("record_id"),
+                 "unsure": unsure, "step": steps[1]}]
+    unsure += bool(record.get("escalated"))
+    answer = record.get("answer")
+    label = answer.get("label") if isinstance(answer, Mapping) else None
+    if label == "yes":
+        return [{"outcome": "shown", "answer": {"label": steps[1]["then"]["yes"]},
+                 "record_id": record.get("record_id"), "unsure": unsure}]
+    # Both oversteps directions (steps 2, 3): each asked regardless of the other
     findings: list[dict[str, Any]] = []
     pending: dict[str, Any] | None = None
-    for step in steps[1:3]:
+    for step in steps[2:4]:
         record = get(step)
         if record is None:
             pending = pending or {"outcome": None, "answer": {"label": None}, "record_id": None,
@@ -600,18 +614,18 @@ def lane_result(steps: list[Mapping[str, Any]], get: Callable[[Mapping[str, Any]
         return findings
     if pending:
         return [pending]
-    # overlaps? (step 3): only when all three are no
-    record = get(steps[3])
+    # overlaps? (step 4): only when all three are no
+    record = get(steps[4])
     if record is None:
-        return [{"outcome": None, "answer": {"label": None}, "record_id": None, "unsure": unsure, "step": steps[3]}]
+        return [{"outcome": None, "answer": {"label": None}, "record_id": None, "unsure": unsure, "step": steps[4]}]
     outcome = record.get("outcome")
     if outcome != "shown":
         return [{"outcome": outcome, "answer": {"label": None}, "record_id": record.get("record_id"),
-                 "unsure": unsure, "step": steps[3]}]
+                 "unsure": unsure, "step": steps[4]}]
     unsure += bool(record.get("escalated"))
     ans = record.get("answer")
     lbl = ans.get("label") if isinstance(ans, Mapping) else None
-    then = steps[3]["then"]
+    then = steps[4]["then"]
     if lbl in then:
         return [{"outcome": "shown", "answer": {"label": then[lbl]},
                  "record_id": record.get("record_id"), "unsure": unsure}]
@@ -948,18 +962,29 @@ def build_corpus_questions(current: str | bytes, baseline: str | bytes | None, p
 def draft_check(anchor: str, before: str, after: str, target: str, target_text: str, *,
                 target_non_goal: bool = False, path: str, base: str, revision: Any,
                 context: Mapping[str, Any] | None = None, target_context: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    """The draft-check chain for one clause and candidate (#corpus-labels): contradicts?, then oversteps?, then
-    overlaps?, the first yes decides; a non-goal candidate is asked only contradicts?."""
+    """The draft-check chain for one clause and candidate (#corpus-labels, #gate-chain): about? gate first,
+    then contradicts?, then oversteps?, then overlaps?, the first yes decides; a non-goal candidate is asked
+    only contradicts? after the gate."""
+    # Gate state: first/second each with context fields (#gate-set-state)
+    first_obj: dict[str, Any] = {"text": after}
+    if context:
+        first_obj.update(context)
+    second_obj: dict[str, Any] = {"text": target_text}
+    if target_context:
+        second_obj.update(target_context)
+    gate = _step(_question("about", anchor, {"first": first_obj, "second": second_obj},
+                           path, base, revision, target), no=None)
     pair: dict[str, Any] = {"before": before, "after": after, "target": target_text}
     if context:
         pair["context"] = dict(context)
     if target_context:
         pair["target_context"] = dict(target_context)
     # Jev sees only text: without this fact a clause adding what a non-goal excludes reads as related.
-    steps = [_step(_question("contradicts", anchor, {**pair, "target_non_goal": target_non_goal},
+    steps = [gate,
+             _step(_question("contradicts", anchor, {**pair, "target_non_goal": target_non_goal},
                              path, base, revision, target), yes="contradicts")]
     if target_non_goal:
-        steps[0]["then"]["no"] = None
+        steps[1]["then"]["no"] = None
     else:
         steps += [_step(_question("oversteps", anchor, pair, path, base, revision, target), yes="oversteps"),
                   _step(_question("overlaps", anchor, pair, path, base, revision, target), yes="overlaps", no=None)]
@@ -1281,15 +1306,17 @@ def build_board_conflict_questions(clauses: Mapping[str, list[Mapping[str, Any]]
 
 
 def lane_check(left: str, a: Mapping[str, Any], right: str, b: Mapping[str, Any]) -> dict[str, Any]:
-    """The lane check for a cross-lane pair (#cross-lane-question): contradicts? once, oversteps? both
-    directions, overlaps? only when all three are no. Walked by lane_result, not chain_result."""
+    """The lane check for a cross-lane pair (#cross-lane-question, #gate-lane): about? gate, then
+    contradicts? once, oversteps? both directions, overlaps? only when all three are no.
+    Walked by lane_result, not chain_result."""
     first, second = a["path"] + "#" + a["anchor"], b["path"] + "#" + b["anchor"]
     a_ctx = a.get("context") or {}
     b_ctx = b.get("context") or {}
     steps = draft_check(a["anchor"], a["before"], a["after"], second, b["after"],
                         path=a["path"], base=a["base"], revision="working-tree",
                         context=a_ctx, target_context=b_ctx)["chain"]
-    steps[1]["then"] = {"yes": "first oversteps second"}
+    # steps[0] = about?, steps[1] = contradicts?, steps[2] = oversteps_fwd?, steps[3] = overlaps?
+    steps[2]["then"] = {"yes": "first oversteps second"}
     back_state: dict[str, Any] = {"before": b["before"], "after": b["after"], "target": a["after"]}
     if b_ctx:
         back_state["context"] = dict(b_ctx)
@@ -1298,7 +1325,7 @@ def lane_check(left: str, a: Mapping[str, Any], right: str, b: Mapping[str, Any]
     back = _step(_question("oversteps", b["anchor"], back_state,
                            b["path"], b["base"], "working-tree", first), yes="second oversteps first")
     back["sources"] = [second, first]
-    steps.insert(2, back)
+    steps.insert(3, back)
     item = _chain("lane", a["anchor"], second, [first, second], {"base": a["base"], "head": "working-tree"}, steps)
     item["pair"] = (a["path"], b["path"])
     item["sides"] = ((left, a["path"], a["anchor"]), (right, b["path"], b["anchor"]))
@@ -1845,7 +1872,7 @@ class JevService:
         """Cross-lane questions over every registry row's changed clauses (#cross-lane-clauses), kept by
         content (#fast-marks): a read resolves each repository's target main once and reparses nothing unchanged.
         Test-flagged slugs are excluded from cross-lane checks (#cross-lane-test-host)."""
-        if not {"contradicts", "oversteps", "overlaps"} <= set(self.seam.question_sets):
+        if not {"about", "contradicts", "oversteps", "overlaps"} <= set(self.seam.question_sets):
             return []
         clauses: dict[str, list[dict[str, str]]] = {}
         mains: dict[str, str | None] = {}
@@ -1916,15 +1943,18 @@ class JevService:
         return items
 
     def _ask_lane_steps(self, steps: list[Mapping[str, Any]], seam: "JevSeam | None" = None) -> None:
-        """Ask a lane check: contradicts? once, both oversteps?, overlaps? when all no."""
+        """Ask a lane check (#gate-lane): about? gate, then contradicts? once, both oversteps?, overlaps? when all no."""
         seam = seam or self.seam
-        r = seam.ask(steps[0])
+        g = seam.ask(steps[0])
+        if _confident_label(g) != "yes":
+            return
+        r = seam.ask(steps[1])
         if _confident_label(r) != "no":
             return
-        a = seam.ask(steps[1])
-        b = seam.ask(steps[2])
+        a = seam.ask(steps[2])
+        b = seam.ask(steps[3])
         if _confident_label(a) == "no" and _confident_label(b) == "no":
-            seam.ask(steps[3])
+            seam.ask(steps[4])
 
     def _lane_submit(self, chain: Mapping[str, Any], seam: "JevSeam | None" = None) -> None:
         """Ask a lane chain in the background; deduped by its steps' keys."""

@@ -131,7 +131,13 @@ class CorpusContextTest(unittest.TestCase):
         questions = jev.build_corpus_questions(current, baseline)
         self.assertTrue(len(questions) > 0, "expected at least one corpus question")
         for q in questions:
-            for step in q["chain"]:
+            # Gate step (about) carries context inside first/second (#gate-set-state)
+            gate = q["chain"][0]
+            self.assertEqual(gate["kind"], "about")
+            self.assertEqual(gate["state"]["first"]["surface"], "Spec")
+            self.assertEqual(gate["state"]["second"]["surface"], "Spec")
+            # Chain steps carry context/target_context at top level
+            for step in q["chain"][1:]:
                 state = step["state"]
                 self.assertIn("context", state, f"step {step['kind']} missing context")
                 self.assertEqual(state["context"]["surface"], "Spec")
@@ -153,7 +159,12 @@ class CorpusContextTest(unittest.TestCase):
             '<tr data-anchor="r2"><td>other</td><td>candidate</td></tr></tbody></table></section>')
         questions = jev.build_corpus_questions(current, baseline)
         self.assertTrue(len(questions) > 0)
-        step = questions[0]["chain"][0]
+        # Gate step (about) carries columns inside first (#gate-set-state)
+        gate = questions[0]["chain"][0]
+        self.assertEqual(gate["kind"], "about")
+        self.assertIn("columns", gate["state"]["first"])
+        # Chain step (contradicts) carries columns at top level
+        step = questions[0]["chain"][1]
         self.assertEqual(step["state"]["context"]["columns"], ["A", "B"])
 
 
@@ -205,14 +216,16 @@ class LaneContextTest(unittest.TestCase):
         b = {"path": "b.spec.html", "anchor": "c2", "before": "old", "after": "new b", "base": "def",
              "context": {"surface": "Spec B", "section": "S2"}}
         item = jev.lane_check("left", a, "right", b)
-        # contradicts step (first): has context for a and target_context for b
-        step0 = item["chain"][0]
-        self.assertEqual(step0["state"]["context"]["surface"], "Spec A")
-        self.assertEqual(step0["state"]["target_context"]["surface"], "Spec B")
-        # back oversteps step (index 2): context for b, target_context for a
-        step2 = item["chain"][2]
-        self.assertEqual(step2["state"]["context"]["surface"], "Spec B")
-        self.assertEqual(step2["state"]["target_context"]["surface"], "Spec A")
+        # gate step (index 0): about? with first/second context
+        self.assertEqual(item["chain"][0]["kind"], "about")
+        # contradicts step (index 1): has context for a and target_context for b
+        step1 = item["chain"][1]
+        self.assertEqual(step1["state"]["context"]["surface"], "Spec A")
+        self.assertEqual(step1["state"]["target_context"]["surface"], "Spec B")
+        # back oversteps step (index 3): context for b, target_context for a
+        step3 = item["chain"][3]
+        self.assertEqual(step3["state"]["context"]["surface"], "Spec B")
+        self.assertEqual(step3["state"]["target_context"]["surface"], "Spec A")
 
 
 if __name__ == "__main__":

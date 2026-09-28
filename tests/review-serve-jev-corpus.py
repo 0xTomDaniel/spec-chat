@@ -29,7 +29,8 @@ def settled(service, *args, timeout=10):
 
 
 class FakeProvider:
-    """Answers yes to a draft-check question when labels maps its target text to that question; else no."""
+    """Answers yes to a draft-check question when labels maps its target text to that question; else no.
+    Gate (about) questions always pass with yes (#gate)."""
 
     def __init__(self, labels):
         self.labels = labels
@@ -38,6 +39,8 @@ class FakeProvider:
     def decide(self, payload):
         self.calls.append(payload)
         kind = next(iter(payload["questions"]))
+        if kind == "about":
+            return {"answers": {kind: {"choice": "yes", "confidence": 0.95}}}
         label = "yes" if self.labels.get(payload["state"].get("target")) == kind else "no"
         return {"answers": {kind: {"choice": label, "confidence": 0.95}}}
 
@@ -92,8 +95,9 @@ class CorpusTest(unittest.TestCase):
         self.assertEqual((restated["state"], restated["label"], restated["level"]), ("label", "overlaps", "warning"))
         unrelated = by_target["lane/docs/specs/other.spec.html#unrelated"]
         self.assertEqual((unrelated["state"], unrelated["label"]), ("none", None))
-        # The non-goal is asked contradicts? alone; the restated clause all three, each its own yes/no record.
-        asked = [(next(iter(call["questions"])), call["state"]["target"]) for call in provider.calls]
+        # The non-goal is asked about? then contradicts? alone; the restated clause about? then all three, each its own yes/no record.
+        asked = [(next(iter(call["questions"])), call["state"].get("target")) for call in provider.calls
+                 if next(iter(call["questions"])) != "about"]
         self.assertEqual([kind for kind, target in asked if target == "The service never writes review events."],
                          ["contradicts"])
         self.assertEqual([kind for kind, target in asked if target == "The service writes review events."],

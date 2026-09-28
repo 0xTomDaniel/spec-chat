@@ -379,13 +379,13 @@ class JevSeamTest(unittest.TestCase):
         draft = jev.draft_check("clause", "", "x", "other", "y", path="spec", base="base", revision="head")
         change = jev.build_type_questions('<section data-anchor="s">x</section>', None, "spec", "base", "head")[0]
         for item, provided, label, level, agent_level in (
-                (draft, answers(("contradicts", "yes", 0.9)), "contradicts", "important", "important"),
-                (draft, answers(("contradicts", "no", 0.9), ("oversteps", "yes", 0.9)), "oversteps", "warning", "important"),
-                (draft, answers(("contradicts", "no", 0.9), ("oversteps", "no", 0.9), ("overlaps", "yes", 0.9)), "overlaps", "warning", "warning"),
-                (draft, answers(("contradicts", "no", 0.9), ("oversteps", "no", 0.9), ("overlaps", "no", 0.9)), None, None, None),
+                (draft, answers(("about", "yes", 0.9), ("contradicts", "yes", 0.9)), "contradicts", "important", "important"),
+                (draft, answers(("about", "yes", 0.9), ("contradicts", "no", 0.9), ("oversteps", "yes", 0.9)), "oversteps", "warning", "important"),
+                (draft, answers(("about", "yes", 0.9), ("contradicts", "no", 0.9), ("oversteps", "no", 0.9), ("overlaps", "yes", 0.9)), "overlaps", "warning", "warning"),
+                (draft, answers(("about", "yes", 0.9), ("contradicts", "no", 0.9), ("oversteps", "no", 0.9), ("overlaps", "no", 0.9)), None, None, None),
                 (change, answers(("type", "yes", 0.9)), "behavior", None, None),
                 (change, answers(("type", "no", 0.9)), "no-behavior-change", None, None),
-                (draft, answers(("contradicts", "yes", 0.01)), None, None, None)):
+                (draft, answers(("about", "yes", 0.9), ("contradicts", "yes", 0.01)), None, None, None)):
             with tempfile.TemporaryDirectory() as directory:
                 service = jev.JevService(state_dir=directory, provider=FakeProvider(*provided), api_key="fake")
                 service.questions = lambda *args, **kwargs: [item]
@@ -394,7 +394,7 @@ class JevSeamTest(unittest.TestCase):
             self.assertEqual((result["items"][0]["label"], result["items"][0].get("level"),
                               result["items"][0].get("agent_level")), (label, level, agent_level), provided)
         # Changing one table row changes the JSON.
-        provider = FakeProvider(*answers(("contradicts", "no", 0.9), ("oversteps", "yes", 0.9)))
+        provider = FakeProvider(*answers(("about", "yes", 0.9), ("contradicts", "no", 0.9), ("oversteps", "yes", 0.9)))
         with tempfile.TemporaryDirectory() as directory, patch.dict(jev.MARK_LEVELS, {"oversteps": {"human": "important", "agent": "important"}}):
             service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
             service.questions = lambda *args, **kwargs: [draft]
@@ -736,7 +736,7 @@ class JevSeamTest(unittest.TestCase):
         targets = {question["target"] for question in questions}
         self.assertIn("non-goal-text", targets)
         self.assertIn("docs/other.spec.html#same-surface", targets)
-        non_goal = {question["target"]: question["chain"][0]["state"]["target_non_goal"] for question in questions}
+        non_goal = {question["target"]: question["chain"][1]["state"]["target_non_goal"] for question in questions}
         self.assertTrue(non_goal["non-goal-text"])
         self.assertFalse(non_goal["docs/other.spec.html#same-surface"])
         changed = [question for question in questions if question["id"] == "changed"]
@@ -764,8 +764,10 @@ class JevSeamTest(unittest.TestCase):
         self.assertIn("non-goal-b", own_targets)
         self.assertLessEqual(len(cross_targets), 8)
         for question in questions:
-            self.assertEqual(set(question["chain"][0]["state"]), {"before", "after", "target", "target_non_goal"})
-            self.assertEqual(question["chain"][0]["state"]["target_non_goal"], question["target"].startswith("non-goal-"))
+            # chain[0] is the about gate; chain[1] is contradicts with target_non_goal
+            self.assertEqual(question["chain"][0]["kind"], "about")
+            self.assertEqual(set(question["chain"][1]["state"]), {"before", "after", "target", "target_non_goal"})
+            self.assertEqual(question["chain"][1]["state"]["target_non_goal"], question["target"].startswith("non-goal-"))
 
         fresh = jev.build_corpus_questions(current, None, "docs/current.spec.html", "base", "head", others)
         per_leaf = {}
@@ -777,7 +779,7 @@ class JevSeamTest(unittest.TestCase):
     def test_draft_check_chain_asks_each_relationship_as_yes_or_no(self):
         sets = jev.load_question_sets(ROOT / "skill" / "review-spec" / "assets" / "jev")
         draft = jev.draft_check("clause", "", "x", "other", "y", path="spec", base="base", revision="head")
-        self.assertEqual([step["kind"] for step in draft["chain"]], ["contradicts", "oversteps", "overlaps"])
+        self.assertEqual([step["kind"] for step in draft["chain"]], ["about", "contradicts", "oversteps", "overlaps"])
         self.assertEqual(draft["display_labels"], ["contradicts", "oversteps", "overlaps"])
         for step in draft["chain"]:
             self.assertEqual(set(sets[step["kind"]].criteria()), {"yes", "no"})
