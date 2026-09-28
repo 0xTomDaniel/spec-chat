@@ -1,7 +1,7 @@
 {
   "id": "oversteps",
   "version": 3,
-  "instructions": "The two clauses do not contradict. Does the changed clause reach into the linked clause's territory? Answer yes only when the linked clause states that a behavior, decision, or responsibility belongs to it or to a named owner, and the changed clause makes a different module, route, or spec do or decide that thing. Answer no for everything else.",
+  "instructions": "Compare the changed clause with the linked clause; they do not contradict. Does the changed clause reach into the linked clause's territory? Answer yes only when the linked clause states that a behavior, decision, or responsibility belongs to it or to a named owner, and the changed clause makes a different module, route, or spec do or decide that thing. Answer no when the changed clause stays within its own scope, restates, tests, motivates, or depends on the linked clause, describes the same thing at another layer, or merely shares words or a topic with it. An acceptance criterion, test, or user story about the linked clause's behavior is no.",
   "threshold": 0.7,
   "fallback": true,
   "show_cutoff": 0.90,

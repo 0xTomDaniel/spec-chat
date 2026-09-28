@@ -1,7 +1,7 @@
 {
   "id": "contradicts",
   "version": 3,
-  "instructions": "Does the changed clause contradict the linked clause? Answer yes only when the changed behavior directly conflicts with what the linked clause states. Answer no for everything else.",
+  "instructions": "Compare the changed clause with the linked clause. Does the changed clause contradict the linked clause? When target_non_goal is true, the linked clause lists items its spec excludes: answer yes only when you can name the listed item the changed clause adds or requires, even when the wording matches; if you cannot name one, answer no. Otherwise answer yes only when the changed behavior conflicts with the linked clause. Restating, extending, or merely relating to it is no.",
   "threshold": 0.4,
   "fallback": true,
   "show_cutoff": 0.90,

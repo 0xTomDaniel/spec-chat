@@ -1,7 +1,7 @@
 {
   "id": "overlaps",
   "version": 4,
-  "instructions": "The two clauses neither contradict nor overstep each other. Do they say the same thing? Answer yes when both clauses describe the same behavior, surface, or responsibility. Answer no for everything else.",
+  "instructions": "Compare the changed clause with the linked clause; they neither contradict nor overstep each other. Do they say the same thing? Answer yes when both clauses describe the same behavior, surface, or responsibility. Answer no when they describe different things, even if related. A criterion or test that checks the behavior the other clause states says the same thing: yes.",
   "threshold": 0.4,
   "fallback": true,
   "show_cutoff": 0.90,

@@ -40,6 +40,10 @@ _wall = time.time
 # Jev was below threshold on a set with a general LLM fallback (project-rules #q-fallback): the LLM decides next.
 ESCALATED = "escalated"
 REPLACEABLE_OUTCOMES = RETRYABLE_OUTCOMES | {ESCALATED}
+# Draft-check P(yes) below the verify cutoff (jev-suggestions #asymmetric-silent): recorded, no mark, no escalation.
+SILENT_NO = "silent-no"
+# Outcomes that let a chain continue: the question was answered (#chains, #asymmetric).
+CHAIN_CONTINUE = frozenset({"shown", SILENT_NO})
 # Mark levels (jev-suggestions#markers-levels): the single source, mark kind to a human and an agent level, fixed by kind and never
 # by confidence; the agent level is never quieter (#markers-levels-audience). Item labels key it directly; the browser keys derived
 # marks (coverage gaps, QA evidence, unsure words) by the other names and reads only the human column.
@@ -470,9 +474,13 @@ class JevSeam:
         if held and held.get("outcome") not in REPLACEABLE_OUTCOMES:
             return held
         provider = self.provider()
-        if held and qset.fallback and provider is not None and (
+        # Escalated fast-path: draft checks go to the verifier (#verifier); others to the general LLM.
+        if held and provider is not None and (
                 held.get("outcome") == ESCALATED or held.get("escalated")):
-            return self._general(question, key, qset, provider)
+            if qset.show_cutoff is not None:
+                return self._verify(question, key, qset, provider)
+            elif qset.fallback:
+                return self._general(question, key, qset, provider)
         criteria = qset.criteria_payload()
         dynamic = question.get("criteria")
         if isinstance(dynamic, Mapping):
@@ -503,6 +511,18 @@ class JevSeam:
             return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
                                 {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model,
                                 failure=failure)
+        if qset.show_cutoff is not None:
+            # Asymmetric threshold for draft-check questions (#asymmetric).
+            p_yes = answer["probabilities"].get("yes")
+            if p_yes is None:
+                p_yes = answer.get("confidence", 0.0) if answer.get("label") == "yes" else 0.0
+            if p_yes >= qset.show_cutoff:
+                return self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, "shown", model)
+            elif qset.verify_cutoff is not None and p_yes >= qset.verify_cutoff:
+                self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, ESCALATED, model)
+                return self._verify(question, key, qset, provider)
+            else:
+                return self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, SILENT_NO, model)
         outcome = "shown" if answer["confidence"] is not None and answer["confidence"] >= qset.threshold else "unsure"
         if outcome == "unsure" and qset.fallback:
             self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, ESCALATED, model)
@@ -540,6 +560,55 @@ class JevSeam:
         return self._record(key, kind, qset, sources, revision,
                             {"label": label, "probabilities": {}, "confidence": None}, "shown", model, True)
 
+    def verifier_payload(self, question: Mapping[str, Any], qset: QuestionSet, model: str) -> dict[str, Any]:
+        """Verifier payload (#verifier): both clauses with context; strict schema requiring quoted spans."""
+        state = question.get("state", {})
+        verify_input: dict[str, Any] = {"clause": state.get("after", ""), "target": state.get("target", "")}
+        if state.get("context"):
+            verify_input["clause_context"] = state["context"]
+        if state.get("target_context"):
+            verify_input["target_context"] = state["target_context"]
+        system = {"question": qset.instructions,
+                  "verify": "If yes, quote the exact span from the clause and the target that conflict. If no, leave spans empty."}
+        schema = {"type": "object",
+                  "properties": {"answer": {"type": "string", "enum": ["yes", "no"]},
+                                 "clause_span": {"type": "string"}, "target_span": {"type": "string"}},
+                  "required": ["answer", "clause_span", "target_span"], "additionalProperties": False}
+        return {"model": model,
+                "messages": [{"role": "system", "content": _canonical(system)},
+                             {"role": "user", "content": _canonical(verify_input)}],
+                "response_format": {"type": "json_schema", "json_schema": {"name": "answer", "strict": True, "schema": schema}},
+                "provider": {"require_parameters": True}}
+
+    def _verify(self, question: Mapping[str, Any], key: str, qset: QuestionSet, provider: Any) -> dict[str, Any]:
+        """Draft-check verify band (#verifier): call general LLM with both clauses; show only if yes + quoted spans."""
+        kind = str(question.get("kind", "type"))
+        sources, revision = question.get("sources", []), question.get("revision")
+        model = self.llm_model()
+        payload = self.verifier_payload(question, qset, model)
+        label = None
+        failure = None
+        try:
+            response = provider.complete(payload)
+            result = json.loads(response["choices"][0]["message"]["content"])
+            clause_span = (result.get("clause_span") or "").strip()
+            target_span = (result.get("target_span") or "").strip()
+            if result.get("answer") == "yes" and clause_span and target_span:
+                label = "yes"
+            else:
+                label = "no"
+        except Exception as exc:
+            failure = exc
+        if label is None:
+            return self._record(key, kind, qset, sources, revision,
+                                {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model, True,
+                                failure)
+        answer: dict[str, Any] = {"label": label, "probabilities": {}, "confidence": None}
+        if label == "yes":
+            answer["clause_span"] = clause_span
+            answer["target_span"] = target_span
+        return self._record(key, kind, qset, sources, revision, answer, "shown", model, True)
+
     def ask_chain(self, chain: list[Mapping[str, Any]]) -> dict[str, Any]:
         """Ask a chain's yes/no questions in order, each only when the answer so far needs it (#chains)."""
         return chain_result(chain, self.ask)
@@ -547,6 +616,14 @@ class JevSeam:
     def answer(self, item: Mapping[str, Any]) -> dict[str, Any]:
         """One item's answer: its chain's, else its one question's record."""
         return self.ask_chain(item["chain"]) if "chain" in item else self.ask(item)
+
+
+def _chain_label(record: Mapping[str, Any]) -> str | None:
+    """The label the chain walks on: a silent-no is a no for chain purposes (#asymmetric)."""
+    if record.get("outcome") == SILENT_NO:
+        return "no"
+    answer = record.get("answer")
+    return answer.get("label") if isinstance(answer, Mapping) else None
 
 
 def chain_result(chain: list[Mapping[str, Any]], get: Callable[[Mapping[str, Any]], Mapping[str, Any] | None]) -> dict[str, Any]:
@@ -560,12 +637,11 @@ def chain_result(chain: list[Mapping[str, Any]], get: Callable[[Mapping[str, Any
         if record is None:
             return {"outcome": None, "answer": {"label": None}, "record_id": None, "unsure": unsure, "step": step}
         outcome = record.get("outcome")
-        if outcome != "shown":
+        if outcome not in CHAIN_CONTINUE:
             return {"outcome": outcome, "answer": {"label": None}, "record_id": record.get("record_id"),
                     "unsure": unsure, "step": step}
         unsure += bool(record.get("escalated"))
-        answer = record.get("answer")
-        label = answer.get("label") if isinstance(answer, Mapping) else None
+        label = _chain_label(record)
         then = step["then"]
         if label not in YES_NO or label in then:
             return {"outcome": "shown", "answer": {"label": then.get(label)}, "record_id": record.get("record_id"),
@@ -583,12 +659,11 @@ def lane_result(steps: list[Mapping[str, Any]], get: Callable[[Mapping[str, Any]
     if record is None:
         return [{"outcome": None, "answer": {"label": None}, "record_id": None, "unsure": 0, "step": steps[0]}]
     outcome = record.get("outcome")
-    if outcome != "shown":
+    if outcome not in CHAIN_CONTINUE:
         return [{"outcome": outcome, "answer": {"label": None}, "record_id": record.get("record_id"),
                  "unsure": 0, "step": steps[0]}]
     unsure += bool(record.get("escalated"))
-    answer = record.get("answer")
-    label = answer.get("label") if isinstance(answer, Mapping) else None
+    label = _chain_label(record)
     if label != "yes":
         return [{"outcome": "shown", "answer": {"label": None},
                  "record_id": record.get("record_id"), "unsure": unsure}]
@@ -597,12 +672,11 @@ def lane_result(steps: list[Mapping[str, Any]], get: Callable[[Mapping[str, Any]
     if record is None:
         return [{"outcome": None, "answer": {"label": None}, "record_id": None, "unsure": unsure, "step": steps[1]}]
     outcome = record.get("outcome")
-    if outcome != "shown":
+    if outcome not in CHAIN_CONTINUE:
         return [{"outcome": outcome, "answer": {"label": None}, "record_id": record.get("record_id"),
                  "unsure": unsure, "step": steps[1]}]
     unsure += bool(record.get("escalated"))
-    answer = record.get("answer")
-    label = answer.get("label") if isinstance(answer, Mapping) else None
+    label = _chain_label(record)
     if label == "yes":
         return [{"outcome": "shown", "answer": {"label": steps[1]["then"]["yes"]},
                  "record_id": record.get("record_id"), "unsure": unsure}]
@@ -616,13 +690,12 @@ def lane_result(steps: list[Mapping[str, Any]], get: Callable[[Mapping[str, Any]
                                   "unsure": unsure, "step": step}
             continue
         outcome = record.get("outcome")
-        if outcome != "shown":
+        if outcome not in CHAIN_CONTINUE:
             pending = pending or {"outcome": outcome, "answer": {"label": None},
                                   "record_id": record.get("record_id"), "unsure": unsure, "step": step}
             continue
         unsure += bool(record.get("escalated"))
-        ans = record.get("answer")
-        lbl = ans.get("label") if isinstance(ans, Mapping) else None
+        lbl = _chain_label(record)
         if lbl == "yes":
             findings.append({"outcome": "shown", "answer": {"label": step["then"]["yes"]},
                              "record_id": record.get("record_id"), "unsure": unsure})
@@ -637,12 +710,11 @@ def lane_result(steps: list[Mapping[str, Any]], get: Callable[[Mapping[str, Any]
     if record is None:
         return [{"outcome": None, "answer": {"label": None}, "record_id": None, "unsure": unsure, "step": steps[4]}]
     outcome = record.get("outcome")
-    if outcome != "shown":
+    if outcome not in CHAIN_CONTINUE:
         return [{"outcome": outcome, "answer": {"label": None}, "record_id": record.get("record_id"),
                  "unsure": unsure, "step": steps[4]}]
     unsure += bool(record.get("escalated"))
-    ans = record.get("answer")
-    lbl = ans.get("label") if isinstance(ans, Mapping) else None
+    lbl = _chain_label(record)
     then = steps[4]["then"]
     if lbl in then:
         return [{"outcome": "shown", "answer": {"label": then[lbl]},
@@ -1402,7 +1474,12 @@ def _escalated(record: Mapping[str, Any] | None) -> bool:
 
 
 def _confident_label(record: Mapping[str, Any] | None) -> str | None:
-    if not record or record.get("outcome") != "shown":
+    if not record:
+        return None
+    outcome = record.get("outcome")
+    if outcome == SILENT_NO:
+        return "no"
+    if outcome != "shown":
         return None
     answer = record.get("answer")
     label = answer.get("label") if isinstance(answer, Mapping) else None
@@ -2399,8 +2476,8 @@ class JevService:
                 "offer": offer, "levels": dict(MARK_LEVELS)}
 
 
-__all__ = ["BUILDERS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MARK_LEVELS", "MODEL",
-           "OPENROUTER_DECISIONS_URL", "OpenRouterProvider", "QuestionSet",
+__all__ = ["BUILDERS", "CHAIN_CONTINUE", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MARK_LEVELS", "MODEL",
+           "OPENROUTER_DECISIONS_URL", "OpenRouterProvider", "QuestionSet", "SILENT_NO",
            "anchor_context",
            "build_audience_questions", "build_board_conflict_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_rule_question", "build_scope_questions", "build_type_questions", "chain_result", "changed_leaf_clauses", "draft_check",
            "extract_anchors", "lane_result",

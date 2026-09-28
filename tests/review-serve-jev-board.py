@@ -294,7 +294,7 @@ class BoardTest(unittest.TestCase):
         cases = ((contradicts, 0.9, True, [contradicts]), (forth, 0.9, True, [contradicts, forth, back]),
                  (back, 0.9, True, [contradicts, forth, back]), (overlaps, 0.9, False, [contradicts, forth, back, overlaps]),
                  (None, 0.9, False, [contradicts, forth, back, overlaps]),
-                 (contradicts, 0.1, False, [contradicts]))  # unsure, and the general LLM is unavailable
+                 (contradicts, 0.1, False, [contradicts, forth, back, overlaps]))  # P(yes)<verify: silent-no, chain continues (#asymmetric)
         for yes, confidence, listed, expected in cases:
             with self.subTest(yes=yes, confidence=confidence):
                 self.tearDown()

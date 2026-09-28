@@ -57,13 +57,12 @@ class ChainTest(unittest.TestCase):
         self.assertEqual(provider.calls, ["about", "contradicts"])
         self.assertEqual(result["answer"]["label"], "contradicts")
         self.assertEqual(result["outcome"], "shown")
-        # no below threshold to oversteps?: one general LLM call, and the chain continues from its answer.
-        provider = FakeProvider({"about": ("yes", 0.95), "contradicts": ("no", 0.95), "oversteps": ("no", 0.1)}, general={"oversteps": "yes"})
+        # P(yes) below verify cutoff for draft checks: silent no, no fallback, chain continues (#asymmetric).
+        provider = FakeProvider({"about": ("yes", 0.95), "contradicts": ("no", 0.95), "oversteps": ("no", 0.1)})
         result = self.seam(provider).ask_chain(draft_check()["chain"])
-        self.assertEqual(provider.calls, ["about", "contradicts", "oversteps"])
-        self.assertEqual(provider.general_calls, ["oversteps"])
-        self.assertEqual(result["answer"]["label"], "oversteps")
-        self.assertEqual(result["unsure"], 1)
+        self.assertEqual(provider.calls, ["about", "contradicts", "oversteps", "overlaps"])
+        self.assertEqual(provider.general_calls, [])
+        self.assertIsNone(result["answer"]["label"])
         provider = FakeProvider({"about": ("yes", 0.95), "contradicts": ("no", 0.95), "oversteps": ("no", 0.1)}, general={"oversteps": "no"})
         result = self.seam(provider).ask_chain(draft_check()["chain"])
         self.assertEqual(provider.calls, ["about", "contradicts", "oversteps", "overlaps"])
