@@ -151,8 +151,8 @@ assert.match(runtime, /\.hx-thread-dock\{/, 'collapsed review uses a compact con
 assert.match(runtime, /\.hx-panel\{[^}]*display:none;/, 'the closed sidebar leaves document layout entirely');
 assert.match(runtime, /setAttribute\('aria-label', 'Review conversations'\)/, 'the thread dock has an accessible navigation label');
 assert.match(runtime, /Collapse review sidebar/, 'the open sidebar exposes a collapse control');
-assert.match(runtime, /\.hx-dock-thread\[data-s=acknowledged\]\{border-color:#315fbd;color:#264f9e;background:#edf2ff\}/, 'acknowledged dock threads use the blue status palette');
-assert.match(runtime, /\.hx-pin\[data-s=acknowledged\]\{background:#315fbd\}/, 'acknowledged page pins use the blue status palette');
+assert.match(runtime, /\.hx-dock-thread\[data-s=acknowledged\]\{border-color:var\(--ui-ack\);color:var\(--ui-ack\);background:var\(--ui-ack-soft\)\}/, 'acknowledged dock threads use the blue status palette');
+assert.match(runtime, /\.hx-pin\[data-s=acknowledged\]\{background:var\(--ui-ack\)\}/, 'acknowledged page pins use the blue status palette');
 assert.match(runtime, /class="hx-unread-badge" id="hx-unread-badge"/, 'the chat launcher includes an acknowledged-reply badge');
 assert.match(runtime, /acknowledged > 99 \? '99\+'/, 'large unread counts stay compact');
 

@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spec page design pass</title>
+<link rel="stylesheet" href=".style/spec.css">
+<script defer src=".viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-anchor="spec-page-design" data-spec-contract="shaped-sections-v1">
+<header data-anchor="header">
+<nav data-anchor="breadcrumb">spec-chat / specs</nav>
+<h1 data-anchor="title">Spec page <span class="accent">design pass</span></h1>
+<div class="mast-grid">
+<p class="lede" data-anchor="lede">Apply the Spec Chat index design values to the spec page chrome: one button system, one color palette, consistent placement.
+The spec document's own content styling is unchanged.</p>
+<dl class="refs" data-anchor="refs">
+<dt>Scope</dt><dd>runtime.js CSS const blocks (CSS, DOC_CSS dark mode chrome only)</dd>
+<dt>Tokens</dt><dd><a href="./lane-hosting.spec.html#index-tokens">Index token block</a></dd>
+<dt>Coordinate</dt><dd><a href="https://github.com/0xTomDaniel/spec-chat/pull/91">#91</a> jev-yes-no, Reconcile offer detail: same runtime.js</dd>
+</dl>
+</div>
+</header>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<div class="sec-head">
+<span class="sec-num">01</span>
+<h2 data-anchor="stories-heading">User stories</h2>
+<p class="sec-note" data-anchor="stories-note">One reviewer, one page, consistent chrome.</p>
+</div>
+
+<p data-user-story data-anchor="story-consistent-chrome" data-user-facing="true" data-guided-journey="no">As a spec reviewer, I see one coherent visual system across every button, pill, pin, panel, popover, toolbar, and bar on a spec page, so I never wonder whether two differently styled controls do the same thing.</p>
+
+<p data-user-story data-anchor="story-token-reuse" data-user-facing="false" data-guided-journey="no">As a contributor editing runtime.js, every chrome color, font size, weight, radius, and spacing value is a named token from one block, so I never invent an ad hoc value or guess which grey to use.</p>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-spec-section="acceptance" data-acceptance-scope="design-pass" data-anchor="acceptance">
+<!-- Jev: cross-lane contradicts from project-rules, jev-suggestions: this spec's acceptance criteria cover CSS visual design only, not those specs' behavioral rules -->
+<div class="sec-head">
+<span class="sec-num">02</span>
+<h2 data-anchor="acceptance-heading">Acceptance criteria</h2>
+<p class="sec-note" data-anchor="acceptance-note">Screenshots at 1440 and 390, before and after.</p>
+</div>
+
+<p data-acceptance-criterion data-anchor="acceptance-token-block" data-story="story-token-reuse">
+<span data-acceptance-scenario>Given the CSS const string in runtime.js,</span>
+<span data-acceptance-observable>it opens with one <code>:root</code> block headed <code>/* ui tokens */</code> holding the index tokens plus the additions in <a href="#token-additions">the token additions table</a>, and every chrome color, font-size, font-weight, border-radius, and spacing value in the CSS const is a <code>var(--ui-*)</code> reference, with no remaining literal values except pin teardrop border-radius, z-index, transition, animation, and position values.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-button-system" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>At 1440 and 390 widths,</span>
+<span data-acceptance-observable>every chrome button matches one of the four <a href="#button-variants">button variants</a> (primary, secondary, icon, text-link) with the specified shared properties, and no button has a shape, size, radius, font, or color outside the system.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-color-consistency" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>At 1440 width with draft, acknowledged, and resolved threads,</span>
+<span data-acceptance-observable>every pin, pill, dock thread, and thread card border for the same status uses the same token pair (color on soft background), and no two statuses share a color.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-mark-levels" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>With Jev markers at important, neutral, and passed levels,</span>
+<span data-acceptance-observable>marker colors are <code>--ui-marker-important</code> #d1242f, <code>--ui-marker</code> #767b85, and <code>--ui-marker-pass</code> #1a7f37 with their current shapes and sizes.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-contrast" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>For every chrome text-on-background combination,</span>
+<span data-acceptance-observable>normal text meets 4.5:1 contrast ratio and meaningful non-text boundaries (status pill borders, active thread borders, pin outlines) meet 3:1.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-no-content-change" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>At 1440 and 390 widths on a spec with the shared stylesheet,</span>
+<span data-acceptance-observable>the spec document content (headings, prose, tables, figures, code blocks, section borders, page background) renders identically to the current main branch: the spec.css tokens and DOC_CSS article.spec rules are unchanged.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-dark-mode" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>In dark mode (prefers-color-scheme: dark),</span>
+<span data-acceptance-observable>all chrome surfaces, text, and borders use token overrides from the dark <code>:root</code> block, and no literal light-mode color leaks through.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-coordinate" data-story="story-token-reuse">
+<span data-acceptance-scenario>Given the diff of this branch against main,</span>
+<span data-acceptance-observable>only CSS const string content in runtime.js is changed (no JS logic, no function signatures, no event handling), and both copies of runtime.js are identical.</span>
+</p>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<div class="sec-head">
+<span class="sec-num">03</span>
+<h2 data-anchor="boundaries-heading">Modular boundaries</h2>
+<p class="sec-note" data-anchor="boundaries-note">Self-contained CSS refactor.</p>
+</div>
+
+<p data-modular-boundary data-anchor="boundary-css-const">
+<span data-boundary-responsibility>The CSS const strings in runtime.js own all spec page chrome styling: layout, color, typography, and responsive rules for the annotation overlay (toolbar, panel, dock, pins, pills, popovers, toasts, banners, badges, error overlay, range bar, index link, Jev notes, orphan hints, composer, settings).</span>
+<span data-boundary-seam>The caller-facing seam is the set of CSS class names and data attributes already used in mountUI() and render functions. No class name changes; the same selectors get new property values from tokens.</span>
+<span data-boundary-dependency>Self-contained: no new external dependency. The token block is a CSS custom property declaration within the same file.</span>
+<span data-boundary-scope>Observable scope: every chrome element on a spec page uses the unified token set. The spec document's own content styling is outside this boundary.</span>
+</p>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-anchor="design">
+<div class="sec-head">
+<span class="sec-num">04</span>
+<h2 data-anchor="design-heading">Design</h2>
+<p class="sec-note" data-anchor="design-note">One token block, one button system, one color per meaning.</p>
+</div>
+
+<div data-anchor="token-block">
+<h3 data-anchor="token-block-heading">Token block</h3>
+<p data-anchor="token-block-rule">The spec page chrome CSS const (the <code>CSS</code> string in runtime.js) opens with one <code>:root</code> block headed <code>/* ui tokens */</code>, holding exactly the <a href="./lane-hosting.spec.html#index-tokens">index tokens</a> plus the additions in the table below.
+Every chrome rule uses only these variables.
+No literal color, font size, weight, spacing, or radius value appears in a chrome rule.
+The spec document's own content styling (DOC_CSS <code>article.spec</code> rules and spec.css) is unchanged and keeps its own <code>--spec-*</code> tokens.</p>
+
+<div class="table-scroll">
+<table data-anchor="token-additions">
+<caption>Additions to the index token set for spec page chrome</caption>
+<thead><tr><th>Token</th><th>Value</th><th>Why</th></tr></thead>
+<tbody>
+<tr data-anchor="token-draft"><td><code>--ui-draft</code>, <code>--ui-draft-soft</code></td><td><code>#b0540e</code>, <code>#faf4ef</code></td><td>Draft/pending status. Reuses <code>--ui-attention</code> pair: drafts are unfinished work that needs attention.</td></tr>
+<tr data-anchor="token-ack"><td><code>--ui-ack</code>, <code>--ui-ack-soft</code></td><td><code>#1d4ed8</code>, <code>#eff3ff</code></td><td>Acknowledged status. One blue, 4.5:1 on white.</td></tr>
+<tr data-anchor="token-resolved"><td><code>--ui-resolved</code>, <code>--ui-resolved-soft</code></td><td><code>#005c32</code>, <code>#e6efea</code></td><td>Resolved status. Reuses <code>--ui-pass</code> pair.</td></tr>
+<tr data-anchor="token-error"><td><code>--ui-error</code></td><td><code>#a5000f</code></td><td>Error overlay background. Reuses <code>--ui-fail</code>.</td></tr>
+<tr data-anchor="token-marker"><td><code>--ui-marker</code>, <code>--ui-marker-important</code>, <code>--ui-marker-pass</code></td><td><code>#767b85</code>, <code>#d1242f</code>, <code>#1a7f37</code></td><td>Jev markers. Agreed mark level colors, unchanged.</td></tr>
+<tr data-anchor="token-pin"><td><code>--ui-pin-ring</code></td><td><code>rgba(176, 84, 14, 0.25)</code></td><td>Active pin and thread ring glow. Derived from <code>--ui-draft</code>.</td></tr>
+<tr data-anchor="token-shadow"><td><code>--ui-shadow</code></td><td><code>rgba(51, 51, 51, 0.14)</code></td><td>Toolbar, dock, panel box shadow. One shadow token from <code>--ui-ink</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="token-dark-mode">Dark mode: the chrome's <code>@media(prefers-color-scheme:dark)</code> block overrides these tokens with dark equivalents.
+The index is light-only; this spec adds the dark overrides for the chrome tokens only, keeping the existing dark palette direction (dark surfaces, light text).</p>
+</div>
+
+<div data-anchor="button-system">
+<h3 data-anchor="button-system-heading">Button system</h3>
+<!-- Jev: preview-light and preview-dark render examples of this system, not a competing one -->
+<p data-anchor="button-system-rule">Every chrome button is one of four variants. The button system consumes tokens from the token block; it does not redefine them. Badges and pills are not buttons and use their own radius (<code>--ui-radius-pill</code>).
+All buttons share: <code>font-family: var(--ui-font)</code>, <code>font-size: var(--ui-text-xs)</code> (12px), <code>font-weight: 600</code>, <code>border-radius: var(--ui-radius-sm)</code> (6px), <code>min-height: 32px</code> desktop / <code>44px</code> mobile, <code>padding: var(--ui-space-2) var(--ui-space-3)</code> (8px 12px).
+Focus: <code>outline: 2px solid var(--ui-focus); outline-offset: 2px</code>.</p>
+
+<div class="table-scroll">
+<table data-anchor="button-variants">
+<thead><tr><th>Variant</th><th>Class</th><th>Fill</th><th>Text</th><th>Border</th><th>Use</th></tr></thead>
+<tbody>
+<tr data-anchor="btn-primary"><td>Primary</td><td><code>.hx-btn.pri</code></td><td><code>var(--ui-ink)</code></td><td><code>var(--ui-page)</code></td><td><code>var(--ui-ink)</code></td><td>Hand off, Accept spec, Apply, Move comment here</td></tr>
+<tr data-anchor="btn-secondary"><td>Secondary</td><td><code>.hx-btn</code></td><td><code>var(--ui-surface)</code></td><td><code>var(--ui-ink)</code></td><td><code>var(--ui-border)</code></td><td>Change base, Cancel, Edit, Reply, Resolve, Go to, Reload, Reconcile</td></tr>
+<tr data-anchor="btn-icon"><td>Icon</td><td><code>.hx-btn-icon</code></td><td><code>var(--ui-surface)</code></td><td><code>var(--ui-muted)</code></td><td><code>var(--ui-border)</code></td><td>Panel toggle, gear, dock open, dock thread, disclosure</td></tr>
+<tr data-anchor="btn-text"><td>Text link</td><td><code>.hx-btn-text</code></td><td>transparent</td><td><code>var(--ui-ink)</code></td><td>none</td><td>Popover +N warnings, dismiss X, toolbar Comment/Reading view</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="button-placement">Placement rule: a bar, panel footer, or popover action row puts the primary action rightmost and a cancel or secondary action left of it.
+A single primary action fills available width on mobile.
+Icon buttons are always square (<code>var(--ui-space-6)</code> desktop, 44px mobile).</p>
+</div>
+
+<div data-anchor="color-map">
+<h3 data-anchor="color-map-heading">Color map</h3>
+<p data-anchor="color-map-rule">Every chrome color value maps to exactly one token.
+The table below is the complete mapping; no chrome rule uses a value outside it.</p>
+
+<div class="table-scroll">
+<table data-anchor="color-map-table">
+<thead><tr><th>Meaning</th><th>Token</th></tr></thead>
+<tbody>
+<tr data-anchor="map-page"><td>Page background</td><td><code>--ui-page</code> #ffffff</td></tr>
+<tr data-anchor="map-surface"><td>Cards, panels, inputs, popovers</td><td><code>--ui-surface</code> #ffffff</td></tr>
+<tr data-anchor="map-ink"><td>Primary text, headings</td><td><code>--ui-ink</code> #333333</td></tr>
+<tr data-anchor="map-muted"><td>Secondary text, captions, status line</td><td><code>--ui-muted</code> #525252</td></tr>
+<tr data-anchor="map-border"><td>Borders, separators, hairlines</td><td><code>--ui-border</code> #dfdfdf</td></tr>
+<tr data-anchor="map-draft"><td>Draft/pending status foreground</td><td><code>--ui-draft</code> #b0540e</td></tr>
+<tr data-anchor="map-draft-soft"><td>Draft/pending status background</td><td><code>--ui-draft-soft</code> #faf4ef</td></tr>
+<tr data-anchor="map-ack"><td>Acknowledged status foreground</td><td><code>--ui-ack</code> #1d4ed8</td></tr>
+<tr data-anchor="map-ack-soft"><td>Acknowledged status background</td><td><code>--ui-ack-soft</code> #eff3ff</td></tr>
+<tr data-anchor="map-resolved"><td>Resolved status foreground</td><td><code>--ui-resolved</code> #005c32</td></tr>
+<tr data-anchor="map-resolved-soft"><td>Resolved status background</td><td><code>--ui-resolved-soft</code> #e6efea</td></tr>
+<tr data-anchor="map-error"><td>Error overlay, error text</td><td><code>--ui-error</code> = <code>--ui-fail</code> #a5000f</td></tr>
+<tr data-anchor="map-banner"><td>Banner (spec updated)</td><td><code>--ui-pass</code> #005c32</td></tr>
+<tr data-anchor="map-marker"><td>Neutral marker</td><td><code>--ui-marker</code> #767b85</td></tr>
+<tr data-anchor="map-marker-imp"><td>Important marker</td><td><code>--ui-marker-important</code> #d1242f</td></tr>
+<tr data-anchor="map-marker-pass"><td>Passed marker</td><td><code>--ui-marker-pass</code> #1a7f37</td></tr>
+<tr data-anchor="map-focus-ring"><td>Focus ring</td><td><code>--ui-focus</code> #262626</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<div data-anchor="type-system">
+<h3 data-anchor="type-system-heading">Typography</h3>
+<p data-anchor="type-system-rule">Chrome text uses only the index type scale.
+<code>var(--ui-text-xs)</code> 12px: pills, badges, captions, toolbar status, note meta, popover text, dock threads.
+<code>var(--ui-text-sm)</code> 14px: panel body, thread messages, composer textarea, range bar text, Jev note.
+<code>var(--ui-text-md)</code> 16px: mobile composer textarea (iOS zoom prevention).
+<code>var(--ui-text-lg)</code> 20px: panel toggle glyph.
+Weights: 400 body, 600 emphasis and buttons, never 700 or 750.</p>
+</div>
+
+<div data-anchor="spacing-system">
+<h3 data-anchor="spacing-system-heading">Spacing and geometry</h3>
+<p data-anchor="spacing-system-rule">Chrome spacing uses only the index spacing scale: 4, 8, 12, 16, 24, 32px.
+Border radii: <code>var(--ui-radius)</code> 8px for containers (panel, toolbar, dock, popover, toast), <code>var(--ui-radius-sm)</code> 6px for buttons and inputs, <code>var(--ui-radius-pill)</code> 999px for pills and badges.
+Pin border-radius is unchanged (teardrop shape).</p>
+</div>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-anchor="preview">
+<div class="sec-head">
+<span class="sec-num">05</span>
+<h2 data-anchor="preview-heading">Visual preview</h2>
+<p class="sec-note" data-anchor="preview-note">Live rendering of the proposed tokens and components, light and dark.</p>
+</div>
+
+<figure data-anchor="preview-figure">
+<!-- Jev: preview-light and preview-dark illustrate the design sections above; they render the token/button/surface specs, not competing rules -->
+<!-- Jev: cross-lane contradicts from jev-suggestions, project-rules, worklane-board, evidence-site, fleet-floor: CSS-only visual spec, not applicable to those behavioral specs -->
+<div data-anchor="preview-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+
+<!-- Light mode -->
+<div data-anchor="preview-light" style="--ui-font:'Inter Variable',Inter,system-ui,sans-serif;--ui-mono:ui-monospace,SFMono-Regular,Menlo,monospace;--ui-text-xs:12px;--ui-text-sm:14px;--ui-page:#ffffff;--ui-surface:#ffffff;--ui-ink:#333333;--ui-muted:#525252;--ui-border:#dfdfdf;--ui-focus:#262626;--ui-draft:#b0540e;--ui-draft-soft:#faf4ef;--ui-ack:#1d4ed8;--ui-ack-soft:#eff3ff;--ui-resolved:#005c32;--ui-resolved-soft:#e6efea;--ui-error:#a5000f;--ui-pass:#005c32;--ui-fail:#a5000f;--ui-marker:#767b85;--ui-marker-important:#d1242f;--ui-marker-pass:#1a7f37;--ui-shadow:rgba(51,51,51,0.14);--ui-radius:8px;--ui-radius-sm:6px;--ui-radius-pill:999px;font-family:var(--ui-font);color:var(--ui-ink);background:var(--ui-page);padding:20px;border-radius:4px;border:1px solid var(--ui-border)">
+
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Light mode</div>
+
+<!-- Swatches -->
+<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px">
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#ffffff"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">page</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#333333"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">ink</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#525252"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">muted</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#dfdfdf"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">border</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#b0540e"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">draft</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#faf4ef"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">draft-s</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#1d4ed8"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">ack</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#eff3ff"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">ack-s</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#005c32"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">resolved</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#e6efea"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">res-s</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#a5000f"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">error</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#767b85"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">marker</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#d1242f"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">m-imp</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#1a7f37"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">m-pass</div></div>
+</div>
+
+<!-- Buttons -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Buttons</div>
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;align-items:center">
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-ink);color:var(--ui-page);border:1px solid var(--ui-ink);cursor:pointer">Hand off</button>
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-surface);color:var(--ui-ink);border:1px solid var(--ui-border);cursor:pointer">Cancel</button>
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);width:32px;height:32px;padding:0;background:var(--ui-surface);color:var(--ui-muted);border:1px solid var(--ui-border);cursor:pointer">&#9881;</button>
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:transparent;color:var(--ui-ink);border:none;cursor:pointer">Comment</button>
+</div>
+
+<!-- Status -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Status</div>
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;align-items:end">
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-draft);background:var(--ui-draft-soft)">Draft</span>
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-ack);background:var(--ui-ack-soft)">Ack</span>
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-resolved);background:var(--ui-resolved-soft)">Resolved</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:#fff;background:var(--ui-draft)">1</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:#fff;background:var(--ui-ack)">2</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:var(--ui-resolved);background:var(--ui-surface);border:2px solid var(--ui-resolved)">3</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;color:#fff;background:var(--ui-marker)">!</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;color:#fff;background:var(--ui-marker-important)">!</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;color:#fff;background:var(--ui-marker-pass)">&#10003;</span>
+<span style="display:inline-block;background:var(--ui-resolved-soft);color:var(--ui-resolved);border-radius:var(--ui-radius-pill);padding:2px 8px;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase">Agent</span>
+</div>
+
+<!-- Toolbar -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Toolbar</div>
+<div style="display:inline-flex;align-items:center;gap:4px;background:var(--ui-surface);border:1px solid var(--ui-border);border-radius:var(--ui-radius);padding:6px 8px;box-shadow:0 8px 28px var(--ui-shadow);margin-bottom:20px">
+<span style="font-size:var(--ui-text-xs);font-weight:600;padding:4px 8px;border-radius:var(--ui-radius-sm);background:var(--ui-draft-soft);color:var(--ui-draft);cursor:pointer">Comment</span>
+<span style="font-size:var(--ui-text-xs);font-weight:600;padding:4px 8px;color:var(--ui-ink);cursor:pointer">Reading view</span>
+<span style="font-size:var(--ui-text-xs);color:var(--ui-muted);margin-left:8px">3 threads</span>
+</div>
+
+<!-- Thread card -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Thread card</div>
+<div style="background:var(--ui-surface);border:1px solid var(--ui-draft);border-radius:var(--ui-radius);padding:12px;margin-bottom:20px;font-size:var(--ui-text-sm)">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-draft);background:var(--ui-draft-soft)">Draft</span><span style="font-size:var(--ui-text-xs);color:var(--ui-muted)">2 min ago</span></div>
+<div>Button radius should be consistent across all surfaces.</div>
+<div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end">
+<button style="font-family:var(--ui-font);font-size:11px;font-weight:600;border-radius:var(--ui-radius-sm);min-height:26px;padding:2px 8px;background:var(--ui-surface);color:var(--ui-ink);border:1px solid var(--ui-border);cursor:pointer">Reply</button>
+<button style="font-family:var(--ui-font);font-size:11px;font-weight:600;border-radius:var(--ui-radius-sm);min-height:26px;padding:2px 8px;background:var(--ui-surface);color:var(--ui-ink);border:1px solid var(--ui-border);cursor:pointer">Resolve</button>
+</div>
+</div>
+
+<!-- Jev note -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Jev note</div>
+<div style="background:var(--ui-draft-soft);border:1px solid rgba(176,84,14,0.4);border-radius:var(--ui-radius);padding:12px;font-size:var(--ui-text-sm);color:var(--ui-draft);margin-bottom:20px">
+<div style="font-size:var(--ui-text-xs);margin-bottom:4px;font-weight:600">Reconcile suggestion</div>
+Button sizes conflict with the range bar spec.
+<div style="margin-top:8px"><button style="font-family:var(--ui-font);font-size:11px;font-weight:600;border-radius:var(--ui-radius-sm);min-height:26px;padding:2px 8px;background:var(--ui-surface);color:var(--ui-ink);border:1px solid var(--ui-border);cursor:pointer">Reconcile</button></div>
+</div>
+
+<!-- Popover -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Jev popover</div>
+<div style="background:var(--ui-surface);border:1px solid var(--ui-ink);border-radius:var(--ui-radius);padding:16px;box-shadow:0 8px 28px var(--ui-shadow);max-width:320px;font-size:var(--ui-text-sm);margin-bottom:20px">
+<div style="font-size:var(--ui-text-xs);color:var(--ui-muted);margin-bottom:8px">important &middot; contradicts</div>
+<div>Conflicts with <a href="#" style="color:var(--ui-ack)">button-system-rule</a>.</div>
+<div style="display:flex;gap:8px;margin-top:12px">
+<button style="font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-surface);color:var(--ui-ack);border:1px solid var(--ui-ack);cursor:pointer">Go to clause</button>
+<button style="font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-surface);color:var(--ui-ack);border:1px solid var(--ui-ack);cursor:pointer">Dismiss</button>
+</div>
+</div>
+
+<!-- Inverted -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Inverted surfaces</div>
+<div style="background:var(--ui-pass);color:var(--ui-page);padding:8px 12px;display:flex;align-items:center;justify-content:space-between;font-size:var(--ui-text-xs);font-weight:600;margin-bottom:8px">
+<span>Spec updated to latest commit</span>
+<button style="font-family:var(--ui-font);font-size:11px;font-weight:600;border-radius:var(--ui-radius-sm);min-height:26px;padding:2px 8px;background:transparent;color:var(--ui-page);border:1px solid var(--ui-page);cursor:pointer">Reload</button>
+</div>
+<div style="display:inline-block;background:var(--ui-ink);color:var(--ui-page);border-radius:var(--ui-radius);padding:8px 12px;font-size:var(--ui-text-xs);font-weight:600;margin-bottom:8px">Thread resolved</div>
+<div style="background:var(--ui-error);color:var(--ui-page);padding:12px;font-size:var(--ui-text-xs);font-family:var(--ui-mono)">Error: runtime.js failed to load</div>
+</div>
+
+<!-- Dark mode -->
+<div data-anchor="preview-dark" style="--ui-font:'Inter Variable',Inter,system-ui,sans-serif;--ui-mono:ui-monospace,SFMono-Regular,Menlo,monospace;--ui-text-xs:12px;--ui-text-sm:14px;--ui-page:#1a1a1a;--ui-surface:#242424;--ui-ink:#e0e0e0;--ui-muted:#999999;--ui-border:#3a3a3a;--ui-focus:#cccccc;--ui-draft:#e5873a;--ui-draft-soft:#2e2218;--ui-ack:#6b8aed;--ui-ack-soft:#1a2040;--ui-resolved:#3daa6e;--ui-resolved-soft:#1a2e22;--ui-error:#e05560;--ui-pass:#3daa6e;--ui-fail:#e05560;--ui-marker:#999999;--ui-marker-important:#e05560;--ui-marker-pass:#3daa6e;--ui-shadow:rgba(0,0,0,0.4);--ui-radius:8px;--ui-radius-sm:6px;--ui-radius-pill:999px;font-family:var(--ui-font);color:var(--ui-ink);background:var(--ui-page);padding:20px;border-radius:4px;border:1px solid var(--ui-border)">
+
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Dark mode</div>
+
+<!-- Dark swatches -->
+<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px">
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#1a1a1a"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">page</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#242424"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">surface</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#e0e0e0"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">ink</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#3a3a3a"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">border</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#e5873a"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">draft</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#2e2218"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">draft-s</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#6b8aed"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">ack</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#1a2040"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">ack-s</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#3daa6e"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">resolved</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#1a2e22"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">res-s</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#e05560"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">error</div></div>
+</div>
+
+<!-- Dark buttons -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Buttons</div>
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;align-items:center">
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-ink);color:var(--ui-page);border:1px solid var(--ui-ink);cursor:pointer">Hand off</button>
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-surface);color:var(--ui-ink);border:1px solid var(--ui-border);cursor:pointer">Cancel</button>
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);width:32px;height:32px;padding:0;background:var(--ui-surface);color:var(--ui-muted);border:1px solid var(--ui-border);cursor:pointer">&#9881;</button>
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:transparent;color:var(--ui-ink);border:none;cursor:pointer">Comment</button>
+</div>
+
+<!-- Dark status -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Status</div>
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;align-items:end">
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-draft);background:var(--ui-draft-soft)">Draft</span>
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-ack);background:var(--ui-ack-soft)">Ack</span>
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-resolved);background:var(--ui-resolved-soft)">Resolved</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:#fff;background:var(--ui-draft)">1</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:#fff;background:var(--ui-ack)">2</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:var(--ui-resolved);background:var(--ui-surface);border:2px solid var(--ui-resolved)">3</span>
+</div>
+
+<!-- Dark thread card -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Thread card</div>
+<div style="background:var(--ui-surface);border:1px solid var(--ui-draft);border-radius:var(--ui-radius);padding:12px;margin-bottom:20px;font-size:var(--ui-text-sm)">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-draft);background:var(--ui-draft-soft)">Draft</span><span style="font-size:var(--ui-text-xs);color:var(--ui-muted)">2 min ago</span></div>
+<div>Button radius should be consistent across all surfaces.</div>
+</div>
+
+<!-- Dark Jev note -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Jev note</div>
+<div style="background:var(--ui-draft-soft);border:1px solid rgba(229,135,58,0.4);border-radius:var(--ui-radius);padding:12px;font-size:var(--ui-text-sm);color:var(--ui-draft);margin-bottom:20px">
+<div style="font-size:var(--ui-text-xs);margin-bottom:4px;font-weight:600">Reconcile suggestion</div>
+Button sizes conflict with the range bar spec.
+</div>
+
+<!-- Dark popover -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Jev popover</div>
+<div style="background:var(--ui-surface);border:1px solid var(--ui-ink);border-radius:var(--ui-radius);padding:16px;box-shadow:0 8px 28px var(--ui-shadow);max-width:320px;font-size:var(--ui-text-sm);margin-bottom:20px">
+<div style="font-size:var(--ui-text-xs);color:var(--ui-muted);margin-bottom:8px">important &middot; contradicts</div>
+<div>Conflicts with <a href="#" style="color:var(--ui-ack)">button-system-rule</a>.</div>
+<div style="display:flex;gap:8px;margin-top:12px">
+<button style="font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-surface);color:var(--ui-ack);border:1px solid var(--ui-ack);cursor:pointer">Go to clause</button>
+</div>
+</div>
+
+<!-- Dark inverted -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Inverted surfaces</div>
+<div style="background:var(--ui-pass);color:var(--ui-page);padding:8px 12px;display:flex;align-items:center;justify-content:space-between;font-size:var(--ui-text-xs);font-weight:600;margin-bottom:8px">
+<span>Spec updated</span>
+<button style="font-family:var(--ui-font);font-size:11px;font-weight:600;border-radius:6px;min-height:26px;padding:2px 8px;background:transparent;color:var(--ui-page);border:1px solid var(--ui-page);cursor:pointer">Reload</button>
+</div>
+<div style="display:inline-block;background:var(--ui-ink);color:var(--ui-page);border-radius:var(--ui-radius);padding:8px 12px;font-size:var(--ui-text-xs);font-weight:600;margin-bottom:8px">Thread resolved</div>
+<div style="background:var(--ui-error);color:var(--ui-page);padding:12px;font-size:var(--ui-text-xs);font-family:var(--ui-mono)">Error: runtime.js failed to load</div>
+</div>
+
+</div>
+<figcaption data-anchor="preview-caption">Left: light mode. Right: dark mode. All values from the proposed token block. Button system: one shape (6px radius, 12px/600, 32px min-height), four variants (primary, secondary, icon, text-link). Status colors: draft amber, acknowledged blue, resolved green. Inverted surfaces: toast (dark), banner (green), error (red).</figcaption>
+</figure>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-anchor="surfaces">
+<div class="sec-head">
+<span class="sec-num">06</span>
+<h2 data-anchor="surfaces-heading">Surface rules</h2>
+<p class="sec-note" data-anchor="surfaces-note">Every chrome surface, by element.</p>
+</div>
+
+<p data-anchor="surface-rule">Each chrome element owns a non-overlapping visual domain. The table below assigns tokens to each element; no two rows share a domain.</p>
+<!-- Jev: toast/banner/error use different inverted backgrounds (ink/pass/error) for different purposes; non-overlapping domains, intentional contrast -->
+<!-- Jev: cross-lane contradicts from worklane-board, fleet-floor: CSS-only surface rules, not applicable to those behavioral specs -->
+
+<div class="table-scroll">
+<table data-anchor="surface-table">
+<thead><tr><th>Element</th><th>Background</th><th>Border</th><th>Text</th><th>Radius</th><th>Buttons / notes</th></tr></thead>
+<tbody>
+<tr data-anchor="surface-toolbar"><td>Toolbar</td><td><code>--ui-surface</code></td><td><code>--ui-border</code></td><td><code>--ui-muted</code> (status)</td><td><code>--ui-radius</code></td><td>Text-link variant. Active: <code>--ui-draft-soft</code> bg, <code>--ui-draft</code> text. Shadow <code>--ui-shadow</code>.</td></tr>
+<tr data-anchor="surface-panel"><td>Thread panel</td><td><code>--ui-page</code></td><td>left <code>--ui-border</code></td><td><code>--ui-ink</code></td><td>none</td><td>Thread cards: <code>--ui-surface</code> bg, <code>--ui-border</code> border, <code>--ui-radius</code>. Active card: <code>--ui-draft</code> border. Hand-off bar: primary rightmost.</td></tr>
+<tr data-anchor="surface-dock"><td>Thread dock</td><td><code>--ui-surface</code> + backdrop-filter</td><td><code>--ui-border</code></td><td><code>--ui-muted</code></td><td>11px (distinctive rounded shape)</td><td>Icon variant. Status tint on thread buttons: draft/ack/resolved token pairs. Unread badge: <code>--ui-ack</code> bg, <code>--ui-page</code> text.</td></tr>
+<tr data-anchor="surface-range-bar"><td>Range bar</td><td><code>--ui-ack-soft</code></td><td><code>--ui-ack</code> at 0.3 opacity</td><td><code>--ui-ink</code></td><td><code>--ui-radius</code></td><td>Change base: secondary. Apply: primary. Selected commit: <code>--ui-resolved</code> border, <code>--ui-resolved-soft</code> bg. Input: <code>--ui-border</code>, <code>--ui-radius-sm</code>.</td></tr>
+<tr data-anchor="surface-pins"><td>Pins</td><td>draft <code>--ui-draft</code>, ack <code>--ui-ack</code>, resolved <code>--ui-surface</code></td><td>resolved: 2px <code>--ui-resolved</code></td><td>resolved: <code>--ui-resolved</code></td><td>teardrop (unchanged)</td><td>Active ring: <code>--ui-pin-ring</code>.</td></tr>
+<tr data-anchor="surface-pills"><td>Pills</td><td>draft <code>--ui-draft-soft</code>, ack <code>--ui-ack-soft</code>, resolved <code>--ui-resolved-soft</code></td><td>none</td><td>draft <code>--ui-draft</code>, ack <code>--ui-ack</code>, resolved <code>--ui-resolved</code></td><td><code>--ui-radius-pill</code></td><td><code>--ui-text-xs</code> 600, uppercase, 0.05em tracking.</td></tr>
+<tr data-anchor="surface-popover"><td>Jev popover</td><td><code>--ui-surface</code></td><td><code>--ui-ink</code></td><td><code>--ui-ink</code>; attention <code>--ui-fail</code>; meta <code>--ui-muted</code></td><td><code>--ui-radius</code></td><td>Shadow <code>--ui-shadow</code>. Links: <code>--ui-ack</code> underlined. Action buttons: secondary with <code>--ui-ack</code> border/text.</td></tr>
+<tr data-anchor="surface-jev-note"><td>Jev note</td><td><code>--ui-draft-soft</code></td><td><code>--ui-draft</code> at 0.4 opacity</td><td><code>--ui-draft</code></td><td><code>--ui-radius</code></td><td>Reconcile/offer: secondary variant.</td></tr>
+<tr data-anchor="surface-toast"><td>Toast (transient notification)</td><td><code>--ui-ink</code> (dark inverted)</td><td>none</td><td><code>--ui-page</code></td><td><code>--ui-radius</code></td><td><code>--ui-text-xs</code> 600.</td></tr>
+<tr data-anchor="surface-banner"><td>Banner (spec-updated alert)</td><td><code>--ui-pass</code> (green inverted)</td><td>none</td><td><code>--ui-page</code></td><td>none</td><td>Button: secondary with <code>--ui-page</code> border/text (inverted for contrast on green).</td></tr>
+<tr data-anchor="surface-error"><td>Error overlay (blocking error)</td><td><code>--ui-error</code> (red inverted)</td><td>none</td><td><code>--ui-page</code></td><td>none</td><td><code>--ui-text-xs</code> monospace.</td></tr>
+<tr data-anchor="surface-index-link"><td>Index link</td><td><code>--ui-surface</code></td><td><code>--ui-border</code></td><td><code>--ui-resolved</code> 600</td><td><code>--ui-radius</code></td><td>Hover: <code>--ui-page</code> bg. <code>--ui-text-xs</code>.</td></tr>
+<tr data-anchor="surface-orphan"><td>Orphan hint</td><td><code>--ui-draft-soft</code></td><td>left 3px <code>--ui-draft</code></td><td><code>--ui-draft</code></td><td>none</td><td>Buttons: secondary variant.</td></tr>
+<tr data-anchor="surface-badge"><td>Agent badge</td><td><code>--ui-resolved-soft</code></td><td>none</td><td><code>--ui-resolved</code></td><td><code>--ui-radius-pill</code></td><td><code>--ui-text-xs</code> 600 uppercase.</td></tr>
+<tr data-anchor="surface-composer"><td>Composer</td><td><code>--ui-surface</code></td><td><code>--ui-border</code></td><td><code>--ui-ink</code></td><td><code>--ui-radius-sm</code></td><td><code>--ui-text-sm</code> desktop, <code>--ui-text-md</code> mobile (iOS zoom). Primary (send) rightmost, secondary (cancel) left.</td></tr>
+</tbody>
+</table>
+</div>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-anchor="coordinate">
+<div class="sec-head">
+<span class="sec-num">07</span>
+<h2 data-anchor="coordinate-heading">Coordinate lanes</h2>
+<p class="sec-note" data-anchor="coordinate-note">What changes, what does not, how merges work.</p>
+</div>
+
+<p data-anchor="coordinate-rule">This spec changes only the CSS const strings in runtime.js: <code>CSS</code>, and the chrome portion of <code>DOC_CSS</code> (the dark mode overrides for the overlay, not the <code>article.spec</code> rules).
+No JS logic changes.
+<a href="https://github.com/0xTomDaniel/spec-chat/pull/91">#91</a> (jev-yes-no) and the Reconcile offer detail lane both add or change JS logic and may add CSS rules.
+Merge conflicts will be in the CSS template strings.
+Resolution: take this branch's token block and color/button values; take the other branch's new selectors and rules, rewriting their literal values to use the tokens.</p>
+
+<p data-anchor="coordinate-copies">runtime.js exists in two identical copies: <code>skill/review-spec/assets/viz/runtime.js</code> (source) and <code>docs/specs/.viz/runtime.js</code> (committed for offline use).
+Both are updated together.</p>
+
+</section>
+
+</article>
+</body>
+</html>
