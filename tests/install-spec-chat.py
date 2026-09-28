@@ -161,5 +161,86 @@ class InstallSpecChatTest(unittest.TestCase):
         self.assertIn("left git-tracked", result.stdout)
 
 
+    # --- ANN-396: adopt/skip for occupied paths --------------------------------
+
+    def test_adopt_symlink_from_different_clone_with_same_origin(self):
+        """link() adopts a symlink resolving into another clone with matching origin."""
+        origin = subprocess.run(
+            ["git", "-C", str(ROOT), "remote", "get-url", "origin"],
+            text=True, capture_output=True,
+        )
+        if origin.returncode != 0 or not origin.stdout.strip():
+            self.skipTest("ROOT has no origin remote")
+        origin_url = origin.stdout.strip()
+
+        # Build a fake second clone: git repo with same origin, skill dirs present
+        other = Path(self.temp.name) / "other-clone"
+        other.mkdir()
+        subprocess.run(["git", "init", "-q", str(other)], check=True)
+        subprocess.run(["git", "-C", str(other), "remote", "add", "origin", origin_url], check=True)
+        for d in ("skill/shape-spec", "skill/review-spec", "skill/repair-specs"):
+            (other / d).mkdir(parents=True)
+
+        skill_map = {
+            "spec-chat-shape": other / "skill/shape-spec",
+            "spec-chat-review": other / "skill/review-spec",
+            "repair-specs": other / "skill/repair-specs",
+        }
+        for base in (".claude/skills", ".codex/skills"):
+            for name, tgt in skill_map.items():
+                p = self.home / base / name
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.symlink_to(tgt)
+
+        result = self.run_install()
+        self.assertIn("adopted:", result.stdout)
+        # Symlinks still point to the other clone, not replaced
+        for base in (".claude/skills", ".codex/skills"):
+            for name, tgt in skill_map.items():
+                p = self.home / base / name
+                self.assertTrue(p.is_symlink())
+                self.assertEqual(p.resolve(), tgt.resolve())
+        # Manifest has no links (all adopted, none created); file may not exist
+        mpath = self.state / "spec-chat/install.toml"
+        manifest = tomllib.loads(mpath.read_text()) if mpath.exists() else {}
+        self.assertEqual(manifest.get("links", []), [])
+
+    def test_skip_occupied_path_and_continue(self):
+        """link() skips occupied non-clone paths and the installer continues."""
+        for base in (".claude/skills", ".codex/skills"):
+            for name in ("spec-chat-shape", "spec-chat-review", "repair-specs"):
+                p = self.home / base / name
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.mkdir()  # a directory, not a symlink
+
+        result = self.run_install()
+        self.assertEqual(result.stdout.count("skipped:"), 6)
+        self.assertIn("(occupied by directory)", result.stdout)
+        # Onboarding still wrote its status (installer continued)
+        self.assertEqual(self.status()["status"], "pending")
+
+    def test_skip_symlink_to_unrelated_target(self):
+        """link() skips a symlink whose target has a different origin."""
+        unrelated = Path(self.temp.name) / "unrelated"
+        unrelated.mkdir()
+        subprocess.run(["git", "init", "-q", str(unrelated)], check=True)
+        subprocess.run(["git", "-C", str(unrelated), "remote", "add", "origin",
+                         "https://example.invalid/other.git"], check=True)
+
+        for base in (".claude/skills", ".codex/skills"):
+            p = self.home / base / "spec-chat-shape"
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.symlink_to(unrelated)
+
+        result = self.run_install()
+        self.assertIn("skipped:", result.stdout)
+        # The other skills should still be linked normally
+        for base in (".claude/skills", ".codex/skills"):
+            self.assertEqual(
+                (self.home / base / "spec-chat-review").resolve(),
+                ROOT / "skill/review-spec",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
