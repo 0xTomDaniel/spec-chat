@@ -132,8 +132,8 @@ for (const value of [new Error('down'), { ok: false, json: async () => ({}) }, {
 }
 assert.ok(fetches.every(url => url === '/api/evidence?path=specs%2Fdemo.spec.html'), fetches.join());
 
-// The server's two-column levels table as /api/evidence returns it (tools/jev.py MARK_LEVELS); color reads its human column.
-const levels = JSON.parse(execFileSync('python3', ['-c', 'import json, sys; sys.path.insert(0, "tools"); from jev import MARK_LEVELS; print(json.dumps(MARK_LEVELS))'], { cwd: root, encoding: 'utf8' }));
+// The server's two-column levels table as /api/evidence returns it (skill/review-spec/assets/jev.py MARK_LEVELS); color reads its human column.
+const levels = JSON.parse(execFileSync('python3', ['-c', 'import json, sys; sys.path.insert(0, "skill/review-spec/assets"); from jev import MARK_LEVELS; print(json.dumps(MARK_LEVELS))'], { cwd: root, encoding: 'utf8' }));
 answer = json({ levels, criteria: {
   passed: entry(),
   failed: entry({ verdict: 'fail', pr: 12, capturedAt: ago(3 * 3600000 + 5000) }),

@@ -60,6 +60,26 @@ def write_manifest(path: Path, manifest: dict[str, list[str]]) -> None:
     write_if_changed(path, "".join(f"{key} = {toml_list(manifest[key])}\n" for key in ("links", "copies", "resources")))
 
 
+def _normalize_origin(url: str) -> str:
+    """Canonical owner/repo from a git remote URL so SSH and HTTPS match.
+
+    git@github.com:o/r.git  ->  o/r
+    https://github.com/o/r.git  ->  o/r
+    https://github.com/o/r  ->  o/r
+    """
+    if not url:
+        return ""
+    # SSH: git@host:owner/repo(.git)
+    m = re.match(r"git@[^:]+:(.+?)(?:\.git)?$", url)
+    if m:
+        return m.group(1)
+    # HTTPS: https://host/owner/repo(.git)
+    m = re.match(r"https?://[^/]+/(.+?)(?:\.git)?$", url)
+    if m:
+        return m.group(1)
+    return url
+
+
 def same_tree(a: Path, b: Path) -> bool:
     cmp = filecmp.dircmp(a, b)
     if cmp.left_only or cmp.right_only or cmp.funny_files:
@@ -75,7 +95,26 @@ def link(source: Path, target: Path, added: list[str]) -> None:
     if target.is_symlink() and target.resolve() == source.resolve():
         return
     if target.exists() or target.is_symlink():
-        raise InstallError(f"refusing to replace: {target}")
+        if target.is_symlink():
+            resolved = target.resolve()
+            probe = str(resolved if resolved.is_dir() else resolved.parent)
+            theirs = subprocess.run(
+                ["git", "-C", probe, "remote", "get-url", "origin"],
+                text=True, capture_output=True,
+            )
+            ours = subprocess.run(
+                ["git", "-C", str(ROOT), "remote", "get-url", "origin"],
+                text=True, capture_output=True,
+            )
+            theirs_norm = _normalize_origin(theirs.stdout.strip()) if theirs.returncode == 0 else ""
+            ours_norm = _normalize_origin(ours.stdout.strip()) if ours.returncode == 0 else ""
+            if (theirs_norm and ours_norm and theirs_norm == ours_norm):
+                print(f"adopted: {target} -> {resolved}")
+                return
+        what = os.readlink(target) if target.is_symlink() else (
+            "directory" if target.is_dir() else "file")
+        print(f"skipped: {target} (occupied by {what})")
+        return
     target.parent.mkdir(parents=True, exist_ok=True)
     target.symlink_to(source)
     added.append(str(target))

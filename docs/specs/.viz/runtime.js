@@ -1596,6 +1596,9 @@ function renderJevNote(note) {
     row.appendChild(meta);
   }
   if (Array.isArray(note.diff) && note.diff.length) {
+    const legend = row.appendChild(document.createElement('div'));
+    legend.className = 'hx-jev-pop-diff-legend';
+    legend.innerHTML = '<del>removed</del> / <ins>added</ins>';
     const diff = row.appendChild(document.createElement('span'));
     diff.className = 'hx-jev-pop-diff';
     note.diff.forEach((part, index) => {
@@ -2052,8 +2055,11 @@ a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
 .hx-jev-pop-meta{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--ui-space-1) 10px;font-size:var(--ui-text-xs);color:var(--ui-muted);overflow-wrap:anywhere}
 .hx-jev-pop-link{color:var(--ui-ack);text-decoration:underline;text-underline-offset:2px}
 .hx-jev-pop-diff{font-size:var(--ui-text-xs);color:var(--ui-ink);overflow-wrap:anywhere}
-.hx-jev-pop-diff del{text-decoration:line-through;text-decoration-thickness:2px}
-.hx-jev-pop-diff ins{text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:2px}
+.hx-jev-pop-diff del{text-decoration:none;background:var(--ui-fail-soft);border-radius:2px;padding:0 1px}
+.hx-jev-pop-diff ins{text-decoration:none;background:var(--ui-pass-soft);border-radius:2px;padding:0 1px}
+.hx-jev-pop-diff-legend{font-size:10px;color:var(--ui-muted);margin-bottom:2px}
+.hx-jev-pop-diff-legend del{text-decoration:none;background:var(--ui-fail-soft);border-radius:2px;padding:0 2px}
+.hx-jev-pop-diff-legend ins{text-decoration:none;background:var(--ui-pass-soft);border-radius:2px;padding:0 2px}
 .hx-jev-pop-actions{display:flex;flex-wrap:wrap;gap:var(--ui-space-1)}
 .hx-jev-pop-actions .hx-btn{margin:0;font-size:var(--ui-text-xs);padding:var(--ui-space-1) var(--ui-space-2);border-color:var(--ui-ack);background:var(--ui-surface);color:var(--ui-ack)}
 .hx-jev-pop-batch{display:inline-flex;align-items:center;gap:var(--ui-space-1);white-space:nowrap}

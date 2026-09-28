@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-_spec = importlib.util.spec_from_file_location("jev_gate_test", ROOT / "tools" / "jev.py")
+_spec = importlib.util.spec_from_file_location("jev_gate_test", ROOT / "skill" / "review-spec" / "assets" / "jev.py")
 jev = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(jev)
 SETS = jev.load_question_sets(ROOT / "skill" / "review-spec" / "assets" / "jev")
@@ -37,7 +37,13 @@ class FakeProvider:
         with self.lock:
             kind = self.calls[-1]
             self.general_calls.append(kind)
-        return {"choices": [{"message": {"content": json.dumps({"choice": self.general[kind]})}}]}
+        label = self.general[kind]
+        # Verifier format (#verifier): answer + quoted spans
+        result = {"answer": label}
+        if label == "yes":
+            result["clause_span"] = "clause conflict"
+            result["target_span"] = "target conflict"
+        return {"choices": [{"message": {"content": json.dumps(result)}}]}
 
 
 def draft_check():
@@ -241,6 +247,105 @@ class LaneGateTest(unittest.TestCase):
         service._ask_lane_steps(item["chain"], seam)
         # Gate yes, contradicts yes -> chain stops at contradicts
         self.assertEqual(provider.calls, ["about", "contradicts"])
+
+
+class ProviderTypeTest(unittest.TestCase):
+    """provider_type selects fallback provider: openrouter (default) or claude-cli."""
+
+    def test_default_provider_type_is_claude_cli(self):
+        reader = jev._provider_type_reader(None)
+        self.assertEqual(reader(), "claude-cli")
+
+    def test_provider_type_from_string(self):
+        reader = jev._provider_type_reader("claude-cli")
+        self.assertEqual(reader(), "claude-cli")
+
+    def test_provider_type_from_callable(self):
+        reader = jev._provider_type_reader(lambda: "claude-cli")
+        self.assertEqual(reader(), "claude-cli")
+
+    def test_fallback_provider_openrouter_returns_primary(self):
+        primary = FakeProvider({"about": ("yes", 0.95)})
+        seam = jev.JevSeam(SETS, provider=primary, api_key="fake", provider_type="openrouter")
+        self.assertIs(seam._fallback_provider(primary), primary)
+
+    def test_fallback_provider_claude_cli_returns_cli(self):
+        """Without an injected provider, provider_type='claude-cli' selects ClaudeCliProvider."""
+        seam = jev.JevSeam(SETS, api_key="fake", provider_type="claude-cli")
+        primary = seam.provider()
+        fallback = seam._fallback_provider(primary)
+        self.assertIsInstance(fallback, jev.ClaudeCliProvider)
+        self.assertIsNot(fallback, primary)
+
+    def test_fallback_provider_injected_ignores_type(self):
+        """An injected provider (test double) is used for both decide and complete regardless of provider_type."""
+        primary = FakeProvider({"about": ("yes", 0.95)})
+        seam = jev.JevSeam(SETS, provider=primary, api_key="fake", provider_type="claude-cli")
+        self.assertIs(seam._fallback_provider(primary), primary)
+
+    def test_claude_cli_provider_has_complete(self):
+        provider = jev.ClaudeCliProvider()
+        self.assertTrue(hasattr(provider, "complete"))
+        self.assertEqual(provider.timeout, jev.GENERAL_LLM_TIMEOUT)
+
+    def test_fallback_path_uses_provider_type(self):
+        """When provider_type is openrouter, the verifier calls the primary's complete(), not ClaudeCliProvider."""
+        # P(yes)=0.8 lands in verify band [0.7, 0.9) so the verifier is called (#asymmetric)
+        primary = FakeProvider({"contradicts": ("yes", 0.8)}, general={"contradicts": "yes"})
+        seam = jev.JevSeam(SETS, provider=primary, api_key="fake", provider_type="openrouter")
+        question = draft_check()["chain"][1]  # the contradicts step
+        result = seam.ask(question)
+        # Verify band: calls primary's complete() for verification
+        self.assertEqual(primary.general_calls, ["contradicts"])
+        self.assertEqual(result["answer"]["label"], "yes")
+
+    def test_claude_cli_default_omits_openrouter_model(self):
+        """When provider_type is claude-cli and no llm_model configured, model is omitted (#ac-defaults)."""
+        seam = jev.JevSeam(SETS, api_key="fake", provider_type="claude-cli")
+        # No llm_model configured: _raw_llm_model returns ""
+        self.assertEqual(seam._raw_llm_model(), "")
+        # llm_model still returns the OpenRouter default
+        self.assertEqual(seam.llm_model(), jev.DEFAULT_LLM_MODEL)
+        # general_payload built with empty model when using claude-cli path
+        qset = SETS["contradicts"]
+        question = draft_check()["chain"][1]
+        fallback = seam._fallback_provider(seam.provider())
+        self.assertIsInstance(fallback, jev.ClaudeCliProvider)
+        # Verify _general would build payload with empty model
+        model = seam.llm_model()
+        if isinstance(fallback, jev.ClaudeCliProvider) and not seam._raw_llm_model():
+            model = ""
+        self.assertEqual(model, "")
+
+    def test_claude_cli_explicit_model_passed(self):
+        """When provider_type is claude-cli and llm_model is configured, it is passed through."""
+        seam = jev.JevSeam(SETS, api_key="fake", provider_type="claude-cli", llm_model="sonnet")
+        self.assertEqual(seam._raw_llm_model(), "sonnet")
+        fallback = seam._fallback_provider(seam.provider())
+        self.assertIsInstance(fallback, jev.ClaudeCliProvider)
+        model = seam.llm_model()
+        if isinstance(fallback, jev.ClaudeCliProvider) and not seam._raw_llm_model():
+            model = ""
+        self.assertEqual(model, "sonnet")
+
+    def test_record_source_jev_for_primary(self):
+        """Primary Jev answers carry source: 'jev' (jev-seam #record-source)."""
+        primary = FakeProvider({"contradicts": ("yes", 0.95)})
+        seam = jev.JevSeam(SETS, provider=primary, api_key="fake")
+        question = draft_check()["chain"][1]
+        result = seam.ask(question)
+        self.assertEqual(result["source"], "jev")
+        self.assertNotIn("escalated", result)
+
+    def test_record_source_llm_for_fallback(self):
+        """Verifier answers carry source: 'llm' (jev-seam #record-source)."""
+        # P(yes)=0.8 in verify band [0.7, 0.9): goes to verifier (#asymmetric)
+        primary = FakeProvider({"contradicts": ("yes", 0.8)}, general={"contradicts": "yes"})
+        seam = jev.JevSeam(SETS, provider=primary, api_key="fake")
+        question = draft_check()["chain"][1]
+        result = seam.ask(question)
+        self.assertEqual(result["source"], "llm")
+        self.assertTrue(result["escalated"])
 
 
 if __name__ == "__main__":

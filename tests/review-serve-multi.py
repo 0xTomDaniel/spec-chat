@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SERVER = ROOT / "tools/review-serve.py"
+SERVER = ROOT / "skill/review-spec/assets/review-serve.py"
 VIZ = ROOT / "skill/review-spec/assets/viz"
 
 

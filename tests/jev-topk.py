@@ -1,7 +1,7 @@
 """Spec #proof-top-k: build_corpus_questions returns at most 5 same-spec and 5 cross-spec
 candidates per changed clause, always including non-goals regardless of rank."""
 import os, sys, unittest
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "skill", "review-spec", "assets"))
 import jev
 
 

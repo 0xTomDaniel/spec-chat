@@ -31,12 +31,6 @@ FALLBACK = YES_NO | {"scope", "coverage", "audience"}
 
 
 class JevQuestionSetTest(unittest.TestCase):
-    def test_seam_copies_are_byte_identical(self):
-        self.assertEqual(
-            (ROOT / "tools/jev.py").read_bytes(),
-            (ROOT / "skill/review-spec/assets/jev.py").read_bytes(),
-        )
-
     def test_every_set_parses_and_has_descriptions_and_examples(self):
         paths = sorted(SETS.glob("*.json"))
         self.assertTrue(EXPECTED <= {path.name for path in paths})
@@ -76,7 +70,7 @@ class JevQuestionSetTest(unittest.TestCase):
 
     def test_examples_reuse_no_text_of_the_spec_under_qa(self):
         # The QA fixture reproduces this spec; examples drawn from it would score the fixture on itself.
-        spec = importlib.util.spec_from_file_location("jev_sets_test", ROOT / "tools" / "jev.py")
+        spec = importlib.util.spec_from_file_location("jev_sets_test", ROOT / "skill" / "review-spec" / "assets" / "jev.py")
         jev = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(jev)
         source = (ROOT / "docs/specs/jev-suggestions.spec.html").read_text(encoding="utf-8")
