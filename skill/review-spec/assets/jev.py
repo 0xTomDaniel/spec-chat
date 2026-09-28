@@ -637,6 +637,10 @@ AUDIENCE_STRUCTURAL_SECTIONS = frozenset({"user-stories", "modular-boundaries"})
 # Page header clauses and source issue sections: never asked nor compared (spec #corpus-meta).
 CORPUS_META_ANCHORS = frozenset({"source-issues"})
 CONTAINER_TAGS = frozenset({"article", "div", "figure", "footer", "header", "main", "nav", "ol", "section", "table", "tbody", "thead", "tfoot", "ul"})
+# Leaf exclusion tags and id patterns (spec #leaf-exclusions).
+_HEADING_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
+_LEAF_EXAMPLE_ID_PARTS = ("mock", "preview", "example")
+_LEAF_AUDIT_ID_PARTS = ("source-issues", "audit", "history")
 
 
 class _AnchorParser(HTMLParser):
@@ -659,6 +663,15 @@ class _AnchorParser(HTMLParser):
             parent = next((item[1] for item in reversed(self.stack) if item[1]), None)
             meta = (tag == "header" or anchor in CORPUS_META_ANCHORS or anchor.endswith("-source-issues") or any(item[0] == "header" for item in self.stack)
                     or bool(parent and self.values[parent]["meta"]))
+            # Leaf exclusion flags (spec #leaf-exclusions).
+            excluded = (
+                tag in _HEADING_TAGS
+                or tag in {"figure", "figcaption"} or any(item[0] == "figure" for item in self.stack)
+                or tag in {"pre", "code"} or any(part in anchor for part in _LEAF_EXAMPLE_ID_PARTS)
+                or tag == "caption"
+                or any(part in anchor for part in _LEAF_AUDIT_ID_PARTS)
+                or any(item[1] is not None and any(part in item[1] for part in _LEAF_AUDIT_ID_PARTS) for item in self.stack)
+            )
             value = self.values.setdefault(anchor, {
                 "text": [],
                 "tag": tag,
@@ -670,6 +683,7 @@ class _AnchorParser(HTMLParser):
                 "children": [],
                 "structural": False,
                 "meta": meta,
+                "excluded": excluded,
             })
             value["structural"] = value["structural"] or structural
             if parent and anchor not in self.values[parent]["children"]:
@@ -711,7 +725,7 @@ def _anchor_words(text: str) -> set[str]:
 
 
 def _corpus_leaf_anchors(anchors: Mapping[str, Mapping[str, Any]]) -> list[str]:
-    return [key for key, value in anchors.items() if not value.get("children") and not value.get("meta")]
+    return [key for key, value in anchors.items() if not value.get("children") and not value.get("meta") and not value.get("excluded")]
 
 
 def _match_score(source: str, target: str) -> tuple[int, int]:
