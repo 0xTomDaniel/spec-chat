@@ -33,8 +33,20 @@ def spec(*criteria, body=""):
             f'<section data-anchor="behavior"><p data-anchor="body">{body}</p></section>')
 
 
+SETS = jev.load_question_sets(ROOT / "skill" / "review-spec" / "assets" / "jev")
+# The rule check is a chain (#q-rule): triggered? then covered?; the maps below name the outcome it reaches.
+RULE_ANSWERS = {"triggered": {"not triggered": "no", "covered": "yes", "missed": "yes"},
+                "covered": {"not triggered": "yes", "covered": "yes", "missed": "no"}}
+
+
+def general_kind(payload):
+    question = json.loads(payload["messages"][0]["content"])["question"]
+    return next(name for name, qset in SETS.items() if qset.instructions == question)
+
+
 class FakeProvider:
-    """Jev answers from scope and rule maps; the general LLM from its own map; every payload is kept."""
+    """Jev answers from scope and rule maps; the general LLM from its own map; every payload is kept.
+    A rule map value is the rule check's outcome, missed, covered, or not triggered, answered per chain question."""
 
     def __init__(self, scope=None, rule=None, general=None, confidence=0.95, gate=None):
         self.scope, self.rule, self.general = dict(scope or {}), dict(rule or {}), dict(general or {})
@@ -50,10 +62,11 @@ class FakeProvider:
         state = payload["state"]
         if kind == "scope":
             label, confidence = self.scope.get(state["criterion"], ("this feature", self.confidence))
-        elif kind == "rule":
+        elif kind in RULE_ANSWERS:
             label, confidence = self.rule.get(state["rule"], ("not triggered", self.confidence))
             if callable(label):
                 label = label(state["spec"])
+            label = RULE_ANSWERS[kind][label]
         else:
             label, confidence = "unrelated", 0.95
         return {"answers": {kind: {"choice": label, "confidence": confidence}}}
@@ -64,16 +77,23 @@ class FakeProvider:
         with self.lock:
             self.general_calls.append(payload)
         state = json.loads(payload["messages"][-1]["content"])
-        kind = "scope" if "criterion" in state else "rule"
-        answer = self.general.get((kind, state.get("criterion", state.get("rule"))))
+        kind = general_kind(payload)
+        answer = self.general.get(("scope" if kind == "scope" else "rule", state.get("criterion", state.get("rule"))))
         if isinstance(answer, list):  # one answer per call, the last repeating
             answer = answer.pop(0) if len(answer) > 1 else answer[0]
         if isinstance(answer, BaseException):
             raise answer
+        answer = RULE_ANSWERS.get(kind, {}).get(answer, answer)
         return {"model": payload["model"], "choices": [{"message": {"content": json.dumps({"choice": answer})}}]}
 
     def asked(self, kind):
+        """Jev calls for one question; rule is the rule check's first, triggered?."""
+        kind = "triggered" if kind == "rule" else kind
         return [call for call in self.calls if kind in call["questions"]]
+
+    def general_asked(self, kind, rule=ONBOARDING):
+        return [call for call in self.general_calls
+                if general_kind(call) == kind and json.loads(call["messages"][-1]["content"]).get("rule") == rule]
 
 
 class RulesTest(unittest.TestCase):
@@ -213,12 +233,14 @@ class RulesTest(unittest.TestCase):
         onboarding = [i for i in self.rules(result) if i["target"].endswith("#acceptance-onboarding")]
         self.assertEqual([(i["state"], i["label"]) for i in onboarding], [("label", "missed")])
         self.assertFalse([i for i in result["items"] if i["state"] == "unsure"])
-        self.assertEqual(len([c for c in provider.general_calls if json.loads(c["messages"][-1]["content"]).get("rule") == ONBOARDING]), 1)
+        # once per chain question: triggered? then covered?
+        self.assertEqual((len(provider.general_asked("triggered")), len(provider.general_asked("covered"))), (1, 1))
+        self.assertEqual(onboarding[0]["unsure"], 2)
         self.assertEqual({c["model"] for c in provider.general_calls}, {jev.DEFAULT_LLM_MODEL})
-        rule_call = next(c for c in provider.general_calls if "rule" in json.loads(c["messages"][-1]["content"]))
+        rule_call = provider.general_asked("covered")[0]
         schema = rule_call["response_format"]["json_schema"]
         self.assertTrue(schema["strict"] and rule_call["provider"]["require_parameters"])
-        self.assertEqual(schema["schema"]["properties"]["choice"]["enum"], ["missed", "covered", "not triggered"])
+        self.assertEqual(schema["schema"]["properties"]["choice"]["enum"], ["yes", "no"])
         records = [json.loads(line) for line in (Path(self.tmp.name) / "state" / "records.jsonl").read_text().splitlines()]
         decided = [r for r in records if r.get("escalated") and r["outcome"] == "shown"]
         self.assertTrue(decided and all(r["model"] != jev.MODEL for r in decided))
@@ -271,7 +293,7 @@ class RulesTest(unittest.TestCase):
             self.assertEqual(len(provider.general_calls), asked)
             now[0] += 300
             self.assertEqual(onboarding(self.read(service))["state"], "none")
-            self.assertEqual(len(provider.general_calls), asked + 1)
+            self.assertEqual(len(provider.general_calls), asked + 2)  # triggered retry + covered escalation
 
     def test_unavailable_scope_yields_no_rule_item_and_is_asked_again(self):
         self.seed()

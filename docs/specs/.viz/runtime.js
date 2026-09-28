@@ -145,11 +145,10 @@ function baselineParams(base) {
   return params;
 }
 
+// The change type's two answers (jev-suggestions #change-type).
 const JEV_TYPE_LABELS = {
-  scope: 'Scope',
-  behavioral: 'Behavior',
-  clarification: 'Clarification',
-  cosmetic: 'Cosmetic',
+  behavior: 'Behavior',
+  'no-behavior-change': 'No behavior change',
 };
 
 function jevParams(base) {
@@ -483,7 +482,7 @@ function coverageGapFlags(items) {
   const values = new Map();
   const ensure = (anchor, side) => {
     const key = side + ':' + anchor;
-    if (!values.has(key)) values.set(key, { anchor, side, verifies: false, unsure: false, unavailable: false, pending: false });
+    if (!values.has(key)) values.set(key, { anchor, side, verifies: false, unavailable: false, pending: false });
     return values.get(key);
   };
   for (const item of Array.isArray(items) ? items : []) {
@@ -493,12 +492,10 @@ function coverageGapFlags(items) {
     const story = ensure(pair.story, 'story');
     const criterion = ensure(pair.criterion, 'criterion');
     const verifies = item.state === 'label' && item.label === 'verifies';
-    const unsure = item.state === 'unsure' || (item.state === 'label' && item.label === 'unsure');
     const unavailable = item.state === 'unavailable';
     const pending = item.state === 'pending';
     for (const value of [story, criterion]) {
       value.verifies ||= verifies;
-      value.unsure ||= unsure;
       value.unavailable ||= unavailable;
       value.pending ||= pending;
     }
@@ -506,7 +503,6 @@ function coverageGapFlags(items) {
   return [...values.values()].flatMap(value => {
     if (!value.anchor) return [];
     if (value.verifies || value.pending) return [];
-    if (value.unsure) return [{ anchor: value.anchor, side: value.side, state: 'unsure', label: 'unsure' }];
     if (value.unavailable) return [{ anchor: value.anchor, side: value.side, state: 'unavailable', label: 'Jev unavailable' }];
     return [{ anchor: value.anchor, side: value.side, state: 'gap',
       label: value.side === 'story' ? 'No criterion covers this' : 'No story backs this' }];
@@ -1141,25 +1137,16 @@ function jevDisplayLabel(item) {
   if (!item) return '';
   if (item.state === 'unsure') return 'unsure';
   if (item.state === 'unavailable') return 'Jev unavailable';
-  const raw = String(item.label || '').toLowerCase();
-  return JEV_TYPE_LABELS[raw] || item.label || '';
+  return item.label || '';
 }
 
 function corpusFlags(items) {
   const labels = { contradicts: 'Contradicts', overlaps: 'Overlaps', oversteps: 'Oversteps' };
-  const seenUnsure = new Set();
   const seenUnavailable = new Set();
-  const confident = new Set();
   const result = [];
   for (const item of Array.isArray(items) ? items : []) {
     if (!item || item.kind !== 'corpus' || !item.id) continue;
     const anchor = String(item.id);
-    if (item.state === 'unsure') {
-      if (seenUnsure.has(anchor)) continue;
-      seenUnsure.add(anchor);
-      result.push({ anchor, state: 'unsure', label: 'unsure', target: null });
-      continue;
-    }
     if (item.state === 'unavailable') {
       if (seenUnavailable.has(anchor)) continue;
       seenUnavailable.add(anchor);
@@ -1168,13 +1155,10 @@ function corpusFlags(items) {
     }
     if (item.state !== 'label') continue;
     const label = labels[String(item.label || '').toLowerCase()];
-    if (label) {
-      confident.add(anchor);
-      result.push({ anchor, state: 'label', label, level: item.level || null,
-        target: item.target == null ? null : String(item.target) });
-    }
+    if (label) result.push({ anchor, state: 'label', label, level: item.level || null,
+      target: item.target == null ? null : String(item.target) });
   }
-  return result.filter(flag => flag.state !== 'unsure' || !confident.has(flag.anchor));
+  return result;
 }
 
 function corpusTargetLink(target) {
@@ -1248,20 +1232,17 @@ function jevBatch(entries, label, heading) {
   }
 }
 
-// Each Jev question has one unsure word and its hover sentence (jev-suggestions #neutral-questions), so a neutral note never reads as QA.
+// Jev unavailable names what Jev could not check in its hover sentence (jev-suggestions #neutral-questions); an unsure
+// answer is settled by the LLM fallback in the seam, so the browser never shows one.
 const JEV_QUESTIONS = {
-  type: ['scope?', 'whether this is scope or behavior'],
-  criterion: ['story?', 'which story this criterion verifies'],
-  story: ['criterion?', 'which criterion verifies this story'],
-  corpus: ['conflict?', 'whether this conflicts with another clause'],
-  audience: ['reader?', 'whether this is for readers or internals'],
+  type: 'whether this changes behavior',
+  criterion: 'which story this criterion verifies',
+  story: 'which criterion verifies this story',
+  corpus: 'whether this conflicts with another clause',
+  audience: 'whether this is for readers or internals',
 };
-function jevNeutralNote(anchor, stateName, question) {
-  const [word, tail] = JEV_QUESTIONS[question];
-  const unsure = stateName === 'unsure';
-  return { anchor, group: 'neutral', state: stateName, text: unsure ? word : 'Jev unavailable',
-    sentence: (unsure ? 'Jev is unsure ' : 'Jev could not check ') + tail,
-    level: unsure ? markLevel(state.jev, 'unsure') : null };
+function jevNeutralNote(anchor, question) {
+  return { anchor, group: 'neutral', state: 'unavailable', text: 'Jev unavailable', sentence: 'Jev could not check ' + JEV_QUESTIONS[question], level: null };
 }
 
 // project-rules #marks: a missed rule is its fixed word linking the rule, not muted, with Ask to cover; a check
@@ -1295,7 +1276,7 @@ function jevSuggestionNotes() {
     if (note) notes.push(note);
   }
   for (const flag of coverageGapFlags(state.jev.items)) {
-    if (flag.state !== 'gap') { notes.push(jevNeutralNote(flag.anchor, flag.state, flag.side)); continue; }
+    if (flag.state !== 'gap') { notes.push(jevNeutralNote(flag.anchor, flag.side)); continue; }
     const note = { anchor: flag.anchor, group: 'coverage', state: 'label', text: flag.label,
       level: markLevel(state.jev, flag.side === 'story' ? 'no-criterion' : 'no-story'),
       actions: [flag.side === 'story'
@@ -1305,10 +1286,9 @@ function jevSuggestionNotes() {
     notes.push(note);
   }
   jevBatch(gaps, 'Ask about all gaps', 'Add a criterion for each story, or name the story for each criterion:');
-  const neutral = item => item.state === 'unsure' || item.state === 'unavailable';
   if (state.readingView) {
     for (const item of state.jev.items) {
-      if (item.kind === 'audience' && item.id && neutral(item)) notes.push(jevNeutralNote(item.id, item.state, 'audience'));
+      if (item.kind === 'audience' && item.id && item.state === 'unavailable') notes.push(jevNeutralNote(item.id, 'audience'));
     }
     return notes;
   }
@@ -1332,7 +1312,7 @@ function jevSuggestionNotes() {
   }
   const gitFocus = jevGitFocus();
   for (const flag of gitFocus ? corpusFlags(state.jev.items) : []) {
-    if (flag.state !== 'label') { notes.push(jevNeutralNote(flag.anchor, flag.state, 'corpus')); continue; }
+    if (flag.state !== 'label') { notes.push(jevNeutralNote(flag.anchor, 'corpus')); continue; }
     const link = corpusTargetLink(flag.target);
     conflict(flag.anchor, flag.label, flag.level, flag.label + (link ? ' ' + link.text : ''), link ? link.href : null, link && link.text);
   }
@@ -1340,11 +1320,11 @@ function jevSuggestionNotes() {
   if (!gitFocus) return notes;
   for (const item of state.jev.items) {
     if (item.kind !== 'type' || !item.id) continue;
-    if (neutral(item)) notes.push(jevNeutralNote(item.id, item.state, 'type'));
-    else if (item.state === 'label' && jevDisplayLabel(item)) {
-      const text = jevDisplayLabel(item);
-      notes.push({ anchor: item.id, group: 'type', state: 'label', text, level: item.level || null,
-        actions: text === 'Scope' || text === 'Behavior' ? [jevDraftAction('Comment on this change', 'About this change: ')] : [] });
+    if (item.state === 'unavailable') notes.push(jevNeutralNote(item.id, 'type'));
+    else if (item.state === 'label' && JEV_TYPE_LABELS[item.label]) {
+      const text = JEV_TYPE_LABELS[item.label];
+      notes.push({ anchor: item.id, group: 'type', state: 'label', text, level: null,
+        actions: item.label === 'behavior' ? [jevDraftAction('Comment on this change', 'About this change: ')] : [] });
     }
   }
   return notes;
@@ -1498,7 +1478,10 @@ function mountJevMarker(holder, notes) {
   marker.className = 'hx-jev-marker';
   const attention = notes.some(note => note.level === 'important');
   marker.dataset.attention = String(attention);
-  marker.dataset.passed = String(!attention && notes.some(note => note.group === 'evidence' && note.passed));
+  const passed = !attention && notes.some(note => note.group === 'evidence' && note.passed);
+  marker.dataset.passed = String(passed);
+  // #markers-color: a light red dot when any note is Warning at the human level, below ! and the green check.
+  marker.dataset.warning = String(!attention && !passed && notes.some(note => note.level === 'warning'));
   // Only escalated checks here: the marker is the pending wheel, its hover sentence its name (project-rules #pending).
   const pending = notes.every(note => note.state === 'pending');
   marker.dataset.pending = String(pending);
@@ -1828,7 +1811,7 @@ function renderJev() {
   }
   if (state.jev.status === 'on' && state.jev.offer) pageNote(jevOfferNote(state.jev.offer));
 
-  // Dims are the only in-text Jev display: reading view internals and Git focus cosmetic changes.
+  // Dims are the only in-text Jev display: reading view internals and Git focus No behavior change sections.
   const gitFocus = jevGitFocus();
   for (const item of state.jev.items) {
     if (!item.id || item.state !== 'label') continue;
@@ -1837,8 +1820,8 @@ function renderJev() {
     if (state.readingView) {
       if (item.kind !== 'audience') continue;
       if (item.state === 'label' && item.label === 'internals') holder.dataset.hxAudience = 'internals';
-    } else if (gitFocus && item.kind === 'type' && String(item.label).toLowerCase() === 'cosmetic') {
-      holder.dataset.hxJevType = 'cosmetic';
+    } else if (gitFocus && item.kind === 'type' && item.label === 'no-behavior-change') {
+      holder.dataset.hxJevType = 'no-behavior-change';
     }
   }
   for (const [anchor, notes] of jevNotesByAnchor()) {
@@ -1868,7 +1851,7 @@ article.spec header{border-color:#33363c}
 article.spec nav{color:#74767e}
 article.spec a{color:#34a899}
 [data-render-target]{border-color:#33363c;background:#1d2024}
-body [data-hx-jev-type=cosmetic]{color:#b9c0ca!important}
+body [data-hx-jev-type=no-behavior-change]{color:#b9c0ca!important}
 }
 @media(max-width:640px){
 :where(body){padding-bottom:calc(112px + env(safe-area-inset-bottom))}
@@ -2025,13 +2008,14 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-tbd-open{outline:2px solid #d98e04;outline-offset:4px}
 .hx-badge{font:600 9.5px system-ui;text-transform:uppercase;letter-spacing:.04em;color:#0e7264;background:#e3f2f0;border-radius:4px;padding:2px 7px;margin-left:8px;vertical-align:middle}
 .hx-jev-note{box-sizing:border-box;max-width:720px;margin:12px auto 0;padding:6px 10px;border:1px solid #e0c77a;border-radius:7px;background:#fff7d6;color:#6d4b05;font:600 12px/1.35 system-ui,sans-serif}
-[data-hx-jev-type=cosmetic]{color:#586069!important}
-[data-hx-jev-type=cosmetic] :is(h1,h2,h3,h4,h5,h6,p,li,td,th,blockquote,code,strong,em,a){color:inherit!important}
+[data-hx-jev-type=no-behavior-change]{color:#586069!important}
+[data-hx-jev-type=no-behavior-change] :is(h1,h2,h3,h4,h5,h6,p,li,td,th,blockquote,code,strong,em,a){color:inherit!important}
 .hx-jev-marker{position:absolute;top:.35em;left:calc(100% + 10px);z-index:640;box-sizing:border-box;width:10px;height:10px;margin:0;padding:0;border:0;border-radius:50%;background:#767b85;color:#ffffff;cursor:pointer;display:grid;place-items:center;font:800 10px/1 system-ui,sans-serif}
 .hx-jev-marker::before{content:"";position:absolute;inset:-10px 0 -10px -16px}
 .hx-jev-marker[data-attention=true]{width:14px;height:14px;background:#d1242f}
 .hx-jev-marker[data-attention=true]::after{content:"!"}
 .hx-jev-marker[data-passed=true]{width:14px;height:14px;background:#1a7f37}
+.hx-jev-marker[data-warning=true]{background:#e5534b}
 .hx-jev-marker[data-passed=true]::after{content:"\\2713"}
 .hx-jev-marker[data-inset=true]{left:auto;right:0}
 .hx-jev-marker:hover,.hx-jev-marker[aria-expanded=true]{box-shadow:0 0 0 3px rgba(41,71,199,.22)}

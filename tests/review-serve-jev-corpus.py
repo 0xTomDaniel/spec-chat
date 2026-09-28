@@ -29,7 +29,7 @@ def settled(service, *args, timeout=10):
 
 
 class FakeProvider:
-    """Answers corpus questions by target text; records every payload."""
+    """Answers yes to a draft-check question when labels maps its target text to that question; else no."""
 
     def __init__(self, labels):
         self.labels = labels
@@ -38,7 +38,7 @@ class FakeProvider:
     def decide(self, payload):
         self.calls.append(payload)
         kind = next(iter(payload["questions"]))
-        label = self.labels.get(payload["state"].get("target"), "unrelated") if kind == "corpus" else "cosmetic"
+        label = "yes" if self.labels.get(payload["state"].get("target")) == kind else "no"
         return {"answers": {kind: {"choice": label, "confidence": 0.95}}}
 
 
@@ -71,10 +71,11 @@ class CorpusTest(unittest.TestCase):
         self.services.append(service)
         return service
 
-    def test_contradicts_shows_and_overlaps_is_recorded_but_hidden(self):
+    def test_non_goal_contradicts_restated_overlaps_and_unrelated_shows_nothing(self):
         baseline = page("The service reads review events.")
         current = page("The service writes review events.")
-        other = '<section data-anchor="o"><p data-anchor="restated">The service writes review events.</p></section>'
+        other = ('<section data-anchor="o"><p data-anchor="restated">The service writes review events.</p>'
+                 '<p data-anchor="unrelated">Mobile markers stay visible at narrow widths.</p></section>')
         labels = {"The service never writes review events.": "contradicts",
                   "The service writes review events.": "overlaps"}
         provider = FakeProvider(labels)
@@ -86,13 +87,18 @@ class CorpusTest(unittest.TestCase):
         by_target = {item["target"]: item for item in items}
         self.assertEqual(by_target["non-goal-text"]["state"], "label")
         self.assertEqual(by_target["non-goal-text"]["label"], "contradicts")
+        self.assertEqual(by_target["non-goal-text"]["level"], "important")
         restated = by_target["lane/docs/specs/other.spec.html#restated"]
-        self.assertEqual(restated["state"], "none")
-        self.assertIsNone(restated["label"])
-        recorded = service.seam.store.get(service.seam.key(
-            next(q for q in questions if q["target"] == "lane/docs/specs/other.spec.html#restated")))
-        self.assertEqual(recorded["answer"]["label"], "overlaps")
-        self.assertTrue(all(item["label"] in {None, "contradicts", "oversteps"} for item in items))
+        self.assertEqual((restated["state"], restated["label"], restated["level"]), ("label", "overlaps", "warning"))
+        unrelated = by_target["lane/docs/specs/other.spec.html#unrelated"]
+        self.assertEqual((unrelated["state"], unrelated["label"]), ("none", None))
+        # The non-goal is asked contradicts? alone; the restated clause all three, each its own yes/no record.
+        asked = [(next(iter(call["questions"])), call["state"]["target"]) for call in provider.calls]
+        self.assertEqual([kind for kind, target in asked if target == "The service never writes review events."],
+                         ["contradicts"])
+        self.assertEqual([kind for kind, target in asked if target == "The service writes review events."],
+                         ["contradicts", "oversteps", "overlaps"])
+        self.assertEqual({record["answer"]["label"] for record in service.seam.store.by_key.values()}, {"yes", "no"})
 
     def test_header_and_source_issue_clauses_are_neither_asked_nor_compared(self):
         baseline = page("The service reads review events.")

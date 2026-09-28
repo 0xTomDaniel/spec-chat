@@ -130,7 +130,7 @@ assert.equal(posted.length, 0);
 show([rule('label', { level: 'warning' })]);
 assert.equal(markers()[0].dataset.attention, 'false');
 // Rule notes list after coverage in the popover.
-show([rule('label'), { kind: 'type', id: 'acceptance', state: 'unsure', label: null, target: null, record: 'r', level: null }]);
+show([rule('label'), { kind: 'type', id: 'acceptance', state: 'unavailable', label: null, target: null, record: 'r', level: null }]);
 location.search = '?focus=changes';
 renderJev();
 markers()[0].fire('focus');

@@ -18,18 +18,15 @@ const { corpusTargetLink } = Function(runtime.slice(targetStart, targetEnd) + ';
 assert.deepEqual(corpusFlags([
   { kind: 'corpus', id: 'draft', state: 'label', label: 'contradicts', target: 'non-goal-text', level: 'important' },
   { kind: 'corpus', id: 'draft', state: 'label', label: 'overlaps', target: 'compared-range#bar-flow' },
-  { kind: 'corpus', id: 'unclear', state: 'unsure', label: null, target: null },
-  { kind: 'corpus', id: 'unclear', state: 'unsure', label: null, target: null },
-  { kind: 'corpus', id: 'mixed', state: 'unsure', label: null, target: null },
-  { kind: 'corpus', id: 'mixed', state: 'label', label: 'overlaps', target: 'other#flow' },
+  { kind: 'corpus', id: 'mixed', state: 'label', label: 'oversteps', target: 'other#flow', level: 'warning' },
+  { kind: 'corpus', id: 'quiet', state: 'none', label: null, target: null },
   { kind: 'corpus', id: 'draft', state: 'label', label: 'unrelated', target: 'other' },
   { kind: 'corpus', id: 'draft', state: 'unavailable', label: null, target: 'other' },
   { kind: 'corpus', id: 'draft', state: 'unavailable', label: null, target: 'other' },
 ]), [
   { anchor: 'draft', state: 'label', label: 'Contradicts', level: 'important', target: 'non-goal-text' },
   { anchor: 'draft', state: 'label', label: 'Overlaps', level: null, target: 'compared-range#bar-flow' },
-  { anchor: 'unclear', state: 'unsure', label: 'unsure', target: null },
-  { anchor: 'mixed', state: 'label', label: 'Overlaps', level: null, target: 'other#flow' },
+  { anchor: 'mixed', state: 'label', label: 'Oversteps', level: 'warning', target: 'other#flow' },
   { anchor: 'draft', state: 'unavailable', label: 'Jev unavailable', target: null },
 ]);
 assert.deepEqual(corpusTargetLink('non-goal-text'), { text: '#non-goal-text', href: '#non-goal-text' });
