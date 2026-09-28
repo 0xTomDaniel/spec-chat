@@ -243,5 +243,48 @@ class LaneGateTest(unittest.TestCase):
         self.assertEqual(provider.calls, ["about", "contradicts"])
 
 
+class ProviderTypeTest(unittest.TestCase):
+    """provider_type selects fallback provider: openrouter (default) or claude-cli."""
+
+    def test_default_provider_type_is_openrouter(self):
+        reader = jev._provider_type_reader(None)
+        self.assertEqual(reader(), "openrouter")
+
+    def test_provider_type_from_string(self):
+        reader = jev._provider_type_reader("claude-cli")
+        self.assertEqual(reader(), "claude-cli")
+
+    def test_provider_type_from_callable(self):
+        reader = jev._provider_type_reader(lambda: "claude-cli")
+        self.assertEqual(reader(), "claude-cli")
+
+    def test_fallback_provider_openrouter_returns_primary(self):
+        primary = FakeProvider({"about": ("yes", 0.95)})
+        seam = jev.JevSeam(SETS, provider=primary, api_key="fake")
+        self.assertIs(seam._fallback_provider(primary), primary)
+
+    def test_fallback_provider_claude_cli_returns_cli(self):
+        primary = FakeProvider({"about": ("yes", 0.95)})
+        seam = jev.JevSeam(SETS, provider=primary, api_key="fake", provider_type="claude-cli")
+        fallback = seam._fallback_provider(primary)
+        self.assertIsInstance(fallback, jev.ClaudeCliProvider)
+        self.assertIsNot(fallback, primary)
+
+    def test_claude_cli_provider_has_complete(self):
+        provider = jev.ClaudeCliProvider()
+        self.assertTrue(hasattr(provider, "complete"))
+        self.assertEqual(provider.timeout, jev.GENERAL_LLM_TIMEOUT)
+
+    def test_fallback_path_uses_provider_type(self):
+        """When provider_type is openrouter, the fallback calls the primary's complete(), not ClaudeCliProvider."""
+        primary = FakeProvider({"contradicts": ("no", 0.1)}, general={"contradicts": "yes"})
+        seam = jev.JevSeam(SETS, provider=primary, api_key="fake", provider_type="openrouter")
+        question = draft_check()["chain"][1]  # the contradicts step
+        result = seam.ask(question)
+        # Below threshold with fallback set: calls primary's complete()
+        self.assertEqual(primary.general_calls, ["contradicts"])
+        self.assertEqual(result["answer"]["label"], "yes")
+
+
 if __name__ == "__main__":
     unittest.main()

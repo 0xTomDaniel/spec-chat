@@ -338,6 +338,45 @@ class OpenRouterProvider:
         return value
 
 
+class ClaudeCliProvider:
+    """One-shot headless claude -p subprocess for general LLM fallback (jev-seam RULE 09)."""
+
+    def __init__(self, *, timeout: float = GENERAL_LLM_TIMEOUT):
+        self.timeout = timeout
+
+    def complete(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """General LLM via claude CLI; returns the same response shape as OpenRouter chat completions."""
+        messages = payload.get("messages", [])
+        system = ""
+        user = ""
+        for msg in messages:
+            role = msg.get("role")
+            content = str(msg.get("content", ""))
+            if role == "system":
+                system = content
+            elif role == "user":
+                user = content
+        schema = payload.get("response_format", {}).get("json_schema", {}).get("schema")
+        if schema:
+            user += "\n\nRespond with ONLY a JSON object matching this schema:\n" + json.dumps(schema, ensure_ascii=False)
+        model = str(payload.get("model", ""))
+        cmd = ["claude", "-p", "--output-format", "json"]
+        if model:
+            cmd.extend(["--model", model])
+        if system:
+            cmd.extend(["--append-system-prompt", system])
+        try:
+            result = subprocess.run(cmd, input=user, capture_output=True, text=True, timeout=self.timeout)
+            if result.returncode != 0:
+                raise RuntimeError("claude CLI exited %d" % result.returncode)
+            text = str(json.loads(result.stdout).get("result", ""))
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("claude CLI timed out") from exc
+        except (OSError, ValueError) as exc:
+            raise RuntimeError("claude CLI failed") from exc
+        return {"choices": [{"message": {"content": text}}], "model": model}
+
+
 def _parse_provider_answer(value: Mapping[str, Any], question_name: str) -> tuple[str, float | None, dict[str, float], str]:
     answer = value["answers"][question_name]
     label = answer["choice"]
@@ -377,14 +416,24 @@ def _model_reader(llm_model: str | Callable[[], str] | None) -> Callable[[], str
     return lambda: read() or DEFAULT_LLM_MODEL
 
 
+def _provider_type_reader(provider_type: str | Callable[[], str] | None) -> Callable[[], str]:
+    """The general LLM provider type, read at each use: 'openrouter' (default) or 'claude-cli'."""
+    if callable(provider_type):
+        return lambda: (provider_type() or "openrouter").strip()
+    fixed = (provider_type or "openrouter").strip()
+    return lambda: fixed
+
+
 class JevSeam:
     def __init__(self, question_sets: Mapping[str, QuestionSet] | None = None, *, provider: Any = None,
                  api_key: str | Callable[[], str] | None = None, llm_model: str | Callable[[], str] | None = None,
+                 provider_type: str | Callable[[], str] | None = None,
                  record_store: JudgmentStore | None = None,
                  clock: Callable[[], str] = _now, max_input_tokens: int = DEFAULT_MAX_INPUT_TOKENS):
         self.question_sets = dict(question_sets or load_question_sets())
         self.api_key = _key_reader(api_key)
         self.llm_model = _model_reader(llm_model)
+        self.provider_type = _provider_type_reader(provider_type)
         self._provider = provider
         self.store = record_store or JudgmentStore()
         self.clock = clock
@@ -401,6 +450,12 @@ class JevSeam:
         if not api_key:
             return None
         return self._provider if self._provider is not None else OpenRouterProvider(api_key)
+
+    def _fallback_provider(self, primary: Any) -> Any:
+        """The provider for the general LLM fallback: claude-cli or the primary OpenRouter provider."""
+        if self.provider_type() == "claude-cli":
+            return ClaudeCliProvider()
+        return primary
 
     def _record(self, key: str, kind: str, qset: QuestionSet, sources: Any, revision: Any,
                 answer: Mapping[str, Any], outcome: str, model: str = MODEL, escalated: bool = False,
@@ -509,10 +564,11 @@ class JevSeam:
         sources, revision = question.get("sources", []), question.get("revision")
         model = self.llm_model()
         payload = self.general_payload(question, qset, model)
+        fallback = self._fallback_provider(provider)
         label = None
         failure = None
         try:
-            label = json.loads(provider.complete(payload)["choices"][0]["message"]["content"])["choice"]
+            label = json.loads(fallback.complete(payload)["choices"][0]["message"]["content"])["choice"]
         except Exception as exc:
             failure = exc
         if label is None:
@@ -1525,6 +1581,7 @@ def default_state_dir() -> Path:
 class JevService:
     def __init__(self, *, state_dir: str | Path | None = None, provider: Any = None,
                  api_key: str | Callable[[], str] | None = None, llm_model: str | Callable[[], str] | None = None,
+                 provider_type: str | Callable[[], str] | None = None,
                  question_dirs: list[str | Path] | None = None, onboarding_path: str | Path | None = None):
         self.question_sets = load_question_sets(*(question_dirs or []))
         self.state_dir = Path(state_dir) if state_dir else default_state_dir()
@@ -1533,11 +1590,11 @@ class JevService:
             self.state_dir / "onboarding.toml" if state_dir else spec_chat_state() / "onboarding.toml")
         path = self.state_dir / "records.jsonl"
         self.seam = JevSeam(self.question_sets, provider=provider, api_key=api_key, llm_model=llm_model,
-                            record_store=JudgmentStore(path))
+                            provider_type=provider_type, record_store=JudgmentStore(path))
         # Test store (#test-hosts): a second JudgmentStore for test-flagged slugs, beside the live one.
         test_path = self.state_dir / "records-test.jsonl"
         self.test_seam = JevSeam(self.question_sets, provider=provider, api_key=api_key, llm_model=llm_model,
-                                 record_store=JudgmentStore(test_path))
+                                 provider_type=provider_type, record_store=JudgmentStore(test_path))
 
         # Board state (#jev-board-answer): the last answer and the rows the board thread answers next.
         self._board_lock = threading.Lock()

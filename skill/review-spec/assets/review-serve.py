@@ -527,6 +527,12 @@ def jev_llm_model(state):
     return model.strip() if isinstance(model, str) else ""
 
 
+def jev_provider_type(state):
+    """The general LLM provider type: 'openrouter' (default) or 'claude-cli' (jev-seam RULE 09)."""
+    value = (read_provider(state, "jev", private=True) or {}).get("provider")
+    return value.strip() if isinstance(value, str) and value.strip() else "openrouter"
+
+
 def wake_provider(state):
     """The wake provider's (check, send) argument lists, or None when it is not plugged."""
     provider = read_provider(state, "wake") or {}
@@ -1127,7 +1133,8 @@ def main(argv=None):
     server.mount_state = state
     server.state_dir = os.path.dirname(os.path.abspath(args.registry)) if args.registry else None
     server.jev = JevService(api_key=lambda: jev_provider(server.state_dir),
-                            llm_model=lambda: jev_llm_model(server.state_dir))
+                            llm_model=lambda: jev_llm_model(server.state_dir),
+                            provider_type=lambda: jev_provider_type(server.state_dir))
     # Bootstrap (project-rules #bootstrap-home): a project's first registration starts its warm-up here.
     state.on_change = server.jev.warm
     state.changed()
