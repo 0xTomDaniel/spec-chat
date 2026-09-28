@@ -528,9 +528,9 @@ def jev_llm_model(state):
 
 
 def jev_provider_type(state):
-    """The general LLM provider type: 'openrouter' (default) or 'claude-cli' (jev-seam RULE 09)."""
+    """The general LLM provider type: 'openrouter' or 'claude-cli' (default, jev-seam #ac-defaults)."""
     value = (read_provider(state, "jev", private=True) or {}).get("provider")
-    return value.strip() if isinstance(value, str) and value.strip() else "openrouter"
+    return value.strip() if isinstance(value, str) and value.strip() else "claude-cli"
 
 
 def wake_provider(state):

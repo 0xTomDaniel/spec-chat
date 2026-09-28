@@ -246,9 +246,9 @@ class LaneGateTest(unittest.TestCase):
 class ProviderTypeTest(unittest.TestCase):
     """provider_type selects fallback provider: openrouter (default) or claude-cli."""
 
-    def test_default_provider_type_is_openrouter(self):
+    def test_default_provider_type_is_claude_cli(self):
         reader = jev._provider_type_reader(None)
-        self.assertEqual(reader(), "openrouter")
+        self.assertEqual(reader(), "claude-cli")
 
     def test_provider_type_from_string(self):
         reader = jev._provider_type_reader("claude-cli")
@@ -260,15 +260,22 @@ class ProviderTypeTest(unittest.TestCase):
 
     def test_fallback_provider_openrouter_returns_primary(self):
         primary = FakeProvider({"about": ("yes", 0.95)})
-        seam = jev.JevSeam(SETS, provider=primary, api_key="fake")
+        seam = jev.JevSeam(SETS, provider=primary, api_key="fake", provider_type="openrouter")
         self.assertIs(seam._fallback_provider(primary), primary)
 
     def test_fallback_provider_claude_cli_returns_cli(self):
-        primary = FakeProvider({"about": ("yes", 0.95)})
-        seam = jev.JevSeam(SETS, provider=primary, api_key="fake", provider_type="claude-cli")
+        """Without an injected provider, provider_type='claude-cli' selects ClaudeCliProvider."""
+        seam = jev.JevSeam(SETS, api_key="fake", provider_type="claude-cli")
+        primary = seam.provider()
         fallback = seam._fallback_provider(primary)
         self.assertIsInstance(fallback, jev.ClaudeCliProvider)
         self.assertIsNot(fallback, primary)
+
+    def test_fallback_provider_injected_ignores_type(self):
+        """An injected provider (test double) is used for both decide and complete regardless of provider_type."""
+        primary = FakeProvider({"about": ("yes", 0.95)})
+        seam = jev.JevSeam(SETS, provider=primary, api_key="fake", provider_type="claude-cli")
+        self.assertIs(seam._fallback_provider(primary), primary)
 
     def test_claude_cli_provider_has_complete(self):
         provider = jev.ClaudeCliProvider()

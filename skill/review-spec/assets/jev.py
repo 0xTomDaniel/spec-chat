@@ -417,10 +417,10 @@ def _model_reader(llm_model: str | Callable[[], str] | None) -> Callable[[], str
 
 
 def _provider_type_reader(provider_type: str | Callable[[], str] | None) -> Callable[[], str]:
-    """The general LLM provider type, read at each use: 'openrouter' (default) or 'claude-cli'."""
+    """The general LLM provider type, read at each use: 'openrouter' or 'claude-cli' (default, jev-seam #ac-defaults)."""
     if callable(provider_type):
-        return lambda: (provider_type() or "openrouter").strip()
-    fixed = (provider_type or "openrouter").strip()
+        return lambda: (provider_type() or "claude-cli").strip()
+    fixed = (provider_type or "claude-cli").strip()
     return lambda: fixed
 
 
@@ -452,7 +452,9 @@ class JevSeam:
         return self._provider if self._provider is not None else OpenRouterProvider(api_key)
 
     def _fallback_provider(self, primary: Any) -> Any:
-        """The provider for the general LLM fallback: claude-cli or the primary OpenRouter provider."""
+        """The provider for the general LLM fallback: the injected provider (tests), else by provider_type."""
+        if self._provider is not None:
+            return primary
         if self.provider_type() == "claude-cli":
             return ClaudeCliProvider()
         return primary
