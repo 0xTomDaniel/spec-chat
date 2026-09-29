@@ -43,6 +43,7 @@
 <p data-acceptance-criterion data-anchor="acceptance-agent-cold" data-story="story-agent"><span data-acceptance-scenario>When no agent ran at hand-off and a compatible agent later enters the repository,</span> <span data-acceptance-observable>its first action drains every completed unprocessed hand-off before new work, and a failed batch leaves the cursor unchanged.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-preflight" data-story="story-compatible-review"><span data-acceptance-scenario>When a target runtime or server lacks a capability the bundled runtime requires,</span> <span data-acceptance-observable>preflight replaces that asset from the bundle before the server starts, leaves an asset declaring every required capability untouched, and shows a failed preflight as a review blocker.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-guided-declared" data-story="story-guided-impact"><span data-acceptance-scenario>When a changed spec has a user-facing story without data-guided-journey, or a yes declaration without exactly one step link and a passive or required mode,</span> <span data-acceptance-observable>the structural validator fails and names that story.</span></p>
+<p data-anchor="acceptance-rules-note">CI: the focus, preflight, and runtime tests run in CI with no other tool of the box installed and no provider file.</p>
 </section>
 
 <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries" id="modular-boundaries">
