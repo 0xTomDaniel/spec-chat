@@ -33,6 +33,7 @@
 <p data-acceptance-criterion data-anchor="acceptance-no-provider" data-story="story-no-provider"><span data-acceptance-scenario>When no valid <code>providers/wake.toml</code> exists in the service state,</span> <span data-acceptance-observable>the host sends nothing, <code>register</code> prints <code>wake=unavailable</code>, and the page keeps the existing timeout message.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-register-report" data-story="story-owner"><span data-acceptance-scenario>When <code>review-host register</code> succeeds,</span> <span data-acceptance-observable>it prints <code>wake=verified owner=&lt;pane&gt;</code> only when the wake provider's <code>check</code> exits 0 for that owner pane, and <code>wake=unavailable owner=&lt;pane&gt;</code> otherwise; registration never fails on wake.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-deleted" data-story="story-owner"><span data-acceptance-scenario>After this change,</span> <span data-acceptance-observable><code>review-control.sh external</code>, the per-lane wake adapter script, the adapter environment contract, and the monitor instructions no longer exist; <code>yielded</code> and <code>manual</code> are unchanged.</span></p>
+<p data-anchor="acceptance-rules-note">Onboarding: not needed, wake status extends the review page with no new user surface.</p>
 </section>
 
 <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">

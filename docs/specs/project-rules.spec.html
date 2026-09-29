@@ -45,6 +45,7 @@
 <p data-acceptance-criterion data-anchor="acceptance-no-false-rule" data-story="story-explicit-rule"><span data-acceptance-scenario>When a criterion describes how one feature behaves and does not say it applies to every feature,</span> <span data-acceptance-observable>Jev answers <code>this feature</code> and it is never a project rule.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-warm-explicit" data-story="story-bootstrap"><span data-acceptance-scenario>When the first-run warm-up classifies every criterion,</span> <span data-acceptance-observable>it uses the same scope question and Jev answer as any other rule check; criteria without explicit every-feature wording are classified <code>this feature</code> and produce no rule, no offer, and no miss mark.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-onboarding-doc" data-story="story-explicit-rule"><span data-acceptance-scenario>When a reviewer reads Spec Chat's onboarding documentation,</span> <span data-acceptance-observable>one section says how to write a project rule: include explicit every-feature wording in the criterion text, such as <q>When any change adds a screen, it ships with its help center article.</q></span></p>
+<p data-anchor="acceptance-rules-note">CI: the scope and rule-check tests run in CI with no Jev provider installed and no provider file; fake provider answers are the contract tests.</p>
 </section>
 
 <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
