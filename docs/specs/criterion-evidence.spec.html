@@ -53,6 +53,8 @@
 <p data-acceptance-criterion data-anchor="acceptance-async" data-story="story-proven story-absent"><span data-acceptance-scenario>When a spec page loads,</span> <span data-acceptance-observable>it renders at once and evidence notes arrive after it, without reflowing text or moving review controls.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-mobile" data-story="story-proven story-open-proof"><span data-acceptance-scenario>When the page is 375px wide,</span> <span data-acceptance-observable>a tap on a criterion's marker opens its evidence note with no horizontal page drift, and every label is 4.5:1 readable.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-own-state" data-story="story-branch"><span data-acceptance-scenario>When a client sends parameters beyond the spec path,</span> <span data-acceptance-observable>the review server ignores them.</span></p>
+<p data-anchor="acceptance-rules-note">Onboarding: not needed, evidence notes extend the review page with no new user surface.
+CI: the evidence route and runtime tests run in CI with no evidence provider installed and no provider file; the fake evidence service is the contract test.</p>
 </section>
 
 <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
