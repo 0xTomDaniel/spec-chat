@@ -771,15 +771,7 @@ class MountHandler(SimpleHTTPRequestHandler):
   --ui-space-1: 4px; --ui-space-2: 8px; --ui-space-3: 12px; --ui-space-4: 16px; --ui-space-5: 24px; --ui-space-6: 32px;
   --ui-radius: 8px; --ui-radius-sm: 6px; --ui-radius-pill: 999px;
 }
-@media (prefers-color-scheme: dark) { :root {
-  --ui-page: #1a1a1e; --ui-surface: #222226; --ui-ink: #e8e6e1; --ui-muted: #9a9aa0; --ui-border: #3a3a3e;
-  --ui-link: #e8e6e1; --ui-focus: #6b8aff; --ui-action: #e8e6e1;
-  --ui-pass: #2fbf9a; --ui-pass-soft: #1a2e28;
-  --ui-fail: #f06860; --ui-fail-soft: #2e1a1a;
-  --ui-attention: #d4a020; --ui-attention-soft: #2e2818;
-  --ui-muted-soft: #2a2a2e;
-} }
-html { color-scheme: light dark; }
+html { color-scheme: light; }
 body { margin: 0; background: var(--ui-page); color: var(--ui-ink); font-family: var(--ui-font); font-size: var(--ui-text-sm); font-weight: 400; line-height: 1.4; }
 main { box-sizing: border-box; max-width: 72rem; margin: 0 auto; padding: var(--ui-space-6); }
 h1 { margin: 0 0 var(--ui-space-5); font-size: var(--ui-text-lg); font-weight: 600; line-height: 1.2; }

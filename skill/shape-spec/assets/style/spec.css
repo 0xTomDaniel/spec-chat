@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --spec-paper: #f4f2ec;
   --spec-surface: #fffefa;
   --spec-ink: #171719;
@@ -420,23 +420,5 @@ body.hx-focus-active article.spec [data-hx-focus="changed"] {
     display: block;
     max-width: 100%;
     overflow-x: auto;
-  }
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --spec-paper: #1a1a1e;
-    --spec-surface: #222226;
-    --spec-ink: #e8e6e1;
-    --spec-body: #ccccd0;
-    --spec-muted: #9a9aa0;
-    --spec-focus-context: #7a7a80;
-    --spec-rule: #d0cec8;
-    --spec-hairline: #3a3a3e;
-    --spec-teal: #2fbf9a;
-    --spec-blue: #6b8aff;
-    --spec-amber: #d4a020;
-    --spec-red: #f06860;
-    --spec-code: #2a2a2e;
   }
 }
