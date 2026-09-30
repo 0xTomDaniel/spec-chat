@@ -61,6 +61,10 @@ Structural gate for shaped specs: checks style provenance, story declarations,
 anchor coverage, and section contract. Run after every spec commit; stop on
 failure.
 
+## QA capture
+
+`qa.toml` at the repo root declares the QA capture target: the review server on the `tests/fixtures/qa/` fixture.
+
 ## Browser tests
 
 Two tests need headless Chromium via `playwright-core`:
