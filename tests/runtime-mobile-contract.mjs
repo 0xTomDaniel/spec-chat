@@ -21,7 +21,10 @@ assert.match(runtime, /\.hx-composer textarea\{min-height:120px;font-size:var\(-
 assert.match(runtime, /\.hx-dock-open,\.hx-dock-thread\{width:44px;height:44px/, 'mobile conversation controls meet the touch target floor');
 assert.match(runtime, /openPanel\(!window\.matchMedia\('\(max-width: 640px\)'\)\.matches\)/, 'mobile comment mode exposes the document before target selection');
 assert.match(runtime, /class="hx-mobile-handoff" id="hx-mobile-handoff"/, 'mobile toolbar exposes handoff beside comment mode');
-assert.match(runtime, /mobileHandoff\.textContent = handoffState\.finish \? 'Accept spec' : handoffState\.tbd \? 'TBD open' : drafts \? 'Hand off \(' \+ drafts \+ '\)' : 'Hand off'/, 'mobile handoff renders the current draft count or Accept spec');
+assert.match(runtime, /mobileHandoff\.textContent = handoffState\.finish \? 'Accept spec' : handoffState\.tbd \? tbdCountLabel\('TBD open', handoffState\.openTbds\) : drafts \? 'Hand off \(' \+ drafts \+ '\)' : 'Hand off'/, 'mobile handoff renders the current draft count or Accept spec');
+assert.match(runtime, /\.hx-mobile-handoff,\.hx-mobile-next-tbd\{display:none\}/, 'desktop hides both mobile toolbar actions');
+assert.match(runtime, /@media\(max-width:640px\)\{[^]*\.hx-mobile-handoff,\.hx-mobile-next-tbd:not\(\[hidden\]\)\{display:block\}/, 'mobile shows Next TBD beside Hand off only while it is offered');
+assert.match(runtime, /@media\(max-width:640px\)\{[^]*\.hx-toolbar button\{min-height:44px/, 'mobile toolbar actions, Next TBD included, keep 44 pixel targets');
 assert.match(runtime, /e\.message === 'Script error\.' && !e\.filename && !e\.lineno && !e\.colno && !e\.error/, 'fully opaque browser errors do not raise a fatal review overlay');
 assert.match(runtime, /overlay\('error', e\.message/, 'attributable script errors remain visible');
 assert.match(runtime, /if \(state\.handoffPosting \|\| !action\.enabled\) return/, 'handoff and Accept spec latch against duplicate submission');
