@@ -79,9 +79,32 @@ const document = { body, activeElement: body, querySelectorAll: s => body.queryS
   createElement: t => new El(t), addEventListener() {} };
 const window = { addEventListener() {}, matchMedia: () => ({ matches: true }) };
 const posted = [];
-const fetch = async (url, init) => { posted.push([url, JSON.parse(init.body)]); return { ok: true }; };
+let reply = { status: 200, body: { ok: true } };  // the record route's answer; an Error rejects
+// A fake review server: GET /api/jev serves server.items as JSON on the wire, fresh objects each read, like the real
+// route; POST /api/jev/offer records, and an accepted dismissal drops what jev.dismiss drops. held and heldPost park
+// the next GET or POST until called.
+const server = { items: [], held: null, heldPost: null };
+const fetch = async (url, init) => {
+  if (!init || init.method !== 'POST') {
+    const wire = JSON.stringify({ jev: 'on', items: server.items, levels, offer: null });
+    if (server.held) await new Promise(resolve => { server.held = resolve; });
+    return { ok: true, json: async () => JSON.parse(wire) };
+  }
+  const body = JSON.parse(init.body);
+  posted.push([url, body]);
+  if (server.heldPost) await new Promise(resolve => { server.heldPost = resolve; });
+  if (reply instanceof Error) throw reply;
+  if (reply.status < 400 && reply.body.ok === true && body.dismiss) {
+    server.items = server.items.filter(i => i.text !== body.rule || (body.dismiss === 'here' && i.record !== body.record));
+  }
+  return { ok: reply.status < 400, status: reply.status, json: async () => reply.body };
+};
+const settle = async () => { for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve)); };
+const pollTimers = [];
 const code = [
+  slice('function jevParams(', '\n\nfunction jevItem('),
   slice('function findAnchor(', '\n\nfunction clearJev('),
+  slice('// Background answers', '\n\n// One evidence read'),
   slice('function coveragePair(', '\n\n// Name the folder'),
   slice('function jevDisplayLabel(', '\n\nfunction goToJevTarget('),
   slice('/* ---------------- Jev markers', '\n\n/* ---------------- UI'),
@@ -89,15 +112,17 @@ const code = [
 const levels = JSON.parse(execFileSync('python3', ['-c', 'import json, sys; sys.path.insert(0, "skill/review-spec/assets"); from jev import MARK_LEVELS; print(json.dumps(MARK_LEVELS))'], { cwd: root, encoding: 'utf8' }));
 const target = 'docs/specs/onboarding.spec.html#acceptance-onboarding';
 const rule = (stateName, extra = {}) => ({ kind: 'rule', id: 'acceptance', state: stateName, label: stateName === 'label' ? 'missed' : null,
-  target, record: null, word: 'onboarding', escalated: false, level: stateName === 'label' ? levels.missed.human : null, ...extra });
+  target, record: null, word: 'onboarding', text: 'Every feature that changes a screen updates onboarding.', escalated: false, level: stateName === 'label' ? levels.missed.human : null, ...extra });
 const state = { readingView: false, jev: { request: 1, status: 'on', base: 'b', items: [], levels, offer: null } };
-const location = { search: '', pathname: '/docs/specs/b.spec.html' };
+const location = { search: '', pathname: '/docs/specs/b.spec.html', protocol: 'http:' };
 const composed = [];
 const openComposer = (...args) => composed.push(args);
-const { renderJev } = Function('document', 'window', 'state', 'location', 'URLSearchParams', 'EMBED_REVIEW_DIR', 'NodeFilter',
+const { renderJev, requestJev: loadJev } = Function('document', 'window', 'state', 'location', 'URLSearchParams', 'EMBED_REVIEW_DIR', 'NodeFilter',
   'requestAnimationFrame', 'cancelAnimationFrame', 'getComputedStyle', 'innerWidth', 'innerHeight', 'openComposer', 'fetch',
-  code + '; return { renderJev };')(document, window, state, location, URLSearchParams, null, {}, () => 0, () => {},
-  () => ({}), 1440, 900, openComposer, fetch);
+  'renderPanel', 'renderPins', 'setTimeout', 'clearTimeout', 'AbortController',
+  code + '; return { renderJev, requestJev };')(document, window, state, location, URLSearchParams, null, {}, () => 0, () => {},
+  () => ({}), 1440, 900, openComposer, fetch, () => {}, () => {},
+  (fn, ms) => { if (ms === 2000) pollTimers.push(fn); return 0; }, () => {}, AbortController);
 const holder = anchor => article.querySelectorAll('[data-anchor]').find(e => e.dataset.anchor === anchor);
 const markers = () => body.querySelectorAll('.hx-jev-marker');
 const pop = () => body.querySelector('.hx-jev-pop');
@@ -119,13 +144,97 @@ const sentence = 'This spec may need #acceptance-onboarding from onboarding.spec
 assert.equal(text.getAttribute('aria-label'), sentence);
 assert.equal(text.getAttribute('role'), null, 'the link keeps link semantics');
 assert.equal(note.querySelector('.hx-jev-pop-sentence').textContent, sentence);
-assert.deepEqual(note.querySelectorAll('button').map(b => b.textContent), ['Ask to cover']);
+// #mark-rule-text: the rule's own criterion text follows the word in full, as plain quoted text.
+assert.equal(note.querySelector('.hx-jev-pop-quote').textContent, '\u201cEvery feature that changes a screen updates onboarding.\u201d');
+assert.deepEqual(note.querySelectorAll('button').map(b => b.textContent), ['Ask to cover', 'Not here', 'Dismiss rule']);
 // #acceptance-ask: the composer opens at the Acceptance criteria section with the fixed draft; nothing is written.
 note.querySelector('button').fire('click');
 assert.deepEqual(composed.pop(), ['acceptance', null, null,
   'Cover ' + target + ' with a criterion, or add one line saying why it does not apply.']);
 assert.equal(pop().hidden, true);
 assert.equal(posted.length, 0);
+// #dismiss-where, #acceptance-dismiss, #mark-rule-text: through the served /api/jev read, the server the only truth.
+// A dismiss click hides its note at once, records through the offer's record route, then re-reads /api/jev and shows
+// what the server returns.
+const ruleText = 'Every feature that changes a screen updates onboarding.';
+const wire = (id, record, extra = {}) => ({ kind: 'rule', id, target, word: 'onboarding', text: ruleText, state: 'label',
+  label: 'missed', record, level: levels.missed.human, agent_level: levels.missed.agent, ...extra });
+const qa = wire('title', 'q1', { target: 'docs/specs/qa.spec.html#acceptance-qa', word: 'qa', text: 'Every feature has QA.' });
+const load = async items => { server.items = items; pollTimers.length = 0; await loadJev('b'); };
+const ruleNote = (anchor, word) => {
+  holder(anchor).querySelector('.hx-jev-marker').fire('focus');
+  return pop().querySelectorAll('.hx-jev-pop-note').find(n => n.querySelector('.hx-jev-pop-text').textContent === word + '?');
+};
+const click = (anchor, word, label) => ruleNote(anchor, word).querySelectorAll('button').find(b => b.textContent === label).fire('click');
+await load([wire('acceptance', 'r1'), qa]);
+assert.equal(markers().length, 2);
+assert.equal(ruleNote('acceptance', 'onboarding').querySelector('.hx-jev-pop-quote').textContent, '\u201c' + ruleText + '\u201d',
+  'the served rule text reaches the popover');
+click('acceptance', 'onboarding', 'Not here');
+assert.equal(markers().length, 1, 'the note is gone without a reload');
+assert.equal(holder('acceptance').querySelector('.hx-jev-marker'), null);
+assert.equal(pop().hidden, true);
+assert.deepEqual(posted.pop(), ['/api/jev/offer?path=docs%2Fspecs%2Fb.spec.html', { dismiss: 'here', rule: ruleText, record: 'r1' }]);
+await settle();
+assert.equal(markers().length, 1, 'the re-read shows the server, which no longer returns it');
+assert.equal(state.jev.items.length, 1);
+// #pending-poll: with a pending item polling, a same-content poll swaps in new item objects without a rerender;
+// Not here on the note then shown still drops it and records it.
+const pendingItem = wire('story', null, { target: 'docs/specs/qa.spec.html#acceptance-qa', word: 'qa', text: 'Every feature has QA.',
+  state: 'pending', label: null, level: undefined, agent_level: undefined, escalated: true });
+await load([wire('acceptance', 'r1'), qa, pendingItem]);
+assert.equal(markers().length, 3);
+pollTimers.shift()();
+await settle();
+assert.equal(markers().length, 3);
+click('acceptance', 'onboarding', 'Not here');
+assert.equal(markers().length, 2, 'dropped at once after a same-content poll');
+assert.deepEqual(posted.pop()[1], { dismiss: 'here', rule: ruleText, record: 'r1' });
+await settle();
+assert.equal(markers().length, 2);
+// A poll in flight when the reviewer dismisses answers from before the dismissal; while the record is still on its
+// way, that answer does not bring the note back; the page shows the re-read after it.
+await load([wire('acceptance', 'r1'), qa, pendingItem]);
+server.held = true;
+pollTimers.shift()();
+await settle();
+const release = server.held;
+server.held = null;
+server.heldPost = true;
+click('acceptance', 'onboarding', 'Not here');
+await settle();
+release();
+await settle();
+assert.equal(markers().length, 2, 'a stale poll does not bring the note back');
+const recorded = server.heldPost;
+server.heldPost = null;
+recorded();
+posted.pop();
+await settle();
+assert.equal(markers().length, 2);
+assert.equal(state.jev.items.filter(i => i.word === 'onboarding').length, 0);
+// #acceptance-dismiss-rule: Dismiss rule removes every note of that rule text on the page and records not-a-rule by text.
+await load([wire('acceptance', 'r1'), wire('story', 'r2'), qa]);
+assert.equal(markers().length, 3);
+click('story', 'onboarding', 'Dismiss rule');
+assert.deepEqual(state.jev.items.map(i => i.word), ['qa']);
+assert.equal(markers().length, 1);
+assert.deepEqual(posted.pop(), ['/api/jev/offer?path=docs%2Fspecs%2Fb.spec.html', { dismiss: 'rule', rule: ruleText }]);
+assert.equal(posted.length, 0);
+await settle();
+assert.equal(markers().length, 1, 'a recorded dismissal stays done');
+// #dismiss-where: a dismissal the server refuses or never gets comes back on the re-read, so it never looks done.
+for (const refused of [{ status: 400, body: { ok: false } }, { status: 200, body: { ok: false } }, { status: 503, body: {} }, new Error('offline')]) {
+  reply = refused;
+  await load([wire('acceptance', 'r1'), qa]);
+  click('acceptance', 'onboarding', 'Not here');
+  assert.equal(markers().length, 1, 'dropped at once');
+  await settle();
+  assert.equal(markers().length, 2, 'back from the server: ' + JSON.stringify(refused.body || refused.message));
+  assert.equal(state.jev.items.filter(i => i.word === 'onboarding').length, 1);
+  posted.pop();
+}
+reply = { status: 200, body: { ok: true } };
 // The level comes only from the item: the runtime keeps no mapping for rules.
 show([rule('label', { level: 'warning' })]);
 assert.equal(markers()[0].dataset.attention, 'false');

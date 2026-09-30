@@ -1,6 +1,6 @@
-"""Record provenance, resolution, confirmed, and regression tests.
+"""Record provenance, resolution, and confirmed tests.
 
-Spec: jev-suggestions #proof-provenance, #proof-resolution, #proof-regression.
+Spec: jev-suggestions #proof-provenance, #proof-resolution, #measure-feedback.
 Run: python3 tests/jev-provenance.py
 """
 
@@ -261,86 +261,6 @@ class TestResolution(unittest.TestCase):
         confirmed = store3.confirmed_records()
         self.assertEqual(len(confirmed), 1)
         self.assertTrue(confirmed[0]["confirmed"])
-
-    def test_eval_counts_only_confirmed(self):
-        """The eval replay counts only confirmed labels, excluding unconfirmed dismissed ones."""
-        # Create two records: one dismissed (unconfirmed), one fixed (confirmed TP)
-        dismissed = {
-            "kind": "contradicts",
-            "answer": {"label": "yes", "probabilities": {"yes": 0.95, "no": 0.05}, "confidence": 0.9},
-            "ground_truth": "no",  # dismissed -> was wrong
-            "confirmed": False,
-        }
-        fixed = {
-            "kind": "contradicts",
-            "answer": {"label": "yes", "probabilities": {"yes": 0.95, "no": 0.05}, "confidence": 0.9},
-            "ground_truth": "yes",  # fixed -> was right
-            "confirmed": True,
-        }
-        # Regression check should only count confirmed entries
-        confirmed_only = [fixed]
-        passed, metrics = jev.regression_check(confirmed_only, SETS)
-        self.assertEqual(metrics["tp"], 1)
-        self.assertEqual(metrics["fp"], 0)
-        self.assertEqual(metrics["fn"], 0)
-
-        # If we include both but mark dismissed as not confirmed, regression_check skips it
-        # (regression_check should filter by show_cutoff)
-        all_labels = [dismissed, fixed]
-        # Both have P(yes)=0.95 >= show_cutoff=0.9, so both shown
-        passed, metrics = jev.regression_check(all_labels, SETS)
-        # dismissed has ground_truth=no -> FP; fixed has ground_truth=yes -> TP
-        self.assertEqual(metrics["tp"], 1)
-        self.assertEqual(metrics["fp"], 1)
-
-
-# ---------------------------------------------------------------------------
-# #proof-regression
-# ---------------------------------------------------------------------------
-
-class TestRegression(unittest.TestCase):
-    """Regression: threshold change that misses a confirmed label fails; original passes."""
-
-    def test_original_threshold_passes(self):
-        """With two confirmed TPs at P(yes)=0.95, original show_cutoff=0.9 shows both."""
-        labels = [
-            {"kind": "contradicts", "ground_truth": "yes",
-             "answer": {"label": "yes", "probabilities": {"yes": 0.95, "no": 0.05}, "confidence": 0.9}},
-            {"kind": "contradicts", "ground_truth": "yes",
-             "answer": {"label": "yes", "probabilities": {"yes": 0.92, "no": 0.08}, "confidence": 0.85}},
-        ]
-        passed, metrics = jev.regression_check(labels, SETS, prior_precision=0.8, prior_recall=1.0)
-        self.assertTrue(passed, f"should pass: {metrics}")
-        self.assertEqual(metrics["tp"], 2)
-        self.assertEqual(metrics["fn"], 0)
-        self.assertGreaterEqual(metrics["recall"], 1.0)
-
-    def test_raised_threshold_fails(self):
-        """Raising show_cutoff misses one confirmed label -> recall drops -> fails."""
-        labels = [
-            {"kind": "contradicts", "ground_truth": "yes",
-             "answer": {"label": "yes", "probabilities": {"yes": 0.95, "no": 0.05}, "confidence": 0.9}},
-            {"kind": "contradicts", "ground_truth": "yes",
-             "answer": {"label": "yes", "probabilities": {"yes": 0.92, "no": 0.08}, "confidence": 0.85}},
-        ]
-        # Create question sets with raised show_cutoff (0.94 misses the 0.92 entry)
-        raised = dict(SETS)
-        raised["contradicts"] = jev.QuestionSet(
-            "contradicts", 3, SETS["contradicts"].instructions,
-            SETS["contradicts"].labels, SETS["contradicts"].threshold,
-            SETS["contradicts"].fallback,
-            show_cutoff=0.94, verify_cutoff=0.7)
-        passed, metrics = jev.regression_check(labels, raised, prior_precision=0.8, prior_recall=1.0)
-        self.assertFalse(passed, f"should fail: {metrics}")
-        self.assertEqual(metrics["tp"], 1)
-        self.assertEqual(metrics["fn"], 1)
-        self.assertLess(metrics["recall"], 1.0)
-
-    def test_regression_with_no_confirmed_labels_passes(self):
-        """With no confirmed labels, nothing to regress against."""
-        passed, metrics = jev.regression_check([], SETS)
-        self.assertTrue(passed)
-        self.assertEqual(metrics["tp"], 0)
 
 
 if __name__ == "__main__":

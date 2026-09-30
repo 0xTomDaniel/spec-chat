@@ -975,14 +975,23 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
             return self._json({"error": "jev unavailable"}, 503)
 
     def _post_offer(self, query, body):
-        """Record the page's one-time reconcile offer sent or dismissed (project-rules #bootstrap-offer)."""
-        mount, _, _ = self._resolve_path(query.get("path", [""])[0], spec_only=True)
+        """The one Jev record route: the page's one-time reconcile offer sent or dismissed (project-rules
+        #bootstrap-offer), or a rule note's Not here or Dismiss rule (project-rules #dismiss-store)."""
+        mount, target, _ = self._resolve_path(query.get("path", [""])[0], spec_only=True)
         if not mount:
             return self._json({"error": "bad path"}, 400)
         try:
-            action = json.loads(body).get("offer")
+            data = json.loads(body)
+            action = data.get("offer")
         except (ValueError, AttributeError):
             return self._json({"error": "bad json"}, 400)
+        if "dismiss" in data:
+            # jev.dismiss is the one check of a dismissal; a refused one is a 400, and the page's re-read brings its note back.
+            try:
+                ok = self.server.jev.dismiss(mount, target, data.get("dismiss"), data.get("rule"), data.get("record"))
+            except OSError:
+                return self._json({"error": "jev unavailable"}, 503)
+            return self._json({"ok": ok}, 200 if ok else 400)
         if action not in ("sent", "dismissed"):
             return self._json({"error": "offer must be sent or dismissed"}, 400)
         try:
