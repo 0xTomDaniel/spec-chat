@@ -65,6 +65,14 @@ observable states the visible result (Then). A criterion in this shape is
 clear to read and checkable: anyone can set up the Given, do the When, and see
 whether the Then holds. Use plain language; quote a UI name when it helps.
 Existing criteria convert when a change touches them.
+Write every clear criterion so a QA capture program can drive it without guessing; these rules apply at shaping and at repair.
+One scenario per criterion: no Given or When joins alternatives with "or"; each alternative becomes its own criterion.
+Then names what is visible at the end: on screen, or for a feature with no screen, in its terminal output or a named file.
+A Then that states only an absence also names something visible that proves the end state was reached, and a Then never defers to other contracts, as in "remains governed by existing contracts".
+Every Given names a state that a fixture declared in the target repository provides; when none does, the Given names the fixture that must be extended to provide it.
+A gesture or timing is its own explicit step with its target or duration, such as "press and hold 500ms" or "drag to the Ideas tile", and the criterion says in plain words that it needs that gesture or timing, so a QA program without it can report the criterion unsupported instead of failed.
+Spec Chat keeps no list of QA capabilities; the plain words are the whole contract.
+Given, When, and Then open their clauses capitalized as written here, the same way throughout a spec, with no label before them such as a number or "Scenario:".
 
 A `data-spec-tbd` marker is open unless its value is `later`. Open TBDs block
 spec acceptance and are highlighted in review. `data-spec-tbd="later"` marks a
