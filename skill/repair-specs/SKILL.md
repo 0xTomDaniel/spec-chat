@@ -1,6 +1,6 @@
 ---
 name: repair-specs
-description: Bring a repo's existing specs to the current shaping contract. Removes non-target text, moves behavior to owning specs, resolves contradictions, and rewrites acceptance criteria to satisfy Jev project rules. Runnable any time or as onboarding catch-up.
+description: Bring a repo's existing specs to the current shaping contract. Removes non-target text, moves behavior to owning specs, resolves contradictions, and rewrites acceptance criteria to the shaping contract's criterion rules and Jev project rules. Runnable any time or as onboarding catch-up.
 ---
 
 # Repair specs
@@ -43,12 +43,20 @@ Resolve contradictions between specs:
 
 ### 4. Criteria
 
-Rewrite acceptance criteria to satisfy Jev project rules.
-Skip this type entirely when Jev is off.
+Rewrite acceptance criteria to the shaping contract's [criterion rules](../../docs/specs/prompt-first-shaping.spec.html#complete-criterion-capturable), then to any missed Jev project rule.
+Criterion-rule repair runs whether Jev is on or off.
 
+Criterion rules:
+- For each criterion that breaks a criterion rule, rewrite it to meet every rule.
+- A Given or When that joins alternatives splits into one criterion per alternative; the first keeps the original anchor, each new one gets a new stable anchor, and each meets every criterion rule.
+- When the visible end state or the providing fixture cannot be read from the specs, write an open TBD (`data-spec-tbd`) at that criterion naming what is missing; never invent an end state or a fixture.
+
+Jev project rules, only when Jev is on:
 - Read the project's Jev rules: project-wide rules are acceptance criteria from other specs whose scope is `every feature`, as [project-rules](../../docs/specs/project-rules.spec.html) defines.
 - For each spec whose criteria miss a rule, rewrite to satisfy the rule using the rule's own wording.
 - The skill names no project's rules and applies whatever Jev found; no rule wording or format is hardcoded.
+
+When Jev is off, skip only the Jev project-rule repair; clean, home, contradict, and criterion-rule repairs still run.
 
 ## Editing contract
 
