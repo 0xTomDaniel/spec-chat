@@ -161,6 +161,22 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(tomllib.loads(text)["project"]["proj"], status)
         self.assertEqual(sorted(p.name for p in service.state_dir.iterdir()), ["onboarding.toml", "records.jsonl"])
 
+    def test_warm_up_collapses_linked_copies_to_their_home_rule(self):
+        # project-rules #q-copies: one rule per home, checked with the home's text, listed once
+        copy = 'Every feature adds onboarding, per <a href="onboarding.spec.html#acceptance-onboarding">onboarding</a>.'
+        self.write("copy.spec.html", spec(("copy-rule", copy), body="Copy."))
+        self.main = self.commit()
+        copy_text = "Every feature adds onboarding, per onboarding."
+        provider = FakeProvider(scope={ONBOARDING: "every feature", copy_text: "every feature"})
+        service = self.service(provider)
+        service.warm([self.row()])
+        status = self.settle(service)
+        home = "docs/specs/onboarding.spec.html#acceptance-onboarding"
+        self.assertEqual((status["state"], status["rules"]), ("done", [home]))
+        self.assertEqual([entry["rules"] for entry in status["reconcile"]], [[{"target": home, "word": "onboarding"}]] * 2)
+        rules = {c["state"]["rule"] for c in provider.calls if "triggered" in c["questions"]}
+        self.assertEqual(rules, {ONBOARDING})
+
     def test_warm_up_table_keeps_install_status_and_other_projects(self):
         path = self.dir / "state" / "onboarding.toml"
         path.parent.mkdir(parents=True)

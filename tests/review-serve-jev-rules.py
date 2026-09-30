@@ -152,6 +152,7 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(item["target"], "specs/onboarding.spec.html#acceptance-onboarding")
         self.assertEqual(item["id"], "acceptance")
         self.assertEqual(item["word"], "onboarding")
+        self.assertEqual(item["text"], ONBOARDING)  # the served rule clause, in full (#mark-rule-text)
 
     def test_rule_miss_level_is_important_from_the_one_levels_table(self):
         # project-rules #mark-order, jev-suggestions #level-important: one MARK_LEVELS row, returned in /api/jev.
@@ -440,6 +441,51 @@ class RulesTest(unittest.TestCase):
         rule_texts = [c["state"]["rule"] for c in provider.asked("rule")]
         self.assertNotIn(FEATURE_EVERY, rule_texts)
         self.assertNotIn(FEATURE_ALL, rule_texts)
+
+    def copies(self):
+        """A home rule, two linked copies (one through the other), a diverging own rule (#q-copies)."""
+        link = '<a href="onboarding.spec.html#acceptance-onboarding">onboarding</a>'
+        self.write("onboarding.spec.html", spec(("acceptance-onboarding", ONBOARDING)))
+        self.write("c.spec.html", spec(("c-rule", "Every feature adds onboarding, as " + link + " states.")))
+        self.write("d.spec.html", spec(("d-rule", 'Every feature adds onboarding, per <a href="c.spec.html#c-rule">c</a>.')))
+        self.write("e.spec.html", spec(("e-rule", "Every feature adds its own CI job.")))
+        self.write("b.spec.html", spec(("b-one", "Old criterion."), body="Old body."))
+        self.base = self.commit()
+        self.write("b.spec.html", spec(("b-one", FEATURE), body="The report page gains an export button."))
+        texts = [ONBOARDING, "Every feature adds onboarding, as onboarding states.",
+                 "Every feature adds onboarding, per c.", "Every feature adds its own CI job."]
+        return FakeProvider(scope={text: ("every feature", 0.95) for text in texts},
+                            rule={text: ("missed", 0.95) for text in texts}), texts
+
+    def test_linked_copies_collapse_to_their_home_rule(self):
+        # project-rules #q-copies, #q-copies-diverge, #acceptance-copies, #proof-dismiss (copy part)
+        provider, texts = self.copies()
+        result = self.read(self.service(provider))
+        home = "specs/onboarding.spec.html#acceptance-onboarding"
+        self.assertEqual(result["rules"], sorted([home, "specs/e.spec.html#e-rule"]))
+        items = {item["target"]: item for item in self.rules(result)}
+        self.assertEqual(sorted(items), result["rules"])
+        self.assertEqual((items[home]["word"], items[home]["text"], items[home]["state"]), ("onboarding", ONBOARDING, "label"))
+        self.assertEqual(items["specs/e.spec.html#e-rule"]["text"], texts[3])
+        # copies are checked with the home's text only, never their own
+        self.assertEqual(sorted({call["state"]["rule"] for call in provider.asked("rule")}), sorted([ONBOARDING, texts[3]]))
+
+    def test_link_to_a_criterion_that_is_no_rule_is_no_copy(self):
+        provider, texts = self.copies()
+        provider.scope[ONBOARDING] = ("this feature", 0.95)
+        result = self.read(self.service(provider))
+        # c stays its own rule; d, linking c, is c's copy
+        self.assertEqual(result["rules"], ["specs/c.spec.html#c-rule", "specs/e.spec.html#e-rule"])
+        self.assertEqual({item["target"]: item["text"] for item in self.rules(result)}["specs/c.spec.html#c-rule"], texts[1])
+
+    def test_home_spec_shows_no_note_for_copies_of_its_own_rule(self):
+        provider, texts = self.copies()
+        service = self.service(provider)
+        self.read(service)  # decides every scope, the home's included
+        self.write("onboarding.spec.html", spec(("acceptance-onboarding", ONBOARDING), body="Changed."))
+        result = self.read(service, "onboarding.spec.html")
+        self.assertEqual(result["rules"], ["specs/e.spec.html#e-rule"])
+        self.assertEqual([item["target"] for item in self.rules(result)], ["specs/e.spec.html#e-rule"])
 
     def test_off_returns_off(self):
         self.seed()
