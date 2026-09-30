@@ -89,7 +89,7 @@ const code = [
 const levels = JSON.parse(execFileSync('python3', ['-c', 'import json, sys; sys.path.insert(0, "skill/review-spec/assets"); from jev import MARK_LEVELS; print(json.dumps(MARK_LEVELS))'], { cwd: root, encoding: 'utf8' }));
 const target = 'docs/specs/onboarding.spec.html#acceptance-onboarding';
 const rule = (stateName, extra = {}) => ({ kind: 'rule', id: 'acceptance', state: stateName, label: stateName === 'label' ? 'missed' : null,
-  target, record: null, word: 'onboarding', escalated: false, level: stateName === 'label' ? levels.missed.human : null, ...extra });
+  target, record: null, word: 'onboarding', text: 'Every feature that changes a screen updates onboarding.', escalated: false, level: stateName === 'label' ? levels.missed.human : null, ...extra });
 const state = { readingView: false, jev: { request: 1, status: 'on', base: 'b', items: [], levels, offer: null } };
 const location = { search: '', pathname: '/docs/specs/b.spec.html' };
 const composed = [];
@@ -119,12 +119,37 @@ const sentence = 'This spec may need #acceptance-onboarding from onboarding.spec
 assert.equal(text.getAttribute('aria-label'), sentence);
 assert.equal(text.getAttribute('role'), null, 'the link keeps link semantics');
 assert.equal(note.querySelector('.hx-jev-pop-sentence').textContent, sentence);
-assert.deepEqual(note.querySelectorAll('button').map(b => b.textContent), ['Ask to cover']);
+// #mark-rule-text: the rule's own criterion text follows the word in full, as plain quoted text.
+assert.equal(note.querySelector('.hx-jev-pop-quote').textContent, '\u201cEvery feature that changes a screen updates onboarding.\u201d');
+assert.deepEqual(note.querySelectorAll('button').map(b => b.textContent), ['Ask to cover', 'Not here', 'Dismiss rule']);
 // #acceptance-ask: the composer opens at the Acceptance criteria section with the fixed draft; nothing is written.
 note.querySelector('button').fire('click');
 assert.deepEqual(composed.pop(), ['acceptance', null, null,
   'Cover ' + target + ' with a criterion, or add one line saying why it does not apply.']);
 assert.equal(pop().hidden, true);
+assert.equal(posted.length, 0);
+// #dismiss-where, #acceptance-dismiss: Not here removes the note at once and records dismissed on its rule-check record,
+// through the offer's record route; other rules stay.
+const other = { ...rule('label'), id: 'story', target: 'docs/specs/qa.spec.html#acceptance-qa', word: 'qa', text: 'Every feature has QA.', record: 'q1' };
+show([rule('label', { record: 'r1' }), other]);
+assert.equal(markers().length, 2);
+holder('acceptance').querySelector('.hx-jev-marker').fire('focus');
+pop().querySelectorAll('button').find(b => b.textContent === 'Not here').fire('click');
+assert.equal(markers().length, 1, 'the note is gone without a reload');
+assert.equal(holder('acceptance').querySelector('.hx-jev-marker'), null);
+assert.equal(pop().hidden, true);
+assert.deepEqual(posted.pop(), ['/api/jev/offer?path=docs%2Fspecs%2Fb.spec.html',
+  { dismiss: 'here', rule: 'Every feature that changes a screen updates onboarding.', record: 'r1' }]);
+// #acceptance-dismiss-rule: Dismiss rule removes every note of that rule text on the page and records not-a-rule by text.
+show([rule('label', { record: 'r1' }), rule('label', { id: 'story', record: 'r2' }), other]);
+assert.equal(markers().length, 2);
+holder('story').querySelector('.hx-jev-marker').fire('focus');
+pop().querySelectorAll('.hx-jev-pop-note').find(n => n.querySelector('.hx-jev-pop-text').textContent === 'onboarding?')
+  .querySelectorAll('button').find(b => b.textContent === 'Dismiss rule').fire('click');
+assert.deepEqual(state.jev.items.map(i => i.word), ['qa']);
+assert.equal(markers().length, 1);
+assert.deepEqual(posted.pop(), ['/api/jev/offer?path=docs%2Fspecs%2Fb.spec.html',
+  { dismiss: 'rule', rule: 'Every feature that changes a screen updates onboarding.' }]);
 assert.equal(posted.length, 0);
 // The level comes only from the item: the runtime keeps no mapping for rules.
 show([rule('label', { level: 'warning' })]);
