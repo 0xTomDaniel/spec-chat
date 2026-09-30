@@ -38,6 +38,14 @@ viewport = { width = 1280, height = 800 }
 viewport = { width = 390, height = 844 }
 touch = true
 
+# Criteria on the later-only and one-open specs start there, not at the report spec.
+[nav.acceptance-tbd-later]
+path = "{review}/qa-fixture/docs/specs/later-only.spec.html"
+[nav.acceptance-tbd-later-handoff]
+path = "{review}/qa-fixture/docs/specs/later-only.spec.html"
+[nav.acceptance-tbd-open-single]
+path = "{review}/qa-fixture/docs/specs/one-open.spec.html"
+
 # Stories this environment cannot host. services.review runs with HOME and XDG under
 # $QA_ROOT: no evidence or wake provider, no Herdr, no live agent, no review-host
 # (the fixture writes the registry), one lane slug and one project. The fake Jev
