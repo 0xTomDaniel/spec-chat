@@ -174,6 +174,7 @@ async function fetchJev(base, signal) {
       side: item.side == null ? null : String(item.side),
       other: item.other == null ? null : String(item.other), // lane items name the other slug (#acceptance-cross-lane)
       word: item.word == null ? null : String(item.word),
+      text: item.text == null ? null : String(item.text), // a rule's criterion text (project-rules #mark-rule-text)
       escalated: item.escalated === true,
     })) : [],
     levels: result ? result.levels : null, // the server's levels table (#markers-levels-source); markLevel reads it
@@ -1245,22 +1246,18 @@ function jevNeutralNote(anchor, question) {
   return { anchor, group: 'neutral', state: 'unavailable', text: 'Jev unavailable', sentence: 'Jev could not check ' + JEV_QUESTIONS[question], level: null };
 }
 
-// project-rules #dismiss-where: one click that Jev is wrong. Drops the matching rule items at once, rerenders, and
-// records through the offer's record route; the server then never returns them. A dismissal not recorded (refused,
-// failed, or unreachable) puts its notes back, so it never looks done and then returns on reload.
+// project-rules #dismiss-where: one click that Jev is wrong. Hides the dropped rule notes at once, ends any read in
+// flight, records through the offer's record route, then re-reads /api/jev and shows what the server returns: a
+// recorded dismissal stays gone, a refused or failed one comes back.
 function jevDismissAction(label, body, drop) {
   return { label, run: () => {
-    const dropped = state.jev.items.filter(item => item.kind === 'rule' && drop(item));
-    state.jev.items = state.jev.items.filter(item => !dropped.includes(item));
+    const base = state.jev.base;
+    state.jev.request += 1;
+    state.jev.items = state.jev.items.filter(item => !(item.kind === 'rule' && drop(item)));
     renderJev();
-    const restore = () => {
-      state.jev.items = [...state.jev.items, ...dropped.filter(item => !state.jev.items.includes(item))];
-      renderJev();
-    };
+    const reread = () => { if (base === state.jev.base) requestJev(base, true); };
     fetch('/api/jev/offer?' + new URLSearchParams({ path: location.pathname.replace(/^\//, '') }),
-      { method: 'POST', body: JSON.stringify(body) })
-      .then(response => response.ok ? response.json() : null)
-      .then(reply => { if (!reply || reply.ok !== true) restore(); }, restore);
+      { method: 'POST', body: JSON.stringify(body) }).then(reread, reread);
   } };
 }
 
@@ -1285,7 +1282,8 @@ function jevRuleNote(item) {
   return { anchor: item.id, group: 'rule', state: 'label', text: item.word + '?', href: link.href, level: item.level || null,
     sentence: 'This spec may need ' + rule, quote: item.text,
     actions: [jevDraftAction('Ask to cover', 'Cover ' + link.text + ' with a criterion, or add one line saying why it does not apply.'),
-      jevDismissAction('Not here', { dismiss: 'here', rule: item.text, record: item.record }, other => other === item),
+      jevDismissAction('Not here', { dismiss: 'here', rule: item.text, record: item.record },
+        other => other.id === item.id && other.text === item.text),
       jevDismissAction('Dismiss rule', { dismiss: 'rule', rule: item.text }, other => other.text === item.text)] };
 }
 

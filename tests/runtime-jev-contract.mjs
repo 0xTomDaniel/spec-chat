@@ -50,9 +50,9 @@ assert.match(requested, /^\/api\/jev\\?/);
 assert.deepEqual(answer, {
   jev: 'on',
   items: [
-    { kind: 'corpus', id: 'draft', state: 'label', label: 'overlaps', target: 'other#flow', record: 'r1', level: 'warning', side: null, other: null, word: null, escalated: false },
-    { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2', level: null, side: null, other: null, word: null, escalated: false },
-    { kind: 'lane', id: 'rule', state: 'label', label: 'contradicts', target: 'ann2/y.spec.html#b', record: 'r3', level: 'important', side: 'first', other: 'ann2', word: null, escalated: false },
+    { kind: 'corpus', id: 'draft', state: 'label', label: 'overlaps', target: 'other#flow', record: 'r1', level: 'warning', side: null, other: null, word: null, text: null, escalated: false },
+    { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2', level: null, side: null, other: null, word: null, text: null, escalated: false },
+    { kind: 'lane', id: 'rule', state: 'label', label: 'contradicts', target: 'ann2/y.spec.html#b', record: 'r3', level: 'important', side: 'first', other: 'ann2', word: null, text: null, escalated: false },
   ],
   levels: { overlaps: { human: 'warning', agent: 'warning' }, contradicts: { human: 'important', agent: 'important' } },
   offer: null,
