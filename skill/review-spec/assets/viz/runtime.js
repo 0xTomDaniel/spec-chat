@@ -55,7 +55,7 @@ const state = {
   loopsStarted: false,
   eventsRendered: false,
   handoffPosting: false,
-  lastTbd: null,         // open TBD marker focused by the last TBD open activation
+  lastTbd: null,         // open TBD marker focused by the last TBD open or Next TBD activation
   range: { baseline: null, loaded: null, loading: false, pickerOpen: false }, // loaded: anchor signatures of the page as served
   jev: { status: 'idle', items: [], levels: {}, offer: null, base: null, request: 0 }, // levels: the server's mark kind -> level table
   evidence: { criteria: null, levels: {}, hostOrigin: null }, // criteria: anchor -> entry once /api/evidence answers, null shows nothing;
@@ -1039,13 +1039,18 @@ function acknowledgedReplyCount(threads) {
   return [...threads.values()].filter(thread => thread.status === 'acknowledged').length;
 }
 
-function reviewHandoffState(threads, hasTbd = false) {
+// With open TBDs the action is TBD open once settled; until then Next TBD sits beside Hand off.
+function reviewHandoffState(threads, openTbds = 0) {
   const values = [...threads.values()];
   const drafts = values.filter(thread => thread.status === 'draft').length;
   const settled = drafts === 0 && values.every(thread => thread.status === 'resolved');
-  const finish = !hasTbd && settled;
-  const tbd = hasTbd && settled;
-  return { drafts, finish, tbd, enabled: drafts > 0 || finish || tbd };
+  const finish = !openTbds && settled;
+  const tbd = openTbds > 0 && settled;
+  return { drafts, openTbds, finish, tbd, nextTbd: openTbds > 0 && !tbd, enabled: drafts > 0 || finish || tbd };
+}
+
+function tbdCountLabel(label, openTbds) {
+  return openTbds >= 2 ? label + ' (' + openTbds + ')' : label;
 }
 
 function isOpenTbd(value) {
@@ -1065,8 +1070,8 @@ function tbdBlock(el) {
   return el.closest('[data-anchor]') || el;
 }
 
-function tbdHighlightBlocks(handoffState, open) {
-  return handoffState.tbd ? [...new Set(open.map(tbdBlock))] : [];
+function tbdHighlightBlocks(open) {
+  return [...new Set(open.map(tbdBlock))];
 }
 
 function advanceTbd(st, open) {
@@ -1076,9 +1081,9 @@ function advanceTbd(st, open) {
 // Open TBDs and the addressed anchor share one highlight; the addressed one keeps it while it is the address.
 function renderHighlight() {
   const openTbds = openTbdMarkers(document.querySelectorAll('[data-spec-tbd]'));
-  const handoffState = reviewHandoffState(state.threads, openTbds.length > 0);
+  const handoffState = reviewHandoffState(state.threads, openTbds.length);
   const addressed = addressPlace();
-  renderTbdHighlight(document, tbdHighlightBlocks(handoffState, openTbds).concat(addressed ? [findAnchor(addressed.anchor)] : []));
+  renderTbdHighlight(document, tbdHighlightBlocks(openTbds).concat(addressed ? [findAnchor(addressed.anchor)] : []));
   return handoffState;
 }
 
@@ -1923,7 +1928,7 @@ const CSS = `
 .hx-toolbar{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);display:flex;gap:var(--ui-space-1);align-items:center;background:var(--ui-surface);border:1px solid var(--ui-border);border-radius:var(--ui-radius);box-shadow:0 8px 28px var(--ui-shadow);padding:var(--ui-space-1);z-index:900;font:var(--ui-text-sm) var(--ui-font)}
 .hx-toolbar button{font:600 var(--ui-text-xs) var(--ui-font);border:none;background:transparent;border-radius:var(--ui-radius-sm);padding:var(--ui-space-2) var(--ui-space-3);cursor:pointer;color:var(--ui-ink)}
 .hx-toolbar button:disabled{cursor:default;opacity:.45}
-.hx-mobile-handoff{display:none}
+.hx-mobile-handoff,.hx-mobile-next-tbd{display:none}
 .hx-toolbar button[aria-pressed=true]{background:var(--ui-draft-soft);color:var(--ui-draft)}
 .hx-toolbar .hx-status{color:var(--ui-muted);font-size:var(--ui-text-xs);padding:0 10px}
 /* index link */
@@ -1990,6 +1995,7 @@ body.hx-panel-open .hx-thread-dock{opacity:0;transform:translateX(10px);pointer-
 /* handoff bar */
 .hx-handoff{border-top:1px solid var(--ui-border);padding:var(--ui-space-3) var(--ui-space-4);display:flex;justify-content:space-between;align-items:center}
 .hx-handoff .hx-note{font-size:var(--ui-text-xs);color:var(--ui-muted)}
+.hx-handoff .hx-next-tbd{margin-left:auto}
 /* pins */
 .hx-pin{position:absolute;z-index:700;width:24px;height:24px;border-radius:50% 50% 50% 4px;border:none;cursor:pointer;font:600 var(--ui-text-xs) var(--ui-font);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px var(--ui-shadow)}
 .hx-pin[data-s=draft],.hx-pin[data-s=pending]{background:var(--ui-draft)}
@@ -2088,7 +2094,7 @@ a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
 @media(max-width:640px){
 .hx-toolbar{left:var(--ui-space-3);right:var(--ui-space-3);bottom:calc(10px + env(safe-area-inset-bottom));transform:none;max-width:none;display:flex;flex-wrap:wrap;justify-content:stretch;gap:var(--ui-space-1);padding:var(--ui-space-1)}
 .hx-toolbar button{min-height:44px;flex:1 1 auto;padding:var(--ui-space-2) var(--ui-space-3);touch-action:manipulation}
-.hx-mobile-handoff{display:block}
+.hx-mobile-handoff,.hx-mobile-next-tbd:not([hidden]){display:block}
 .hx-toolbar .hx-status{flex:1 0 100%;min-width:0;padding:2px var(--ui-space-2) var(--ui-space-1);overflow:hidden;text-align:center;text-overflow:ellipsis;white-space:nowrap}
 .hx-panel{width:100vw;height:100dvh;max-height:100dvh;border-left:0;box-sizing:border-box;padding-bottom:calc(var(--hx-dock-space,0px) + 10px + env(safe-area-inset-bottom))}
 body.hx-panel-open{padding-right:0;overflow:hidden}
@@ -2182,7 +2188,7 @@ function mountUI() {
 
   const bar = document.createElement('div');
   bar.className = 'hx-toolbar';
-  bar.innerHTML = '<button id="hx-mode" aria-pressed="false">✛ Comment (C)</button><button class="hx-mobile-handoff" id="hx-mobile-handoff" type="button" disabled>Hand off</button><button id="hx-connect" hidden>Connect review folder</button><button id="hx-repick" hidden>Choose different folder</button><span class="hx-status" id="hx-status">starting…</span>';
+  bar.innerHTML = '<button id="hx-mode" aria-pressed="false">✛ Comment (C)</button><button class="hx-mobile-next-tbd" id="hx-mobile-next-tbd" type="button" hidden>Next TBD</button><button class="hx-mobile-handoff" id="hx-mobile-handoff" type="button" disabled>Hand off</button><button id="hx-connect" hidden>Connect review folder</button><button id="hx-repick" hidden>Choose different folder</button><span class="hx-status" id="hx-status">starting…</span>';
   document.body.appendChild(bar);
   // The narrow sidebar ends above the fixed dock, so its last content stays reachable.
   new ResizeObserver(() => document.documentElement.style.setProperty('--hx-dock-space', bar.offsetHeight + 'px')).observe(bar);
@@ -2196,14 +2202,16 @@ function mountUI() {
   const panel = document.createElement('aside');
   panel.className = 'hx-panel';
   panel.setAttribute('aria-label', 'Review sidebar');
-  panel.innerHTML = '<div class="hx-panel-head">Review <span class="hx-sub" id="hx-agent"></span><button class="hx-panel-toggle" id="hx-panel-toggle" type="button" aria-expanded="false" aria-label="Open review sidebar">‹</button><button class="hx-panel-gear" id="hx-panel-gear" type="button" aria-expanded="false" aria-controls="hx-settings" aria-label="Review display settings" title="Display settings">⚙</button></div><div class="hx-panel-content" id="hx-panel-content" aria-hidden="true" inert><div class="hx-settings" id="hx-settings" hidden><label class="hx-set-row" for="hx-veil">Diff visibility<span class="hx-set-val" id="hx-veil-val">100%</span><input type="range" id="hx-veil" min="0" max="100" step="5" value="100"></label><p class="hx-set-note">How strongly unchanged blocks are dimmed and blurred. At 0 the whole spec reads at normal clarity.</p></div><div class="hx-threads" id="hx-threads"></div><div class="hx-handoff"><span class="hx-note" id="hx-drafts">0 drafts</span><button class="hx-btn pri" id="hx-handoff">Hand off to agent →</button></div></div>';
+  panel.innerHTML = '<div class="hx-panel-head">Review <span class="hx-sub" id="hx-agent"></span><button class="hx-panel-toggle" id="hx-panel-toggle" type="button" aria-expanded="false" aria-label="Open review sidebar">‹</button><button class="hx-panel-gear" id="hx-panel-gear" type="button" aria-expanded="false" aria-controls="hx-settings" aria-label="Review display settings" title="Display settings">⚙</button></div><div class="hx-panel-content" id="hx-panel-content" aria-hidden="true" inert><div class="hx-settings" id="hx-settings" hidden><label class="hx-set-row" for="hx-veil">Diff visibility<span class="hx-set-val" id="hx-veil-val">100%</span><input type="range" id="hx-veil" min="0" max="100" step="5" value="100"></label><p class="hx-set-note">How strongly unchanged blocks are dimmed and blurred. At 0 the whole spec reads at normal clarity.</p></div><div class="hx-threads" id="hx-threads"></div><div class="hx-handoff"><span class="hx-note" id="hx-drafts">0 drafts</span><button class="hx-btn hx-next-tbd" id="hx-next-tbd" type="button" hidden>Next TBD</button><button class="hx-btn pri" id="hx-handoff">Hand off to agent →</button></div></div>';
   document.body.appendChild(panel);
 
   document.getElementById('hx-mode').addEventListener('click', () => setCommentMode(!state.commentMode));
   document.getElementById('hx-mobile-handoff').addEventListener('click', handoff);
+  document.getElementById('hx-mobile-next-tbd').addEventListener('click', nextTbd);
   document.getElementById('hx-dock-open').addEventListener('click', () => openPanel(true));
   document.getElementById('hx-panel-toggle').addEventListener('click', () => openPanel(!state.panelOpen));
   document.getElementById('hx-handoff').addEventListener('click', handoff);
+  document.getElementById('hx-next-tbd').addEventListener('click', nextTbd);
   setupDiffVisibility();
   document.addEventListener('keydown', e => {
     if (commentModeShortcut(e)) setCommentMode(!state.commentMode);
@@ -2481,10 +2489,14 @@ function renderPanel() {
   document.getElementById('hx-drafts').textContent = handoffState.finish ? 'Ready to accept' : drafts + ' draft' + (drafts === 1 ? '' : 's');
   const desktopHandoff = document.getElementById('hx-handoff');
   desktopHandoff.disabled = !handoffState.enabled;
-  desktopHandoff.textContent = handoffState.finish ? 'Accept spec' : handoffState.tbd ? 'TBD open' : 'Hand off to agent →';
+  desktopHandoff.textContent = handoffState.finish ? 'Accept spec' : handoffState.tbd ? tbdCountLabel('TBD open', handoffState.openTbds) : 'Hand off to agent →';
   const mobileHandoff = document.getElementById('hx-mobile-handoff');
   mobileHandoff.disabled = !handoffState.enabled;
-  mobileHandoff.textContent = handoffState.finish ? 'Accept spec' : handoffState.tbd ? 'TBD open' : drafts ? 'Hand off (' + drafts + ')' : 'Hand off';
+  mobileHandoff.textContent = handoffState.finish ? 'Accept spec' : handoffState.tbd ? tbdCountLabel('TBD open', handoffState.openTbds) : drafts ? 'Hand off (' + drafts + ')' : 'Hand off';
+  for (const nextButton of [document.getElementById('hx-next-tbd'), document.getElementById('hx-mobile-next-tbd')]) {
+    nextButton.hidden = !handoffState.nextTbd;
+    nextButton.textContent = tbdCountLabel('Next TBD', handoffState.openTbds);
+  }
   renderThreadDock();
   renderThreadHighlight();
 }
@@ -2825,8 +2837,8 @@ function renderBadges() {
 
 async function handoff() {
   const openTbds = openTbdMarkers(document.querySelectorAll('[data-spec-tbd]'));
-  const action = reviewHandoffState(state.threads, openTbds.length > 0);
-  if (action.tbd) return jumpToTbd(advanceTbd(state, openTbds));
+  const action = reviewHandoffState(state.threads, openTbds.length);
+  if (action.tbd) return nextTbd();
   if (state.handoffPosting || !action.enabled) return;
   state.handoffPosting = true;
   try {
@@ -2836,6 +2848,12 @@ async function handoff() {
   } finally {
     state.handoffPosting = false;
   }
+}
+
+// TBD open and Next TBD share one step and one position (state.lastTbd).
+function nextTbd() {
+  const open = openTbdMarkers(document.querySelectorAll('[data-spec-tbd]'));
+  if (open.length) jumpToTbd(advanceTbd(state, open));
 }
 
 function jumpToTbd(el) {
