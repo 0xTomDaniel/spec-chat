@@ -132,7 +132,6 @@ pending    0</pre>
 </ol>
 <p data-anchor="agent-read-rules">The hand-off message names the rules checked, as home spec and anchor, for visibility only; it asks nothing of the human.</p>
 <p data-anchor="agent-read-off">With Jev off, the read says <code>off</code> and the skill sends the link at once.</p>
-<p data-anchor="agent-read-trim" data-spec-tbd="operator proposal">Open for the human, proposed by the operator and not decided: after review, trim what the agent receives from Jev. Keep the project-rules check. Drop corpus and unsure counts from the agent hand-off, keeping them on the page. Hold back contradiction marks from the agent until their precision is measured. Evidence from recent reviews: about 1,400 corpus and unsure marks across four reviews, none acted on; about 11 important contradiction marks, all dismissed as wrong. Accept, change, or reject.</p>
 </section>
 
 <section data-anchor="bootstrap">
@@ -163,7 +162,6 @@ pending    0</pre>
 <p data-anchor="proof-first">First failing test: with a fake provider answering <code>every feature</code> for one criterion of spec A and <code>missed</code> for spec B, <code>/api/jev</code> for B returns one <code>rule</code> item targeting A's criterion.</p>
 <p data-anchor="proof-dismiss">Dismiss first failing test: with a fake provider answering <code>missed</code> for spec B, resolving that rule-check record <code>dismissed</code> removes the item from B's <code>/api/jev</code>, and it stays absent after B's text changes, then returns when the rule's criterion text changes.</p>
 <p data-anchor="proof-own-project">Own-project first failing test: with mounts of two projects each holding an <code>every feature</code> criterion, <code>/api/jev</code> for a spec of the first project lists only the first project's rule as checked.</p>
-<p data-anchor="proof-eval" data-spec-tbd="eval replay">Eval replay: open for the human. This changes no question set, threshold, or model, but limiting other specs to the page's project narrows the candidates <a href="./jev-suggestions.spec.html#acceptance-regression">the eval replay rule</a> may count as a pairing change. Proposed: not needed, since only another project's candidates go. Confirm, or require a replay before merge.</p>
 <p data-anchor="proof-evidence">Evidence: seam and runtime tests behind fakes, one live run per new question set, and a QA bundle on a real spec with a real project-wide rule, including a first registration.</p>
 </section>
 
