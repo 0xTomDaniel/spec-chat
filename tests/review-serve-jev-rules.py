@@ -524,6 +524,42 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(result["rules"], ["specs/e.spec.html#e-rule"])
         self.assertEqual([item["target"] for item in self.rules(result)], ["specs/e.spec.html#e-rule"])
 
+    def test_copies_collapse_across_per_spec_mounts_under_two_slugs(self):
+        # project-rules #q-copies, #acceptance-copies, #dismiss-rule (every copy); jev-suggestions #corpus-others:
+        # hosted mounts are one spec each under a lane slug, so a copy and its home are served under different slugs.
+        provider, texts = self.copies()
+        git(self.root, "update-ref", "refs/remotes/origin/main", self.base)
+
+        def row(slug, name):
+            return {"slug": slug, "project": "alpha", "root": str(self.root), "spec": "docs/specs/" + name,
+                    "spec_file": str(self.specs / name)}
+
+        lanes = {"b.spec.html": "ann1", "c.spec.html": "ann1", "onboarding.spec.html": "ann2",
+                 "d.spec.html": "ann2", "e.spec.html": "ann2"}
+        mounts = [row(slug, name) for name, slug in lanes.items()]
+        service = self.service(provider)
+
+        def read(name):
+            page = row(lanes[name], name)
+            args = (page, page["spec_file"], lanes[name] + "/docs/specs/" + name, self.base, [], "", mounts)
+            result = service.response(*args)
+            deadline = time.time() + 5
+            while any(item["state"] == "pending" for item in result["items"]) and time.time() < deadline:
+                time.sleep(0.01)
+                result = service.response(*args)
+            return result
+
+        home, own = "ann2/docs/specs/onboarding.spec.html#acceptance-onboarding", "ann2/docs/specs/e.spec.html#e-rule"
+        result = read("b.spec.html")
+        self.assertEqual(result["rules"], sorted([home, own]))
+        self.assertEqual(sorted(item["target"] for item in self.missed(result)), sorted([home, own]))
+        # the home spec is never asked to cover its own rule through a copy served in another lane
+        self.write("onboarding.spec.html", spec(("acceptance-onboarding", ONBOARDING), body="Changed."))
+        self.assertEqual(read("onboarding.spec.html")["rules"], [own])
+        # dismissing the home removes its copies in every lane
+        self.assertTrue(service.dismiss(row("ann1", "b.spec.html"), str(self.specs / "b.spec.html"), "rule", ONBOARDING))
+        self.assertEqual(read("b.spec.html")["rules"], [own])
+
     def records(self):
         return [json.loads(line) for line in (Path(self.tmp.name) / "state" / "records.jsonl").read_text().splitlines()]
 
@@ -612,6 +648,11 @@ class RulesTest(unittest.TestCase):
         self.assertFalse(service.dismiss(self.mount("alpha"), b, "here", ONBOARDING, scope))  # not a rule check
         self.assertFalse(service.dismiss(self.mount("alpha"), b, "here", ONBOARDING, "judgment-none"))
         self.assertFalse(service.dismiss(self.mount("alpha"), b, "other", ONBOARDING, item["record"]))
+        self.assertFalse(service.dismiss(self.mount("alpha"), b, ["rule"], ONBOARDING))
+        # no scope set loaded: refused, never a KeyError out of the record route
+        bare = jev.JevService(state_dir=Path(self.tmp.name) / "state", provider=provider, api_key="fake")
+        bare.seam.question_sets = {kind: qset for kind, qset in bare.seam.question_sets.items() if kind != "scope"}
+        self.assertFalse(bare.dismiss(self.mount("alpha"), b, "rule", ONBOARDING))
         self.assertEqual([r for r in self.records() if r.get("resolution")], [])
         self.assertEqual(len(self.missed(self.read(service, project="alpha"))), 1)
 
