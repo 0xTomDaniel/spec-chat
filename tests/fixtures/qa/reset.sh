@@ -1,11 +1,13 @@
 #!/bin/sh
-# QA fixture reset (qa.toml fixture.review_site): rebuild the served spec repo and
-# the review registry under $QA_ROOT, and drop Jev records and onboarding status.
-# base/ is the compared base commit, head/ the spec under shaping on top of it.
+# QA fixture reset (qa.toml fixture.spec_review_site): rebuild the served spec repo
+# and the review registry under $QA_ROOT. base/ is the compared base commit, head/
+# the specs under shaping on top of it. Jev records and onboarding status under
+# $QA_ROOT/state are kept: the running service holds them in memory too, and the
+# fake is deterministic, so they match every reset's identical commits.
 set -eu
 site="$QA_ROOT/site"
 serve="$QA_ROOT/serve"
-rm -rf "$site" "$QA_ROOT/state/spec-chat"
+rm -rf "$site"
 mkdir -p "$site" "$serve"
 # Fixed identity and dates: every reset yields the same commits, so a running
 # service keeps the same registry rows.
@@ -23,7 +25,7 @@ git -C "$site" add -A
 git -C "$site" commit -qm head
 tmp="$serve/registry.toml.tmp"
 : > "$tmp"
-for spec in onboarding report; do
+for spec in onboarding report later-only one-open; do
   cat >> "$tmp" <<ROW
 [[resource]]
 id = "spec:qa-fixture::docs/specs/$spec.spec.html"

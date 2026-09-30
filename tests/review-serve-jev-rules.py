@@ -46,10 +46,12 @@ def general_kind(payload):
 
 class FakeProvider:
     """Jev answers from scope and rule maps; the general LLM from its own map; every payload is kept.
-    A rule map value is the rule check's outcome, missed, covered, or not triggered, answered per chain question."""
+    A rule map value is the rule check's outcome, missed, covered, or not triggered, answered per chain question.
+    coverage holds the (story anchor, criterion anchor) pairs that verify; every other pair is unrelated."""
 
-    def __init__(self, scope=None, rule=None, general=None, confidence=0.95, gate=None):
+    def __init__(self, scope=None, rule=None, general=None, confidence=0.95, gate=None, coverage=()):
         self.scope, self.rule, self.general = dict(scope or {}), dict(rule or {}), dict(general or {})
+        self.coverage = set(coverage)
         self.confidence = confidence
         self.gate = gate
         self.calls, self.general_calls = [], []
@@ -67,6 +69,9 @@ class FakeProvider:
             if callable(label):
                 label = label(state["spec"])
             label = RULE_ANSWERS[kind][label]
+        elif kind == "coverage":
+            pair = tuple((state.get(side) or {}).get("anchor") for side in ("story", "criterion"))
+            label, confidence = ("verifies" if pair in self.coverage else "unrelated"), self.confidence
         else:
             label, confidence = "unrelated", 0.95
         return {"answers": {kind: {"choice": label, "confidence": confidence}}}
@@ -440,6 +445,19 @@ class RulesTest(unittest.TestCase):
         rule_texts = [c["state"]["rule"] for c in provider.asked("rule")]
         self.assertNotIn(FEATURE_EVERY, rule_texts)
         self.assertNotIn(FEATURE_ALL, rule_texts)
+
+    def test_fake_coverage_verifies_only_declared_pairs(self):
+        # The one fake serves the QA fixture too: its declared story/criterion pairs verify, others stay unrelated.
+        stories = ('<section data-spec-section="user-stories" data-anchor="user-stories">'
+                   '<p data-user-story data-anchor="story-a">As a manager, I read totals.</p>'
+                   '<p data-user-story data-anchor="story-b">As a manager, I export.</p></section>')
+        self.write("b.spec.html", stories + spec(("crit-a", LOCAL), ("crit-b", FEATURE)))
+        self.base = self.commit()
+        provider = FakeProvider(coverage={("story-a", "crit-a"), ("story-b", "crit-b")})
+        items = [item for item in self.read(self.service(provider))["items"] if item["kind"] == "coverage"]
+        labels = {tuple(item["id"].split("::")): item.get("label") for item in items}
+        self.assertEqual(labels, {("story-a", "crit-a"): "verifies", ("story-a", "crit-b"): "unrelated",
+                                  ("story-b", "crit-a"): "unrelated", ("story-b", "crit-b"): "verifies"})
 
     def test_off_returns_off(self):
         self.seed()
