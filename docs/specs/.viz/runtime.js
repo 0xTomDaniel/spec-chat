@@ -1245,7 +1245,19 @@ function jevNeutralNote(anchor, question) {
   return { anchor, group: 'neutral', state: 'unavailable', text: 'Jev unavailable', sentence: 'Jev could not check ' + JEV_QUESTIONS[question], level: null };
 }
 
-// project-rules #marks: a missed rule is its fixed word linking the rule, not muted, with Ask to cover; a check
+// project-rules #dismiss-where: one click that Jev is wrong. Drops the matching rule items at once, rerenders, and
+// records through the offer's record route; the server then never returns them.
+function jevDismissAction(label, body, drop) {
+  return { label, run: () => {
+    state.jev.items = state.jev.items.filter(item => !(item.kind === 'rule' && drop(item)));
+    renderJev();
+    fetch('/api/jev/offer?' + new URLSearchParams({ path: location.pathname.replace(/^\//, '') }),
+      { method: 'POST', body: JSON.stringify(body) }).catch(() => {});
+  } };
+}
+
+// project-rules #marks: a missed rule is its fixed word linking the rule, not muted, then the rule's criterion text
+// (#mark-rule-text), with Ask to cover, Not here, and Dismiss rule; a check
 // escalated to the LLM and still unanswered is a wheel in the marker's place; a failed LLM fallback is the neutral
 // Jev unavailable note naming the rule (#q-fallback); anything else shows nothing.
 function jevRuleNote(item) {
@@ -1263,8 +1275,10 @@ function jevRuleNote(item) {
       sentence: 'Jev could not check whether this spec needs ' + rule };
   }
   return { anchor: item.id, group: 'rule', state: 'label', text: item.word + '?', href: link.href, level: item.level || null,
-    sentence: 'This spec may need ' + rule,
-    actions: [jevDraftAction('Ask to cover', 'Cover ' + link.text + ' with a criterion, or add one line saying why it does not apply.')] };
+    sentence: 'This spec may need ' + rule, quote: item.text,
+    actions: [jevDraftAction('Ask to cover', 'Cover ' + link.text + ' with a criterion, or add one line saying why it does not apply.'),
+      jevDismissAction('Not here', { dismiss: 'here', rule: item.text, record: item.record }, other => other === item),
+      jevDismissAction('Dismiss rule', { dismiss: 'rule', rule: item.text }, other => other.text === item.text)] };
 }
 
 function jevSuggestionNotes() {
@@ -1569,6 +1583,11 @@ function renderJevNote(note) {
   if (note.href && note.open) text.addEventListener('click', event => { if (note.open()) event.preventDefault(); });
   text.textContent = note.text;
   row.appendChild(text);
+  if (note.quote) {
+    const quote = row.appendChild(document.createElement('span'));
+    quote.className = 'hx-jev-pop-quote';
+    quote.textContent = '\u201c' + note.quote + '\u201d';
+  }
   // A neutral note's sentence is its accessible name and shows in the popover on hover or focus.
   if (note.sentence) {
     if (!note.href) {
@@ -2050,6 +2069,7 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-jev-pop-note[data-attention=true] .hx-jev-pop-text{color:var(--ui-fail)}
 .hx-jev-pop-note[data-group=neutral] .hx-jev-pop-text{font-weight:600;color:var(--ui-muted)}
 a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
+.hx-jev-pop-quote{color:var(--ui-ink);overflow-wrap:anywhere}
 .hx-jev-pop-sentence{display:none;font-size:var(--ui-text-xs);color:var(--ui-muted);overflow-wrap:anywhere}
 .hx-jev-pop[data-measure] .hx-jev-pop-sentence,.hx-jev-pop-note:hover .hx-jev-pop-sentence,.hx-jev-pop-note:focus-within .hx-jev-pop-sentence{display:block}
 .hx-jev-pop-meta{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--ui-space-1) 10px;font-size:var(--ui-text-xs);color:var(--ui-muted);overflow-wrap:anywhere}
