@@ -17,13 +17,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE = Path(__file__).resolve().parent
-CRITERION = re.compile(r'<p data-acceptance-criterion data-anchor="([^"]+)" data-story="([^"]+)"')
+CRITERION = re.compile(r"<[^>]*\bdata-acceptance-criterion\b[^>]*>")
+ATTR = re.compile(r'\b(data-anchor|data-story)="([^"]*)"')
 
 
 def coverage():
-    """(story, criterion) pairs the fixture specs declare with data-story."""
-    return {(story, criterion) for path in FIXTURE.glob("*/docs/specs/*.spec.html")
-            for criterion, story in CRITERION.findall(path.read_text(encoding="utf-8"))}
+    """(story, criterion) pairs the fixture specs declare with data-story, in any attribute order."""
+    pairs = set()
+    for path in FIXTURE.glob("*/docs/specs/*.spec.html"):
+        for tag in CRITERION.findall(path.read_text(encoding="utf-8")):
+            attrs = dict(ATTR.findall(tag))
+            pairs.update((story, attrs["data-anchor"]) for story in attrs.get("data-story", "").split())
+    if not pairs:
+        raise SystemExit("qa fixture: no data-story criteria found under " + str(FIXTURE))
+    return pairs
 
 
 def load(name, path):

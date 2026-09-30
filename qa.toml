@@ -17,7 +17,7 @@ command = 'mkdir -p "$QA_ROOT/home" "$QA_ROOT/state" "$QA_ROOT/config" && cd "$Q
 url = "http://127.0.0.1:{port}"
 ready = "/qa-fixture/docs/specs/report.spec.html"
 
-# One Git repo of four specs: onboarding.spec.html holds the project rule "Every change
+# One Git repo of four specs, copied per collection (reset.sh): onboarding.spec.html holds the project rule "Every change
 # to what a user sees or does adds its onboarding section."; report.spec.html is the
 # spec under shaping, its head adding an export story with no onboarding criterion,
 # two open TBDs, and one later TBD; later-only.spec.html's only TBD is later;
@@ -38,31 +38,33 @@ viewport = { width = 1280, height = 800 }
 viewport = { width = 390, height = 844 }
 touch = true
 
-# Criteria on the later-only and one-open specs start there, not at the report spec;
-# the report spec's criteria in the same story start back on it, not on the page the
-# previous criterion left.
+# Each criterion below starts on its own clean copy of the fixture repo (reset.sh
+# collections): a story resets once, and earlier criteria leave drafts and hand-offs
+# in the spec's spool. The spec file names stay the same, so "the report spec" holds.
 [nav.acceptance-tbd-later]
-path = "{review}/qa-fixture/docs/specs/later-only.spec.html"
+path = "{review}/tbd-later/docs/specs/later-only.spec.html"
 [nav.acceptance-tbd-later-handoff]
-path = "{review}/qa-fixture/docs/specs/later-only.spec.html"
-[nav.acceptance-tbd-open-single]
-path = "{review}/qa-fixture/docs/specs/one-open.spec.html"
+path = "{review}/tbd-later-handoff/docs/specs/later-only.spec.html"
 [nav.acceptance-tbd-open-highlight]
-path = "{review}/qa-fixture/docs/specs/report.spec.html"
+path = "{review}/tbd-open-highlight/docs/specs/report.spec.html"
+[nav.acceptance-tbd-open-single]
+path = "{review}/tbd-open-single/docs/specs/one-open.spec.html"
 [nav.acceptance-next-tbd]
-path = "{review}/qa-fixture/docs/specs/report.spec.html"
+path = "{review}/next-tbd/docs/specs/report.spec.html"
 [nav.acceptance-next-tbd-step]
-path = "{review}/qa-fixture/docs/specs/report.spec.html"
+path = "{review}/next-tbd-step/docs/specs/report.spec.html"
 [nav.acceptance-next-tbd-handoff]
-path = "{review}/qa-fixture/docs/specs/report.spec.html"
+path = "{review}/next-tbd-handoff/docs/specs/report.spec.html"
 [nav.acceptance-tbd-open-jump]
-path = "{review}/qa-fixture/docs/specs/report.spec.html"
+path = "{review}/tbd-open-jump/docs/specs/report.spec.html"
 [nav.acceptance-tbd-open-wrap]
-path = "{review}/qa-fixture/docs/specs/report.spec.html"
+path = "{review}/tbd-open-wrap/docs/specs/report.spec.html"
+[nav.acceptance-mobile-composer]
+path = "{review}/mobile-composer/docs/specs/report.spec.html"
 
 # Stories this environment cannot host. services.review runs with HOME and XDG under
 # $QA_ROOT: no evidence or wake provider, no Herdr, no live agent, no review-host
-# (the fixture writes the registry), one lane slug and one project. The fake Jev
+# (the fixture writes the registry), no lane-key slug and one project. The fake Jev
 # answers scope, rule, and coverage (each criterion verifies its data-story story);
 # every other question answers unrelated. Jev state persists across resets, so the
 # project's warm-up runs once per service start.
