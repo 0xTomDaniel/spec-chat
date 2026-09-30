@@ -986,7 +986,7 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
         except (ValueError, AttributeError):
             return self._json({"error": "bad json"}, 400)
         if "dismiss" in data:
-            # jev.dismiss is the one check of a dismissal; a refused one is a 400 the page restores its note on.
+            # jev.dismiss is the one check of a dismissal; a refused one is a 400, and the page's re-read brings its note back.
             try:
                 ok = self.server.jev.dismiss(mount, target, data.get("dismiss"), data.get("rule"), data.get("record"))
             except OSError:
