@@ -79,7 +79,13 @@ const document = { body, activeElement: body, querySelectorAll: s => body.queryS
   createElement: t => new El(t), addEventListener() {} };
 const window = { addEventListener() {}, matchMedia: () => ({ matches: true }) };
 const posted = [];
-const fetch = async (url, init) => { posted.push([url, JSON.parse(init.body)]); return { ok: true }; };
+let reply = { status: 200, body: { ok: true } };  // the record route's answer; an Error rejects
+const fetch = async (url, init) => {
+  posted.push([url, JSON.parse(init.body)]);
+  if (reply instanceof Error) throw reply;
+  return { ok: reply.status < 400, status: reply.status, json: async () => reply.body };
+};
+const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const code = [
   slice('function findAnchor(', '\n\nfunction clearJev('),
   slice('function coveragePair(', '\n\n// Name the folder'),
@@ -151,6 +157,21 @@ assert.equal(markers().length, 1);
 assert.deepEqual(posted.pop(), ['/api/jev/offer?path=docs%2Fspecs%2Fb.spec.html',
   { dismiss: 'rule', rule: 'Every feature that changes a screen updates onboarding.' }]);
 assert.equal(posted.length, 0);
+await tick();
+assert.equal(markers().length, 1, 'a recorded dismissal stays done');
+// #dismiss-where: a dismissal the server refuses or never gets puts its notes back, so it never looks done.
+for (const refused of [{ status: 400, body: { ok: false } }, { status: 200, body: { ok: false } }, { status: 503, body: {} }, new Error('offline')]) {
+  reply = refused;
+  show([rule('label', { record: 'r1' }), other]);
+  holder('acceptance').querySelector('.hx-jev-marker').fire('focus');
+  pop().querySelectorAll('button').find(b => b.textContent === 'Not here').fire('click');
+  assert.equal(markers().length, 1, 'dropped at once');
+  await tick();
+  assert.equal(markers().length, 2, 'restored: ' + JSON.stringify(refused.body || refused.message));
+  assert.equal(state.jev.items.filter(i => i.word === 'onboarding').length, 1);
+  posted.pop();
+}
+reply = { status: 200, body: { ok: true } };
 // The level comes only from the item: the runtime keeps no mapping for rules.
 show([rule('label', { level: 'warning' })]);
 assert.equal(markers()[0].dataset.attention, 'false');

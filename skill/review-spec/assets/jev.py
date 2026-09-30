@@ -1148,13 +1148,6 @@ def _served_spec_parts(value: Any) -> tuple[str, str] | None:
     return path, source
 
 
-def served_path(mount: Mapping[str, Any], filename: str) -> str:
-    """A mount's spec file as served specs name it: slug, then its path as enumerate_served_specs gives it."""
-    prefix = str(mount.get("slug", ""))
-    relative = str(mount["spec"]) if mount.get("spec") else os.path.relpath(filename, str(mount.get("narrow_root", ""))).replace(os.sep, "/")
-    return (prefix + "/" if prefix else "") + relative
-
-
 def enumerate_served_specs(mounts: Any) -> list[tuple[str, str]]:
     """Enumerate the same spec files exposed by the review index."""
     if isinstance(mounts, Mapping):
@@ -1548,7 +1541,7 @@ def rule_mark_anchor(source: str | bytes | None) -> str | None:
 
 
 def _linked_criterion(path: str, href: str) -> str | None:
-    """A link to a clause of another spec, as that spec's served path and anchor; None for any other link."""
+    """A link to a clause of another spec, as that spec's repo path and anchor; None for any other link."""
     file, _, anchor = href.partition("#")
     if not file or not anchor or file.startswith("/") or ":" in file:
         return None
@@ -1558,20 +1551,23 @@ def _linked_criterion(path: str, href: str) -> str | None:
 
 def build_scope_questions(served_specs: Any) -> list[dict[str, Any]]:
     """One scope question per acceptance criterion of every other spec; the key is its text alone (#q-scope).
-    links names the other specs' clauses the criterion links, so copies resolve to their home (#q-copies)."""
+    clause names the criterion by repo path, which one project's lanes share whatever slug serves it, and links
+    names the other specs' clauses it links in that same form, so copies resolve to their home (#q-copies)."""
     result = []
     for raw in served_specs or []:
         part = _served_spec_parts(raw)
         if not part:
             continue
         path, source = part
+        repo = str(raw.get("spec") or path) if isinstance(raw, Mapping) else path
         for anchor, value in extract_anchors(source).items():
             if not value.get("criterion") or not value["text"]:
                 continue
             question = _question("scope", anchor, {"criterion": value["text"]}, path, "", None, path + "#" + anchor)
             question["revision"] = None
             question["word"] = rule_word(path)
-            question["links"] = [link for link in (_linked_criterion(path, href) for href in value["links"]) if link]
+            question["clause"] = repo + "#" + anchor
+            question["links"] = [link for link in (_linked_criterion(repo, href) for href in value["links"]) if link]
             result.append(question)
     return result
 
@@ -1579,7 +1575,7 @@ def build_scope_questions(served_specs: Any) -> list[dict[str, Any]]:
 def rule_homes(scopes: list[Mapping[str, Any]], is_rule: Callable[[Mapping[str, Any]], bool]) -> dict[str, str]:
     """Each rule's home (#q-copies): a rule's links are followed through rules to the criterion that links no
     further rule. A link loop, which no copy should form, has its least target as home, so the loop is one rule."""
-    by_target = {scope["target"]: scope for scope in scopes}
+    by_target = {scope["clause"]: scope for scope in scopes}
     rules = {target for target, scope in by_target.items() if is_rule(scope)}
     homes: dict[str, str] = {}
     for start in rules:
@@ -2024,7 +2020,7 @@ class JevService:
                     mains[key[0]] = _commit(root, "origin/main")
                 source = self._at(root, mains[key[0]], key[1]) if mains[key[0]] else None
                 if source is not None:
-                    result.append({"path": (prefix + "/" if prefix else "") + relative, "source": source})
+                    result.append({"path": (prefix + "/" if prefix else "") + relative, "spec": key[1], "source": source})
         return result
 
     def _as_served(self, mounts: list[Any], current: str) -> list[dict[str, Any]]:
@@ -2037,9 +2033,12 @@ class JevService:
                 if filename == os.path.realpath(current) or filename in seen or not os.path.isfile(filename):
                     continue
                 seen.add(filename)
-                served_path = (prefix + "/" if prefix else "") + relative
+                served = {"path": (prefix + "/" if prefix else "") + relative}
+                root = mount.get("root") if isinstance(mount, Mapping) else None
+                if root:
+                    served["spec"] = os.path.relpath(filename, os.path.realpath(str(root))).replace(os.sep, "/")
                 try:
-                    result.append({"path": served_path, "source": Path(filename).read_bytes()})
+                    result.append({**served, "source": Path(filename).read_bytes()})
                 except OSError:
                     continue
         return result
@@ -2403,14 +2402,14 @@ class JevService:
                 self._asking[key] = future
 
     def rule_items(self, current: bytes, old: bytes | None, path: str, base: str, revision: Any,
-                   served: Any, seam: "JevSeam | None" = None, page_path: str | None = None, project: Any = None,
+                   served: Any, seam: "JevSeam | None" = None, project: Any = None,
                    spec: str | None = None) -> tuple[list[dict[str, Any]], list[str]]:
         """Rule items for a spec that differs from its compared base, and the rules checked (#marks, #pending).
 
         Answers come from held records only; misses are asked in the background and show as pending, with
         escalated true once Jev was unsure and the general LLM has the question. A copy is no rule of its own:
-        its home is checked instead, and a copy of this spec's own rule is none (#q-copies). page_path is this
-        spec's path as other specs' links name it. A rule the project dismissed shows nothing: Not here on this
+        its home is checked instead, and a copy of this spec's own rule is none (#q-copies). spec is this spec's
+        repo path, as other specs' links name it. A rule the project dismissed shows nothing: Not here on this
         repo spec path, Dismiss rule everywhere, its copies included, and is then no rule checked (#dismiss)."""
         seam = seam or self.seam
         sets = seam.question_sets
@@ -2424,7 +2423,8 @@ class JevService:
             state, record = self._rule_held(question, seam)
             return record if state == "final" else None
 
-        corpus = {scope["target"]: scope for scope in scopes + self._build("scope", [{"path": page_path or path, "source": current}])}
+        page = {"path": path, "spec": spec or path, "source": current}
+        corpus = {scope["clause"]: scope for scope in scopes + self._build("scope", [page])}
         homes = rule_homes(list(corpus.values()), lambda scope: _confident_label(final(scope)) == RULE_SCOPE)
 
         def linked(scope: Mapping[str, Any]) -> list[Mapping[str, Any]]:
@@ -2448,7 +2448,7 @@ class JevService:
             copy_unknown = [question for question in linked(scope) if self._rule_held(question, seam)[0] != "final"]
             decided = state == "final"
             if decided:
-                if _confident_label(record) != RULE_SCOPE or homes.get(scope["target"]) != scope["target"]:
+                if _confident_label(record) != RULE_SCOPE or homes.get(scope["clause"]) != scope["clause"]:
                     continue
                 if copy_unknown:
                     ask_pending(copy_unknown)
@@ -2485,10 +2485,9 @@ class JevService:
         return items, sorted(set(rules))
 
     def _rules(self, relative: str, base: str, facts: Mapping[str, Any], seam: "JevSeam | None" = None,
-               mount: Mapping[str, Any] | None = None, target: str = "") -> tuple[list[dict[str, Any]], list[str]]:
+               mount: Mapping[str, Any] | None = None) -> tuple[list[dict[str, Any]], list[str]]:
         try:
             return self.rule_items(facts["current"], facts["old"], relative, base, facts["head"], facts["served"], seam,
-                                   served_path(mount, target) if mount else None,
                                    (mount or {}).get("project"), facts["rel"])
         except Exception:
             return [], []
@@ -2607,9 +2606,9 @@ class JevService:
             self._warm_submit(scopes)
             decided = [self.seam.store.get(self.seam.key(s)) for s in scopes]
             labels = [_confident_label(record) for record in decided]
-            decided_rules = {scope["target"] for scope, label in zip(scopes, labels) if label == RULE_SCOPE}
-            homes = rule_homes(scopes, lambda scope: scope["target"] in decided_rules)
-            rules = [scope for scope in scopes if homes.get(scope["target"]) == scope["target"]]
+            decided_rules = {scope["clause"] for scope, label in zip(scopes, labels) if label == RULE_SCOPE}
+            homes = rule_homes(scopes, lambda scope: scope["clause"] in decided_rules)
+            rules = [scope for scope in scopes if homes.get(scope["clause"]) == scope["clause"]]
             checks: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
             for spec in specs:
                 mark = self._built("mark", spec["source"])
@@ -2677,11 +2676,13 @@ class JevService:
         """The human's Not here (action here, on the note's rule-check record_id) or Dismiss rule (action rule, on
         the rule's scope record), for the page's project (#dismiss). Held by project, repo spec path for Not
         here, and rule text, never by cache key; unconfirmed until audited (jev-suggestions #measure-feedback).
-        False when the text is no rule held here or the record is no rule check."""
+        False when the action is neither, the text is no rule held here, or the record is no rule check: the one
+        check of a dismissal, so the record route only relays it."""
         project = mount.get("project")
-        if action not in DISMISSALS or not project or not isinstance(text, str) or not text:
-            return False
         seam = self._seam_for(mount)
+        if action not in ("here", "rule") or not project or not isinstance(text, str) or not text \
+                or "scope" not in seam.question_sets:
+            return False
         scope = seam.store.get(seam.key({"kind": "scope", "state": {"criterion": text}}))
         if _confident_label(scope) != RULE_SCOPE:
             return False
@@ -2717,7 +2718,7 @@ class JevService:
             facts = self._read_facts(mount, target, base, served_mounts, base_commit)
         except Exception:
             facts = None  # no rules; questions reads again and fails as it always has
-        rule_items, rules = self._rules(relative, base, facts, seam, mount, target) if facts else ([], [])
+        rule_items, rules = self._rules(relative, base, facts, seam, mount) if facts else ([], [])
         asked = self.questions(mount, target, relative, base, events, view, served_mounts, base_commit, facts)
         questions = [question for question in asked
                      if all(step["kind"] in seam.question_sets for step in question.get("chain", [question]))]

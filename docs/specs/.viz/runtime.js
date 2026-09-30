@@ -1246,13 +1246,21 @@ function jevNeutralNote(anchor, question) {
 }
 
 // project-rules #dismiss-where: one click that Jev is wrong. Drops the matching rule items at once, rerenders, and
-// records through the offer's record route; the server then never returns them.
+// records through the offer's record route; the server then never returns them. A dismissal not recorded (refused,
+// failed, or unreachable) puts its notes back, so it never looks done and then returns on reload.
 function jevDismissAction(label, body, drop) {
   return { label, run: () => {
-    state.jev.items = state.jev.items.filter(item => !(item.kind === 'rule' && drop(item)));
+    const dropped = state.jev.items.filter(item => item.kind === 'rule' && drop(item));
+    state.jev.items = state.jev.items.filter(item => !dropped.includes(item));
     renderJev();
+    const restore = () => {
+      state.jev.items = [...state.jev.items, ...dropped.filter(item => !state.jev.items.includes(item))];
+      renderJev();
+    };
     fetch('/api/jev/offer?' + new URLSearchParams({ path: location.pathname.replace(/^\//, '') }),
-      { method: 'POST', body: JSON.stringify(body) }).catch(() => {});
+      { method: 'POST', body: JSON.stringify(body) })
+      .then(response => response.ok ? response.json() : null)
+      .then(reply => { if (!reply || reply.ok !== true) restore(); }, restore);
   } };
 }
 

@@ -986,14 +986,12 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
         except (ValueError, AttributeError):
             return self._json({"error": "bad json"}, 400)
         if "dismiss" in data:
-            dismiss, rule, record = data.get("dismiss"), data.get("rule"), data.get("record")
-            if dismiss not in ("here", "rule") or not isinstance(rule, str) or not rule \
-                    or (dismiss == "here" and not isinstance(record, str)):
-                return self._json({"error": "dismiss must be here with rule and record, or rule with rule"}, 400)
+            # jev.dismiss is the one check of a dismissal; a refused one is a 400 the page restores its note on.
             try:
-                return self._json({"ok": self.server.jev.dismiss(mount, target, dismiss, rule, record)})
+                ok = self.server.jev.dismiss(mount, target, data.get("dismiss"), data.get("rule"), data.get("record"))
             except OSError:
                 return self._json({"error": "jev unavailable"}, 503)
+            return self._json({"ok": ok}, 200 if ok else 400)
         if action not in ("sent", "dismissed"):
             return self._json({"error": "offer must be sent or dismissed"}, 400)
         try:
