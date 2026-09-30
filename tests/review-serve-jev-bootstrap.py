@@ -9,6 +9,7 @@ import threading
 import time
 import tomllib
 import unittest
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -318,6 +319,28 @@ class BootstrapTest(unittest.TestCase):
         rule_calls = [c for c in provider.calls if "triggered" in c["questions"] or "covered" in c["questions"]]
         self.assertEqual(rule_calls, [])
 
+    def test_dismiss_rule_drops_the_rule_from_the_offer_of_that_project_only(self):
+        # project-rules #acceptance-dismiss-rule: the offer no longer lists it or counts a spec missing only it
+        provider = FakeProvider(scope={ONBOARDING: "every feature", LOCAL: "every feature"})
+        service = self.service(provider)
+        rows = [self.row(), self.row(project="other")]
+        service.warm(rows)
+        self.settle(service)
+        self.settle(service, "other")
+        self.assertEqual(self.page(service, rows)["offer"]["count"], 2)
+        self.assertTrue(service.dismiss(rows[0], str(self.specs / "export.spec.html"), "rule", ONBOARDING))
+        offer = self.page(service, rows)["offer"]
+        local = {"target": "docs/specs/onboarding.spec.html#local", "word": "onboarding"}
+        self.assertEqual(offer, {"count": 2, "specs": [{"spec": "docs/specs/export.spec.html", "rules": [local]},
+                                                      {"spec": "docs/specs/import.spec.html", "rules": [local]}]})
+        self.assertEqual(self.page(service, [rows[1]])["offer"]["specs"][0]["rules"][0]["target"],
+                         "docs/specs/onboarding.spec.html#acceptance-onboarding")
+        self.assertTrue(service.dismiss(rows[0], str(self.specs / "export.spec.html"), "rule", LOCAL))
+        self.assertIsNone(self.page(service, rows)["offer"])
+        self.assertEqual(self.page(service, [rows[1]])["offer"]["count"], 2)
+        # the table is unchanged: dismissals live in the records only
+        self.assertEqual(service.onboarding_status("proj")["specs_to_reconcile"], 2)
+
     def test_registration_in_the_running_server_starts_warm_up_and_offer_is_recorded(self):
         registry = self.dir / "registry.toml"
 
@@ -346,11 +369,22 @@ class BootstrapTest(unittest.TestCase):
             query = "?path=/proj/docs/specs/export.spec.html&base=" + self.main
             with opener.open(url + "/api/jev" + query, timeout=2) as response:
                 self.assertEqual(json.loads(response.read())["offer"]["count"], 2)
-            request = urllib.request.Request(url + "/api/jev/offer" + query, data=b'{"offer": "sent"}', method="POST")
-            with opener.open(request, timeout=2) as response:
-                self.assertEqual(json.loads(response.read()), {"ok": True})
+            def post(body):
+                request = urllib.request.Request(url + "/api/jev/offer" + query, data=json.dumps(body).encode(), method="POST")
+                try:
+                    with opener.open(request, timeout=2) as response:
+                        return response.status, json.loads(response.read())
+                except urllib.error.HTTPError as error:
+                    return error.code, json.loads(error.read())
+
+            # the one Jev record route takes either dismissal as well as the offer (project-rules #dismiss-store)
+            self.assertEqual(post({"dismiss": "here", "rule": ONBOARDING})[0], 400)  # Not here names its record
+            self.assertEqual(post({"dismiss": "other", "rule": ONBOARDING})[0], 400)
+            self.assertEqual(post({"dismiss": "rule"})[0], 400)
+            self.assertEqual(post({"dismiss": "rule", "rule": ONBOARDING}), (200, {"ok": True}))
             with opener.open(url + "/api/jev" + query, timeout=2) as response:
                 self.assertIsNone(json.loads(response.read())["offer"])
+            self.assertEqual(post({"offer": "sent"}), (200, {"ok": True}))
         finally:
             server.shutdown()
             server.server_close()

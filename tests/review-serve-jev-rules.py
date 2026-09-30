@@ -118,11 +118,12 @@ class RulesTest(unittest.TestCase):
     def service(self, provider, state="state"):
         return jev.JevService(state_dir=Path(self.tmp.name) / state, provider=provider, api_key="fake")
 
-    def mount(self):
-        return {"slug": "", "root": str(self.root), "narrow_root": str(self.root / "docs")}
+    def mount(self, project=None):
+        mount = {"slug": "", "root": str(self.root), "narrow_root": str(self.root / "docs")}
+        return {**mount, "project": project} if project else mount
 
-    def read(self, service, name="b.spec.html", base=None, events=(), settle=True):
-        mount = self.mount()
+    def read(self, service, name="b.spec.html", base=None, events=(), settle=True, project=None):
+        mount = self.mount(project)
         base = base or self.base
         result = service.response(mount, str(self.specs / name), "specs/" + name, base, list(events), "", [mount])
         deadline = time.time() + 5
@@ -522,6 +523,97 @@ class RulesTest(unittest.TestCase):
         result = self.read(service, "onboarding.spec.html")
         self.assertEqual(result["rules"], ["specs/e.spec.html#e-rule"])
         self.assertEqual([item["target"] for item in self.rules(result)], ["specs/e.spec.html#e-rule"])
+
+    def records(self):
+        return [json.loads(line) for line in (Path(self.tmp.name) / "state" / "records.jsonl").read_text().splitlines()]
+
+    def missed(self, result):
+        return [item for item in self.rules(result) if item["state"] == "label"]
+
+    def test_not_here_hides_the_rule_on_that_spec_path_until_its_text_changes(self):
+        # project-rules #dismiss-here, #dismiss-scope, #acceptance-dismiss, #acceptance-dismiss-return, #proof-dismiss
+        self.seed()
+        self.write("c.spec.html", spec(("c-one", "Another feature criterion."), body="C body."))
+        reworded = "Every feature adds its onboarding section and a tour."
+        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95), reworded: ("every feature", 0.95)},
+                                rule={ONBOARDING: ("missed", 0.95), reworded: ("missed", 0.95)})
+        service = self.service(provider)
+        home = "specs/onboarding.spec.html#acceptance-onboarding"
+        item = self.missed(self.read(service, project="alpha"))[0]
+        mount, b = self.mount("alpha"), str(self.specs / "b.spec.html")
+        self.assertTrue(service.dismiss(mount, b, "here", item["text"], item["record"]))
+        result = self.read(service, project="alpha")
+        self.assertEqual((self.rules(result), result["rules"]), ([], [home]))
+        # stored on the note's rule-check record, by project, spec path, and rule text; unconfirmed; names no text
+        resolved = [r for r in self.records() if r.get("resolution")]
+        self.assertEqual([(r["record_id"], r["kind"], r["resolution"]["status"], r["resolution"]["project"],
+                           r["resolution"]["spec"], "confirmed" in r) for r in resolved],
+                         [(item["record"], "covered", "dismissed", "alpha", "docs/specs/b.spec.html", False)])
+        self.assertNotIn(ONBOARDING, json.dumps(resolved))
+        # survives an edit, a new head, and a restart; another spec missing the rule still shows it
+        self.write("b.spec.html", spec(("b-one", FEATURE), body="Edited export body."))
+        self.commit()
+        self.write("b.spec.html", spec(("b-one", FEATURE), body="Edited again."))
+        self.assertEqual(self.rules(self.read(self.service(provider), project="alpha")), [])
+        self.assertEqual([i["target"] for i in self.missed(self.read(service, "c.spec.html", project="alpha"))], [home])
+        # another project with the same text is unaffected
+        self.assertEqual(len(self.missed(self.read(service, project="beta"))), 1)
+        # a changed rule text is a new rule: its miss shows again
+        self.write("onboarding.spec.html", spec(("acceptance-onboarding", reworded), ("local", LOCAL)))
+        self.assertEqual([i["text"] for i in self.missed(self.read(service, project="alpha"))], [reworded])
+
+    def test_dismiss_rule_removes_the_rule_from_every_spec_of_that_project_only(self):
+        # project-rules #dismiss-rule, #acceptance-dismiss-rule, #acceptance-dismiss-return, #proof-dismiss
+        self.seed()
+        self.write("c.spec.html", spec(("c-one", "Another feature criterion."), body="C body."))
+        reworded = "Every feature adds its onboarding section and a tour."
+        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95), reworded: ("every feature", 0.95)},
+                                rule={ONBOARDING: ("missed", 0.95), reworded: ("missed", 0.95)})
+        service = self.service(provider)
+        item = self.missed(self.read(service, project="alpha"))[0]
+        self.assertTrue(service.dismiss(self.mount("alpha"), str(self.specs / "b.spec.html"), "rule", item["text"]))
+        for name in ("b.spec.html", "c.spec.html"):
+            result = self.read(self.service(provider), name, project="alpha")
+            self.assertEqual((self.rules(result), result["rules"]), ([], []))
+        self.assertEqual(len(self.missed(self.read(service, project="beta"))), 1)
+        resolved = [r for r in self.records() if r.get("resolution")]
+        self.assertEqual([(r["kind"], r["resolution"]["status"], r["resolution"]["project"], "spec" in r["resolution"],
+                           "confirmed" in r) for r in resolved], [("scope", "not-a-rule", "alpha", False, False)])
+        self.assertNotIn(ONBOARDING, json.dumps(resolved))
+        # both projects may dismiss the one scope record; each holds after a restart
+        self.assertTrue(service.dismiss(self.mount("beta"), str(self.specs / "b.spec.html"), "rule", ONBOARDING))
+        for project in ("alpha", "beta"):
+            self.assertEqual(self.rules(self.read(self.service(provider), project=project)), [])
+        self.write("onboarding.spec.html", spec(("acceptance-onboarding", reworded), ("local", LOCAL)))
+        self.assertEqual([i["text"] for i in self.missed(self.read(service, project="alpha"))], [reworded])
+
+    def test_dismiss_rule_on_a_home_covers_its_linked_copies(self):
+        # project-rules #dismiss-rule (every copy), #acceptance-copies, #proof-dismiss
+        provider, texts = self.copies()
+        service = self.service(provider)
+        items = {i["target"]: i for i in self.missed(self.read(service, project="alpha"))}
+        home = items["specs/onboarding.spec.html#acceptance-onboarding"]
+        self.assertTrue(service.dismiss(self.mount("alpha"), str(self.specs / "b.spec.html"), "rule", home["text"]))
+        result = self.read(service, project="alpha")
+        self.assertEqual(result["rules"], ["specs/e.spec.html#e-rule"])
+        self.assertEqual([i["target"] for i in self.rules(result)], ["specs/e.spec.html#e-rule"])
+
+    def test_dismiss_refuses_what_it_cannot_hold(self):
+        self.seed()
+        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95), LOCAL: ("this feature", 0.95)},
+                                rule={ONBOARDING: ("missed", 0.95)})
+        service = self.service(provider)
+        item = self.missed(self.read(service, project="alpha"))[0]
+        b = str(self.specs / "b.spec.html")
+        scope = next(r["record_id"] for r in self.records() if r["kind"] == "scope")
+        self.assertFalse(service.dismiss(self.mount(), b, "rule", ONBOARDING))  # no project
+        self.assertFalse(service.dismiss(self.mount("alpha"), b, "rule", LOCAL))  # not a rule
+        self.assertFalse(service.dismiss(self.mount("alpha"), b, "rule", "Unknown text."))
+        self.assertFalse(service.dismiss(self.mount("alpha"), b, "here", ONBOARDING, scope))  # not a rule check
+        self.assertFalse(service.dismiss(self.mount("alpha"), b, "here", ONBOARDING, "judgment-none"))
+        self.assertFalse(service.dismiss(self.mount("alpha"), b, "other", ONBOARDING, item["record"]))
+        self.assertEqual([r for r in self.records() if r.get("resolution")], [])
+        self.assertEqual(len(self.missed(self.read(service, project="alpha"))), 1)
 
     def test_off_returns_off(self):
         self.seed()
