@@ -30,6 +30,12 @@ reset = 'sh "$QA_FIXTURE/reset.sh"'
 url = "{review}/qa-fixture/docs/specs/report.spec.html"
 viewport = { width = 1280, height = 800 }
 
+# Phone-frame story: "Given a narrow screen" runs at a phone viewport with touch and
+# mobile emulation, below the runtime's 640px narrow breakpoint.
+[entry.stories.story-mobile]
+viewport = { width = 390, height = 844 }
+touch = true
+
 # Stories this environment cannot host. services.review runs with HOME and XDG under
 # $QA_ROOT: no evidence or wake provider, no Herdr, no live agent, no review-host
 # (the fixture writes the registry), one lane slug and one project. The fake Jev
