@@ -1931,7 +1931,7 @@ const CSS = `
 .hx-service-index-link:hover{background:var(--ui-page);border-color:var(--ui-muted);color:var(--ui-resolved)}
 .hx-service-index-link:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px}
 /* panel */
-.hx-panel{position:fixed;top:0;right:0;width:330px;height:100vh;background:var(--ui-page);border-left:1px solid var(--ui-border);z-index:800;display:none;flex-direction:column;font:var(--ui-text-sm) var(--ui-font);box-shadow:none}
+.hx-panel{position:fixed;top:0;right:0;width:330px;height:100vh;background:var(--ui-page);color:var(--ui-ink);border-left:1px solid var(--ui-border);z-index:800;display:none;flex-direction:column;font:var(--ui-text-sm) var(--ui-font);box-shadow:none}
 .hx-panel.open{display:flex;box-shadow:-8px 0 30px var(--ui-shadow)}
 body.hx-panel-open{padding-right:330px}
 .hx-panel-head{position:relative;min-height:44px;padding:14px var(--ui-space-4) 14px 52px;box-sizing:border-box;border-bottom:1px solid var(--ui-border);font-weight:600}
@@ -1983,7 +1983,7 @@ body.hx-panel-open .hx-thread-dock{opacity:0;transform:translateX(10px);pointer-
 .hx-msg-actions{display:flex;gap:var(--ui-space-1);margin-top:3px}
 .hx-msg-actions .hx-btn{font-size:var(--ui-text-xs);padding:3px var(--ui-space-2);margin-top:2px}
 /* composer */
-.hx-composer textarea{width:100%;min-height:56px;font:var(--ui-text-sm) var(--ui-font);border:1px solid var(--ui-border);border-radius:var(--ui-radius-sm);padding:var(--ui-space-1) var(--ui-space-2);box-sizing:border-box;margin-top:var(--ui-space-1)}
+.hx-composer textarea{width:100%;min-height:56px;font:var(--ui-text-sm) var(--ui-font);border:1px solid var(--ui-border);border-radius:var(--ui-radius-sm);padding:var(--ui-space-1) var(--ui-space-2);box-sizing:border-box;margin-top:var(--ui-space-1);background:var(--ui-surface);color:var(--ui-ink)}
 /* buttons */
 .hx-btn{font:600 var(--ui-text-xs) var(--ui-font);border:1px solid var(--ui-border);background:var(--ui-surface);border-radius:var(--ui-radius-sm);padding:var(--ui-space-2) var(--ui-space-3);cursor:pointer;margin:var(--ui-space-1) var(--ui-space-1) 0 0;color:var(--ui-ink);min-height:var(--ui-space-6)}
 .hx-btn.pri{background:var(--ui-ink);color:var(--ui-page);border-color:var(--ui-ink)}
