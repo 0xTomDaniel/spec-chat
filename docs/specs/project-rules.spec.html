@@ -117,7 +117,7 @@
 </table>
 </div>
 <p data-anchor="dismiss-store">Both write through the existing Jev record route the offer uses, as <a href="./jev-suggestions.spec.html#record-resolution">record resolution</a> defines, into the one records store; there is no other dismissal store, and deleting the records forgets dismissals, as it forgets answers. The resolution names the project, since one record may serve several projects with the same text.</p>
-<p data-anchor="dismiss-scope">A dismissal survives reloads, edits, and new heads, since later checks with the same rule text read it; a change to the rule's text is a new rule, and its miss shows again.</p>
+<p data-anchor="dismiss-scope">A later check finds a dismissal by what it holds for, the project, spec path, and rule text for <code>Not here</code>, or the project and rule text for <code>Dismiss rule</code>, never by the record's cache key, which also hashes the spec text. So a dismissal survives reloads, edits, and new heads; a change to the rule's text is a new rule, and its miss shows again.</p>
 <p data-anchor="dismiss-label">Neither takes a reason, and both stay unconfirmed, like an owner's dismissal, until the <a href="./jev-suggestions.spec.html#measure-audit">agent audit</a> labels them. The two resolutions keep <q>wrong for this spec</q>, a rule-check label, apart from <q>not a rule</q>, a scope label, as labeled data for Jev's precision work.</p>
 <p data-anchor="dismiss-agent">A dismissed miss is absent from <code>/api/jev</code>, so the agent read neither lists nor counts it.</p>
 </section>
