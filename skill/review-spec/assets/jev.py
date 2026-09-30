@@ -337,7 +337,7 @@ class JudgmentStore:
         return None
 
     def confirmed_records(self) -> list[dict[str, Any]]:
-        """All confirmed records for regression replay (#measure-regression)."""
+        """All confirmed records, the labels the eval replay scores (#measure-feedback)."""
         with self.lock:
             return [dict(r) for r in self.by_key.values() if r.get("confirmed")]
 
@@ -1545,46 +1545,6 @@ def build_rule_questions(scopes: list[Mapping[str, Any]], current: str | bytes, 
     return [build_rule_question(scope, current, path, base, revision, mark) for scope in scopes]
 
 
-def regression_check(confirmed: list[Mapping[str, Any]], question_sets: Mapping[str, QuestionSet],
-                     prior_precision: float = 0.0, prior_recall: float = 0.0) -> tuple[bool, dict[str, Any]]:
-    """Replay confirmed labels through threshold logic and compare to prior metrics (#measure-regression).
-
-    Each entry: {kind, answer: {label, probabilities, confidence}, ground_truth: "yes"|"no"}.
-    Returns (passed, metrics_dict). Passed is True when precision and recall are at least as good."""
-    tp = fp = fn = tn = 0
-    for entry in confirmed:
-        kind = entry.get("kind")
-        qset = question_sets.get(kind) if kind else None
-        if not qset:
-            continue
-        answer = entry.get("answer", {})
-        probs = answer.get("probabilities", {}) if isinstance(answer, Mapping) else {}
-        confidence = answer.get("confidence") if isinstance(answer, Mapping) else None
-        p_yes = probs.get("yes", 0.0) if isinstance(probs, Mapping) else 0.0
-        if qset.show_cutoff is not None:
-            shown = p_yes >= qset.show_cutoff
-        elif confidence is not None:
-            shown = confidence >= qset.threshold
-        else:
-            shown = False
-        gt = entry.get("ground_truth", "yes")
-        if shown and gt == "yes":
-            tp += 1
-        elif shown and gt == "no":
-            fp += 1
-        elif not shown and gt == "yes":
-            fn += 1
-        else:
-            tn += 1
-    total_shown = tp + fp
-    total_pos = tp + fn
-    precision = tp / total_shown if total_shown > 0 else 1.0
-    recall = tp / total_pos if total_pos > 0 else 1.0
-    passed = precision >= prior_precision and recall >= prior_recall
-    return passed, {"tp": tp, "fp": fp, "fn": fn, "tn": tn,
-                    "precision": precision, "recall": recall}
-
-
 BUILDERS = {"type": build_type_questions, "orphan": build_orphan_questions, "resolved": build_resolved_questions,
             "coverage": build_coverage_questions, "audience": build_audience_questions,
             "corpus": build_corpus_questions, "scope": build_scope_questions, "rule": build_rule_questions,
@@ -1959,12 +1919,15 @@ class JevService:
 
     def _served_specs(self, mounts: Any, current: str, page: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
         """Other specs (#corpus-others): the lane's own served specs as served, plus main's copy of every
-        other served spec path, once per project and path; another lane's served copy is never read."""
+        other served spec path of the page's project, once per project and path; another lane's served copy
+        and another project's specs are never read."""
         mounts = [mounts] if isinstance(mounts, Mapping) else list(mounts or [])
         slug = str(page.get("slug", "")) if isinstance(page, Mapping) else ""
         if not slug:
             return self._as_served(mounts, current)
-        own = [mount for mount in mounts if isinstance(mount, Mapping) and mount.get("slug") == slug]
+        project = page.get("project") or ""
+        mounts = [mount for mount in mounts if isinstance(mount, Mapping) and (mount.get("project") or "") == project]
+        own = [mount for mount in mounts if mount.get("slug") == slug]
         result = self._as_served(own, current)
         mains: dict[str, str | None] = {}
 
@@ -1976,7 +1939,7 @@ class JevService:
         for mount in own:
             seen.update(spec_key(mount, filename) for _, filename in enumerate_served_specs(mount))
         for mount in mounts:
-            if not isinstance(mount, Mapping) or mount.get("slug") == slug:
+            if mount.get("slug") == slug:
                 continue
             prefix = str(mount.get("slug", ""))
             for relative, filename in enumerate_served_specs(mount):
@@ -2678,4 +2641,4 @@ __all__ = ["BUILDERS", "CHAIN_CONTINUE", "DRAFT_CHECK_KINDS", "DEFAULT_MAX_INPUT
            "anchor_context",
            "build_audience_questions", "build_board_conflict_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_rule_question", "build_scope_questions", "build_type_questions", "chain_result", "changed_leaf_clauses", "draft_check",
            "extract_anchors", "lane_result",
-           "load_question_sets", "material", "regression_check", "rule_mark_anchor", "rule_word", "spec_text"]
+           "load_question_sets", "material", "rule_mark_anchor", "rule_word", "spec_text"]

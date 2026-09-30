@@ -441,6 +441,42 @@ class RulesTest(unittest.TestCase):
         self.assertNotIn(FEATURE_EVERY, rule_texts)
         self.assertNotIn(FEATURE_ALL, rule_texts)
 
+    def test_rules_come_only_from_the_page_project(self):
+        """project-rules #proof-own-project, #acceptance-own-project: mounts of two projects, each with an
+        every feature criterion; /api/jev for a spec of the first lists only the first project's rule."""
+        OTHER_RULE = "Every feature ships with its audit log entry."
+        self.seed()
+        other = Path(self.tmp.name) / "other"
+        (other / "docs" / "specs").mkdir(parents=True)
+        git(other, "init", "-q")
+        for name in ("rules.spec.html", "shared.spec.html"):
+            (other / "docs" / "specs" / name).write_text(spec(("acceptance-audit", OTHER_RULE)), encoding="utf-8")
+        git(other, "add", "-A")
+        git(other, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "c")
+        git(other, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+        def row(root, slug, project, name):
+            return {"slug": slug, "project": project, "root": str(root), "spec": "docs/specs/" + name,
+                    "spec_file": str(Path(root) / "docs" / "specs" / name)}
+
+        page = row(self.root, "ann1", "alpha", "b.spec.html")
+        mounts = [page, row(self.root, "ann1", "alpha", "onboarding.spec.html"),
+                  row(other, "ann1", "beta", "shared.spec.html"),  # a slug shared across projects
+                  row(other, "ann2", "beta", "rules.spec.html")]
+        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95), OTHER_RULE: ("every feature", 0.95)},
+                                rule={ONBOARDING: ("missed", 0.95), OTHER_RULE: ("missed", 0.95)})
+        service = self.service(provider)
+        args = (page, str(self.specs / "b.spec.html"), "ann1/docs/specs/b.spec.html", self.base, [], "", mounts)
+        result = service.response(*args)
+        deadline = time.time() + 5
+        while any(item["state"] == "pending" for item in result["items"]) and time.time() < deadline:
+            time.sleep(0.01)
+            result = service.response(*args)
+        self.assertEqual(result["rules"], ["ann1/docs/specs/onboarding.spec.html#acceptance-onboarding"])
+        self.assertNotIn(OTHER_RULE, [call["state"]["criterion"] for call in provider.asked("scope")])
+        self.assertEqual([item["path"] for item in service._served_specs(mounts, page["spec_file"], page)],
+                         ["ann1/docs/specs/onboarding.spec.html"])
+
     def test_off_returns_off(self):
         self.seed()
         service = jev.JevService(state_dir=Path(self.tmp.name) / "state", api_key="")
