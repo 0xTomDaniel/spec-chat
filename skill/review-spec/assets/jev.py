@@ -268,12 +268,23 @@ def load_question_sets(*directories: str | Path | None) -> dict[str, QuestionSet
     return result
 
 
+def rule_identity(text: str) -> str:
+    """What a dismissal holds for in place of the rule's criterion text, so no record names it (project-rules #dismiss-scope)."""
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+# The human's two rule-note dismissals (project-rules #dismiss): the resolution each records.
+DISMISSALS = {"here": "dismissed", "rule": "not-a-rule"}
+
+
 class JudgmentStore:
     """Append-only JSONL records, also used as the cache."""
 
     def __init__(self, path: str | Path | None = None):
         self.path = Path(path) if path else None
         self.by_key: dict[str, dict[str, Any]] = {}
+        # Every rule dismissal ever recorded, by what it holds for, never by cache key (project-rules #dismiss-scope).
+        self.dismissals: set[tuple[str, str, str, str | None]] = set()
         self.lock = threading.RLock()
         if self.path:
             try:
@@ -289,6 +300,7 @@ class JudgmentStore:
                     continue
                 if isinstance(record, Mapping) and record.get("cache_key"):
                     record = dict(record)
+                    self._hold(record.get("resolution"))
                     current = self.by_key.get(record["cache_key"])
                     if current is None or current.get("outcome") in REPLACEABLE_OUTCOMES or "resolution" in record:
                         self.by_key[record["cache_key"]] = record
@@ -310,21 +322,37 @@ class JudgmentStore:
                     stream.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
             return record
 
+    def _hold(self, resolution: Any) -> None:
+        if isinstance(resolution, Mapping) and resolution.get("status") in DISMISSALS.values() and resolution.get("project"):
+            self.dismissals.add((resolution["status"], str(resolution["project"]), str(resolution.get("rule")),
+                                 resolution.get("spec")))
+
+    def dismissed(self, status: str, project: Any, text: str, spec: str | None = None) -> bool:
+        """Whether the project dismissed this rule text: on this spec path (dismissed), or everywhere (not-a-rule)."""
+        with self.lock:
+            return bool(project) and (status, str(project), rule_identity(text), spec) in self.dismissals
+
+    def by_id(self, record_id: str) -> dict[str, Any] | None:
+        with self.lock:
+            return next((record for record in self.by_key.values() if record.get("record_id") == record_id), None)
+
     def resolve(self, record_id: str, resolution: str, reason: str | None = None,
-                confirmed: bool | None = None) -> dict[str, Any] | None:
+                confirmed: bool | None = None, **holds: Any) -> dict[str, Any] | None:
         """Set resolution and confirmed on an existing record (#record-resolution, #record-confirmed).
 
-        A 'fixed' resolution auto-confirms as a true positive (#measure-feedback).
-        The amended record is appended to the JSONL so it survives a restart."""
+        A 'fixed' resolution auto-confirms as a true positive (#measure-feedback). holds names what a rule
+        dismissal holds for (project-rules #dismiss-scope). The amended record is appended to the JSONL so it
+        survives a restart."""
         with self.lock:
             for key, record in self.by_key.items():
                 if record.get("record_id") != record_id:
                     continue
                 updated = dict(record)
-                res: dict[str, Any] = {"status": resolution}
+                res: dict[str, Any] = {"status": resolution, **holds}
                 if reason:
                     res["reason"] = reason
                 updated["resolution"] = res
+                self._hold(res)
                 if confirmed is not None:
                     updated["confirmed"] = confirmed
                 elif resolution == "fixed":
@@ -2375,13 +2403,15 @@ class JevService:
                 self._asking[key] = future
 
     def rule_items(self, current: bytes, old: bytes | None, path: str, base: str, revision: Any,
-                   served: Any, seam: "JevSeam | None" = None, page_path: str | None = None) -> tuple[list[dict[str, Any]], list[str]]:
+                   served: Any, seam: "JevSeam | None" = None, page_path: str | None = None, project: Any = None,
+                   spec: str | None = None) -> tuple[list[dict[str, Any]], list[str]]:
         """Rule items for a spec that differs from its compared base, and the rules checked (#marks, #pending).
 
         Answers come from held records only; misses are asked in the background and show as pending, with
         escalated true once Jev was unsure and the general LLM has the question. A copy is no rule of its own:
         its home is checked instead, and a copy of this spec's own rule is none (#q-copies). page_path is this
-        spec's path as other specs' links name it."""
+        spec's path as other specs' links name it. A rule the project dismissed shows nothing: Not here on this
+        repo spec path, Dismiss rule everywhere, its copies included, and is then no rule checked (#dismiss)."""
         seam = seam or self.seam
         sets = seam.question_sets
         mark = self._built("mark", current)
@@ -2406,6 +2436,9 @@ class JevService:
                     self._ask_submit(question, seam)
 
         for scope, rule in zip(scopes, self._build("rule", scopes, current, path, base, revision, mark)):
+            text = scope["state"]["criterion"]
+            if seam.store.dismissed(DISMISSALS["rule"], project, text):
+                continue
             state, record = self._rule_held(scope, seam)
             if state == "unavailable":
                 # An undecided scope is no rule yet: show nothing (non-goals: no scope mark) until its pause ends.
@@ -2421,6 +2454,8 @@ class JevService:
                     ask_pending(copy_unknown)
                     continue
                 rules.append(scope["target"])
+                if seam.store.dismissed(DISMISSALS["here"], project, text, spec):
+                    continue
                 # triggered? then covered?, from held records; a step not final here is pending or unavailable.
                 result = chain_result(rule["chain"], final)
                 if result["outcome"] == "oversize":
@@ -2436,7 +2471,7 @@ class JevService:
                 self._rule_submit(scope, rule, seam)
             label = _confident_label(record) if state == "final" else None
             item = {"kind": "rule", "id": mark, "target": scope["target"], "word": scope["word"],
-                    "text": scope["state"]["criterion"],
+                    "text": text,
                     "state": "label" if label == RULE_MISSED else ("none" if state == "final" else state),
                     "label": RULE_MISSED if label == RULE_MISSED else None,
                     "record": record.get("record_id") if record and state == "final" else None}
@@ -2453,7 +2488,8 @@ class JevService:
                mount: Mapping[str, Any] | None = None, target: str = "") -> tuple[list[dict[str, Any]], list[str]]:
         try:
             return self.rule_items(facts["current"], facts["old"], relative, base, facts["head"], facts["served"], seam,
-                                   served_path(mount, target) if mount else None)
+                                   served_path(mount, target) if mount else None,
+                                   (mount or {}).get("project"), facts["rel"])
         except Exception:
             return [], []
 
@@ -2614,12 +2650,49 @@ class JevService:
             except (OSError, ValueError):
                 pass  # unreadable onboarding.toml is never overwritten; the next start warms again
 
-    def offer(self, project: Any) -> dict[str, Any] | None:
-        """The one-time reconcile offer (#bootstrap-offer): after warm-up, N above zero, never sent or dismissed."""
+    def offer(self, project: Any, root: str | None = None) -> dict[str, Any] | None:
+        """The one-time reconcile offer (#bootstrap-offer): after warm-up, N above zero, never sent or dismissed.
+        A rule the project dismissed is not listed, and a spec missing only such rules is not counted (#dismiss-rule);
+        its text is read from the warm-up's main, where the listed home clause lives."""
         status = self.onboarding_status(str(project)) if project else None
         if not status or status.get("state") != "done" or status.get("offer") or not status.get("specs_to_reconcile"):
             return None
-        return {"count": status["specs_to_reconcile"], "specs": status.get("reconcile", [])}
+        specs = status.get("reconcile", [])
+        if root and status.get("main"):
+            gone = {target for target in {rule["target"] for entry in specs for rule in entry["rules"]}
+                    if self._dismissed_at_main(project, root, status["main"], target)}
+            specs = [{**entry, "rules": [rule for rule in entry["rules"] if rule["target"] not in gone]} for entry in specs]
+            specs = [entry for entry in specs if entry["rules"]]
+        return {"count": len(specs), "specs": specs} if specs else None
+
+    def _dismissed_at_main(self, project: Any, root: str, main: str, target: str) -> bool:
+        path = target.partition("#")[0]
+        source = self._at(root, main, path)
+        scopes = self._build("scope", [{"path": path, "source": source}]) if source is not None else []
+        text = next((scope["state"]["criterion"] for scope in scopes if scope["target"] == target), None)
+        return text is not None and self.seam.store.dismissed(DISMISSALS["rule"], project, text)
+
+    def dismiss(self, mount: Mapping[str, Any], target: str, action: str, text: str,
+                record_id: str | None = None) -> bool:
+        """The human's Not here (action here, on the note's rule-check record_id) or Dismiss rule (action rule, on
+        the rule's scope record), for the page's project (#dismiss). Held by project, repo spec path for Not
+        here, and rule text, never by cache key; unconfirmed until audited (jev-suggestions #measure-feedback).
+        False when the text is no rule held here or the record is no rule check."""
+        project = mount.get("project")
+        if action not in DISMISSALS or not project or not isinstance(text, str) or not text:
+            return False
+        seam = self._seam_for(mount)
+        scope = seam.store.get(seam.key({"kind": "scope", "state": {"criterion": text}}))
+        if _confident_label(scope) != RULE_SCOPE:
+            return False
+        holds: dict[str, Any] = {"project": str(project), "rule": rule_identity(text)}
+        if action == "rule":
+            return seam.store.resolve(scope["record_id"], DISMISSALS["rule"], **holds) is not None
+        record = seam.store.by_id(record_id) if isinstance(record_id, str) else None
+        if not record or record.get("kind") != "covered":
+            return False
+        holds["spec"] = os.path.relpath(target, mount["root"]).replace(os.sep, "/")
+        return seam.store.resolve(record_id, DISMISSALS["here"], **holds) is not None
 
     def record_offer(self, project: Any, action: str) -> bool:
         """Record the offer sent or dismissed in the project's table; the first record stands."""
@@ -2700,7 +2773,7 @@ class JevService:
             if unsure:
                 item["unsure"] = unsure
             items.append(item)
-        offer = None if mount.get("test") else self.offer(mount.get("project"))
+        offer = None if mount.get("test") else self.offer(mount.get("project"), mount.get("root"))
         return {"jev": "on", "items": items + rule_items + self._lane_items(mount, served_mounts), "rules": rules,
                 "offer": offer, "levels": dict(MARK_LEVELS)}
 
@@ -2710,4 +2783,4 @@ __all__ = ["BUILDERS", "CHAIN_CONTINUE", "DRAFT_CHECK_KINDS", "DEFAULT_MAX_INPUT
            "anchor_context",
            "build_audience_questions", "build_board_conflict_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_rule_question", "build_scope_questions", "build_type_questions", "chain_result", "changed_leaf_clauses", "draft_check",
            "extract_anchors", "lane_result",
-           "load_question_sets", "material", "rule_homes", "rule_mark_anchor", "rule_word", "spec_text"]
+           "load_question_sets", "material", "rule_homes", "rule_identity", "rule_mark_anchor", "rule_word", "spec_text"]
