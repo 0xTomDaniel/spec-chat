@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import os
+import posixpath
 import re
 import subprocess
 import threading
@@ -963,6 +964,7 @@ class _AnchorParser(HTMLParser):
                 "structural": False,
                 "meta": meta,
                 "excluded": excluded,
+                "links": [],
             })
             value["structural"] = value["structural"] or structural
             if parent and anchor not in self.values[parent]["children"]:
@@ -972,6 +974,10 @@ class _AnchorParser(HTMLParser):
             self.stack.append((tag, self.stack[-1][1] if self.stack else None, structural))
         elif tag == "br" and self.stack:
             self.handle_data(" ")
+        if tag == "a" and attrs.get("href"):
+            for anchor in {item[1] for item in self.stack if item[1]}:
+                if attrs["href"] not in self.values[anchor]["links"]:
+                    self.values[anchor]["links"].append(attrs["href"])
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]):
         self.handle_starttag(tag, attrs)
@@ -1112,6 +1118,13 @@ def _served_spec_parts(value: Any) -> tuple[str, str] | None:
     if not isinstance(source, str):
         return None
     return path, source
+
+
+def served_path(mount: Mapping[str, Any], filename: str) -> str:
+    """A mount's spec file as served specs name it: slug, then its path as enumerate_served_specs gives it."""
+    prefix = str(mount.get("slug", ""))
+    relative = str(mount["spec"]) if mount.get("spec") else os.path.relpath(filename, str(mount.get("narrow_root", ""))).replace(os.sep, "/")
+    return (prefix + "/" if prefix else "") + relative
 
 
 def enumerate_served_specs(mounts: Any) -> list[tuple[str, str]]:
@@ -1506,8 +1519,18 @@ def rule_mark_anchor(source: str | bytes | None) -> str | None:
     return next((key for key, value in anchors.items() if value.get("section") and not value.get("meta")), None)
 
 
+def _linked_criterion(path: str, href: str) -> str | None:
+    """A link to a clause of another spec, as that spec's served path and anchor; None for any other link."""
+    file, _, anchor = href.partition("#")
+    if not file or not anchor or file.startswith("/") or ":" in file:
+        return None
+    target = posixpath.normpath(posixpath.join(posixpath.dirname(path), file))
+    return None if target == path else target + "#" + anchor
+
+
 def build_scope_questions(served_specs: Any) -> list[dict[str, Any]]:
-    """One scope question per acceptance criterion of every other spec; the key is its text alone (#q-scope)."""
+    """One scope question per acceptance criterion of every other spec; the key is its text alone (#q-scope).
+    links names the other specs' clauses the criterion links, so copies resolve to their home (#q-copies)."""
     result = []
     for raw in served_specs or []:
         part = _served_spec_parts(raw)
@@ -1520,8 +1543,29 @@ def build_scope_questions(served_specs: Any) -> list[dict[str, Any]]:
             question = _question("scope", anchor, {"criterion": value["text"]}, path, "", None, path + "#" + anchor)
             question["revision"] = None
             question["word"] = rule_word(path)
+            question["links"] = [link for link in (_linked_criterion(path, href) for href in value["links"]) if link]
             result.append(question)
     return result
+
+
+def rule_homes(scopes: list[Mapping[str, Any]], is_rule: Callable[[Mapping[str, Any]], bool]) -> dict[str, str]:
+    """Each rule's home (#q-copies): a rule's links are followed through rules to the criterion that links no
+    further rule. A link loop, which no copy should form, has its least target as home, so the loop is one rule."""
+    by_target = {scope["target"]: scope for scope in scopes}
+    rules = {target for target, scope in by_target.items() if is_rule(scope)}
+    homes: dict[str, str] = {}
+    for start in rules:
+        chain = [start]
+        while True:
+            step = next((link for link in by_target[chain[-1]].get("links", ()) if link in rules and link != chain[-1]), None)
+            if step is None:
+                homes[start] = chain[-1]
+                break
+            if step in chain:
+                homes[start] = min(chain[chain.index(step):])
+                break
+            chain.append(step)
+    return homes
 
 
 def build_rule_question(scope: Mapping[str, Any], current: str | bytes, path: str, base: str,
@@ -2331,11 +2375,13 @@ class JevService:
                 self._asking[key] = future
 
     def rule_items(self, current: bytes, old: bytes | None, path: str, base: str, revision: Any,
-                   served: Any, seam: "JevSeam | None" = None) -> tuple[list[dict[str, Any]], list[str]]:
+                   served: Any, seam: "JevSeam | None" = None, page_path: str | None = None) -> tuple[list[dict[str, Any]], list[str]]:
         """Rule items for a spec that differs from its compared base, and the rules checked (#marks, #pending).
 
         Answers come from held records only; misses are asked in the background and show as pending, with
-        escalated true once Jev was unsure and the general LLM has the question."""
+        escalated true once Jev was unsure and the general LLM has the question. A copy is no rule of its own:
+        its home is checked instead, and a copy of this spec's own rule is none (#q-copies). page_path is this
+        spec's path as other specs' links name it."""
         seam = seam or self.seam
         sets = seam.question_sets
         mark = self._built("mark", current)
@@ -2348,14 +2394,31 @@ class JevService:
             state, record = self._rule_held(question, seam)
             return record if state == "final" else None
 
+        corpus = {scope["target"]: scope for scope in scopes + self._build("scope", [{"path": page_path or path, "source": current}])}
+        homes = rule_homes(list(corpus.values()), lambda scope: _confident_label(final(scope)) == RULE_SCOPE)
+
+        def linked(scope: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+            return [corpus[target] for target in scope.get("links", ()) if target in corpus]
+
+        def ask_pending(questions: list[Mapping[str, Any]]) -> None:
+            for question in questions:
+                if self._rule_held(question, seam)[0] == "pending":
+                    self._ask_submit(question, seam)
+
         for scope, rule in zip(scopes, self._build("rule", scopes, current, path, base, revision, mark)):
             state, record = self._rule_held(scope, seam)
             if state == "unavailable":
                 # An undecided scope is no rule yet: show nothing (non-goals: no scope mark) until its pause ends.
                 continue
             unsure = 0
-            if state == "final":
-                if _confident_label(record) != RULE_SCOPE:
+            # A criterion linking others may be a copy (#q-copies): its check waits until they are decided.
+            copy_unknown = [question for question in linked(scope) if self._rule_held(question, seam)[0] != "final"]
+            decided = state == "final"
+            if decided:
+                if _confident_label(record) != RULE_SCOPE or homes.get(scope["target"]) != scope["target"]:
+                    continue
+                if copy_unknown:
+                    ask_pending(copy_unknown)
                     continue
                 rules.append(scope["target"])
                 # triggered? then covered?, from held records; a step not final here is pending or unavailable.
@@ -2367,10 +2430,13 @@ class JevService:
                     state, record = self._rule_held(result["step"], seam)
                 else:
                     record = result
-            if state == "pending":
+            if state == "pending" and not decided and linked(scope):
+                ask_pending([scope, *copy_unknown])
+            elif state == "pending":
                 self._rule_submit(scope, rule, seam)
             label = _confident_label(record) if state == "final" else None
             item = {"kind": "rule", "id": mark, "target": scope["target"], "word": scope["word"],
+                    "text": scope["state"]["criterion"],
                     "state": "label" if label == RULE_MISSED else ("none" if state == "final" else state),
                     "label": RULE_MISSED if label == RULE_MISSED else None,
                     "record": record.get("record_id") if record and state == "final" else None}
@@ -2383,10 +2449,11 @@ class JevService:
             items.append(item)
         return items, sorted(set(rules))
 
-    def _rules(self, relative: str, base: str, facts: Mapping[str, Any],
-                seam: "JevSeam | None" = None) -> tuple[list[dict[str, Any]], list[str]]:
+    def _rules(self, relative: str, base: str, facts: Mapping[str, Any], seam: "JevSeam | None" = None,
+               mount: Mapping[str, Any] | None = None, target: str = "") -> tuple[list[dict[str, Any]], list[str]]:
         try:
-            return self.rule_items(facts["current"], facts["old"], relative, base, facts["head"], facts["served"], seam)
+            return self.rule_items(facts["current"], facts["old"], relative, base, facts["head"], facts["served"], seam,
+                                   served_path(mount, target) if mount else None)
         except Exception:
             return [], []
 
@@ -2504,7 +2571,9 @@ class JevService:
             self._warm_submit(scopes)
             decided = [self.seam.store.get(self.seam.key(s)) for s in scopes]
             labels = [_confident_label(record) for record in decided]
-            rules = [scope for scope, label in zip(scopes, labels) if label == RULE_SCOPE]
+            decided_rules = {scope["target"] for scope, label in zip(scopes, labels) if label == RULE_SCOPE}
+            homes = rule_homes(scopes, lambda scope: scope["target"] in decided_rules)
+            rules = [scope for scope in scopes if homes.get(scope["target"]) == scope["target"]]
             checks: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
             for spec in specs:
                 mark = self._built("mark", spec["source"])
@@ -2575,7 +2644,7 @@ class JevService:
             facts = self._read_facts(mount, target, base, served_mounts, base_commit)
         except Exception:
             facts = None  # no rules; questions reads again and fails as it always has
-        rule_items, rules = self._rules(relative, base, facts, seam) if facts else ([], [])
+        rule_items, rules = self._rules(relative, base, facts, seam, mount, target) if facts else ([], [])
         asked = self.questions(mount, target, relative, base, events, view, served_mounts, base_commit, facts)
         questions = [question for question in asked
                      if all(step["kind"] in seam.question_sets for step in question.get("chain", [question]))]
@@ -2641,4 +2710,4 @@ __all__ = ["BUILDERS", "CHAIN_CONTINUE", "DRAFT_CHECK_KINDS", "DEFAULT_MAX_INPUT
            "anchor_context",
            "build_audience_questions", "build_board_conflict_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_rule_question", "build_scope_questions", "build_type_questions", "chain_result", "changed_leaf_clauses", "draft_check",
            "extract_anchors", "lane_result",
-           "load_question_sets", "material", "rule_mark_anchor", "rule_word", "spec_text"]
+           "load_question_sets", "material", "rule_homes", "rule_mark_anchor", "rule_word", "spec_text"]
