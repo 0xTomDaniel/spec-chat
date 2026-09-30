@@ -70,8 +70,11 @@ One scenario per criterion: no Given or When joins alternatives with "or"; each 
 Then names what is visible at the end: on screen, or for a feature with no screen, in its terminal output or a named file.
 A Then that states only an absence also names something visible that proves the end state was reached, and a Then never defers to other contracts, as in "remains governed by existing contracts".
 Every Given names a state that a fixture declared in the target repository provides; when none does, the Given names the fixture that must be extended to provide it.
+No hidden steps: the When names, in order, every action from the Given's state to the Then, such as opening a menu before choosing its item; no step the Then depends on is left implied.
+Text a user types is quoted verbatim in the When, as in `types "Q3 scripts" into Folder name`, never described as "a valid name".
 A gesture or timing is its own explicit step with its target or duration, such as "press and hold 500ms" or "drag to the Ideas tile", and the criterion says in plain words that it needs that gesture or timing, so a QA program without it can report the criterion unsupported instead of failed.
 Spec Chat keeps no list of QA capabilities; the plain words are the whole contract.
+A criterion that needs a failure caused on purpose says "needs an induced failure" and names the failure, such as a provider timeout, so the target can prove the criterion with a unit test instead.
 Given, When, and Then open their clauses capitalized as written here, the same way throughout a spec, with no label before them such as a number or "Scenario:".
 
 A `data-spec-tbd` marker is open unless its value is `later`. Open TBDs block
