@@ -36,10 +36,10 @@ const state = { threads: draft };
 const { renderHighlight, scrollToJevAnchor } = Function('document', 'location', 'state', code + '; return { renderHighlight, scrollToJevAnchor };')(document, location, state);
 const lit = () => blocks.filter(b => b.classList.contains('hx-tbd-open')).map(b => b.dataset.anchor);
 
-// A page arrived at #rule (another spec's Jev link) highlights rule only; open TBDs stay gated as before.
+// A page arrived at #rule (another spec's Jev link) highlights rule, and the open TBD keeps its highlight while a draft keeps the action Hand off.
 location.hash = '#rule';
 renderHighlight();
-assert.deepEqual(lit(), ['rule']);
+assert.deepEqual(lit(), ['rule', 'open']);
 // With TBD open as the action, both show the same highlight.
 state.threads = new Map();
 renderHighlight();
@@ -51,12 +51,12 @@ scrollToJevAnchor('other');
 assert.equal(location.hash, 'other');
 location.hash = '#other';
 scrollToJevAnchor('other');
-assert.deepEqual(lit(), ['other']);
+assert.deepEqual(lit(), ['open', 'other']);
 assert.deepEqual(blocks[3].scrolled, ['center']);
-// An address naming no anchor highlights nothing.
+// An address naming no anchor adds no highlight beyond open TBDs.
 location.hash = '#hxdebug';
 renderHighlight();
-assert.deepEqual(lit(), []);
+assert.deepEqual(lit(), ['open']);
 
 // One highlight style: the Jev flash is gone, and boot listens for arrivals.
 assert.doesNotMatch(runtime, /hx-jev-target-flash|hx-jev-flash/);
