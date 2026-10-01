@@ -210,6 +210,20 @@ class MultiReviewServeTest(unittest.TestCase):
                                       {"event": "comment", "id": "c3", "actor": "agent"})[0], 403)
         self.assertEqual(sorted(p.name for p in human.iterdir()), [name])
 
+    def test_event_write_io_failure_is_a_server_error_the_page_retries(self):
+        # review-state #offline-outbox: an I/O failure is never a refusal, so the page keeps the event.
+        resource = self.make_resource("io")
+        self.start([resource])
+        human = Path(resource["root"]) / (resource["spec"] + ".review") / "human"
+        human.mkdir(parents=True, exist_ok=True)
+        human.chmod(0o500)
+        self.addCleanup(human.chmod, 0o700)
+        path = self.api(resource, actor="human", name="1759300000000000000-comment-io.json")
+        event = {"event": "comment", "id": "io", "text": "x"}
+        self.assertEqual(self.request(path, "POST", event)[0], 503)
+        human.chmod(0o700)
+        self.assertEqual(self.request(path, "POST", event)[0], 200)
+
     def test_served_spec_text_is_stored_as_a_version_by_its_etag(self):
         # review-state #model-versions, #model-fields: version hash is the page ETag.
         resource = self.make_resource("versions")

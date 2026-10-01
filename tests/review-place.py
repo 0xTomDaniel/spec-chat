@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import urllib.request
 from pathlib import Path
@@ -55,7 +56,7 @@ class ResolveTest(unittest.TestCase):
         result = place.resolve(comment(), INSERTED, V1)
         start = INSERTED.index(SENTENCE)
         self.assertEqual(result, {"anchorId": "marks-intro", "start": start, "end": start + len(SENTENCE),
-                                  "quote": SENTENCE, "state": "kept"})
+                                  "quote": SENTENCE, "state": "kept", "key": None})
         self.assertNotEqual(start, V1.index(SENTENCE))
 
     def test_rewritten_part_is_changed_on_surviving_text(self):
@@ -103,6 +104,22 @@ class ResolveTest(unittest.TestCase):
         block["target"] = None
         self.assertEqual(place.resolve(block, REWRITTEN, V1)["state"], "changed")
         self.assertEqual(place.resolve(block, INSERTED, V1)["state"], "kept")
+
+    def test_element_key_follows_the_element_when_a_peer_is_inserted_before_it(self):
+        v1 = '<section data-anchor="b">\n<p>one</p>\n<p>two</p>\n</section>\n'
+        current = v1.replace("<p>one</p>", "<p>new</p>\n<p>one</p>")
+        result = place.resolve(comment("", anchor="b", target={"type": "element", "key": "p[1]"}, version=v1), current, v1)
+        self.assertEqual((result["anchorId"], result["state"], result["key"]), ("b", "kept", "p[2]"))
+        self.assertEqual(current[result["start"]:result["end"]], "<p>one</p>")
+        ident = '<section data-anchor="b">\n<p id="x">one</p>\n</section>\n'
+        moved = ident.replace('<p id="x">', '<p>new</p>\n<p id="x">')
+        kept = place.resolve(comment("", anchor="b", target={"type": "element", "key": "p#x"}, version=ident), moved, ident)
+        self.assertEqual(kept["key"], "p#x")
+        svg = '<figure data-anchor="f">\n<svg><g><path d="1"/></g></svg>\n</figure>\n'
+        grown = svg.replace("<g>", "<g><path d=\"0\"/>")
+        path = place.resolve(comment("", anchor="f", target={"type": "element", "key": "svg[1]/g[1]/path[1]"}, version=svg), grown, svg)
+        self.assertEqual(path["key"], "svg[1]/g[1]/path[2]")
+        self.assertIsNone(place.resolve(comment(), INSERTED, V1)["key"], "a text mark carries its quote, not a key")
 
     def test_event_without_anchor_has_no_place(self):
         self.assertIsNone(place.resolve({"event": "handoff", "anchorId": "", "target": None}, V1, None))
@@ -165,6 +182,36 @@ class SpoolTest(unittest.TestCase):
             server.shutdown()
             server.server_close()
         self.assertEqual([event.get("place") for event in events], [expected, None])
+
+    def test_repeat_poll_of_many_text_marks_is_cheap(self):
+        """#model-place: a page polls often; place is resolved once per event and spec text."""
+        blocks = "".join('<p data-anchor="b%d">Block %d says %s</p>\n' % (i, i, "word " * 30) for i in range(600))
+        old = '<article>\n' + blocks + '</article>\n'
+        current = old.replace('<p data-anchor="b0">', '<p data-anchor="new">Inserted.</p>\n<p data-anchor="b0">')
+        self.assertGreater(len(current), 99000)
+        names = []
+        for i in range(100):
+            body = comment("Block %d says word" % (i * 6), anchor="b%d" % (i * 6), version=old)
+            body["id"] = "u%d" % i
+            names.append(("%03d-comment-u%d.json" % (i, i), body))
+        spec, review = spool(self.root / "perf", current, [old], names)
+        reads = []
+        real = place.read_version
+        place.read_version = lambda *args: reads.append(args) or real(*args)
+        try:
+            events = [{"name": name, "body": body} for name, body in names]
+            began = time.process_time()
+            place.resolve_events(str(spec), events)
+            first = time.process_time() - began
+            began = time.process_time()
+            place.resolve_events(str(spec), [{"name": name, "body": body} for name, body in names])
+            again = time.process_time() - began
+        finally:
+            place.read_version = real
+        self.assertTrue(all(event["place"]["state"] == "kept" for event in events))
+        self.assertLessEqual(len(reads), 1, "each version file is read once")
+        self.assertLess(first, 1.5)
+        self.assertLess(again, 0.05)
 
 
 if __name__ == "__main__":

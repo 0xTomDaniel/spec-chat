@@ -113,4 +113,28 @@ assert.equal(offlineNotice(0), '');
 assert.equal(offlineNotice(1), 'Offline: 1 change waiting');
 assert.equal(offlineNotice(3), 'Offline: 3 changes waiting');
 
+// #offline-outbox: only a validation refusal (400, 403, 409) drops an event; any other failure keeps it to resend.
+const httpStart = runtime.indexOf('function httpTransport()');
+const httpEnd = runtime.indexOf('\n}\n', httpStart) + 2;
+for (const [status, outcome] of [[200, 'stored'], [400, 'refused'], [403, 'refused'], [409, 'refused'], [404, 'kept'], [500, 'kept'], [503, 'kept']]) {
+  const transport = Function('REVIEW_DIR', 'EMBED_REVIEW_DIR', 'fetch', runtime.slice(httpStart, httpEnd) + '; return httpTransport();')(
+    'd', false, async () => ({ ok: status < 300, status }));
+  const got = await transport.postEvent({ name: 'n', body: {} }).catch(() => 'kept');
+  assert.equal(got, outcome, 'status ' + status);
+}
+
+// #anchoring-states: the service place wins; an element mark sits on the key place.py gives it now.
+const placeStart = runtime.indexOf('function placedMark(e)');
+const placedMark = Function(runtime.slice(placeStart, runtime.indexOf('\n}\n', placeStart) + 2) + '; return placedMark;')();
+const elementMark = { anchorId: 'b', target: { type: 'element', key: 'p[1]' } };
+assert.deepEqual(placedMark({ body: elementMark, place: { anchorId: 'b', state: 'kept', key: 'p[2]' } }).target, { type: 'element', key: 'p[2]' },
+  'a paragraph inserted before the marked one moves the pin with it');
+assert.equal(placedMark({ body: elementMark, place: { anchorId: 'b', state: 'kept', key: null } }).target, null, 'no current key: the block');
+assert.deepEqual(placedMark({ body: { anchorId: 'b', target: { type: 'text', key: 'old' } }, place: { anchorId: 'b', state: 'changed', quote: 'new' } }).target,
+  { type: 'text', key: 'new' });
+assert.equal(placedMark({ body: elementMark, place: { anchorId: 'b', state: 'gone' } }).target, null);
+const datum = { anchorId: 'c', target: { type: 'datum', key: 'Q1' } };
+assert.deepEqual(placedMark({ body: datum, place: { anchorId: 'c', state: 'kept' } }).target, datum.target, 'a chart mark keeps its own target');
+assert.equal(placedMark({ body: elementMark }), elementMark, 'no place: the event as written');
+
 console.log('runtime review-state tests passed');
