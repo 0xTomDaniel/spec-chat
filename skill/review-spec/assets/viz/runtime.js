@@ -2218,6 +2218,7 @@ a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
 /* orphan hint */
 .hx-orphan-hint{display:flex;align-items:center;flex-wrap:wrap;gap:var(--ui-space-1);margin:7px 0;padding:7px var(--ui-space-2);border-left:3px solid var(--ui-draft);background:var(--ui-draft-soft);color:var(--ui-draft);font-size:var(--ui-text-xs);line-height:1.35}
 .hx-orphan-hint>span{flex:1 1 100%}
+.hx-place-notice{margin:7px 0;padding:7px var(--ui-space-2);border-left:3px solid var(--ui-draft);background:var(--ui-draft-soft);color:var(--ui-draft);font-size:var(--ui-text-xs);line-height:1.35}
 .hx-orphan-hint .hx-btn{margin:0;font-size:var(--ui-text-xs);padding:var(--ui-space-1) var(--ui-space-2)}
 .hx-pin-jev{position:absolute;left:calc(100% + 4px);top:50%;transform:translateY(-50%);width:max-content;max-width:120px;color:var(--ui-resolved);background:var(--ui-resolved-soft);border:1px solid var(--ui-resolved);border-radius:var(--ui-radius-pill);padding:2px var(--ui-space-1);font:600 9px/1.1 var(--ui-font);white-space:nowrap;pointer-events:none}
 /* banner */
@@ -2587,6 +2588,14 @@ function renderPanel() {
       (threadJevState ? '<span class="hx-jev-thread-label" data-state="' + threadJevState.state + '">' + esc(jevDisplayLabel(threadJevState)) + '</span>' : '') +
       (th.status === 'resolved' ? '<button class="hx-disclosure" data-act="disclosure" aria-expanded="' + String(!collapsed) + '" aria-label="' + (collapsed ? 'Show' : 'Hide') + ' resolved thread">' + (collapsed ? '▸' : '▾') + '</button>' : '') + '</div>' +
       (collapsed ? '<div class="hx-thread-preview">' + esc(b.text || 'Resolved comment') + '</div>' : '');
+    const notice = th.ev.place && PLACE_NOTICES[th.ev.place.state];
+    if (notice) {
+      const n = document.createElement('div');
+      n.className = 'hx-place-notice';
+      n.dataset.state = th.ev.place.state;
+      n.innerHTML = esc(notice) + (b.quote ? '<span class="hx-quote">“' + esc(b.quote) + '”</span>' : '');
+      d.appendChild(n);
+    }
     const hint = orphanHintElement(th, orphanHint);
     if (hint) d.appendChild(hint);
     if (!collapsed) {
@@ -2708,7 +2717,7 @@ function selectThread(th, scroll) {
   openPanel(true);
   renderPanel();
   renderPins();
-  if (scroll) scrollToThread(th.ev.body);
+  if (scroll) scrollToThread(placedMark(th.ev));
   renderThreadHighlight();
 }
 
@@ -2900,10 +2909,23 @@ function threadTargetRect(b, holder) {
   return host;
 }
 
+// #anchoring-states: where a thread's mark sits now. The service's place (place.py) wins: its
+// block, and for a text target its surviving text; a gone mark sits on the block alone. An event
+// without a place sits by its own anchor and quote.
+function placedMark(e) {
+  const b = e.body, p = e.place;
+  if (!p || !p.anchorId) return b;
+  if (p.state === 'gone') return { ...b, anchorId: p.anchorId, target: null };
+  const text = b.target && b.target.type === 'text';
+  return { ...b, anchorId: p.anchorId, target: text ? { type: 'text', key: p.quote } : p.anchorId === b.anchorId ? b.target : null };
+}
+
+const PLACE_NOTICES = { changed: 'Text changed since this comment', gone: 'Text removed' };
+
 function renderThreadHighlight() {
   let ring = document.querySelector('.hx-thread-ring');
   const th = state.activeThread && state.threads.get(state.activeThread);
-  const b = th && th.ev.body;
+  const b = th && placedMark(th.ev);
   const holder = b && document.querySelector('[data-anchor="' + b.anchorId + '"]');
   if (!holder) {
     syncChartHighlight(null, null);
@@ -2949,6 +2971,16 @@ function pinPos(b, holder) {
       return { top: cR.top - hR.top + y - 12, left: cR.left - hR.left + x - 12 };
     } catch { /* fall through */ }
   }
+  if (t.type === 'text') {
+    // beside the text's first line, in the block's pin corner or column, so it covers no text
+    const r = textTargetRect(holder, t.key || b.quote);
+    const corner = cornerPos(holder);
+    if (r) {
+      const top = Math.round(r.top - holder.getBoundingClientRect().top - holder.clientTop);
+      return corner.column ? { column: true, top: Math.max(corner.top, top) } : { top, left: corner.left };
+    }
+    return corner;
+  }
   if (t.type === 'element') {
     const el = resolveElement(holder, t.key);
     if (el) {
@@ -2974,7 +3006,7 @@ function renderPins() {
   let n = 0;
   for (const th of state.threads.values()) {
     n++;
-    const b = th.ev.body;
+    const b = placedMark(th.ev);
     const holder = findAnchor(b.anchorId);
     if (!holder) continue;
     const pos = pinPos(b, holder);
