@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# spec-chat-capabilities: exact-baseline git-baseline narrow-review-root
+# spec-chat-capabilities: exact-baseline git-baseline narrow-review-root non-git-root
 """Serve one or more narrow Spec Chat review mounts."""
 
 from __future__ import annotations
@@ -11,12 +11,14 @@ import html
 import json
 import mimetypes
 import os
+import pwd
 import re
 import signal
 import socket
 import stat
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import tomllib
@@ -73,11 +75,16 @@ def _inside(path, parent, strict=False):
 
 
 def _git(root, *args, optional=False):
-    result = subprocess.run(
-        ("git", "-C", str(root), *args),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-    )
+    try:
+        result = subprocess.run(
+            ("git", "-C", str(root), *args),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as exc:  # no git binary: Git features are unavailable, never fatal
+        if optional:
+            return None
+        raise RuntimeError("git unavailable") from exc
     if result.returncode:
         if optional:
             return None
@@ -221,16 +228,71 @@ class MountState:
                 print("review-serve: registry change hook failed: %r" % exc, file=sys.stderr, flush=True)
 
 
+BROAD_HOME_CHILDREN = ("Desktop", "Documents", "Downloads")
+NOT_GIT_REASON = "not a Git repository"
+
+
+def _home_directories():
+    homes = {os.path.realpath(os.path.expanduser("~"))}
+    with contextlib.suppress(KeyError, OSError):
+        homes.add(os.path.realpath(pwd.getpwuid(os.getuid()).pw_dir))
+    return homes
+
+
+def _broad_root_reason(root):
+    """Why a served root is too broad, decided without Git; None for a narrow directory."""
+    root = os.path.realpath(root)
+    if root == os.path.dirname(root) or os.path.ismount(root):
+        return "filesystem or volume root"
+    if os.path.dirname(root) == os.path.dirname(os.path.dirname(root)):
+        return "top-level system directory"
+    if root in {os.path.realpath(path) for path in ("/tmp", "/var/tmp", tempfile.gettempdir())}:
+        return "shared temporary directory"
+    for home in _home_directories():
+        if _inside(home, root):
+            return "home directory or its ancestor"
+        if root in {os.path.join(home, name) for name in BROAD_HOME_CHILDREN}:
+            return "top-level home folder"
+    return None
+
+
+def _contains_git(root):
+    """True when the tree under root holds a Git repository or worktree; symlinks are not followed."""
+    for directory, directories, names in os.walk(root, followlinks=False):
+        if ".git" in directories or ".git" in names:
+            return True
+        directories[:] = [name for name in directories if not name.endswith(".review")]
+    return False
+
+
 def _single_mount(root):
     root = Path(root).expanduser().resolve()
+    if not root.is_dir():
+        raise SystemExit("review root must be a directory; serve a narrow review collection")
+    if ".git" in root.parts:
+        raise SystemExit("refusing Git metadata directory; serve a narrow review collection")
+    reason = _broad_root_reason(root)
+    if reason:
+        raise SystemExit("refusing broad root (%s); serve a narrow review collection" % reason)
     try:
         repo = _repo_root(root)
-    except RuntimeError as exc:
-        raise SystemExit("refusing broad root; serve a narrow review collection strictly inside its Git repository") from exc
-    if root == repo:
+    except RuntimeError:
+        repo = None
+    if repo is None:
+        # Plain directory: the served directory is the whole boundary; Git features report unavailable.
+        if _contains_git(root):
+            raise SystemExit("refusing root that contains a Git repository; serve a narrow review collection strictly inside it")
+        return {
+            "id": "single-root",
+            "slug": "",
+            "root": str(root),
+            "narrow_root": str(root),
+            "spec": None,
+            "base": "",
+            "git": False,
+        }
+    if root == repo or not _inside(root, repo, strict=True):
         raise SystemExit("refusing broad root; serve a narrow review collection strictly inside its Git repository")
-    if not root.is_dir() or not _inside(root, repo, strict=True):
-        raise SystemExit("review root must be a directory strictly inside its Git repository")
     return {
         "id": "single-root",
         "slug": "",
@@ -238,6 +300,7 @@ def _single_mount(root):
         "narrow_root": str(root),
         "spec": None,
         "base": "",
+        "git": True,
     }
 
 
@@ -815,7 +878,7 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
             target = os.path.realpath(os.path.join(target_root, *relative.split("/")))
             if not _inside(target, mount["narrow_root"]) or not os.path.isfile(target):
                 continue
-            if any(part.endswith(".review") for part in Path(target).parts):
+            if any(part.endswith(".review") or part == ".git" for part in Path(target).parts):
                 continue
             if spec_only:
                 if not relative.endswith(".spec.html"):
@@ -839,9 +902,13 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
                 continue
             if prefix:
                 relative = relative[len(prefix):]
-            if not relative.endswith(".spec.html.review"):
+            # A registry row reviews its spec; a single-root collection reviews any HTML page it serves.
+            if not relative.endswith(".spec.html.review" if mount.get("spec") else ".html.review"):
                 continue
             spec = relative[:-len(".review")]
+            if not mount.get("spec") and (not _safe_relative(spec) or any(
+                    part.startswith(".") or part.endswith(".review") for part in spec.split("/"))):
+                continue
             if mount.get("spec") and spec != mount["spec"]:
                 continue
             target_root = mount["root"] if mount["slug"] else mount["narrow_root"]
@@ -855,6 +922,8 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
         mount, target, _ = self._resolve_path(query.get("path", [""])[0], spec_only=True)
         if not mount:
             return self._json({"error": "bad path"}, 400)
+        if mount.get("git") is False:
+            return self._json({"error": "git baseline unavailable", "reason": NOT_GIT_REASON}, 409)
         requested = query.get("base", [mount.get("base", "")])[0]
         if requested.startswith("-"):
             return self._json({"error": "invalid base"}, 400)
@@ -868,11 +937,11 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
                 ).strip())
             except subprocess.CalledProcessError:
                 candidates.extend(("main", "master"))
+            except OSError:
+                return self._json({"error": "git baseline unavailable", "reason": "git unavailable"}, 409)
         base_ref = next(
-            (candidate for candidate in candidates if candidate and subprocess.run(
-                ("git", "-C", mount["root"], "rev-parse", "--verify", candidate + "^{commit}"),
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            ).returncode == 0),
+            (candidate for candidate in candidates
+             if candidate and _git(mount["root"], "rev-parse", "--verify", candidate + "^{commit}", optional=True) is not None),
             None,
         )
         if not base_ref:
@@ -927,6 +996,8 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
         mount, target, relative = self._resolve_path(query.get("path", [""])[0], spec_only=True)
         if not mount:
             return self._json({"error": "bad path"}, 400)
+        if mount.get("git") is False:
+            return self._json({"error": "jev unavailable", "reason": NOT_GIT_REASON}, 409)
         base = query.get("base", [mount.get("base", "")])[0]
         if not base or base.startswith("-"):
             return self._json({"error": "invalid base"}, 400)
@@ -954,7 +1025,7 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
         if not mount:
             return self._json({"error": "bad path"}, 400)
         base = evidence_provider(self.server.state_dir)
-        if not base:
+        if not base or mount.get("git") is False:
             return self._json({"criteria": None, "levels": MARK_LEVELS})
         try:
             spec = os.path.relpath(target, mount["root"]).replace(os.sep, "/")
