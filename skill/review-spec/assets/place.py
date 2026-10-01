@@ -28,6 +28,8 @@ import sys
 from html.parser import HTMLParser
 
 VERSION_RE = re.compile(r"[0-9a-f]{64}\Z")
+# #anchoring-state-unplaced: a mark the resolver fails on; the page shows it by its own anchor and quote.
+UNPLACED = {"anchorId": None, "start": None, "end": None, "quote": None, "state": "unplaced", "key": None}
 ENTITY_RE = re.compile(r"&(?:#[0-9]+|#[xX][0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]*);?")
 SEGMENT_RE = re.compile(r"([a-z0-9-]+)(?:\[(\d+)\]|#(.+))\Z")
 VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
@@ -313,7 +315,12 @@ class Resolver:
         if version not in self._versions and version_text is not None:
             version = version or hashlib.sha256(version_text.encode("utf-8")).hexdigest()
         known = version in self._versions or version_text is not None
-        result = self._place(body, version if known else None, version_text)
+        try:
+            result = self._place(body, version if known else None, version_text)
+        except Exception as error:  # #anchoring-state-unplaced: one bad mark never fails the others
+            print("place: cannot place comment %s: %r" % (body.get("id"), error), file=sys.stderr)
+            self._places[memo] = UNPLACED  # kept, so a polled failure logs once per spec text
+            return UNPLACED
         if known or not body.get("version"):  # a named version not yet stored may arrive: resolve again then
             self._places[memo] = result
         return result
