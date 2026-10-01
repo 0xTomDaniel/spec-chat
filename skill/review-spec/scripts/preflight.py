@@ -124,15 +124,19 @@ def runtime_path(spec):
     return resolved.pop()
 
 
-def copy_tree(source, target):
-    for path in source.rglob("*"):
-        relative = path.relative_to(source)
-        destination = target / relative
-        if path.is_dir():
-            destination.mkdir(parents=True, exist_ok=True)
-        elif path.is_file():
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, destination)
+def migration_files(source, target):
+    """Map each bundled asset file to the target path it overwrites."""
+    return [
+        (path, target / path.relative_to(source))
+        for path in sorted(source.rglob("*"))
+        if path.is_file()
+    ]
+
+
+def copy_files(files):
+    for source, destination in files:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
 
 
 def git(repository, *args):
@@ -143,19 +147,34 @@ def git(repository, *args):
     )
 
 
-def commit_migration(repository, target_viz):
-    """Commit only the migrated runtime assets; return the commit id or None."""
+def owns_git(repository):
+    """True only when the target itself is a git work tree root."""
     top = git(repository, "rev-parse", "--show-toplevel")
-    if top.returncode != 0:
-        return None
-    assets = str(target_viz)
-    git(repository, "add", "--", assets)
-    if git(repository, "diff", "--cached", "--quiet", "--", assets).returncode == 0:
+    return top.returncode == 0 and Path(top.stdout.strip()).resolve() == repository
+
+
+def commit_blocker(repository, paths):
+    """Return why the migration could not be committed, checked before any write."""
+    lock = git(repository, "rev-parse", "--git-path", "index.lock").stdout.strip()
+    if (repository / lock).exists():
+        return "git index is locked"
+    ignored = git(repository, "check-ignore", "--", *paths)
+    if ignored.returncode == 0:
+        return "runtime assets are gitignored: " + " ".join(ignored.stdout.split())
+    return None
+
+
+def commit_migration(repository, paths):
+    """Commit only the written runtime assets; return the commit id or None."""
+    staged = git(repository, "add", "--", *paths)
+    if staged.returncode != 0:
+        raise RuntimeError(staged.stderr.strip() or "git add failed")
+    if git(repository, "diff", "--cached", "--quiet", "--", *paths).returncode == 0:
         return None
     message = "Migrate Spec Chat review runtime\n\nShared runtime assets only."
-    committed = git(repository, "commit", "-q", "--no-verify", "-m", message, "--", assets)
+    committed = git(repository, "commit", "-q", "--no-verify", "-m", message, "--", *paths)
     if committed.returncode != 0:
-        raise RuntimeError(committed.stderr.strip() or "runtime migration commit failed")
+        raise RuntimeError(committed.stderr.strip() or "git commit failed")
     return git(repository, "rev-parse", "HEAD").stdout.strip()
 
 
@@ -213,14 +232,22 @@ def main(argv):
 
     runtime_state = "compatible"
     if not required_runtime.issubset(capabilities(target_runtime)):
-        copy_tree(bundled_viz, target_viz)
+        files = migration_files(bundled_viz, target_viz)
+        paths = [str(destination) for _, destination in files]
+        commits = owns_git(repository)
+        if commits:
+            blocker = commit_blocker(repository, paths)
+            if blocker:
+                return fail(f"runtime migration cannot be committed: {blocker}")
+        copy_files(files)
         runtime_state = "migrated"
-        try:
-            commit = commit_migration(repository, target_viz)
-        except RuntimeError as error:
-            return fail(f"runtime migration commit failed: {error}")
-        if commit:
-            runtime_state += f" migration={commit}"
+        if commits:
+            try:
+                commit = commit_migration(repository, paths)
+            except RuntimeError as error:
+                return fail(f"runtime migration commit failed: {error}")
+            if commit:
+                runtime_state += f" migration={commit}"
 
     print(f"runtime={runtime_state} visuals=valid")
     return 0
