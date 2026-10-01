@@ -124,6 +124,41 @@ class ResolveTest(unittest.TestCase):
     def test_event_without_anchor_has_no_place(self):
         self.assertIsNone(place.resolve({"event": "handoff", "anchorId": "", "target": None}, V1, None))
 
+    def test_replies_and_edits_have_no_place(self):
+        """A thread is placed by its root comment; an edit copying a stale quote can never show gone."""
+        edit = dict(comment(version=REWRITTEN), id="e1", event="edit", supersedes="u1", threadId="u1")
+        reply = dict(comment(version=REWRITTEN), id="u2", event="reply", respondsTo="a1", threadId="u1", quote=None)
+        self.assertIsNone(place.resolve(edit, REWRITTEN, REWRITTEN))
+        self.assertIsNone(place.resolve(reply, REWRITTEN, REWRITTEN))
+        self.assertEqual(place.resolve(comment(), REWRITTEN, V1)["state"], "changed")
+
+    def test_large_unequal_line_count_rewrite_places_in_bounded_time(self):
+        """#model-place: cost stays near linear in spec size; a 600 to 550 line rewrite once took 34s."""
+        def spec(lines):
+            return ('<article class="spec">\n<section data-anchor="big">\n' + "".join(
+                '<p data-anchor="p%d">%s</p>\n' % (i, line) for i, line in enumerate(lines)) + "</section>\n</article>\n")
+        old_lines = ["Line %d says the review keeps marks where a reviewer put them, item %d." % (i, i * 7) for i in range(600)]
+        new_lines = ["Row %d now reads quite differently: the agent rewrote part %d here." % (i, i * 3) for i in range(550)]
+        old, new = spec(old_lines), spec(new_lines)
+        self.assertGreater(len(old), 30000)
+        started = time.monotonic()
+        result = place.resolve(comment(old_lines[300], anchor="p300", version=old), new, old)
+        elapsed = time.monotonic() - started
+        self.assertLess(elapsed, 3.0, "placement took %.1fs" % elapsed)
+        self.assertIn(result["state"], ("changed", "gone"))
+        half = spec(old_lines[:300] + ["Inserted %d." % i for i in range(40)] + [line + " Edited." for line in old_lines[300:]])
+        started = time.monotonic()
+        moved = place.resolve(comment(old_lines[450], anchor="p450", version=old), half, old)
+        self.assertLess(time.monotonic() - started, 3.0)
+        self.assertEqual((moved["anchorId"], moved["state"], moved["quote"]), ("p490", "kept", old_lines[450]),
+                         "every quoted character survives the edited, shifted line")
+
+    def test_edited_line_beside_inserted_line_is_changed_not_gone(self):
+        old = '<section data-anchor="s">\n<p data-anchor="a">Alpha beta gamma delta.</p>\n<p data-anchor="z">End.</p>\n</section>\n'
+        new = old.replace("Alpha beta gamma delta.</p>", "Alpha beta gamma epsilon.</p>\n<p data-anchor=\"n\">New paragraph.</p>")
+        result = place.resolve(comment("Alpha beta gamma delta.", anchor="a", version=old), new, old)
+        self.assertEqual((result["anchorId"], result["state"]), ("a", "changed"))
+
     def test_same_inputs_same_answer(self):
         self.assertEqual(place.resolve(comment(), REWRITTEN, V1), place.resolve(comment(), REWRITTEN, V1))
 

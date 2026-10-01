@@ -97,6 +97,19 @@ try {
   assert.equal(s.pinOnText, true, 'pin beside the remaining text');
   assert.match(s.notice, /^Text changed since this comment/);
   assert.equal(s.noticeQuote, '“' + SENTENCE + '”', 'original quote');
+  // An edit of the root comment, saved on the rewritten version, changes text only: still changed, never removed.
+  await page.click('#hx-dock-open');
+  await page.click('#hx-threads .hx-msg [data-act=edit]');
+  await page.fill('.hx-composer textarea', 'Edited after the rewrite.');
+  await page.click('.hx-composer [data-act=save]');
+  await page.waitForFunction(() => localStorage.getItem('spec-chat:outbox:anchor-changed/docs/specs/report.spec.html.review') === '[]', null, { timeout: 5000 });
+  await page.close();
+  page = await open('anchor-changed');
+  assert.equal(await page.locator('#hx-threads .hx-msg .hx-text', { hasText: 'Edited after the rewrite.' }).count(), 1, 'the edit shows');
+  s = await shown(page);
+  assert.equal(s.place.state, 'changed');
+  assert.equal(s.pinOnText, true, 'pin still beside the remaining text');
+  assert.match(s.notice, /^Text changed since this comment/, 'an edited root comment is not removed');
   await page.close();
 
   // #acceptance-anchor-gone: sentence deleted; removed notice with the original quote, pin on the nearest surviving block.

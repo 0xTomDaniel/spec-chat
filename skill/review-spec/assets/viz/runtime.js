@@ -1018,8 +1018,7 @@ function foldThreads(events) {
       const index = prior ? prior.index : th.messages.length;
       if (!th.history.has(index)) th.history.set(index, { original: th.messages[index] || e, edits: [] });
       th.history.get(index).edits.push(e);
-      th.messages[index] = e;
-      if (index === 0) th.ev = e;
+      th.messages[index] = e; // th.ev stays the root comment: its version, target, and quote place the thread
       messageThread.set(b.id, th.id);
       messageSlot.set(b.id, { th, index });
       th.latestHumanId = b.id;
@@ -2588,7 +2587,7 @@ function renderPanel() {
       (looksResolved(th) ? '<span class="hx-jev-thread-label">Looks resolved</span>' : '') +
       (threadJevState ? '<span class="hx-jev-thread-label" data-state="' + threadJevState.state + '">' + esc(jevDisplayLabel(threadJevState)) + '</span>' : '') +
       (th.status === 'resolved' ? '<button class="hx-disclosure" data-act="disclosure" aria-expanded="' + String(!collapsed) + '" aria-label="' + (collapsed ? 'Show' : 'Hide') + ' resolved thread">' + (collapsed ? '▸' : '▾') + '</button>' : '') + '</div>' +
-      (collapsed ? '<div class="hx-thread-preview">' + esc(b.text || 'Resolved comment') + '</div>' : '');
+      (collapsed ? '<div class="hx-thread-preview">' + esc(th.messages[0].body.text || 'Resolved comment') + '</div>' : '');
     const notice = th.ev.place && PLACE_NOTICES[th.ev.place.state];
     if (notice) {
       const n = document.createElement('div');
@@ -2769,10 +2768,11 @@ async function moveOrphans(moves) {
   try {
     for (const { th, target } of moves) {
       const original = th.ev.body || {};
-      const quote = original.quote || original.text || '';
+      const text = th.messages[0].body.text;
+      const quote = original.quote || text || '';
       save({
         id: humanId('u'), event: 'comment', anchorId: target, target: null,
-        quote, text: original.text || 'Moved comment', actor: 'human',
+        quote, text: text || 'Moved comment', actor: 'human',
         createdAt: new Date().toISOString(), schemaVersion: 1,
       });
       save({

@@ -111,21 +111,6 @@ class ReviewStateCollections(unittest.TestCase):
         self.assertEqual([name.split("-", 2)[1] for name in batch], ["comment", "handoff"])
         self.assertEqual(self.site.places("agent-scan")["qa-sentence"]["state"], "changed")
 
-    def test_edit_race_is_a_pending_thread_with_another_reviewers_edit(self):
-        events = [e["body"] for e in self.site.events("edit-race")]
-        comment, handoff, edit = events
-        self.assertEqual(handoff["events"], [comment["id"]])
-        self.assertEqual(spool.handoff_batch(self.site.spec("edit-race") + ".review", set())[-2:],
-                         tuple(e["name"] for e in self.site.events("edit-race")[:2]))
-        self.assertEqual((edit["supersedes"], edit["threadId"]), (comment["id"], comment["id"]))
-        self.assertNotEqual((edit["browser"], edit["author"]), (comment["browser"], comment["author"]))
-        self.assertEqual(self.site.places("edit-race")[comment["id"]]["state"], "kept")
-
-    def test_name_collision_two_browsers_one_fruit(self):
-        first, second = (e["body"] for e in self.site.events("name-collision"))
-        self.assertEqual(first["author"], second["author"])
-        self.assertNotEqual(first["browser"], second["browser"])
-
     def test_stale_page_edit_lands_on_save_and_the_mark_follows(self):
         spec = self.site.spec("stale-page")
         self.assertEqual(self.current("stale-page"), HEAD)

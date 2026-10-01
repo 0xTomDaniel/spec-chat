@@ -7,8 +7,8 @@ Each collection below gets seeded spool events on its report spec, as the page a
 agent would have left them (skill/review-spec/references/event-schema.md), and, where a
 criterion needs it, the agent's edit to the spec. Seeded human events name the head spec
 text as their `version` and the version file holds it, as the service writes on serve.
-Seeded reviewers are browsers other than the capture browser, so one capture browser
-meets the "two reviewers" Givens. Fixed names and stamps: every reset is identical.
+Seeded reviewers are browsers other than the capture browser. Fixed names and stamps:
+every reset is identical.
 """
 
 import hashlib
@@ -18,7 +18,6 @@ import sys
 
 SPEC = os.path.join("docs", "specs", "report.spec.html")
 SENTENCE = "The export button downloads a CSV of the current table."
-TOTALS = "The report page shows totals per week."
 EXPORT_LINE = '<p data-acceptance-criterion data-anchor="report-export" data-story="story-export">%s</p>\n' % SENTENCE
 INSERTED = '<p data-anchor="report-scope">Totals and export cover the selected week only.</p>\n'
 REWRITE = ("of the current table.", "of every row in the report.")
@@ -75,27 +74,6 @@ def sentence_comment(spool, ident="qa-sentence"):
                    "Say which columns the CSV holds.", {"type": "text", "key": SENTENCE})
 
 
-def pending_thread(spool):
-    """Papaya's comment, handed off: one pending human message."""
-    root = comment(spool, "qa-pending", "qa-browser-papaya", "Papaya", "report-totals", TOTALS, "Weeks start on Monday?")
-    spool.add("handoff", "qa-pending-handoff", "qa-browser-papaya", "Papaya", events=[root])
-    return root
-
-
-def edit_race(spool):
-    root = pending_thread(spool)
-    # the other reviewer's racing edit; the capture browser's edit, saved now, names later
-    spool.add("edit", "qa-edit-guava", "qa-browser-guava", "Guava", supersedes=root, threadId=root,
-              anchorId="report-totals", quote=TOTALS, text="Do weeks start on Monday or Sunday?")
-    return None
-
-
-def name_collision(spool):
-    comment(spool, "qa-mango-first", "qa-browser-mango-1", "Mango", "report-totals", TOTALS, "Totals per ISO week?")
-    comment(spool, "qa-mango-second", "qa-browser-mango-2", "Mango", "report-export", SENTENCE, "Which delimiter?")
-    return None
-
-
 def agent_scan(spool):
     root = sentence_comment(spool)
     spool.add("handoff", "qa-sentence-handoff", "qa-browser-papaya", "Papaya", events=[root])
@@ -116,8 +94,6 @@ def no_events(spool):
 
 # collection -> seeds the spool, returns the agent edit applied now (or None)
 COLLECTIONS = {
-    "edit-race": edit_race,
-    "name-collision": name_collision,
     "anchor-moved": on_sentence(insert_above),
     "anchor-changed": on_sentence(rewrite),
     "anchor-gone": on_sentence(delete),

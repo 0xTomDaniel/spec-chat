@@ -2,10 +2,12 @@
 """Resolve a review mark to its place in the current spec (review-state #anchoring, #model-place).
 
 One resolver for every reader: review-serve.py adds `place` to /api/events, and watch-specs.sh
-prints it beside the zero-wait scan rows. A mark is located in the spec version its event names
-(`version`, the sha256 of that spec text), then mapped through a character diff to the current
-text. Offsets are code-point indexes into the current spec source; `quote` is the mapped range's
-visible text, the same text the page's text target search reads.
+prints it beside the zero-wait scan rows. A mark is a comment: a thread is placed by its root
+comment (its version, target, quote); replies and edits never move it. A mark is located in the
+spec version its event names (`version`, the sha256 of that spec text), then mapped through a
+character diff (char_map) to the current text. Offsets are code-point indexes into the current
+spec source; `quote` is the mapped range's visible text, the same text the page's text target
+search reads.
 
 An element mark also gets `key`, the element's target key in the current spec, so a pin follows
 the element when its peers shift.
@@ -237,8 +239,14 @@ class Document:
         return block.start, block.end
 
 
+TOKEN_RE = re.compile(r"\w+|\s+|[^\w\s]")
+
+
 def char_map(old, new):
-    """Map each old character index to its new index, or None: a line diff refined by a character diff."""
+    """Map each old character index to its new index, or None. Lines are diffed first; a replaced run
+    of lines is refined by a token diff (words, spaces, punctuation), whose popular-token junking
+    keeps cost near linear in spec size for any edit, and 1:1 replaced tokens by a character diff.
+    Characters of an unpaired token map to None, so a reworded mark is changed and a removed one gone."""
     mapping = [None] * len(old)
     old_lines, new_lines = old.splitlines(keepends=True), new.splitlines(keepends=True)
     old_at, new_at = [0], [0]
@@ -248,20 +256,22 @@ def char_map(old, new):
         new_at.append(new_at[-1] + len(line))
     lines = difflib.SequenceMatcher(None, old_lines, new_lines, autojunk=False)
     for op, i1, i2, j1, j2 in lines.get_opcodes():
-        old_start, new_start = old_at[i1], new_at[j1]
+        a0, b0 = old_at[i1], new_at[j1]
         if op == "equal":
-            for offset in range(old_at[i2] - old_start):
-                mapping[old_start + offset] = new_start + offset
+            for offset in range(old_at[i2] - a0):
+                mapping[a0 + offset] = b0 + offset
         elif op == "replace":
-            # same line count: diff each line pair, which keeps a long rewrite linear in lines
-            pairs = zip(range(i1, i2), range(j1, j2)) if i2 - i1 == j2 - j1 else [(None, None)]
-            for i, j in pairs:
-                a0, a1 = (old_at[i], old_at[i + 1]) if i is not None else (old_start, old_at[i2])
-                b0, b1 = (new_at[j], new_at[j + 1]) if j is not None else (new_start, new_at[j2])
-                chunk = difflib.SequenceMatcher(None, old[a0:a1], new[b0:b1], autojunk=False)
-                for a, b, size in chunk.get_matching_blocks():
-                    for offset in range(size):
-                        mapping[a0 + a + offset] = b0 + b + offset
+            old_tokens = [(m.start(), m.group()) for m in TOKEN_RE.finditer(old, a0, old_at[i2])]
+            new_tokens = [(m.start(), m.group()) for m in TOKEN_RE.finditer(new, b0, new_at[j2])]
+            tokens = difflib.SequenceMatcher(None, [t for _, t in old_tokens], [t for _, t in new_tokens])
+            for top, k1, k2, l1, l2 in tokens.get_opcodes():
+                if top == "equal" or (top == "replace" and k2 - k1 == l2 - l1):
+                    for (at, token), (to, other) in zip(old_tokens[k1:k2], new_tokens[l1:l2]):
+                        same = [(0, 0, len(token))] if top == "equal" else difflib.SequenceMatcher(
+                            None, token, other, autojunk=False).get_matching_blocks()  # 1:1 pair: refine by character
+                        for a, b, size in same:
+                            for offset in range(size):
+                                mapping[at + a + offset] = to + b + offset
     return mapping
 
 
@@ -281,8 +291,8 @@ class Resolver:
 
     def place(self, body, version_text=None, review=None):
         """One mark's place. With `review`, the version text is read from its spool only when not cached."""
-        if not isinstance(body, dict) or not body.get("anchorId"):
-            return None
+        if not isinstance(body, dict) or body.get("event") != "comment" or not body.get("anchorId"):
+            return None  # a thread is placed by its root comment; replies and edits never move it
         memo = json.dumps(body, sort_keys=True)
         if memo in self._places:
             return self._places[memo]
@@ -346,7 +356,8 @@ class Resolver:
 
 
 def resolve(body, current, version_text=None):
-    """One mark's current place: {anchorId, start, end, quote, state, key}, or None for an event without one."""
+    """One mark's current place: {anchorId, start, end, quote, state, key}, or None for an event that is
+    not a comment with an anchor."""
     return Resolver(current).place(body, version_text)
 
 

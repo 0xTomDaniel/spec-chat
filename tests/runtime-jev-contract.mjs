@@ -84,7 +84,8 @@ const { moveOrphan, moveOrphans } = Function('state', 'humanId', 'renderPanel', 
   () => {},
   save,
 );
-await moveOrphan({ id: 'thread-1', ev: { body: { quote: 'old quote', text: 'Original note' } } }, 'new-section');
+const movedRoot = { body: { quote: 'old quote', text: 'Original note' } };
+await moveOrphan({ id: 'thread-1', ev: movedRoot, messages: [movedRoot] }, 'new-section');
 assert.equal(posted.length, 2);
 assert.equal(posted[0].event, 'comment');
 assert.equal(posted[0].anchorId, 'new-section');
@@ -95,8 +96,10 @@ assert.equal(posted[1].status, 'resolved');
 
 // #acceptance-move-all: Move all (n) moves each thread exactly as its own Move comment here, nothing else.
 const moveEvents = () => posted.map(e => ({ ...e, createdAt: null }));
-const threadA = { id: 'thread-a', ev: { body: { quote: 'quote a', text: 'Note a' } } };
-const threadB = { id: 'thread-b', ev: { body: { text: 'Note b' } } };
+const rootA = { body: { quote: 'quote a', text: 'Note a' } };
+const rootB = { body: { text: 'Note b' } };
+const threadA = { id: 'thread-a', ev: rootA, messages: [rootA] };
+const threadB = { id: 'thread-b', ev: rootB, messages: [rootB] };
 posted.length = 0;
 await moveOrphan(threadA, 'sec-a');
 await moveOrphan(threadB, 'sec-b');
