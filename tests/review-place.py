@@ -272,6 +272,79 @@ class SpoolTest(unittest.TestCase):
         self.assertIn("place\t150-comment-u2.json\tunplaced\t#\t-\t\n", scan.stdout)
         self.assertIn("place\t100-comment-u1.json\tchanged\t", scan.stdout)
 
+    def test_unbuildable_current_spec_leaves_every_mark_unplaced(self):
+        """#anchoring-state-unplaced: a current spec the resolver cannot parse never fails /api/events."""
+        unplaced = dict(place.UNPLACED)
+        names = ["100-comment-u1.json", "200-handoff-h1.json"]
+
+        def broken(text):
+            raise RuntimeError("parser exploded")
+
+        import contextlib
+        import io
+        real = place.Document
+        place.Document = broken
+        log = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(log):
+                for _ in range(2):  # a page polls; the failure is logged once per spec text
+                    events = place.resolve_events(str(self.spec), [
+                        {"name": name, "body": json.loads((self.review / "human" / name).read_text())} for name in names])
+                    self.assertEqual([event["place"] for event in events], [unplaced, None])
+        finally:
+            place.Document = real
+        self.assertEqual(log.getvalue().count("\n"), 1, log.getvalue())
+
+        _serve = importlib.util.spec_from_file_location("review_place_serve_broken", ASSETS / "review-serve.py")
+        serve = importlib.util.module_from_spec(_serve)
+        _serve.loader.exec_module(serve)
+        served = serve.resolve_events.__globals__
+        served_real = served["Document"]
+        served["Document"] = broken
+        server = serve.ReviewThreadingHTTPServer(("127.0.0.1", 0), serve.MountHandler)
+        server.mount_state = serve.MountState([serve._single_mount(self.root / "docs")])
+        server.state_dir = str(self.root / "state")
+        server.wake_controller = serve.WakeController(server)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            url = "http://127.0.0.1:%d/api/events?dir=specs/demo.spec.html.review" % server.server_port
+            with contextlib.redirect_stderr(io.StringIO()), urllib.request.urlopen(url, timeout=10) as response:
+                status, events = response.status, json.loads(response.read())
+        finally:
+            served["Document"] = served_real
+            server.shutdown()
+            server.server_close()
+        self.assertEqual(status, 200)
+        self.assertEqual([event.get("place") for event in events], [unplaced, None])
+
+        script = ("import sys; sys.path.insert(0, %r); import place\n"
+                  "def broken(text): raise RuntimeError('parser exploded')\n"
+                  "place.Document = broken; sys.exit(place.main([%r]))") % (str(ASSETS), str(self.spec))
+        scan = subprocess.run([sys.executable, "-c", script], input="\n".join(names),
+                              text=True, capture_output=True, check=True)
+        self.assertEqual(scan.stdout, "place\t100-comment-u1.json\tunplaced\t#\t-\t\n")
+
+    def test_unplaced_mark_of_unknown_version_resolves_again_once_the_version_arrives(self):
+        """#anchoring-state-unplaced: a failure before the named version is stored is not kept."""
+        body = comment(version=INSERTED)
+        body["id"] = "u3"
+        name = "300-comment-u3.json"
+        (self.review / "human" / name).write_text(json.dumps(body), encoding="utf-8")
+        real = place.Resolver._place
+        place.Resolver._place = lambda *args: (_ for _ in ()).throw(RuntimeError("transient"))
+        import contextlib
+        import io
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                first = place.resolve_events(str(self.spec), [{"name": name, "body": body}])
+        finally:
+            place.Resolver._place = real
+        self.assertEqual(first[0]["place"], place.UNPLACED)
+        (self.review / "versions" / (sha(INSERTED) + ".html")).write_text(INSERTED, encoding="utf-8")
+        again = place.resolve_events(str(self.spec), [{"name": name, "body": body}])
+        self.assertEqual(again[0]["place"], place.resolve(body, REWRITTEN, INSERTED))
+        self.assertNotEqual(again[0]["place"]["state"], "unplaced")
+
     def test_repeat_poll_of_many_text_marks_is_cheap(self):
         """#model-place: a page polls often; place is resolved once per event and spec text."""
         blocks = "".join('<p data-anchor="b%d">Block %d says %s</p>\n' % (i, i, "word " * 30) for i in range(600))

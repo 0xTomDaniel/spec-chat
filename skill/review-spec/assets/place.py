@@ -293,7 +293,12 @@ class Resolver:
     version, and each mark's place by its event body: a page polls often, and both are fixed per spec text."""
 
     def __init__(self, current):
-        self.current = Document(current)
+        self.text = current
+        try:
+            self.current = Document(current)
+        except Exception as error:  # #anchoring-state-unplaced: every mark of this spec text is unplaced
+            print("place: cannot parse current spec: %r" % (error,), file=sys.stderr)
+            self.current = None
         self._versions = {}
         self._places = {}
 
@@ -306,6 +311,8 @@ class Resolver:
         """One mark's place. With `review`, the version text is read from its spool only when not cached."""
         if not isinstance(body, dict) or body.get("event") != "comment" or not body.get("anchorId"):
             return None  # a thread is placed by its root comment; replies and edits never move it
+        if self.current is None:
+            return UNPLACED
         memo = json.dumps(body, sort_keys=True)
         if memo in self._places:
             return self._places[memo]
@@ -319,8 +326,7 @@ class Resolver:
             result = self._place(body, version if known else None, version_text)
         except Exception as error:  # #anchoring-state-unplaced: one bad mark never fails the others
             print("place: cannot place comment %s: %r" % (body.get("id"), error), file=sys.stderr)
-            self._places[memo] = UNPLACED  # kept, so a polled failure logs once per spec text
-            return UNPLACED
+            result = UNPLACED  # kept below like any place, so a polled failure logs once per spec text
         if known or not body.get("version"):  # a named version not yet stored may arrive: resolve again then
             self._places[memo] = result
         return result
@@ -404,7 +410,7 @@ def resolve_events(spec, events):
     except (OSError, UnicodeDecodeError):
         current = None
     resolver = _RESOLVERS.get(spec)
-    if current is not None and (resolver is None or resolver.current.text != current):
+    if current is not None and (resolver is None or resolver.text != current):
         resolver = _RESOLVERS[spec] = Resolver(current)  # pages poll often; parse and diff once per spec text
     if current is None:
         resolver = None
