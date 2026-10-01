@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 import sys
@@ -31,11 +32,12 @@ class ReviewSurfacePreflightTest(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def run_preflight(self, spec=None):
+    def run_preflight(self, spec=None, env=None):
         return subprocess.run(
             (sys.executable, str(PREFLIGHT), str(self.repo), str(spec or self.spec)),
             text=True,
             capture_output=True,
+            env=env,
         )
 
     def test_migrates_a_runtime_that_lacks_required_capabilities(self):
@@ -103,8 +105,7 @@ class ReviewSurfacePreflightTest(unittest.TestCase):
         result = self.run_preflight()
 
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
-        self.assertNotIn("runtime=migrated", result.stdout)
-        self.assertEqual(self.runtime.read_text(), "// legacy runtime\n")
+        self.assertNotIn("runtime=", result.stdout)
         self.assertEqual(self.git("rev-parse", "HEAD"), base)
 
         lock.unlink()
@@ -115,6 +116,36 @@ class ReviewSurfacePreflightTest(unittest.TestCase):
         self.assertNotEqual(head, base)
         self.assertIn(f"migration={head}", rerun.stdout)
 
+    def test_failed_commit_is_finished_by_a_rerun(self):
+        base = self.init_git("// legacy runtime\n")
+        self.git("config", "--unset", "user.email")
+        self.git("config", "--unset", "user.name")
+        self.git("config", "user.useConfigOnly", "true")
+        no_identity = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+        for name in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL", "EMAIL"):
+            no_identity.pop(name, None)
+
+        result = self.run_preflight(env=no_identity)
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertNotIn("runtime=", result.stdout)
+        self.assertEqual(self.git("rev-parse", "HEAD"), base)
+
+        rerun = self.run_preflight(env=no_identity)
+
+        self.assertEqual(rerun.returncode, 2, rerun.stdout + rerun.stderr)
+        self.assertNotIn("runtime=compatible", rerun.stdout)
+
+        self.git("config", "user.name", "Test")
+        self.git("config", "user.email", "test@example.test")
+        fixed = self.run_preflight()
+
+        self.assertEqual(fixed.returncode, 0, fixed.stdout + fixed.stderr)
+        head = self.git("rev-parse", "HEAD")
+        self.assertEqual(self.git("rev-parse", "HEAD~1"), base)
+        self.assertIn(f"migration={head}", fixed.stdout)
+        self.assertEqual(self.git("status", "--porcelain", "--", "docs/specs/.viz"), "")
+
     def test_ignored_runtime_assets_fail_and_leave_the_target_migratable(self):
         base = self.init_git("// legacy runtime\n")
         (self.repo / ".gitignore").write_text("docs/specs/.viz/\n")
@@ -122,9 +153,11 @@ class ReviewSurfacePreflightTest(unittest.TestCase):
         result = self.run_preflight()
 
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
-        self.assertNotIn("runtime=migrated", result.stdout)
-        self.assertEqual(self.runtime.read_text(), "// legacy runtime\n")
+        self.assertNotIn("runtime=", result.stdout)
         self.assertEqual(self.git("rev-parse", "HEAD"), base)
+        rerun = self.run_preflight()
+        self.assertEqual(rerun.returncode, 2, rerun.stdout + rerun.stderr)
+        self.assertNotIn("runtime=", rerun.stdout)
 
     def test_target_nested_in_a_parent_repository_commits_nothing(self):
         self.runtime.write_text("// legacy runtime\n")
