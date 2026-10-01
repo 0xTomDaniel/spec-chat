@@ -155,6 +155,17 @@
         "Commits locally and never pushes or opens a pull request despite the target instructions",
         "Runs every other shaping step unchanged"
       ]
+    },
+    {
+      "id": 14,
+      "eval_name": "product-term-criteria",
+      "prompt": "Shape a feature used by an internal admin acting in a client account, whose qa.toml maps that role to a fixture user, with one outcome on the account's cost page and one analytics event no screen shows, whose QA needs a provider stub and a capture file.",
+      "expectations": [
+        "Each Given names the role, never the fixture user",
+        "The cost-page Then states the outcome in product terms and names no file, path, command, or test output",
+        "The analytics Then states the event is recorded once and reads \"proven by a unit test: no screen shows it\"",
+        "The spec names neither the provider stub nor the capture file"
+      ]
     }
   ]
 }
