@@ -175,7 +175,8 @@ const rootEdit = [
 ];
 const editedRootThread = foldThreads(rootEdit).get('u-edit-root');
 assert.equal(editedRootThread.id, 'u-edit-root', 'editing a root preserves the stable thread id');
-assert.equal(editedRootThread.ev.body.id, 'e-edit-root');
+assert.equal(editedRootThread.ev.body.id, 'u-edit-root', 'the root comment places the thread; an edit never replaces it');
+assert.equal(editedRootThread.messages[0].body.text, 'Edited root', 'the edit is the shown text');
 assert.equal(editedRootThread.status, 'pending');
 
 console.log('runtime thread model tests passed');

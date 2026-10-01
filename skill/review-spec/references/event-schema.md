@@ -107,7 +107,7 @@ Only the human resolves; the agent proposes it ("OK to resolve?"). Lifecycle: `d
 
 ## Resolved place (read side)
 
-`/api/events` returns each event as `{"actor","name","body","place"}`. `place` is derived, never stored: `null` for events without `anchorId`, else `{"anchorId","start","end","quote","state"}` from `assets/place.py`. It locates the mark in `<spec>.review/versions/<body.version>.html` and maps it through a character diff to the current spec (an event without `version` is located in the current spec). `start`/`end` are code-point offsets into the current spec source; `quote` is that range's visible text for a text target. `state`: `kept` (every character survives), `changed` (some survive), `gone` (none; `anchorId` is the nearest surviving anchored block, range and quote null). The zero-wait scan prints the same place on stderr.
+`/api/events` returns each event as `{"actor","name","body","place"}`. `place` is derived, never stored: `null` for every event but a `comment` with an `anchorId` (a thread is placed by its root comment; replies and edits never move it), else `{"anchorId","start","end","quote","state"}` from `assets/place.py`. It locates the mark in `<spec>.review/versions/<body.version>.html` and maps it through a character diff to the current spec (an event without `version` is located in the current spec). `start`/`end` are code-point offsets into the current spec source; `quote` is that range's visible text for a text target. `state`: `kept` (every character survives), `changed` (some survive), `gone` (none; `anchorId` is the nearest surviving anchored block, range and quote null). The zero-wait scan prints the same place on stderr.
 
 ## Thread folding rules
 
