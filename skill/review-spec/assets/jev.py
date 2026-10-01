@@ -278,15 +278,36 @@ DISMISSALS = {"here": "dismissed", "rule": "not-a-rule"}
 
 
 class JudgmentStore:
-    """Append-only JSONL records, also used as the cache."""
+    """Append-only JSONL records, also used as the cache.
+
+    The file loads on a background thread so a server start never waits on its size (review-service
+    #service-restart); every read and write takes the lock, so the first use waits for the load instead."""
 
     def __init__(self, path: str | Path | None = None):
         self.path = Path(path) if path else None
-        self.by_key: dict[str, dict[str, Any]] = {}
+        self._by_key: dict[str, dict[str, Any]] = {}
         # Every rule dismissal ever recorded, by what it holds for, never by cache key (project-rules #dismiss-scope).
-        self.dismissals: set[tuple[str, str, str, str | None]] = set()
+        self._dismissals: set[tuple[str, str, str, str | None]] = set()
         self.lock = threading.RLock()
+        self._loaded = not self.path
         if self.path:
+            threading.Thread(target=self._load, daemon=True, name="spec-chat-jev-store").start()
+
+    @property
+    def by_key(self) -> dict[str, dict[str, Any]]:
+        self._load()
+        return self._by_key
+
+    @property
+    def dismissals(self) -> set[tuple[str, str, str, str | None]]:
+        self._load()
+        return self._dismissals
+
+    def _load(self) -> None:
+        with self.lock:
+            if self._loaded:
+                return
+            self._loaded = True
             try:
                 if not self.path.is_file():
                     return
@@ -301,9 +322,9 @@ class JudgmentStore:
                 if isinstance(record, Mapping) and record.get("cache_key"):
                     record = dict(record)
                     self._hold(record.get("resolution"))
-                    current = self.by_key.get(record["cache_key"])
+                    current = self._by_key.get(record["cache_key"])
                     if current is None or current.get("outcome") in REPLACEABLE_OUTCOMES or "resolution" in record:
-                        self.by_key[record["cache_key"]] = record
+                        self._by_key[record["cache_key"]] = record
 
     def get(self, key: str) -> dict[str, Any] | None:
         with self.lock:
@@ -324,7 +345,7 @@ class JudgmentStore:
 
     def _hold(self, resolution: Any) -> None:
         if isinstance(resolution, Mapping) and resolution.get("status") in DISMISSALS.values() and resolution.get("project"):
-            self.dismissals.add((resolution["status"], str(resolution["project"]), str(resolution.get("rule")),
+            self._dismissals.add((resolution["status"], str(resolution["project"]), str(resolution.get("rule")),
                                  resolution.get("spec")))
 
     def dismissed(self, status: str, project: Any, text: str, spec: str | None = None) -> bool:
