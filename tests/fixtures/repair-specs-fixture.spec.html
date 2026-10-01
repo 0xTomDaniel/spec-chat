@@ -33,6 +33,11 @@
 <p data-modular-boundary data-anchor="boundary-main"><span data-boundary-responsibility>The module owns its core logic.</span> <span data-boundary-seam>Caller-facing seam: the public API.</span> <span data-boundary-dependency>Dependency direction: self-contained.</span> <span data-boundary-scope>Observable scope: output files.</span></p>
 </section>
 
+<section data-anchor="qa-harness">
+<h2>QA harness</h2>
+<p data-anchor="qa-harness-stub">A provider stub answers every request and appends each call to posthog-captures.jsonl.</p>
+</section>
+
 <section data-anchor="audit">
 <h2>Audit</h2>
 <p data-anchor="audit-finding">Current state: three specs still reference the old format. Two have stale links.</p>

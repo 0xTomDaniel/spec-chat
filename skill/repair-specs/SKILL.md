@@ -26,8 +26,10 @@ Remove non-target text from every spec:
 - Sections anchored or named as audit, history, before/after, or status.
 - Source-issue links and ticket links in headers or body.
 - Any current-state prose, migration notes, or changelog entries.
+- QA harness setup: provider stubs, capture files, readback tooling, and fixture extensions.
 
 Preserve every behavior clause, acceptance criterion, and modular boundary.
+List each piece of removed QA harness setup in the repair commit message for the target's qa.toml or QA docs.
 
 ### 2. Home
 
@@ -53,6 +55,8 @@ Criterion rules:
 - When the visible end state or the providing fixture cannot be read from the specs, write an open TBD (`data-spec-tbd`) at that criterion naming what is missing; never invent an end state or a fixture.
 - When a Given does not say who the user is and the specs do not say it either, write an open TBD (`data-spec-tbd`) at that criterion asking who the user is; never invent a user.
 - When a criterion holds a concrete value, selector, or path, rewrite it in user terms (`types "Q3 scripts" into Folder name` becomes `types a folder name`) and list each value moved out in the repair commit message as a value for the target's qa.toml hint file.
+- When a Given names a fixture identifier or fixture user and the specs say which role it is, rewrite the Given to that role (`Given tf-admin is signed in` becomes `Given an internal admin acting in a client account`) and list the fixture user in the repair commit message as that role's fixture user for the target's qa.toml.
+- When a Then names an artifact path, capture file, command, or test output, rewrite it to the outcome in product terms; when no screen shows the outcome, the Then reads `proven by a unit test: no screen shows it` (`posthog-captures.jsonl holds one funnel event` becomes `the funnel step is recorded once, proven by a unit test: no screen shows it`). List each artifact path moved out in the repair commit message for the target's qa.toml.
 
 Jev project rules, only when Jev is on:
 - Read the project's Jev rules: project-wide rules are acceptance criteria from other specs whose scope is `every feature`, as [project-rules](../../docs/specs/project-rules.spec.html) defines.
