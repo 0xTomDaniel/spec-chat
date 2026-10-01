@@ -38,6 +38,14 @@ except ModuleNotFoundError:
     MARK_LEVELS = _jev_module.MARK_LEVELS
     enumerate_served_specs = _jev_module.enumerate_served_specs
     extract_anchors = _jev_module.extract_anchors
+try:
+    from place import resolve_events
+except ModuleNotFoundError:
+    import importlib.util
+    _place_spec = importlib.util.spec_from_file_location("review_serve_place", os.path.join(os.path.dirname(__file__), "place.py"))
+    _place_module = importlib.util.module_from_spec(_place_spec)
+    _place_spec.loader.exec_module(_place_module)
+    resolve_events = _place_module.resolve_events
 
 try:
     import spool
@@ -946,6 +954,7 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
         if events is None:
             return self._json({"error": "unsafe spool path"}, 400)
         events.sort(key=lambda event: event["name"])
+        resolve_events(review[:-len(".review")], events)
         wake = self.server.wake_controller.status(mount.get("id"))
         headers = {"X-Spec-Chat-Wake": wake} if wake else None
         return self._json(events, headers=headers)
