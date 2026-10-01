@@ -49,10 +49,12 @@ Press `C`, comment, and hand off. Then ask your agent to review the spec (the `s
 
 ```sh
 R=~/.claude/skills/spec-chat-review/scripts
-sh $R/watch-specs.sh docs .cursor-owner 0 3        # rows for the ready batch; exit 3 = nothing pending
+sh $R/watch-specs.sh docs .cursor-owner 0 3   # one immediate scan: rows <spec> <file name>
 sh $R/emit-reply.sh docs/specs/example.spec.html.review/ c1 p1 '{"type":"text","key":"downloads a CSV"}' acknowledged 'no spec change' 'Date, item, total.'
-sh $R/watch-specs.sh docs .cursor-owner 0 3 2>/dev/null | cut -f2 >> docs/specs/example.spec.html.review/.cursor-owner
+printf '%s\n' <file names printed by the scan above> >> docs/specs/example.spec.html.review/.cursor-owner
 ```
+
+The scan's `0` is the wait (none) and `3` the poll interval; exit status 3 means nothing is pending. After replying, append exactly the file names the scan printed to the cursor of the spec in the scan's first column (`<spec>.review/.cursor-owner`). Never rescan into the cursor: hand-offs that arrived in between would be marked seen unprocessed.
 
 The agent runs these for you; they are shown so you can see nothing else is involved.
 
