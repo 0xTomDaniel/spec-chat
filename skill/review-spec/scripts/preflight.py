@@ -5,6 +5,7 @@ from collections import Counter
 from html.parser import HTMLParser
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 from urllib.parse import urlsplit
 
@@ -28,10 +29,8 @@ VOID_TAGS = {
 }
 
 
-def capabilities(path):
-    if not path.is_file():
-        return set()
-    for line in path.read_text(errors="replace").splitlines()[:20]:
+def capabilities(text):
+    for line in text.splitlines()[:20]:
         if CAPABILITY_PREFIX in line:
             return set(line.split(CAPABILITY_PREFIX, 1)[1].strip().split())
     return set()
@@ -123,15 +122,56 @@ def runtime_path(spec):
     return resolved.pop()
 
 
-def copy_tree(source, target):
-    for path in source.rglob("*"):
-        relative = path.relative_to(source)
-        destination = target / relative
-        if path.is_dir():
-            destination.mkdir(parents=True, exist_ok=True)
-        elif path.is_file():
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, destination)
+def migration_files(source, target):
+    """Map each bundled asset file to the target path it overwrites."""
+    return [
+        (path, target / path.relative_to(source))
+        for path in sorted(source.rglob("*"))
+        if path.is_file()
+    ]
+
+
+def copy_files(files):
+    for source, destination in files:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+
+
+def git(repository, *args):
+    return subprocess.run(
+        ("git", "-C", str(repository), *args),
+        text=True,
+        capture_output=True,
+    )
+
+
+def owns_git(repository):
+    """True only when the target itself is a git work tree root."""
+    top = git(repository, "rev-parse", "--show-toplevel")
+    return top.returncode == 0 and Path(top.stdout.strip()).resolve() == repository
+
+
+def file_text(path):
+    return path.read_text(errors="replace") if path.is_file() else ""
+
+
+def committed_text(repository, path):
+    """Runtime text at HEAD, so an uncommitted migration still counts as pending."""
+    shown = git(repository, "show", f"HEAD:{path.relative_to(repository).as_posix()}")
+    return shown.stdout if shown.returncode == 0 else ""
+
+
+def commit_migration(repository, paths):
+    """Commit only the runtime assets; return the commit id."""
+    message = "Migrate Spec Chat review runtime\n\nShared runtime assets only."
+    for step in (
+        ("add", "--", *paths),
+        ("commit", "-q", "--no-verify", "-m", message, "--only", "--", *paths),
+    ):
+        done = git(repository, *step)
+        if done.returncode != 0:
+            raise RuntimeError(done.stderr.strip() or f"git {step[0]} failed")
+    return git(repository, "rev-parse", "HEAD").stdout.strip()
 
 
 def fail(message):
@@ -182,14 +222,26 @@ def main(argv):
     if any(not path_stays_inside(path, repository) for path in asset_paths):
         return fail("asset path escapes the target repository")
 
-    required_runtime = capabilities(bundled_runtime)
+    required_runtime = capabilities(file_text(bundled_runtime))
     if not required_runtime:
         return fail("bundled Spec Chat assets do not declare required capabilities")
 
+    commits = owns_git(repository)
+    current = capabilities(file_text(target_runtime))
+    if commits:
+        current &= capabilities(committed_text(repository, target_runtime))
+
     runtime_state = "compatible"
-    if not required_runtime.issubset(capabilities(target_runtime)):
-        copy_tree(bundled_viz, target_viz)
+    if not required_runtime.issubset(current):
+        files = migration_files(bundled_viz, target_viz)
+        copy_files(files)
         runtime_state = "migrated"
+        if commits:
+            try:
+                commit = commit_migration(repository, [str(d) for _, d in files])
+            except RuntimeError as error:
+                return fail(f"runtime migration commit failed, rerun preflight once fixed: {error}")
+            runtime_state += f" migration={commit}"
 
     print(f"runtime={runtime_state} visuals=valid")
     return 0
