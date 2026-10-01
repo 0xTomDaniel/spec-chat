@@ -3,6 +3,7 @@
 The wake provider is a fake registered in providers/wake.toml; no real pane is ever prompted.
 """
 import importlib.util
+import json
 import os
 import socket
 import subprocess
@@ -153,6 +154,60 @@ class WakeControllerTest(unittest.TestCase):
         ).stdout
         expected = tuple(line.split("\t")[1] for line in scan.splitlines())
         self.assertEqual(serve._wake_batch(self.record), expected)
+
+    def scan(self, *, check=True):
+        result = subprocess.run(
+            ["sh", str(WATCH), str(self.collection), ".cursor-owner", "0", "1"],
+            text=True, stdout=subprocess.PIPE, check=False,
+        )
+        if check:
+            self.assertEqual(result.returncode, 0)
+        return result.returncode, tuple(line.split("\t")[1] for line in result.stdout.splitlines())
+
+    def write(self, name, body):
+        (self.human / name).write_text(json.dumps(body))
+
+    def test_handoff_batch_is_the_handoff_and_the_events_it_lists(self):
+        # review-state #live-handoff, host-wake #wake-rule-batch: two reviewers' drafts, one hands off.
+        self.write("100-comment-a1.json", {"event": "comment", "id": "a1", "browser": "A"})
+        self.write("110-comment-b1.json", {"event": "comment", "id": "b1", "browser": "B"})
+        self.write("120-edit-a2.json", {"event": "edit", "id": "a2", "supersedes": "a1", "browser": "A"})
+        self.write("130-handoff-ha.json", {"event": "handoff", "id": "ha", "events": ["a1", "a2"], "browser": "A"})
+        expected = ("100-comment-a1.json", "120-edit-a2.json", "130-handoff-ha.json")
+        self.assertEqual(self.scan(), (0, expected))
+        self.assertEqual(serve._wake_batch(self.record), expected)
+
+    def test_two_handoffs_then_cursor_advance_leaves_nothing(self):
+        # review-state #acceptance-agent-cursor (server side).
+        self.write("100-comment-a1.json", {"event": "comment", "id": "a1"})
+        self.write("110-comment-b1.json", {"event": "comment", "id": "b1"})
+        self.write("120-handoff-ha.json", {"event": "handoff", "id": "ha", "events": ["a1"]})
+        self.write("130-handoff-hb.json", {"event": "handoff", "id": "hb", "events": ["b1"]})
+        self.write("140-comment-a3.json", {"event": "comment", "id": "a3"})
+        rc, names = self.scan()
+        self.assertEqual(names, ("100-comment-a1.json", "110-comment-b1.json",
+                                 "120-handoff-ha.json", "130-handoff-hb.json"))
+        self.assertEqual(serve._wake_batch(self.record), names)
+        self.advance(*names)
+        self.assertEqual(self.scan(check=False), (3, ()))
+        self.assertEqual(serve._wake_batch(self.record), ())
+
+    def test_handoff_without_events_hands_off_every_draft_before_it(self):
+        self.write("100-comment-a1.json", {"event": "comment", "id": "a1"})
+        self.write("110-comment-b1.json", {"event": "comment", "id": "b1"})
+        self.write("120-handoff-old.json", {"event": "handoff", "id": "old"})
+        self.write("130-comment-late.json", {"event": "comment", "id": "late"})
+        expected = ("100-comment-a1.json", "110-comment-b1.json", "120-handoff-old.json")
+        self.assertEqual(self.scan(), (0, expected))
+        self.assertEqual(serve._wake_batch(self.record), expected)
+
+    def test_listed_event_already_in_cursor_is_not_repeated(self):
+        self.write("100-comment-a1.json", {"event": "comment", "id": "a1"})
+        self.write("110-handoff-h1.json", {"event": "handoff", "id": "h1", "events": ["a1"]})
+        self.advance("100-comment-a1.json", "110-handoff-h1.json")
+        self.write("120-handoff-h2.json", {"event": "handoff", "id": "h2", "events": ["a1"]})
+        self.assertEqual(self.scan(), (0, ("120-handoff-h2.json",)))
+        self.assertEqual(serve._wake_batch(self.record), ("120-handoff-h2.json",))
 
     def test_later_handoff_wakes_once_before_and_after_cursor_advance(self):
         self.event("100-handoff-a.json")

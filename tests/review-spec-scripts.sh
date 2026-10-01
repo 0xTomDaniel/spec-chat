@@ -74,6 +74,19 @@ RECOVERED_EXPECTED=$(printf '%s\t%s\n%s\t%s\n%s\t%s' \
   exit 1
 }
 
+# Agent events are named by their writer as <createdAt ns>-<event>-<id>.json (review-state #model-events).
+"$SCRIPTS/emit-reply.sh" "$REVIEW" u1 anchor null acknowledged 'no spec change' 'ok' >/dev/null
+REPLY=$(ls "$REVIEW/agent")
+case "$REPLY" in
+  [0-9]*-reply-r[0-9]*.json) ;;
+  *) echo "emit-reply did not name the file by its own id: $REPLY" >&2; exit 1 ;;
+esac
+REPLY_ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$REVIEW/agent/$REPLY")
+[ "${REPLY#*-reply-}" = "$REPLY_ID.json" ] || {
+  echo "emit-reply file name and id differ: $REPLY vs $REPLY_ID" >&2
+  exit 1
+}
+
 node "$ROOT/tests/runtime-thread-model.mjs"
 node "$ROOT/tests/runtime-focus-model.mjs"
 node "$ROOT/tests/runtime-fsa-transport.mjs"
