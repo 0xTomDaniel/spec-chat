@@ -65,17 +65,17 @@ observable states the visible result (Then). A criterion in this shape is
 clear to read and checkable: anyone can set up the Given, do the When, and see
 whether the Then holds. Use plain language; quote a UI name when it helps.
 Existing criteria convert when a change touches them.
-Write every clear criterion so a QA capture program can drive it without guessing; these rules apply at shaping and at repair.
+Write every clear criterion at user-story level, what a person does and sees and never a click script, so a QA capture program can drive it without guessing; these rules apply at shaping and at repair.
 One scenario per criterion: no Given or When joins alternatives with "or"; each alternative becomes its own criterion.
 Then names what is visible at the end: on screen, or for a feature with no screen, in its terminal output or a named file.
 A Then that states only an absence also names something visible that proves the end state was reached, and a Then never defers to other contracts, as in "remains governed by existing contracts".
-Every Given names a state that a fixture declared in the target repository provides; when none does, the Given names the fixture that must be extended to provide it.
-No hidden steps: the When names, in order, every action from the Given's state to the Then, such as opening a menu before choosing its item; no step the Then depends on is left implied.
-Text a user types is quoted verbatim in the When, as in `types "Q3 scripts" into Folder name`, never described as "a valid name".
+Every Given names who the user is, such as "a creator" or "an internal reviewer viewing a client account", and a state that a fixture declared in the target repository provides; when none does, the Given says a fixture must be added to provide it.
+No hidden steps: when reaching the Then needs something the user must do, such as finishing a re-run setup after a handle change, the When says so in user terms; no step the Then depends on is left implied.
+Concrete values, selectors, and paths stay out of the spec: the When says what the user types or picks in user terms, as in "types a folder name", and the target's qa.toml hint file carries the exact value.
 A gesture or timing is its own explicit step with its target or duration, such as "press and hold 500ms" or "drag to the Ideas tile", and the criterion says in plain words that it needs that gesture or timing, so a QA program without it can report the criterion unsupported instead of failed.
 Spec Chat keeps no list of QA capabilities; the plain words are the whole contract.
-A criterion that needs a failure caused on purpose says "needs an induced failure" and names the failure, such as a provider timeout, so the target can prove the criterion with a unit test instead.
-Given, When, and Then open their clauses capitalized as written here, the same way throughout a spec, with no label before them such as a number or "Scenario:".
+A state that cannot occur live is marked "needs an induced failure: <what fails>", as in "needs an induced failure: provider timeout", so the target proves the criterion with a unit test instead of driving it.
+Given, When, and Then open their clauses capitalized as written here, the same way throughout a spec, with no label before them such as a number or "Scenario:"; a criterion in a table cell keeps each Given, When, and Then a readable clause of its own.
 
 A `data-spec-tbd` marker is open unless its value is `later`. Open TBDs block
 spec acceptance and are highlighted in review. `data-spec-tbd="later"` marks a
