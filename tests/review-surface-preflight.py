@@ -9,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PREFLIGHT = ROOT / "skill" / "review-spec" / "scripts" / "preflight.py"
 BUNDLED_RUNTIME = ROOT / "skill" / "review-spec" / "assets" / "viz" / "runtime.js"
 
+SKILL = ROOT / "skill" / "review-spec" / "SKILL.md"
+
 RUNTIME_CAPABILITIES = "// spec-chat-capabilities: changed-root-focus custom-style-focus diff-visibility-control finish-review git-focus manual-resume-status mobile-pre-wrap mobile-review next-tbd reopen-thread semantic-islands shared-style-ownership spec-acceptance tbd-later\n"
 
 
@@ -43,6 +45,64 @@ class ReviewSurfacePreflightTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.runtime.read_bytes(), BUNDLED_RUNTIME.read_bytes())
         self.assertIn("runtime=migrated", result.stdout)
+
+    def git(self, *args):
+        return subprocess.run(
+            ("git", "-C", str(self.repo), *args),
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+
+    def init_git(self, runtime_text):
+        self.git("init", "-q")
+        self.git("config", "user.name", "Test")
+        self.git("config", "user.email", "test@example.test")
+        self.runtime.write_text(runtime_text)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "base")
+        return self.git("rev-parse", "HEAD")
+
+    def test_commits_the_migration_alone_and_names_it(self):
+        base = self.init_git("// legacy runtime\n")
+        self.spec.write_text(self.spec.read_text() + "<p>feature edit</p>\n")
+        self.git("add", str(self.spec))
+
+        result = self.run_preflight()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        head = self.git("rev-parse", "HEAD")
+        self.assertNotEqual(head, base)
+        self.assertEqual(self.git("rev-parse", "HEAD~1"), base)
+        self.assertIn(f"migration={head}", result.stdout)
+        changed = self.git("diff", "--name-only", base, head).splitlines()
+        self.assertTrue(changed)
+        self.assertTrue(
+            all(path.startswith("docs/specs/.viz/") for path in changed), changed
+        )
+        self.assertEqual(
+            self.git("diff", "--cached", "--name-only"), "docs/specs/example.spec.html"
+        )
+        self.assertEqual(self.git("status", "--porcelain", "--", "docs/specs/.viz"), "")
+
+    def test_compatible_runtime_makes_no_commit(self):
+        base = self.init_git(RUNTIME_CAPABILITIES)
+
+        result = self.run_preflight()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.git("rev-parse", "HEAD"), base)
+        self.assertNotIn("migration=", result.stdout)
+
+    def test_skill_ships_the_migration_commit_inside_the_feature_change(self):
+        text = " ".join(SKILL.read_text().split())
+        for phrase in (
+            "preflight commits it alone, touching only the shared runtime assets",
+            "hand-off names that commit",
+            "ships inside the same change as the feature",
+        ):
+            self.assertTrue(phrase in text, phrase)
+        self.assertFalse("Commit migrated assets locally" in text)
 
     def test_never_writes_a_review_server_into_the_target(self):
         self.runtime.write_text("// legacy runtime\n")
