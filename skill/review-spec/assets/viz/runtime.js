@@ -2240,12 +2240,19 @@ function mountUI() {
   document.getElementById('hx-next-tbd').addEventListener('click', nextTbd);
   setupDiffVisibility();
   document.addEventListener('keydown', e => {
+    // Enter or Space on a comment-target block is a click on the block itself (onDocClick)
+    if (state.commentMode && (e.key === 'Enter' || e.key === ' ') && e.target.hasAttribute && e.target.hasAttribute('data-hx-target')) {
+      e.preventDefault();
+      e.target.click();
+      return;
+    }
     if (commentModeShortcut(e)) setCommentMode(!state.commentMode);
     if (e.key === 'Escape') { state.composer = null; setCommentMode(false); renderPanel(); }
   });
   document.addEventListener('click', onDocClick, true); // capture: runs before spec-script handlers
   // suspend page interactivity while commenting; hover and text selection stay live
-  const INTERACTIVE = 'button, input, select, textarea, label, a, summary, [role="button"], [role="link"]';
+  // a comment-target block's own button role is not a control: selection inside it stays live
+  const INTERACTIVE = 'button, input, select, textarea, label, a, summary, [role="button"]:not([data-hx-target]), [role="link"]';
   const suspend = e => {
     if (!state.commentMode) return;
     if (e.target.closest && e.target.closest('.hx-pin,.hx-jev-marker,.hx-jev-pop,.hx-panel,.hx-thread-dock,.hx-toolbar,.hx-range-bar,.hx-service-index-link,#hx-errors')) return;
@@ -2285,9 +2292,30 @@ function mountUI() {
   renderThreadDock();
 }
 
+// Comment mode makes every leaf anchored block a button Tab stop named by its text; off restores
+// each block's own role and Tab order (data-hx-target holds them while on).
+function setCommentTargets(on) {
+  if (on) {
+    for (const block of document.querySelectorAll('[data-anchor]:not([data-hx-target])')) {
+      if (block.querySelector('[data-anchor]')) continue;
+      block.setAttribute('data-hx-target', JSON.stringify([block.getAttribute('role'), block.getAttribute('tabindex')]));
+      block.setAttribute('role', 'button');
+      block.setAttribute('tabindex', '0');
+    }
+    return;
+  }
+  for (const block of document.querySelectorAll('[data-hx-target]')) {
+    const [role, tabindex] = JSON.parse(block.getAttribute('data-hx-target'));
+    if (role === null) block.removeAttribute('role'); else block.setAttribute('role', role);
+    if (tabindex === null) block.removeAttribute('tabindex'); else block.setAttribute('tabindex', tabindex);
+    block.removeAttribute('data-hx-target');
+  }
+}
+
 function setCommentMode(on) {
   state.commentMode = on;
   document.body.classList.toggle('hx-comment', on);
+  setCommentTargets(on);
   document.getElementById('hx-mode').setAttribute('aria-pressed', String(on));
   if (on) adoptForeignCharts(); // catch charts the spec script created since the last scan
   for (const info of state.charts.values()) {
