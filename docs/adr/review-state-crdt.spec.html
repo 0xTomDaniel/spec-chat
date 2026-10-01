@@ -14,13 +14,13 @@
 <header data-anchor="header">
 <h1 data-anchor="title">Review state as a grow-only CRDT over the spool</h1>
 <nav data-anchor="breadcrumbs">docs / adr / review-state-crdt.spec.html</nav>
-<p data-anchor="context">Decision behind <a href="../specs/review-state.spec.html">Shared review state</a>: live multi-reviewer review, marks that survive agent edits, and offline or cross-host merge. Hard to reverse because it fixes the event naming, the stored model, the server's dependencies, and how spec text relates to review state.</p>
+<p data-anchor="context">Decision behind <a href="../specs/review-state.spec.html">Shared review state</a>: live multi-reviewer review, marks that survive agent edits, and offline merge from a browser on reconnect. Hard to reverse because it fixes the event naming, the stored model, the server's dependencies, and how spec text relates to review state.</p>
 </header>
 
 <section data-anchor="context-section">
 <h2>Context</h2>
 <p data-anchor="context-spool">The spool already holds one immutable file per event, with unique ids and reference-based causality. That is a grow-only set: two copies merge by union with no conflict.</p>
-<p data-anchor="context-gaps">Three things are missing. The service names files by its own clock, so one event saved twice, or saved on two hosts, gets two names. Events do not say which spec text they were written against, so marks cannot follow edits. Events carry no author, and any hand-off sends every reviewer's drafts.</p>
+<p data-anchor="context-gaps">Three things are missing. The service names files by its own clock, so one event saved twice gets two names. Events do not say which spec text they were written against, so marks cannot follow edits. Events carry no author, and any hand-off sends every reviewer's drafts.</p>
 <p data-anchor="context-text">People will edit spec text, but for now only through comments and hand-offs that the agent applies, so during review spec text has one writer, the agent, editing a committed file. Direct live editing by humans is expected later.</p>
 <p data-anchor="context-stack">The review service is Python standard library only; the runtime is one classic script with vendored libraries and must work over <code>file://</code>.</p>
 </section>
@@ -32,7 +32,7 @@
 <p data-anchor="decision-anchor">A mark carries the content hash of the spec text it was written against. Its current place is computed, never stored: locate it in that version, then map it through a character diff to the current text. This replaces the deferred anchor-migration events: nothing is written when the agent edits.</p>
 <p data-anchor="decision-git">Spec text stays in Git and the worktree file only. Review state never holds a second live copy of it, so there is no step that turns live edits into commits; the existing commit-before-reply rule stays the only one.</p>
 <p data-anchor="decision-library">No third-party CRDT library while the agent is the one text writer. The service stays standard library and the runtime gains no dependency. Decided by the human, 2026-10-01.</p>
-<p data-anchor="decision-transport">Sync is the existing HTTP <code>/api/events</code>: pages read events not held and write their own idempotently; services pull from listed peers and write on their own disk. No WebSocket, so the same route works through the narrow HTTPS relay and an <code>ssh -L</code> tunnel, and no write route ever accepts an agent event.</p>
+<p data-anchor="decision-transport">Sync is the existing HTTP <code>/api/events</code>: pages read events not held and write their own idempotently. No WebSocket, so the same route works through the narrow HTTPS relay and an <code>ssh -L</code> tunnel, and no write route ever accepts an agent event.</p>
 <p data-anchor="decision-auth">No login is added. <code>author</code> is a fruit name assigned once per browser, numbered on collision within a spec; it is a label, not an identity. Agent events stay disk-only and event files are never overwritten.</p>
 </section>
 
@@ -57,7 +57,7 @@
 <p data-anchor="cons-one-store">One mechanism: the spool is extended, not replaced, and no parallel store is added. <code>watch-specs.sh</code>, cursors, <code>emit-reply.sh</code>, and host wake keep their contracts; a hand-off's batch is the events it lists.</p>
 <p data-anchor="cons-versions">Spool directories grow by one copy of each distinct spec text an event points at; they stay gitignored and are deleted with the spool.</p>
 <p data-anchor="cons-reopen">Move trigger: direct human editing of spec text, expected later, or any second concurrent text writer. Then spec text moves to a Yjs document on the page with pycrdt in the service, and the file becomes that document's committed snapshot.</p>
-<p data-anchor="cons-compatible">Nothing here blocks that move. Events keep writer-chosen ids and immutable files, which map one to one onto entries of a Yjs map. <code>browser</code> becomes the Yjs client identity. A mark stays a range in a named, stored spec version, which converts to Yjs relative positions by seeding the text from that version; only the resolver changes. No field depends on the diff mapping, and the pull sync carries Yjs updates beside events unchanged.</p>
+<p data-anchor="cons-compatible">Nothing here blocks that move. Events keep writer-chosen ids and immutable files, which map one to one onto entries of a Yjs map. <code>browser</code> becomes the Yjs client identity. A mark stays a range in a named, stored spec version, which converts to Yjs relative positions by seeding the text from that version; only the resolver changes. No field depends on the diff mapping.</p>
 <p data-anchor="cons-peers">Spec Chat depends on no peer for any of this; no tracker or pane concept enters the model.</p>
 </section>
 

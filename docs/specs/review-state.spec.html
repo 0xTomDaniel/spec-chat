@@ -14,7 +14,7 @@
 <header data-anchor="header">
 <h1 data-anchor="title">Shared review state</h1>
 <nav data-anchor="breadcrumbs">docs / specs / review-state.spec.html</nav>
-<p data-anchor="context">One spec's review state is a conflict-free replicated set: several reviewers write it live, the agent edits the spec under it, and copies held offline or on another host merge without loss. The spool beside each spec stays the one store; the decision and its tradeoff live in <a href="../adr/review-state-crdt.spec.html">the review state CRDT ADR</a>. The box service, its URL, and providers stay in <a href="./review-service.spec.html">Box review service and providers</a>; owner wake stays in <a href="./host-wake.spec.html">Review host wakes the owner pane</a>.</p>
+<p data-anchor="context">One spec's review state is a conflict-free replicated set: several reviewers write it live, the agent edits the spec under it, and copies held offline merge without loss. The spool beside each spec stays the one store; the decision and its tradeoff live in <a href="../adr/review-state-crdt.spec.html">the review state CRDT ADR</a>. The box service, its URL, and providers stay in <a href="./review-service.spec.html">Box review service and providers</a>; owner wake stays in <a href="./host-wake.spec.html">Review host wakes the owner pane</a>.</p>
 </header>
 
 <section data-spec-section="user-stories" data-anchor="user-stories">
@@ -23,7 +23,6 @@
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-own-handoff">As one of several reviewers, my hand-off sends my drafts and leaves another reviewer's unfinished drafts with them.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-anchor">As a human reviewer, when the agent edits the spec during review, each of my marks stays on the text I marked, and the thread tells me when that text changed or is gone.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-offline">As a human reviewer on a laptop, I keep reviewing an open page when the connection drops, and everything I saved merges when it returns.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-hosts">As a human reviewer who reviews on two hosts, review state saved through one host's review service appears on the other's, including what either saved while they could not reach each other.</p>
 <p data-user-story data-user-facing="false" data-anchor="story-agent">As the owning agent, I keep the same scan, cursor, and reply contract, and I read each mark at its current place in the spec I am editing.</p>
 </section>
 
@@ -45,16 +44,13 @@
 <p data-acceptance-criterion data-anchor="acceptance-offline-save" data-story="story-offline"><span data-acceptance-scenario>Given a reviewer with the report spec of the spec review site fixture open. When their browser goes offline and they save a comment.</span> <span data-acceptance-observable>Then the page shows <q>Offline: 1 change waiting</q> and the new thread as a draft.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-offline-reconnect" data-story="story-offline story-live"><span data-acceptance-scenario>Given a reviewer offline with one waiting comment on the report spec of the spec review site fixture, and a second reviewer who commented meanwhile. When the first reviewer's browser comes back online.</span> <span data-acceptance-observable>Then within 2 seconds the waiting notice is gone and both pages show both comments, each exactly once.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-offline-closed" data-story="story-offline"><span data-acceptance-scenario>Given a reviewer who saved a comment offline on the report spec of the spec review site fixture and then closed the tab. When they open the same page again with the service reachable.</span> <span data-acceptance-observable>Then the comment appears as their draft, and another reviewer's page shows it.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-hosts" data-story="story-hosts"><span data-acceptance-scenario>Given two hosts each running a review service for the same spec and each pulling from the other, on a fixture that must be added to provide both. When a reviewer saves a comment through the first host's page.</span> <span data-acceptance-observable>Then within 10 seconds the second host's page shows that thread exactly once, at the same place, with the same author.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-hosts-offline" data-story="story-hosts"><span data-acceptance-scenario>Given two peered hosts for the same spec, needs an induced failure: the network between the hosts is down. When a reviewer comments on each host, and then the network returns.</span> <span data-acceptance-observable>Then within 10 seconds both hosts' pages show both threads, each exactly once.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-hosts-agent" data-story="story-hosts story-agent"><span data-acceptance-scenario>Given two peered hosts where the agent runs on the second, on a fixture that must be added to provide them. When the agent replies to a comment saved through the first host.</span> <span data-acceptance-observable>Then within 10 seconds the first host's page shows the reply, and the first host's pages still cannot send an agent event, which the service refuses.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-no-presence" data-story="story-live"><span data-acceptance-scenario>Given two reviewers with the report spec of the spec review site fixture open in two browsers. When the second reviewer looks at the page before anyone saves anything.</span> <span data-acceptance-observable>Then the page shows the spec and its review controls with no list of viewers and no other reviewer's selection.</span></p>
 <p data-anchor="acceptance-rules-note">Onboarding: not needed, shared state extends the review page with no new user surface.</p>
 </section>
 
 <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
 <h2>Modular boundaries</h2>
-<p data-modular-boundary data-anchor="boundary-service"><span data-boundary-responsibility>The review service owns each spec's review state: storing events and spec versions idempotently, resolving every mark to its place in the current spec, and pulling from its listed peers.</span> <span data-boundary-seam>Caller-facing seam: <code>/api/events</code>, read with resolved places and written idempotently, version reads for peers, <code>review-host peer</code>, and the spool directory beside the spec.</span> <span data-boundary-dependency>Dependency direction: self-contained; it reads spec files and local Git and never writes repository state.</span> <span data-boundary-scope>Observable scope: spool files, version files, and <code>/api/events</code> responses.</span></p>
+<p data-modular-boundary data-anchor="boundary-service"><span data-boundary-responsibility>The review service owns each spec's review state: storing events and spec versions idempotently, and resolving every mark to its place in the current spec.</span> <span data-boundary-seam>Caller-facing seam: <code>/api/events</code>, read with resolved places and written idempotently, and the spool directory beside the spec.</span> <span data-boundary-dependency>Dependency direction: self-contained; it reads spec files and local Git and never writes repository state.</span> <span data-boundary-scope>Observable scope: spool files, version files, and <code>/api/events</code> responses.</span></p>
 <p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns showing shared state live, the browser's assigned fruit name, and the offline outbox of saved events not yet stored.</span> <span data-boundary-seam>Caller-facing seam: the page, and <code>/api/events</code> toward the service.</span> <span data-boundary-dependency>Dependency direction: external-provider; the runtime depends on the service route, never the reverse.</span> <span data-boundary-scope>Observable scope: pins, threads, statuses, and the offline notice.</span></p>
 <p data-modular-boundary data-anchor="boundary-agent"><span data-boundary-responsibility>The review skill owns the agent side: zero-wait scan, batch processing, spec edits, replies, and cursor advance.</span> <span data-boundary-seam>Caller-facing seam: the scan's rows and the spool and cursor files.</span> <span data-boundary-dependency>Dependency direction: self-contained on disk; it shares the service's resolver and needs no running service.</span> <span data-boundary-scope>Observable scope: scan output, agent events, and cursor contents.</span></p>
 <p data-modular-boundary data-anchor="boundary-git"><span data-boundary-responsibility>Git owns spec text; the spec file in the worktree is the only live copy of it.</span> <span data-boundary-seam>Caller-facing seam: the spec file and its commits.</span> <span data-boundary-dependency>Dependency direction: self-contained; review state points at spec versions by content hash, and Git never depends on review state.</span> <span data-boundary-scope>Observable scope: the spec file and its history.</span></p>
@@ -79,7 +75,7 @@
 </div>
 <p data-anchor="model-fields">Every human event carries <code>browser</code>, a random id the page creates once and keeps in this browser, <code>author</code>, the fruit name assigned to that browser, and <code>version</code>, the content hash of the spec text the page showed when it was written. The hash is the one the service already sends as the page's ETag.</p>
 <p data-anchor="model-author-assign">On first use, a browser is assigned one name at random from a fixed list and keeps it: Mango, Papaya, Lychee, Guava, Rambutan, Pineapple, Passion Fruit, Dragon Fruit, Durian, Jackfruit, Mangosteen, Starfruit, Soursop, Coconut, Banana, Tamarind, Longan, Feijoa, Cherimoya, Sapodilla, Kiwano, Pitanga, Jabuticaba, Salak. No name prompt appears. Decided by the human, 2026-10-01.</p>
-<p data-anchor="model-author-shown">Within one spec, browsers sharing a fruit name are numbered by their first event's file name: the first shows the name alone, the next adds 2, then 3. Every reader derives the same names, so authors stay distinct on every page and host.</p>
+<p data-anchor="model-author-shown">Within one spec, browsers sharing a fruit name are numbered by their first event's file name: the first shows the name alone, the next adds 2, then 3. Every reader derives the same names, so authors stay distinct on every page.</p>
 <p data-anchor="model-order">File-name order breaks ties only between edits of one message; meaning follows references (<code>respondsTo</code>, <code>threadId</code>, <code>supersedes</code>), so a skewed clock changes at most which of two racing edits shows.</p>
 <p data-anchor="model-edit-history">A message with more than one edit shows the effective text, and its thread history lists every edit with its author.</p>
 </section>
@@ -96,7 +92,7 @@
 <section data-anchor="anchoring">
 <h2>Marks through agent edits</h2>
 <p data-anchor="anchoring-locate">The resolver finds a mark's source range in its event's version: the anchored block, then the target within it, the quote for a text target.</p>
-<p data-anchor="anchoring-map">It maps that range through a character diff from that version to the current spec text, and reports the current block, range, and state below. The same inputs give the same answer on every reader and host.</p>
+<p data-anchor="anchoring-map">It maps that range through a character diff from that version to the current spec text, and reports the current block, range, and state below. The same inputs give the same answer on every reader.</p>
 <p data-anchor="anchoring-legacy">An event with no <code>version</code> resolves as today, by anchor and quote in the current spec.</p>
 <div class="table-scroll" data-anchor="anchoring-states-scroll">
 <table data-anchor="anchoring-states">
@@ -114,15 +110,11 @@
 </section>
 
 <section data-anchor="offline">
-<h2>Offline and other hosts</h2>
+<h2>Offline</h2>
 <p data-anchor="offline-outbox">The page keeps every event it saved and has not seen stored in browser storage for that page, and the events and spec text it last loaded.</p>
 <p data-anchor="offline-notice">While any saved event is not yet stored, the page shows <q>Offline: n changes waiting</q>, keeps every review action available, and sends the events in order as soon as the service answers.</p>
 <p data-anchor="offline-reopen">A page opened later with waiting events sends them first, then reads.</p>
 <p data-anchor="offline-handoff">A waiting hand-off wakes the owner when the service stores it, by the existing wake rule.</p>
-<p data-anchor="hosts-sync">Two review services sync by pulling: each service lists, in its own state, the peer service URLs it pulls from, set once by the box owner with <code>review-host peer &lt;url&gt;</code> and removed with <code>review-host peer --remove &lt;url&gt;</code>. Syncing both ways means each lists the other.</p>
-<p data-anchor="hosts-match">A spec on two hosts is the same spec when its project and spec path match; the slug and root may differ.</p>
-<p data-anchor="hosts-pull">Every 10 seconds, and at once when a peer answers again after being unreachable, the service reads from each peer the events and spec versions it does not hold for each matching spec and writes them on its own disk, human and agent events alike, by the same union. No HTTP write route is added, so a page still cannot write an agent event.</p>
-<p data-anchor="hosts-local">Cursors, wake, and the registry stay local to each host; only events and versions travel. An unreachable peer is retried and never blocks local review.</p>
 </section>
 
 <section data-anchor="trust">
