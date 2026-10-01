@@ -16,6 +16,8 @@ const SPEC_FILE = decodeURIComponent(location.pathname.split('/').pop());
 // document.currentScript is only valid during the initial synchronous run — capture now.
 const EMBED_REVIEW_DIR = (document.currentScript && document.currentScript.dataset && document.currentScript.dataset.reviewDir) || null;
 const REVIEW_DIRNAME = SPEC_FILE + '.review';
+// The spool this page reviews; also keys its outbox and last-loaded events in browser storage.
+const REVIEW_DIR = EMBED_REVIEW_DIR || location.pathname.replace(/^\//, '') + '.review';
 const RUNTIME_URL = (document.currentScript && document.currentScript.src) || new URL('./.viz/runtime.js', document.baseURI).href;
 const VENDOR = { echarts: new URL('./vendor/echarts-5.5.1.min.js', RUNTIME_URL).href };
 
@@ -54,7 +56,6 @@ const state = {
   specMtime: null,
   loopsStarted: false,
   eventsRendered: false,
-  handoffPosting: false,
   lastTbd: null,         // open TBD marker focused by the last TBD open or Next TBD activation
   range: { baseline: null, loaded: null, loading: false, pickerOpen: false }, // loaded: anchor signatures of the page as served
   jev: { status: 'idle', items: [], levels: {}, offer: null, base: null, request: 0 }, // levels: the server's mark kind -> level table
@@ -62,11 +63,18 @@ const state = {
   // hostOrigin: the BB plugin frame that announced itself
   readingView: false,
   movingOrphans: new Set(),
+  handoffPosting: false,
+  reviewer: null,        // {browser, author}: this browser's id and fruit name (#model-author-assign)
+  authors: new Map(),    // author key -> shown name (#model-author-shown)
+  version: null,         // SHA-256 of the spec text this page shows: its ETag (#model-fields)
+  lastStamp: null,       // last event-name stamp this page chose
+  outboxBlocked: false,  // a send failed; the offline notice shows until the outbox drains
+  storedCount: -1,       // events last kept in browser storage
 };
 
 /* ---------------- transports ---------------- */
 function httpTransport() {
-  const dir = EMBED_REVIEW_DIR || location.pathname.replace(/^\//, '') + '.review';
+  const dir = REVIEW_DIR;
   return {
     mode: 'http', label: EMBED_REVIEW_DIR ? 'review-serve (embedded)' : 'review-serve',
     ready: Promise.resolve(true),
@@ -74,8 +82,12 @@ function httpTransport() {
       const r = await fetch('/api/events?dir=' + encodeURIComponent(dir));
       return { events: await r.json(), wake: r.headers.get('X-Spec-Chat-Wake') || null };
     },
-    async postEvent(body) {
-      await fetch('/api/events?dir=' + encodeURIComponent(dir) + '&actor=human', { method: 'POST', body: JSON.stringify(body) });
+    // 'stored' (also a resend of the same bytes), 'refused' (a 4xx no resend fixes); throws when unreachable.
+    async postEvent(entry) {
+      const r = await fetch('/api/events?dir=' + encodeURIComponent(dir) + '&actor=human&name=' + encodeURIComponent(entry.name), { method: 'POST', body: JSON.stringify(entry.body) });
+      if (r.ok) return 'stored';
+      if (r.status >= 400 && r.status < 500) return 'refused';
+      throw new Error('review service answered ' + r.status);
     },
     async specModified() {
       if (EMBED_REVIEW_DIR) return null; // no spec file behind a live app; watchSpec stays quiet
@@ -670,13 +682,13 @@ function fsaTransport() {
       out.sort((a, b) => a.name < b.name ? -1 : 1);
       return out;
     },
-    async postEvent(body) {
+    async postEvent(entry) {
       const d = await t._dir('human', true);
-      const name = String(Date.now() * 1e6 + Math.floor(Math.random() * 1e6)) + '-' + (body.event || 'event') + '-' + (body.id || 'x') + '.json';
-      const fh = await d.getFileHandle(name, { create: true });
+      const fh = await d.getFileHandle(entry.name, { create: true });
       const w = await fh.createWritable();
-      await w.write(JSON.stringify(body));
+      await w.write(JSON.stringify(entry.body));
       await w.close();
+      return 'stored';
     },
     async specModified() {
       if (!t.connected) return null;
@@ -959,58 +971,156 @@ function onDocClick(e) {
 }
 
 /* ---------------- events -> threads ---------------- */
+// Events sorted by file name; meaning follows references (#model-order): an event whose
+// referent sorts later waits for it, so a skewed clock never drops or detaches a message.
 function foldThreads(events) {
   const threads = new Map();
-  let lastHandoff = '';
-  for (const e of events) if (e.body.event === 'handoff') lastHandoff = e.name;
+  const drafts = draftIds(events);
+  const ids = new Set(events.map(e => e.body.id));
+  const known = new Set();
+  const parked = new Map();
   const messageThread = new Map();
   const messageSlot = new Map();
-  const humanStatus = e => e.name > lastHandoff ? 'draft' : 'pending';
-  for (const e of events) {
+  const humanStatus = e => drafts.has(e.body.id) ? 'draft' : 'pending';
+  const markDraft = (th, e) => { if (drafts.has(e.body.id)) th.draftBy.add(e.body.browser || ''); };
+  const apply = e => {
     const b = e.body;
     if (b.event === 'comment' && e.actor === 'human') {
-      const th = { id: b.id, ev: e, messages: [e], status: humanStatus(e), latestHumanId: b.id };
+      const th = { id: b.id, ev: e, messages: [e], status: humanStatus(e), latestHumanId: b.id, history: new Map(), draftBy: new Set() };
+      markDraft(th, e);
       threads.set(b.id, th);
       messageThread.set(b.id, b.id);
       messageSlot.set(b.id, { th, index: 0 });
-      continue;
+      return;
     }
     if (b.event === 'reply') {
       const threadId = b.threadId || messageThread.get(b.respondsTo) || (threads.has(b.respondsTo) ? b.respondsTo : null);
       const th = threadId && threads.get(threadId);
-      if (!th) continue;
+      if (!th) return;
       const index = th.messages.push(e) - 1;
       messageThread.set(b.id, th.id);
       messageSlot.set(b.id, { th, index });
       if (e.actor === 'human') {
         th.latestHumanId = b.id;
         th.status = humanStatus(e);
+        markDraft(th, e);
       } else if (b.respondsTo === th.latestHumanId) {
         th.status = b.status || 'acknowledged';
       }
-      continue;
+      return;
     }
     if (b.event === 'edit' && e.actor === 'human') {
       const prior = messageSlot.get(b.supersedes);
       const threadId = b.threadId || messageThread.get(b.supersedes);
       const th = (prior && prior.th) || (threadId && threads.get(threadId));
-      if (!th) continue;
+      if (!th) return;
       const index = prior ? prior.index : th.messages.length;
+      if (!th.history.has(index)) th.history.set(index, { original: th.messages[index] || e, edits: [] });
+      th.history.get(index).edits.push(e);
       th.messages[index] = e;
       if (index === 0) th.ev = e;
       messageThread.set(b.id, th.id);
       messageSlot.set(b.id, { th, index });
       th.latestHumanId = b.id;
       th.status = humanStatus(e);
-      continue;
+      markDraft(th, e);
+      return;
     }
     if (b.event === 'status') {
       const threadId = b.threadId || messageThread.get(b.respondsTo) || (threads.has(b.respondsTo) ? b.respondsTo : null);
       const th = threadId && threads.get(threadId);
       if (th) th.status = b.status;
     }
+  };
+  const visit = e => {
+    apply(e);
+    known.add(e.body.id);
+    const waiting = parked.get(e.body.id);
+    if (waiting) { parked.delete(e.body.id); waiting.forEach(visit); }
+  };
+  for (const e of events) {
+    const b = e.body;
+    const ref = b.event === 'edit' ? b.supersedes : ['reply', 'status'].includes(b.event) ? b.respondsTo : null;
+    if (ref && ref !== b.id && !known.has(ref) && ids.has(ref)) {
+      if (!parked.has(ref)) parked.set(ref, []);
+      parked.get(ref).push(e);
+    } else visit(e);
   }
   return threads;
+}
+
+// Human message ids no hand-off covers (review-state #live-handoff): a hand-off covers the ids
+// it lists in `events`; one without `events` (older, or Accept spec) covers every draft before it.
+function draftIds(events) {
+  const listed = new Set();
+  let legacy = '';
+  for (const e of events) {
+    if (e.actor !== 'human' || e.body.event !== 'handoff') continue;
+    if (Array.isArray(e.body.events)) e.body.events.forEach(id => listed.add(id));
+    else if (e.name > legacy) legacy = e.name;
+  }
+  const drafts = new Set();
+  for (const e of events) {
+    if (e.actor === 'human' && ['comment', 'reply', 'edit'].includes(e.body.event) && e.name > legacy && !listed.has(e.body.id)) drafts.add(e.body.id);
+  }
+  return drafts;
+}
+
+// This browser's drafts: what its Hand off lists. A draft from before browser ids goes with whichever page hands off next.
+function handoffEvents(events, browser) {
+  const drafts = draftIds(events);
+  return events.filter(e => e.actor === 'human' && drafts.has(e.body.id) && (!e.body.browser || e.body.browser === browser)).map(e => e.body.id);
+}
+
+// Browsers sharing a fruit are numbered by their first event's file name (#model-author-shown).
+const authorKey = b => b.browser || (b.author ? 'author:' + b.author : null);
+function authorNames(events) {
+  const shown = new Map();
+  const count = new Map();
+  for (const e of events) {
+    const key = e.actor === 'human' && e.body.author && authorKey(e.body);
+    if (!key || shown.has(key)) continue;
+    const n = (count.get(e.body.author) || 0) + 1;
+    count.set(e.body.author, n);
+    shown.set(key, n === 1 ? e.body.author : e.body.author + ' ' + n);
+  }
+  return shown;
+}
+
+function messageAuthor(names, message) {
+  if (message.actor !== 'human') return 'Agent';
+  const key = authorKey(message.body);
+  return (key && names.get(key)) || 'Reviewer';
+}
+
+// #model-author-assign: a random id and a fruit name, created once and kept in this browser.
+const FRUITS = ['Mango', 'Papaya', 'Lychee', 'Guava', 'Rambutan', 'Pineapple', 'Passion Fruit', 'Dragon Fruit', 'Durian', 'Jackfruit', 'Mangosteen', 'Starfruit', 'Soursop', 'Coconut', 'Banana', 'Tamarind', 'Longan', 'Feijoa', 'Cherimoya', 'Sapodilla', 'Kiwano', 'Pitanga', 'Jabuticaba', 'Salak'];
+function reviewerIdentity(storage, random) {
+  const KEY = 'spec-chat:reviewer';
+  try {
+    const kept = JSON.parse(storage.getItem(KEY) || 'null');
+    if (kept && typeof kept.browser === 'string' && kept.browser && FRUITS.includes(kept.author)) return kept;
+  } catch (_) { /* no storage: a name for this page only */ }
+  let browser = '';
+  while (browser.length < 20) browser += Math.floor(random() * 36).toString(36);
+  const fresh = { browser, author: FRUITS[Math.min(FRUITS.length - 1, Math.floor(random() * FRUITS.length))] };
+  try { storage.setItem(KEY, JSON.stringify(fresh)); } catch (_) { /* nothing to keep it in */ }
+  return fresh;
+}
+
+// #live-save: `<ns>-<event>-<id>.json`, chosen once before the first send; strictly increasing within a page.
+function nextStamp(last, nowMs, random) {
+  let stamp = BigInt(nowMs) * 1000000n + BigInt(Math.floor(random() * 1e6));
+  if (last && stamp <= BigInt(last)) stamp = BigInt(last) + 1n;
+  return String(stamp);
+}
+
+function eventName(body, stamp) {
+  return stamp + '-' + body.event + '-' + body.id + '.json';
+}
+
+function offlineNotice(waiting) {
+  return waiting ? 'Offline: ' + waiting + ' change' + (waiting === 1 ? '' : 's') + ' waiting' : '';
 }
 
 function resolvedThreadCollapsed(thread, expandedResolved) {
@@ -1041,10 +1151,12 @@ function acknowledgedReplyCount(threads) {
 }
 
 // With open TBDs the action is TBD open once settled; until then Next TBD sits beside Hand off.
-function reviewHandoffState(threads, openTbds = 0) {
+// `browser` counts only that browser's draft threads: its Hand off hands off only its own drafts.
+function reviewHandoffState(threads, openTbds = 0, browser = null) {
   const values = [...threads.values()];
-  const drafts = values.filter(thread => thread.status === 'draft').length;
-  const settled = drafts === 0 && values.every(thread => thread.status === 'resolved');
+  const drafts = values.filter(thread => browser ? thread.draftBy?.has(browser) || thread.draftBy?.has('') : thread.status === 'draft').length;
+  const unsent = values.some(thread => thread.status === 'draft');
+  const settled = !unsent && values.every(thread => thread.status === 'resolved');
   const finish = !openTbds && settled;
   const tbd = openTbds > 0 && settled;
   return { drafts, openTbds, finish, tbd, nextTbd: openTbds > 0 && !tbd, enabled: drafts > 0 || finish || tbd };
@@ -1082,7 +1194,7 @@ function advanceTbd(st, open) {
 // Open TBDs and the addressed anchor share one highlight; the addressed one keeps it while it is the address.
 function renderHighlight() {
   const openTbds = openTbdMarkers(document.querySelectorAll('[data-spec-tbd]'));
-  const handoffState = reviewHandoffState(state.threads, openTbds.length);
+  const handoffState = reviewHandoffState(state.threads, openTbds.length, state.reviewer?.browser);
   const addressed = addressPlace();
   renderTbdHighlight(document, tbdHighlightBlocks(openTbds).concat(addressed ? [findAnchor(addressed.anchor)] : []));
   return handoffState;
@@ -1117,8 +1229,8 @@ function handoffAgentText(observation, wake, last) {
   return last ? '· agent last event ' + new Date(last.body.createdAt).toLocaleTimeString() : '· no agent events yet';
 }
 
-function ingest(events) {
-  let changed = false;
+function ingest(events, force = false) {
+  let changed = force;
   for (const e of events) {
     if (state.seenNames.has(e.actor + '/' + e.name)) continue;
     state.seenNames.add(e.actor + '/' + e.name);
@@ -1130,6 +1242,7 @@ function ingest(events) {
   if (changed) {
     state.events.sort((a, b) => a.name < b.name ? -1 : 1);
     state.threads = foldThreads(state.events);
+    state.authors = authorNames(state.events);
     for (const id of state.expandedResolved) {
       if (state.threads.get(id)?.status !== 'resolved') state.expandedResolved.delete(id);
     }
@@ -1956,6 +2069,7 @@ const CSS = `
 .hx-mobile-handoff,.hx-mobile-next-tbd{display:none}
 .hx-toolbar button[aria-pressed=true]{background:var(--ui-draft-soft);color:var(--ui-draft)}
 .hx-toolbar .hx-status{color:var(--ui-muted);font-size:var(--ui-text-xs);padding:0 10px}
+.hx-toolbar .hx-offline{font-size:var(--ui-text-xs);font-weight:600;padding:0 10px}
 /* index link */
 .hx-service-index-link{position:fixed;top:var(--ui-space-3);left:var(--ui-space-3);z-index:1000;display:inline-flex;align-items:center;min-height:44px;box-sizing:border-box;padding:var(--ui-space-2) var(--ui-space-3);border:1px solid var(--ui-border);border-radius:var(--ui-radius);background:rgba(255,255,255,.96);box-shadow:0 5px 18px var(--ui-shadow);color:var(--ui-resolved);font:600 var(--ui-text-xs)/1 var(--ui-font);text-decoration:none;backdrop-filter:blur(8px)}
 .hx-service-index-link:hover{background:var(--ui-page);border-color:var(--ui-muted);color:var(--ui-resolved)}
@@ -2009,6 +2123,7 @@ body.hx-panel-open .hx-thread-dock{opacity:0;transform:translateX(10px);pointer-
 .hx-pill[data-s=resolved]{color:var(--ui-resolved);background:var(--ui-resolved-soft)}
 .hx-msg{margin-top:7px;font-size:var(--ui-text-sm);line-height:1.45}
 .hx-who{font-size:10px;font-weight:600;color:var(--ui-muted);text-transform:uppercase}
+.hx-history{margin:4px 0 0;padding-left:18px;font-size:var(--ui-text-xs);color:var(--ui-muted)}
 .hx-quote{display:block;border-left:2px solid var(--ui-border);padding-left:7px;color:var(--ui-muted);font-style:italic;font-size:var(--ui-text-xs);margin:2px 0}
 .hx-msg-actions{display:flex;gap:var(--ui-space-1);margin-top:3px}
 .hx-msg-actions .hx-btn{font-size:var(--ui-text-xs);padding:3px var(--ui-space-2);margin-top:2px}
@@ -2214,7 +2329,7 @@ function mountUI() {
 
   const bar = document.createElement('div');
   bar.className = 'hx-toolbar';
-  bar.innerHTML = '<button id="hx-mode" aria-pressed="false">✛ Comment (C)</button><button class="hx-mobile-next-tbd" id="hx-mobile-next-tbd" type="button" hidden>Next TBD</button><button class="hx-mobile-handoff" id="hx-mobile-handoff" type="button" disabled>Hand off</button><button id="hx-connect" hidden>Connect review folder</button><button id="hx-repick" hidden>Choose different folder</button><span class="hx-status" id="hx-status">starting…</span>';
+  bar.innerHTML = '<button id="hx-mode" aria-pressed="false">✛ Comment (C)</button><button class="hx-mobile-next-tbd" id="hx-mobile-next-tbd" type="button" hidden>Next TBD</button><button class="hx-mobile-handoff" id="hx-mobile-handoff" type="button" disabled>Hand off</button><button id="hx-connect" hidden>Connect review folder</button><button id="hx-repick" hidden>Choose different folder</button><span class="hx-offline" id="hx-offline" role="status" hidden></span><span class="hx-status" id="hx-status">starting…</span>';
   document.body.appendChild(bar);
   // The narrow sidebar ends above the fixed dock, so its last content stays reachable.
   new ResizeObserver(() => document.documentElement.style.setProperty('--hx-dock-space', bar.offsetHeight + 'px')).observe(bar);
@@ -2377,6 +2492,8 @@ function addComposer(parent, c) {
     '<button class="hx-btn pri" data-act="save">' + verb + '</button><button class="hx-btn" data-act="cancel">Cancel</button>';
   const textarea = box.querySelector('textarea');
   textarea.value = c.text || '';
+  // Live events re-render the panel; the composer keeps what was typed.
+  textarea.addEventListener('input', () => { c.text = textarea.value; });
   textarea.addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); box.querySelector('[data-act=save]').click(); }
   });
@@ -2389,8 +2506,8 @@ function addComposer(parent, c) {
     if (c.kind === 'reply') body = Object.assign(common, { id: humanId('u'), event: 'reply', respondsTo: c.respondsTo, threadId: c.threadId });
     else if (c.kind === 'edit') body = Object.assign(common, { id: humanId('e'), event: 'edit', supersedes: c.supersedes, threadId: c.threadId });
     else body = Object.assign(common, { id: humanId('u'), event: 'comment' });
-    await state.transport.postEvent(body);
     state.composer = null;
+    save(body);
     if (c.onSent) c.onSent();
     toast((c.kind === 'edit' ? 'Edit' : c.kind === 'reply' ? 'Reply' : 'Comment') + ' saved as draft — hand off when ready');
     refresh();
@@ -2473,13 +2590,26 @@ function renderPanel() {
     const hint = orphanHintElement(th, orphanHint);
     if (hint) d.appendChild(hint);
     if (!collapsed) {
-      for (const message of th.messages) {
+      th.messages.forEach((message, index) => {
         const m = message.body;
+        const history = th.history && th.history.get(index);
         const item = document.createElement('div');
         item.className = 'hx-msg';
         item.dataset.messageId = m.id;
-        item.innerHTML = '<span class="hx-who">' + (message.actor === 'human' ? 'You' : 'Agent') + '</span>' +
-          (m.quote ? '<span class="hx-quote">“' + esc(m.quote) + '”</span>' : '') + esc(m.text || '');
+        item.innerHTML = '<span class="hx-who">' + esc(messageAuthor(state.authors, history ? history.original : message)) + '</span>' +
+          (m.quote ? '<span class="hx-quote">“' + esc(m.quote) + '”</span>' : '') + '<span class="hx-text">' + esc(m.text || '') + '</span>';
+        // #model-edit-history: more than one edit lists every edit with its author.
+        if (history && history.edits.length > 1) {
+          const list = document.createElement('ol');
+          list.className = 'hx-history';
+          list.setAttribute('aria-label', 'Edit history');
+          for (const edit of history.edits) {
+            const entry = document.createElement('li');
+            entry.innerHTML = '<span class="hx-who">' + esc(messageAuthor(state.authors, edit)) + '</span> ' + esc(edit.body.text || '');
+            list.appendChild(entry);
+          }
+          item.appendChild(list);
+        }
         if (message.actor === 'human' && m.id === th.latestHumanId && ['draft', 'pending'].includes(th.status)) {
           const actions = document.createElement('div');
           actions.className = 'hx-msg-actions';
@@ -2488,7 +2618,7 @@ function renderPanel() {
           item.appendChild(actions);
         }
         d.appendChild(item);
-      }
+      });
       const replyAction = threadReplyAction(th);
       if (replyAction) {
         const reply = document.createElement('button');
@@ -2561,7 +2691,7 @@ function renderPanel() {
 // A card's own resolve control and Resolve all post the same resolve event.
 async function resolveThreads(threads) {
   for (const th of threads) {
-    await state.transport.postEvent({ id: humanId('s'), event: 'status', respondsTo: th.id, threadId: th.id, status: 'resolved', actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
+    save({ id: humanId('s'), event: 'status', respondsTo: th.id, threadId: th.id, status: 'resolved', actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
     state.expandedResolved.delete(th.id);
   }
   toast('Resolved');
@@ -2630,12 +2760,12 @@ async function moveOrphans(moves) {
     for (const { th, target } of moves) {
       const original = th.ev.body || {};
       const quote = original.quote || original.text || '';
-      await state.transport.postEvent({
+      save({
         id: humanId('u'), event: 'comment', anchorId: target, target: null,
         quote, text: original.text || 'Moved comment', actor: 'human',
         createdAt: new Date().toISOString(), schemaVersion: 1,
       });
-      await state.transport.postEvent({
+      save({
         id: humanId('s'), event: 'status', respondsTo: th.id, threadId: th.id,
         status: 'resolved', actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1,
       });
@@ -2892,19 +3022,17 @@ function renderBadges() {
   }
 }
 
-async function handoff() {
+function handoff() {
   const openTbds = openTbdMarkers(document.querySelectorAll('[data-spec-tbd]'));
-  const action = reviewHandoffState(state.threads, openTbds.length);
+  const action = reviewHandoffState(state.threads, openTbds.length, state.reviewer.browser);
   if (action.tbd) return nextTbd();
   if (state.handoffPosting || !action.enabled) return;
-  state.handoffPosting = true;
-  try {
-    await state.transport.postEvent({ id: 'h' + Date.now().toString(36), event: 'handoff', anchorId: '', target: null, quote: null, text: 'batch from ' + state.transport.mode, actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 });
-    toast(action.finish ? 'Spec accepted' : 'Handed off ' + action.drafts + ' comment' + (action.drafts === 1 ? '' : 's') + ', agent notified');
-    refresh();
-  } finally {
-    state.handoffPosting = false;
-  }
+  state.handoffPosting = true; // until this hand-off's send settles: a double tap writes one
+  // Hand off lists this browser's drafts (#live-handoff); Accept spec writes the existing hand-off without a list.
+  const listed = action.finish ? {} : { events: handoffEvents(state.events, state.reviewer.browser) };
+  save(Object.assign({ id: humanId('h'), event: 'handoff', anchorId: '', target: null, quote: null, text: 'batch from ' + state.transport.mode, actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 }, listed));
+  toast(action.finish ? 'Spec accepted' : 'Handed off ' + action.drafts + ' comment' + (action.drafts === 1 ? '' : 's') + ', agent notified');
+  refresh().finally(() => { state.handoffPosting = false; });
 }
 
 // TBD open and Next TBD share one step and one position (state.lastTbd).
@@ -2936,12 +3064,100 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
 }
 
+/* ---------------- saving: page-named events through the outbox ----------------
+ * review-state #live-save, #offline. Every human event is named by this page, kept in
+ * browser storage for this spool until the service stores it, shown at once, and sent
+ * in order; a resend after a lost response stores nothing new.
+ */
+const OUTBOX_KEY = 'spec-chat:outbox:' + REVIEW_DIR;
+const LOADED_KEY = 'spec-chat:events:' + REVIEW_DIR;
+let pageOutbox = null; // this page's own outbox when browser storage cannot keep it
+let flushing = null;
+
+function reviewStorage() {
+  try { return window.localStorage; } catch (_) { return null; }
+}
+
+function outboxEntries() {
+  if (pageOutbox) return pageOutbox;
+  try { return JSON.parse(reviewStorage().getItem(OUTBOX_KEY) || '[]'); } catch (_) { return pageOutbox = []; }
+}
+
+function setOutbox(entries) {
+  if (!pageOutbox) {
+    try { reviewStorage().setItem(OUTBOX_KEY, JSON.stringify(entries)); return; } catch (_) { /* fall back to this page */ }
+  }
+  pageOutbox = entries;
+}
+
+const outboxEvents = () => outboxEntries().map(entry => ({ actor: 'human', name: entry.name, body: entry.body }));
+
+function save(body) {
+  const event = Object.assign({}, body, { browser: state.reviewer.browser, author: state.reviewer.author }, state.version ? { version: state.version } : {});
+  state.lastStamp = nextStamp(state.lastStamp, Date.now(), Math.random);
+  const entry = { name: eventName(event, state.lastStamp), body: event };
+  setOutbox(outboxEntries().concat([entry]));
+  ingest([{ actor: 'human', name: entry.name, body: event }]);
+  flushOutbox();
+}
+
+async function drainOutbox() {
+  for (let entry; (entry = outboxEntries()[0]);) {
+    let result;
+    try { result = await state.transport.postEvent(entry); } catch (_) { state.outboxBlocked = true; return; }
+    setOutbox(outboxEntries().filter(waiting => waiting.name !== entry.name));
+    if (result === 'refused') forgetEvent(entry.name);
+  }
+  state.outboxBlocked = false;
+}
+
+function flushOutbox() {
+  if (!flushing) flushing = drainOutbox().finally(() => { flushing = null; renderOffline(); });
+  return flushing;
+}
+
+// The service refused the event outright; no resend can store it.
+function forgetEvent(name) {
+  state.events = state.events.filter(e => !(e.actor === 'human' && e.name === name));
+  state.seenNames.delete('human/' + name);
+  ingest([], true);
+  toast('The review service refused a change; it was not saved');
+}
+
+function keepLoaded(events) {
+  if (events.length === state.storedCount) return;
+  state.storedCount = events.length;
+  try { reviewStorage().setItem(LOADED_KEY, JSON.stringify(events)); } catch (_) { /* the page still shows them */ }
+}
+
+function loadedEvents() {
+  try { return JSON.parse(reviewStorage().getItem(LOADED_KEY) || '[]'); } catch (_) { return []; }
+}
+
+function renderOffline() {
+  const el = document.getElementById('hx-offline');
+  if (!el) return;
+  el.textContent = state.outboxBlocked ? offlineNotice(outboxEntries().length) : '';
+  el.hidden = !el.textContent;
+}
+
+// The ETag of the spec text this page shows, from the browser's copy of this document.
+async function shownVersion() {
+  try {
+    const tag = (await fetch(location.href.split('#')[0], { cache: 'force-cache' })).headers.get('ETag');
+    return tag ? tag.replace(/^W\//, '').replace(/"/g, '') : null;
+  } catch (_) { return null; }
+}
+
 /* ---------------- loops ---------------- */
 async function refresh() {
+  await flushOutbox(); // #offline-reopen: waiting events go first, then the read
   try {
     const listed = await state.transport.listEvents();
     const wake = Array.isArray(listed) ? null : listed.wake;
-    ingest(Array.isArray(listed) ? listed : listed.events);
+    const events = Array.isArray(listed) ? listed : listed.events;
+    keepLoaded(events);
+    ingest(events.concat(outboxEvents()));
     const agentEvents = state.events.filter(e => e.actor === 'agent');
     const observation = handoffObservation(state.events, Date.now());
     document.getElementById('hx-agent').textContent = handoffAgentText(observation, wake, agentEvents[agentEvents.length - 1]);
@@ -2950,11 +3166,16 @@ async function refresh() {
       state._beaconed = true;
       fetch('/hxdebug/threads=' + state.threads.size + '/pins=' + document.querySelectorAll('.hx-pin').length + '/charts=' + state.charts.size).catch(() => {});
     }
-  } catch (e) { status('event sync failed: ' + e.message); }
+  } catch (e) {
+    if (!state.eventsRendered) ingest(loadedEvents().concat(outboxEvents()));
+    status('event sync failed: ' + e.message);
+  }
+  renderOffline();
 }
 
 async function watchSpec() {
-  const m = await state.transport.specModified();
+  let m;
+  try { m = await state.transport.specModified(); } catch (_) { return; } // offline: the next poll checks
   if (m && state.specMtime && m > state.specMtime && !document.getElementById('hx-banner')) {
     const b = document.createElement('div');
     b.className = 'hx-banner';
@@ -3056,6 +3277,8 @@ function keepPlace() {
     return;
   }
   state.transport = location.protocol === 'file:' ? fsaTransport() : httpTransport();
+  state.reviewer = reviewerIdentity(reviewStorage(), Math.random);
+  if (httpPage) state.version = await shownVersion();
 
   if (state.transport.mode === 'fsa') {
     const btn = document.getElementById('hx-connect');
@@ -3157,6 +3380,7 @@ function startLoops() {
   refresh();
   watchSpec();
   setInterval(refresh, 2000);
+  window.addEventListener('online', refresh);
   setInterval(watchSpec, 5000);
   // Pins live inside anchored holders; a host framework re-rendering a holder (React
   // remounts, spec scripts rebuilding DOM) silently drops them. Redraw is idempotent.
