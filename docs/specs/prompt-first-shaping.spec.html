@@ -26,6 +26,7 @@
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-guided-impact">As a feature author, I want every changed user-facing story to state whether the central guided journey extends so onboarding impact is explicit without forcing every feature into onboarding.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-tbd-later">As a reviewer, I want TBDs marked for a later slice to leave spec acceptance available and each open TBD to be counted, highlighted, and reachable from the toolbar even while I have draft comments, so only real open questions stop spec acceptance and I always know how many remain.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-vocabulary">As a human reviewer, I want sending my review and accepting the spec to have distinct names so no one mistakes a reviewed batch for approval to deliver.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-block-target">As a reviewer on a keyboard or a browser agent, I want each block I can comment on to be a real button in comment mode so I can pick it without pointing at plain text.</p>
 <p data-user-story data-user-facing="false" data-anchor="story-qa-capturable">As a QA capture program, I drive every acceptance criterion from its Given, When, and Then without guessing, and read in plain words which gesture, timing, or induced failure a criterion needs.</p>
 </section>
 
@@ -48,6 +49,9 @@
 <p data-acceptance-criterion data-anchor="acceptance-mobile-link" data-story="story-mobile"><span data-acceptance-scenario>When the reviewer opens the review link in an ordinary mobile browser,</span> <span data-acceptance-observable>the spec loads with no SSH, VPN, or account login, and the server exposes only the declared review collection and its event routes.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-mobile-review" data-story="story-mobile"><span data-acceptance-scenario>Given the spec review site fixture's report spec is open on a narrow screen, with two open TBDs and no comment thread, When the reviewer adds the draft comment "Check the total." on the paragraph "The report page shows totals per week.",</span> <span data-acceptance-observable>Then the bottom toolbar shows Hand off (1) with Next TBD (2) beside it, and every toolbar control is at least 44 pixels tall.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-mobile-composer" data-story="story-mobile"><span data-acceptance-scenario>Given the spec review site fixture's report spec is open on a narrow screen, When the reviewer turns on comment mode and taps the paragraph "The report page shows totals per week.",</span> <span data-acceptance-observable>Then the comment composer fills the whole viewport.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-block-target-enter" data-story="story-block-target"><span data-acceptance-scenario>Given the spec review site fixture's report spec is open, When the reviewer presses the Comment (C) button, presses Tab until the paragraph "The report page shows totals per week." has keyboard focus, and presses Enter,</span> <span data-acceptance-observable>Then the comment composer opens headed #report-totals with its text box focused.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-block-target-space" data-story="story-block-target"><span data-acceptance-scenario>Given the spec review site fixture's report spec is open, When the reviewer presses the Comment (C) button, presses Tab until the paragraph "The report page shows totals per week." has keyboard focus, and presses Space,</span> <span data-acceptance-observable>Then the comment composer opens headed #report-totals with its text box focused.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-block-target-off" data-story="story-block-target"><span data-acceptance-scenario>Given the spec review site fixture's report spec is open, When the reviewer presses the Comment (C) button twice and then presses Tab,</span> <span data-acceptance-observable>Then keyboard focus lands on a page control and no spec paragraph shows a focus outline.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-agent-wake" data-story="story-agent"><span data-acceptance-scenario>When the human hands off a batch and the wake provider resolves the registered owner pane,</span> <span data-acceptance-observable>the host prompts that pane once per unchanged batch and never launches a second processor.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-agent-cold" data-story="story-agent"><span data-acceptance-scenario>When no agent ran at hand-off and a compatible agent later enters the repository,</span> <span data-acceptance-observable>its first action drains every completed unprocessed hand-off before new work, and a failed batch leaves the cursor unchanged.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-preflight" data-story="story-compatible-review"><span data-acceptance-scenario>When a target runtime or server lacks a capability the bundled runtime requires,</span> <span data-acceptance-observable>preflight replaces that asset from the bundle before the server starts, leaves an asset declaring every required capability untouched, and shows a failed preflight as a review blocker.</span></p>
@@ -643,6 +647,15 @@ Spec Chat keeps no list of QA capabilities; the plain words are the whole contra
 <p data-anchor="finish-not-acceptance">Spec acceptance is not human acceptance of delivered software, tracker lifecycle transition, merge approval, or deployment approval.</p>
 </section>
 
+<section data-anchor="comment-targets" id="comment-targets">
+<h2>Comment targets</h2>
+<p data-anchor="comment-target-blocks">While comment mode is on, every anchored block that holds no other anchored block is a button: it has the button role, sits in the Tab order, and is named by its own text.</p>
+<p data-anchor="comment-target-activate">Enter or Space on a focused block opens the comment composer on that block, exactly as a click on the block outside any inner element does.</p>
+<p data-anchor="comment-target-selection">Text selection inside a block keeps working in comment mode and still comments on the selected text.</p>
+<p data-anchor="comment-target-off">Turning comment mode off returns every block to its own role and Tab order, so reading view adds no buttons and no Tab stops.</p>
+<p data-anchor="comment-target-one-mechanism">The block button is the existing comment-mode targeting made reachable; it adds no second picker or composer path.</p>
+</section>
+
 <section data-anchor="mobile" id="mobile">
 <h2>Mobile review</h2>
 <p data-anchor="mobile-version">The runtime includes the latest upstream Spec Chat behavior plus the existing mobile-review commit.</p>
@@ -811,6 +824,7 @@ Spec Chat keeps no list of QA capabilities; the plain words are the whole contra
 <p data-anchor="tdd-handoff-red">A watcher attachment scenario must first demonstrate that returning a final response strands a later browser hand-off until another agent turn begins.</p>
 <p data-anchor="tdd-handoff-green">The same scenario passes when turn-yielded keeps the turn open, host-wake prompts the registered owner pane, or manual-resume explicitly requires a new human message.</p>
 <p data-anchor="tdd-mobile">Existing mobile, FSA, thread-model, and review-script suites remain green.</p>
+<p data-anchor="tdd-block-target">A runtime test must first fail because a block in comment mode has no button role or Tab stop, then pass when comment mode gives leaf anchored blocks the button role and a Tab stop, Enter and Space open the composer on that block, and leaving comment mode restores each block's own role and Tab order.</p>
 <p data-anchor="tdd-visual">Browser evidence must verify focus readability, mobile target-first commenting, resolved-thread reopen, hand-off waiting state, and spec acceptance on a real rendered spec.</p>
 </section>
 
