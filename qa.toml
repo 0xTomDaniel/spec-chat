@@ -86,9 +86,11 @@ path = "{review}/block-target-off/docs/specs/report.spec.html"
 #   select the export sentence's text, type the comment text from values, save. The save
 #   brings the "Spec updated by agent" banner; its Reload button is the Then's refresh.
 # - name: four steps, all required; do not stop after the first save. 1) Turn on Comment
-#   (C), click any block, type the first value, save. 2) Reload the page (browser reload,
-#   not the banner). 3) Open that thread with its "Open thread 1" button. 4) Click Reply,
-#   type the second value, save. Then capture the thread: both messages and their author.
+#   (C), click any block, type the first value, save. The fixture agent answers that comment
+#   as it saves (tests/fixtures/qa/serve.py), so the thread offers Reply. 2) Reload the page
+#   (browser reload, not the banner). 3) Open that thread with its "Open thread 1" button.
+#   4) Click Reply, type the second value, save. Then capture the thread: both of this
+#   reviewer's messages and their author.
 [nav.acceptance-anchor-moved]
 path = "{review}/anchor-moved/docs/specs/report.spec.html"
 [nav.acceptance-anchor-changed]
@@ -99,6 +101,8 @@ path = "{review}/anchor-gone/docs/specs/report.spec.html"
 path = "{review}/stale-page/docs/specs/report.spec.html"
 [nav.acceptance-agent-scan]
 path = "{review}/agent-scan/docs/specs/report.spec.html"
+[nav.acceptance-name]
+path = "{review}/name-reply/docs/specs/report.spec.html"
 
 # Typed text for the review-state criteria that save a message (capture types only these).
 [entry.criteria.acceptance-name]

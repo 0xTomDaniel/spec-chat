@@ -94,6 +94,12 @@ class ReviewStateCollections(unittest.TestCase):
         self.assertEqual((mark["state"], mark["anchorId"], mark["quote"]), ("kept", "report-export", spools.SENTENCE))
         self.assertEqual(self.current("anchor-moved")[mark["start"]:mark["end"]], spools.SENTENCE)
 
+    def test_seeded_text_key_is_the_pages_40_char_prefix(self):
+        """The page keys a text target by the selection's first 40 characters; the rewrite lies past it."""
+        body = next(e["body"] for e in self.site.events("anchor-changed") if e["body"]["id"] == "qa-sentence")
+        self.assertEqual((body["target"]["key"], body["quote"]), (spools.SENTENCE[:40], spools.SENTENCE))
+        self.assertNotIn(spools.REWRITE[0], body["target"]["key"])
+
     def test_anchor_changed_sits_on_remaining_text(self):
         mark = self.site.places("anchor-changed")["qa-sentence"]
         self.assertEqual((mark["state"], mark["anchorId"]), ("changed", "report-export"))
@@ -111,47 +117,77 @@ class ReviewStateCollections(unittest.TestCase):
         self.assertEqual([name.split("-", 2)[1] for name in batch], ["comment", "handoff"])
         self.assertEqual(self.site.places("agent-scan")["qa-sentence"]["state"], "changed")
 
-    def test_stale_page_edit_lands_on_save_and_the_mark_follows(self):
-        spec = self.site.spec("stale-page")
-        self.assertEqual(self.current("stale-page"), HEAD)
-        self.assertFalse(os.path.exists(spec + ".review"))
+    def serve(self, site=None):
+        """The fixture service (serve.py) on a site, this class's by default; returns its base url."""
+        site = site or self.site
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
             port = probe.getsockname()[1]
-        env = {**os.environ, "HOME": str(self.site.root / "home"), "XDG_STATE_HOME": str(self.site.root / "state"),
-               "XDG_CONFIG_HOME": str(self.site.root / "config")}
+        env = {**os.environ, "HOME": str(site.root / "home"), "XDG_STATE_HOME": str(site.root / "state"),
+               "XDG_CONFIG_HOME": str(site.root / "config")}
         env.pop("HERDR_SOCKET_PATH", None)
-        server = subprocess.Popen([sys.executable, str(FIXTURE / "serve.py"), str(self.site.root / "serve" / "registry.toml"), str(port)],
+        server = subprocess.Popen([sys.executable, str(FIXTURE / "serve.py"), str(site.root / "serve" / "registry.toml"), str(port)],
                                   cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(lambda: (server.terminate(), server.wait(timeout=10)))
         base = "http://127.0.0.1:%d" % port
-        try:
-            for _ in range(100):
-                try:
-                    with urllib.request.urlopen(base + "/stale-page/docs/specs/report.spec.html") as response:
-                        etag = response.headers["ETag"].strip('"')
-                    break
-                except OSError:
-                    time.sleep(0.1)
-            else:
-                self.fail("serve.py did not start")
-            self.assertEqual(etag, hashlib.sha256(HEAD.encode("utf-8")).hexdigest())
-            body = {"id": "qa-stale", "event": "comment", "actor": "human", "createdAt": "2026-10-01T00:00:00Z",
-                    "schemaVersion": 1, "browser": "qa-capture", "author": "Lychee", "version": etag,
-                    "anchorId": "report-export", "target": {"type": "text", "key": spools.SENTENCE},
-                    "quote": spools.SENTENCE, "text": "Name the columns."}
-            name = "%d-comment-qa-stale.json" % time.time_ns()
-            query = "dir=/stale-page/docs/specs/report.spec.html.review&actor=human&name=" + name
-            request = urllib.request.Request(base + "/api/events?" + query, data=json.dumps(body).encode(), method="POST")
-            with urllib.request.urlopen(request) as response:
-                self.assertEqual(json.load(response)["name"], name)
-            self.assertIn(spools.INSERTED, self.current("stale-page"))
-            with urllib.request.urlopen(base + "/api/events?dir=/stale-page/docs/specs/report.spec.html.review") as response:
-                events = json.load(response)
-            mark = next(e["place"] for e in events if e["body"]["id"] == "qa-stale")
-            self.assertEqual((mark["state"], mark["anchorId"], mark["quote"]), ("kept", "report-export", spools.SENTENCE))
-        finally:
-            server.terminate()
-            server.wait(timeout=10)
+        for _ in range(100):
+            try:
+                urllib.request.urlopen(base + "/qa-fixture/docs/specs/report.spec.html").close()
+                return base
+            except OSError:
+                time.sleep(0.1)
+        self.fail("serve.py did not start")
+
+    def post(self, base, collection, body):
+        name = "%d-%s-%s.json" % (time.time_ns(), body["event"], body["id"])
+        query = "dir=/%s/docs/specs/report.spec.html.review&actor=human&name=%s" % (collection, name)
+        request = urllib.request.Request(base + "/api/events?" + query, data=json.dumps(body).encode(), method="POST")
+        with urllib.request.urlopen(request) as response:
+            self.assertEqual(json.load(response)["name"], name)
+        return name
+
+    def served_events(self, base, collection):
+        with urllib.request.urlopen(base + "/api/events?dir=/%s/docs/specs/report.spec.html.review" % collection) as response:
+            return json.load(response)
+
+    def test_stale_page_edit_lands_on_save_and_the_mark_follows(self):
+        self.assertEqual(self.current("stale-page"), HEAD)
+        self.assertFalse(os.path.exists(self.site.spec("stale-page") + ".review"))
+        base = self.serve()
+        with urllib.request.urlopen(base + "/stale-page/docs/specs/report.spec.html") as response:
+            etag = response.headers["ETag"].strip('"')
+        self.assertEqual(etag, hashlib.sha256(HEAD.encode("utf-8")).hexdigest())
+        body = {"id": "qa-stale", "event": "comment", "actor": "human", "createdAt": "2026-10-01T00:00:00Z",
+                "schemaVersion": 1, "browser": "qa-capture", "author": "Lychee", "version": etag,
+                "anchorId": "report-export", "target": {"type": "text", "key": spools.KEY},
+                "quote": spools.SENTENCE, "text": "Name the columns."}
+        self.post(base, "stale-page", body)
+        self.assertIn(spools.INSERTED, self.current("stale-page"))
+        mark = next(e["place"] for e in self.served_events(base, "stale-page") if e["body"]["id"] == "qa-stale")
+        self.assertEqual((mark["state"], mark["anchorId"], mark["quote"]), ("kept", "report-export", spools.SENTENCE))
+
+    def test_name_reply_agent_answers_a_saved_comment_so_a_reply_is_possible(self):
+        """acceptance-name: the page offers Reply only after an agent message (runtime threadReplyAction)."""
+        site = Site()  # its own site: these saves leave the shared seeded spools untouched
+        self.addCleanup(site.tmp.cleanup)
+        self.assertFalse(os.path.exists(site.spec("name-reply") + ".review"))
+        base = self.serve(site)
+        common = {"actor": "human", "schemaVersion": 1, "browser": "qa-capture", "author": "Lychee",
+                  "anchorId": "report-export", "target": None, "createdAt": "2026-10-01T00:00:00Z",
+                  "version": hashlib.sha256(HEAD.encode("utf-8")).hexdigest()}
+        name = self.post(base, "name-reply", dict(common, id="qa-first", event="comment", text="First note."))
+        events = self.served_events(base, "name-reply")
+        agent = [e["body"] for e in events if e["body"].get("actor") == "agent"]
+        self.assertEqual([(a["event"], a["respondsTo"], a["status"]) for a in agent], [("reply", "qa-first", "acknowledged")])
+        # a resend of the same save is answered once; a human reply is not answered
+        request = urllib.request.Request(
+            base + "/api/events?dir=/name-reply/docs/specs/report.spec.html.review&actor=human&name=" + name,
+            data=json.dumps(dict(common, id="qa-first", event="comment", text="First note.")).encode(), method="POST")
+        urllib.request.urlopen(request).close()
+        self.post(base, "name-reply", dict(common, id="qa-reply", event="reply", respondsTo=agent[0]["id"],
+                                           threadId="qa-first", text="Reply after reload."))
+        agent = [e for e in self.served_events(base, "name-reply") if e["body"].get("actor") == "agent"]
+        self.assertEqual(len(agent), 1)
 
 
 if __name__ == "__main__":

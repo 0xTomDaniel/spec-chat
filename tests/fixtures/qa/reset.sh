@@ -14,7 +14,7 @@ set -eu
 collections="qa-fixture tbd-later tbd-later-handoff tbd-open-highlight tbd-open-single
   next-tbd next-tbd-step next-tbd-handoff tbd-open-jump tbd-open-wrap mobile-composer
   block-target-enter block-target-space block-target-off
-  anchor-moved anchor-changed anchor-gone stale-page agent-scan"
+  anchor-moved anchor-changed anchor-gone stale-page agent-scan name-reply"
 site="$QA_ROOT/site"
 serve="$QA_ROOT/serve"
 repo="$site/.repo"
