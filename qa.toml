@@ -21,7 +21,8 @@ ready = "/qa-fixture/docs/specs/report.spec.html"
 # to what a user sees or does adds its onboarding section."; report.spec.html is the
 # spec under shaping, its head adding an export story with no onboarding criterion,
 # two open TBDs, and one later TBD; later-only.spec.html's only TBD is later;
-# one-open.spec.html has exactly one open TBD. No spec has a comment thread. Jev
+# one-open.spec.html has exactly one open TBD. No spec has a comment thread, except
+# the review-state collections' report spec (spools.py, nav hints below). Jev
 # records are written by the fake as pages load and kept across resets.
 [fixture.spec_review_site]
 repo = "spec-chat"
@@ -67,6 +68,30 @@ path = "{review}/block-target-enter/docs/specs/report.spec.html"
 path = "{review}/block-target-space/docs/specs/report.spec.html"
 [nav.acceptance-block-target-off]
 path = "{review}/block-target-off/docs/specs/report.spec.html"
+
+# Review-state collections (tests/fixtures/qa/spools.py). Seeded reviewers are other
+# browsers, so the capture browser is the second reviewer. edit-race: Papaya's handed-off
+# comment on report-totals, and Guava's edit to it; the capture saves the later edit.
+# name-collision: two browsers both named Mango commented. anchor-*: Papaya's comment on
+# the selected export sentence, then the agent's edit already landed (paragraph inserted
+# above, sentence partly rewritten, sentence deleted); the page load is the refresh.
+# stale-page: the agent's paragraph insertion above the export sentence lands when the
+# page next saves, so the comment is saved from a page loaded before the edit.
+# agent-scan: Papaya's sentence comment, handed off, the sentence since rewritten.
+[nav.acceptance-edit-race]
+path = "{review}/edit-race/docs/specs/report.spec.html"
+[nav.acceptance-name-collision]
+path = "{review}/name-collision/docs/specs/report.spec.html"
+[nav.acceptance-anchor-moved]
+path = "{review}/anchor-moved/docs/specs/report.spec.html"
+[nav.acceptance-anchor-changed]
+path = "{review}/anchor-changed/docs/specs/report.spec.html"
+[nav.acceptance-anchor-gone]
+path = "{review}/anchor-gone/docs/specs/report.spec.html"
+[nav.acceptance-anchor-stale-page]
+path = "{review}/stale-page/docs/specs/report.spec.html"
+[nav.acceptance-agent-scan]
+path = "{review}/agent-scan/docs/specs/report.spec.html"
 
 # Stories this environment cannot host. services.review runs with HOME and XDG under
 # $QA_ROOT: no evidence or wake provider, no Herdr, no live agent, no review-host
