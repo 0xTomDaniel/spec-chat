@@ -7,12 +7,17 @@ prints it beside the zero-wait scan rows. A mark is located in the spec version 
 text. Offsets are code-point indexes into the current spec source; `quote` is the mapped range's
 visible text, the same text the page's text target search reads.
 
+An element mark also gets `key`, the element's target key in the current spec, so a pin follows
+the element when its peers shift.
+
 CLI: place.py SPEC < event file names  ->  place<TAB>name<TAB>state<TAB>#anchor<TAB>start-end<TAB>quote
 """
 
 from __future__ import annotations
 
+import bisect
 import difflib
+import hashlib
 import html
 import json
 import os
@@ -114,14 +119,19 @@ class Document:
         self.text = text
         parser = _Parser(text).finish()
         self.root, self.elements, self.chars = parser.root, parser.elements, parser.chars
+        self.char_starts = [at for at, _, _ in self.chars]
         self.blocks = {}
         for element in self.elements:
             anchor = element.attrs.get("data-anchor")
             if anchor and anchor not in self.blocks:
                 self.blocks[anchor] = element
 
+    def _chars(self, start, end):
+        """Visible characters whose source starts in [start, end), by bisection: no whole-document scan."""
+        return self.chars[bisect.bisect_left(self.char_starts, start):bisect.bisect_left(self.char_starts, end)]
+
     def visible(self, start, end):
-        return "".join(char for at, _, char in self.chars if start <= at < end)
+        return "".join(char for _, _, char in self._chars(start, end))
 
     def innermost(self, start, end):
         best = None
@@ -160,6 +170,49 @@ class Document:
             scope = found.children
         return found
 
+    def key(self, block, element):
+        """The target key the runtime's elementDescriptor/svgDescriptor gives `element` within `block`."""
+        if element is block:
+            return None
+        chain, node = [], element
+        while node is not None and node is not block and node.tag != "svg":
+            chain.insert(0, node)
+            node = node.parent
+        if node is None:
+            return None
+        inside = list(self._descendants(block))
+        if node.tag == "svg":
+            svg = node
+            ident = svg.attrs.get("id")
+            parts = ["svg#" + ident if ident else "svg[%d]" % ([e for e in inside if e.tag == "svg"].index(svg) + 1)]
+            for item in chain:
+                if item.attrs.get("id"):
+                    parts.append(item.tag + "#" + item.attrs["id"])
+                else:
+                    peers = [e for e in item.parent.children if e.tag == item.tag]
+                    parts.append("%s[%d]" % (item.tag, peers.index(item) + 1))
+            return "/".join(parts)
+        figure = "data-render-target" in element.attrs
+        ident = element.attrs.get("id")
+        if not figure and ident and sum(1 for e in inside if e.tag == element.tag and e.attrs.get("id") == ident) == 1:
+            return element.tag + "#" + ident
+        peers = [e for e in inside if ("data-render-target" in e.attrs if figure else e.tag == element.tag)]
+        name = "figure" if figure else {"h1": "title", "nav": "breadcrumbs"}.get(element.tag, element.tag)
+        return "%s[%d]" % (name, peers.index(element) + 1)
+
+    def element_at(self, tag, at, start, end):
+        """The current element a mapped element became: the same tag at its mapped start, else the
+        innermost same-tag element around the mapped range."""
+        best = None
+        for element in self.elements:
+            if element.tag != tag:
+                continue
+            if element.start == at:
+                return element
+            if element.start <= start and end <= element.end and (best is None or element.start >= best.start):
+                best = element
+        return best
+
     def locate(self, body):
         """Source range of a mark: its anchored block, then the target within it (the quote for text)."""
         block = self.blocks.get(body.get("anchorId"))
@@ -168,7 +221,7 @@ class Document:
         target = body.get("target") or {}
         if target.get("type") == "text":
             needle = "".join(str(target.get("key") or body.get("quote") or "").split())
-            chars = [char for char in self.chars if block.start <= char[0] < block.end and not char[2].isspace()]
+            chars = [char for char in self._chars(block.start, block.end) if not char[2].isspace()]
             haystack, owner = "", []  # an entity may decode to several code points
             for index, (_, _, char) in enumerate(chars):
                 owner.extend([index] * len(char))
@@ -213,27 +266,49 @@ def char_map(old, new):
 
 
 class Resolver:
-    """Resolves every mark against one current spec text; version parses and diff maps are cached."""
+    """Resolves every mark against one current spec text. Version parses and diff maps are cached by
+    version, and each mark's place by its event body: a page polls often, and both are fixed per spec text."""
 
     def __init__(self, current):
         self.current = Document(current)
         self._versions = {}
+        self._places = {}
 
-    def _version(self, text):
-        if text not in self._versions:
-            self._versions[text] = (Document(text), char_map(text, self.current.text))
-        return self._versions[text]
+    def _version(self, version, text):
+        if version not in self._versions:
+            self._versions[version] = (Document(text), char_map(text, self.current.text))
+        return self._versions[version]
 
-    def place(self, body, version_text=None):
+    def place(self, body, version_text=None, review=None):
+        """One mark's place. With `review`, the version text is read from its spool only when not cached."""
         if not isinstance(body, dict) or not body.get("anchorId"):
             return None
-        text_target = (body.get("target") or {}).get("type") == "text"
-        if version_text is None:
+        memo = json.dumps(body, sort_keys=True)
+        if memo in self._places:
+            return self._places[memo]
+        version = body.get("version")
+        if review is not None and version not in self._versions:
+            version_text = read_version(review, version)
+        if version not in self._versions and version_text is not None:
+            version = version or hashlib.sha256(version_text.encode("utf-8")).hexdigest()
+        known = version in self._versions or version_text is not None
+        result = self._place(body, version if known else None, version_text)
+        if known or not body.get("version"):  # a named version not yet stored may arrive: resolve again then
+            self._places[memo] = result
+        return result
+
+    def _place(self, body, version, version_text):
+        target = body.get("target") or {}
+        text_target = target.get("type") == "text"
+        if version is None:
             located = self.current.locate(body)
             if located is None:
                 return self._gone(body, None)
-            return self._found(body, located[0], located[1], "kept", text_target)
-        source, mapping = self._version(version_text)
+            element = None
+            if target.get("type") == "element":
+                element = self.current._element(self.current.blocks[body["anchorId"]], target.get("key"))
+            return self._found(located[0], located[1], "kept", text_target, element)
+        source, mapping = self._version(version, version_text)
         located = source.locate(body)
         if located is None:
             return self._gone(body, None)
@@ -241,12 +316,22 @@ class Resolver:
         if not mapped:
             return self._gone(body, source.blocks.get(body.get("anchorId")))
         state = "kept" if len(mapped) == located[1] - located[0] else "changed"
-        return self._found(body, min(mapped), max(mapped) + 1, state, text_target)
+        start, end, element = min(mapped), max(mapped) + 1, None
+        if target.get("type") == "element":
+            old = source._element(source.blocks[body["anchorId"]], target.get("key"))
+            if old is not None:
+                element = self.current.element_at(old.tag, mapping[old.start], start, end)
+        return self._found(start, end, state, text_target, element)
 
-    def _found(self, body, start, end, state, text_target):
+    def _found(self, start, end, state, text_target, element):
         anchor = self.current.innermost(start, end)
         quote = self.current.visible(start, end) if text_target else None
-        return {"anchorId": anchor, "start": start, "end": end, "quote": quote, "state": state}
+        key = None
+        if element is not None and anchor is not None:
+            block = self.current.blocks[anchor]
+            if block.start <= element.start and element.end <= block.end:
+                key = self.current.key(block, element)
+        return {"anchorId": anchor, "start": start, "end": end, "quote": quote, "state": state, "key": key}
 
     def _gone(self, body, block):
         """Nearest surviving anchored block: the mark's own anchor, else its nearest surviving ancestor."""
@@ -257,11 +342,11 @@ class Resolver:
                 block = block.parent
             anchor = block.attrs.get("data-anchor") if block is not None else None
         return {"anchorId": anchor if anchor in self.current.blocks else None,
-                "start": None, "end": None, "quote": None, "state": "gone"}
+                "start": None, "end": None, "quote": None, "state": "gone", "key": None}
 
 
 def resolve(body, current, version_text=None):
-    """One mark's current place: {anchorId, start, end, quote, state}, or None for an event without one."""
+    """One mark's current place: {anchorId, start, end, quote, state, key}, or None for an event without one."""
     return Resolver(current).place(body, version_text)
 
 
@@ -300,7 +385,7 @@ def resolve_events(spec, events):
         if resolver is None or not isinstance(body, dict):
             event["place"] = None
             continue
-        event["place"] = resolver.place(body, read_version(review, body.get("version")))
+        event["place"] = resolver.place(body, review=review)
     return events
 
 

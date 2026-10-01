@@ -82,11 +82,12 @@ function httpTransport() {
       const r = await fetch('/api/events?dir=' + encodeURIComponent(dir));
       return { events: await r.json(), wake: r.headers.get('X-Spec-Chat-Wake') || null };
     },
-    // 'stored' (also a resend of the same bytes), 'refused' (a 4xx no resend fixes); throws when unreachable.
+    // 'stored' (also a resend of the same bytes), 'refused' (400, 403, 409: validation no resend fixes);
+    // throws on anything else, so the outbox keeps the event and sends it again (#offline-outbox).
     async postEvent(entry) {
       const r = await fetch('/api/events?dir=' + encodeURIComponent(dir) + '&actor=human&name=' + encodeURIComponent(entry.name), { method: 'POST', body: JSON.stringify(entry.body) });
       if (r.ok) return 'stored';
-      if (r.status >= 400 && r.status < 500) return 'refused';
+      if (r.status === 400 || r.status === 403 || r.status === 409) return 'refused';
       throw new Error('review service answered ' + r.status);
     },
     async specModified() {
@@ -2910,14 +2911,17 @@ function threadTargetRect(b, holder) {
 }
 
 // #anchoring-states: where a thread's mark sits now. The service's place (place.py) wins: its
-// block, and for a text target its surviving text; a gone mark sits on the block alone. An event
-// without a place sits by its own anchor and quote.
+// block, for a text target its surviving text, for an element target its current key; a gone mark
+// sits on the block alone. An event without a place sits by its own anchor and quote.
 function placedMark(e) {
   const b = e.body, p = e.place;
   if (!p || !p.anchorId) return b;
   if (p.state === 'gone') return { ...b, anchorId: p.anchorId, target: null };
-  const text = b.target && b.target.type === 'text';
-  return { ...b, anchorId: p.anchorId, target: text ? { type: 'text', key: p.quote } : p.anchorId === b.anchorId ? b.target : null };
+  const type = b.target && b.target.type;
+  const target = type === 'text' ? { type: 'text', key: p.quote }
+    : type === 'element' ? (p.key ? { type: 'element', key: p.key } : null)
+    : p.anchorId === b.anchorId ? b.target : null;
+  return { ...b, anchorId: p.anchorId, target };
 }
 
 const PLACE_NOTICES = { changed: 'Text changed since this comment', gone: 'Text removed' };

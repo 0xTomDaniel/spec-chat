@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import errno
 import hashlib
 import html
 import json
@@ -498,12 +499,20 @@ def _own_viz_asset(path):
     return True, target
 
 
+class UnsafeSpool(OSError):
+    """A spool path that escapes its collection."""
+
+
+# A symlink or non-directory where the spool expects its own directory or file: refused, not retried.
+UNSAFE_ERRNOS = (errno.ELOOP, errno.ENOTDIR)
+
+
 @contextlib.contextmanager
 def _actor_directory(review, root, actor, create=False):
     relative = os.path.relpath(review, root)
     parts = relative.split(os.sep) + [actor]
     if any(part in ("", ".", "..") for part in parts) or not _inside(review, root, strict=True):
-        raise OSError("review path escapes collection")
+        raise UnsafeSpool("review path escapes collection")
     flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(root, flags)
     try:
@@ -1131,8 +1140,11 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
             return self._json({"error": "bad event file name"}, 400)
         try:
             stored = _write_event(review, mount["narrow_root"], actor, name, event)
-        except OSError:
-            return self._json({"error": "unsafe spool path"}, 400)
+        except OSError as exc:
+            if isinstance(exc, UnsafeSpool) or exc.errno in UNSAFE_ERRNOS:
+                return self._json({"error": "unsafe spool path"}, 400)
+            # an I/O failure is not a refusal: the page keeps the event and sends it again
+            return self._json({"error": "event not stored"}, 503)
         if not stored:
             return self._json({"error": "event file exists with different bytes"}, 409)
         return self._json({"ok": True, "name": name})
