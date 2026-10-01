@@ -1,0 +1,142 @@
+# QA capture target: the Spec Chat review page (annotateanything
+# docs/specs/jev-capture.spec.html#jc-target). Commands run in the environment root
+# with QA_ROOT, QA_FIXTURE, QA_REPO_<REPO>, QA_HEAD_<REPO>, QA_URL_<SERVICE>; a
+# service also gets PORT, reset gets QA_STORY. Python stdlib only: no setup or rebuild.
+
+# Test paths searched for a no-browser criterion's anchor.
+tests = ["tests"]
+
+[repos.spec-chat]
+url = "https://github.com/0xTomDaniel/spec-chat.git"
+
+[services.review]
+# The real review-serve.py on the fixture registry, Jev answered by the rules test's
+# fake provider (tests/fixtures/qa/serve.py). Box state isolated: HOME, XDG state and
+# config under $QA_ROOT, no Herdr socket, so no provider file, wake provider, or records.
+command = 'mkdir -p "$QA_ROOT/home" "$QA_ROOT/state" "$QA_ROOT/config" && cd "$QA_REPO_SPEC_CHAT" && exec env -u HERDR_SOCKET_PATH HOME="$QA_ROOT/home" XDG_STATE_HOME="$QA_ROOT/state" XDG_CONFIG_HOME="$QA_ROOT/config" python3 tests/fixtures/qa/serve.py "$QA_ROOT/serve/registry.toml" "$PORT"'
+url = "http://127.0.0.1:{port}"
+ready = "/qa-fixture/docs/specs/report.spec.html"
+
+# One Git repo of four specs, copied per collection (reset.sh): onboarding.spec.html holds the project rule "Every change
+# to what a user sees or does adds its onboarding section."; report.spec.html is the
+# spec under shaping, its head adding an export story with no onboarding criterion,
+# two open TBDs, and one later TBD; later-only.spec.html's only TBD is later;
+# one-open.spec.html has exactly one open TBD. No spec has a comment thread. Jev
+# records are written by the fake as pages load and kept across resets.
+[fixture.spec_review_site]
+repo = "spec-chat"
+path = "tests/fixtures/qa"
+reset = 'sh "$QA_FIXTURE/reset.sh"'
+
+[entry]
+url = "{review}/qa-fixture/docs/specs/report.spec.html"
+viewport = { width = 1280, height = 800 }
+
+# Phone-frame story: "Given a narrow screen" runs at a phone viewport with touch and
+# mobile emulation, below the runtime's 640px narrow breakpoint.
+[entry.stories.story-mobile]
+viewport = { width = 390, height = 844 }
+touch = true
+
+# Each criterion below starts on its own clean copy of the fixture repo (reset.sh
+# collections): a story resets once, and earlier criteria leave drafts and hand-offs
+# in the spec's spool. The spec file names stay the same, so "the report spec" holds.
+[nav.acceptance-tbd-later]
+path = "{review}/tbd-later/docs/specs/later-only.spec.html"
+[nav.acceptance-tbd-later-handoff]
+path = "{review}/tbd-later-handoff/docs/specs/later-only.spec.html"
+[nav.acceptance-tbd-open-highlight]
+path = "{review}/tbd-open-highlight/docs/specs/report.spec.html"
+[nav.acceptance-tbd-open-single]
+path = "{review}/tbd-open-single/docs/specs/one-open.spec.html"
+[nav.acceptance-next-tbd]
+path = "{review}/next-tbd/docs/specs/report.spec.html"
+[nav.acceptance-next-tbd-step]
+path = "{review}/next-tbd-step/docs/specs/report.spec.html"
+[nav.acceptance-next-tbd-handoff]
+path = "{review}/next-tbd-handoff/docs/specs/report.spec.html"
+[nav.acceptance-tbd-open-jump]
+path = "{review}/tbd-open-jump/docs/specs/report.spec.html"
+[nav.acceptance-tbd-open-wrap]
+path = "{review}/tbd-open-wrap/docs/specs/report.spec.html"
+[nav.acceptance-mobile-composer]
+path = "{review}/mobile-composer/docs/specs/report.spec.html"
+
+# Stories this environment cannot host. services.review runs with HOME and XDG under
+# $QA_ROOT: no evidence or wake provider, no Herdr, no live agent, no review-host
+# (the fixture writes the registry), no lane-key slug and one project. The fake Jev
+# answers scope, rule, and coverage (each criterion verifies its data-story story);
+# every other question answers unrelated. Jev state persists across resets, so the
+# project's warm-up runs once per service start.
+[entry.criteria.acceptance-reviewed-kept]
+cannot_host = "the reviewed base is written by review-host when a hand-off is processed; review-host does not run here (the fixture writes the registry)"
+[entry.criteria.acceptance-reviewed-accepted]
+cannot_host = "the accepted flag is written by review-host reviewed; review-host does not run here (the fixture writes the registry)"
+[entry.criteria.acceptance-warm]
+cannot_host = "register is review-host's, which does not run here, and the warm-up runs once per service start with state kept across resets, so no first registration per story"
+[entry.stories.story-proven]
+cannot_host = "no evidence provider (providers/evidence.toml absent), so no criterion carries evidence"
+[entry.stories.story-open-proof]
+cannot_host = "no evidence provider (providers/evidence.toml absent), so no evidence to open"
+[entry.stories.story-branch]
+cannot_host = "no evidence provider (providers/evidence.toml absent), so no evidence notes to judge"
+[entry.stories.story-what-changed]
+cannot_host = "no evidence provider (providers/evidence.toml absent), so no QA stale criterion"
+[entry.stories.story-reproof]
+cannot_host = "no evidence provider (providers/evidence.toml absent), so no QA stale criterion"
+[entry.stories.story-plugin]
+cannot_host = "the BB plugin is not run here, and no evidence provider"
+[entry.stories.story-human-handoff]
+cannot_host = "no wake provider and no Herdr, so no owner pane to wake"
+[entry.stories.story-wake-failed]
+cannot_host = "no wake provider and no Herdr, so no owner pane to lose"
+[entry.stories.story-no-provider]
+cannot_host = "register output (wake=unavailable) comes from review-host, which does not run here (the fixture writes the registry)"
+[entry.stories.story-change-type]
+cannot_host = "fake Jev answers only scope, rule, and coverage questions; change-type answers unrelated"
+[entry.stories.story-orphan]
+cannot_host = "fake Jev answers only scope, rule, and coverage questions; orphan placement answers unrelated, and the fixture has no threads"
+[entry.stories.story-resolved]
+cannot_host = "fake Jev answers only scope, rule, and coverage questions; resolves answers unrelated, and the fixture has no threads"
+[entry.stories.story-corpus]
+cannot_host = "fake Jev answers only scope, rule, and coverage questions; contradicts and oversteps answer unrelated"
+[entry.stories.story-cross-lane]
+cannot_host = "one lane slug only, and fake Jev answers only scope, rule, and coverage questions"
+[entry.stories.story-coverage]
+cannot_host = "every fixture story has its verifying criterion and every criterion its story, so no coverage gap to show or clear"
+[entry.stories.story-neutral]
+cannot_host = "Jev is on through the fake provider, which never fails, so Jev off or unavailable cannot occur"
+[entry.stories.story-fast-marks]
+cannot_host = "Givens need box load above CPU count; QA creates no synthetic load"
+[entry.stories.story-note-action]
+cannot_host = "fake Jev answers only scope, rule, and coverage questions, so no Contradicts, gap, or change note carries its button"
+[entry.stories.story-settled]
+cannot_host = "fake Jev answers only scope, rule, and coverage questions, so no orphan, gap, or conflict mark to settle"
+[entry.stories.story-no-walls]
+cannot_host = "fake Jev answers every question at 0.95, so no below-threshold or verify-band answer and no general LLM"
+[entry.stories.story-right-pairs]
+cannot_host = "fake Jev answers only scope, rule, and coverage questions; no Contradicts or Oversteps flag"
+[entry.stories.story-no-noise]
+cannot_host = "fake Jev answers only scope, rule, and coverage questions; no flag to withhold"
+[entry.stories.story-context]
+cannot_host = "fake Jev answers only scope, rule, and coverage questions; no flag popover to quote"
+[entry.criteria.acceptance-review-index]
+cannot_host = "the fixture registers one lane slug and one project; index Givens need several lane slugs, settled and unregistered specs"
+[entry.criteria.acceptance-index-sections]
+cannot_host = "the fixture registers one lane slug and one project; index Givens need several lane slugs, settled and unregistered specs"
+[entry.criteria.acceptance-index-design]
+cannot_host = "the fixture registers one lane slug and one project; index Givens need changed, up-to-date, and settled specs across lanes"
+[entry.stories.story-stable-url]
+cannot_host = "the fixture registers one repository and one project; Givens need two projects from two repositories"
+[entry.stories.story-operator]
+cannot_host = "needs a live shaping agent and issue tracker"
+[entry.stories.story-agent]
+cannot_host = "needs a live agent and a wake provider; neither runs here"
+[entry.stories.story-compatible-review]
+cannot_host = "preflight runs in review-host before the server starts; review-host does not run here"
+[entry.stories.story-review]
+cannot_host = "repairs are run by an agent with the repair skill; no live agent here"
+[entry.stories.story-catch-up]
+cannot_host = "repairs are run by an agent with the repair skill; no live agent here"
+[entry.stories.story-box-service]
+cannot_host = "needs review-host register and the box's one review service; review-host does not run here"

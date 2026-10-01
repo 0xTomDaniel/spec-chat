@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./.style/spec.css">
+<title>Weekly report</title>
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Weekly report</h1>
+<nav data-anchor="breadcrumbs">docs / specs / report.spec.html</nav>
+<p data-anchor="context">QA fixture: a feature spec under shaping.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="true" data-anchor="story-totals">As a manager, I read totals per week on the report page.</p>
+<p data-user-story data-user-facing="true" data-anchor="story-export">As a manager, I download the table I see.</p>
+</section>
+
+<section data-spec-section="acceptance" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="report-totals" data-story="story-totals">The report page shows totals per week.</p>
+<p data-acceptance-criterion data-anchor="report-export" data-story="story-export">The export button downloads a CSV of the current table.</p>
+</section>
+
+<section data-spec-section="behavior" data-anchor="behavior">
+<h2>Behavior</h2>
+<p data-anchor="export-format" data-spec-tbd>TBD: whether the export also offers XLSX.</p>
+<p data-anchor="export-name" data-spec-tbd>TBD: the file name of the downloaded CSV.</p>
+<p data-anchor="export-schedule" data-spec-tbd="later">TBD: scheduled exports, in a later slice.</p>
+</section>
+
+</article>
+</body>
+</html>
