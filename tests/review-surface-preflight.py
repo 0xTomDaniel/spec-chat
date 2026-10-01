@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -93,6 +94,76 @@ class ReviewSurfacePreflightTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.git("rev-parse", "HEAD"), base)
         self.assertNotIn("migration=", result.stdout)
+
+    def test_locked_index_fails_and_leaves_the_target_migratable(self):
+        base = self.init_git("// legacy runtime\n")
+        lock = self.repo / ".git" / "index.lock"
+        lock.write_text("")
+
+        result = self.run_preflight()
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertNotIn("runtime=migrated", result.stdout)
+        self.assertEqual(self.runtime.read_text(), "// legacy runtime\n")
+        self.assertEqual(self.git("rev-parse", "HEAD"), base)
+
+        lock.unlink()
+        rerun = self.run_preflight()
+
+        self.assertEqual(rerun.returncode, 0, rerun.stdout + rerun.stderr)
+        head = self.git("rev-parse", "HEAD")
+        self.assertNotEqual(head, base)
+        self.assertIn(f"migration={head}", rerun.stdout)
+
+    def test_ignored_runtime_assets_fail_and_leave_the_target_migratable(self):
+        base = self.init_git("// legacy runtime\n")
+        (self.repo / ".gitignore").write_text("docs/specs/.viz/\n")
+
+        result = self.run_preflight()
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertNotIn("runtime=migrated", result.stdout)
+        self.assertEqual(self.runtime.read_text(), "// legacy runtime\n")
+        self.assertEqual(self.git("rev-parse", "HEAD"), base)
+
+    def test_target_nested_in_a_parent_repository_commits_nothing(self):
+        self.runtime.write_text("// legacy runtime\n")
+        parent = self.repo.parent / (self.repo.name + "-parent")
+        parent.mkdir()
+        self.addCleanup(shutil.rmtree, parent)
+        nested = parent / "target"
+        shutil.move(str(self.repo), nested)
+        self.repo.mkdir()
+        self.repo, self.spec, self.runtime = (
+            nested,
+            nested / self.spec.relative_to(self.repo),
+            nested / self.runtime.relative_to(self.repo),
+        )
+        subprocess.run(("git", "init", "-q", str(parent)), check=True)
+
+        result = self.run_preflight()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("migration=", result.stdout)
+        head = subprocess.run(
+            ("git", "-C", str(parent), "rev-parse", "--verify", "-q", "HEAD"),
+            capture_output=True,
+        )
+        self.assertNotEqual(head.returncode, 0)
+
+    def test_migration_commit_leaves_other_work_under_viz_alone(self):
+        base = self.init_git("// legacy runtime\n")
+        wip = self.runtime.parent / "notes.wip"
+        wip.write_text("user work\n")
+
+        result = self.run_preflight()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        changed = self.git("diff", "--name-only", base, "HEAD").splitlines()
+        self.assertNotIn("docs/specs/.viz/notes.wip", changed)
+        self.assertEqual(
+            self.git("status", "--porcelain", "--", str(wip)), "?? docs/specs/.viz/notes.wip"
+        )
 
     def test_skill_ships_the_migration_commit_inside_the_feature_change(self):
         text = " ".join(SKILL.read_text().split())
