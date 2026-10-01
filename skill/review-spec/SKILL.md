@@ -168,7 +168,9 @@ Preflight preserves a target runtime that declares every capability required by 
 It replaces only an incompatible runtime from the bundle, including vendored visual dependencies, and rejects semantic islands without a same-parent `data-render-target`.
 It never writes a review server into the target: every launch runs this skill's own `assets/review-serve.py`, directly on loopback or through `scripts/review-host.py`.
 Treat a preflight failure as a review blocker.
-Commit migrated assets locally before presenting a shaping review.
+A migration is its own commit, never mixed into a feature commit: in a Git target, preflight commits it alone, touching only the shared runtime assets, and prints `migration=<commit>`.
+The hand-off names that commit.
+It ships inside the same change as the feature, never as a separate change or an earlier merge to the target's main branch.
 If the server was already running when runtime migration occurred, restart it through
 review-host stop and the lane command, then rerun host checks before handoff. This is a
 runtime change; ordinary edits to a served spec do not require a restart.

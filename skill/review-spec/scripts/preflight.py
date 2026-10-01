@@ -5,6 +5,7 @@ from collections import Counter
 from html.parser import HTMLParser
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 from urllib.parse import urlsplit
 
@@ -134,6 +135,30 @@ def copy_tree(source, target):
             shutil.copy2(path, destination)
 
 
+def git(repository, *args):
+    return subprocess.run(
+        ("git", "-C", str(repository), *args),
+        text=True,
+        capture_output=True,
+    )
+
+
+def commit_migration(repository, target_viz):
+    """Commit only the migrated runtime assets; return the commit id or None."""
+    top = git(repository, "rev-parse", "--show-toplevel")
+    if top.returncode != 0:
+        return None
+    assets = str(target_viz)
+    git(repository, "add", "--", assets)
+    if git(repository, "diff", "--cached", "--quiet", "--", assets).returncode == 0:
+        return None
+    message = "Migrate Spec Chat review runtime\n\nShared runtime assets only."
+    committed = git(repository, "commit", "-q", "--no-verify", "-m", message, "--", assets)
+    if committed.returncode != 0:
+        raise RuntimeError(committed.stderr.strip() or "runtime migration commit failed")
+    return git(repository, "rev-parse", "HEAD").stdout.strip()
+
+
 def fail(message):
     print(message, file=sys.stderr)
     return 2
@@ -190,6 +215,12 @@ def main(argv):
     if not required_runtime.issubset(capabilities(target_runtime)):
         copy_tree(bundled_viz, target_viz)
         runtime_state = "migrated"
+        try:
+            commit = commit_migration(repository, target_viz)
+        except RuntimeError as error:
+            return fail(f"runtime migration commit failed: {error}")
+        if commit:
+            runtime_state += f" migration={commit}"
 
     print(f"runtime={runtime_state} visuals=valid")
     return 0
