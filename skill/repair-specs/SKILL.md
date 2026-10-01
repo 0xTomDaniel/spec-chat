@@ -51,6 +51,8 @@ Criterion rules:
 - A Given or When that joins alternatives splits into one criterion per alternative; the first keeps the original anchor, each new one gets a new stable anchor, and each meets every criterion rule.
 - When a criterion's When skips a step to its Then that the specs do not state, write an open TBD (`data-spec-tbd`) at that criterion naming the missing step; never invent a step.
 - When the visible end state or the providing fixture cannot be read from the specs, write an open TBD (`data-spec-tbd`) at that criterion naming what is missing; never invent an end state or a fixture.
+- When a Given does not say who the user is and the specs do not say it either, write an open TBD (`data-spec-tbd`) at that criterion asking who the user is; never invent a user.
+- When a criterion holds a concrete value, selector, or path, rewrite it in user terms (`types "Q3 scripts" into Folder name` becomes `types a folder name`) and list each value moved out in the repair commit message as a value for the target's qa.toml hint file.
 
 Jev project rules, only when Jev is on:
 - Read the project's Jev rules: project-wide rules are acceptance criteria from other specs whose scope is `every feature`, as [project-rules](../../docs/specs/project-rules.spec.html) defines.
