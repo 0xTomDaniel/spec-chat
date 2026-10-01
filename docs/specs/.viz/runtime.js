@@ -75,6 +75,7 @@ const state = {
 /* ---------------- transports ---------------- */
 function httpTransport() {
   const dir = REVIEW_DIR;
+  const POST_TIMEOUT_MS = 10000; // a save that has not answered by then is waiting, not stored
   return {
     mode: 'http', label: EMBED_REVIEW_DIR ? 'review-serve (embedded)' : 'review-serve',
     ready: Promise.resolve(true),
@@ -83,9 +84,14 @@ function httpTransport() {
       return { events: await r.json(), wake: r.headers.get('X-Spec-Chat-Wake') || null };
     },
     // 'stored' (also a resend of the same bytes), 'refused' (400, 403, 409: validation no resend fixes);
-    // throws on anything else, so the outbox keeps the event and sends it again (#offline-outbox).
+    // throws on anything else, a hung save included, so the outbox keeps the event and sends it again (#offline-outbox).
     async postEvent(entry) {
-      const r = await fetch('/api/events?dir=' + encodeURIComponent(dir) + '&actor=human&name=' + encodeURIComponent(entry.name), { method: 'POST', body: JSON.stringify(entry.body) });
+      const abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(), POST_TIMEOUT_MS);
+      let r;
+      try {
+        r = await fetch('/api/events?dir=' + encodeURIComponent(dir) + '&actor=human&name=' + encodeURIComponent(entry.name), { method: 'POST', body: JSON.stringify(entry.body), signal: abort.signal });
+      } finally { clearTimeout(timer); }
       if (r.ok) return 'stored';
       if (r.status === 400 || r.status === 403 || r.status === 409) return 'refused';
       throw new Error('review service answered ' + r.status);
@@ -2912,7 +2918,7 @@ function threadTargetRect(b, holder) {
 
 // #anchoring-states: where a thread's mark sits now. The service's place (place.py) wins: its
 // block, for a text target its surviving text, for an element target its current key; a gone mark
-// sits on the block alone. An event without a place sits by its own anchor and quote.
+// sits on the block alone. An event without a place, or unplaced, sits by its own anchor and quote.
 function placedMark(e) {
   const b = e.body, p = e.place;
   if (!p || !p.anchorId) return b;
@@ -3187,7 +3193,7 @@ async function shownVersion() {
 
 /* ---------------- loops ---------------- */
 async function refresh() {
-  await flushOutbox(); // #offline-reopen: waiting events go first, then the read
+  flushOutbox(); // #offline-reopen: waiting events are sent first; the read never waits on a pending save
   try {
     const listed = await state.transport.listEvents();
     const wake = Array.isArray(listed) ? null : listed.wake;

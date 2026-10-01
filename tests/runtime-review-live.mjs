@@ -144,6 +144,21 @@ try {
   await waitThread(b.page, 'lost response');
   assert.equal(byText(await threadsOf(b.page), 'lost response').length, 1, 'shown once');
 
+  // #offline-notice: a save that never answers stalls no read; it times out, waits, and is sent again.
+  let hung = 0;
+  await a.page.route('**/api/events?*name=*', route => { if (hung++ === 0) return; return route.continue(); });
+  await comment(a.page, TOTALS, 'hung save');
+  await a.page.waitForTimeout(500);
+  await comment(b.page, EXPORT, 'read past a hung save');
+  await waitThread(a.page, 'read past a hung save');
+  assert.equal(spoolEvents().filter(e => e.body.text === 'hung save').length, 0, 'the hung save is not stored yet');
+  await a.page.waitForFunction(() => document.getElementById('hx-offline').textContent === 'Offline: 1 change waiting', null, { timeout: 12000 });
+  await a.page.waitForFunction(() => !document.getElementById('hx-offline').textContent, null, { timeout: 5000 });
+  await a.page.unroute('**/api/events?*name=*');
+  assert.ok(hung >= 2, 'the stuck event is sent again');
+  assert.equal(spoolEvents().filter(e => e.body.text === 'hung save').length, 1, 'stored once after the retry');
+  await waitThread(b.page, 'hung save');
+
   // #acceptance-offline-save, #acceptance-offline-reconnect
   await a.context.setOffline(true);
   await comment(a.page, EXPORT, 'offline from A');

@@ -249,6 +249,29 @@ class SpoolTest(unittest.TestCase):
             server.server_close()
         self.assertEqual([event.get("place") for event in events], [expected, None])
 
+    def test_failing_mark_is_unplaced_and_others_still_place(self):
+        """#anchoring-state-unplaced: one mark the resolver cannot place never takes down the rest."""
+        bad = comment()
+        bad["id"], bad["target"] = "u2", "bogus"
+        (self.review / "human" / "150-comment-u2.json").write_text(json.dumps(bad), encoding="utf-8")
+        names = ["100-comment-u1.json", "150-comment-u2.json"]
+        unplaced = {"anchorId": None, "start": None, "end": None, "quote": None, "state": "unplaced", "key": None}
+        import contextlib
+        import io
+        log = io.StringIO()
+        with contextlib.redirect_stderr(log):
+            for _ in range(2):  # a page polls; the failure is logged once
+                events = place.resolve_events(str(self.spec), [
+                    {"name": name, "body": json.loads((self.review / "human" / name).read_text())} for name in names])
+                self.assertEqual([event["place"] for event in events],
+                                 [place.resolve(comment(), REWRITTEN, V1), unplaced])
+        self.assertEqual(log.getvalue().count("\n"), 1, log.getvalue())
+        self.assertIn("u2", log.getvalue())
+        scan = subprocess.run([sys.executable, str(ASSETS / "place.py"), str(self.spec)], input="\n".join(names),
+                              text=True, capture_output=True, check=True)
+        self.assertIn("place\t150-comment-u2.json\tunplaced\t#\t-\t\n", scan.stdout)
+        self.assertIn("place\t100-comment-u1.json\tchanged\t", scan.stdout)
+
     def test_repeat_poll_of_many_text_marks_is_cheap(self):
         """#model-place: a page polls often; place is resolved once per event and spec text."""
         blocks = "".join('<p data-anchor="b%d">Block %d says %s</p>\n' % (i, i, "word " * 30) for i in range(600))
