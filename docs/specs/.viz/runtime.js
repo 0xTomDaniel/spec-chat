@@ -2240,9 +2240,12 @@ function mountUI() {
   document.getElementById('hx-next-tbd').addEventListener('click', nextTbd);
   setupDiffVisibility();
   document.addEventListener('keydown', e => {
-    // Enter or Space on a comment-target block is a click on the block itself (onDocClick)
-    if (state.commentMode && (e.key === 'Enter' || e.key === ' ') && e.target.hasAttribute && e.target.hasAttribute('data-hx-target')) {
+    // Enter or Space on a comment-target block is a plain click on the block itself (onDocClick):
+    // a plain click collapses any selection, so a leftover one never becomes the quote
+    if (state.commentMode && (e.key === 'Enter' || e.key === ' ') && !e.repeat
+      && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.target.hasAttribute && e.target.hasAttribute('data-hx-target')) {
       e.preventDefault();
+      getSelection().removeAllRanges();
       e.target.click();
       return;
     }

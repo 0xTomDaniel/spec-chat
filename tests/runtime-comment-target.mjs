@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 
 // In comment mode every leaf anchored block is a button: button role, a Tab stop, named by its
-// text; Enter and Space open the composer on it like a click on the block; text selection still
+// text; unmodified Enter and Space open the composer on it like a plain click on the block, never
+// quoting a leftover selection elsewhere; text selection still
 // comments on the selected text; leaving comment mode restores each block's own role and Tab order
 // (prompt-first-shaping #comment-targets, #tdd-block-target). Runs the full runtime on the QA
 // fixture's report spec in headless Chromium. Needs PLAYWRIGHT_CORE=<path to playwright-core>.
@@ -108,6 +109,45 @@ try {
     assert.match(box.head, /^#report-totals$/, 'composer is headed #report-totals with no inner target');
     assert.ok(box.focused, 'composer text box is focused');
     assert.deepEqual(errors, [], 'no page errors');
+    await page.close();
+  }
+
+  // A leftover selection in another block never becomes the quote: keyboard activation acts as a
+  // plain click on the focused block.
+  {
+    const { page } = await open();
+    await page.evaluate(() => {
+      const r = document.createRange();
+      r.selectNodeContents(document.querySelector('[data-anchor="story-totals"]'));
+      getSelection().removeAllRanges();
+      getSelection().addRange(r);
+    });
+    await page.keyboard.press('c');
+    await tabTo(page, TOTALS);
+    await page.keyboard.press('Enter');
+    const box = await composer(page);
+    assert.ok(box, 'Enter with a leftover selection opens the composer');
+    assert.match(box.head, /^#report-totals$/, 'composer is on the focused block, not the leftover selection (' + box.head + ')');
+    await page.close();
+  }
+
+  // Modified or repeated Enter and Space are not block activation.
+  for (const key of ['Shift+Enter', 'Control+Enter', 'Alt+ ', 'Meta+Enter']) {
+    const { page } = await open();
+    await page.click('#hx-mode');
+    await tabTo(page, TOTALS);
+    await page.keyboard.press(key);
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator('.hx-composer').count(), 0, key + ' does not open the composer');
+    await page.close();
+  }
+  {
+    const { page } = await open();
+    await page.click('#hx-mode');
+    await tabTo(page, TOTALS);
+    await page.evaluate(s => document.querySelector(s).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true })), TOTALS);
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator('.hx-composer').count(), 0, 'a repeated Enter does not open the composer');
     await page.close();
   }
 
