@@ -67,10 +67,11 @@ failure.
 
 ## Browser tests
 
-Two tests need headless Chromium via `playwright-core`:
+Three tests need headless Chromium via `playwright-core`:
 
 - `tests/runtime-pin-marker.mjs` (pin placement and clearance)
 - `tests/runtime-jev-popover.mjs` (Jev popover positioning)
+- `tests/runtime-comment-target.mjs` (comment-mode block buttons and keyboard activation)
 
 They read `PLAYWRIGHT_CORE` to locate the package:
 
