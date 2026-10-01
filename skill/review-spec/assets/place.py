@@ -222,7 +222,7 @@ class Document:
             return None
         target = body.get("target") or {}
         if target.get("type") == "text":
-            needle = "".join(str(target.get("key") or body.get("quote") or "").split())
+            needle = "".join(str(body.get("quote") or target.get("key") or "").split())  # the key is only a prefix
             chars = [char for char in self._chars(block.start, block.end) if not char[2].isspace()]
             haystack, owner = "", []  # an entity may decode to several code points
             for index, (_, _, char) in enumerate(chars):
@@ -240,13 +240,14 @@ class Document:
 
 
 TOKEN_RE = re.compile(r"\w+|\s+|[^\w\s]")
+EXACT_TOKENS = 250_000  # token pairs an exact (no autojunk) diff may compare: about 20 ms in the worst case
 
 
 def char_map(old, new):
     """Map each old character index to its new index, or None. Lines are diffed first; a replaced run
-    of lines is refined by a token diff (words, spaces, punctuation), whose popular-token junking
-    keeps cost near linear in spec size for any edit, and 1:1 replaced tokens by a character diff.
-    Characters of an unpaired token map to None, so a reworded mark is changed and a removed one gone."""
+    of lines is refined by a token diff (words, spaces, punctuation), and 1:1 replaced tokens by a
+    character diff. Characters of an unpaired token map to None, so a reworded mark is changed and a
+    removed one gone."""
     mapping = [None] * len(old)
     old_lines, new_lines = old.splitlines(keepends=True), new.splitlines(keepends=True)
     old_at, new_at = [0], [0]
@@ -263,16 +264,26 @@ def char_map(old, new):
         elif op == "replace":
             old_tokens = [(m.start(), m.group()) for m in TOKEN_RE.finditer(old, a0, old_at[i2])]
             new_tokens = [(m.start(), m.group()) for m in TOKEN_RE.finditer(new, b0, new_at[j2])]
-            tokens = difflib.SequenceMatcher(None, [t for _, t in old_tokens], [t for _, t in new_tokens])
-            for top, k1, k2, l1, l2 in tokens.get_opcodes():
-                if top == "equal" or (top == "replace" and k2 - k1 == l2 - l1):
-                    for (at, token), (to, other) in zip(old_tokens[k1:k2], new_tokens[l1:l2]):
-                        same = [(0, 0, len(token))] if top == "equal" else difflib.SequenceMatcher(
-                            None, token, other, autojunk=False).get_matching_blocks()  # 1:1 pair: refine by character
-                        for a, b, size in same:
-                            for offset in range(size):
-                                mapping[at + a + offset] = to + b + offset
+            _map_tokens(mapping, old_tokens, new_tokens)
     return mapping
+
+
+def _map_tokens(mapping, old_tokens, new_tokens):
+    """Token diff of one replaced run. A run within EXACT_TOKENS is diffed exactly. A larger one uses
+    popular-token junking, which keeps cost near linear in spec size but can miss text built of common
+    words, so each of its unmatched gaps within EXACT_TOKENS is diffed again exactly."""
+    exact = len(old_tokens) * len(new_tokens) <= EXACT_TOKENS
+    tokens = difflib.SequenceMatcher(None, [t for _, t in old_tokens], [t for _, t in new_tokens], autojunk=not exact)
+    for top, k1, k2, l1, l2 in tokens.get_opcodes():
+        if not exact and top != "equal" and k1 < k2 and l1 < l2 and (k2 - k1) * (l2 - l1) <= EXACT_TOKENS:
+            _map_tokens(mapping, old_tokens[k1:k2], new_tokens[l1:l2])
+        elif top == "equal" or (top == "replace" and k2 - k1 == l2 - l1):
+            for (at, token), (to, other) in zip(old_tokens[k1:k2], new_tokens[l1:l2]):
+                same = [(0, 0, len(token))] if top == "equal" else difflib.SequenceMatcher(
+                    None, token, other, autojunk=False).get_matching_blocks()  # 1:1 pair: refine by character
+                for a, b, size in same:
+                    for offset in range(size):
+                        mapping[at + a + offset] = to + b + offset
 
 
 class Resolver:

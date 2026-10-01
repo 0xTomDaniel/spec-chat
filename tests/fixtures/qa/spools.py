@@ -5,8 +5,9 @@ usage: spools.py <site>   (after reset.sh copies the head repo to <site>/<collec
 
 Each collection below gets seeded spool events on its report spec, as the page and the
 agent would have left them (skill/review-spec/references/event-schema.md), and, where a
-criterion needs it, the agent's edit to the spec. Seeded human events name the head spec
-text as their `version` and the version file holds it, as the service writes on serve.
+criterion needs it, the agent's edit to the spec or its answer to a saved comment. Seeded
+human events name the head spec text as their `version` and the version file holds it, as
+the service writes on serve.
 Seeded reviewers are browsers other than the capture browser. Fixed names and stamps:
 every reset is identical.
 """
@@ -14,15 +15,19 @@ every reset is identical.
 import hashlib
 import json
 import os
+import subprocess
 import sys
 
 SPEC = os.path.join("docs", "specs", "report.spec.html")
 SENTENCE = "The export button downloads a CSV of the current table."
+KEY = SENTENCE[:40]  # the page's text target key: the selection's first 40 characters
 EXPORT_LINE = '<p data-acceptance-criterion data-anchor="report-export" data-story="story-export">%s</p>\n' % SENTENCE
 INSERTED = '<p data-anchor="report-scope">Totals and export cover the selected week only.</p>\n'
 REWRITE = ("of the current table.", "of every row in the report.")
 STAMP = 1767225600 * 10**9  # 2026-01-01T00:00:00Z, reset.sh's commit date
 PENDING_EDIT = ".qa-agent-edit"  # beside the spec: the agent edit that lands on the next save
+ANSWERS = ".qa-agent-answers"  # beside the spec: the agent answers each comment the page saves
+EMIT_REPLY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "skill", "review-spec", "scripts", "emit-reply.sh")
 
 
 def insert_above(text):
@@ -71,7 +76,7 @@ def comment(spool, ident, browser, author, anchor, quote, text, target=None):
 def sentence_comment(spool, ident="qa-sentence"):
     """Papaya's comment on the selected export sentence (a text target)."""
     return comment(spool, ident, "qa-browser-papaya", "Papaya", "report-export", SENTENCE,
-                   "Say which columns the CSV holds.", {"type": "text", "key": SENTENCE})
+                   "Say which columns the CSV holds.", {"type": "text", "key": KEY})
 
 
 def agent_scan(spool):
@@ -99,9 +104,12 @@ COLLECTIONS = {
     "anchor-gone": on_sentence(delete),
     "agent-scan": agent_scan,
     "stale-page": no_events,
+    "name-reply": no_events,
 }
 # collection -> agent edit that lands when the page next saves (land_pending_edit)
 PENDING = {"stale-page": insert_above}
+# collections whose agent answers each saved comment (answer_comment), so the page offers a reply
+ANSWERING = {"name-reply"}
 
 
 def build(site):
@@ -126,6 +134,8 @@ def build(site):
             _write(spec, edit(text))
         if collection in PENDING:
             _write(spec + PENDING_EDIT, PENDING[collection](text))
+        if collection in ANSWERING:
+            _write(spec + ANSWERS, "")
 
 
 def land_pending_edit(spec):
@@ -134,6 +144,15 @@ def land_pending_edit(spec):
         os.replace(spec + PENDING_EDIT, spec)
     except FileNotFoundError:
         pass
+
+
+def answer_comment(spec, body):
+    """The agent answers a comment the page just saved (serve.py, after each stored event post),
+    through the agent's own writer, emit-reply.sh."""
+    if not os.path.exists(spec + ANSWERS) or not isinstance(body, dict) or body.get("event") != "comment":
+        return
+    subprocess.run(["sh", EMIT_REPLY, spec + ".review", body["id"], body.get("anchorId") or "",
+                    json.dumps(body.get("target")), "acknowledged", "no spec change", "Noted."], check=True)
 
 
 def _write(path, text):

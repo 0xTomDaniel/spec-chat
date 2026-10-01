@@ -159,6 +159,37 @@ class ResolveTest(unittest.TestCase):
         result = place.resolve(comment("Alpha beta gamma delta.", anchor="a", version=old), new, old)
         self.assertEqual((result["anchorId"], result["state"]), ("a", "changed"))
 
+    def test_untouched_sentence_of_common_words_in_rewritten_line_is_kept(self):
+        """Popular-token junking once dropped every token of an untouched sentence built of common words."""
+        s1 = "A reviewer marks the text of the spec, and the page keeps the mark on the text of the spec for the reviewer."
+        s2 = "The mark stays on the text of the page."
+        rest = ("The page shows the mark on the text, and the mark of the page stays on the text of the spec the page shows. "
+                "The text of the mark is the text of the page, and the page of the mark is the page of the text the mark stays on.")
+        for repeat in (1, 12):
+            old = ('<section data-anchor="s">\n<p data-anchor="a">%s %s %s</p>\n<p data-anchor="z">End.</p>\n</section>\n'
+                   % (s1, s2, " ".join([rest] * repeat)))
+            new = old.replace(s1, "An agent rewrote the first sentence of the page so the text of the mark on the page reads new text.").replace(
+                '</p>\n<p data-anchor="z">', '</p>\n<p data-anchor="n">A new paragraph the agent added.</p>\n<p data-anchor="z">')
+            result = place.resolve(comment(s2, anchor="a", version=old), new, old)
+            self.assertEqual((result["anchorId"], result["state"], result["quote"]), ("a", "kept", s2), repeat)
+
+    def test_text_mark_is_located_by_its_quote_not_its_40_char_key(self):
+        """The page's text key is the selection's first 40 characters; the quote is the whole selection."""
+        first = "The export button downloads a CSV file of the rows in the current table, with one header row."
+        second = "The export button downloads a CSV file of the totals only."
+        self.assertEqual(first[:40], second[:40])
+        old = '<section data-anchor="s">\n<p data-anchor="a">%s %s</p>\n</section>\n' % (first, second)
+        mark = comment(second, anchor="a", version=old, target={"type": "text", "key": second[:40]})
+        same = place.resolve(mark, old, old)
+        self.assertEqual((same["state"], same["quote"]), ("kept", second), "the second sentence, not the first")
+        rewritten = old.replace("with one header row.", "and a footer with grand totals.")
+        mark = comment(first, anchor="a", version=old, target={"type": "text", "key": first[:40]})
+        changed = place.resolve(mark, rewritten, old)
+        self.assertEqual(changed["state"], "changed", "a rewrite past the key's 40 characters changes the mark")
+        legacy = comment(first, anchor="a", version=old, target={"type": "text", "key": first[:40]})
+        legacy["quote"] = None
+        self.assertEqual(place.resolve(legacy, old, old)["quote"], first[:40], "no quote: the key locates")
+
     def test_same_inputs_same_answer(self):
         self.assertEqual(place.resolve(comment(), REWRITTEN, V1), place.resolve(comment(), REWRITTEN, V1))
 

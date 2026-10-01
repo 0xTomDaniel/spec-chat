@@ -9,10 +9,13 @@ unless the spec mentions onboarding, so the served specs show a rule mark and Je
 writes real records. Each criterion verifies the story its data-story names and no
 other, so no false coverage gap shows. A fixture agent edit pending beside a spec
 (spools.py, stale-page) lands when a page next posts an event to that spec, so the page
-saving it was loaded before the edit. Everything else runs unchanged.
+saving it was loaded before the edit. In an answering collection (spools.py, name-reply) the
+agent answers each comment the page saves, so the page offers a reply. Everything else runs
+unchanged.
 """
 
 import importlib.util
+import os
 import re
 import sys
 from pathlib import Path
@@ -63,7 +66,17 @@ def main(argv):
             spools.land_pending_edit(review[:-len(".review")])
         return post(handler, query, body)
 
+    write = serve._write_event
+
+    def write_then_answer(review, root, actor, name, event):
+        fresh = not os.path.exists(os.path.join(review, actor, name))  # a resend is answered once
+        stored = write(review, root, actor, name, event)
+        if stored and fresh and actor == "human":
+            spools.answer_comment(review[:-len(".review")], event)  # before the page hears the save
+        return stored
+
     serve.MountHandler._post_event = post_after_agent_edit
+    serve._write_event = write_then_answer
     return serve.main(["--registry", registry, "--port", port])
 
 
