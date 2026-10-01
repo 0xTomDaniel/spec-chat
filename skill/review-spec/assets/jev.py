@@ -277,11 +277,19 @@ def rule_identity(text: str) -> str:
 DISMISSALS = {"here": "dismissed", "rule": "not-a-rule"}
 
 
+def _dismissal(resolution: Any) -> list[tuple[str, str, str, str | None]]:
+    """The rule dismissal a resolution records, by what it holds for (project-rules #dismiss-scope); none otherwise."""
+    if isinstance(resolution, Mapping) and resolution.get("status") in DISMISSALS.values() and resolution.get("project"):
+        return [(resolution["status"], str(resolution["project"]), str(resolution.get("rule")), resolution.get("spec"))]
+    return []
+
+
 class JudgmentStore:
     """Append-only JSONL records, also used as the cache.
 
-    The file loads on a background thread so a server start never waits on its size (review-service
-    #service-restart); every read and write takes the lock, so the first use waits for the load instead."""
+    The file loads once, on first use under the lock, never at construction, so a server start prints its URL
+    without reading it (review-service #acceptance-restart). A load that fails raises to that caller and is
+    tried again on the next use; the store never serves a partial cache."""
 
     def __init__(self, path: str | Path | None = None):
         self.path = Path(path) if path else None
@@ -290,8 +298,6 @@ class JudgmentStore:
         self._dismissals: set[tuple[str, str, str, str | None]] = set()
         self.lock = threading.RLock()
         self._loaded = not self.path
-        if self.path:
-            threading.Thread(target=self._load, daemon=True, name="spec-chat-jev-store").start()
 
     @property
     def by_key(self) -> dict[str, dict[str, Any]]:
@@ -307,13 +313,12 @@ class JudgmentStore:
         with self.lock:
             if self._loaded:
                 return
-            self._loaded = True
+            by_key: dict[str, dict[str, Any]] = {}
+            dismissals: set[tuple[str, str, str, str | None]] = set()
             try:
-                if not self.path.is_file():
-                    return
-                lines = self.path.read_text(encoding="utf-8", errors="replace").splitlines()
+                lines = self.path.read_text(encoding="utf-8", errors="replace").splitlines() if self.path.is_file() else []
             except OSError:
-                return
+                lines = []
             for line in lines:
                 try:
                     record = json.loads(line)
@@ -321,10 +326,11 @@ class JudgmentStore:
                     continue
                 if isinstance(record, Mapping) and record.get("cache_key"):
                     record = dict(record)
-                    self._hold(record.get("resolution"))
-                    current = self._by_key.get(record["cache_key"])
+                    dismissals.update(_dismissal(record.get("resolution")))
+                    current = by_key.get(record["cache_key"])
                     if current is None or current.get("outcome") in REPLACEABLE_OUTCOMES or "resolution" in record:
-                        self._by_key[record["cache_key"]] = record
+                        by_key[record["cache_key"]] = record
+            self._by_key, self._dismissals, self._loaded = by_key, dismissals, True
 
     def get(self, key: str) -> dict[str, Any] | None:
         with self.lock:
@@ -342,11 +348,6 @@ class JudgmentStore:
                 with self.path.open("a", encoding="utf-8") as stream:
                     stream.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
             return record
-
-    def _hold(self, resolution: Any) -> None:
-        if isinstance(resolution, Mapping) and resolution.get("status") in DISMISSALS.values() and resolution.get("project"):
-            self._dismissals.add((resolution["status"], str(resolution["project"]), str(resolution.get("rule")),
-                                 resolution.get("spec")))
 
     def dismissed(self, status: str, project: Any, text: str, spec: str | None = None) -> bool:
         """Whether the project dismissed this rule text: on this spec path (dismissed), or everywhere (not-a-rule)."""
@@ -373,7 +374,7 @@ class JudgmentStore:
                 if reason:
                     res["reason"] = reason
                 updated["resolution"] = res
-                self._hold(res)
+                self.dismissals.update(_dismissal(res))
                 if confirmed is not None:
                     updated["confirmed"] = confirmed
                 elif resolution == "fixed":

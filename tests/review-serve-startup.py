@@ -1,11 +1,10 @@
-"""Review server start prints its URL without waiting on the Jev record store (review-service #service-restart)."""
+"""Review server start prints its URL without reading the Jev record store (review-service #acceptance-restart)."""
 import contextlib
 import importlib.util
 import io
 import json
 import sys
 import tempfile
-import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -19,8 +18,8 @@ spec.loader.exec_module(serve)
 jev = sys.modules["jev"]
 
 
-class SlowStoreStartTest(unittest.TestCase):
-    """A store read held open stands in for a large records.jsonl: start must not wait on it."""
+class StoreUnreadAtStartTest(unittest.TestCase):
+    """Start never reads records.jsonl, however large; the first store use reads it once."""
 
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
@@ -29,51 +28,37 @@ class SlowStoreStartTest(unittest.TestCase):
         (self.state / "jev").mkdir(parents=True)
         record = {"cache_key": "sha256:held", "outcome": "ok", "record_id": "judgment-held"}
         (self.state / "jev" / "records.jsonl").write_text(json.dumps(record) + "\n")
-        self.release = threading.Event()
-        self.addCleanup(self.release.set)
+        self.reads = []
         read_text = Path.read_text
 
-        def held(path, *args, **kwargs):
+        def counted(path, *args, **kwargs):
             if path.name == "records.jsonl":
-                self.release.wait(10)
+                self.reads.append(path)
             return read_text(path, *args, **kwargs)
 
-        patcher = patch.object(Path, "read_text", held)
+        patcher = patch.object(Path, "read_text", counted)
         patcher.start()
         self.addCleanup(patcher.stop)
         env = patch.dict("os.environ", {"XDG_STATE_HOME": str(self.state.parent)})
         env.start()
         self.addCleanup(env.stop)
 
-    def test_service_returns_before_store_loads_and_store_answers_after(self):
-        built = []
-        thread = threading.Thread(target=lambda: built.append(jev.JevService()), daemon=True)
-        thread.start()
-        thread.join(2)
-        self.assertTrue(built, "JevService waited on the record store")
-        self.release.set()
-        self.assertEqual(built[0].seam.store.get("sha256:held")["record_id"], "judgment-held")
-        built[0].stop()
+    def test_service_builds_without_reading_store_and_store_answers_after(self):
+        service = jev.JevService()
+        self.addCleanup(service.stop)
+        self.assertEqual(self.reads, [], "JevService read the record store at construction")
+        self.assertEqual(service.seam.store.get("sha256:held")["record_id"], "judgment-held")
+        self.assertEqual(len(self.reads), 1)
 
-    def test_server_prints_url_while_store_is_still_loading(self):
+    def test_server_prints_url_without_reading_store(self):
         out = io.StringIO()
         servers = []
-
-        def no_serve(server, *args):
-            servers.append(server)
-
-        def run():
-            with patch.object(serve.ReviewThreadingHTTPServer, "serve_forever", no_serve):
-                serve.main([str(ROOT / "docs" / "specs"), "--port", "0"])
-
-        with contextlib.redirect_stdout(out):
-            thread = threading.Thread(target=run, daemon=True)
-            thread.start()
-            thread.join(2)
+        with patch.object(serve.ReviewThreadingHTTPServer, "serve_forever", lambda server, *args: servers.append(server)), \
+                contextlib.redirect_stdout(out):
+            serve.main([str(ROOT / "docs" / "specs"), "--port", "0"])
         self.assertIn("spec-chat review-serve on http://", out.getvalue())
-        self.release.set()
-        thread.join(5)
         self.assertEqual(len(servers), 1)
+        self.assertEqual(self.reads, [], "server start read the record store")
 
 
 if __name__ == "__main__":

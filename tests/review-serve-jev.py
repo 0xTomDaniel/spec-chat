@@ -339,16 +339,29 @@ class JevSeamTest(unittest.TestCase):
                 b'{"cache_key":"truncated","outcome":"shown"\xe2'
             )
             store = jev.JudgmentStore(path)
-        self.assertEqual(set(store.by_key), {"valid"})
+            self.assertEqual(set(store.by_key), {"valid"})
 
     def test_judgment_store_treats_unreadable_state_as_empty(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "records.jsonl"
-            with patch.object(Path, "is_file", return_value=True), patch.object(
-                Path, "read_text", side_effect=OSError("unreadable state")
-            ):
+            path.write_text('{"cache_key":"held","outcome":"shown"}\n')
+            with patch.object(Path, "read_text", side_effect=OSError("unreadable state")) as read:
                 store = jev.JudgmentStore(path)
-        self.assertEqual(store.by_key, {})
+                self.assertEqual(store.by_key, {})
+            read.assert_called_once()
+
+    def test_judgment_store_load_failure_raises_and_retries_never_partial(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "records.jsonl"
+            path.write_text('{"cache_key":"first","outcome":"shown"}\n{"cache_key":["unhashable"],"outcome":"shown"}\n')
+            store = jev.JudgmentStore(path)
+            with self.assertRaises(TypeError):
+                store.get("first")
+            with self.assertRaises(TypeError):
+                store.append({"cache_key": "first", "outcome": "shown"})
+            self.assertEqual(path.read_text().count("\n"), 2, "a failed load let a write append")
+            path.write_text('{"cache_key":"first","outcome":"shown"}\n')
+            self.assertEqual(store.get("first")["outcome"], "shown")
 
     def test_resolved_unrelated_is_not_displayed(self):
         provider = FakeProvider({"answers": {"resolved": {"choice": "unrelated", "confidence": 0.9}}})
