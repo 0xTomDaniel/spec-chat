@@ -8,11 +8,13 @@
 # Capture resets once per story, but criteria add drafts and hand-offs to the spec's
 # on-disk spool. So every collection below is its own clean copy of the one repo,
 # served at /<collection>/docs/specs/<spec>: qa-fixture is the story entry, and each
-# other collection is one criterion's start, named by its qa.toml nav hint.
+# other collection is one criterion's start, named by its qa.toml nav hint. Review-state
+# collections also get their seeded spool and agent edit from spools.py.
 set -eu
 collections="qa-fixture tbd-later tbd-later-handoff tbd-open-highlight tbd-open-single
   next-tbd next-tbd-step next-tbd-handoff tbd-open-jump tbd-open-wrap mobile-composer
-  block-target-enter block-target-space block-target-off"
+  block-target-enter block-target-space block-target-off
+  edit-race name-collision anchor-moved anchor-changed anchor-gone stale-page agent-scan"
 site="$QA_ROOT/site"
 serve="$QA_ROOT/serve"
 repo="$site/.repo"
@@ -36,6 +38,8 @@ for collection in $collections; do
   cp -R "$repo" "$site/$collection"
 done
 rm -rf "$repo"
+# Review-state collections: seeded spools and agent edits (spools.py).
+python3 "$QA_FIXTURE/spools.py" "$site"
 # Registry: every spec of every collection, one project. Python writes it so paths
 # are escaped as TOML strings.
 python3 - "$serve/registry.toml" "$site" "$base" $collections <<'PY'

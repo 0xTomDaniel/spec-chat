@@ -7,7 +7,9 @@ usage: serve.py <registry.toml> <port>
 The fake says the onboarding rule applies to every feature and that a spec misses it
 unless the spec mentions onboarding, so the served specs show a rule mark and Jev
 writes real records. Each criterion verifies the story its data-story names and no
-other, so no false coverage gap shows. Everything else runs unchanged.
+other, so no false coverage gap shows. A fixture agent edit pending beside a spec
+(spools.py, stale-page) lands when a page next posts an event to that spec, so the page
+saving it was loaded before the edit. Everything else runs unchanged.
 """
 
 import importlib.util
@@ -52,6 +54,16 @@ def main(argv):
     )
     real = serve.JevService
     serve.JevService = lambda **kw: real(**{**kw, "provider": fake, "api_key": "fake"})
+    spools = load("qa_fixture_spools", FIXTURE / "spools.py")
+    post = serve.MountHandler._post_event
+
+    def post_after_agent_edit(handler, query, body):
+        _, review = handler._route_review(query)
+        if review:
+            spools.land_pending_edit(review[:-len(".review")])
+        return post(handler, query, body)
+
+    serve.MountHandler._post_event = post_after_agent_edit
     return serve.main(["--registry", registry, "--port", port])
 
 
