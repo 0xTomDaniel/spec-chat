@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ADR: review state as a grow-only CRDT over the spool</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../specs/.style/spec.css">
+<script defer src="../specs/.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Review state as a grow-only CRDT over the spool</h1>
+<nav data-anchor="breadcrumbs">docs / adr / review-state-crdt.spec.html</nav>
+<p data-anchor="context">Decision behind <a href="../specs/review-state.spec.html">Shared review state</a>: live multi-reviewer review, marks that survive agent edits, and offline or cross-host merge. Hard to reverse because it fixes the event naming, the stored model, the server's dependencies, and how spec text relates to review state.</p>
+</header>
+
+<section data-anchor="context-section">
+<h2>Context</h2>
+<p data-anchor="context-spool">The spool already holds one immutable file per event, with unique ids and reference-based causality. That is a grow-only set: two copies merge by union with no conflict.</p>
+<p data-anchor="context-gaps">Three things are missing. The service names files by its own clock, so one event saved twice, or saved on two hosts, gets two names. Events do not say which spec text they were written against, so marks cannot follow edits. Events carry no author, and any hand-off sends every reviewer's drafts.</p>
+<p data-anchor="context-text">Spec text has one writer during review, the agent, editing a committed file. Humans comment; they do not edit spec text.</p>
+<p data-anchor="context-stack">The review service is Python standard library only; the runtime is one classic script with vendored libraries and must work over <code>file://</code>.</p>
+</section>
+
+<section data-anchor="decision">
+<h2>Decision</h2>
+<p data-anchor="decision-model">Review state is a state-based CRDT built from two grow-only sets in the spool: events named by their writer as <code>&lt;createdAt ns&gt;-&lt;event&gt;-&lt;id&gt;.json</code>, and spec versions stored by SHA-256. Merge is union. Everything else is derived by one deterministic fold and one resolver.</p>
+<p data-anchor="decision-lww">Concurrent edits of one message resolve last writer wins by file name; every edit stays in history.</p>
+<p data-anchor="decision-anchor">A mark carries the content hash of the spec text it was written against. Its current place is computed, never stored: locate it in that version, then map it through a character diff to the current text. This replaces the deferred anchor-migration events: nothing is written when the agent edits.</p>
+<p data-anchor="decision-git">Spec text stays in Git and the worktree file only. Review state never holds a second live copy of it, so there is no step that turns live edits into commits; the existing commit-before-reply rule stays the only one.</p>
+<p data-anchor="decision-library" data-spec-tbd="open">No third-party CRDT library. The service stays standard library and the runtime gains no dependency. This holds while the spec's agent edit question settles on file edits; if it settles on a live shared text model, this decision becomes Yjs on the page with pycrdt in the service, below.</p>
+<p data-anchor="decision-transport">Sync is the existing HTTP <code>/api/events</code>: read events not held, write events idempotently. No WebSocket, so the same route works through the narrow HTTPS relay and an <code>ssh -L</code> tunnel.</p>
+<p data-anchor="decision-auth">No login is added. <code>author</code> is self-given. Agent events stay disk-only and event files are never overwritten.</p>
+</section>
+
+<section data-anchor="alternatives">
+<h2>Alternatives</h2>
+<div class="table-scroll" data-anchor="alternatives-table-scroll">
+<table data-anchor="alternatives-table">
+<caption>Options weighed against the three needs and the stack</caption>
+<thead><tr><th>Option</th><th>Gives</th><th>Costs</th><th>Verdict</th></tr></thead>
+<tbody>
+<tr data-anchor="alt-chosen"><td>Grow-only sets over the spool, diff-mapped marks</td><td>All three needs while one writer edits text; one store; same agent contract</td><td>Marks on heavily rewritten text resolve as changed or gone, not kept</td><td>Chosen</td></tr>
+<tr data-anchor="alt-yjs"><td>Yjs doc per spec (text plus annotations), pycrdt in the service</td><td>Concurrent text editing by many writers; relative positions; awareness protocol for presence</td><td>Binary dependency in the service; vendored Yjs in the runtime; a second live copy of spec text and a doc-to-file-to-commit step; a new store beside the spool or a migration of it; agents need a CRDT client</td><td>Rejected while text has one writer</td></tr>
+<tr data-anchor="alt-automerge"><td>Automerge doc per spec</td><td>Same as Yjs, with history</td><td>Same costs; heavier WASM runtime on the page</td><td>Rejected</td></tr>
+<tr data-anchor="alt-relay"><td>Yjs on the page, opaque update relay in the service, Node helper ingesting file edits</td><td>Keeps the service standard library</td><td>Adds a Node runtime to the service host and two processes to keep in step</td><td>Rejected</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section data-anchor="consequences">
+<h2>Consequences</h2>
+<p data-anchor="cons-one-store">One mechanism: the spool is extended, not replaced, and no parallel store is added. <code>watch-specs.sh</code>, cursors, <code>emit-reply.sh</code>, and host wake keep their contracts; a hand-off's batch is the events it lists.</p>
+<p data-anchor="cons-versions">Spool directories grow by one copy of each distinct spec text an event points at; they stay gitignored and are deleted with the spool.</p>
+<p data-anchor="cons-reopen">Reopen trigger: a second concurrent writer of spec text, human or agent. Then move to the Yjs option; events keep their ids and migrate as entries of the doc.</p>
+<p data-anchor="cons-peers">Spec Chat depends on no peer for any of this; no tracker or pane concept enters the model.</p>
+</section>
+
+</article>
+</body>
+</html>

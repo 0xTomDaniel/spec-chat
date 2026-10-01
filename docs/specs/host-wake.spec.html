@@ -45,7 +45,7 @@
 <section data-anchor="wake-rule">
 <h2>Wake rule</h2>
 <p data-anchor="wake-rule-poll">The host polls every registered resource's spool every 3 seconds, in one background thread of the running review server.</p>
-<p data-anchor="wake-rule-batch">A batch is the resource's human events not in its cursor, through the newest completed hand-off, exactly as the zero-wait scan reports it. Its identity is that list of file names.</p>
+<p data-anchor="wake-rule-batch">A batch is the resource's handed-off events not in its cursor: each hand-off not in the cursor and the events it lists (<a href="./review-state.spec.html#live-handoff">Shared review state</a>), exactly as the zero-wait scan reports it. Its identity is that list of file names.</p>
 <p data-anchor="wake-rule-memory">Delivered batch identities live only in memory. After a host restart, a still-unprocessed batch is woken once more; a duplicate wake is harmless because the owner starts with a zero-wait scan.</p>
 <p data-anchor="wake-rule-message">The prompt names the spec path, collection root, cursor name, and event count, and tells the owner to run the zero-wait scan, process the batch, and park.</p>
 <div class="table-scroll" data-anchor="wake-states-scroll">
