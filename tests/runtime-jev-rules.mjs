@@ -371,7 +371,7 @@ state.jev.offer = offer;
 renderJev();
 assert.deepEqual(offerNote().map(n => n.textContent), ['Jev off'], 'no offer with Jev off');
 
-// The composer runs onSent only after the comment is posted.
-assert.match(slice('function addComposer(', '\n}\n'), /await state\.transport\.postEvent\(body\);\n\s*state\.composer = null;\n\s*if \(c\.onSent\) c\.onSent\(\);/);
+// The composer runs onSent only after the comment is saved.
+assert.match(slice('function addComposer(', '\n}\n'), /state\.composer = null;\n\s*save\(body\);\n\s*if \(c\.onSent\) c\.onSent\(\);/);
 
 console.log('runtime Jev rule tests passed');
