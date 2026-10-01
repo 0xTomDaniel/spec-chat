@@ -61,6 +61,12 @@ path = "{review}/tbd-open-jump/docs/specs/report.spec.html"
 path = "{review}/tbd-open-wrap/docs/specs/report.spec.html"
 [nav.acceptance-mobile-composer]
 path = "{review}/mobile-composer/docs/specs/report.spec.html"
+[nav.acceptance-block-target-enter]
+path = "{review}/block-target-enter/docs/specs/report.spec.html"
+[nav.acceptance-block-target-space]
+path = "{review}/block-target-space/docs/specs/report.spec.html"
+[nav.acceptance-block-target-off]
+path = "{review}/block-target-off/docs/specs/report.spec.html"
 
 # Stories this environment cannot host. services.review runs with HOME and XDG under
 # $QA_ROOT: no evidence or wake provider, no Herdr, no live agent, no review-host
