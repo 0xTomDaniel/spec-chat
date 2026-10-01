@@ -33,7 +33,7 @@
 <p data-anchor="decision-git">Spec text stays in Git and the worktree file only. Review state never holds a second live copy of it, so there is no step that turns live edits into commits; the existing commit-before-reply rule stays the only one.</p>
 <p data-anchor="decision-library" data-spec-tbd="open">No third-party CRDT library. The service stays standard library and the runtime gains no dependency. This holds while the spec's agent edit question settles on file edits; if it settles on a live shared text model, this decision becomes Yjs on the page with pycrdt in the service, below.</p>
 <p data-anchor="decision-transport">Sync is the existing HTTP <code>/api/events</code>: read events not held, write events idempotently. No WebSocket, so the same route works through the narrow HTTPS relay and an <code>ssh -L</code> tunnel.</p>
-<p data-anchor="decision-auth">No login is added. <code>author</code> is self-given. Agent events stay disk-only and event files are never overwritten.</p>
+<p data-anchor="decision-auth">No login is added. <code>author</code> is a fruit name assigned once per browser, numbered on collision within a spec; it is a label, not an identity. Agent events stay disk-only and event files are never overwritten.</p>
 </section>
 
 <section data-anchor="alternatives">
