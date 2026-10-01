@@ -11,8 +11,10 @@ DIR=$1; RT=$2; ANCHOR=$3; TARGET=$4; STATUS=$5; CHANGE=$6; TEXT=$7
 mkdir -p "$DIR/agent"
 # portable across GNU/BSD: ns via python3 (BSD date lacks %N), UTC ISO time
 NS=$(python3 -c 'import time; print(time.time_ns())' 2>/dev/null || date +%s%N)
-OUT="$DIR/agent/${NS}-reply-$RT.json"
 ID="r${NS}"; AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+# named by its writer, <createdAt ns>-<event>-<id>.json; never overwrites (noclobber, open "x")
+OUT="$DIR/agent/${NS}-reply-$ID.json"
+set -C
 
 if command -v jq >/dev/null 2>&1; then
   jq -n --arg id "$ID" --arg rt "$RT" --arg anchor "$ANCHOR" --argjson target "$TARGET" \
@@ -30,7 +32,7 @@ json.dump({"id": e["ID"], "event": "reply", "respondsTo": e["RT"],
            "anchorId": e["ANCHOR"], "target": json.loads(e["TARGET"]),
            "text": e["TEXT"], "status": e["STATUS"], "change": e["CHANGE"],
            "actor": "agent", "createdAt": e["AT"], "schemaVersion": 1},
-          open(e["OUT"], "w"))
+          open(e["OUT"], "x"))
 PY
 else
   echo "emit-reply.sh: needs jq or python3 to write JSON safely; neither found" >&2

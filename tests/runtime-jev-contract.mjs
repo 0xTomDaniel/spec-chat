@@ -70,20 +70,22 @@ assert.ok(moveStart >= 0 && moveEnd > moveStart, 'runtime exposes orphan move ac
 const posted = [];
 const moveState = {
   movingOrphans: new Set(),
-  transport: { postEvent: async event => posted.push(event) },
   activeThread: 'thread-1',
 };
 let moveRefreshes = 0;
 const toasts = [];
-const { moveOrphan, moveOrphans } = Function('state', 'humanId', 'renderPanel', 'toast', 'refresh', 'renderPins', runtime.slice(moveStart, moveEnd) + '; return { moveOrphan, moveOrphans };')(
+const save = event => { posted.push(event); };
+const { moveOrphan, moveOrphans } = Function('state', 'humanId', 'renderPanel', 'toast', 'refresh', 'renderPins', 'save', runtime.slice(moveStart, moveEnd) + '; return { moveOrphan, moveOrphans };')(
   moveState,
   prefix => prefix + 'fixed',
   () => {},
   text => toasts.push(text),
   async () => { moveRefreshes++; },
   () => {},
+  save,
 );
-await moveOrphan({ id: 'thread-1', ev: { body: { quote: 'old quote', text: 'Original note' } } }, 'new-section');
+const movedRoot = { body: { quote: 'old quote', text: 'Original note' } };
+await moveOrphan({ id: 'thread-1', ev: movedRoot, messages: [movedRoot] }, 'new-section');
 assert.equal(posted.length, 2);
 assert.equal(posted[0].event, 'comment');
 assert.equal(posted[0].anchorId, 'new-section');
@@ -94,8 +96,10 @@ assert.equal(posted[1].status, 'resolved');
 
 // #acceptance-move-all: Move all (n) moves each thread exactly as its own Move comment here, nothing else.
 const moveEvents = () => posted.map(e => ({ ...e, createdAt: null }));
-const threadA = { id: 'thread-a', ev: { body: { quote: 'quote a', text: 'Note a' } } };
-const threadB = { id: 'thread-b', ev: { body: { text: 'Note b' } } };
+const rootA = { body: { quote: 'quote a', text: 'Note a' } };
+const rootB = { body: { text: 'Note b' } };
+const threadA = { id: 'thread-a', ev: rootA, messages: [rootA] };
+const threadB = { id: 'thread-b', ev: rootB, messages: [rootB] };
 posted.length = 0;
 await moveOrphan(threadA, 'sec-a');
 await moveOrphan(threadB, 'sec-b');
@@ -123,7 +127,7 @@ assert.equal(openOrphanHint({ id: 'unsure', status: 'resolved' }), null, 'no uns
 const composerStart = runtime.indexOf('function openComposer(');
 const composerEnd = runtime.indexOf('\n\nconst label', composerStart);
 assert.ok(composerStart >= 0 && composerEnd > composerStart, 'runtime exposes the comment composer');
-const composerState = { transport: { postEvent: async event => posted.push(event) } };
+const composerState = {};
 const openComposer = Function('state', 'setCommentMode', 'openPanel', 'renderPanel', 'setTimeout',
   runtime.slice(composerStart, composerEnd) + '; return openComposer;')(composerState, () => {}, () => {}, () => {}, () => {});
 posted.length = 0;
@@ -139,10 +143,10 @@ const resolveStart = runtime.indexOf('async function resolveThreads(');
 const resolveEnd = runtime.indexOf('\n\nfunction selectThread(', resolveStart);
 assert.ok(resolveStart >= 0 && resolveEnd > resolveStart, 'runtime exposes the shared resolve path');
 let refreshed = 0;
-const resolveState = { expandedResolved: new Set(['t1', 't3']), transport: { postEvent: async event => posted.push(event) } };
-const { resolveThreads, resolveThread } = Function('state', 'humanId', 'toast', 'refresh',
+const resolveState = { expandedResolved: new Set(['t1', 't3']) };
+const { resolveThreads, resolveThread } = Function('state', 'humanId', 'toast', 'refresh', 'save',
   runtime.slice(resolveStart, resolveEnd) + '; return { resolveThreads, resolveThread };')(
-  resolveState, prefix => prefix + 'fixed', () => {}, () => { refreshed++; });
+  resolveState, prefix => prefix + 'fixed', () => {}, () => { refreshed++; }, save);
 const resolvedEvent = id => ({ id: 'sfixed', event: 'status', respondsTo: id, threadId: id, status: 'resolved', actor: 'human', createdAt: null, schemaVersion: 1 });
 posted.length = 0;
 await resolveThread({ id: 't1' });

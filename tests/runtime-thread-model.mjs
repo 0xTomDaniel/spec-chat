@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime.js'), 'utf8');
 const start = runtime.indexOf('function foldThreads(events)');
-const end = runtime.indexOf('\n\nfunction ingest(events)', start);
+const end = runtime.indexOf('\n\nfunction ingest(', start);
 assert.ok(start >= 0 && end > start, 'runtime exposes the pure thread-folding function');
 const model = Function(runtime.slice(start, end) + '; return { foldThreads, resolvedThreadCollapsed, threadReplyAction, reviewHandoffState, handoffObservation, handoffAgentText, commentModeShortcut, threadDockEntries, acknowledgedReplyCount, isOpenTbd, openTbdMarkers, nextOpenTbd, tbdBlock, tbdHighlightBlocks, advanceTbd, renderTbdHighlight, tbdCountLabel };')();
 const { foldThreads, resolvedThreadCollapsed, threadReplyAction, reviewHandoffState, handoffObservation, handoffAgentText, commentModeShortcut, threadDockEntries, acknowledgedReplyCount, isOpenTbd, openTbdMarkers, nextOpenTbd, tbdBlock, tbdHighlightBlocks, advanceTbd, renderTbdHighlight, tbdCountLabel } = model;
@@ -129,7 +129,7 @@ assert.deepEqual(allBlocks.map(b => b.classList.contains('hx-tbd-open')), [true,
 renderTbdHighlight(fakeRoot(allBlocks), tbdHighlightBlocks([]));
 assert.deepEqual(allBlocks.map(b => b.classList.contains('hx-tbd-open')), [false, false, false], 'highlight clears when no open TBD remains');
 assert.match(runtime, /renderTbdHighlight\(document, tbdHighlightBlocks\(openTbds\)\.concat\(/, 'the panel renders the open TBD highlight');
-assert.equal((runtime.match(/const openTbds = openTbdMarkers\(document\.querySelectorAll\('\[data-spec-tbd\]'\)\);\n\s+const \w+ = reviewHandoffState\(state\.threads, openTbds\.length\);/g) || []).length, 2, 'render and activation gate eligibility on open TBD markers only');
+assert.equal((runtime.match(/const openTbds = openTbdMarkers\(document\.querySelectorAll\('\[data-spec-tbd\]'\)\);\n\s+const \w+ = reviewHandoffState\(state\.threads, openTbds\.length, state\.reviewer\??\.browser\);/g) || []).length, 2, 'render and activation gate eligibility on open TBD markers only');
 // Next TBD: one position shared with TBD open, beside Hand off on desktop and mobile.
 assert.match(runtime, /<button class="hx-btn hx-next-tbd" id="hx-next-tbd" type="button" hidden>Next TBD<\/button><button class="hx-btn pri" id="hx-handoff">/, 'desktop Next TBD sits left of Hand off');
 assert.match(runtime, /<button class="hx-mobile-next-tbd" id="hx-mobile-next-tbd" type="button" hidden>Next TBD<\/button><button class="hx-mobile-handoff" id="hx-mobile-handoff"/, 'mobile Next TBD sits beside Hand off');
@@ -175,7 +175,8 @@ const rootEdit = [
 ];
 const editedRootThread = foldThreads(rootEdit).get('u-edit-root');
 assert.equal(editedRootThread.id, 'u-edit-root', 'editing a root preserves the stable thread id');
-assert.equal(editedRootThread.ev.body.id, 'e-edit-root');
+assert.equal(editedRootThread.ev.body.id, 'u-edit-root', 'the root comment places the thread; an edit never replaces it');
+assert.equal(editedRootThread.messages[0].body.text, 'Edited root', 'the edit is the shown text');
 assert.equal(editedRootThread.status, 'pending');
 
 console.log('runtime thread model tests passed');

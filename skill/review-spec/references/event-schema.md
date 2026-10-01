@@ -1,6 +1,14 @@
 # Event schema — reading and writing the spool
 
-One JSON object per file. Read this instead of reverse-engineering the schema from `runtime.js`. Human events land in `<spec>.review/human/`, agent events in `<spec>.review/agent/`; filenames are `<ns-timestamp>-<event>-<id>.json` and sort into chronological order.
+One JSON object per file. Read this instead of reverse-engineering the schema from `runtime.js`. Human events land in `<spec>.review/human/`, agent events in `<spec>.review/agent/`. The writer names each file `<createdAt ns>-<event>-<id>.json` (the page for human events, `emit-reply.sh` for agent events); names sort into chronological order. Files are immutable: never renamed, rewritten, or deleted.
+
+## Storing over HTTP
+
+The page posts a human event to `POST /api/events?dir=<spec>.review&actor=human&name=<file name>`, the name chosen before the first send. A resend after a lost response stores nothing new: the same name with the same bytes answers `200 {"ok":true,"name":...}`; the same name with different bytes is refused `409`. A name whose `<event>-<id>` differs from the body is `400`. `actor=agent`, or a body `actor` other than `human`, is `403`: agent events are written only on disk. A post without `name` takes the service clock (pages from before page-named events).
+
+## Spec versions
+
+`<spec>.review/versions/<sha256>.html` holds each spec text the service served, by the SHA-256 of its bytes, which is also the page's ETag. Written once by the service; readers (the mark resolver) read it as a plain file.
 
 ## Common fields
 
@@ -11,6 +19,9 @@ One JSON object per file. Read this instead of reverse-engineering the schema fr
 | `actor` | both | `human` \| `agent` |
 | `createdAt` | both | ISO 8601 |
 | `schemaVersion` | both | currently `1` |
+| `browser` | human | random id the page creates once and keeps in this browser |
+| `author` | human | fruit name assigned to that browser; a label, not an identity |
+| `version` | human | SHA-256 of the spec text the page showed (its ETag); names `versions/<version>.html`. Absent on older events |
 
 ## `comment` (human)
 
@@ -30,7 +41,16 @@ One JSON object per file. Read this instead of reverse-engineering the schema fr
 
 ## `handoff` (human)
 
-Marks a batch ready. `text` typically lists the comment ids. `anchorId` empty, `target` null. The watch wakes on this.
+Marks a batch ready. `anchorId` empty, `target` null. The watch wakes on this.
+
+```json
+{"id":"h1","event":"handoff","events":["u1","e1"],"anchorId":"","target":null,
+ "text":"","actor":"human","browser":"...","author":"Mango","createdAt":"...","schemaVersion":1}
+```
+
+- `events`: the event ids it hands off, its browser's drafts. Only those become `pending`; other reviewers' drafts stay `draft`.
+- No `events` (written before this field): hands off every draft before it.
+- The batch the zero-wait scan prints and host wake counts is each hand-off not in the cursor plus the events it lists (`assets/spool.py`).
 
 ## `reply` (human or agent)
 
@@ -84,6 +104,10 @@ Human-authored comments and follow-up replies remain append-only on disk. Editin
 ```
 
 Only the human resolves; the agent proposes it ("OK to resolve?"). Lifecycle: `draft` (new human comment/reply/edit, pre-hand-off) → `pending` → `acknowledged` (agent replied to the newest human message) → `resolved`.
+
+## Resolved place (read side)
+
+`/api/events` returns each event as `{"actor","name","body","place"}`. `place` is derived, never stored: `null` for every event but a `comment` with an `anchorId` (a thread is placed by its root comment; replies and edits never move it), else `{"anchorId","start","end","quote","state"}` from `assets/place.py`. It locates the mark in `<spec>.review/versions/<body.version>.html` and maps it through a character diff to the current spec (an event without `version` is located in the current spec). `start`/`end` are code-point offsets into the current spec source; `quote` is that range's visible text for a text target. `state`: `kept` (every character survives), `changed` (some survive), `gone` (none; `anchorId` is the nearest surviving anchored block, range and quote null). The zero-wait scan prints the same place on stderr.
 
 ## Thread folding rules
 

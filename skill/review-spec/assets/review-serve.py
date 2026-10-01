@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import errno
 import hashlib
 import html
 import json
@@ -40,6 +41,22 @@ except ModuleNotFoundError:
     MARK_LEVELS = _jev_module.MARK_LEVELS
     enumerate_served_specs = _jev_module.enumerate_served_specs
     extract_anchors = _jev_module.extract_anchors
+try:
+    from place import resolve_events
+except ModuleNotFoundError:
+    import importlib.util
+    _place_spec = importlib.util.spec_from_file_location("review_serve_place", os.path.join(os.path.dirname(__file__), "place.py"))
+    _place_module = importlib.util.module_from_spec(_place_spec)
+    _place_spec.loader.exec_module(_place_module)
+    resolve_events = _place_module.resolve_events
+
+try:
+    import spool
+except ModuleNotFoundError:
+    import importlib.util
+    _spool_spec = importlib.util.spec_from_file_location("review_serve_spool", os.path.join(os.path.dirname(__file__), "spool.py"))
+    spool = importlib.util.module_from_spec(_spool_spec)
+    _spool_spec.loader.exec_module(spool)
 
 
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
@@ -482,12 +499,20 @@ def _own_viz_asset(path):
     return True, target
 
 
+class UnsafeSpool(OSError):
+    """A spool path that escapes its collection."""
+
+
+# A symlink or non-directory where the spool expects its own directory or file: refused, not retried.
+UNSAFE_ERRNOS = (errno.ELOOP, errno.ENOTDIR)
+
+
 @contextlib.contextmanager
 def _actor_directory(review, root, actor, create=False):
     relative = os.path.relpath(review, root)
     parts = relative.split(os.sep) + [actor]
     if any(part in ("", ".", "..") for part in parts) or not _inside(review, root, strict=True):
-        raise OSError("review path escapes collection")
+        raise UnsafeSpool("review path escapes collection")
     flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(root, flags)
     try:
@@ -530,31 +555,50 @@ def _read_spool_events(review, root):
     return events
 
 
+def _write_once(directory, name, data):
+    """Store `data` as `name` in `directory`, never overwriting (review-state #trust-immutable).
+
+    Written whole under a hidden temporary name, then linked in, so no reader sees a partial file.
+    True when stored or already held with these bytes; False when held with other bytes."""
+    temp = ".%s.%d.%d.tmp" % (name, os.getpid(), threading.get_ident())
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(temp, flags, 0o600, dir_fd=directory)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(data)
+        try:
+            os.link(temp, name, src_dir_fd=directory, dst_dir_fd=directory, follow_symlinks=False)
+        except FileExistsError:
+            held = os.open(name, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0), dir_fd=directory)
+            with os.fdopen(held, "rb") as stream:
+                return stat.S_ISREG(os.fstat(stream.fileno()).st_mode) and stream.read() == data
+        return True
+    finally:
+        os.unlink(temp, dir_fd=directory)
+
+
 def _write_event(review, root, actor, name, event):
     with _actor_directory(review, root, actor, create=True) as directory:
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-        descriptor = os.open(name, flags, 0o600, dir_fd=directory)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            json.dump(event, stream)
+        return _write_once(directory, name, json.dumps(event).encode("utf-8"))
+
+
+def _store_version(review, root, body):
+    """Keep `versions/<sha256>.html`, the spec text a page is shown (review-state #model-versions)."""
+    name = hashlib.sha256(body).hexdigest() + ".html"
+    with _actor_directory(review, root, "versions", create=True) as directory:
+        try:
+            os.stat(name, dir_fd=directory, follow_symlinks=False)
+        except FileNotFoundError:
+            _write_once(directory, name, body)
 
 
 def _wake_batch(resource):
-    """Return the zero-wait scan batch: pending human names through the newest hand-off."""
+    """Return the zero-wait scan batch (spool.handoff_batch): each pending hand-off and the events it lists."""
     review = resource["spec_file"] + ".review"
     try:
-        names = sorted(name for name in os.listdir(os.path.join(review, "human")) if not name.startswith("."))
-    except OSError:
-        return ()
-    try:
-        with open(os.path.join(review, resource["cursor_name"]), encoding="utf-8") as stream:
-            consumed = set(stream.read().splitlines())
-    except FileNotFoundError:
-        consumed = set()
+        return spool.handoff_batch(review, spool.read_cursor(review, resource["cursor_name"]))
     except (OSError, ValueError):
         return ()
-    pending = [name for name in names if name not in consumed]
-    last = max((index for index, name in enumerate(pending) if "-handoff-" in name), default=-1)
-    return tuple(pending[:last + 1])
 
 
 def read_provider(state, name, *, private=False):
@@ -988,6 +1032,7 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
         if events is None:
             return self._json({"error": "unsafe spool path"}, 400)
         events.sort(key=lambda event: event["name"])
+        resolve_events(review[:-len(".review")], events)
         wake = self.server.wake_controller.status(mount.get("id"))
         headers = {"X-Spec-Chat-Wake": wake} if wake else None
         return self._json(events, headers=headers)
@@ -1086,16 +1131,27 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
         event_name, event_id = event.get("event"), event.get("id")
         if not isinstance(event_name, str) or not isinstance(event_id, str) or not EVENT_RE.fullmatch(event_name) or not EVENT_RE.fullmatch(event_id):
             return self._json({"error": "bad event name"}, 400)
-        name = "%d-%s-%s.json" % (time.time_ns(), event_name, event_id)
+        if event.get("actor", "human") != "human":
+            return self._json({"error": "agent spool writes are disk-only"}, 403)
+        # The page names the event (review-state #live-save); unnamed posts take the service clock.
+        name = query.get("name", ["%d-%s-%s.json" % (time.time_ns(), event_name, event_id)])[0]
+        stamp, _, rest = name.partition("-")
+        if not stamp.isdigit() or not stamp.isascii() or rest != "%s-%s.json" % (event_name, event_id):
+            return self._json({"error": "bad event file name"}, 400)
         try:
-            _write_event(review, mount["narrow_root"], actor, name, event)
-        except OSError:
-            return self._json({"error": "unsafe spool path"}, 400)
+            stored = _write_event(review, mount["narrow_root"], actor, name, event)
+        except OSError as exc:
+            if isinstance(exc, UnsafeSpool) or exc.errno in UNSAFE_ERRNOS:
+                return self._json({"error": "unsafe spool path"}, 400)
+            # an I/O failure is not a refusal: the page keeps the event and sends it again
+            return self._json({"error": "event not stored"}, 503)
+        if not stored:
+            return self._json({"error": "event file exists with different bytes"}, 409)
         return self._json({"ok": True, "name": name})
 
     def _send_file(self, path):
         handled, bundled = _own_viz_asset(path)
-        vendor = False
+        vendor, mount, relative = False, None, ""
         if handled:
             decoded = _decoded_path(path) or ""
             parts = decoded.split("/")
@@ -1112,7 +1168,7 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
             target = bundled
             vendor = bool(bundled) and parts[parts.index(".viz") + 1] == "vendor"
         else:
-            _, target, _ = self._resolve_path(path)
+            mount, target, relative = self._resolve_path(path)
         if not target:
             self.send_error(404)
             return
@@ -1121,6 +1177,11 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
         except OSError:
             self.send_error(404)
             return
+        if relative.endswith(".spec.html"):
+            try:
+                _store_version(target + ".review", mount["narrow_root"], body)
+            except OSError as exc:
+                print("review-serve: version not stored for %s: %s" % (relative, exc), file=sys.stderr, flush=True)
         self._send_body(
             body, mimetypes.guess_type(target)[0] or "application/octet-stream", immutable=vendor,
             headers={"Last-Modified": self.date_time_string(int(os.stat(target).st_mtime))},

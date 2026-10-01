@@ -187,6 +187,62 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertEqual(sorted(str(path.relative_to(review)) for path in review.rglob("*")), before)
         self.assertEqual(self.request(self.api(resource, actor="human"), "POST", {"event": "comment", "id": "human"})[0], 200)
 
+    def test_page_named_event_resend_stores_it_once(self):
+        # review-state #live-save, #acceptance-lost-response (server side), #trust-immutable.
+        resource = self.make_resource("named")
+        self.start([resource])
+        human = Path(resource["root"]) / (resource["spec"] + ".review") / "human"
+        name = "1759300000000000000-comment-c1.json"
+        event = {"event": "comment", "id": "c1", "text": "x", "browser": "b", "author": "Mango"}
+        path = self.api(resource, actor="human", name=name)
+        self.assertEqual(self.request(path, "POST", event), (200, json.dumps({"ok": True, "name": name}).encode()))
+        stored = (human / name).read_bytes()
+        self.assertEqual(self.request(path, "POST", event)[0], 200)
+        self.assertEqual(sorted(p.name for p in human.iterdir()), [name])
+        self.assertEqual((human / name).read_bytes(), stored)
+        self.assertEqual(self.request(path, "POST", {**event, "text": "other"})[0], 409)
+        self.assertEqual((human / name).read_bytes(), stored)
+        events = json.loads(self.request(self.api(resource))[1])
+        self.assertEqual([e["name"] for e in events], [name])
+        for bad in ("1-comment-c2.json", "1-reply-c1.json", "x-comment-c1.json", "1-comment-c1.txt", ".1-comment-c1.json"):
+            self.assertEqual(self.request(self.api(resource, actor="human", name=bad), "POST", event)[0], 400, bad)
+        self.assertEqual(self.request(self.api(resource, actor="human", name="2-comment-c3.json"), "POST",
+                                      {"event": "comment", "id": "c3", "actor": "agent"})[0], 403)
+        self.assertEqual(sorted(p.name for p in human.iterdir()), [name])
+
+    def test_event_write_io_failure_is_a_server_error_the_page_retries(self):
+        # review-state #offline-outbox: an I/O failure is never a refusal, so the page keeps the event.
+        resource = self.make_resource("io")
+        self.start([resource])
+        human = Path(resource["root"]) / (resource["spec"] + ".review") / "human"
+        human.mkdir(parents=True, exist_ok=True)
+        human.chmod(0o500)
+        self.addCleanup(human.chmod, 0o700)
+        path = self.api(resource, actor="human", name="1759300000000000000-comment-io.json")
+        event = {"event": "comment", "id": "io", "text": "x"}
+        self.assertEqual(self.request(path, "POST", event)[0], 503)
+        human.chmod(0o700)
+        self.assertEqual(self.request(path, "POST", event)[0], 200)
+
+    def test_served_spec_text_is_stored_as_a_version_by_its_etag(self):
+        # review-state #model-versions, #model-fields: version hash is the page ETag.
+        resource = self.make_resource("versions")
+        self.start([resource])
+        source = Path(resource["root"]) / resource["spec"]
+        versions = Path(str(source) + ".review") / "versions"
+        seen = []
+        for text in ("<title>v</title>one\n", "<title>v</title>two\n"):
+            source.write_text(text)
+            with urllib.request.urlopen(self.url + self.stable(resource), timeout=2) as response:
+                etag = response.headers["ETag"].strip('"')
+                body = response.read()
+            self.assertEqual(etag, hashlib.sha256(body).hexdigest())
+            self.assertEqual((versions / (etag + ".html")).read_bytes(), body)
+            seen.append(etag + ".html")
+        self.assertEqual(sorted(p.name for p in versions.iterdir()), sorted(seen))
+        events = json.loads(self.request(self.api(resource))[1])
+        self.assertEqual(events, [])
+
     def test_pages_revalidate_by_etag_and_vendor_assets_are_immutable(self):
         resource = self.make_resource("cache")
         self.start([resource])

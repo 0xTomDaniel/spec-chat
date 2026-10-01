@@ -21,7 +21,8 @@ ready = "/qa-fixture/docs/specs/report.spec.html"
 # to what a user sees or does adds its onboarding section."; report.spec.html is the
 # spec under shaping, its head adding an export story with no onboarding criterion,
 # two open TBDs, and one later TBD; later-only.spec.html's only TBD is later;
-# one-open.spec.html has exactly one open TBD. No spec has a comment thread. Jev
+# one-open.spec.html has exactly one open TBD. No spec has a comment thread, except
+# the review-state collections' report spec (spools.py, nav hints below). Jev
 # records are written by the fake as pages load and kept across resets.
 [fixture.spec_review_site]
 repo = "spec-chat"
@@ -67,6 +68,66 @@ path = "{review}/block-target-enter/docs/specs/report.spec.html"
 path = "{review}/block-target-space/docs/specs/report.spec.html"
 [nav.acceptance-block-target-off]
 path = "{review}/block-target-off/docs/specs/report.spec.html"
+
+# Review-state collections (tests/fixtures/qa/spools.py). Seeded reviewers are other
+# browsers than the capture browser.
+#
+# Capture hints, per criterion (the capture agent reads these):
+# - anchor-moved, anchor-changed, anchor-gone: Papaya's comment is on the selected
+#   sentence "The export button downloads a CSV of the current table.". The agent's edit
+#   is already on disk before the page loads (moved: a paragraph inserted above it;
+#   changed: "of the current table." rewritten; gone: the sentence deleted), so the
+#   page load is the refresh. Do not edit any file. The step left is opening that thread
+#   with its "Open thread 1" button, so the panel shows its pin ring, quote, and notice
+#   (gone: "Text removed" shows only in the opened thread).
+# - stale-page: the agent's edit (a paragraph inserted above the export sentence) waits
+#   beside the spec and lands when this page next saves an event (tests/fixtures/qa/
+#   serve.py), so the page as loaded predates the edit. Steps: turn on Comment (C),
+#   select the export sentence's text, type the comment text from values, save. The save
+#   brings the "Spec updated by agent" banner; its Reload button is the Then's refresh.
+# - name: four steps, all required; do not stop after the first save. 1) Turn on Comment
+#   (C), click any block, type the first value, save. The fixture agent answers that comment
+#   as it saves (tests/fixtures/qa/serve.py), so the thread offers Reply. 2) Reload the page
+#   (browser reload, not the banner). 3) Open that thread with its "Open thread 1" button.
+#   4) Click Reply, type the second value, save. Then capture the thread: both of this
+#   reviewer's messages and their author.
+[nav.acceptance-anchor-moved]
+path = "{review}/anchor-moved/docs/specs/report.spec.html"
+[nav.acceptance-anchor-changed]
+path = "{review}/anchor-changed/docs/specs/report.spec.html"
+[nav.acceptance-anchor-gone]
+path = "{review}/anchor-gone/docs/specs/report.spec.html"
+[nav.acceptance-anchor-stale-page]
+path = "{review}/stale-page/docs/specs/report.spec.html"
+[nav.acceptance-agent-scan]
+path = "{review}/agent-scan/docs/specs/report.spec.html"
+[nav.acceptance-name]
+path = "{review}/name-reply/docs/specs/report.spec.html"
+
+# Typed text for the review-state criteria that save a message (capture types only these).
+[entry.criteria.acceptance-name]
+values = ["First note from this browser.", "Reply after reload."]
+[entry.criteria.acceptance-anchor-stale-page]
+values = ["Name the CSV columns."]
+# One capture browser: a When by another live browser, or a Given of two live drafts,
+# cannot be driven; the two-browser runtime test proves these.
+[entry.criteria.acceptance-live-comment]
+cannot_host = "capture has one browser context and cannot save from the first reviewer's page while watching the second; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-live-concurrent]
+cannot_host = "capture has one browser context, so two pages cannot save within the same second; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-name-collision]
+cannot_host = "capture has one browser context; the Then needs both reviewers' pages showing each other's names; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-edit-race]
+cannot_host = "capture has one browser context; the Then needs both reviewers' pages showing the same edit; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-handoff-own]
+cannot_host = "capture has one browser context; the Given needs two live browsers each holding a draft, and a seeded draft cannot carry the capture browser's own id; proven by tests/runtime-review-live.mjs"
+# Going offline is the device capability capture does not support (jev-capture #jc-capabilities).
+[entry.criteria.acceptance-offline-save]
+cannot_host = "capture cannot take the browser offline (device capability unsupported); proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-offline-reconnect]
+cannot_host = "capture cannot take the browser offline (device capability unsupported), so no reconnect; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-offline-closed]
+cannot_host = "capture cannot take the browser offline (device capability unsupported), so no offline save to reopen; proven by tests/runtime-review-live.mjs"
 
 # Stories this environment cannot host. services.review runs with HOME and XDG under
 # $QA_ROOT: no evidence or wake provider, no Herdr, no live agent, no review-host
