@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 import socket
 import subprocess
 import sys
@@ -119,6 +120,18 @@ class BaselineRouteTest(unittest.TestCase):
 
         self.assertEqual(response.status, 200)
         self.assertEqual(detail, source)
+
+    def test_index_runs_the_runtime_host_bridge_and_nothing_else(self):
+        # criterion-evidence #bridge-tab-pages, #acceptance-tab-index: same bridge code, not a second copy.
+        runtime = (ROOT / "skill" / "review-spec" / "assets" / "viz" / "runtime.js").read_text()
+        start = runtime.index("/* ---------------- host bridge")
+        end_marker = "/* ---------------- end host bridge ---------------- */"
+        block = runtime[start:runtime.index(end_marker, start) + len(end_marker)]
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as response:
+            body = response.read().decode()
+        scripts = re.findall(r"<script>(.*?)</script>", body, re.S)
+        self.assertEqual(scripts, [block + "\nlistenHost();\n"])
+        self.assertNotIn("<script src", body)
 
     def test_runtime_navigation_is_fixed_top_and_server_preserves_raw_spec_bytes(self):
         runtime = (ROOT / "skill" / "review-spec" / "assets" / "viz" / "runtime.js").read_text()
