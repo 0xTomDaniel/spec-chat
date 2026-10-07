@@ -83,11 +83,12 @@ class JevReadTest(unittest.TestCase):
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertEqual(server.queries, [("/api/jev", {"path": ["specs/b.spec.html"], "base": ["abc123"]})])
         self.assertEqual(out.stdout.splitlines(), [
-            "important  acceptance  rule         important  " + RULE,
-            "important  save-rule   contradicts  important  #non-goal-offline",
-            "warnings   corpus 3, unsure 4",
-            "rules      " + RULE,
-            "pending    0",
+            "important   acceptance  rule         important  " + RULE,
+            "important   save-rule   contradicts  important  #non-goal-offline",
+            "warnings    corpus 3, unsure 4",
+            "rules       " + RULE,
+            "candidates  none",
+            "pending     0",
         ])
         self.assertNotIn("{", out.stdout)
 
@@ -100,25 +101,26 @@ class JevReadTest(unittest.TestCase):
         ]
         server = self.serve({"jev": "on", "items": items, "rules": []})
         self.assertEqual(run(server.url + "/specs/b.spec.html?base=abc").stdout.splitlines(), [
-            "important  over  oversteps  important  #non-goal-x",
-            "warnings   corpus 1",
-            "rules      none",
-            "pending    0",
+            "important   over  oversteps  important  #non-goal-x",
+            "warnings    corpus 1",
+            "rules       none",
+            "candidates  none",
+            "pending     0",
         ])
 
     def test_agent_level_absent_is_neither_mark_nor_warning(self):
         server = self.serve({"jev": "on", "items": [dict(item, agent_level=None, unsure=None) for item in ON["items"]], "rules": []})
         out = run(server.url + "/specs/b.spec.html?base=abc")
-        self.assertEqual(out.stdout.splitlines(), ["warnings  0", "rules     none", "pending   0"])
+        self.assertEqual(out.stdout.splitlines(), ["warnings    0", "rules       none", "candidates  none", "pending     0"])
 
     def test_pending_counted_and_wait_rereads_until_none(self):
         pending = {"jev": "on", "items": [{"kind": "rule", "id": "acceptance", "state": "pending", "target": RULE}], "rules": []}
         server = self.serve(pending)
-        self.assertIn("pending   1", run(server.url + "/specs/b.spec.html?base=abc").stdout.splitlines())
+        self.assertIn("pending     1", run(server.url + "/specs/b.spec.html?base=abc").stdout.splitlines())
         server = self.serve(pending, pending, ON)
         out = run(server.url + "/specs/b.spec.html?base=abc", "--wait", "20")
         self.assertEqual(len(server.queries), 3)
-        self.assertEqual(out.stdout.splitlines()[-1], "pending    0")
+        self.assertEqual(out.stdout.splitlines()[-1], "pending     0")
 
     def test_off(self):
         server = self.serve({"jev": "off", "items": []})
@@ -134,6 +136,29 @@ class JevReadTest(unittest.TestCase):
         self.assertNotIn("acceptance", out)
         self.assertNotIn("record  r7", out)
         self.assertEqual(run(server.url + "/specs/b.spec.html?base=abc", "--anchor", "zz").stdout, "zz  no items\n")
+
+    def test_candidates_listed_on_their_own_line_not_as_warnings(self):
+        cand = "specs/peer-seams.spec.html#acceptance-ci"
+        items = [
+            {"kind": "candidate", "id": None, "state": "label", "label": "candidate", "target": cand, "text": "CI runs.",
+             "name": "CI runs", "record": "s1", "level": "warning", "agent_level": "warning"},
+            {"kind": "candidate", "id": None, "state": "label", "label": "candidate", "target": cand, "text": "CI runs.",
+             "name": "CI runs", "record": "s1", "level": "warning", "agent_level": "warning"},
+            {"kind": "candidate", "id": None, "state": "pending", "label": "candidate", "target": "specs/x.spec.html#acceptance-y",
+             "record": "s2", "level": "warning", "agent_level": "warning", "escalated": True},
+            {"kind": "type", "id": "d", "state": "label", "label": "internals", "target": None, "record": "r7", "level": "warning", "agent_level": "warning"},
+        ]
+        server = self.serve({"jev": "on", "items": items, "rules": [RULE]})
+        self.assertEqual(run(server.url + "/specs/b.spec.html?base=abc").stdout.splitlines(), [
+            "warnings    type 1",
+            "rules       " + RULE,
+            "candidates  " + cand,
+            "pending     1",
+        ])
+
+    def test_no_candidates_reads_none(self):
+        server = self.serve({"jev": "on", "items": [], "rules": []})
+        self.assertIn("candidates  none", run(server.url + "/specs/b.spec.html?base=abc").stdout.splitlines())
 
     def test_server_error_fails_loudly(self):
         server = self.serve({"error": "invalid base"}, status=400)
