@@ -23,6 +23,14 @@ from typing import Any, Callable, Mapping
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+try:
+    import spool
+except ModuleNotFoundError:
+    import importlib.util
+    _spool_spec = importlib.util.spec_from_file_location("jev_spool", os.path.join(os.path.dirname(__file__), "spool.py"))
+    spool = importlib.util.module_from_spec(_spool_spec)
+    _spool_spec.loader.exec_module(spool)
+
 
 MODEL = "typesafe/jev-1.13"
 OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
@@ -1362,51 +1370,17 @@ def build_type_questions(current: str | bytes, baseline: str | bytes | None, pat
 
 
 def _human_threads(events: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    events = sorted(events, key=lambda item: str(item.get("name", "")))
-    threads: dict[str, dict[str, Any]] = {}
-    message_to_thread: dict[str, str] = {}
-    message_slots: dict[str, tuple[str, int]] = {}
-    for event in events:
-        body = event.get("body", event)
-        actor = event.get("actor", body.get("actor")) if isinstance(body, Mapping) else None
-        if not isinstance(body, Mapping):
-            continue
-        if not isinstance(body.get("id"), str) or any(
-                field in body and not isinstance(body[field], str)
-                for field in ("threadId", "respondsTo", "anchorId", "supersedes")):
-            continue
-        event = body.get("event")
-        if not isinstance(event, str):
-            continue
-        if event == "comment" and actor == "human":
-            thread = {"id": body.get("id"), "status": "pending", "messages": [body], "anchor": body.get("anchorId")}
-            threads[thread["id"]] = thread
-            message_to_thread[body.get("id")] = thread["id"]
-            message_slots[body["id"]] = (thread["id"], 0)
-        elif event in {"reply", "edit", "status"}:
-            key = body.get("threadId") or message_to_thread.get(body.get("respondsTo"))
-            if not key or key not in threads:
-                continue
-            thread = threads[key]
-            if body.get("event") == "status":
-                thread["status"] = body.get("status", thread["status"])
-            elif body.get("event") == "edit" and actor == "human":
-                prior = message_slots.get(body.get("supersedes"))
-                if prior is None or prior[0] != key:
-                    continue
-                thread["messages"][prior[1]] = body
-                thread["anchor"] = body.get("anchorId", thread["anchor"])
-                thread["status"] = "pending"
-                message_to_thread[body.get("id")] = key
-                message_slots[body["id"]] = prior
-            else:
-                thread["messages"].append(body)
-                message_slots[body["id"]] = (key, len(thread["messages"]) - 1)
-                if actor == "human":
-                    thread["anchor"] = body.get("anchorId", thread["anchor"])
-                    thread["status"] = "pending"
-                message_to_thread[body.get("id")] = key
-    return list(threads.values())
+    """The service fold (review-state #model-fold-one) as Jev reads it: message bodies, and the
+    anchor of the newest human message naming one."""
+    result = []
+    for thread in spool.fold_threads(events).values():
+        messages = [message["body"] for message in thread["messages"]]
+        anchor = thread["ev"]["body"].get("anchorId")
+        for message in thread["messages"]:
+            if message["actor"] == "human":
+                anchor = message["body"].get("anchorId", anchor)
+        result.append({"id": thread["id"], "status": thread["status"], "messages": messages, "anchor": anchor})
+    return result
 
 
 def build_orphan_questions(events: list[Mapping[str, Any]], current: str | bytes, path: str = "spec", base: str = "",
