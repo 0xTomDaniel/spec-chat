@@ -74,7 +74,8 @@ class ReviewStateCollections(unittest.TestCase):
         for collection in spools.COLLECTIONS:
             self.assertIn(collection, reset)
             self.assertIn('"spec:%s::docs/specs/report.spec.html"' % collection, registry)
-            self.assertIn(collection, hinted)
+            # An index lane is reached from the index root ("{review}/"), any other from its own path.
+            self.assertIn("" if collection in spools.INDEX_LANES else collection, hinted)
 
     def test_seeded_events_name_their_version_and_file(self):
         version = hashlib.sha256(HEAD.encode("utf-8")).hexdigest()
@@ -149,6 +150,34 @@ class ReviewStateCollections(unittest.TestCase):
     def served_events(self, base, collection):
         with urllib.request.urlopen(base + "/api/events?dir=/%s/docs/specs/report.spec.html.review" % collection) as response:
             return json.load(response)
+
+    def test_index_lanes_show_their_seeded_thread_counts(self):
+        """lane-hosting #acceptance-index-threads, -threads-none, -threads-refresh Givens: QA-1 holds every
+        status (3 Open, 1 Resolved) on its report spec and none on the others; QA-2 one open thread."""
+        import html
+        import re
+
+        base = self.serve()
+        with urllib.request.urlopen(base + "/") as response:
+            body = response.read().decode()
+        cards = dict(re.findall(r'<section class="lane[^"]*" aria-label="([^"]+)">(.*?)</section>', body, re.S))
+        self.assertEqual(list(cards), ["QA-1", "QA-2"])
+
+        def rows(card):
+            result = {}
+            for item in re.findall(r"<li>(.*?)</li>", card, re.S):
+                parts = [p.strip() for p in html.unescape(re.sub(r"<[^>]+>", "\n", item)).splitlines() if p.strip()]
+                result[parts[0]] = [p for p in parts[1:] if p != "Changed"]
+            return result
+
+        quiet = {"Onboarding": [], "Report filters": [], "Report sorting": []}
+        self.assertEqual(rows(cards["QA-1"]), {**quiet, "Weekly report": ["3", "Open", "1", "Resolved"]})
+        self.assertEqual(rows(cards["QA-2"]), {**quiet, "Weekly report": ["1", "Open"]})
+        statuses = {th["id"]: th["status"] for th in spool.fold_threads(self.site.events("qa-1") + [
+            {"name": name, "actor": "agent", "body": json.loads((Path(self.site.spec("qa-1") + ".review") / "agent" / name).read_text())}
+            for name in os.listdir(self.site.spec("qa-1") + ".review/agent")]).values()}
+        self.assertEqual(statuses, {"qa-draft": "draft", "qa-handed": "pending", "qa-replied": "acknowledged",
+                                    "qa-resolved": "resolved"})
 
     def test_stale_page_edit_lands_on_save_and_the_mark_follows(self):
         self.assertEqual(self.current("stale-page"), HEAD)

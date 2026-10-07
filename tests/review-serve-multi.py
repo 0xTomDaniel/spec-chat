@@ -556,13 +556,26 @@ class MultiReviewServeTest(unittest.TestCase):
         "--ui-fail": "#a5000f", "--ui-fail-soft": "#f6e6e7",
         "--ui-attention": "#b0540e", "--ui-attention-soft": "#faf4ef",
         "--ui-muted-soft": "#eeeeee",
+        "--ui-draft": "#b0540e", "--ui-draft-soft": "#faf4ef",
+        "--ui-resolved": "#005c32", "--ui-resolved-soft": "#e6efea",
         "--ui-space-1": "4px", "--ui-space-2": "8px", "--ui-space-3": "12px",
         "--ui-space-4": "16px", "--ui-space-5": "24px", "--ui-space-6": "32px",
         "--ui-radius": "8px", "--ui-radius-sm": "6px", "--ui-radius-pill": "999px",
     }
 
+    # lane-hosting #index-token-dark: the dark block overrides these, the spec page chrome's dark values.
+    INDEX_DARK = {
+        "--ui-page": "#1a1a1a", "--ui-surface": "#242424", "--ui-ink": "#e0e0e0", "--ui-muted": "#999999",
+        "--ui-border": "#3a3a3a", "--ui-link": "#e0e0e0", "--ui-focus": "#cccccc", "--ui-action": "#cccccc",
+        "--ui-attention": "#e5873a", "--ui-attention-soft": "#2e2218",
+        "--ui-draft": "#e5873a", "--ui-draft-soft": "#2e2218",
+        "--ui-pass": "#3daa6e", "--ui-pass-soft": "#1a2e22",
+        "--ui-resolved": "#3daa6e", "--ui-resolved-soft": "#1a2e22",
+        "--ui-fail": "#ffb4ab", "--ui-fail-soft": "#2e1a1c",
+    }
+
     def test_index_css_is_one_ui_tokens_block_and_rules_use_only_its_variables(self):
-        """ANN-301 lane-hosting #acceptance-index-design, #index-design, #index-tokens."""
+        """ANN-301 lane-hosting #acceptance-index-design, #acceptance-index-dark, #index-design, #index-tokens."""
         import re
 
         board = self.make_resource("ann134")
@@ -570,13 +583,20 @@ class MultiReviewServeTest(unittest.TestCase):
         self.start([board])
         body = self.request("/")[1].decode()
         css = re.search(r"<style>(.*?)</style>", body, re.S).group(1)
-        self.assertEqual(len(re.findall(r":root\s*\{", css)), 1)
         block = re.search(r"/\* ui tokens \*/\s*:root\s*\{([^}]*)\}", css)
         self.assertIsNotNone(block)
         declared = dict(
             (name, value.strip()) for name, value in re.findall(r"(--[\w-]+)\s*:\s*([^;]+);", block.group(1)))
         self.assertEqual(declared, self.INDEX_TOKENS)
-        rules = css.replace(block.group(0), "")
+        # The one other :root is the system-appearance override, dark values only (#index-token-dark).
+        dark = re.search(r"@media \(prefers-color-scheme: dark\) \{\s*:root\s*\{([^}]*)\}\s*\}", css)
+        self.assertIsNotNone(dark)
+        self.assertEqual(len(re.findall(r":root\s*\{", css)), 2)
+        self.assertEqual(dict(
+            (name, value.strip()) for name, value in re.findall(r"(--[\w-]+)\s*:\s*([^;]+);", dark.group(1))),
+            self.INDEX_DARK)
+        self.assertIn("color-scheme: light dark", css)
+        rules = css.replace(block.group(0), "").replace(dark.group(0), "")
         self.assertNotRegex(rules, r"#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(")
         self.assertNotRegex(rules, r"font-family\s*:(?!\s*var\()")
         self.assertNotRegex(rules, r"font-size\s*:(?!\s*var\()")
@@ -595,19 +615,110 @@ class MultiReviewServeTest(unittest.TestCase):
             linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
             return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
 
-        def contrast(one, two):
-            high, low = sorted((luminance(self.INDEX_TOKENS[one]), luminance(self.INDEX_TOKENS[two])), reverse=True)
-            return (high + 0.05) / (low + 0.05)
-
-        for text, ground in (("--ui-ink", "--ui-page"), ("--ui-muted", "--ui-surface"),
-                             ("--ui-link", "--ui-surface"), ("--ui-attention", "--ui-attention-soft")):
-            self.assertGreaterEqual(contrast(text, ground), 4.5, (text, ground))
-        self.assertGreaterEqual(contrast("--ui-attention", "--ui-surface"), 3)
-        # Stripes at 3:1: only a changed lane draws a stripe; others keep the hairline edge.
+        # Text at 4.5:1 and stripes at 3:1, in light and in dark appearance.
         stripes = re.findall(r"([^{}]*)\{[^}]*border-left(?:-color)?\s*:[^;}]*var\((--[\w-]+)\)", rules)
         self.assertEqual([(sel.strip(), token) for sel, token in stripes], [(".lane.changed", "--ui-attention")])
-        for _, token in stripes:
-            self.assertGreaterEqual(contrast(token, "--ui-surface"), 3, token)
+        for scheme, tokens in (("light", self.INDEX_TOKENS), ("dark", {**self.INDEX_TOKENS, **self.INDEX_DARK})):
+            def contrast(one, two):
+                high, low = sorted((luminance(tokens[one]), luminance(tokens[two])), reverse=True)
+                return (high + 0.05) / (low + 0.05)
+
+            for text, ground in (("--ui-ink", "--ui-page"), ("--ui-ink", "--ui-surface"),
+                                 ("--ui-muted", "--ui-surface"), ("--ui-link", "--ui-surface"),
+                                 ("--ui-attention", "--ui-attention-soft"), ("--ui-draft", "--ui-draft-soft"),
+                                 ("--ui-resolved", "--ui-resolved-soft")):
+                self.assertGreaterEqual(contrast(text, ground), 4.5, (scheme, text, ground))
+            for _, token in stripes:
+                self.assertGreaterEqual(contrast(token, "--ui-surface"), 3, (scheme, token))
+        # Count pills sit on their status soft color (#index-threads-table).
+        self.assertRegex(rules, r"\.tally\.open \{ background: var\(--ui-draft-soft\); color: var\(--ui-draft\); \}")
+        self.assertRegex(rules, r"\.tally\.resolved \{ background: var\(--ui-resolved-soft\); color: var\(--ui-resolved\); \}")
+
+    @staticmethod
+    def spool_event(resource, actor, stamp, **body):
+        review = Path(resource["root"], resource["spec"] + ".review", actor)
+        review.mkdir(parents=True, exist_ok=True)
+        body = {"actor": actor, "schemaVersion": 1, "createdAt": "2026-01-01T00:00:00Z", **body}
+        (review / f"{stamp}-{body['event']}-{body['id']}.json").write_text(json.dumps(body))
+
+    def seed_every_status(self, resource):
+        """Draft, handed-off, replied, and resolved threads (event-schema lifecycle)."""
+        human = {"browser": "b1", "author": "Mango", "anchorId": "x", "target": None}
+        for stamp, ident in ((100, "d"), (101, "p"), (102, "a"), (103, "r")):
+            self.spool_event(resource, "human", stamp, id=ident, event="comment", text=ident, **human)
+        self.spool_event(resource, "human", 110, id="h", event="handoff", events=["p", "a", "r"], **human)
+        self.spool_event(resource, "agent", 120, id="ra", event="reply", respondsTo="a", status="acknowledged", text="ok")
+        self.spool_event(resource, "agent", 121, id="rr", event="reply", respondsTo="r", status="acknowledged", text="ok")
+        self.spool_event(resource, "human", 130, id="s", event="status", respondsTo="r", threadId="r", status="resolved")
+
+    def test_index_rows_show_open_then_resolved_count_pills(self):
+        """ANN-610 lane-hosting #acceptance-index-threads, #acceptance-index-threads-none,
+        #acceptance-index-threads-refresh, #index-threads, #index-threads-refresh."""
+        import html as html_lib
+        import re
+
+        busy = self.make_resource("ann610") | {"project": "sc"}
+        self.seed_every_status(busy)
+        quiet = busy | {"id": "spec:ann610::docs/specs/quiet.spec.html", "spec": "docs/specs/quiet.spec.html"}
+        Path(busy["root"], quiet["spec"]).write_text("<title>Quiet</title>\n")
+        one = self.make_resource("ann611") | {"project": "sc"}
+        self.spool_event(one, "human", 100, id="o", event="comment", anchorId="x", text="o", browser="b", author="Kiwi")
+        self.start([busy, quiet, one])
+
+        def rows():
+            response = urllib.request.urlopen(self.url + "/", timeout=2)
+            body = response.read().decode()
+            self.assertNotIn("<script", body)
+            items = re.findall(r"<li>(.*?)</li>", body, re.S)
+            text = {}
+            for item in items:
+                parts = [p.strip() for p in html_lib.unescape(re.sub(r"<[^>]+>", "\n", item)).splitlines() if p.strip()]
+                text[parts[0]] = parts[1:]
+            return body, response.headers["ETag"], text
+
+        body, etag, text = rows()
+        self.assertEqual(text["ann610"], ["Changed", "3", "Open", "1", "Resolved"])
+        self.assertEqual(text["Quiet"], ["Changed"])
+        self.assertEqual(text["ann611"], ["Changed", "1", "Open"])
+        self.assertIn('<div class="tallies"><span class="tally open"><b>3</b> Open</span>'
+                      '<span class="tally resolved"><b>1</b> Resolved</span></div>', body)
+        self.assertNotRegex(body, r"<b>0</b>")
+        # Resolve the one open thread, then reload: one Resolved, no Open, a new ETag.
+        self.spool_event(one, "human", 200, id="so", event="status", respondsTo="o", threadId="o", status="resolved")
+        _, fresh, text = rows()
+        self.assertEqual(text["ann611"], ["Changed", "1", "Resolved"])
+        self.assertNotEqual(fresh, etag)
+
+    def test_thread_counts_refold_only_when_a_spool_directory_changes(self):
+        """ANN-610 lane-hosting #index-entry-cost: counts kept per spool, keyed by human/ and agent/ mtimes."""
+        import importlib.util
+        import os
+        from unittest import mock
+
+        spec = importlib.util.spec_from_file_location("review_serve_threads", SERVER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        mount = self.make_resource("ann612")
+        path = str(Path(mount["root"]) / mount["spec"])
+        folds = []
+        fold = module.spool.fold_threads
+        with mock.patch.object(module.spool, "fold_threads", lambda events: folds.append(1) or fold(events)):
+            self.assertEqual(module._thread_counts(mount, path), (0, 0))
+            self.seed_every_status(mount)
+            self.assertEqual(module._thread_counts(mount, path), (3, 1))
+            self.assertEqual(module._thread_counts(mount, path), (3, 1))
+            self.assertEqual(len(folds), 2)
+            agent = Path(path + ".review", "agent")
+            info = os.stat(agent)
+            os.utime(agent, ns=(info.st_atime_ns, info.st_mtime_ns + 1))
+            self.assertEqual(module._thread_counts(mount, path), (3, 1))
+            self.assertEqual(len(folds), 3)
+        # No spool at all: nothing to read, no threads.
+        bare = self.make_resource("ann613")
+        bare_path = str(Path(bare["root"]) / bare["spec"])
+        for actor in ("human", "agent"):
+            os.rmdir(bare_path + ".review/" + actor)
+        self.assertEqual(module._thread_counts(bare, bare_path), (0, 0))
 
     def test_index_settles_specs_served_without_a_row_in_a_closed_disclosure(self):
         """ANN-230 lane-hosting #acceptance-index-sections: row-less specs go in one closed Settled (n)."""

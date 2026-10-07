@@ -127,6 +127,30 @@ class FoldParity(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(service_fold(CASES[name]), {**expected, "drafts": sorted(expected["drafts"])})
 
+    def test_index_counts_match_page_resolved_statuses(self):
+        """lane-hosting #acceptance-index-threads-fold: the review index counts a thread resolved exactly
+        when the page's fold shows it resolved, open otherwise, read from each case's spool on disk."""
+        import os
+        import tempfile
+
+        serve = load("fold_review_serve", ASSETS / "review-serve.py")
+        names = list(CASES)
+        page = page_fold([CASES[name] for name in names])
+        for name, expected in zip(names, page):
+            with self.subTest(name), tempfile.TemporaryDirectory() as root:
+                spec = os.path.join(root, "docs", "x.spec.html")
+                os.makedirs(os.path.dirname(spec))
+                for event in CASES[name]:
+                    actor = os.path.join(spec + ".review", event["actor"])
+                    os.makedirs(actor, exist_ok=True)
+                    with open(os.path.join(actor, event["name"]), "w", encoding="utf-8") as stream:
+                        json.dump(event["body"], stream)
+                with open(spec, "w", encoding="utf-8") as stream:
+                    stream.write("<title>x</title>")
+                resolved = sum(1 for th in expected["threads"] if th["status"] == "resolved")
+                counts = serve._thread_counts({"narrow_root": os.path.join(root, "docs")}, spec)
+                self.assertEqual(counts, (len(expected["threads"]) - resolved, resolved))
+
     def test_statuses(self):
         threads = spool.fold_threads(CASES["acknowledged and resolved"])
         self.assertEqual({key: th["status"] for key, th in threads.items()},
