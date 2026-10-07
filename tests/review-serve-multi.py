@@ -519,7 +519,7 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertIn('"GIT_OPTIONAL_LOCKS": "0"', SERVER.read_text())
         # #index-entry-title: the Changed pill sits on the right of its row.
         self.assertRegex(body, r"\.pill \{[^}]*margin-left: auto;")
-        text = html_lib.unescape(re.sub(r"<style>.*?</style>|<[^>]+>", "\n", body, flags=re.S))
+        text = html_lib.unescape(re.sub(r"<(style|script)>.*?</\1>|<[^>]+>", "\n", body, flags=re.S))
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         self.assertEqual(lines[:2], ["Spec Chat index", "Review index"])
         # #acceptance-index-sections: lane cards sit under In progress; aa rows in one closed Settled.
@@ -634,8 +634,8 @@ class MultiReviewServeTest(unittest.TestCase):
             self.fail("review server did not start")
         self.assertEqual(len(re.findall(r"<details\b", body)), 1)
         self.assertRegex(body, r"<details(?![^>]*\bopen\b)[^>]*>\s*<summary>Settled \(2\)</summary>")
-        self.assertTrue(body.rstrip().endswith("</details></main></body></html>"))
-        text = html_lib.unescape(re.sub(r"<style>.*?</style>|<[^>]+>", "\n", body, flags=re.S))
+        self.assertIn("</details></main><script>", body)
+        text = html_lib.unescape(re.sub(r"<(style|script)>.*?</\1>|<[^>]+>", "\n", body, flags=re.S))
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         self.assertEqual(lines, ["Spec Chat index", "Review index", "Settled (2)", "settled", "Alpha", "Beta"])
         for gone in ("In progress", "Other specs", "No status", "Up to date"):
