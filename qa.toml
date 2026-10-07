@@ -142,6 +142,9 @@ cannot_host = "capture has one browser context; the Then needs both reviewers' p
 cannot_host = "capture has one browser context; the Then needs both reviewers' pages showing the same edit; proven by tests/runtime-review-live.mjs"
 [entry.criteria.acceptance-handoff-own]
 cannot_host = "capture has one browser context; the Given needs two live browsers each holding a draft, and a seeded draft cannot carry the capture browser's own id; proven by tests/runtime-review-live.mjs"
+# Capture runs story-review-index at desktop viewport; criteria cannot set a viewport.
+[entry.criteria.acceptance-index-link-panel]
+cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone-width open panel state cannot be reached; proven by tests/runtime-mobile-contract.mjs"
 # Going offline is the device capability capture does not support (jev-capture #jc-capabilities).
 [entry.criteria.acceptance-offline-save]
 cannot_host = "capture cannot take the browser offline (device capability unsupported); proven by tests/runtime-review-live.mjs"
