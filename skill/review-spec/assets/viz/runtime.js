@@ -1384,38 +1384,39 @@ function jevNeutralNote(anchor, question) {
 }
 
 // project-rules #dismiss-where, #approval: one click that Jev is wrong, or a candidate confirmed. Changes what the page
-// shows at once, ends any read in flight, records through the offer's record route for the given spec path, then
-// re-reads /api/jev and shows what the server returns: a recorded answer stays, a refused or failed one comes back.
-function jevRecordAction(label, body, path = location.pathname.replace(/^\//, '')) {
+// shows at once, ends any read in flight, records through the offer's record route for this page, then re-reads
+// /api/jev and shows what the server returns: a recorded answer stays, a refused or failed one comes back.
+function jevRecordAction(label, body) {
   return { label, run: () => {
     const base = state.jev.base;
     state.jev.request += 1;
-    jevForget(body, path);
+    jevForget(body);
     renderJev();
     const reread = () => { if (base === state.jev.base) requestJev(base, true); };
-    fetch('/api/jev/offer?' + new URLSearchParams({ path }), { method: 'POST', body: JSON.stringify(body) }).then(reread, reread);
+    fetch('/api/jev/offer?' + new URLSearchParams({ path: location.pathname.replace(/^\//, '') }),
+      { method: 'POST', body: JSON.stringify(body) }).then(reread, reread);
   } };
 }
 
-// What one recorded answer removes from the page (#dismiss): Not for this spec drops that one note or offer line rule;
-// Not a project rule drops every card and candidate of the rule text, leaves a mark citing it a plain draft-check
-// note, and takes it out of both offers; Confirm rule ends its candidate.
-function jevForget(body, path) {
+// What one recorded answer removes from the page (#dismiss): Not for this spec drops that one note, or, naming an
+// offer line's spec, that line's rule; Not a project rule drops every card and candidate of the rule text, leaves a
+// mark citing it a plain draft-check note, and takes it out of both offers; Confirm rule ends its candidate.
+function jevForget(body) {
   const text = body.rule;
   const here = body.dismiss === 'here';
-  const page = path === location.pathname.replace(/^\//, '');
+  const line = body.spec;
   const everywhere = body.dismiss === 'rule';
   state.jev.items = state.jev.items.flatMap(item => {
     const own = item.kind === 'rule' || item.kind === 'candidate' ? item.text === text : false;
-    if (here) return page && body.record && item.record === body.record && (own || (item.rule && item.rule.text === text)) ? [] : [item];
+    if (here) return !line && body.record && item.record === body.record && (own || (item.rule && item.rule.text === text)) ? [] : [item];
     if (own && (everywhere || item.kind === 'candidate')) return [];
     if (everywhere && item.kind === 'corpus' && item.rule && item.rule.text === text) return [{ ...item, rule: null }];
     return [item];
   });
   const offer = state.jev.offer;
-  if (offer && (everywhere || (here && !page))) {
+  if (offer && (everywhere || (here && line))) {
     const specs = (Array.isArray(offer.specs) ? offer.specs : []).map(entry => ({ ...entry,
-      rules: (Array.isArray(entry.rules) ? entry.rules : []).filter(r => r.text !== text || (here && entry.spec !== path)) }))
+      rules: (Array.isArray(entry.rules) ? entry.rules : []).filter(r => r.text !== text || (here && entry.spec !== line)) }))
       .filter(entry => entry.rules.length);
     state.jev.offer = specs.length ? { ...offer, count: specs.length, specs } : null;
   }
@@ -1442,9 +1443,11 @@ function jevRuleTitle(rule) {
   return rule.name || (source ? source.text : '');
 }
 
-// The two rejects every rule card shares (#dismiss): left of the primary, each one click.
-function jevRuleRejects(rule, record, here = true, path) {
-  return [...(here ? [jevRecordAction('Not for this spec', { dismiss: 'here', rule: rule.text, ...(record ? { record } : {}) }, path)] : []),
+// The two rejects every rule card shares (#dismiss): left of the primary, each one click. Not for this spec holds
+// for the note's record on this page's spec, or on the repo spec an offer line names (#card-offer-row).
+function jevRuleRejects(rule, record, here = true, spec) {
+  return [...(here ? [jevRecordAction('Not for this spec', { dismiss: 'here', rule: rule.text, ...(record ? { record } : {}),
+    ...(spec ? { spec } : {}) })] : []),
     jevRecordAction('Not a project rule', { dismiss: 'rule', rule: rule.text })];
 }
 
@@ -2081,10 +2084,12 @@ function jevCandidateOfferNote(offer) {
 
 // #bootstrap-offer: N existing specs miss project rules; expanded, one line per spec, its name linking to it, then
 // misses and each missed rule's name; a line expands in place to one card per missed rule. Reconcile drafts one
-// comment, recorded only once sent.
+// comment, recorded only once sent. A line names its repo spec and the path this page's mount serves it at.
 function jevOfferNote(offer) {
   const specs = (Array.isArray(offer.specs) ? offer.specs : []).map(entry => ({ spec: String(entry.spec || ''),
-    rules: (Array.isArray(entry.rules) ? entry.rules : []).map(jevRuleOf).filter(Boolean) })).filter(entry => entry.rules.length);
+    path: String(entry.path || ''),
+    rules: (Array.isArray(entry.rules) ? entry.rules : []).map(r => jevRuleOf(r) && { ...jevRuleOf(r), record: r.record || null })
+      .filter(Boolean) })).filter(entry => entry.rules.length);
   const count = specs.length;
   const { note, head, detail, record } = jevOfferShell(count + (count === 1 ? ' existing spec misses' : ' existing specs miss')
     + ' project rules', 'reconcile', 'specs and the rules they miss');
@@ -2098,14 +2103,14 @@ function jevOfferNote(offer) {
     const name = entry.spec.split('/').pop().replace(/\.spec\.html$/, '');
     line.appendChild(jevDisclosure(cards, 'rules ' + name + ' misses'));
     const link = line.appendChild(document.createElement('a'));
-    link.href = '/' + entry.spec;
+    link.href = '/' + entry.path;
     link.textContent = name;
     line.appendChild(document.createElement('span')).className = 'hx-jev-offer-misses';
     line.lastElementChild.textContent = 'misses';
     line.appendChild(document.createElement('span')).className = 'hx-jev-offer-rules';
     line.lastElementChild.textContent = entry.rules.map(jevRuleTitle).join(', ');
     for (const rule of entry.rules) {
-      cards.appendChild(jevRuleCard({ label: 'Missing project rule', rule, actions: jevRuleRejects(rule, null, true, entry.spec) }));
+      cards.appendChild(jevRuleCard({ label: 'Missing project rule', rule, actions: jevRuleRejects(rule, rule.record, true, entry.spec) }));
     }
     row.appendChild(cards);
   }

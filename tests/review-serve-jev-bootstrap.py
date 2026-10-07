@@ -86,6 +86,15 @@ def name_of(text):
     return "Name: " + text[:24]
 
 
+def held(entries):
+    """Reconcile entries without each miss's rule-check record, which every miss holds (#card-offer-row)."""
+    for entry in entries:
+        for rule in entry["rules"]:
+            assert rule["record"].startswith("judgment-"), rule
+    return [{**entry, "rules": [{k: v for k, v in rule.items() if k != "record"} for rule in entry["rules"]]}
+            for entry in entries]
+
+
 class BootstrapTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -177,7 +186,7 @@ class BootstrapTest(unittest.TestCase):
         status = self.confirm(service, self.row(), ONBOARDING)
         self.assertEqual((status["candidates"], status["rules"], status["specs_to_reconcile"]), ([home], [home], 2))
         rule = {"target": home, "word": "onboarding"}
-        self.assertEqual(status["reconcile"], [{"spec": "docs/specs/export.spec.html", "rules": [rule]},
+        self.assertEqual(held(status["reconcile"]), [{"spec": "docs/specs/export.spec.html", "rules": [rule]},
                                                {"spec": "docs/specs/import.spec.html", "rules": [rule]}])
         # the home spec is never checked against its own rule; every other spec is
         checked = sorted(c["state"]["spec"].split("\n")[-1] for c in provider.calls if "triggered" in c["questions"])
@@ -203,7 +212,7 @@ class BootstrapTest(unittest.TestCase):
         status = self.settle(service)
         home = "docs/specs/onboarding.spec.html#acceptance-onboarding"
         self.assertEqual((status["state"], status["rules"], status["candidates"]), ("done", [home], []))
-        self.assertEqual([entry["rules"] for entry in status["reconcile"]], [[{"target": home, "word": "onboarding"}]] * 2)
+        self.assertEqual([entry["rules"] for entry in held(status["reconcile"])], [[{"target": home, "word": "onboarding"}]] * 2)
         rules = {c["state"]["rule"] for c in provider.calls if "triggered" in c["questions"]}
         self.assertEqual(rules, {ONBOARDING})
 
@@ -243,12 +252,14 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual([c for c in provider.calls[calls:] if set(c["questions"]) & {"scope", "triggered", "covered"}], [])
         offer = result["offer"]
         self.assertEqual(offer["count"], 2)
-        self.assertEqual([entry["spec"] for entry in offer["specs"]],
-                         ["docs/specs/export.spec.html", "docs/specs/import.spec.html"])
-        # each missed rule is a rule card: home target, word, verbatim text, and plain-words name (#bootstrap-offer)
-        self.assertEqual(offer["specs"][0]["rules"], [{"target": "docs/specs/onboarding.spec.html#acceptance-onboarding",
-                                                       "word": "onboarding", "text": ONBOARDING,
-                                                       "name": offer["specs"][0]["rules"][0]["name"]}])
+        # each line names its repo spec and the path the page's mount serves it at (#bootstrap-offer)
+        self.assertEqual([(entry["spec"], entry["path"]) for entry in offer["specs"]],
+                         [("docs/specs/export.spec.html", "proj/docs/specs/export.spec.html"),
+                          ("docs/specs/import.spec.html", "proj/docs/specs/import.spec.html")])
+        # each missed rule is a rule card: home target as served, word, verbatim text, and plain-words name
+        self.assertEqual(held(offer["specs"])[0]["rules"], [{"target": "proj/docs/specs/onboarding.spec.html#acceptance-onboarding",
+                                                             "word": "onboarding", "text": ONBOARDING,
+                                                             "name": offer["specs"][0]["rules"][0]["name"]}])
         self.assertIn(offer["specs"][0]["rules"][0]["name"], (None, name_of(ONBOARDING)))
         self.assertTrue(service.record_offer("proj", "dismissed"))
         self.assertIsNone(self.page(service, rows)["offer"])
@@ -368,11 +379,19 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(self.page(service, rows)["offer"]["count"], 2)
         self.assertTrue(service.dismiss(rows[0], str(self.specs / "export.spec.html"), "rule", ONBOARDING))
         offer = self.page(service, rows)["offer"]
-        local = {"target": "docs/specs/onboarding.spec.html#local", "word": "onboarding", "text": LOCAL, "name": name_of(LOCAL)}
-        self.assertEqual(offer, {"count": 2, "specs": [{"spec": "docs/specs/export.spec.html", "rules": [local]},
-                                                      {"spec": "docs/specs/import.spec.html", "rules": [local]}]})
+        local = {"target": "proj/docs/specs/onboarding.spec.html#local", "word": "onboarding", "text": LOCAL, "name": name_of(LOCAL)}
+        self.assertEqual({**offer, "specs": held(offer["specs"])}, {"count": 2, "specs": [
+            {"spec": "docs/specs/export.spec.html", "path": "proj/docs/specs/export.spec.html", "rules": [local]},
+            {"spec": "docs/specs/import.spec.html", "path": "proj/docs/specs/import.spec.html", "rules": [local]}]})
         self.assertEqual(self.page(service, [rows[1]])["offer"]["specs"][0]["rules"][0]["target"],
-                         "docs/specs/onboarding.spec.html#acceptance-onboarding")
+                         "other/docs/specs/onboarding.spec.html#acceptance-onboarding")
+        # Not for this spec on an offer line holds for the spec it names, on the miss's record, from any page
+        # (project-rules #card-offer-row, #dismiss-here): that line drops the rule, the other line keeps it
+        record = offer["specs"][1]["rules"][0]["record"]
+        self.assertTrue(service.dismiss(rows[0], str(self.specs / "export.spec.html"), "here", LOCAL, record,
+                                        "docs/specs/import.spec.html"))
+        offer = self.page(service, rows)["offer"]
+        self.assertEqual([entry["spec"] for entry in offer["specs"]], ["docs/specs/export.spec.html"])
         self.assertTrue(service.dismiss(rows[0], str(self.specs / "export.spec.html"), "rule", LOCAL))
         self.assertIsNone(self.page(service, rows)["offer"])
         self.assertEqual(self.page(service, [rows[1]])["offer"]["count"], 2)
@@ -390,21 +409,47 @@ class BootstrapTest(unittest.TestCase):
         local = "docs/specs/onboarding.spec.html#local"
         page = self.page(service, rows)
         self.assertEqual(page["candidate_offer"]["count"], 2)
+        # each candidate's home as the page's mount serves it
         self.assertEqual([(c["target"], c["text"]) for c in page["candidate_offer"]["candidates"]],
-                         [(onboarding, ONBOARDING), (local, LOCAL)])
+                         [("proj/" + onboarding, ONBOARDING), ("proj/" + local, LOCAL)])
         self.assertIsNone(page["offer"])
         self.confirm(service, rows[0], ONBOARDING)
         page = self.page(service, rows)
         # one candidate still undecided: the reconcile offer waits, the candidate offer lists what is left
-        self.assertEqual([c["target"] for c in page["candidate_offer"]["candidates"]], [local])
+        self.assertEqual([c["target"] for c in page["candidate_offer"]["candidates"]], ["proj/" + local])
         self.assertIsNone(page["offer"])
         self.assertTrue(service.record_offer("proj", "dismissed", "candidates"))
         page = self.page(service, rows)
         self.assertIsNone(page["candidate_offer"])
-        self.assertEqual([[r["target"] for r in e["rules"]] for e in page["offer"]["specs"]], [[onboarding]] * 2)
+        self.assertEqual([[r["target"] for r in e["rules"]] for e in page["offer"]["specs"]], [["proj/" + onboarding]] * 2)
         status = service.onboarding_status("proj")
         self.assertEqual((status["candidate_offer"], status.get("offer")), ("dismissed", None))
         self.assertFalse(service.record_offer("proj", "dismissed", "other"))
+
+    def test_single_root_mount_holds_its_repo_project_so_rules_confirm_and_check(self):
+        # project-rules #approval, #marks: a single-root server's mount names its repo as its project, as the index does
+        mount = serve._single_mount(str(self.root / "docs"))
+        self.assertEqual(mount["project"], "repo")
+        self.write("export.spec.html", spec(("export-one", FEATURE), body="The report page now exports."))
+        service = self.service(FakeProvider())
+        target = "specs/export.spec.html"
+
+        def read():
+            return service.response(mount, str(self.specs / "export.spec.html"), target, self.main, [], "", [mount])
+
+        deadline = time.time() + 5
+        while not [i for i in read()["items"] if i["kind"] == "candidate" and i["state"] == "label"] and time.time() < deadline:
+            time.sleep(0.01)
+        self.assertTrue(service.confirm(mount, ONBOARDING))
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            result = read()
+            rules = [i for i in result["items"] if i["kind"] == "rule"]
+            if rules and all(i["state"] != "pending" for i in rules):
+                break
+            time.sleep(0.01)
+        self.assertEqual(result["rules"], ["specs/onboarding.spec.html#acceptance-onboarding"])
+        self.assertEqual([(i["state"], i["label"]) for i in rules], [("label", "missed")])
 
     def test_registration_in_the_running_server_starts_warm_up_and_offer_is_recorded(self):
         registry = self.dir / "registry.toml"
@@ -459,6 +504,14 @@ class BootstrapTest(unittest.TestCase):
             self.assertEqual(post({"offer": "dismissed", "kind": "candidates"}), (200, {"ok": True}))
             self.assertEqual(service.onboarding_status("proj")["candidate_offer"], "dismissed")
             self.assertEqual(post({"dismiss": "here", "rule": ONBOARDING})[0], 400)  # Not for this spec names its record
+            # an offer line's Not for this spec posts on this page's route, naming the line's repo spec and its miss's
+            # record; the spec need not be served (import is not), and the line links as this mount serves it
+            line = answer["offer"]["specs"][1]
+            self.assertEqual((line["spec"], line["path"]), ("docs/specs/import.spec.html", "proj/docs/specs/import.spec.html"))
+            self.assertEqual(post({"dismiss": "here", "rule": ONBOARDING, "record": line["rules"][0]["record"],
+                                   "spec": line["spec"]}), (200, {"ok": True}))
+            with opener.open(url + "/api/jev" + query, timeout=2) as response:
+                self.assertEqual([e["spec"] for e in json.loads(response.read())["offer"]["specs"]], ["docs/specs/export.spec.html"])
             self.assertEqual(post({"dismiss": "other", "rule": ONBOARDING})[0], 400)
             self.assertEqual(post({"dismiss": "rule"})[0], 400)
             self.assertEqual(post({"dismiss": "rule", "rule": ONBOARDING}), (200, {"ok": True}))

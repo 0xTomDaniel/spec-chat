@@ -1218,6 +1218,24 @@ def _served_spec_parts(value: Any) -> tuple[str, str] | None:
     return path, source
 
 
+def mount_prefix(mount: Mapping[str, Any]) -> str:
+    """The URL path prefix a mount serves its files under, without the leading slash."""
+    if mount.get("path"):
+        return mount["path"][:-len(mount["spec"])]
+    return (mount["slug"] + "/") if mount.get("slug") else ""
+
+
+def served_path(mount: Mapping[str, Any], target: str) -> str:
+    """A repo path, with any #anchor, as the page's mount serves it: a slug serves its repo paths under its prefix,
+    the single root its narrow root's (project-rules #bootstrap-offer links and records)."""
+    path, hash_, anchor = str(target).partition("#")
+    if mount.get("slug"):
+        path = mount_prefix(mount) + path
+    elif mount.get("root") and mount.get("narrow_root"):
+        path = os.path.relpath(os.path.join(str(mount["root"]), path), str(mount["narrow_root"])).replace(os.sep, "/")
+    return path + hash_ + anchor
+
+
 def enumerate_served_specs(mounts: Any) -> list[tuple[str, str]]:
     """Enumerate the same spec files exposed by the review index."""
     if isinstance(mounts, Mapping):
@@ -2492,9 +2510,9 @@ class JevService:
             named.add(key)
             self._asking[key] = self._ask_pool.submit(self._asked_quietly, (key,), lambda: seam.name(scope))
 
-    def _rule_name(self, scope: Mapping[str, Any], project: Any, seam: "JevSeam") -> str | None:
+    def _rule_name(self, scope: Mapping[str, Any], project: Any, seam: "JevSeam", ask: bool = True) -> str | None:
         """A rule's plain-words name: the human's correction at Confirm rule, else the written one, else None
-        while it is written (project-rules #card-name-source)."""
+        while it is written (project-rules #card-name-source); asked only when ask, for a card a page renders."""
         text = scope["state"]["criterion"]
         confirmed = seam.store.decided(DECISIONS["confirm"], project, text)
         if confirmed and confirmed.get("name"):
@@ -2502,12 +2520,14 @@ class JevService:
         record = seam.store.get(seam.key(scope))
         if record and record.get("name"):
             return str(record["name"])
-        self._name_submit(scope, seam)
+        if ask:
+            self._name_submit(scope, seam)
         return None
 
-    def _rule_card(self, scope: Mapping[str, Any], project: Any, seam: "JevSeam") -> dict[str, Any]:
+    def _rule_card(self, scope: Mapping[str, Any], project: Any, seam: "JevSeam", ask: bool = True) -> dict[str, Any]:
         """What every rule card shows of its rule (project-rules #card): home target, verbatim text, name."""
-        return {"target": scope["target"], "text": scope["state"]["criterion"], "name": self._rule_name(scope, project, seam)}
+        return {"target": scope["target"], "text": scope["state"]["criterion"],
+                "name": self._rule_name(scope, project, seam, ask)}
 
     def rule_items(self, current: bytes, old: bytes | None, path: str, base: str, revision: Any,
                    served: Any, seam: "JevSeam | None" = None, project: Any = None,
@@ -2528,6 +2548,7 @@ class JevService:
         mark = self._built("mark", current)
         if not {"scope", "triggered", "covered"} <= set(sets) or mark is None:
             return [], [], {}
+        # An unchanged spec asks nothing and checks nothing; held records still show its cards (#bootstrap-after).
         checking = old != current
         items: list[dict[str, Any]] = []
         rules: list[str] = []
@@ -2564,7 +2585,8 @@ class JevService:
 
         def candidate(scope: Mapping[str, Any], anchor: str | None, record: Mapping[str, Any] | None,
                       state: str = "label") -> dict[str, Any]:
-            item = {"kind": RULE_CANDIDATE, "id": anchor, **self._rule_card(scope, project, seam), "state": state,
+            # A candidate off its home spec is data for the agent read only; no page renders it, so its name is not asked.
+            item = {"kind": RULE_CANDIDATE, "id": anchor, **self._rule_card(scope, project, seam, anchor is not None), "state": state,
                     "label": RULE_CANDIDATE if state == "label" else None,
                     "record": record.get("record_id") if record and state == "label" else None}
             if state == "label":
@@ -2592,12 +2614,12 @@ class JevService:
             state, record = self._rule_held(scope, seam)
             if state != "final":
                 # An undecided scope is no rule yet: show nothing (non-goals: no scope mark); a pending one is asked.
-                if state == "pending" and not decided("rule", text):
+                if state == "pending" and checking and not decided("rule", text):
                     ask_pending([scope, *linked(scope)])
                 continue
             if _confident_label(record) != RULE_SCOPE:
                 continue
-            if homes.get(scope["clause"]) == scope["clause"]:
+            if checking and homes.get(scope["clause"]) == scope["clause"]:
                 ask_pending(linked(scope))
             kind = standing(scope)
             if kind == RULE_CANDIDATE:
@@ -2823,7 +2845,8 @@ class JevService:
         missed: dict[str, list[dict[str, str]]] = {}
         for (path, scope, _), record in zip(checks, answers):
             if _confident_label(record) == RULE_MISSED:
-                missed.setdefault(path, []).append({"target": scope["target"], "word": scope["word"]})
+                missed.setdefault(path, []).append({"target": scope["target"], "word": scope["word"],
+                                                    "record": record.get("record_id")})
         return missed
 
     def _reconcile_rule(self, project: str, text: str) -> None:
@@ -2908,20 +2931,23 @@ class JevService:
                     scope = self._main_scope(root, status["main"], rule["target"])
                     standing = self._standing(project, scope) if scope is not None else None
                     cards[rule["target"]] = self._rule_card(scope, project, self.seam) if standing == "rule" else None
-        specs = [{**entry, "rules": [{**rule, **cards[rule["target"]]} for rule in entry["rules"] if cards[rule["target"]]]}
+        specs = [{**entry, "rules": [{**rule, **cards[rule["target"]]} for rule in entry["rules"] if cards[rule["target"]]
+                                     and not self.seam.store.decided(DECISIONS["here"], project,
+                                                                     cards[rule["target"]]["text"], entry["spec"])]}
                  for entry in status.get("reconcile", [])]
         specs = [entry for entry in specs if entry["rules"]]
         return {"count": len(specs), "specs": specs} if specs else None
 
     def dismiss(self, mount: Mapping[str, Any], target: str, action: str, text: str,
-                record_id: str | None = None) -> bool:
+                record_id: str | None = None, spec: Any = None) -> bool:
         """The human's Not for this spec (action here, on the card's rule-check record_id, or the record of a
         draft-check mark citing the rule) or Not a project rule (action rule, on the rule's scope record), for
         the page's project (#dismiss, #card-cites-reject). Held by project, repo spec path for Not for this spec,
         and rule text, never by cache key. Not a project rule is a confirmed scope label (#approval-labels); Not
         for this spec stays unconfirmed until audited (jev-suggestions #measure-feedback). False when the action
         is neither, the text is no rule held here, or the record is no rule check or draft check: the one check
-        of a dismissal, so the record route only relays it."""
+        of a dismissal, so the record route only relays it. spec is the repo spec path a reconcile offer line
+        names, which the page's own target is not (#card-offer-row)."""
         project = mount.get("project")
         seam = self._seam_for(mount)
         if action not in ("here", "rule") or not project or not isinstance(text, str) or not text \
@@ -2936,7 +2962,7 @@ class JevService:
         record = seam.store.by_id(record_id) if isinstance(record_id, str) else None
         if not record or (record.get("kind") != "covered" and record.get("kind") not in DRAFT_CHECK_KINDS):
             return False
-        holds["spec"] = os.path.relpath(target, mount["root"]).replace(os.sep, "/")
+        holds["spec"] = spec if isinstance(spec, str) and spec else os.path.relpath(target, mount["root"]).replace(os.sep, "/")
         return seam.store.resolve(record_id, DECISIONS["here"], **holds) is not None
 
     def confirm(self, mount: Mapping[str, Any], text: str, name: Any = None) -> bool:
@@ -3052,12 +3078,20 @@ class JevService:
             items.append(item)
         offer = None if mount.get("test") else self.offer(mount.get("project"), mount.get("root"))
         candidates = None if mount.get("test") else self.candidate_offer(mount.get("project"), mount.get("root"))
+        # Offers list repo paths; the page links them, and their cards' sources, as its mount serves them.
+        if offer:
+            offer = {**offer, "specs": [{**entry, "path": served_path(mount, entry["spec"]),
+                                         "rules": [{**rule, "target": served_path(mount, rule["target"])} for rule in entry["rules"]]}
+                                        for entry in offer["specs"]]}
+        if candidates:
+            candidates = {**candidates, "candidates": [{**card, "target": served_path(mount, card["target"])}
+                                                       for card in candidates["candidates"]]}
         return {"jev": "on", "items": items + rule_items + self._lane_items(mount, served_mounts), "rules": rules,
                 "candidate_offer": candidates, "offer": offer, "levels": dict(MARK_LEVELS)}
 
 
 __all__ = ["BUILDERS", "CHAIN_CONTINUE", "DRAFT_CHECK_KINDS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MARK_LEVELS", "MODEL",
-           "OPENROUTER_DECISIONS_URL", "OpenRouterProvider", "QuestionSet", "SILENT_NO",
+           "OPENROUTER_DECISIONS_URL", "mount_prefix", "served_path", "OpenRouterProvider", "QuestionSet", "SILENT_NO",
            "anchor_context",
            "build_audience_questions", "build_board_conflict_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_rule_question", "build_scope_questions", "build_type_questions", "chain_result", "changed_leaf_clauses", "draft_check",
            "extract_anchors", "lane_result",

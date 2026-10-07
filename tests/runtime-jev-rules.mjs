@@ -124,7 +124,7 @@ const rule = (stateName, extra = {}) => ({ kind: 'rule', id: 'acceptance', state
   target, record: null, word: 'onboarding', text: ruleText, name: ruleName, escalated: false,
   level: stateName === 'label' ? levels.missed.human : null, ...extra });
 const state = { readingView: false, jev: { request: 1, status: 'on', base: 'b', items: [], levels, offer: null, candidateOffer: null } };
-const location = { search: '', pathname: '/docs/specs/b.spec.html', protocol: 'http:' };
+const location = { search: '', pathname: '/ann601/docs/specs/b.spec.html', protocol: 'http:' }; // a mounted page
 const composed = [];
 const openComposer = (...args) => composed.push(args);
 const { renderJev, requestJev: loadJev } = Function('document', 'window', 'state', 'location', 'URLSearchParams', 'EMBED_REVIEW_DIR', 'NodeFilter',
@@ -138,7 +138,7 @@ const markers = () => body.querySelectorAll('.hx-jev-marker');
 const pop = () => body.querySelector('.hx-jev-pop');
 const show = items => { state.jev.items = items; renderJev(); };
 const buttons = el => el.querySelectorAll('button').map(b => b.textContent);
-const route = '/api/jev/offer?path=docs%2Fspecs%2Fb.spec.html';
+const route = '/api/jev/offer?path=ann601%2Fdocs%2Fspecs%2Fb.spec.html';
 
 // project-rules #card, #acceptance-miss, #acceptance-card-readable: one important marker on the Acceptance criteria
 // section; its popover holds one rule card: label, the rule's name as title, the full verbatim quote, the source
@@ -418,10 +418,14 @@ assert.deepEqual(pollState.jev.candidateOffer, { count: 1, candidates: [{ target
 // linking to it, misses, and each missed rule's name; a line expands to that rule's card. Reconcile drafts one
 // comment, recorded only once sent; Dismiss records.
 const qaTarget = 'docs/specs/qa.spec.html#acceptance-qa';
+// Each line names its repo spec and the path this page's mount serves it at (here under /ann601/), and each rule its
+// main rule-check record.
 const offer = { count: 2, specs: [
-  { spec: 'docs/specs/a.spec.html', rules: [{ target, word: 'onboarding', text: ruleText, name: ruleName },
-    { target: qaTarget, word: 'qa', text: 'Every feature has QA.', name: 'Every feature has QA' }] },
-  { spec: 'docs/specs/c.spec.html', rules: [{ target, word: 'onboarding', text: ruleText, name: ruleName }] }] };
+  { spec: 'docs/specs/a.spec.html', path: 'ann601/docs/specs/a.spec.html',
+    rules: [{ target, word: 'onboarding', text: ruleText, name: ruleName, record: 'judgment-a-onboarding' },
+      { target: qaTarget, word: 'qa', text: 'Every feature has QA.', name: 'Every feature has QA', record: 'judgment-a-qa' }] },
+  { spec: 'docs/specs/c.spec.html', path: 'ann601/docs/specs/c.spec.html',
+    rules: [{ target, word: 'onboarding', text: ruleText, name: ruleName, record: 'judgment-c-onboarding' }] }] };
 state.jev.offer = offer;
 show([]);
 const offerNote = () => body.querySelectorAll('.hx-jev-offer');
@@ -439,7 +443,8 @@ assert.deepEqual([disclosureBtn.getAttribute('aria-expanded'), disclosureBtn.tex
 const specRows = detailDiv.querySelectorAll('.hx-jev-offer-spec');
 assert.equal(specRows.length, 2, 'one line per spec');
 const line = specRows[0].querySelector('.hx-jev-offer-line');
-assert.deepEqual([line.querySelector('a').textContent, line.querySelector('a').href], ['a', '/docs/specs/a.spec.html']);
+assert.deepEqual([line.querySelector('a').textContent, line.querySelector('a').href], ['a', '/ann601/docs/specs/a.spec.html'],
+  'the line links the spec under the page mount');
 assert.equal(line.querySelector('.hx-jev-offer-misses').textContent, 'misses');
 assert.equal(line.querySelector('.hx-jev-offer-rules').textContent, ruleName + ', Every feature has QA');
 const lineToggle = line.querySelector('.hx-disclosure');
@@ -471,15 +476,16 @@ assert.equal(offerNote()[0].querySelector('.hx-jev-offer-title').textContent, '1
 offerNote()[0].querySelector('.hx-jev-offer-head').querySelectorAll('button')[1].fire('click');
 assert.equal(offerNote().length, 0);
 assert.deepEqual(posted.pop(), [route, { offer: 'dismissed' }]);
-// Not for this spec on an offer line card records against that spec's path; Not a project rule drops the rule from
-// every line at once, and a spec whose only miss it was leaves the count.
+// Not for this spec on an offer line card records on this page's route, naming that line's repo spec and the rule's
+// rule-check record; Not a project rule drops the rule from every line at once, and a spec whose only miss it was
+// leaves the count.
 server.items = [];
 server.offer = offer;
 await load([]);
 offerNote()[0].querySelector('.hx-disclosure').fire('click');
 const aCards = () => offerNote()[0].querySelectorAll('.hx-jev-offer-spec')[0].querySelectorAll('.hx-rule-card');
 aCards()[1].querySelectorAll('button')[0].fire('click');
-assert.deepEqual(posted.pop(), ['/api/jev/offer?path=docs%2Fspecs%2Fa.spec.html', { dismiss: 'here', rule: 'Every feature has QA.' }]);
+assert.deepEqual(posted.pop(), [route, { dismiss: 'here', rule: 'Every feature has QA.', record: 'judgment-a-qa', spec: 'docs/specs/a.spec.html' }]);
 assert.equal(aCards().length, 1, 'the line drops that rule at once');
 server.offer = { count: 1, specs: [{ spec: 'docs/specs/a.spec.html', rules: [offer.specs[0].rules[0]] }] };
 await settle();

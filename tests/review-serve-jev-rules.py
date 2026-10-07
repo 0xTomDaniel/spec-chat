@@ -405,6 +405,28 @@ class RulesTest(unittest.TestCase):
         self.assertEqual((self.rules(result), result["rules"]), ([], []))
         self.assertEqual(provider.asked("rule"), [])
 
+    def test_unchanged_spec_asks_nothing_of_the_corpus(self):
+        # project-rules #bootstrap-after: only new or changed criterion text is asked; an unchanged read asks nothing
+        self.seed()
+        self.base = self.commit()
+        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)})
+        service = self.service(provider)
+        for _ in range(3):
+            self.read(service, settle=False)
+        time.sleep(0.1)
+        self.assertEqual((provider.calls, provider.general_calls), ([], []))
+
+    def test_a_candidate_off_its_home_spec_asks_no_name(self):
+        # project-rules #card-name-source: a name is written for a card a page renders; a candidate listed on
+        # another spec is data for the agent read only, so it starts no general LLM call
+        self.seed()
+        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)})
+        service = self.service(provider)
+        self.assertEqual([(i["id"], i["text"]) for i in self.candidates(self.read(service))], [(None, ONBOARDING)])
+        self.read(service)
+        time.sleep(0.1)
+        self.assertEqual([c for c in provider.general_calls if is_name(c)], [])
+
     def test_rule_asks_share_the_one_ask_pool_and_stop_drops_them(self):
         """Rule and suggestion asks go through one pool (jev-suggestions #fast-marks-background, project-rules #pending)."""
         self.seed()

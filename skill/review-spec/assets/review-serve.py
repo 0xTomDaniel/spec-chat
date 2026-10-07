@@ -31,7 +31,7 @@ from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
 from urllib.request import urlopen
 
 try:
-    from jev import MARK_LEVELS, JevService, enumerate_served_specs, extract_anchors
+    from jev import MARK_LEVELS, JevService, enumerate_served_specs, extract_anchors, mount_prefix as _mount_prefix
 except ModuleNotFoundError:
     import importlib.util
     _jev_spec = importlib.util.spec_from_file_location("review_serve_jev", os.path.join(os.path.dirname(__file__), "jev.py"))
@@ -41,6 +41,7 @@ except ModuleNotFoundError:
     MARK_LEVELS = _jev_module.MARK_LEVELS
     enumerate_served_specs = _jev_module.enumerate_served_specs
     extract_anchors = _jev_module.extract_anchors
+    _mount_prefix = _jev_module.mount_prefix
 try:
     from place import resolve_events
 except ModuleNotFoundError:
@@ -318,6 +319,8 @@ def _single_mount(root):
         "spec": None,
         "base": "",
         "git": True,
+        # The repo's name, as the index names it, so rules and their decisions hold here (project-rules #approval).
+        "project": os.path.basename(str(repo)),
     }
 
 
@@ -334,12 +337,6 @@ def _safe_relative(value):
     if not value or any(part in ("", ".", "..") for part in parts):
         return None
     return "/".join(parts)
-
-
-def _mount_prefix(mount):
-    if mount.get("path"):
-        return mount["path"][:-len(mount["spec"])]
-    return (mount["slug"] + "/") if mount["slug"] else ""
 
 
 def _page_title(path):
@@ -1106,7 +1103,8 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
         if "dismiss" in data:
             # jev.dismiss is the one check of a dismissal; a refused one is a 400, and the page's re-read brings its note back.
             try:
-                ok = self.server.jev.dismiss(mount, target, data.get("dismiss"), data.get("rule"), data.get("record"))
+                ok = self.server.jev.dismiss(mount, target, data.get("dismiss"), data.get("rule"), data.get("record"),
+                                             data.get("spec"))
             except OSError:
                 return self._json({"error": "jev unavailable"}, 503)
             return self._json({"ok": ok}, 200 if ok else 400)
