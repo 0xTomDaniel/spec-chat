@@ -6,7 +6,7 @@ usage: serve.py <registry.toml> <port>
 
 The fake says the onboarding rule applies to every feature and that a spec misses it
 unless the spec mentions onboarding, so the served specs show a rule mark and Jev
-writes real records. Each criterion verifies the story its data-story names and no
+writes real records. The general LLM names the rule in plain words (RULE_NAME). Each criterion verifies the story its data-story names and no
 other, so no false coverage gap shows. A project whose name ends in -confirmed (reset.sh)
 has the onboarding rule confirmed as it warms up, through Confirm rule's own record write,
 so its warm-up checks specs against it; in any other project the rule stays a candidate. A fixture agent edit pending beside a spec
@@ -25,6 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE = Path(__file__).resolve().parent
 CONFIRMED = "-confirmed"
+RULE_NAME = "Every change ships its onboarding"  # the general LLM's plain-words name for the rule
 CRITERION = re.compile(r"<[^>]*\bdata-acceptance-criterion\b[^>]*>")
 ATTR = re.compile(r'\b(data-anchor|data-story)="([^"]*)"')
 
@@ -56,6 +57,7 @@ def main(argv):
     fake = rules.FakeProvider(
         scope={rules.ONBOARDING: ("every feature", 0.95)},
         rule={rules.ONBOARDING: (lambda spec: "covered" if "onboarding" in spec.lower() else "missed", 0.95)},
+        general={("name", rules.ONBOARDING): RULE_NAME},
         coverage=coverage(),
     )
     real = serve.JevService

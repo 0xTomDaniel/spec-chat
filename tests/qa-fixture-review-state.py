@@ -33,6 +33,7 @@ place = load("qa_place", ASSETS / "place.py")
 spool = load("qa_spool", ASSETS / "spool.py")
 spools = load("qa_spools", FIXTURE / "spools.py")
 ONBOARDING = load("qa_rules", ROOT / "tests" / "review-serve-jev-rules.py").ONBOARDING
+RULE_NAME = load("qa_serve", FIXTURE / "serve.py").RULE_NAME
 HEAD = (FIXTURE / "head" / "docs" / "specs" / "report.spec.html").read_text(encoding="utf-8")
 
 
@@ -225,6 +226,10 @@ class ReviewStateCollections(unittest.TestCase):
 
         site.reset(QA_STORY="story-miss", QA_URL_REVIEW=base)
         confirmed("qa-fixture"), confirmed("rule-confirmed"), candidate("rule-candidate")
+        until = time.monotonic() + 20  # the card's title is the fixture's plain-words name, written by the general LLM
+        while (names := {i.get("name") for i in jev("qa-fixture")[1]["items"] if i["kind"] == "rule"}) != {RULE_NAME}:
+            self.assertLess(time.monotonic(), until, names)
+            time.sleep(0.2)
         body = json.dumps({"dismiss": "rule", "rule": ONBOARDING}).encode()
         request = urllib.request.Request(base + "/api/jev/offer?path=qa-fixture/docs/specs/report.spec.html", data=body, method="POST")
         with urllib.request.urlopen(request) as response:
