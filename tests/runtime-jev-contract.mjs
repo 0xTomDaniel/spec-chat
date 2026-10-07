@@ -36,7 +36,9 @@ const fakeFetch = async url => {
     { kind: 'corpus', id: 'draft', state: 'label', label: 'overlaps', target: 'other#flow', record: 'r1', level: 'warning', agent_level: 'warning' },
     { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2' },
     { kind: 'lane', id: 'rule', state: 'label', label: 'contradicts', side: 'first', other: 'ann2', target: 'ann2/y.spec.html#b', record: 'r3', level: 'important', agent_level: 'important' },
-  ], levels: { overlaps: { human: 'warning', agent: 'warning' }, contradicts: { human: 'important', agent: 'important' } } }) };
+    { kind: 'corpus', id: 'cite', state: 'label', label: 'contradicts', target: 'r.spec.html#a', record: 'r4', level: 'important',
+      rule: { target: 'r.spec.html#a', text: 'Every feature has a.', name: null, extra: 1 } },
+  ], candidate_offer: { count: 1, candidates: [{ target: 'r.spec.html#a', text: 'Every feature has a.', name: 'A' }] }, levels: { overlaps: { human: 'warning', agent: 'warning' }, contradicts: { human: 'important', agent: 'important' } } }) };
 };
 const fetchJev = Function('fetch', 'jevParams', 'location', 'URLSearchParams', runtime.slice(fetchStart, fetchEnd) + '; return fetchJev;')(
   fakeFetch,
@@ -50,12 +52,16 @@ assert.match(requested, /^\/api\/jev\\?/);
 assert.deepEqual(answer, {
   jev: 'on',
   items: [
-    { kind: 'corpus', id: 'draft', state: 'label', label: 'overlaps', target: 'other#flow', record: 'r1', level: 'warning', side: null, other: null, word: null, text: null, escalated: false },
-    { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2', level: null, side: null, other: null, word: null, text: null, escalated: false },
-    { kind: 'lane', id: 'rule', state: 'label', label: 'contradicts', target: 'ann2/y.spec.html#b', record: 'r3', level: 'important', side: 'first', other: 'ann2', word: null, text: null, escalated: false },
+    { kind: 'corpus', id: 'draft', state: 'label', label: 'overlaps', target: 'other#flow', record: 'r1', level: 'warning', side: null, other: null, word: null, text: null, name: null, rule: null, escalated: false },
+    { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2', level: null, side: null, other: null, word: null, text: null, name: null, rule: null, escalated: false },
+    { kind: 'lane', id: 'rule', state: 'label', label: 'contradicts', target: 'ann2/y.spec.html#b', record: 'r3', level: 'important', side: 'first', other: 'ann2', word: null, text: null, name: null, rule: null, escalated: false },
+    // a mark citing a confirmed rule keeps that rule's target, text, and name for its card (project-rules #card-cites)
+    { kind: 'corpus', id: 'cite', state: 'label', label: 'contradicts', target: 'r.spec.html#a', record: 'r4', level: 'important', side: null, other: null, word: null, text: null, name: null,
+      rule: { target: 'r.spec.html#a', text: 'Every feature has a.', name: null }, escalated: false },
   ],
   levels: { overlaps: { human: 'warning', agent: 'warning' }, contradicts: { human: 'important', agent: 'important' } },
   offer: null,
+  candidateOffer: { count: 1, candidates: [{ target: 'r.spec.html#a', text: 'Every feature has a.', name: 'A' }] },
 });
 assert.equal((runtime.match(/fetch\('\/api\/jev\?/g) || []).length, 1, 'all Jev display uses one request seam');
 assert.match(runtime, /120000/, 'Jev fetch allows a cold provider request to finish');

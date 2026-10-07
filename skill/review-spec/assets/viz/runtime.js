@@ -58,7 +58,7 @@ const state = {
   eventsRendered: false,
   lastTbd: null,         // open TBD marker focused by the last TBD open or Next TBD activation
   range: { baseline: null, loaded: null, loading: false, pickerOpen: false }, // loaded: anchor signatures of the page as served
-  jev: { status: 'idle', items: [], levels: {}, offer: null, base: null, request: 0 }, // levels: the server's mark kind -> level table
+  jev: { status: 'idle', items: [], levels: {}, offer: null, candidateOffer: null, base: null, request: 0 }, // levels: the server's mark kind -> level table
   evidence: { criteria: null, levels: {}, hostOrigin: null }, // criteria: anchor -> entry once /api/evidence answers, null shows nothing;
   // hostOrigin: the BB plugin frame that announced itself
   readingView: false,
@@ -193,12 +193,22 @@ async function fetchJev(base, signal) {
       side: item.side == null ? null : String(item.side),
       other: item.other == null ? null : String(item.other), // lane items name the other slug (#acceptance-cross-lane)
       word: item.word == null ? null : String(item.word),
-      text: item.text == null ? null : String(item.text), // a rule's criterion text (project-rules #mark-rule-text)
+      text: item.text == null ? null : String(item.text), // a rule's criterion text, verbatim (project-rules #card)
+      name: item.name == null ? null : String(item.name), // its plain-words name, null while being written (#card-name-source)
+      rule: jevRuleOf(item.rule), // the confirmed rule a draft-check mark cites (#card-cites)
       escalated: item.escalated === true,
     })) : [],
     levels: result ? result.levels : null, // the server's levels table (#markers-levels-source); markLevel reads it
     offer: result && result.offer && typeof result.offer === 'object' && Number(result.offer.count) > 0 ? result.offer : null,
+    candidateOffer: result && result.candidate_offer && typeof result.candidate_offer === 'object'
+      && Number(result.candidate_offer.count) > 0 ? result.candidate_offer : null,
   };
+}
+
+// A rule as every card shows it: home target, verbatim criterion text, and name (project-rules #card).
+function jevRuleOf(value) {
+  if (!value || typeof value !== 'object' || !value.target || !value.text) return null;
+  return { target: String(value.target), text: String(value.text), name: value.name == null ? null : String(value.name) };
 }
 
 function jevItem(kind, id) {
@@ -221,6 +231,7 @@ function clearJev() {
   state.jev.items = [];
   state.jev.levels = {};
   state.jev.offer = null;
+  state.jev.candidateOffer = null;
   state.jev.base = null;
   scheduleJevPoll();
   renderJev();
@@ -262,12 +273,13 @@ async function requestJev(base, refresh = false) {
     if (request !== state.jev.request) return;
     const status = result.jev === 'off' ? 'off' : 'on';
     const same = refresh && status === state.jev.status
-      && JSON.stringify([result.items, result.levels, result.offer])
-      === JSON.stringify([state.jev.items, state.jev.levels, state.jev.offer]);
+      && JSON.stringify([result.items, result.levels, result.offer, result.candidateOffer])
+      === JSON.stringify([state.jev.items, state.jev.levels, state.jev.offer, state.jev.candidateOffer]);
     state.jev.status = status;
     state.jev.items = result.items;
     state.jev.levels = result.levels;
     state.jev.offer = result.offer;
+    state.jev.candidateOffer = result.candidateOffer;
     scheduleJevPoll();
     if (same) return;
     renderJev();
@@ -280,6 +292,7 @@ async function requestJev(base, refresh = false) {
     state.jev.items = [];
     state.jev.levels = {};
     state.jev.offer = null;
+    state.jev.candidateOffer = null;
     renderJev();
     renderPanel();
     renderPins();
@@ -1281,7 +1294,7 @@ function corpusFlags(items) {
     if (item.state !== 'label') continue;
     const label = labels[String(item.label || '').toLowerCase()];
     if (label) result.push({ anchor, state: 'label', label, level: item.level || null,
-      target: item.target == null ? null : String(item.target) });
+      target: item.target == null ? null : String(item.target), record: item.record || null, rule: item.rule || null });
   }
   return result;
 }
@@ -1370,45 +1383,164 @@ function jevNeutralNote(anchor, question) {
   return { anchor, group: 'neutral', state: 'unavailable', text: 'Jev unavailable', sentence: 'Jev could not check ' + JEV_QUESTIONS[question], level: null };
 }
 
-// project-rules #dismiss-where: one click that Jev is wrong. Hides the dropped rule notes at once, ends any read in
-// flight, records through the offer's record route, then re-reads /api/jev and shows what the server returns: a
-// recorded dismissal stays gone, a refused or failed one comes back.
-function jevDismissAction(label, body, drop) {
+// project-rules #dismiss-where, #approval: one click that Jev is wrong, or a candidate confirmed. Changes what the page
+// shows at once, ends any read in flight, records through the offer's record route for the given spec path, then
+// re-reads /api/jev and shows what the server returns: a recorded answer stays, a refused or failed one comes back.
+function jevRecordAction(label, body, path = location.pathname.replace(/^\//, '')) {
   return { label, run: () => {
     const base = state.jev.base;
     state.jev.request += 1;
-    state.jev.items = state.jev.items.filter(item => !(item.kind === 'rule' && drop(item)));
+    jevForget(body, path);
     renderJev();
     const reread = () => { if (base === state.jev.base) requestJev(base, true); };
-    fetch('/api/jev/offer?' + new URLSearchParams({ path: location.pathname.replace(/^\//, '') }),
-      { method: 'POST', body: JSON.stringify(body) }).then(reread, reread);
+    fetch('/api/jev/offer?' + new URLSearchParams({ path }), { method: 'POST', body: JSON.stringify(body) }).then(reread, reread);
   } };
 }
 
-// project-rules #marks: a missed rule is its fixed word linking the rule, not muted, then the rule's criterion text
-// (#mark-rule-text), with Ask to cover, Not here, and Dismiss rule; a check
-// escalated to the LLM and still unanswered is a wheel in the marker's place; a failed LLM fallback is the neutral
-// Jev unavailable note naming the rule (#q-fallback); anything else shows nothing.
-function jevRuleNote(item) {
-  if (!item.id || !item.word) return null;
-  if (item.state === 'pending') {
-    return item.escalated ? { anchor: item.id, group: 'rule', state: 'pending', text: 'checking ' + item.word + '\u2026' } : null;
+// What one recorded answer removes from the page (#dismiss): Not for this spec drops that one note or offer line rule;
+// Not a project rule drops every card and candidate of the rule text, leaves a mark citing it a plain draft-check
+// note, and takes it out of both offers; Confirm rule ends its candidate.
+function jevForget(body, path) {
+  const text = body.rule;
+  const here = body.dismiss === 'here';
+  const page = path === location.pathname.replace(/^\//, '');
+  const everywhere = body.dismiss === 'rule';
+  state.jev.items = state.jev.items.flatMap(item => {
+    const own = item.kind === 'rule' || item.kind === 'candidate' ? item.text === text : false;
+    if (here) return page && body.record && item.record === body.record && (own || (item.rule && item.rule.text === text)) ? [] : [item];
+    if (own && (everywhere || item.kind === 'candidate')) return [];
+    if (everywhere && item.kind === 'corpus' && item.rule && item.rule.text === text) return [{ ...item, rule: null }];
+    return [item];
+  });
+  const offer = state.jev.offer;
+  if (offer && (everywhere || (here && !page))) {
+    const specs = (Array.isArray(offer.specs) ? offer.specs : []).map(entry => ({ ...entry,
+      rules: (Array.isArray(entry.rules) ? entry.rules : []).filter(r => r.text !== text || (here && entry.spec !== path)) }))
+      .filter(entry => entry.rules.length);
+    state.jev.offer = specs.length ? { ...offer, count: specs.length, specs } : null;
   }
-  if (item.state !== 'unavailable' && (item.state !== 'label' || item.label !== 'missed')) return null;
-  const link = corpusTargetLink(item.target);
+  const candidates = state.jev.candidateOffer;
+  if (candidates && (everywhere || body.confirm)) {
+    const left = (Array.isArray(candidates.candidates) ? candidates.candidates : []).filter(c => c.text !== text);
+    state.jev.candidateOffer = left.length ? { ...candidates, count: left.length, candidates: left } : null;
+  }
+}
+
+// A rule's source: its home file name without .spec.html, a middle dot, and the clause anchor (#card).
+function jevRuleSource(target) {
+  const link = corpusTargetLink(target);
   if (!link) return null;
   const hash = link.text.indexOf('#');
-  const rule = link.text.slice(hash) + ' from ' + (link.text.slice(0, Math.max(hash, 0)).split('/').pop() || item.word + '.spec.html');
+  const file = hash > 0 ? link.text.slice(0, hash).split('/').pop() : '';
+  const stem = file.replace(/\.spec\.html$/, '');
+  return { href: link.href, link: link.text, file, text: (stem ? stem + ' · ' : '') + link.text.slice(Math.max(hash, 0)) };
+}
+
+// The rule's plain-words name; home and anchor while the LLM still writes it (#card-name-source).
+function jevRuleTitle(rule) {
+  const source = jevRuleSource(rule.target);
+  return rule.name || (source ? source.text : '');
+}
+
+// The two rejects every rule card shares (#dismiss): left of the primary, each one click.
+function jevRuleRejects(rule, record, here = true, path) {
+  return [...(here ? [jevRecordAction('Not for this spec', { dismiss: 'here', rule: rule.text, ...(record ? { record } : {}) }, path)] : []),
+    jevRecordAction('Not a project rule', { dismiss: 'rule', rule: rule.text })];
+}
+
+// Confirm rule (#approval): the name sent only when the human corrected it (#card-name-source).
+function jevConfirmAction(rule) {
+  return { label: 'Confirm rule', primary: true, run: (note, card) => {
+    const field = card && card.querySelector('.hx-rule-card-name');
+    const name = field ? String(field.value || '').split(/\s+/).filter(Boolean).join(' ') : '';
+    const body = { confirm: true, rule: rule.text, ...(name && name !== (rule.name || '') ? { name } : {}) };
+    jevRecordAction('Confirm rule', body).run();
+  } };
+}
+
+// project-rules #card: every note about a project rule is one card, rendered the same wherever it shows. Label, the
+// rule's name as title (editable on a candidate), the full verbatim quote, the source link, then the rejects left and
+// the one primary rightmost after a hairline. A labelled group; buttons are real buttons in visual order.
+function jevRuleCard(card, note = null) {
+  const box = document.createElement('div');
+  box.className = 'hx-rule-card';
+  box.setAttribute('role', 'group');
+  const title = jevRuleTitle(card.rule);
+  box.setAttribute('aria-label', card.label + ': ' + title);
+  box.appendChild(document.createElement('div')).className = 'hx-rule-card-label';
+  box.lastElementChild.textContent = card.label;
+  if (card.editName) {
+    const field = box.appendChild(document.createElement('textarea'));
+    field.className = 'hx-rule-card-name';
+    field.rows = 1;
+    field.maxLength = 120;
+    field.value = card.rule.name || '';
+    field.placeholder = (jevRuleSource(card.rule.target) || { text: '' }).text;
+    field.setAttribute('aria-label', 'Rule name');
+    field.title = 'Correct the name before Confirm rule';
+    field.spellcheck = true;
+    field.addEventListener('keydown', event => { if (event.key === 'Enter') event.preventDefault(); });
+  } else {
+    box.appendChild(document.createElement('div')).className = 'hx-rule-card-title';
+    box.lastElementChild.textContent = title;
+  }
+  box.appendChild(document.createElement('blockquote')).className = 'hx-rule-card-quote';
+  box.lastElementChild.textContent = card.rule.text;
+  const source = jevRuleSource(card.rule.target);
+  if (source) {
+    const link = box.appendChild(document.createElement('a'));
+    link.className = 'hx-rule-card-source';
+    link.href = source.href;
+    link.appendChild(document.createElement('span')).className = 'hx-rule-card-source-text';
+    link.lastElementChild.textContent = source.text;
+    const arrow = link.appendChild(document.createElement('span'));
+    arrow.className = 'hx-rule-card-source-arrow';
+    arrow.setAttribute('aria-hidden', 'true');
+    arrow.textContent = '↗';
+  }
+  const actions = box.appendChild(document.createElement('div'));
+  actions.className = 'hx-rule-card-actions';
+  for (const action of card.actions) {
+    const button = actions.appendChild(document.createElement('button'));
+    button.type = 'button';
+    button.className = action.primary ? 'hx-btn pri' : 'hx-rule-card-reject';
+    button.textContent = action.label;
+    button.addEventListener('click', event => { event.stopPropagation(); action.run(note, box); });
+  }
+  return box;
+}
+
+// A note holding one card: its text and sentence name the marker; the card is what the popover shows.
+function jevCardNote(anchor, group, level, sentence, card) {
+  return { anchor, group, state: 'label', level, sentence, text: card.label + ' ' + jevRuleTitle(card.rule), card };
+}
+
+// project-rules #marks, #approval: a confirmed rule the spec misses is the missed-rule card on the Acceptance criteria
+// heading; a candidate on its home criterion is the candidate card; a check escalated to the LLM and still unanswered
+// is a wheel in the marker's place; a failed LLM fallback is the neutral Jev unavailable note naming the rule
+// (#q-fallback); anything else, a candidate elsewhere included, shows nothing.
+function jevRuleNote(item) {
+  if (!item.id || !item.text || !item.target) return null;
+  const rule = { target: item.target, text: item.text, name: item.name };
+  const title = jevRuleTitle(rule);
+  if (item.state === 'pending') {
+    return item.escalated ? { anchor: item.id, group: 'rule', state: 'pending', text: 'checking ' + title + '…' } : null;
+  }
+  if (item.kind === 'candidate') {
+    if (item.state !== 'label') return null;
+    return jevCardNote(item.id, 'rule', item.level || null, 'Jev reads this as a rule for every feature',
+      { label: 'Possible project rule', rule, editName: true, actions: [...jevRuleRejects(rule, null, false), jevConfirmAction(rule)] });
+  }
+  if (item.state !== 'unavailable' && (item.state !== 'label' || item.label !== 'missed')) return null;
+  const source = jevRuleSource(item.target);
+  if (!source) return null;
   if (item.state === 'unavailable') {
     return { anchor: item.id, group: 'neutral', state: 'unavailable', text: 'Jev unavailable', level: null,
-      sentence: 'Jev could not check whether this spec needs ' + rule };
+      sentence: 'Jev could not check whether this spec needs the rule ' + title };
   }
-  return { anchor: item.id, group: 'rule', state: 'label', text: item.word + '?', href: link.href, level: item.level || null,
-    sentence: 'This spec may need ' + rule, quote: item.text,
-    actions: [jevDraftAction('Ask to cover', 'Cover ' + link.text + ' with a criterion, or add one line saying why it does not apply.'),
-      jevDismissAction('Not here', { dismiss: 'here', rule: item.text, record: item.record },
-        other => other.id === item.id && other.text === item.text),
-      jevDismissAction('Dismiss rule', { dismiss: 'rule', rule: item.text }, other => other.text === item.text)] };
+  const ask = { ...jevDraftAction('Ask to cover', 'Cover ' + source.link + ' with a criterion, or add one line saying why it does not apply.'), primary: true };
+  return jevCardNote(item.id, 'rule', item.level || null, 'This spec may need the rule ' + title + ' from ' + source.file,
+    { label: 'Missing project rule', rule, actions: [...jevRuleRejects(rule, item.record), ask] });
 }
 
 function jevSuggestionNotes() {
@@ -1416,7 +1548,7 @@ function jevSuggestionNotes() {
   const notes = [];
   const gaps = [];
   for (const item of state.jev.items) {
-    const note = item.kind === 'rule' ? jevRuleNote(item) : null;
+    const note = item.kind === 'rule' || item.kind === 'candidate' ? jevRuleNote(item) : null;
     if (note) notes.push(note);
   }
   for (const flag of coverageGapFlags(state.jev.items)) {
@@ -1457,6 +1589,15 @@ function jevSuggestionNotes() {
   const gitFocus = jevGitFocus();
   for (const flag of gitFocus ? corpusFlags(state.jev.items) : []) {
     if (flag.state !== 'label') { notes.push(jevNeutralNote(flag.anchor, 'corpus')); continue; }
+    if (flag.rule) {
+      // project-rules #card-cites: a mark whose other clause is a confirmed rule is that rule's card, in its place.
+      const source = jevRuleSource(flag.rule.target);
+      const label = flag.label + ' project rule';
+      notes.push(jevCardNote(flag.anchor, 'conflict', flag.level, label + ' ' + jevRuleTitle(flag.rule), { label, rule: flag.rule,
+        actions: [...jevRuleRejects(flag.rule, flag.record),
+          { ...jevDraftAction('Ask agent to reconcile', 'Reconcile this clause with ' + (source ? source.link : flag.rule.target) + '.'), primary: true }] }));
+      continue;
+    }
     const link = corpusTargetLink(flag.target);
     conflict(flag.anchor, flag.label, flag.level, flag.label + (link ? ' ' + link.text : ''), link ? link.href : null, link && link.text);
   }
@@ -1706,6 +1847,10 @@ function renderJevNote(note) {
   row.dataset.group = note.group;
   row.dataset.state = note.state || 'label';
   row.dataset.attention = String(note.level === 'important');
+  if (note.card) {
+    row.appendChild(jevRuleCard(note.card, note));
+    return row;
+  }
   const text = document.createElement(note.href ? 'a' : 'span');
   text.className = 'hx-jev-pop-text';
   if (note.href) text.href = note.href;
@@ -1861,7 +2006,7 @@ function wireJevPopover() {
       return;
     }
     if (event.key !== 'Tab') return;
-    const stops = pop.querySelectorAll('a,button');
+    const stops = pop.querySelectorAll('a,button,textarea');
     if (!stops.length) return;
     if (active === marker && !event.shiftKey) { event.preventDefault(); stops[0].focus(); }
     else if (active === stops[0] && event.shiftKey) { event.preventDefault(); marker.focus(); }
@@ -1875,57 +2020,100 @@ function wireJevPopover() {
   window.addEventListener('resize', placeJevPopover);
 }
 
-// project-rules #bootstrap-offer: one page note after warm-up. Reconcile drafts one comment; sending it or
-// dismissing the note records the offer, after which the server never returns it again for this project.
-function jevOfferNote(offer) {
-  const note = document.createElement('div');
-  note.className = 'hx-jev-note hx-jev-offer';
-  const count = Number(offer.count);
-  note.appendChild(document.createElement('span')).textContent =
-    count + (count === 1 ? ' existing spec misses' : ' existing specs miss') + ' project rules: reconcile?';
-  const specs = Array.isArray(offer.specs) ? offer.specs : [];
-  // Disclosure toggle: collapsed detail list of each spec and its missed rules.
-  const toggle = note.appendChild(document.createElement('button'));
+// The existing disclosure button pattern: a toggle that shows and hides one region.
+function jevDisclosure(region, what) {
+  const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.className = 'hx-disclosure';
-  toggle.setAttribute('aria-expanded', 'false');
-  toggle.setAttribute('aria-label', 'Show spec details');
-  toggle.textContent = '\u25b8';
-  const detail = note.appendChild(document.createElement('div'));
+  const set = expanded => {
+    region.hidden = !expanded;
+    toggle.setAttribute('aria-expanded', String(expanded));
+    toggle.setAttribute('aria-label', (expanded ? 'Hide ' : 'Show ') + what);
+    toggle.textContent = expanded ? '▾' : '▸';
+  };
+  set(false);
+  toggle.addEventListener('click', event => { event.stopPropagation(); set(region.hidden); });
+  return toggle;
+}
+
+// project-rules #bootstrap: both one-time offers are one page note, collapsed by default: a disclosure, the title,
+// then Dismiss and the offer's own primary rightmost; expanded, its detail below a hairline. Dismiss records the
+// offer, after which the server never returns it again for this project.
+function jevOfferShell(title, kind, what) {
+  const note = document.createElement('section');
+  note.className = 'hx-jev-note hx-jev-offer';
+  note.setAttribute('aria-label', title);
+  const head = note.appendChild(document.createElement('div'));
+  head.className = 'hx-jev-offer-head';
+  const detail = document.createElement('div');
   detail.className = 'hx-jev-offer-detail';
-  detail.hidden = true;
+  head.appendChild(jevDisclosure(detail, what));
+  head.appendChild(document.createElement('span')).className = 'hx-jev-offer-title';
+  head.lastElementChild.textContent = title;
+  const record = action => {
+    if (kind === 'candidates') state.jev.candidateOffer = null;
+    else state.jev.offer = null;
+    renderJev();
+    fetch('/api/jev/offer?' + new URLSearchParams({ path: location.pathname.replace(/^\//, '') }),
+      { method: 'POST', body: JSON.stringify({ offer: action, ...(kind === 'candidates' ? { kind } : {}) }) }).catch(() => {});
+  };
+  const dismiss = head.appendChild(document.createElement('button'));
+  dismiss.type = 'button';
+  dismiss.className = 'hx-rule-card-reject';
+  dismiss.textContent = 'Dismiss';
+  dismiss.addEventListener('click', event => { event.stopPropagation(); record('dismissed'); });
+  note.appendChild(detail);
+  return { note, head, detail, record };
+}
+
+// #bootstrap-candidates: N possible project rules: confirm?, expanding to one candidate card per candidate.
+function jevCandidateOfferNote(offer) {
+  const candidates = (Array.isArray(offer.candidates) ? offer.candidates : []).map(jevRuleOf).filter(Boolean);
+  const count = candidates.length;
+  const { note, detail } = jevOfferShell(count + (count === 1 ? ' possible project rule' : ' possible project rules') + ': confirm?',
+    'candidates', 'possible project rules');
+  for (const rule of candidates) {
+    detail.appendChild(jevRuleCard({ label: 'Possible project rule', rule, editName: true,
+      actions: [...jevRuleRejects(rule, null, false), jevConfirmAction(rule)] }));
+  }
+  return note;
+}
+
+// #bootstrap-offer: N existing specs miss project rules; expanded, one line per spec, its name linking to it, then
+// misses and each missed rule's name; a line expands in place to one card per missed rule. Reconcile drafts one
+// comment, recorded only once sent.
+function jevOfferNote(offer) {
+  const specs = (Array.isArray(offer.specs) ? offer.specs : []).map(entry => ({ spec: String(entry.spec || ''),
+    rules: (Array.isArray(entry.rules) ? entry.rules : []).map(jevRuleOf).filter(Boolean) })).filter(entry => entry.rules.length);
+  const count = specs.length;
+  const { note, head, detail, record } = jevOfferShell(count + (count === 1 ? ' existing spec misses' : ' existing specs miss')
+    + ' project rules', 'reconcile', 'specs and the rules they miss');
   for (const entry of specs) {
     const row = detail.appendChild(document.createElement('div'));
     row.className = 'hx-jev-offer-spec';
-    const specLink = row.appendChild(document.createElement('a'));
-    specLink.href = '/' + String(entry.spec || '');
-    specLink.textContent = String(entry.spec || '');
-    for (const r of (Array.isArray(entry.rules) ? entry.rules : [])) {
-      const ruleLink = row.appendChild(document.createElement('a'));
-      ruleLink.href = '/' + String(r.target || '');
-      ruleLink.className = 'hx-jev-offer-rule';
-      ruleLink.textContent = String(r.word || '') + '?';
+    const line = row.appendChild(document.createElement('div'));
+    line.className = 'hx-jev-offer-line';
+    const cards = document.createElement('div');
+    cards.className = 'hx-jev-offer-cards';
+    const name = entry.spec.split('/').pop().replace(/\.spec\.html$/, '');
+    line.appendChild(jevDisclosure(cards, 'rules ' + name + ' misses'));
+    const link = line.appendChild(document.createElement('a'));
+    link.href = '/' + entry.spec;
+    link.textContent = name;
+    line.appendChild(document.createElement('span')).className = 'hx-jev-offer-misses';
+    line.lastElementChild.textContent = 'misses';
+    line.appendChild(document.createElement('span')).className = 'hx-jev-offer-rules';
+    line.lastElementChild.textContent = entry.rules.map(jevRuleTitle).join(', ');
+    for (const rule of entry.rules) {
+      cards.appendChild(jevRuleCard({ label: 'Missing project rule', rule, actions: jevRuleRejects(rule, null, true, entry.spec) }));
     }
+    row.appendChild(cards);
   }
-  toggle.addEventListener('click', event => {
-    event.stopPropagation();
-    const expanded = detail.hidden;
-    detail.hidden = !expanded;
-    toggle.setAttribute('aria-expanded', String(expanded));
-    toggle.textContent = expanded ? '\u25be' : '\u25b8';
-    toggle.setAttribute('aria-label', expanded ? 'Hide spec details' : 'Show spec details');
-  });
-  const record = action => {
-    state.jev.offer = null;
-    renderJev();
-    fetch('/api/jev/offer?' + new URLSearchParams({ path: location.pathname.replace(/^\//, '') }),
-      { method: 'POST', body: JSON.stringify({ offer: action }) }).catch(() => {});
-  };
-  const lines = specs.map(entry => [String(entry.spec || ''),
-    ...(Array.isArray(entry.rules) ? entry.rules : []).map(r => String(r.word || '') + '? ' + String(r.target || ''))].join(' '));
-  const reconcile = note.appendChild(document.createElement('button'));
+  const lines = specs.map(entry => entry.spec + ' misses '
+    + entry.rules.map(rule => jevRuleTitle(rule) + ' ' + (jevRuleSource(rule.target) || { link: rule.target }).link).join(', '));
+  const reconcile = head.appendChild(document.createElement('button'));
   reconcile.type = 'button';
-  reconcile.className = 'hx-btn';
+  reconcile.className = 'hx-btn pri';
   reconcile.textContent = 'Reconcile';
   reconcile.addEventListener('click', event => {
     event.stopPropagation();
@@ -1933,12 +2121,6 @@ function jevOfferNote(offer) {
     openComposer(anchor ? anchor.dataset.anchor : '', null, null,
       ['Reconcile each spec with its missed rules:', ...lines].join('\n'), () => record('sent'));
   });
-  const dismiss = note.appendChild(document.createElement('button'));
-  dismiss.type = 'button';
-  dismiss.className = 'hx-jev-offer-dismiss';
-  dismiss.textContent = '\u00d7';
-  dismiss.setAttribute('aria-label', 'Dismiss');
-  dismiss.addEventListener('click', event => { event.stopPropagation(); record('dismissed'); });
   return note;
 }
 
@@ -1961,6 +2143,8 @@ function renderJev() {
     note.textContent = state.jev.status === 'off' ? 'Jev off' : 'Jev unavailable';
     pageNote(note);
   }
+  // The candidate offer comes first (#bootstrap-candidates); the server decides when each shows.
+  if (state.jev.status === 'on' && state.jev.candidateOffer) pageNote(jevCandidateOfferNote(state.jev.candidateOffer));
   if (state.jev.status === 'on' && state.jev.offer) pageNote(jevOfferNote(state.jev.offer));
 
   // Dims are the only in-text Jev display: reading view internals and Git focus No behavior change sections.
@@ -2183,16 +2367,42 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-jev-marker:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px}
 .hx-jev-marker[data-pending=true]{background:transparent;border:2px solid var(--ui-marker);border-right-color:transparent;animation:hx-jev-spin 1s linear infinite}
 @keyframes hx-jev-spin{to{transform:rotate(360deg)}}
-/* jev offer */
-.hx-jev-offer{display:flex;align-items:center;flex-wrap:wrap;gap:var(--ui-space-2)}
-.hx-jev-offer span{flex:1 1 auto}
-.hx-jev-offer .hx-btn{margin:0;font-size:var(--ui-text-xs);padding:3px var(--ui-space-2)}
-.hx-jev-offer-dismiss{margin:0;padding:0 var(--ui-space-1);border:0;background:none;color:inherit;font:600 14px/1 var(--ui-font);cursor:pointer}
-.hx-jev-offer-detail{width:100%;font:var(--ui-text-xs)/1.5 var(--ui-font);padding-left:var(--ui-space-1)}
-.hx-jev-offer-detail[hidden]{display:none}
-.hx-jev-offer-spec{margin:2px 0}
-.hx-jev-offer-spec a{color:var(--ui-link);text-decoration:underline;text-underline-offset:2px}
-.hx-jev-offer-rule{margin-left:var(--ui-space-2);font-size:var(--ui-text-xs);color:var(--ui-muted)}
+/* jev offers (project-rules #bootstrap): one quiet panel, collapsed by default */
+.hx-jev-offer{display:block;padding:0;border:1px solid var(--ui-border);background:var(--ui-surface);color:var(--ui-ink);font:var(--ui-text-sm)/1.5 var(--ui-font);overflow:hidden}
+.hx-jev-offer+.hx-jev-offer{margin-top:var(--ui-space-2)}
+.hx-jev-offer-head{display:flex;align-items:center;flex-wrap:wrap;gap:var(--ui-space-2) var(--ui-space-3);padding:var(--ui-space-2) var(--ui-space-3)}
+.hx-jev-offer-title{flex:1 1 12em;font-weight:600;color:var(--ui-ink)}
+.hx-jev-offer-head .hx-btn{margin:0;white-space:nowrap}
+.hx-jev-offer-detail{border-top:1px solid var(--ui-border);padding:var(--ui-space-1) 0}
+.hx-jev-offer-detail[hidden],.hx-jev-offer-cards[hidden]{display:none}
+.hx-jev-offer-detail>.hx-rule-card{margin:var(--ui-space-2) var(--ui-space-3)}
+.hx-jev-offer-spec+.hx-jev-offer-spec{border-top:1px solid color-mix(in srgb,var(--ui-border) 55%,transparent)}
+.hx-jev-offer-line{display:flex;align-items:baseline;flex-wrap:wrap;gap:0 var(--ui-space-2);padding:var(--ui-space-2) var(--ui-space-3)}
+.hx-jev-offer-line .hx-disclosure{align-self:center}
+.hx-jev-offer-line a{font-weight:600;color:var(--ui-ack);text-decoration:underline;text-underline-offset:2px}
+.hx-jev-offer-misses{color:var(--ui-muted)}
+.hx-jev-offer-rules{flex:1 1 14em;min-width:0;overflow-wrap:anywhere}
+.hx-jev-offer-cards{display:grid;gap:var(--ui-space-2);margin:0 var(--ui-space-3) var(--ui-space-3) calc(var(--ui-space-3) + 22px)}
+.hx-jev-offer .hx-rule-card{padding:var(--ui-space-3) var(--ui-space-4);border:1px solid var(--ui-border);border-radius:var(--ui-radius-sm);background:color-mix(in srgb,var(--ui-ink) 3%,var(--ui-surface))}
+/* rule card (project-rules #card): label, title, verbatim quote, source, then rejects left and one primary rightmost */
+.hx-rule-card{display:grid;gap:var(--ui-space-2);min-width:0;color:var(--ui-ink);font:var(--ui-text-sm)/1.55 var(--ui-font)}
+.hx-rule-card-label{font:600 var(--ui-text-xs)/1.3 var(--ui-font);letter-spacing:.02em;color:var(--ui-muted)}
+.hx-rule-card-title,.hx-rule-card-name{font:600 var(--ui-text-md)/1.35 var(--ui-font);color:var(--ui-ink);overflow-wrap:anywhere}
+.hx-rule-card-name{box-sizing:border-box;display:block;width:calc(100% + 12px);margin:-3px -6px;padding:2px 5px;border:1px dashed var(--ui-border);border-radius:var(--ui-radius-sm);background:transparent;resize:none;field-sizing:content;min-height:0}
+.hx-rule-card-name:hover{border-color:var(--ui-muted)}
+.hx-rule-card-name:focus{outline:2px solid var(--ui-focus);outline-offset:1px;border-color:transparent}
+.hx-rule-card-name::placeholder{color:var(--ui-muted);font-weight:400}
+.hx-rule-card-quote{margin:var(--ui-space-1) 0 0;padding:0 0 0 var(--ui-space-3);border-left:3px solid var(--ui-border);border-radius:0;font:inherit;font-style:normal;color:var(--ui-ink);overflow-wrap:anywhere;white-space:normal}
+.hx-rule-card-source{justify-self:start;display:inline-flex;gap:var(--ui-space-1);align-items:baseline;font-size:var(--ui-text-xs);color:var(--ui-ack);text-decoration:none;overflow-wrap:anywhere}
+.hx-rule-card-source-text{text-decoration:underline;text-underline-offset:2px}
+.hx-rule-card-actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--ui-space-2) var(--ui-space-4);margin-top:var(--ui-space-1);padding-top:var(--ui-space-3);border-top:1px solid var(--ui-border)}
+.hx-rule-card-actions button{white-space:nowrap}
+.hx-rule-card-actions .hx-btn.pri{margin:0 0 0 auto}
+.hx-rule-card-reject{margin:0;padding:var(--ui-space-1) 2px;min-height:var(--ui-space-6);border:0;background:none;font:600 var(--ui-text-xs) var(--ui-font);color:var(--ui-ink);text-decoration:underline;text-decoration-color:var(--ui-border);text-decoration-thickness:1px;text-underline-offset:3px;cursor:pointer;border-radius:var(--ui-radius-sm)}
+.hx-rule-card-reject:hover{text-decoration-color:currentColor}
+.hx-rule-card-reject:focus-visible,.hx-rule-card .hx-btn:focus-visible,.hx-rule-card-source:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px}
+.hx-jev-pop:has(.hx-rule-card){max-width:min(440px,calc(100vw - 16px));padding:var(--ui-space-4)}
+.hx-jev-pop-note:has(>.hx-rule-card)+.hx-jev-pop-note,.hx-jev-pop-note+.hx-jev-pop-note:has(>.hx-rule-card){margin-top:var(--ui-space-2);padding-top:var(--ui-space-3);border-top:1px solid var(--ui-border)}
 /* jev popover */
 .hx-jev-pop{position:fixed;z-index:880;box-sizing:border-box;width:max-content;min-width:180px;max-width:min(340px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;padding:var(--ui-space-2) 10px;border:1px solid var(--ui-ink);border-radius:var(--ui-radius);background:var(--ui-surface);color:var(--ui-ink);box-shadow:0 8px 28px var(--ui-shadow);font:var(--ui-text-sm)/1.4 var(--ui-font)}
 .hx-jev-pop[hidden]{display:none}
@@ -2270,6 +2480,9 @@ tr[data-anchor]:has(> .hx-pin[data-column]) > :has(> .hx-jev-marker){padding-rig
 .hx-jev-marker::before{inset:-14px 0 -14px -28px}
 .hx-jev-pop{left:var(--ui-space-3);right:var(--ui-space-3);top:auto;bottom:calc(10px + var(--hx-dock-space,64px) + var(--ui-space-2) + env(safe-area-inset-bottom));width:auto;max-width:none;max-height:40dvh;padding:10px var(--ui-space-3)}
 .hx-jev-pop-actions .hx-btn,.hx-jev-pop-more{min-height:44px}
+.hx-rule-card-reject{min-height:44px;padding:var(--ui-space-2) 2px}
+.hx-jev-pop:has(.hx-rule-card){max-width:none;padding:var(--ui-space-3)}
+.hx-jev-offer-cards{margin-left:var(--ui-space-3)}
 .hx-banner{align-items:flex-start;flex-wrap:wrap;padding:calc(var(--ui-space-2) + env(safe-area-inset-top)) var(--ui-space-3) var(--ui-space-2);text-align:center}
 .hx-banner button{min-height:44px;padding:var(--ui-space-2) var(--ui-space-3);touch-action:manipulation}
 .hx-toast{bottom:calc(112px + env(safe-area-inset-bottom));max-width:calc(100vw - 24px);box-sizing:border-box;text-align:center}
