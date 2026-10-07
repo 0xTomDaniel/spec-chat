@@ -23,7 +23,10 @@ ready = "/qa-fixture/docs/specs/report.spec.html"
 # two open TBDs, and one later TBD; later-only.spec.html's only TBD is later;
 # one-open.spec.html has exactly one open TBD. No spec has a comment thread, except
 # the review-state collections' report spec (spools.py, nav hints below). Jev
-# records are written by the fake as pages load and kept across resets.
+# records are written by the fake as pages load and kept across resets; rule
+# decisions are not, since each reset registers fresh projects. The onboarding rule is
+# confirmed for stories whose criteria are Given a confirmed rule (reset.sh
+# confirmed_stories), a candidate for the rest (story-approve).
 [fixture.spec_review_site]
 repo = "spec-chat"
 path = "tests/fixtures/qa"
@@ -42,6 +45,13 @@ touch = true
 # Each criterion below starts on its own clean copy of the fixture repo (reset.sh
 # collections): a story resets once, and earlier criteria leave drafts and hand-offs
 # in the spec's spool. The spec file names stay the same, so "the report spec" holds.
+# A criterion whose Given's rule state differs from its story's has its own project.
+[nav.acceptance-candidates]
+path = "{review}/rule-candidate/docs/specs/report.spec.html"
+[nav.acceptance-confirm]
+path = "{review}/rule-candidate/docs/specs/report.spec.html"
+[nav.acceptance-dismiss-return]
+path = "{review}/rule-confirmed/docs/specs/report.spec.html"
 [nav.acceptance-tbd-later]
 path = "{review}/tbd-later/docs/specs/later-only.spec.html"
 [nav.acceptance-tbd-later-handoff]
@@ -133,14 +143,14 @@ cannot_host = "capture cannot take the browser offline (device capability unsupp
 # $QA_ROOT: no evidence or wake provider, no Herdr, no live agent, no review-host
 # (the fixture writes the registry), no lane-key slug and one project. The fake Jev
 # answers scope, rule, and coverage (each criterion verifies its data-story story);
-# every other question answers unrelated. Jev state persists across resets, so the
-# project's warm-up runs once per service start.
+# every other question answers unrelated. Each reset registers fresh projects, which
+# the service warms before the story starts.
 [entry.criteria.acceptance-reviewed-kept]
 cannot_host = "the reviewed base is written by review-host when a hand-off is processed; review-host does not run here (the fixture writes the registry)"
 [entry.criteria.acceptance-reviewed-accepted]
 cannot_host = "the accepted flag is written by review-host reviewed; review-host does not run here (the fixture writes the registry)"
 [entry.criteria.acceptance-warm]
-cannot_host = "register is review-host's, which does not run here, and the warm-up runs once per service start with state kept across resets, so no first registration per story"
+cannot_host = "register is review-host's, which does not run here (the fixture writes the registry)"
 [entry.stories.story-proven]
 cannot_host = "no evidence provider (providers/evidence.toml absent), so no criterion carries evidence"
 [entry.stories.story-open-proof]
