@@ -2250,24 +2250,29 @@ class JevService:
     def _lane_questions(self, rows: Any, *, exclude_test: bool = True) -> list[dict[str, Any]]:
         """Cross-lane questions over every registry row's changed clauses (#cross-lane-clauses), kept by
         content (#fast-marks): a read resolves each repository's target main once and reparses nothing unchanged.
+        Only slugs of the same project are paired (#cross-lane-pairs, #shared-own-project).
         Test-flagged slugs are excluded from cross-lane checks (#cross-lane-test-host)."""
         if not {"about", "contradicts", "oversteps", "overlaps"} <= set(self.seam.question_sets):
             return []
-        clauses: dict[str, list[dict[str, str]]] = {}
+        projects: dict[str, dict[str, list[dict[str, str]]]] = {}
         mains: dict[str, str | None] = {}
         for row in rows or ():
             if not isinstance(row, Mapping) or not row.get("slug") or not row.get("spec"):
                 continue
             if exclude_test and row.get("test"):
                 continue
+            clauses = projects.setdefault(str(row.get("project") or ""), {})
             try:
                 clauses.setdefault(str(row["slug"]), []).extend(self._changed_clauses(row, mains))
             except Exception:
                 continue
-        try:
-            return list(self._built("lane", clauses))
-        except Exception:
-            return []
+        result: list[dict[str, Any]] = []
+        for clauses in projects.values():
+            try:
+                result.extend(self._built("lane", clauses))
+            except Exception:
+                continue
+        return result
 
     def _lane_items(self, mount: Mapping[str, Any], rows: Any) -> list[dict[str, Any]]:
         """`lane` items on this page's own clauses from held records; misses are asked after answering.
