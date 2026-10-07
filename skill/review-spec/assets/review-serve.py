@@ -446,6 +446,17 @@ _ROW_CACHE = {}
 _COMMIT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
 
+_HOST_BRIDGE_END = "/* ---------------- end host bridge ---------------- */"
+
+
+def _host_bridge():
+    """The runtime's host bridge block, verbatim: the index runs the spec pages' bridge, not a copy (criterion-evidence #bridge-tab-pages)."""
+    runtime = Path(__file__).resolve().parent.joinpath("viz", "runtime.js").read_text(encoding="utf-8")
+    start = runtime.index("/* ---------------- host bridge")
+    end = runtime.index(_HOST_BRIDGE_END, start) + len(_HOST_BRIDGE_END)
+    return runtime[start:end]
+
+
 def _index_row(mount, path, row):
     """(status, title) for one served spec, recomputed only when its file identity or row base changes."""
     try:
@@ -896,7 +907,9 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
 .settled summary { cursor: pointer; margin: 0 0 var(--ui-space-2); font-size: var(--ui-text-md); font-weight: 600; }
 .empty { color: var(--ui-muted); }
 @media (max-width: 640px) { main { padding: var(--ui-space-4); } }
-</style></head><body><main><h1>Review index</h1>%s</main></body></html>''' % listing).encode("utf-8")
+</style></head><body><main><h1>Review index</h1>%s</main><script>%s
+listenHost();
+</script></body></html>''' % (listing, _host_bridge())).encode("utf-8")
         self._send_body(body, "text/html; charset=utf-8")
 
     def _resolve_path(self, path, *, spec_only=False):

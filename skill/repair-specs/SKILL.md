@@ -1,12 +1,12 @@
 ---
 name: repair-specs
-description: Bring a repo's existing specs to the current shaping contract. Removes non-target text, moves behavior to owning specs, resolves contradictions, and rewrites acceptance criteria to the shaping contract's criterion rules and Jev project rules. Runnable any time or as onboarding catch-up.
+description: Bring a repo's existing specs and ADRs to the current shaping contract. Removes non-target text, moves behavior to owning specs, resolves contradictions, reduces ADRs to the ADR model, and rewrites acceptance criteria to the shaping contract's criterion rules and Jev project rules. Runnable any time or as onboarding catch-up.
 ---
 
 # Repair specs
 
-One skill that brings every spec in a repo to the current [shaping contract](../shape-spec/SKILL.md).
-Reads only Spec Chat's `onboarding.toml` and the repo's specs; no peer status file or peer name.
+One skill that brings every spec and ADR in a repo to the current [shaping contract](../shape-spec/SKILL.md).
+Reads only Spec Chat's `onboarding.toml` and the repo's specs and ADRs; no peer status file or peer name.
 
 ## Inputs
 
@@ -17,8 +17,8 @@ When N is zero or the table is absent, there is nothing to reconcile; stop.
 
 ## Repair types
 
-Run in this fixed order: clean, home, contradict, criteria.
-Each type reads every spec as the previous type left it.
+Run in this fixed order: clean, home, contradict, ADR, criteria.
+Each type reads every spec and ADR as the previous type left it.
 
 ### 1. Clean
 
@@ -43,7 +43,17 @@ Resolve contradictions between specs:
 - When two specs' clauses contradict and one side is out of date, update the out-of-date side.
 - When the contradiction is a real design choice, write an open TBD (`data-spec-tbd`) at the clause instead.
 
-### 4. Criteria
+### 4. ADR
+
+Bring every ADR to the [ADR model](../../docs/specs/prompt-first-shaping.spec.html#source-adr): context, decision, why, alternatives rejected, and consequences only.
+An ADR already in that model is left unchanged.
+For an ADR with a policy or rules section, a restated rule, mechanics, or amendments (superseded blocks, dated amendments, a decision log):
+- Move each rule into its home spec as an acceptance criterion that says it applies to every feature, unless a spec already states it.
+- Write one new short ADR holding the current decision and why, linking those criteria without restating them and naming every ADR it supersedes.
+- Add only the line `Superseded by ADR NNNN (date)` to each superseded ADR; where ADRs carry no number, the line links the new ADR's file.
+- List removed mechanics in the repair commit message for the code and the change request.
+
+### 5. Criteria
 
 Rewrite acceptance criteria to the shaping contract's [criterion rules](../../docs/specs/prompt-first-shaping.spec.html#complete-criterion-capturable), then to any missed Jev project rule.
 Criterion-rule repair runs whether Jev is on or off.
@@ -63,7 +73,7 @@ Jev project rules, only when Jev is on:
 - For each spec whose criteria miss a rule, rewrite to satisfy the rule using the rule's own wording.
 - The skill names no project's rules and applies whatever Jev found; no rule wording or format is hardcoded.
 
-When Jev is off, skip only the Jev project-rule repair; clean, home, contradict, and criterion-rule repairs still run.
+When Jev is off, skip only the Jev project-rule repair; clean, home, contradict, ADR, and criterion-rule repairs still run.
 
 ## Editing contract
 
@@ -85,7 +95,7 @@ Same rule as the shaping agent's [fix-raises-new-mark](../../docs/specs/project-
 
 When repairs complete:
 
-1. Commit each changed spec on the current branch.
+1. Commit each changed spec and ADR on the current branch.
 2. Register each changed spec with the review server so the reviewer sees changes with Git focus.
 
 Commits are local only; the skill never pushes, opens a pull request, or creates an issue.
@@ -94,7 +104,7 @@ Commits are local only; the skill never pushes, opens a pull request, or creates
 
 When `onboarding.toml` shows specs to reconcile for a project:
 
-1. Run all four repair types on that project's specs.
+1. Run all five repair types on that project's specs.
 2. Update the project's table in `onboarding.toml` when done (reconciled count, timestamp).
 
 ## Burden
