@@ -93,14 +93,14 @@ const code = [
   slice('async function requestEvidence(', '\n\nfunction markIssueFocus('),
   slice('function commitDate(', '\n\nfunction rangeBarText('),
 ].join('\n\n');
-const state = { readingView: false, jev: { request: 0, status: 'idle', base: null, items: [] }, evidence: { criteria: null, hostOrigin: null } };
+const state = { readingView: false, jev: { request: 0, status: 'idle', base: null, items: [] }, evidence: { criteria: null } };
 const location = { search: '', pathname: '/specs/demo.spec.html' };
 let answer = null;
 const fetches = [];
 const fetch = async url => { fetches.push(url); if (answer instanceof Error) throw answer; return answer; };
-const { renderJev, requestEvidence, evidenceAge, evidenceDiff, listenEvidenceHost } = Function('document', 'window', 'state', 'location', 'URLSearchParams', 'EMBED_REVIEW_DIR', 'NodeFilter',
+const { renderJev, requestEvidence, evidenceAge, evidenceDiff, listenHost } = Function('document', 'window', 'state', 'location', 'URLSearchParams', 'EMBED_REVIEW_DIR', 'NodeFilter',
   'requestAnimationFrame', 'cancelAnimationFrame', 'getComputedStyle', 'innerWidth', 'innerHeight', 'fetch', 'openComposer',
-  code + '; return { renderJev, requestEvidence, evidenceAge, evidenceDiff, listenEvidenceHost };')(document, window, state, location, URLSearchParams, null, {}, () => 0, () => {},
+  code + '; return { renderJev, requestEvidence, evidenceAge, evidenceDiff, listenHost };')(document, window, state, location, URLSearchParams, null, {}, () => 0, () => {},
   () => ({}), 375, 812, fetch, openComposer);
 
 const holder = anchor => article.querySelectorAll('[data-anchor]').find(e => e.dataset.anchor === anchor);
@@ -227,7 +227,7 @@ const labelOf = anchor => row(anchor).querySelector('.hx-jev-pop-text');
 const bundleOf = anchor => row(anchor).querySelector('.hx-jev-pop-link');
 assert.equal(click(labelOf('passed')), false);
 assert.equal(click(bundleOf('passed')), false);
-listenEvidenceHost();
+listenHost();
 const announce = (data, source = parent, origin = 'https://bb.example') => windowListeners.message.forEach(fn => fn({ data, source, origin }));
 announce({ type: 'spec-chat-host', opens: ['evidence'] }, {});
 announce({ type: 'spec-chat-host', opens: [] });

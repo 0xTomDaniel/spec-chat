@@ -59,8 +59,7 @@ const state = {
   lastTbd: null,         // open TBD marker focused by the last TBD open or Next TBD activation
   range: { baseline: null, loaded: null, loading: false, pickerOpen: false }, // loaded: anchor signatures of the page as served
   jev: { status: 'idle', items: [], levels: {}, offer: null, base: null, request: 0 }, // levels: the server's mark kind -> level table
-  evidence: { criteria: null, levels: {}, hostOrigin: null }, // criteria: anchor -> entry once /api/evidence answers, null shows nothing;
-  // hostOrigin: the BB plugin frame that announced itself
+  evidence: { criteria: null, levels: {} }, // criteria: anchor -> entry once /api/evidence answers, null shows nothing
   readingView: false,
   movingOrphans: new Set(),
   handoffPosting: false,
@@ -1548,21 +1547,47 @@ function evidenceCriterionKey(url) {
 function evidenceOpen(bundle, criterion) {
   if (!bundle) return null;
   return () => {
-    if (!state.evidence.hostOrigin) return false;
-    window.parent.postMessage(criterion ? { type: 'spec-chat-open-evidence', bundle, criterion } : { type: 'spec-chat-open-evidence', bundle }, state.evidence.hostOrigin);
+    if (!hostBridge.evidence) return false;
+    window.parent.postMessage(criterion ? { type: 'spec-chat-open-evidence', bundle, criterion } : { type: 'spec-chat-open-evidence', bundle }, hostBridge.evidence);
     return true;
   };
 }
 
-function listenEvidenceHost() {
+/* ---------------- host bridge (criterion-evidence #plugin-bridge) ----------------
+ * Self-contained (window, document, location, navigator only): review-serve inlines this exact block
+ * into the review index, so spec pages and the index run one bridge (#bridge-tab-pages). */
+// The parent frame's origin per step its hello offers; null keeps the browser's own behavior.
+const hostBridge = { evidence: null, tab: null };
+
+// #bridge-new-tab-click: Cmd+click on macOS, Ctrl+click elsewhere, or middle-click (auxclick button 1), same-origin link.
+function hostTabClick(event) {
+  if (!hostBridge.tab || event.defaultPrevented) return;
+  const modifier = /Mac|iPhone|iPad/.test(navigator.platform) ? event.metaKey : event.ctrlKey;
+  if (!(event.type === 'auxclick' ? event.button === 1 : event.button === 0 && modifier)) return;
+  const link = event.target && event.target.closest && event.target.closest('a[href]');
+  if (!link) return;
+  let url;
+  try { url = new URL(link.getAttribute('href'), document.baseURI); } catch (_) { return; }
+  if (url.origin !== location.origin) return;
+  event.preventDefault();
+  window.parent.postMessage({ type: 'spec-chat-open-tab', href: url.href }, hostBridge.tab);
+}
+
+// #bridge-hello-check: only the parent window at a real origin; "evidence" and "tab" each turn on only their own steps.
+function listenHost() {
   if (window.parent === window) return;
   window.addEventListener('message', event => {
     const data = event.data;
     if (event.source !== window.parent || !event.origin || event.origin === 'null') return;
-    if (!data || data.type !== 'spec-chat-host' || !Array.isArray(data.opens) || !data.opens.includes('evidence')) return;
-    state.evidence.hostOrigin = event.origin;
+    if (!data || data.type !== 'spec-chat-host' || !Array.isArray(data.opens)) return;
+    if (data.opens.includes('evidence')) hostBridge.evidence = event.origin;
+    if (!data.opens.includes('tab')) return;
+    hostBridge.tab = event.origin;
+    event.source.postMessage({ type: 'spec-chat-title', title: String(document.title) }, event.origin);
   });
+  for (const type of ['click', 'auxclick']) document.addEventListener(type, hostTabClick, true);
 }
+/* ---------------- end host bridge ---------------- */
 
 function evidenceNotes() {
   const criteria = state.evidence && state.evidence.criteria;
@@ -3299,7 +3324,7 @@ function keepPlace() {
   if (httpPage) state.range.loaded = anchorSignatures(document);
   mountUI();
   if (httpPage) applyIssueFocus();
-  if (httpPage) { listenEvidenceHost(); requestEvidence(); }
+  if (httpPage) { listenHost(); requestEvidence(); }
   await hydrateIslands();
   adoptForeignCharts();
   restorePlace();
