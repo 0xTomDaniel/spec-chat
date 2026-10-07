@@ -1091,8 +1091,10 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
             return self._json({"error": "jev unavailable"}, 503)
 
     def _post_offer(self, query, body):
-        """The one Jev record route: the page's one-time reconcile offer sent or dismissed (project-rules
-        #bootstrap-offer), or a rule note's Not here or Dismiss rule (project-rules #dismiss-store)."""
+        """The one Jev record route: either one-time offer, reconcile or candidates (body kind), sent or dismissed
+        (project-rules #bootstrap-offer, #bootstrap-candidates), a rule card's Not for this spec or Not a project
+        rule (project-rules #dismiss-store), or a candidate card's Confirm rule with an optional corrected name
+        (project-rules #approval)."""
         mount, target, _ = self._resolve_path(query.get("path", [""])[0], spec_only=True)
         if not mount:
             return self._json({"error": "bad path"}, 400)
@@ -1108,10 +1110,16 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); out
             except OSError:
                 return self._json({"error": "jev unavailable"}, 503)
             return self._json({"ok": ok}, 200 if ok else 400)
-        if action not in ("sent", "dismissed"):
+        if "confirm" in data:
+            try:
+                ok = self.server.jev.confirm(mount, data.get("rule"), data.get("name"))
+            except OSError:
+                return self._json({"error": "jev unavailable"}, 503)
+            return self._json({"ok": ok}, 200 if ok else 400)
+        if action not in ("sent", "dismissed") or data.get("kind", "reconcile") not in ("reconcile", "candidates"):
             return self._json({"error": "offer must be sent or dismissed"}, 400)
         try:
-            return self._json({"ok": self.server.jev.record_offer(mount.get("project"), action)})
+            return self._json({"ok": self.server.jev.record_offer(mount.get("project"), action, data.get("kind", "reconcile"))})
         except OSError:
             return self._json({"error": "jev unavailable"}, 503)
 

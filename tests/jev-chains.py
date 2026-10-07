@@ -138,7 +138,8 @@ class ChainTest(unittest.TestCase):
             "contradicts": important, "missed": important, "no-criterion": important,
             "no-story": important, "qa-failed": important, "qa-stale": important,
             "overlaps": {"human": "warning", "agent": "warning"},
-            "oversteps": {"human": "warning", "agent": "important"}})
+            "oversteps": {"human": "warning", "agent": "important"},
+            "candidate": {"human": "warning", "agent": "warning"}})  # jev-suggestions #level-candidate
 
 
 if __name__ == "__main__":
