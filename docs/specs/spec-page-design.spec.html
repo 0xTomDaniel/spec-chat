@@ -44,44 +44,47 @@ The spec document's own content styling is outside this design.</p>
 </div>
 
 <p data-acceptance-criterion data-anchor="acceptance-token-block" data-story="story-token-reuse">
-<span data-acceptance-scenario>Given the CSS const string in runtime.js, When it is read,</span>
-<span data-acceptance-observable>it opens with one <code>:root</code> block headed <code>/* ui tokens */</code> holding the index tokens plus the additions in <a href="#token-additions">the token additions table</a>, and every chrome color, font-size, font-weight, border-radius, and spacing value in the CSS const is a <code>var(--ui-*)</code> reference, with no remaining literal values except pin teardrop border-radius, z-index, transition, animation, and position values.</span>
+<span data-acceptance-scenario>Given a contributor editing runtime.js, When they look up a chrome color, font size, weight, radius, or spacing value,</span>
+<span data-acceptance-observable>Then they find it as a named token in the one token block, which holds the index tokens plus <a href="#token-additions">the token additions</a>, and every chrome style uses those tokens, with literal values only for the pin teardrop radius, stacking order, transitions, animations, and positions, proven by a unit test: no screen shows it.</span>
 </p>
 
 <p data-acceptance-criterion data-anchor="acceptance-button-system" data-story="story-consistent-chrome">
-<span data-acceptance-scenario>When a spec page is viewed at 1440 and 390 widths,</span>
-<span data-acceptance-observable>every chrome button matches one of the four <a href="#button-variants">button variants</a> (primary, secondary, icon, text-link) with the specified shared properties, and no button has a shape, size, radius, font, or color outside the system.</span>
+<span data-acceptance-scenario>Given a spec reviewer on a spec page, When they view it at desktop and at phone width,</span>
+<span data-acceptance-observable>Then every chrome button matches one of the four <a href="#button-variants">button variants</a> (primary, secondary, icon, text-link) with its shared properties, and no button has a shape, size, radius, font, or color outside the system.</span>
 </p>
 
 <p data-acceptance-criterion data-anchor="acceptance-color-consistency" data-story="story-consistent-chrome">
-<span data-acceptance-scenario>When a spec page is viewed at 1440 width with draft, acknowledged, and resolved threads,</span>
-<span data-acceptance-observable>every pin, pill, dock thread, and thread card border for the same status uses the same token pair (color on soft background), and no two statuses share a color.</span>
+<span data-acceptance-scenario>Given a spec reviewer on a spec page with draft, acknowledged, and resolved threads, a fixture that must be added to provide it, When they view it at desktop width,</span>
+<span data-acceptance-observable>Then every pin, pill, dock thread, and thread card border for the same status shows the same color on the same soft background, and no two statuses share a color.</span>
 </p>
 
 <p data-acceptance-criterion data-anchor="acceptance-mark-levels" data-story="story-consistent-chrome">
-<span data-acceptance-scenario>When Jev markers show at important, neutral, and passed levels,</span>
-<span data-acceptance-observable>marker colors are <code>--ui-marker-important</code> #d1242f, <code>--ui-marker</code> #767b85, and <code>--ui-marker-pass</code> #1a7f37 with their current shapes and sizes.</span>
+<span data-acceptance-scenario>Given a spec reviewer on a spec with Jev markers at important, neutral, and passed levels, When they view the markers,</span>
+<span data-acceptance-observable>Then the markers show the important, neutral, and passed colors of the <a href="#token-marker">marker tokens</a>, each in its level's marker shape and size.</span>
 </p>
 
 <p data-acceptance-criterion data-anchor="acceptance-contrast" data-story="story-consistent-chrome">
-<span data-acceptance-scenario>When every chrome text-on-background combination is checked,</span>
-<span data-acceptance-observable>normal text meets 4.5:1 contrast ratio and meaningful non-text boundaries (status pill borders, active thread borders, pin outlines) meet 3:1.</span>
+<span data-acceptance-scenario>Given a spec reviewer on a spec page, When they read every chrome text and control,</span>
+<span data-acceptance-observable>Then normal text meets 4.5:1 contrast and meaningful non-text boundaries (status pill borders, active thread borders, pin outlines) meet 3:1.</span>
 </p>
 
 <p data-acceptance-criterion data-anchor="acceptance-no-content-change" data-story="story-consistent-chrome">
-<span data-acceptance-scenario>When a spec with the shared stylesheet is viewed at 1440 and 390 widths,</span>
-<span data-acceptance-observable>the spec document content (headings, prose, tables, figures, code blocks, section borders, page background) renders identically to the current main branch: the spec.css tokens and DOC_CSS article.spec rules are unchanged.</span>
+<span data-acceptance-scenario>Given a spec reviewer on a spec that uses the shared stylesheet, When they view it at desktop and at phone width,</span>
+<span data-acceptance-observable>Then the spec content (headings, prose, tables, figures, code blocks, section borders, page background) takes its look from the shared stylesheet and the runtime's document rules alone, and no chrome token restyles it.</span>
 </p>
 
 <p data-acceptance-criterion data-anchor="acceptance-dark-mode" data-story="story-consistent-chrome">
-<span data-acceptance-scenario>When a spec page is viewed in dark mode (prefers-color-scheme: dark),</span>
-<span data-acceptance-observable>all chrome surfaces, text, and borders use token overrides from the dark <code>:root</code> block, and no literal light-mode color leaks through.</span>
+<span data-acceptance-scenario>Given a spec reviewer whose system is set to dark mode, When they open a spec page,</span>
+<span data-acceptance-observable>Then all chrome surfaces, text, and borders show the dark token values, and no light-mode chrome color shows.</span>
 </p>
 
 <p data-acceptance-criterion data-anchor="acceptance-coordinate" data-story="story-token-reuse">
-<span data-acceptance-scenario>Given the diff of this branch against main, When it is read,</span>
-<span data-acceptance-observable>only CSS const string content in runtime.js is changed (no JS logic, no function signatures, no event handling), and both copies of runtime.js are identical.</span>
+<span data-acceptance-scenario>Given a contributor editing runtime.js, When they compare its two copies,</span>
+<span data-acceptance-observable>Then the copies are identical, proven by a unit test: no screen shows it.</span>
 </p>
+
+<p data-anchor="acceptance-rules-note">Onboarding: not needed, the design pass restyles existing chrome with no new user surface.
+CI: the <a href="./review-service.spec.html#acceptance-ci-alone">CI rule</a> covers the runtime style tests; they use no provider.</p>
 
 </section>
 
@@ -426,6 +429,17 @@ Button sizes conflict with the range bar spec.
 </tbody>
 </table>
 </div>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-anchor="open-questions">
+<div class="sec-head">
+<span class="sec-num">07</span>
+<h2 data-anchor="open-questions-heading">Open questions</h2>
+</div>
+
+<p data-anchor="tbd-coordinate" data-spec-tbd><a href="#acceptance-coordinate">Coordinate criterion</a>: its rule that only CSS content changes in runtime.js, with no JS logic, function signatures, or event handling, held only for one branch's diff and has no lasting form; decide whether it is dropped or stated as a lasting rule.</p>
 
 </section>
 
