@@ -104,6 +104,27 @@ path = "{review}/agent-scan/docs/specs/report.spec.html"
 [nav.acceptance-name]
 path = "{review}/name-reply/docs/specs/report.spec.html"
 
+# Review index (lane-hosting #index-threads), at the server root. Lane-key collections
+# (tests/fixtures/qa/spools.py INDEX_LANES) are the In progress cards: QA-1 and QA-2, each
+# holding the four fixture specs (Weekly report changed since base, Onboarding unchanged,
+# Report filters and Report sorting absent at base); every other collection settles.
+# Capture hints, per criterion:
+# - review-index, index-threads, index-threads-none: read the QA-1 card. Its Weekly report
+#   row holds a draft, a handed-off, a replied, and a resolved thread (3 Open, 1 Resolved);
+#   its other rows have no threads.
+# - index-threads-refresh: QA-2's Weekly report has one open thread, replied by the agent.
+#   Steps: click that row's "Weekly report" title in the QA-2 card; open the thread with its
+#   "Open thread 1" button; click its "✓ Resolve" button; click "Back to Spec Chat index" (the
+#   reload); read the QA-2 Weekly report row.
+[nav.acceptance-review-index]
+path = "{review}/"
+[nav.acceptance-index-threads]
+path = "{review}/"
+[nav.acceptance-index-threads-none]
+path = "{review}/"
+[nav.acceptance-index-threads-refresh]
+path = "{review}/"
+
 # Typed text for the review-state criteria that save a message (capture types only these).
 [entry.criteria.acceptance-name]
 values = ["First note from this browser.", "Reply after reload."]
@@ -121,6 +142,9 @@ cannot_host = "capture has one browser context; the Then needs both reviewers' p
 cannot_host = "capture has one browser context; the Then needs both reviewers' pages showing the same edit; proven by tests/runtime-review-live.mjs"
 [entry.criteria.acceptance-handoff-own]
 cannot_host = "capture has one browser context; the Given needs two live browsers each holding a draft, and a seeded draft cannot carry the capture browser's own id; proven by tests/runtime-review-live.mjs"
+# Capture runs story-review-index at desktop viewport; criteria cannot set a viewport.
+[entry.criteria.acceptance-index-link-panel]
+cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone-width open panel state cannot be reached; proven by tests/runtime-mobile-contract.mjs"
 # Going offline is the device capability capture does not support (jev-capture #jc-capabilities).
 [entry.criteria.acceptance-offline-save]
 cannot_host = "capture cannot take the browser offline (device capability unsupported); proven by tests/runtime-review-live.mjs"
@@ -187,12 +211,13 @@ cannot_host = "fake Jev answers only scope, rule, and coverage questions; no Con
 cannot_host = "fake Jev answers only scope, rule, and coverage questions; no flag to withhold"
 [entry.stories.story-context]
 cannot_host = "fake Jev answers only scope, rule, and coverage questions; no flag popover to quote"
-[entry.criteria.acceptance-review-index]
-cannot_host = "the fixture registers one lane slug and one project; index Givens need several lane slugs, settled and unregistered specs"
 [entry.criteria.acceptance-index-sections]
-cannot_host = "the fixture registers one lane slug and one project; index Givens need several lane slugs, settled and unregistered specs"
+cannot_host = "every fixture spec is served with a registry row, so the Given's specs served without a row are absent; proven by tests/review-serve-multi.py"
 [entry.criteria.acceptance-index-design]
-cannot_host = "the fixture registers one lane slug and one project; index Givens need changed, up-to-date, and settled specs across lanes"
+cannot_host = "a criterion runs at one viewport, and the When needs desktop then phone; the token block is CSS source; proven by tests/review-serve-multi.py"
+# Setting the system appearance is not a browser capability (jev-capture #jc-capabilities).
+[entry.criteria.acceptance-index-dark]
+cannot_host = "capture cannot set the system appearance to dark; the QA-1 lane card has threads in every status; proven by tests/review-serve-multi.py (dark tokens, 4.5:1 per pill)"
 [entry.stories.story-stable-url]
 cannot_host = "the fixture registers one repository and one project; Givens need two projects from two repositories"
 [entry.stories.story-operator]

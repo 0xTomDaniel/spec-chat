@@ -111,6 +111,8 @@ Only the human resolves; the agent proposes it ("OK to resolve?"). Lifecycle: `d
 
 ## Thread folding rules
 
+Two folds apply these rules and agree: the page's `foldThreads` in the runtime and `fold_threads` in `assets/spool.py`, which every service and agent reader uses (review index, Jev).
+
 - A human `comment` starts a thread; its id is the `threadId`.
 - Human and agent `reply` events join the thread containing `respondsTo`.
 - `edit` replaces the effective human message named by `supersedes`, while the original file remains immutable.

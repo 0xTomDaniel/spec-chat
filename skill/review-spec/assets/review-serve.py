@@ -477,6 +477,34 @@ def _index_row(mount, path, row):
     return value
 
 
+_THREAD_CACHE = {}
+
+
+def _thread_counts(mount, path):
+    """(open, resolved) thread counts of one served spec's spool (lane-hosting #index-threads), refolded only
+    when its human/ or agent/ directory modification time changes (#index-entry-cost); None when unreadable."""
+    review = os.path.realpath(path) + ".review"
+    key = []
+    for actor in ("human", "agent"):
+        try:
+            key.append(os.lstat(os.path.join(review, actor)).st_mtime_ns)
+        except OSError:
+            key.append(None)
+    key = tuple(key)
+    cached = _THREAD_CACHE.get(review)
+    if cached and cached[0] == key:
+        return cached[1]
+    events = _read_spool_events(review, mount["narrow_root"]) if key != (None, None) else []
+    if events is None:
+        counts = None
+    else:
+        statuses = [thread["status"] for thread in spool.fold_threads(events).values()]
+        resolved = statuses.count("resolved")
+        counts = len(statuses) - resolved, resolved
+    _THREAD_CACHE[review] = (key, counts)
+    return counts
+
+
 def _lane_label(slug):
     match = re.fullmatch(r"([a-z]+)-?([0-9]+)", slug)
     if not match:
@@ -833,30 +861,36 @@ class MountHandler(SimpleHTTPRequestHandler):
                 seen.add(stable)
                 href = ("/" if mount["slug"] else "") + quote(stable, safe="/") + (("?" + query) if query else "")
                 status, title = _index_row(mount, path, row)
-                lanes.setdefault(lane, {}).setdefault(project, []).append((status, title, href))
+                lanes.setdefault(lane, {}).setdefault(project, []).append(
+                    (status, title, href, _thread_counts(mount, path)))
 
         settled = lanes.pop(None, {})
 
         def lane_order(item):
             lane, projects = item
-            changed = any(status for specs in projects.values() for status, _, _ in specs)
+            changed = any(spec[0] for specs in projects.values() for spec in specs)
             return (0 if changed else 1, _lane_label(lane)[1])
 
         def project_rows(projects):
             parts = []
             for project in sorted(projects):
                 parts.append('<p class="label">%s</p><ul>' % html.escape(project))
-                for status, title, href in sorted(projects[project], key=lambda spec: (not spec[0], spec[1].casefold(), spec[2])):
+                for status, title, href, counts in sorted(projects[project], key=lambda spec: (not spec[0], spec[1].casefold(), spec[2])):
                     # The lane count says up to date; a row's only status word is its Changed pill.
                     pill = '<span class="pill">Changed</span>' if status else ""
-                    parts.append('<li><a href="%s">%s</a>%s</li>' % (
-                        html.escape(href, quote=True), html.escape(title), pill))
+                    # Count pills, Open then Resolved; a status with no threads has no pill (#index-threads).
+                    tallies = "".join(
+                        '<span class="tally %s"><b>%d</b> %s</span>' % (word.lower(), count, word)
+                        for word, count in zip(("Open", "Resolved"), counts or (0, 0)) if count)
+                    parts.append('<li><div class="row"><a href="%s">%s</a>%s</div>%s</li>' % (
+                        html.escape(href, quote=True), html.escape(title), pill,
+                        '<div class="tallies">%s</div>' % tallies if tallies else ""))
                 parts.append('</ul>')
             return "".join(parts)
 
         cards = []
         for lane, projects in sorted(lanes.items(), key=lane_order):
-            statuses = [status for specs in projects.values() for status, _, _ in specs if status is not None]
+            statuses = [spec[0] for specs in projects.values() for spec in specs if spec[0] is not None]
             changed = sum(1 for status in statuses if status)
             count = (
                 "%d of %d changed" % (changed, len(statuses)) if changed
@@ -886,10 +920,21 @@ class MountHandler(SimpleHTTPRequestHandler):
   --ui-fail: #a5000f; --ui-fail-soft: #f6e6e7;
   --ui-attention: #b0540e; --ui-attention-soft: #faf4ef;
   --ui-muted-soft: #eeeeee;
+  --ui-draft: #b0540e; --ui-draft-soft: #faf4ef;
+  --ui-resolved: #005c32; --ui-resolved-soft: #e6efea;
   --ui-space-1: 4px; --ui-space-2: 8px; --ui-space-3: 12px; --ui-space-4: 16px; --ui-space-5: 24px; --ui-space-6: 32px;
   --ui-radius: 8px; --ui-radius-sm: 6px; --ui-radius-pill: 999px;
 }
-html { color-scheme: light; }
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ui-page: #1a1a1a; --ui-surface: #242424; --ui-ink: #e0e0e0; --ui-muted: #999999; --ui-border: #3a3a3a;
+    --ui-link: #e0e0e0; --ui-focus: #cccccc; --ui-action: #cccccc;
+    --ui-attention: #e5873a; --ui-attention-soft: #2e2218; --ui-draft: #e5873a; --ui-draft-soft: #2e2218;
+    --ui-pass: #3daa6e; --ui-pass-soft: #1a2e22; --ui-resolved: #3daa6e; --ui-resolved-soft: #1a2e22;
+    --ui-fail: #ffb4ab; --ui-fail-soft: #2e1a1c;
+  }
+}
+html { color-scheme: light dark; }
 body { margin: 0; background: var(--ui-page); color: var(--ui-ink); font-family: var(--ui-font); font-size: var(--ui-text-sm); font-weight: 400; line-height: 1.4; }
 main { box-sizing: border-box; max-width: 72rem; margin: 0 auto; padding: var(--ui-space-6); }
 h1 { margin: 0 0 var(--ui-space-5); font-size: var(--ui-text-lg); font-weight: 600; line-height: 1.2; }
@@ -902,11 +947,17 @@ h1 { margin: 0 0 var(--ui-space-5); font-size: var(--ui-text-lg); font-weight: 6
 .count { flex: none; color: var(--ui-muted); font-size: var(--ui-text-xs); }
 .lane .label, .card ul + .label { margin: var(--ui-space-3) 0 var(--ui-space-1); }
 ul { list-style: none; margin: 0; padding: 0; }
-li { display: flex; align-items: center; gap: var(--ui-space-3); padding: var(--ui-space-2) 0; border-top: 1px solid var(--ui-border); }
+li { padding: var(--ui-space-2) 0; border-top: 1px solid var(--ui-border); }
+.row { display: flex; align-items: center; gap: var(--ui-space-3); }
 li a { flex: 1 1 auto; min-width: 0; color: var(--ui-link); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
 li a:hover, li a:focus-visible { text-decoration: underline; }
 a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; border-radius: var(--ui-radius-sm); }
 .pill { flex: none; margin-left: auto; padding: 0 var(--ui-space-2); line-height: 1.6; border-radius: var(--ui-radius-pill); background: var(--ui-attention-soft); color: var(--ui-attention); font-size: var(--ui-text-xs); font-weight: 600; }
+.tallies { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); margin-top: var(--ui-space-1); }
+.tally { display: inline-flex; gap: var(--ui-space-1); padding: 0 var(--ui-space-2); line-height: 1.6; border-radius: var(--ui-radius-pill); font-size: var(--ui-text-xs); font-weight: 400; }
+.tally b { font-weight: 600; }
+.tally.open { background: var(--ui-draft-soft); color: var(--ui-draft); }
+.tally.resolved { background: var(--ui-resolved-soft); color: var(--ui-resolved); }
 .settled summary { cursor: pointer; margin: 0 0 var(--ui-space-2); font-size: var(--ui-text-md); font-weight: 600; }
 .empty { color: var(--ui-muted); }
 @media (max-width: 640px) { main { padding: var(--ui-space-4); } }

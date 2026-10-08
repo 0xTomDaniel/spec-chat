@@ -9,12 +9,14 @@
 # on-disk spool. So every collection below is its own clean copy of the one repo,
 # served at /<collection>/docs/specs/<spec>: qa-fixture is the story entry, and each
 # other collection is one criterion's start, named by its qa.toml nav hint. Review-state
-# collections also get their seeded spool and agent edit from spools.py.
+# collections also get their seeded spool and agent edit from spools.py. qa-1 and qa-2
+# are lane keys, so the review index shows them as lane cards (QA-1, QA-2) under In
+# progress; every other collection settles.
 set -eu
 collections="qa-fixture tbd-later tbd-later-handoff tbd-open-highlight tbd-open-single
   next-tbd next-tbd-step next-tbd-handoff tbd-open-jump tbd-open-wrap mobile-composer
   block-target-enter block-target-space block-target-off
-  anchor-moved anchor-changed anchor-gone stale-page agent-scan name-reply"
+  anchor-moved anchor-changed anchor-gone stale-page agent-scan name-reply qa-1 qa-2"
 site="$QA_ROOT/site"
 serve="$QA_ROOT/serve"
 repo="$site/.repo"
