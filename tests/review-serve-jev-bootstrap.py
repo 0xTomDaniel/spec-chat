@@ -300,6 +300,31 @@ class BootstrapTest(unittest.TestCase):
         status = self.settle(again)
         self.assertEqual((status["state"], status["candidates"]), ("done", ["docs/specs/onboarding.spec.html#acceptance-onboarding"]))
 
+    def test_unreadable_main_fails_the_warm_up_and_is_never_kept_as_absent(self):
+        """#bootstrap-once: a warm-up that cannot read main's specs (its repo mid-rebuild) fails, so it never
+        stands done without them, and a later read of the same commit sees the specs (no failed read is kept)."""
+        real = jev._git_run
+        broken = {"show"}
+
+        def git_run(root, *args):
+            if args and args[0] in broken:
+                return subprocess.CompletedProcess(args, 128, b"", b"")
+            return real(root, *args)
+
+        jev._git_run = git_run
+        self.addCleanup(setattr, jev, "_git_run", real)
+        service = self.service(FakeProvider())
+        self.assertEqual(service.warm([self.row(project="a")]), ["a"])
+        self.assertEqual(self.settle(service, "a")["state"], "failed")
+        broken.clear()
+        self.assertEqual(service.warm([self.row(project="b")]), ["b"])
+        status = self.settle(service, "b")
+        self.assertEqual((status["state"], status["criteria_classified"], status["candidates"]),
+                         ("done", 5, ["docs/specs/onboarding.spec.html#acceptance-onboarding"]))
+        broken.add("ls-tree")
+        self.assertEqual(service.warm([self.row(project="c")]), ["c"])
+        self.assertEqual(self.settle(service, "c")["state"], "failed")
+
     def test_rate_limited_warm_up_asks_pause_and_never_sleep(self):
         """jev-suggestions #state-error: a warm-up ask that 429s is one call, gets the given wait as its pause,
         and is asked again later; no worker waits (old code slept 30 s per 429)."""
