@@ -23,7 +23,10 @@ ready = "/qa-fixture/docs/specs/report.spec.html"
 # two open TBDs, and one later TBD; later-only.spec.html's only TBD is later;
 # one-open.spec.html has exactly one open TBD. No spec has a comment thread, except
 # the review-state collections' report spec (spools.py, nav hints below). Jev
-# records are written by the fake as pages load and kept across resets.
+# records are written by the fake as pages load and kept across resets; rule
+# decisions are not, since each reset registers fresh projects. The onboarding rule is
+# confirmed for stories whose criteria are Given a confirmed rule (reset.sh
+# confirmed_stories), a candidate for the rest (story-approve).
 [fixture.spec_review_site]
 repo = "spec-chat"
 path = "tests/fixtures/qa"
@@ -39,9 +42,34 @@ viewport = { width = 1280, height = 800 }
 viewport = { width = 390, height = 844 }
 touch = true
 
+# Rule-card capture hints, per criterion (the capture agent reads these). The rule marker is
+# the "Jev notes" button beside the Acceptance criteria heading; opening it shows the rule card
+# "Every change ships its onboarding". Every collection except rule-candidate and rule-confirmed
+# is the same project, so its report spec is another spec of the project missing the same rule.
+# - miss, dismiss: open the rule marker beside Acceptance criteria to show the card first.
+# - dismiss: then click Not for this spec, then reload the page (browser reload). The edit and
+#   commit is the agent's on disk, not a browser step: the When is done after the reload.
+# - dismiss-rule: spec B is this page's report spec, spec C is {review}/next-tbd/docs/specs/
+#   report.spec.html; both show the card, and the "existing spec misses project rules" offer
+#   shows at the top of the page. Open the rule marker, click Not a project rule, reload the
+#   page, then open spec C's address in the same tab: that is the reload of C and of an offer page.
+# - offer: click "Show specs and the rules they miss" to expand the offer, then click the line's
+#   own toggle "Show rules report misses" so the line's rule card shows below it.
+# - confirm: click "Show possible project rules", click Confirm rule on the card, reload the page
+#   (browser reload), then open the rule marker beside Acceptance criteria so the rule card shows.
+# - unconfirmed: the start page is the spec of the project that would miss the candidate, already
+#   open: the When is done at page load. Click nothing; report "opened the report spec".
+#
 # Each criterion below starts on its own clean copy of the fixture repo (reset.sh
 # collections): a story resets once, and earlier criteria leave drafts and hand-offs
 # in the spec's spool. The spec file names stay the same, so "the report spec" holds.
+# A criterion whose Given's rule state differs from its story's has its own project.
+[nav.acceptance-candidates]
+path = "{review}/rule-candidate/docs/specs/report.spec.html"
+[nav.acceptance-confirm]
+path = "{review}/rule-candidate/docs/specs/report.spec.html"
+[nav.acceptance-dismiss-return]
+path = "{review}/rule-confirmed/docs/specs/report.spec.html"
 [nav.acceptance-tbd-later]
 path = "{review}/tbd-later/docs/specs/later-only.spec.html"
 [nav.acceptance-tbd-later-handoff]
@@ -157,14 +185,14 @@ cannot_host = "capture cannot take the browser offline (device capability unsupp
 # $QA_ROOT: no evidence or wake provider, no Herdr, no live agent, no review-host
 # (the fixture writes the registry), no lane-key slug and one project. The fake Jev
 # answers scope, rule, and coverage (each criterion verifies its data-story story);
-# every other question answers unrelated. Jev state persists across resets, so the
-# project's warm-up runs once per service start.
+# every other question answers unrelated. Each reset registers fresh projects, which
+# the service warms before the story starts.
 [entry.criteria.acceptance-reviewed-kept]
 cannot_host = "the reviewed base is written by review-host when a hand-off is processed; review-host does not run here (the fixture writes the registry)"
 [entry.criteria.acceptance-reviewed-accepted]
 cannot_host = "the accepted flag is written by review-host reviewed; review-host does not run here (the fixture writes the registry)"
 [entry.criteria.acceptance-warm]
-cannot_host = "register is review-host's, which does not run here, and the warm-up runs once per service start with state kept across resets, so no first registration per story"
+cannot_host = "register is review-host's, which does not run here (the fixture writes the registry)"
 [entry.stories.story-proven]
 cannot_host = "no evidence provider (providers/evidence.toml absent), so no criterion carries evidence"
 [entry.stories.story-open-proof]
@@ -211,6 +239,23 @@ cannot_host = "fake Jev answers only scope, rule, and coverage questions; no Con
 cannot_host = "fake Jev answers only scope, rule, and coverage questions; no flag to withhold"
 [entry.stories.story-context]
 cannot_host = "fake Jev answers only scope, rule, and coverage questions; no flag popover to quote"
+# Rule criteria the fixture cannot drive: one rule, one home, answered only by the fake.
+[entry.criteria.acceptance-pending]
+cannot_host = "fake Jev answers every rule check at 0.95, so no check escalates to the general LLM and no checking wheel shows"
+[entry.criteria.acceptance-card-cites]
+cannot_host = "fake Jev answers only scope, rule, and coverage questions, so no clause is marked Contradicts against a rule"
+[entry.criteria.acceptance-copies]
+cannot_host = "the fixture holds one rule in one home spec, no linked copies and no second every-feature rule"
+[entry.criteria.acceptance-own-project]
+cannot_host = "the fixture's projects are copies of one repo with the same rule text, and fake Jev answers no Contradicts, Oversteps, Overlaps, or cross-lane question, so no mark can show which project it cites"
+[entry.criteria.acceptance-own-project-lane]
+cannot_host = "fake Jev answers no contradiction question, so no two lanes contradict and no cross-lane mark or pair exists"
+[entry.criteria.acceptance-clear]
+cannot_host = "the When is an agent edit to the spec file while the reviewer views the card; capture edits no file and the fixture lands no edit on a plain reload"
+[entry.criteria.acceptance-dismiss-return]
+cannot_host = "the When changes the rule's text in its home spec file; capture edits no file, and fake Jev reads only the fixture's one rule text as applying to every feature"
+[entry.criteria.acceptance-new-candidate]
+cannot_host = "the fixture's head adds no every-feature criterion: fake Jev reads only the onboarding rule, in the base, as one, and a second would change every other criterion's rule counts"
 [entry.criteria.acceptance-index-sections]
 cannot_host = "every fixture spec is served with a registry row, so the Given's specs served without a row are absent; proven by tests/review-serve-multi.py"
 [entry.criteria.acceptance-index-design]
