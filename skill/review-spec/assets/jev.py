@@ -8,6 +8,7 @@ import math
 import os
 import posixpath
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -297,97 +298,252 @@ def _decision(resolution: Any) -> list[tuple[tuple[str, str, str, str | None], d
     return []
 
 
+# The record store's files (#record-store): records split by cache key across this many plain JSONL files, so a
+# lookup that misses reads about 1/4096 of the store, a few hundred records at a million, never the whole of it.
+STORE_SHARDS = 4096  # three hex digits of the key's sha256
+# Records held in memory, by recency of use (#record-held): enough for every mark a few busy specs show.
+STORE_HELD = 20000
+_MISS = object()
+
+
+def _replaces(current: Mapping[str, Any] | None, record: Mapping[str, Any]) -> bool:
+    """Whether a later line for the same cache key replaces the one held: a retryable or escalated outcome is
+    replaced, and an amendment (a resolution or a rule name) replaces the record it amends."""
+    return current is None or current.get("outcome") in REPLACEABLE_OUTCOMES or "resolution" in record \
+        or record.get("record_id") == current.get("record_id")
+
+
+def _lines(path: Path):
+    """The file's lines as bytes, streamed; none when it does not exist."""
+    try:
+        stream = path.open("rb")
+    except FileNotFoundError:
+        return
+    with stream:
+        yield from stream
+
+
+def _parsed(line: bytes) -> dict[str, Any] | None:
+    try:
+        record = json.loads(line)
+    except (ValueError, TypeError):
+        return None
+    return dict(record) if isinstance(record, Mapping) and isinstance(record.get("cache_key"), str) \
+        and record["cache_key"] else None
+
+
+def _append_line(path: Path, value: Mapping[str, Any]) -> None:
+    """One whole line in one O_APPEND write, so concurrent writers never interleave and no line is rewritten."""
+    data = (json.dumps(value, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+    try:
+        view = memoryview(data)
+        while view:
+            view = view[os.write(fd, view):]
+    finally:
+        os.close(fd)
+
+
 class JudgmentStore:
-    """Append-only JSONL records, also used as the cache.
+    """Append-only JSONL records, also used as the cache (#record-store, #record-held, #record-lock).
 
-    The file loads once, on first use under the lock, never at construction, so a server start prints its URL
-    without reading it (review-service #acceptance-restart). A load that fails raises to that caller and is
-    tried again on the next use; the store never serves a partial cache."""
+    The path names the store: its records live in the directory beside it named by the path's stem, split by
+    cache key into STORE_SHARDS files, plus decisions.jsonl, the human's rule decisions. Memory holds the records
+    recent reads and writes used, up to `held`, and every rule decision. No lock is held while a file is read.
+    A store written as one file at the path is split on first use, streaming, and that file is kept renamed.
+    Construction reads nothing (review-service #acceptance-restart). Without a path the store is memory only."""
 
-    def __init__(self, path: str | Path | None = None):
+    def __init__(self, path: str | Path | None = None, *, held: int = STORE_HELD):
         self.path = Path(path) if path else None
-        self._by_key: dict[str, dict[str, Any]] = {}
+        self.dir = self.path.with_name(self.path.stem) if self.path else None
+        self.limit = held
+        self._held: OrderedDict[str, Any] = OrderedDict()
         # Every rule decision ever recorded, by what it holds for, never by cache key (project-rules #dismiss-scope).
         self._decisions: dict[tuple[str, str, str, str | None], dict[str, Any]] = {}
+        self._decisions_loaded = not self.path
+        self._writes: dict[str, int] = {}
         self.lock = threading.RLock()
-        self._loaded = not self.path
+        self._split_lock = threading.Lock()
+        self._split = not self.path
 
-    @property
-    def by_key(self) -> dict[str, dict[str, Any]]:
-        self._load()
-        return self._by_key
+    # Files
 
-    @property
-    def decisions(self) -> dict[tuple[str, str, str, str | None], dict[str, Any]]:
-        self._load()
-        return self._decisions
+    def _shard(self, key: str) -> str:
+        return hashlib.sha256(key.encode("utf-8")).hexdigest()[:3]
 
-    def _load(self) -> None:
-        with self.lock:
-            if self._loaded:
+    def _shard_path(self, shard: str) -> Path:
+        return self.dir / (shard + ".jsonl")  # type: ignore[operator]
+
+    def _decisions_path(self) -> Path:
+        return self.dir / "decisions.jsonl"  # type: ignore[operator]
+
+    def _ready(self) -> None:
+        """Split a single-file store at the path once, on first use: streamed into a scratch directory that is
+        renamed into place only when whole, so an interrupted split starts again; the file is then kept renamed."""
+        if self._split:
+            return
+        with self._split_lock:
+            if self._split:
                 return
-            by_key: dict[str, dict[str, Any]] = {}
-            decisions: dict[tuple[str, str, str, str | None], dict[str, Any]] = {}
-            try:
-                lines = self.path.read_text(encoding="utf-8", errors="replace").splitlines() if self.path.is_file() else []
-            except OSError:
-                lines = []
-            for line in lines:
-                try:
-                    record = json.loads(line)
-                except (ValueError, TypeError):
-                    continue
-                if isinstance(record, Mapping) and record.get("cache_key"):
-                    record = dict(record)
-                    decisions.update(_decision(record.get("resolution")))
-                    current = by_key.get(record["cache_key"])
-                    # An amendment (a resolution or a rule name) replaces the record it amends.
-                    if current is None or current.get("outcome") in REPLACEABLE_OUTCOMES or "resolution" in record \
-                            or record.get("record_id") == current.get("record_id"):
-                        by_key[record["cache_key"]] = record
-            self._by_key, self._decisions, self._loaded = by_key, decisions, True
+            if self.path.is_file() and not self.dir.is_dir():
+                scratch = self.dir.with_name(self.dir.name + ".splitting")
+                if scratch.exists():
+                    shutil.rmtree(scratch)
+                scratch.mkdir(parents=True)
+                pending: dict[str, list[bytes]] = {}
+                size = 0
+
+                def flush() -> None:
+                    for name, lines in pending.items():
+                        with (scratch / name).open("ab") as stream:
+                            stream.writelines(lines)
+                    pending.clear()
+
+                for line in _lines(self.path):
+                    record = _parsed(line)
+                    if record is None:
+                        continue
+                    line = line if line.endswith(b"\n") else line + b"\n"
+                    pending.setdefault(self._shard(record["cache_key"]) + ".jsonl", []).append(line)
+                    if _decision(record.get("resolution")):
+                        pending.setdefault("decisions.jsonl", []).append(
+                            (json.dumps(record["resolution"], ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8"))
+                    size += len(line)
+                    if size > 8 << 20:
+                        flush()
+                        size = 0
+                flush()
+                os.rename(scratch, self.dir)
+            if self.path.is_file():
+                os.replace(self.path, self.path.with_name(self.path.name + ".unsplit"))
+            self.dir.mkdir(parents=True, exist_ok=True)
+            self._split = True
+
+    def _scan(self, key: str) -> dict[str, Any] | None:
+        """The key's current record from its file, streamed with no lock held; only lines naming the key parse."""
+        needle = json.dumps(key, ensure_ascii=False)[1:-1].encode("utf-8")
+        current = None
+        for line in _lines(self._shard_path(self._shard(key))):
+            if needle in line:
+                record = _parsed(line)
+                if record is not None and record["cache_key"] == key and _replaces(current, record):
+                    current = record
+        return current
+
+    def _write(self, record: Mapping[str, Any]) -> None:
+        """Called under the lock: one append to the key's file, then the record is held."""
+        key = record["cache_key"]
+        if self.path:
+            shard = self._shard(key)
+            _append_line(self._shard_path(shard), record)
+            self._writes[shard] = self._writes.get(shard, 0) + 1
+        self._hold(key, record)
+
+    # Held records
+
+    def _hold(self, key: str, value: Any) -> None:
+        self._held[key] = value
+        self._held.move_to_end(key)
+        if self.path:
+            while len(self._held) > self.limit:
+                self._held.popitem(last=False)
+
+    def _held_value(self, key: str) -> Any:
+        value = self._held.get(key)
+        if value is not None:
+            self._held.move_to_end(key)
+        return value
 
     def get(self, key: str) -> dict[str, Any] | None:
         with self.lock:
-            return self.by_key.get(key)
+            value = self._held_value(key)
+            if value is not None or not self.path:
+                return None if value is _MISS else value
+        self._ready()
+        shard = self._shard(key)
+        while True:
+            with self.lock:
+                writes = self._writes.get(shard, 0)
+            record = self._scan(key)
+            with self.lock:
+                value = self._held_value(key)
+                if value is not None:
+                    return None if value is _MISS else value
+                if self._writes.get(shard, 0) == writes:  # no write to this file raced the read
+                    self._hold(key, _MISS if record is None else record)
+                    return record
 
     def append(self, record: Mapping[str, Any]) -> dict[str, Any]:
         record = dict(record)
+        self.get(record["cache_key"])  # holds the current record, if any
         with self.lock:
-            current = self.by_key.get(record["cache_key"])
-            if current is not None and current.get("outcome") not in REPLACEABLE_OUTCOMES:
+            current = self._held_value(record["cache_key"])
+            if current is not None and current is not _MISS and current.get("outcome") not in REPLACEABLE_OUTCOMES:
                 return current
-            self.by_key[record["cache_key"]] = record
             self._write(record)
             return record
-
-    def decided(self, status: str, project: Any, text: str, spec: str | None = None) -> dict[str, Any] | None:
-        """The project's decision on this rule text, else None: dismissed on this spec path, or, for every
-        spec, not-a-rule or rule (confirmed, with any corrected name)."""
-        with self.lock:
-            return self.decisions.get((status, str(project), rule_identity(text), spec)) if project else None
 
     def amend(self, key: str, **fields: Any) -> dict[str, Any] | None:
         """Add fields to a held record, such as a rule's written name (project-rules #card-name-source);
         appended to the JSONL so it survives a restart."""
+        if self.get(key) is None:
+            return None
         with self.lock:
-            record = self.by_key.get(key)
-            if record is None:
+            record = self._held_value(key)
+            if record is None or record is _MISS:
                 return None
             updated = {**record, **fields}
-            self.by_key[key] = updated
             self._write(updated)
             return updated
 
-    def _write(self, record: Mapping[str, Any]) -> None:
-        if self.path:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8") as stream:
-                stream.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+    # Rule decisions
+
+    def _decided(self) -> dict[tuple[str, str, str, str | None], dict[str, Any]]:
+        """Every rule decision, read from decisions.jsonl once, with no lock held during the read."""
+        if not self._decisions_loaded:
+            self._ready()
+            loaded: dict[tuple[str, str, str, str | None], dict[str, Any]] = {}
+            for line in _lines(self._decisions_path()):
+                try:
+                    loaded.update(_decision(json.loads(line)))
+                except (ValueError, TypeError):
+                    continue
+            with self.lock:
+                if not self._decisions_loaded:
+                    loaded.update(self._decisions)  # decisions recorded during the read are newer
+                    self._decisions, self._decisions_loaded = loaded, True
+        return self._decisions
+
+    def decided(self, status: str, project: Any, text: str, spec: str | None = None) -> dict[str, Any] | None:
+        """The project's decision on this rule text, else None: dismissed on this spec path, or, for every
+        spec, not-a-rule or rule (confirmed, with any corrected name)."""
+        if not project:
+            return None
+        decisions = self._decided()
+        with self.lock:
+            return decisions.get((status, str(project), rule_identity(text), spec))
+
+    # By record id, and streaming
 
     def by_id(self, record_id: str) -> dict[str, Any] | None:
+        """The current record with this id: a held one, else found by streaming the files with no lock held."""
         with self.lock:
-            return next((record for record in self.by_key.values() if record.get("record_id") == record_id), None)
+            for value in reversed(self._held.values()):
+                if value is not _MISS and value.get("record_id") == record_id:
+                    return value
+        if not self.path:
+            return None
+        self._ready()
+        needle = json.dumps(record_id, ensure_ascii=False)[1:-1].encode("utf-8")
+        for shard in range(STORE_SHARDS):
+            for line in _lines(self._shard_path("%03x" % shard)):
+                if needle in line:
+                    record = _parsed(line)
+                    if record is not None and record.get("record_id") == record_id:
+                        current = self.get(record["cache_key"])
+                        if current is not None and current.get("record_id") == record_id:
+                            return current
+        return None
 
     def resolve(self, record_id: str, resolution: str, reason: str | None = None,
                 confirmed: bool | None = None, **holds: Any) -> dict[str, Any] | None:
@@ -395,28 +551,47 @@ class JudgmentStore:
 
         Only a caller that knows a label is confirmed says so: a human's rule decision or an audit. fixed stays
         unconfirmed, since an edit can answer a wrong mark (#measure-feedback). holds names what a rule decision
-        holds for (project-rules #dismiss-scope). The amended record is appended to the JSONL so it survives a restart."""
+        holds for (project-rules #dismiss-scope). The amended record is appended to the JSONL so it survives a
+        restart, and a rule decision also to decisions.jsonl, which the server holds whole."""
+        record = self.by_id(record_id)
+        if record is None:
+            return None
         with self.lock:
-            for key, record in self.by_key.items():
-                if record.get("record_id") != record_id:
-                    continue
-                updated = dict(record)
-                res: dict[str, Any] = {"status": resolution, **holds}
-                if reason:
-                    res["reason"] = reason
-                updated["resolution"] = res
-                self.decisions.update(_decision(res))
-                if confirmed is not None:
-                    updated["confirmed"] = confirmed
-                self.by_key[key] = updated
-                self._write(updated)
-                return updated
-        return None
+            record = self._held_value(record["cache_key"])
+            if record is None or record is _MISS or record.get("record_id") != record_id:
+                return None
+            res: dict[str, Any] = {"status": resolution, **holds}
+            if reason:
+                res["reason"] = reason
+            updated = {**record, "resolution": res}
+            if confirmed is not None:
+                updated["confirmed"] = confirmed
+            self._write(updated)
+            decision = _decision(res)
+            if decision and self.path:
+                _append_line(self._decisions_path(), res)
+            self._decisions.update(decision)
+            return updated
 
-    def confirmed_records(self) -> list[dict[str, Any]]:
-        """All confirmed records, the labels the eval replay scores (#measure-feedback)."""
-        with self.lock:
-            return [dict(r) for r in self.by_key.values() if r.get("confirmed")]
+    def records(self):
+        """Every current record, streamed one file at a time with no lock held."""
+        if not self.path:
+            with self.lock:
+                held = [value for value in self._held.values() if value is not _MISS]
+            yield from held
+            return
+        self._ready()
+        for shard in range(STORE_SHARDS):
+            current: dict[str, dict[str, Any]] = {}
+            for line in _lines(self._shard_path("%03x" % shard)):
+                record = _parsed(line)
+                if record is not None and _replaces(current.get(record["cache_key"]), record):
+                    current[record["cache_key"]] = record
+            yield from current.values()
+
+    def confirmed_records(self):
+        """Every confirmed record, the labels the eval replay scores (#measure-feedback), streamed."""
+        return (record for record in self.records() if record.get("confirmed"))
 
 
 def given_wait(value: str | None, now: Callable[[], float] = time.time) -> float | None:

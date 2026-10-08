@@ -104,8 +104,8 @@ class JevBackgroundTest(unittest.TestCase):
         return settled(service, {}, "", "", "base", [])
 
     def records(self):
-        path = Path(self.tmp.name) / "records.jsonl"
-        return path.read_text().splitlines() if path.exists() else []
+        """Every record line (#record-store), in file order: one key's lines keep their order."""
+        return [line for f in sorted((Path(self.tmp.name) / "records").glob("*.jsonl")) for line in f.read_text().splitlines()]
 
     def test_first_read_is_pending_and_never_waits_for_jev(self):
         provider = GatedProvider()
@@ -281,8 +281,8 @@ class JevSeamTest(unittest.TestCase):
                                "sources": ["spec#rule"], "revision": "head"})
             self.assertEqual(result["outcome"], "unsure")
             self.assertEqual(len(provider.calls), 1)
-            self.assertEqual(len(store.by_key), 1)
-            encoded = json.dumps(next(iter(store.by_key.values())))
+            self.assertEqual(len(list(store.records())), 1)
+            encoded = json.dumps(next(iter(store.records())))
             self.assertNotIn("secret text", encoded)
             self.assertNotIn("fake", encoded)
 
@@ -292,7 +292,7 @@ class JevSeamTest(unittest.TestCase):
         result = seam.ask({"kind": "type", "id": "rule", "state": {}, "sources": [], "revision": "head"})
         self.assertEqual(result["outcome"], "unavailable")
         self.assertEqual(len(provider.calls), 1)
-        self.assertEqual(len(seam.store.by_key), 1)
+        self.assertEqual(len(list(seam.store.records())), 1)
 
     def test_same_question_uses_record_cache(self):
         provider = FakeProvider({"answers": {"type": {"choice": "behavioral", "confidence": 0.9}}})
@@ -339,28 +339,19 @@ class JevSeamTest(unittest.TestCase):
                 b'{"cache_key":"truncated","outcome":"shown"\xe2'
             )
             store = jev.JudgmentStore(path)
-            self.assertEqual(set(store.by_key), {"valid"})
+            self.assertEqual([r["cache_key"] for r in store.records()], ["valid"])
 
-    def test_judgment_store_treats_unreadable_state_as_empty(self):
+    def test_judgment_store_split_failure_raises_and_retries_never_partial(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "records.jsonl"
-            path.write_text('{"cache_key":"held","outcome":"shown"}\n')
-            with patch.object(Path, "read_text", side_effect=OSError("unreadable state")) as read:
-                store = jev.JudgmentStore(path)
-                self.assertEqual(store.by_key, {})
-            read.assert_called_once()
-
-    def test_judgment_store_load_failure_raises_and_retries_never_partial(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "records.jsonl"
-            path.write_text('{"cache_key":"first","outcome":"shown"}\n{"cache_key":["unhashable"],"outcome":"shown"}\n')
-            store = jev.JudgmentStore(path)
-            with self.assertRaises(TypeError):
-                store.get("first")
-            with self.assertRaises(TypeError):
-                store.append({"cache_key": "first", "outcome": "shown"})
-            self.assertEqual(path.read_text().count("\n"), 2, "a failed load let a write append")
             path.write_text('{"cache_key":"first","outcome":"shown"}\n')
+            store = jev.JudgmentStore(path)
+            with patch.object(jev.os, "rename", side_effect=OSError("unreadable state")):
+                with self.assertRaises(OSError):
+                    store.get("first")
+                with self.assertRaises(OSError):
+                    store.append({"cache_key": "first", "outcome": "shown"})
+            self.assertFalse((Path(directory) / "records").exists(), "a failed split let a write append")
             self.assertEqual(store.get("first")["outcome"], "shown")
 
     def test_resolved_unrelated_is_not_displayed(self):
@@ -577,7 +568,7 @@ class JevSeamTest(unittest.TestCase):
             service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
             service.questions = lambda *args: [question]
             result = settled(service, {}, "", "", "", [], "")
-            stored = (Path(directory) / "records.jsonl").read_text()
+            stored = "".join(f.read_text() for f in (Path(directory) / "records").glob("*.jsonl"))
         record = json.loads(stored.strip().splitlines()[-1])
         self.assertEqual(record["answer"]["label"], "new-section")
         self.assertEqual(record["answer"]["probabilities"], {"new-section": 0.8, "other-section": 0.15, "none": 0.05})
