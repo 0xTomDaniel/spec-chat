@@ -19,7 +19,7 @@ jev = sys.modules["jev"]
 
 
 class StoreUnreadAtStartTest(unittest.TestCase):
-    """Start never reads records.jsonl, however large; the first store use reads it once."""
+    """Start never reads the record store, however large; the first store use splits records.jsonl once."""
 
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
@@ -29,14 +29,13 @@ class StoreUnreadAtStartTest(unittest.TestCase):
         record = {"cache_key": "sha256:held", "outcome": "ok", "record_id": "judgment-held"}
         (self.state / "jev" / "records.jsonl").write_text(json.dumps(record) + "\n")
         self.reads = []
-        read_text = Path.read_text
+        lines = jev._lines
 
-        def counted(path, *args, **kwargs):
-            if path.name == "records.jsonl":
-                self.reads.append(path)
-            return read_text(path, *args, **kwargs)
+        def counted(path):
+            self.reads.append(path.name)
+            return lines(path)
 
-        patcher = patch.object(Path, "read_text", counted)
+        patcher = patch.object(jev, "_lines", counted)
         patcher.start()
         self.addCleanup(patcher.stop)
         env = patch.dict("os.environ", {"XDG_STATE_HOME": str(self.state.parent)})
@@ -48,7 +47,8 @@ class StoreUnreadAtStartTest(unittest.TestCase):
         self.addCleanup(service.stop)
         self.assertEqual(self.reads, [], "JevService read the record store at construction")
         self.assertEqual(service.seam.store.get("sha256:held")["record_id"], "judgment-held")
-        self.assertEqual(len(self.reads), 1)
+        self.assertEqual(self.reads[0], "records.jsonl")
+        self.assertEqual(len(self.reads), 2, "the first use read more than the old file and the key's own")
 
     def test_server_prints_url_without_reading_store(self):
         out = io.StringIO()

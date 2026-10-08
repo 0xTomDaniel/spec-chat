@@ -105,7 +105,7 @@ class CorpusTest(unittest.TestCase):
                          ["contradicts-nongoal"])
         self.assertEqual([kind for kind, target in asked if target == "The service writes review events."],
                          ["contradicts", "oversteps", "overlaps"])
-        self.assertEqual({record["answer"]["label"] for record in service.seam.store.by_key.values()}, {"yes", "no"})
+        self.assertEqual({record["answer"]["label"] for record in service.seam.store.records()}, {"yes", "no"})
 
     def test_header_and_source_issue_clauses_are_neither_asked_nor_compared(self):
         baseline = page("The service reads review events.")

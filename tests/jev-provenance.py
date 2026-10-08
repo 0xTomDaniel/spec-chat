@@ -74,7 +74,7 @@ class TestProvenance(unittest.TestCase):
         self.assertEqual(result["answer"]["label"], "contradicts")
 
         # Find the contradicts record
-        records = [r for r in store.by_key.values() if r["kind"] == "contradicts"]
+        records = [r for r in store.records() if r["kind"] == "contradicts"]
         self.assertEqual(len(records), 1)
         rec = records[0]
 
@@ -214,7 +214,7 @@ class TestResolution(unittest.TestCase):
         self.assertIsNotNone(updated)
         self.assertEqual(updated["resolution"]["status"], "fixed")
         self.assertNotIn("confirmed", updated)
-        self.assertEqual(store.confirmed_records(), [])
+        self.assertEqual(list(store.confirmed_records()), [])
         audited = store.resolve("judgment-test-001", "fixed", confirmed=True)
         self.assertEqual([r["record_id"] for r in store.confirmed_records()], [audited["record_id"]])
 
@@ -251,20 +251,19 @@ class TestResolution(unittest.TestCase):
         """confirmed_records filters to confirmed=True only."""
         store, _ = self._make_store_with_record()
         # Before resolution: no confirmed records
-        self.assertEqual(len(store.confirmed_records()), 0)
+        self.assertEqual(len(list(store.confirmed_records())), 0)
 
         # Dismiss (unconfirmed)
         store2, _ = self._make_store_with_record()
-        store2.by_key["sha256:aaa"]["record_id"] = "judgment-test-002"
-        store2.resolve("judgment-test-002", "dismissed", reason="wrong")
-        self.assertEqual(len(store2.confirmed_records()), 0)
+        store2.resolve("judgment-test-001", "dismissed", reason="wrong")
+        self.assertEqual(len(list(store2.confirmed_records())), 0)
 
         # Fix: unconfirmed; an audit's label confirms it
         store3, _ = self._make_store_with_record()
         store3.resolve("judgment-test-001", "fixed")
-        self.assertEqual(len(store3.confirmed_records()), 0)
+        self.assertEqual(len(list(store3.confirmed_records())), 0)
         store3.resolve("judgment-test-001", "fixed", confirmed=True)
-        confirmed = store3.confirmed_records()
+        confirmed = list(store3.confirmed_records())
         self.assertEqual(len(confirmed), 1)
         self.assertTrue(confirmed[0]["confirmed"])
 

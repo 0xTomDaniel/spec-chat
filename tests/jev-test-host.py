@@ -45,23 +45,15 @@ class TestHostStore(unittest.TestCase):
             provider = FakeProvider()
             service = jev.JevService(state_dir=tmp, provider=provider, api_key="fake-key")
 
-            live_path = Path(tmp) / "records.jsonl"
-            test_path = Path(tmp) / "records-test.jsonl"
-
             # Ask a question on the test seam directly
             question = {"kind": "type", "state": {"before": "old", "after": "new"},
                         "sources": ["spec#a"], "revision": "head"}
             service.test_seam.ask(question)
 
-            # The test store should have the record
-            self.assertTrue(test_path.exists(), "records-test.jsonl should exist")
-            test_lines = test_path.read_text().strip().splitlines()
+            # The test store, files beside the live store's, has the record; the live store has none
+            test_lines = [line for f in (Path(tmp) / "records-test").glob("*.jsonl") for line in f.read_text().splitlines()]
             self.assertEqual(len(test_lines), 1, "test store should have one record")
-
-            # The live store should not have the record
-            if live_path.exists():
-                live_lines = live_path.read_text().strip().splitlines()
-                self.assertEqual(len(live_lines), 0, "live store should be empty")
+            self.assertEqual(list(service.seam.store.records()), [], "live store should be empty")
 
             service.stop()
 

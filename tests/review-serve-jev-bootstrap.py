@@ -195,7 +195,7 @@ class BootstrapTest(unittest.TestCase):
         text = service.onboarding_path.read_text(encoding="utf-8")
         self.assertNotIn("w1:p1", text)  # names no peer
         self.assertEqual(tomllib.loads(text)["project"]["proj"], status)
-        self.assertEqual(sorted(p.name for p in service.state_dir.iterdir()), ["onboarding.toml", "records.jsonl"])
+        self.assertEqual(sorted(p.name for p in service.state_dir.iterdir()), ["onboarding.toml", "records"])
 
     def test_warm_up_collapses_linked_copies_to_their_home_rule(self):
         # project-rules #q-copies: one rule per home, checked with the home's text, listed once
@@ -317,7 +317,8 @@ class BootstrapTest(unittest.TestCase):
                 threading.Event().wait(0.01)
             self.assertLess(time.monotonic() - started, 2.0)
             self.assertEqual(service.onboarding_status("proj")["state"], "failed")
-            records = [json.loads(line) for line in (self.dir / "state" / "records.jsonl").read_text().splitlines()]
+            records = [json.loads(line) for f in (self.dir / "state" / "records").glob("*.jsonl")
+                       for line in f.read_text().splitlines()]
             self.assertEqual(limited.call_count, len(records))
             self.assertTrue(records and all(r["outcome"] == "unavailable" and jev.pause_left(r) == 45.0 for r in records))
         again = self.service(FakeProvider())

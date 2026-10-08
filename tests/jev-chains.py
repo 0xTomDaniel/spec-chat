@@ -83,7 +83,7 @@ class ChainTest(unittest.TestCase):
         provider = FakeProvider({"about": ("yes", 0.95), "contradicts": ("no", 0.95)})
         seam = self.seam(provider)
         seam.ask_chain(draft_check()["chain"])
-        records = list(seam.store.by_key.values())
+        records = list(seam.store.records())
         self.assertEqual(len(records), 2)
         self.assertEqual({record["answer"]["label"] for record in records}, {"yes", "no"})
         for name in ("about", "type", "contradicts", "oversteps", "overlaps", "triggered", "covered"):
