@@ -44,14 +44,15 @@ Create durable current truth before deep investigation.
 
 ## Jev check
 
-After registering with `spec-chat-review`'s lane command and before the link is sent (project-rules#agent-read), read the review link's Jev checks with `spec-chat-review`'s `scripts/jev-read.py '<review-url>' --wait 120`: one line per important mark, warning counts by kind, rules checked, pending count, or `off`. `--anchor <id>` prints one anchor's full detail.
+After registering with `spec-chat-review`'s lane command and before the link is sent (project-rules#agent-read), read the review link's Jev checks with `spec-chat-review`'s `scripts/jev-read.py '<review-url>' --wait 120`: one line per important mark, warning counts by kind, rules checked, candidate rules, pending count, or `off`. `--anchor <id>` prints one anchor's full detail.
 
 - `off`: send the link at once.
 - Key only on each mark's `level`; keep no list of kinds.
 - End every `important` mark in exactly one of: a spec fix, a reason line in the spec (for example `Onboarding: not needed, this changes no screen`), or, when it is bigger than a simple edit, an open TBD you write at that clause (Review shaping TBD rule, open value), never a thread; it blocks `Accept spec` until the human settles it and counts as solved for hand-off. A contradiction between specs means one is out of date: update that one in the same PR. If it is a real design choice, open a TBD for the human. If Jev is wrong, don't edit either spec; list it in the hand-off as dismissed with a reason. Fixes take the direction of the reconcile rule under Review shaping. Commit and read again after each fix.
 - If a fix raises a new important mark on the same clause, write an open TBD at that clause instead of editing it again.
 - Never act on warnings, never hide them, and never edit a spec only to change a Jev answer or its confidence. Marks are advice and never block `Accept spec`.
-- Start the hand-off message with `N warnings not acted on: <the read's counts by kind>`, then name the rules checked as home spec and anchor, for visibility only.
+- Start the hand-off message with `N warnings not acted on: <the read's counts by kind>`, then name the rules checked as home spec and anchor, and the read's candidates as awaiting the human, for visibility only.
+- Never confirm or reject a rule: a candidate needs no agent action and blocks nothing.
 
 ## Review shaping
 

@@ -432,6 +432,26 @@ class BoardTest(unittest.TestCase):
         self.settle(service, rows)
         self.assertFalse(self.lane_calls(provider, LANES))
 
+    def test_slugs_of_different_projects_are_never_paired(self):
+        """jev-suggestions #cross-lane-pairs, #cross-lane-board, #shared-own-project; project-rules
+        #acceptance-own-project-lane: lanes of two projects contradicting each other show no cross-lane mark and
+        the board lists no pair across them; a third lane of the first project still pairs."""
+        rows = self.cross_lane()
+        rows[0]["project"], rows[1]["project"] = "alpha", "beta"
+        service, provider = self.service(self.cross_answer)
+        self.assertEqual(self.lane_items(self.page(service, rows, 0)), [])
+        self.assertEqual(self.lane_items(self.page(service, rows, 1)), [])
+        _, board = self.settle(service, rows)
+        self.wait_asks(service)
+        self.assertEqual(board["conflicts"], [])
+        self.assertFalse(self.lane_calls(provider, CROSS))
+        # Same project, same lanes: paired as before.
+        rows[1]["project"] = "alpha"
+        self.page(service, rows, 0)
+        self.wait_asks(service)
+        _, board = self.settle(service, rows)
+        self.assertEqual(board["conflicts"], [{"a": "ann1/" + SPEC, "b": "ann2/docs/specs/y.spec.html"}])
+
     def test_route_serves_board_without_parameters(self):
         rows = self.one_row()
         service, _ = self.service(lambda kind, state: ("no", 0.9))
