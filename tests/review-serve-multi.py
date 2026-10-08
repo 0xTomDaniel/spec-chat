@@ -664,10 +664,17 @@ class MultiReviewServeTest(unittest.TestCase):
         one = self.make_resource("ann611") | {"project": "sc"}
         self.spool_event(one, "human", 100, id="o", event="comment", anchorId="x", text="o", browser="b", author="Kiwi")
         self.start([busy, quiet, one])
+        # The index's one script is the runtime host bridge (criterion-evidence #bridge-tab-pages); counts need none.
+        runtime = (VIZ / "runtime.js").read_text()
+        start = runtime.index("/* ---------------- host bridge")
+        end_marker = "/* ---------------- end host bridge ---------------- */"
+        bridge = "<script>" + runtime[start:runtime.index(end_marker, start) + len(end_marker)] + "\nlistenHost();\n</script>"
 
         def rows():
             response = urllib.request.urlopen(self.url + "/", timeout=2)
             body = response.read().decode()
+            self.assertEqual(body.count(bridge), 1)
+            body = body.replace(bridge, "")
             self.assertNotIn("<script", body)
             items = re.findall(r"<li>(.*?)</li>", body, re.S)
             text = {}
