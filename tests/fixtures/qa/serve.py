@@ -6,8 +6,10 @@ usage: serve.py <registry.toml> <port>
 
 The fake says the onboarding rule applies to every feature and that a spec misses it
 unless the spec mentions onboarding, so the served specs show a rule mark and Jev
-writes real records. Each criterion verifies the story its data-story names and no
-other, so no false coverage gap shows. A fixture agent edit pending beside a spec
+writes real records. The general LLM names the rule in plain words (RULE_NAME). Each criterion verifies the story its data-story names and no
+other, so no false coverage gap shows. A project whose name ends in -confirmed (reset.sh)
+has the onboarding rule confirmed as it warms up, through Confirm rule's own record write,
+so its warm-up checks specs against it; in any other project the rule stays a candidate. A fixture agent edit pending beside a spec
 (spools.py, stale-page) lands when a page next posts an event to that spec, so the page
 saving it was loaded before the edit. In an answering collection (spools.py, name-reply) the
 agent answers each comment the page saves, so the page offers a reply. Everything else runs
@@ -22,6 +24,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE = Path(__file__).resolve().parent
+CONFIRMED = "-confirmed"
+RULE_NAME = "Every change ships its onboarding"  # the general LLM's plain-words name for the rule
 CRITERION = re.compile(r"<[^>]*\bdata-acceptance-criterion\b[^>]*>")
 ATTR = re.compile(r'\b(data-anchor|data-story)="([^"]*)"')
 
@@ -53,9 +57,24 @@ def main(argv):
     fake = rules.FakeProvider(
         scope={rules.ONBOARDING: ("every feature", 0.95)},
         rule={rules.ONBOARDING: (lambda spec: "covered" if "onboarding" in spec.lower() else "missed", 0.95)},
+        general={("name", rules.ONBOARDING): RULE_NAME},
         coverage=coverage(),
     )
     real = serve.JevService
+    warm_project = real._warm_project
+
+    def warm_confirmed(service, project, rows, status):
+        """A human's Confirm rule on the onboarding candidate, before the warm-up reads the project's rules."""
+        if project.endswith(CONFIRMED):
+            try:
+                _, specs = service._main_specs(rows)
+                service._warm_submit(list(service._built("scope", specs)))  # the scope record Confirm rule resolves
+            except Exception:
+                pass  # the warm-up below reports it
+            service.confirm({"project": project}, rules.ONBOARDING)
+        return warm_project(service, project, rows, status)
+
+    real._warm_project = warm_confirmed
     serve.JevService = lambda **kw: real(**{**kw, "provider": fake, "api_key": "fake"})
     spools = load("qa_fixture_spools", FIXTURE / "spools.py")
     post = serve.MountHandler._post_event

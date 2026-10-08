@@ -12,6 +12,7 @@ import tempfile
 import time
 import tomllib
 import unittest
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -31,6 +32,8 @@ def load(name, path):
 place = load("qa_place", ASSETS / "place.py")
 spool = load("qa_spool", ASSETS / "spool.py")
 spools = load("qa_spools", FIXTURE / "spools.py")
+ONBOARDING = load("qa_rules", ROOT / "tests" / "review-serve-jev-rules.py").ONBOARDING
+RULE_NAME = load("qa_serve", FIXTURE / "serve.py").RULE_NAME
 HEAD = (FIXTURE / "head" / "docs" / "specs" / "report.spec.html").read_text(encoding="utf-8")
 
 
@@ -40,7 +43,11 @@ class Site:
     def __init__(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
-        env = {**os.environ, "QA_ROOT": str(self.root), "QA_FIXTURE": str(FIXTURE), "QA_REPO_SPEC_CHAT": str(ROOT)}
+        self.reset()
+
+    def reset(self, **extra):
+        """reset.sh, as capture runs it: with QA_STORY and QA_URL_REVIEW once the service runs."""
+        env = {**os.environ, "QA_ROOT": str(self.root), "QA_FIXTURE": str(FIXTURE), "QA_REPO_SPEC_CHAT": str(ROOT), **extra}
         subprocess.run(["sh", str(FIXTURE / "reset.sh")], check=True, env=env)
 
     def spec(self, collection):
@@ -217,6 +224,50 @@ class ReviewStateCollections(unittest.TestCase):
                                            threadId="qa-first", text="Reply after reload."))
         agent = [e for e in self.served_events(base, "name-reply") if e["body"].get("actor") == "agent"]
         self.assertEqual(len(agent), 1)
+
+
+    def test_rule_state_follows_the_story_and_the_criterion_given(self):
+        """project-rules #approval: a confirmed-rule story's entry shows the rule card and reconcile offer, story-approve's
+        the candidate; rule-candidate and rule-confirmed hold their state in either story; a reset forgets clicks."""
+        site = Site()  # its own site: its resets replace the shared site's collections
+        self.addCleanup(site.tmp.cleanup)
+        base = self.serve(site)
+
+        def jev(collection):
+            query = urllib.parse.urlencode({"path": "%s/docs/specs/report.spec.html" % collection})
+            with urllib.request.urlopen(base + "/api/jev?" + query) as response:
+                answer = json.load(response)
+            return {item["kind"] for item in answer["items"]} & {"rule", "candidate"}, answer
+
+        def confirmed(collection):
+            kinds, answer = jev(collection)
+            self.assertEqual(kinds, {"rule"}, collection)
+            self.assertIsNone(answer["candidate_offer"], collection)
+            self.assertEqual(answer["offer"]["count"], 1, collection)
+            self.assertEqual(len(answer["rules"]), 1, collection)
+
+        def candidate(collection):
+            kinds, answer = jev(collection)
+            self.assertNotIn("rule", kinds, collection)
+            self.assertEqual(answer["candidate_offer"]["count"], 1, collection)
+            self.assertIsNone(answer["offer"], collection)
+            self.assertEqual(answer["rules"], [], collection)
+
+        site.reset(QA_STORY="story-miss", QA_URL_REVIEW=base)
+        confirmed("qa-fixture"), confirmed("rule-confirmed"), candidate("rule-candidate")
+        until = time.monotonic() + 20  # the card's title is the fixture's plain-words name, written by the general LLM
+        while (names := {i.get("name") for i in jev("qa-fixture")[1]["items"] if i["kind"] == "rule"}) != {RULE_NAME}:
+            self.assertLess(time.monotonic(), until, names)
+            time.sleep(0.2)
+        body = json.dumps({"dismiss": "rule", "rule": ONBOARDING}).encode()
+        request = urllib.request.Request(base + "/api/jev/offer?path=qa-fixture/docs/specs/report.spec.html", data=body, method="POST")
+        with urllib.request.urlopen(request) as response:
+            self.assertTrue(json.load(response)["ok"])
+        self.assertEqual(jev("qa-fixture")[0], set())
+        site.reset(QA_STORY="story-approve", QA_URL_REVIEW=base)
+        candidate("qa-fixture"), confirmed("rule-confirmed"), candidate("rule-candidate")
+        site.reset(QA_STORY="story-dismiss", QA_URL_REVIEW=base)
+        confirmed("qa-fixture")
 
 
 if __name__ == "__main__":

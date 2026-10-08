@@ -20,7 +20,7 @@
 <h2>User stories</h2>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-operator">As a product operator, I want a prompt to become clean durable issue and spec surfaces immediately so shaping survives a lost chat session.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-reviewer">As a reviewer, I want additions to remain clear while existing context recedes so the canonical spec itself explains the current issue-scoped change.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-mobile">As a reviewer away from the authoring machine, I want to comment and accept the spec from an ordinary mobile browser using one secret link so review requires no SSH or separate account.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-mobile">As a reviewer away from the authoring machine, I want to comment and accept the spec from an ordinary mobile browser using one link so review requires no SSH or separate account.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-agent">As an authoring agent, I want hand-offs to wake the active shaping turn and durable files to support cold recovery so processing remains portable without a resident supervisor.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-compatible-review">As a reviewer, I want the same required review capabilities in every repository so an old vendored runtime cannot silently remove controls, focus, or visuals.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-guided-impact">As a feature author, I want every changed user-facing story to state whether the central guided journey extends so onboarding impact is explicit without forcing every feature into onboarding.</p>
@@ -273,7 +273,7 @@ An ADR may name a rule it decided on only by linking that criterion, as in <q>se
         },
         {
           "id": "issue",
-          "name": "Placeholder issue",
+          "name": "Issue, by caller",
           "x": 220,
           "y": 90
         },
@@ -285,7 +285,7 @@ An ADR may name a rule it decided on only by linking that criterion, as in <q>se
         },
         {
           "id": "seed",
-          "name": "Issue + spec seed",
+          "name": "Spec seed",
           "x": 520,
           "y": 90
         },
@@ -320,8 +320,11 @@ An ADR may name a rule it decided on only by linking that criterion, as in <q>se
           "target": "issue"
         },
         {
-          "source": "issue",
-          "target": "docs"
+          "source": "prompt",
+          "target": "docs",
+          "lineStyle": {
+            "curveness": 0.4
+          }
         },
         {
           "source": "docs",
@@ -353,13 +356,13 @@ An ADR may name a rule it decided on only by linking that criterion, as in <q>se
 }
 </script>
 <div data-render-target="chart"></div>
-<p data-anchor="flow-prompt">The caller names the issue for the spec to link; shaping never waits on it.</p>
+<p data-anchor="flow-prompt">The caller owns the issue; shaping never waits on it.</p>
 <p data-anchor="flow-no-transcript">The issue is always-most-recent and clean, so later passes replace its content rather than retaining the raw prompt or accumulating summaries.</p>
 <p data-anchor="flow-branch">The agent creates the work branch, and that branch supplies the local Git comparison baseline.</p>
 <p data-anchor="flow-docs">The short seed pass reads only target instructions, the spec index, clearly related specs and ADRs, and directly relevant product or workflow docs.</p>
 <p data-anchor="flow-docs-exclusion">The seed pass defers code, tests, configuration, and package inspection unless durable docs conflict or cannot identify the correct spec surface.</p>
 <p data-anchor="flow-governing-links">The issue retains links only to sources that actually govern the work, never a bibliography of everything inspected.</p>
-<p data-anchor="flow-seed">The agent writes one concise current issue seed and one concise current spec seed before deeper grilling.</p>
+<p data-anchor="flow-seed">The agent writes one concise current spec seed before deeper grilling; the issue seed is the caller's.</p>
 <p data-anchor="flow-existing-spec">When a relevant canonical spec exists, the agent edits it in place.</p>
 <p data-anchor="flow-new-spec">When no relevant spec exists, the agent creates a minimal durable capability or domain spec with only sections that contain real behavior.</p>
 <p data-anchor="flow-no-issue-link">The spec carries no ticket or issue link; git history is the provenance record.</p>
@@ -419,9 +422,9 @@ Where a repo's ADRs carry no number, the line names the new ADR by a link to its
 <h2>Issue surface</h2>
 <p data-anchor="issue-github-only">Each target repository selects its own issue surface through a separate concise issue skill.</p>
 <p data-anchor="issue-same-repo">External repositories may select a different issue surface without changing Spec Chat's shaping or review contract.</p>
-<p data-anchor="issue-no-abstraction">The core Spec Chat shaping skill depends only on the issue skill's create, read, replace-current-content, and link operations.</p>
+<p data-anchor="issue-no-abstraction">The core Spec Chat shaping skill calls no issue operation; creating and editing the issue are the caller's.</p>
 <p data-anchor="issue-direct-tool">The Spec Chat browser runtime, review server, and event protocol contain no tracker client or tracker-specific behavior.</p>
-<p data-anchor="issue-missing-access">Missing access to the repository-selected issue surface is a visible shaping blocker.</p>
+<p data-anchor="issue-missing-access">Missing access to the repository-selected issue surface is the caller's blocker and never blocks shaping.</p>
 <p data-anchor="issue-current-only">Resolved decisions replace prior issue prose, and resolved material TBDs are removed immediately.</p>
 </section>
 
@@ -434,7 +437,7 @@ Where a repo's ADRs carry no number, the line names the new ADR by a link to its
 <p data-anchor="focus-new-file">A new spec is entirely clear.</p>
 <p data-anchor="focus-normal-view">Opening the spec without issue focus renders the whole current document at normal clarity.</p>
 <p data-anchor="focus-no-metadata">Focus is derived from Git and never maintained through embedded issue metadata, sidecars, anchor lists, or hand-authored change markers.</p>
-<p data-anchor="focus-commit-discipline">The shaping skill commits and pushes every accepted spec change before presenting the refreshed focus view, so the Git-derived review state remains durable and reproducible.</p>
+<p data-anchor="focus-commit-discipline">The shaping skill commits every accepted spec change locally before presenting the refreshed focus view, so the Git-derived review state remains durable and reproducible.</p>
 <p data-anchor="focus-http">Prompt-first shaping uses the existing HTTP review transport on desktop and mobile because a browser file page cannot inspect Git.</p>
 <p data-anchor="focus-local-git">The review server reads only the current local repository and never fetches, checks out, stages, commits, or writes Git state.</p>
 <p data-anchor="focus-no-octo">No focus behavior imports, invokes, expects, or mentions an orchestrator.</p>
@@ -454,7 +457,7 @@ Where a repo's ADRs carry no number, the line names the new ADR by a link to its
 <p data-anchor="grilling-tbd">Each question appears as a temporary anchored TBD block marked with <code>data-spec-tbd</code> so spec acceptance cannot become eligible while material questions remain; only a question deliberately deferred to a later slice uses <code>data-spec-tbd="later"</code>.</p>
 <p data-anchor="grilling-answer">The human answers with an ordinary comment on that block.</p>
 <p data-anchor="grilling-resolve">The agent immediately replaces the TBD with the resulting current rule or removes it when no rule is needed.</p>
-<p data-anchor="grilling-issue-sync">The clean current issue is updated in the same batch when the answer changes its high-level scope or criteria.</p>
+<p data-anchor="grilling-issue-sync">When an answer changes the issue's high-level scope or criteria, keeping the issue current is the caller's; the agent never edits it.</p>
 <p data-anchor="grilling-no-protocol">Agent questions require no agent-created root thread, new event type, or side channel.</p>
 <p data-anchor="grilling-fallback">Terminal chat is only a fallback when the browser review surface is unavailable.</p>
 </section>
@@ -541,8 +544,8 @@ Where a repo's ADRs carry no number, the line names the new ADR by a link to its
 <p data-anchor="batch-no-grandfathering">An existing or old spec receives no exemption from the current information-shape or visual-quality rules when a material batch changes it.</p>
 <p data-anchor="batch-restructure-weak-page">When the current page cannot carry new material with readable visual density, the agent restructures the affected page rather than appending prose, cards, or one catch-all diagram.</p>
 <p data-anchor="batch-order-2">The agent completes each coherent batch of behavior, acceptance, and necessary layout changes before its replies.</p>
-<p data-anchor="batch-order-3">The agent updates the clean current issue when high-level truth changed.</p>
-<p data-anchor="batch-order-4">The agent commits and pushes every accepted spec change before the browser presents its refreshed Git-derived focus view.</p>
+<p data-anchor="batch-order-3">The agent never edits the issue; keeping it current when high-level truth changed is the caller's.</p>
+<p data-anchor="batch-order-4">The agent commits every accepted spec change locally before the browser presents its refreshed Git-derived focus view.</p>
 <p data-anchor="batch-order-5">The agent emits one reply to each newest human message after the durable spec write succeeds.</p>
 <p data-anchor="batch-order-6">Only after every prior action succeeds does the agent append the exact processed filenames to its cursor.</p>
 <p data-anchor="batch-failure">A partial or failed batch leaves the cursor unchanged so the next processor reconstructs and completes the same work.</p>
@@ -661,7 +664,7 @@ Where a repo's ADRs carry no number, the line names the new ADR by a link to its
 <p data-anchor="finish-tbd-later">A <code>data-spec-tbd</code> marker is open unless its value is <code>later</code>. <code>data-spec-tbd="later"</code> marks a TBD deliberately left for a later slice: it stays visible text but neither blocks spec acceptance nor is highlighted.</p>
 <p data-anchor="finish-event">Spec acceptance writes the existing hand-off event with an empty batch.</p>
 <p data-anchor="finish-agent">The parked agent interprets that empty hand-off as explicit completion of the browser review window.</p>
-<p data-anchor="finish-final-batch">The agent reconciles issue and spec, commits and pushes any final changes, advances the cursor, and closes the active wait.</p>
+<p data-anchor="finish-final-batch">The agent reconciles the spec, commits any final changes locally, advances the cursor, and closes the active wait.</p>
 <p data-anchor="finish-alignment">The issue, spec, applicable ADRs, user stories, acceptance criteria, architecture, and TDD contract must describe the same current behavior before spec acceptance is eligible.</p>
 <p data-anchor="finish-conditional">Absent ADRs, single-module work, docs-only work, and recorded test waivers are valid only when their stated conditions hold.</p>
 <p data-anchor="finish-narrow">Spec acceptance means the human accepts the reviewed canonical spec, the applicable durable surfaces agree, and delivery may start under it.</p>
@@ -679,7 +682,6 @@ Where a repo's ADRs carry no number, the line names the new ADR by a link to its
 
 <section data-anchor="mobile" id="mobile">
 <h2>Mobile review</h2>
-<p data-anchor="mobile-version">The runtime includes the latest upstream Spec Chat behavior plus the existing mobile-review commit.</p>
 <p data-anchor="mobile-http">Prompt-first shaping uses HTTP transport so the same review works on phones, tablets, and desktops.</p>
 <p data-anchor="mobile-target-first">Comment mode remains target-first on narrow screens: opening comment mode exposes the document, and selecting a target opens the full-viewport composer.</p>
 <p data-anchor="mobile-controls">Review controls keep at least 44 pixel touch targets, 16 pixel textarea text, dynamic viewport height, safe-area padding, and reduced-motion behavior.</p>
@@ -689,15 +691,15 @@ Where a repo's ADRs carry no number, the line names the new ADR by a link to its
 
 <section data-anchor="public-review-access" id="public-review-access">
 <h2>Public review access</h2>
-<p data-anchor="public-review-anywhere">Prompt-first shaping publishes an HTTPS review link that opens from any ordinary browser without SSH, VPN, or a separate account login.</p>
-<p data-anchor="public-review-capability">The unguessable link is a bearer capability, and possession of that link is the only review authentication.</p>
+<p data-anchor="public-review-anywhere">Prompt-first shaping hands off a review link on the <a href="./review-service.spec.html#service">box's one review service</a>; once the box owner has made that service public, the link opens from any ordinary browser without SSH, VPN, or a separate account login.</p>
+<p data-anchor="public-review-capability">The link is not an authentication boundary: the page has <a href="./review-state.spec.html#trust-no-login">no login</a>.</p>
 <p data-anchor="public-review-warning">The shaping skill tells the human to treat the link as a secret and never publishes it into the issue or change request.</p>
 <p data-anchor="public-review-narrow-root">The public server exposes only the declared review collection and its event routes, never the repository root.</p>
 <p data-anchor="public-review-plain-directory">A review collection needs no Git repository: outside one, the served directory itself is the collection boundary, comments, replies, and hand-offs work over its spools, and the baseline, compared range, and issue focus report unavailable.</p>
 <p data-anchor="public-review-broad-root">Without consulting Git, the server refuses a filesystem or volume root, a top-level system or shared temporary directory, the home directory or any ancestor of it, the home Desktop, Documents, and Downloads folders, any path inside Git metadata, and a directory outside Git that contains a repository; inside a repository it also refuses the repository root.</p>
 <p data-anchor="public-review-page-spools">A single-directory collection accepts the review spool of any HTML page it serves, while a registered resource accepts only its declared spec.</p>
-<p data-anchor="public-review-local-origin">The review server binds directly to an approved ingress port through the approved-port launcher, with no relay or tunnel.</p>
-<p data-anchor="public-review-close">Spec acceptance or explicitly ending review closes the public transport and invalidates the capability URL.</p>
+<p data-anchor="public-review-local-origin">A public review service binds directly to an approved ingress port, with no relay or tunnel; the service owns its bind and port (<a href="./review-service.spec.html#service-restart">one service per box</a>).</p>
+<p data-anchor="public-review-close">Lane teardown removes the lane's registered rows, so their review links stop serving (<a href="./lane-hosting.spec.html#context">lane hosting</a>); spec acceptance leaves them registered, and the box's review service keeps serving other lanes.</p>
 </section>
 
 <section data-anchor="review-surface-compatibility" id="review-surface-compatibility">
@@ -807,7 +809,7 @@ Where a repo's ADRs carry no number, the line names the new ADR by a link to its
 
 <section data-anchor="skill-ownership" id="skill-ownership">
 <h2>Skill ownership</h2>
-<p data-anchor="skill-shape">A new automatically discoverable spec-chat-shape skill owns prompt intake, issue creation, short docs discovery, first issue and spec seed, Git focus launch, in-spec grilling, batch publication, and review completion.</p>
+<p data-anchor="skill-shape">A new automatically discoverable spec-chat-shape skill owns prompt intake, short docs discovery, first spec seed, Git focus launch, in-spec grilling, batch publication, and review completion.</p>
 <p data-anchor="skill-review">The existing spec-chat-review skill remains the sole owner of spool reading, thread folding, reply emission, cursor safety, watcher attachment, mobile review, and cold recovery.</p>
 <p data-anchor="skill-material-boundary">Review-only ends when a batch changes behavior or information architecture, at which point the review skill retains the spool transaction while the shaping skill becomes the required material-authoring co-skill.</p>
 <p data-anchor="skill-handoff">The shaping skill hands into the review skill without copying its event protocol, while both skills encode the same spec contract invariants.</p>
@@ -861,12 +863,6 @@ Where a repo's ADRs carry no number, the line names the new ADR by a link to its
 <p data-anchor="non-goal-distributed">It does not build a distributed scheduler, exactly-once execution system, multi-writer coordinator, or cross-host presence service.</p>
 <p data-anchor="non-goal-review-pr">It does not require humans to inspect GitHub or another change-request UI to understand the spec change.</p>
 <p data-anchor="non-goal-runtime-stack">It does not install an application framework catalog into every shaping context or add a source-to-HTML build loop.</p>
-</section>
-
-<section data-anchor="references" id="references">
-<h2>References</h2>
-<p data-anchor="reference-design">Product design history: <a href="https://github.com/0xTomDaniel/spec-chat/blob/70e22934dc418c7971fde5772a6d9fcc904e892f/DESIGN.md">DESIGN.md at the shaping baseline</a>.</p>
-<p data-anchor="reference-review-skill">Current review procedure baseline: <a href="https://github.com/varelaseb/spec-chat/blob/cae844f1b85ce39911ab9db7f6bb03c37d434bac/skill/review-spec/SKILL.md">skill/review-spec/SKILL.md at the mobile-review commit</a>.</p>
 </section>
 
 </article>

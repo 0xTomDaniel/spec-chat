@@ -173,7 +173,7 @@ class TestProvenance(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestResolution(unittest.TestCase):
-    """Resolution: dismissed is unconfirmed, fixed is auto-confirmed, eval counts only confirmed."""
+    """Resolution: dismissed and fixed stay unconfirmed until audited, eval counts only confirmed (#measure-feedback)."""
 
     def _make_store_with_record(self, outcome="shown"):
         """Create a store with one draft-check record."""
@@ -206,13 +206,17 @@ class TestResolution(unittest.TestCase):
         self.assertEqual(updated["resolution"]["reason"], "Jev is wrong here")
         self.assertNotIn("confirmed", updated)
 
-    def test_fixed_is_auto_confirmed(self):
-        """A spec fix auto-confirms as true positive."""
+    def test_fixed_is_unconfirmed_until_audited(self):
+        """project-rules #acceptance-fixed-unconfirmed: an edit can answer a wrong mark, so fixed proves nothing;
+        the eval replay's labels, confirmed_records, exclude it until an audit labels it."""
         store, record = self._make_store_with_record()
         updated = store.resolve("judgment-test-001", "fixed")
         self.assertIsNotNone(updated)
         self.assertEqual(updated["resolution"]["status"], "fixed")
-        self.assertTrue(updated["confirmed"])
+        self.assertNotIn("confirmed", updated)
+        self.assertEqual(store.confirmed_records(), [])
+        audited = store.resolve("judgment-test-001", "fixed", confirmed=True)
+        self.assertEqual([r["record_id"] for r in store.confirmed_records()], [audited["record_id"]])
 
     def test_resolve_unknown_record_returns_none(self):
         store, _ = self._make_store_with_record()
@@ -234,7 +238,7 @@ class TestResolution(unittest.TestCase):
                 "threshold": 0.4, "outcome": "shown",
                 "time": "2026-09-28T00:00:00.000Z",
             })
-            store.resolve("judgment-persist-001", "fixed")
+            store.resolve("judgment-persist-001", "fixed", confirmed=True)  # as an audit labels it
 
             # Reload
             store2 = jev.JudgmentStore(path)
@@ -255,9 +259,11 @@ class TestResolution(unittest.TestCase):
         store2.resolve("judgment-test-002", "dismissed", reason="wrong")
         self.assertEqual(len(store2.confirmed_records()), 0)
 
-        # Fix (auto-confirmed)
+        # Fix: unconfirmed; an audit's label confirms it
         store3, _ = self._make_store_with_record()
         store3.resolve("judgment-test-001", "fixed")
+        self.assertEqual(len(store3.confirmed_records()), 0)
+        store3.resolve("judgment-test-001", "fixed", confirmed=True)
         confirmed = store3.confirmed_records()
         self.assertEqual(len(confirmed), 1)
         self.assertTrue(confirmed[0]["confirmed"])

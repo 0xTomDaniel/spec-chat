@@ -85,7 +85,7 @@
 <h2>Live review</h2>
 <p data-anchor="live-pull">The page asks the service for events it does not hold at least every 2 seconds, and shows them without reloading.</p>
 <p data-anchor="live-save">The page names each event before sending it, so a resend after a lost response stores nothing new.</p>
-<p data-anchor="live-handoff">A hand-off lists the event ids it hands off in <code>events</code>: its browser's drafts. Only those become pending; other reviewers' drafts stay drafts. A hand-off without <code>events</code>, written before this field, hands off every draft, as before.</p>
+<p data-anchor="live-handoff">A hand-off lists the event ids it hands off in <code>events</code>: its browser's drafts. Only those become pending; other reviewers' drafts stay drafts. A hand-off without <code>events</code> hands off every draft.</p>
 <p data-anchor="live-accept">Accept spec is offered when every thread is resolved and no open TBD remains, whoever's thread it is, and writes the existing empty hand-off.</p>
 <p data-anchor="live-presence">The page shows no presence: no list of who is viewing and no live selections or cursors. Authors appear only on what they saved. Decided by the human, 2026-10-01.</p>
 </section>
@@ -94,7 +94,7 @@
 <h2>Marks through agent edits</h2>
 <p data-anchor="anchoring-locate">The resolver finds a mark's source range in its event's version: the anchored block, then the target within it, the quote for a text target.</p>
 <p data-anchor="anchoring-map">It maps that range through a character diff from that version to the current spec text, and reports the current block, range, and state below. The same inputs give the same answer on every reader.</p>
-<p data-anchor="anchoring-legacy">An event with no <code>version</code> resolves as today, by anchor and quote in the current spec.</p>
+<p data-anchor="anchoring-legacy">An event with no <code>version</code> resolves by anchor and quote in the current spec.</p>
 <div class="table-scroll" data-anchor="anchoring-states-scroll">
 <table data-anchor="anchoring-states">
 <caption>Mark state after mapping, and what the page and agent see</caption>
@@ -121,7 +121,7 @@
 
 <section data-anchor="trust">
 <h2>Trust</h2>
-<p data-anchor="trust-no-login">The page still has no login and its URL is not an authentication boundary. <code>author</code> is an assigned fruit name, not an identity, and is never checked.</p>
+<p data-anchor="trust-no-login">The page has no login and its URL is not an authentication boundary. <code>author</code> is an assigned fruit name, not an identity, and is never checked.</p>
 <p data-anchor="trust-agent-disk">Agent events are written only on disk; the service refuses an agent event over HTTP, so no page can speak as the agent.</p>
 <p data-anchor="trust-immutable">The service never overwrites an event file; a write naming an existing file with different bytes is refused.</p>
 </section>

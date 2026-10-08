@@ -24,9 +24,9 @@ assert.deepEqual(corpusFlags([
   { kind: 'corpus', id: 'draft', state: 'unavailable', label: null, target: 'other' },
   { kind: 'corpus', id: 'draft', state: 'unavailable', label: null, target: 'other' },
 ]), [
-  { anchor: 'draft', state: 'label', label: 'Contradicts', level: 'important', target: 'non-goal-text' },
-  { anchor: 'draft', state: 'label', label: 'Overlaps', level: null, target: 'compared-range#bar-flow' },
-  { anchor: 'mixed', state: 'label', label: 'Oversteps', level: 'warning', target: 'other#flow' },
+  { anchor: 'draft', state: 'label', label: 'Contradicts', level: 'important', target: 'non-goal-text', record: null, rule: null },
+  { anchor: 'draft', state: 'label', label: 'Overlaps', level: null, target: 'compared-range#bar-flow', record: null, rule: null },
+  { anchor: 'mixed', state: 'label', label: 'Oversteps', level: 'warning', target: 'other#flow', record: null, rule: null },
   { anchor: 'draft', state: 'unavailable', label: 'Jev unavailable', target: null },
 ]);
 assert.deepEqual(corpusTargetLink('non-goal-text'), { text: '#non-goal-text', href: '#non-goal-text' });
