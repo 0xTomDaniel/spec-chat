@@ -13,7 +13,8 @@
 <header data-anchor="header">
 <h1 data-anchor="title">Review host wakes the owner pane</h1>
 <nav data-anchor="breadcrumbs">docs / specs / host-wake.spec.html</nav>
-<p data-anchor="context">Replaces the per-lane external monitor in <a href="./prompt-first-shaping.spec.html#wake-ownership">Review wake ownership</a>. The one long-lived review host already knows each resource's owner pane from its registry, so it wakes that pane itself, only through the registered <code>wake</code> provider (<a href="./review-service.spec.html#providers">Providers</a>).</p>
+<p data-anchor="context">Owns the host-wake state of <a href="./prompt-first-shaping.spec.html#wake-ownership">Review wake ownership</a>.
+The one long-lived review host knows each resource's owner pane from its registry, so it wakes that pane itself, only through the registered <code>wake</code> provider (<a href="./review-service.spec.html#providers">Providers</a>).</p>
 </header>
 
 <section data-spec-section="user-stories" data-anchor="user-stories">
@@ -64,7 +65,8 @@
 
 <section data-anchor="control-states">
 <h2>Control states</h2>
-<p data-anchor="control-host-wake">The external-wake state becomes host-wake: the resource is registered with the owner's pane id and <code>register</code> printed <code>wake=verified</code>. A final response is allowed.</p>
+<p data-anchor="control-host-wake">Host-wake: the resource is registered with the owner's pane id and <code>register</code> printed <code>wake=verified</code>.
+A final response is allowed.</p>
 <p data-anchor="control-others">Turn-yielded and manual-resume are unchanged. A registration that printed <code>wake=unavailable</code> selects manual-resume.</p>
 <p data-anchor="control-owner-source">The row's <code>owner</code> is the lane record owner pane id, never an agent or tab name.</p>
 </section>
