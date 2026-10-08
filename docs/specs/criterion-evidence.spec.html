@@ -25,9 +25,9 @@
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-what-changed">As a reviewer, a <code>QA stale</code> or reworded criterion shows me what changed between the proven text and the text I am reading, so I judge the gap without opening anything.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-reproof">As a reviewer, a <code>QA stale</code> criterion offers one button that drafts a re-proof request, and several offer one button that drafts one request for them all; the request reaches the spec's owner, who acts on it, and once new evidence lands it replaces <code>QA stale</code>.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-plugin">As a reviewer inside the BB plugin, evidence links open in the plugin's Proof page instead of a browser.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-tabs">As a reviewer inside a host that offers tabs, a new-tab click on a link to another Spec Chat page, on a spec page or the review index, opens it in the host's own tab instead of a browser, while plain clicks and links to other sites behave as today.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-tabs">As a reviewer inside a host that offers tabs, a new-tab click on a link to another Spec Chat page, on a spec page or the review index, opens it in the host's own tab instead of a browser, while plain clicks and links to other sites keep the browser's own behavior.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-place">As a reviewer, when a spec page reloads, including after I go to Proof and back with Spec alone in BB, it returns me to where I was reading.</p>
-<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-absent">As a reviewer, when the evidence service is down or not configured, the page works as today, with no evidence notes.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-absent">As a reviewer, when the evidence service is down or not configured, the page works with no evidence notes and no error.</p>
 </section>
 
 <section data-spec-section="acceptance" data-acceptance-scope="criterion-evidence" data-anchor="acceptance">
@@ -126,7 +126,8 @@ CI: the evidence route and runtime tests run in CI with no evidence provider ins
 <p data-anchor="reproof-settle"><code>QA stale</code> is Jev's guess that the text changed materially; once evidence of the current text lands, the next read shows that evidence's label and the stale note, its diff, and its buttons are gone.</p>
 <p data-anchor="reproof-route">A sent request is an ordinary comment: the hand-off wakes the host row's owner through <a href="./host-wake.spec.html#acceptance-wake-once">host wake</a>, and that owner runs a narrow Jev recapture of that criterion.</p>
 <p data-anchor="reproof-main-owner">A spec on main, outside any lane, is registered with the operator as owner, so its request reaches the operator, who starts a small re-proof lane.</p>
-<p data-anchor="reproof-always-owned">Every hosted spec has an owner: <code>review-host register</code> rejects a row without one. A lane spec's owner is the lane owner; a main spec's is the operator. So a request always reaches someone, and the page shows no watcher state.</p>
+<p data-anchor="reproof-always-owned">Every hosted spec has an owner, as <a href="./review-service.spec.html#lane-command">the lane command</a> requires.
+A lane spec's owner is the lane owner; a main spec's is the operator. So a request always reaches someone, and the page shows no watcher state.</p>
 </section>
 
 <section data-anchor="plugin-bridge">
@@ -143,7 +144,7 @@ CI: the evidence route and runtime tests run in CI with no evidence provider ins
 </tbody>
 </table>
 </div>
-<p data-anchor="bridge-intercept">Only after step 1 does the page turn an evidence click into step 2 instead of following the link; before it, and in any unframed page, links behave as today.</p>
+<p data-anchor="bridge-intercept">Only after step 1 does the page turn an evidence click into step 2 instead of following the link; before it, and in any unframed page, links keep the browser's own behavior.</p>
 <p data-anchor="bridge-hello-check">The page takes a hello only when <code>event.source</code> is its parent window and <code>event.origin</code> is a real origin, not <code>null</code>, and answers to <code>event.source</code> at <code>event.origin</code>. <code>opens</code> must be an array; <code>"evidence"</code> and <code>"tab"</code> each turn on only their own steps.</p>
 <p data-anchor="bridge-new-tab-click">A new-tab click is a Cmd+click on macOS, a Ctrl+click elsewhere, or a middle-click, on a link whose resolved address has the page's own origin. On it the page cancels the click's default and sends step 5. A plain click, a click on a link to another origin, and any click before a tab hello keep the browser's own behavior, and a page that is not framed sends nothing.</p>
 <p data-anchor="bridge-tab-pages">Spec pages and the <a href="./lane-hosting.spec.html#index-entry">review index</a> both speak steps 4 and 5. One mechanism: the tab steps extend the existing hello listener and its sender check, and the index runs the same bridge code as spec pages, not a second copy; the index loads nothing else from the runtime.</p>
@@ -163,7 +164,7 @@ CI: the evidence route and runtime tests run in CI with no evidence provider ins
 <h2>One read per page</h2>
 <figure data-anchor="read-figure">
 <div class="rail-wrap" data-anchor="read-figure-scroll">
-<svg viewBox="0 0 780 290" style="min-width: 620px" role="img" aria-label="Swimlane. Browser: 1 the page renders as today, then calls GET /api/evidence with the spec path. Review server: 2 names the spec ID and viewed commit, 3 calls GET /criteria on the evidence service. Evidence service: 4 picks, matches, asks Jev, checks main, and returns criteria. Review server: 5 marks uncommitted criteria and makes links absolute. Browser: 6 shows evidence notes, or nothing.">
+<svg viewBox="0 0 780 290" style="min-width: 620px" role="img" aria-label="Swimlane. Browser: 1 the page renders at once, then calls GET /api/evidence with the spec path. Review server: 2 names the spec ID and viewed commit, 3 calls GET /criteria on the evidence service. Evidence service: 4 picks, matches, asks Jev, checks main, and returns criteria. Review server: 5 marks uncommitted criteria and makes links absolute. Browser: 6 shows evidence notes, or nothing.">
 <rect x="0" y="0" width="780" height="92" fill="#f4f6fb"></rect>
 <rect x="0" y="92" width="780" height="100" fill="#ffffff"></rect>
 <rect x="0" y="192" width="780" height="98" fill="#f4f6fb"></rect>
@@ -174,7 +175,7 @@ CI: the evidence route and runtime tests run in CI with no evidence provider ins
 <text x="12" y="238" fill="#171719" font-size="14" font-weight="700">Evidence</text>
 <text x="12" y="256" fill="#171719" font-size="14" font-weight="700">service</text>
 <rect x="140" y="24" width="190" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="152" y="51" fill="#171719" font-size="13">1 Page renders as today</text>
+<text x="152" y="51" fill="#171719" font-size="13">1 Page renders at once</text>
 <rect x="556" y="24" width="216" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
 <text x="568" y="51" fill="#171719" font-size="13">6 Evidence notes, or nothing</text>
 <rect x="140" y="120" width="210" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
