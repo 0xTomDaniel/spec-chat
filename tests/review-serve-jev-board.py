@@ -474,7 +474,8 @@ class BoardTest(unittest.TestCase):
             server.server_close()
         self.assertEqual(first["rows"], [])
         self.assertEqual(second["rows"], [{"id": rows[0]["id"], "material": "no"}])
-        records = (self.dir / "state" / "records.jsonl").read_text(encoding="utf-8")
+        records = "".join(f.read_text(encoding="utf-8") for f in (self.dir / "state" / "records").glob("*.jsonl"))
+        self.assertIn("cache_key", records)
         self.assertNotIn("New words", records)
 
     def test_jev_route_resolves_base_once_and_rejects_bad_base(self):

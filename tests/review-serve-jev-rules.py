@@ -55,6 +55,12 @@ def general_kind(payload):
     return next(name for name, qset in SETS.items() if qset.instructions == question)
 
 
+
+def record_lines(state):
+    """Every line of the store's record files (jev-suggestions #record-store); one key's lines keep their order."""
+    return [line for f in sorted((state / "records").glob("*.jsonl")) if f.name != "decisions.jsonl"
+            for line in f.read_text().splitlines()]
+
 class FakeProvider:
     """Jev answers from scope and rule maps; the general LLM from its own map; every payload is kept.
     A rule map value is the rule check's outcome, missed, covered, or not triggered, answered per chain question.
@@ -288,7 +294,7 @@ class RulesTest(unittest.TestCase):
         schema = rule_call["response_format"]["json_schema"]
         self.assertTrue(schema["strict"] and rule_call["provider"]["require_parameters"])
         self.assertEqual(schema["schema"]["properties"]["choice"]["enum"], ["yes", "no"])
-        records = [json.loads(line) for line in (Path(self.tmp.name) / "state" / "records.jsonl").read_text().splitlines()]
+        records = [json.loads(line) for line in record_lines(Path(self.tmp.name) / "state")]
         decided = [r for r in records if r.get("escalated") and r["outcome"] == "shown"]
         self.assertTrue(decided and all(r["model"] != jev.MODEL for r in decided))
         calls = (len(provider.calls), len(provider.general_calls))
@@ -646,7 +652,7 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(read("b.spec.html")["rules"], [own])
 
     def records(self):
-        return [json.loads(line) for line in (Path(self.tmp.name) / "state" / "records.jsonl").read_text().splitlines()]
+        return [json.loads(line) for line in record_lines(Path(self.tmp.name) / "state")]
 
     def missed(self, result):
         return [item for item in self.rules(result) if item["state"] == "label"]
