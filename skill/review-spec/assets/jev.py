@@ -1830,11 +1830,12 @@ def _main_commit(root: str) -> str | None:
 
 
 def _collection_paths(root: str, commit: str, collection: str) -> list[str]:
-    """Repo-relative spec paths in main's tree under one collection, as the review index would list them."""
-    listing = _git_read(root, "ls-tree", "-r", "-z", "--name-only", "--end-of-options", commit, "--",
-                        collection if collection not in ("", ".") else ".")
+    """Repo-relative spec paths in main's tree under one collection, as the review index would list them.
+    Raises when Git gave no listing, so an unreadable main is never an empty one."""
+    listing = _git_answer(root, "ls-tree", "-r", "-z", "--name-only", "--end-of-options", commit, "--",
+                          collection if collection not in ("", ".") else ".")
     result = []
-    for name in (listing or b"").decode("utf-8", "replace").split("\0"):
+    for name in listing.decode("utf-8", "replace").split("\0"):
         parts = name.split("/")
         if not name.endswith(SPEC_SUFFIX) or parts[-1].startswith("."):
             continue
@@ -2013,10 +2014,16 @@ class JevService:
             return os.path.realpath(root)
 
     def _at(self, root: str, commit: str, relative: str) -> bytes | None:
-        """A file's content at a resolved commit, read once: it cannot change. A clean miss is kept as absent."""
+        """A file's content at a resolved commit, read once: it cannot change. A clean miss, the commit's tree
+        read and the path not in it, is kept as absent; a failed read keeps nothing, so a repo rebuilt or
+        briefly unreadable is read again."""
         def read() -> bytes | None:
             result = _git_run(root, "show", "--end-of-options", commit + ":" + relative)
-            return result.stdout if result.returncode == 0 else None
+            if result.returncode == 0:
+                return result.stdout
+            if _git_answer(root, "ls-tree", "-z", "--name-only", "--end-of-options", commit, "--", relative):
+                raise subprocess.SubprocessError("git show failed on a path in the tree")
+            return None
         try:
             return self._kept.get(("at", self._common_dir(root), commit, relative), read)
         except (OSError, subprocess.SubprocessError):
@@ -2725,8 +2732,9 @@ class JevService:
         specs = []
         for path in paths:
             source = self._at(root, commit, path)
-            if source is not None:
-                specs.append({"path": path, "source": source})
+            if source is None:
+                raise RuntimeError("main's %s is unreadable" % path)  # listed, so a failed read, never a miss
+            specs.append({"path": path, "source": source})
         return commit, specs
 
     def _warm_submit(self, questions: list[Mapping[str, Any]]) -> None:
