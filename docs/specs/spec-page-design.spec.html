@@ -78,11 +78,6 @@ The spec document's own content styling is outside this design.</p>
 <span data-acceptance-observable>Then all chrome surfaces, text, and borders show the dark token values, and no light-mode chrome color shows.</span>
 </p>
 
-<p data-acceptance-criterion data-anchor="acceptance-coordinate" data-story="story-token-reuse">
-<span data-acceptance-scenario>Given a contributor editing runtime.js, When they compare its two copies,</span>
-<span data-acceptance-observable>Then the copies are identical, proven by a unit test: no screen shows it.</span>
-</p>
-
 <p data-anchor="acceptance-rules-note">Onboarding: not needed, the design pass restyles existing chrome with no new user surface.
 CI: the <a href="./review-service.spec.html#acceptance-ci-alone">CI rule</a> covers the runtime style tests; they use no provider.</p>
 
@@ -429,17 +424,6 @@ Button sizes conflict with the range bar spec.
 </tbody>
 </table>
 </div>
-
-</section>
-
-<!-- ════════════════════════════════════════════════════════════════ -->
-<section data-anchor="open-questions">
-<div class="sec-head">
-<span class="sec-num">07</span>
-<h2 data-anchor="open-questions-heading">Open questions</h2>
-</div>
-
-<p data-anchor="tbd-coordinate" data-spec-tbd><a href="#acceptance-coordinate">Coordinate criterion</a>: its rule that only CSS content changes in runtime.js, with no JS logic, function signatures, or event handling, held only for one branch's diff and has no lasting form; decide whether it is dropped or stated as a lasting rule.</p>
 
 </section>
 
