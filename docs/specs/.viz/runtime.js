@@ -2241,7 +2241,7 @@ body.hx-focus-active tr[data-hx-focus=unchanged]:not([data-hx-focus=unchanged]:n
 `;
 const CSS = `
 /* ui tokens */
-:root{--ui-font:"Inter Variable",Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--ui-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--ui-text-xs:12px;--ui-text-sm:14px;--ui-text-md:16px;--ui-text-lg:20px;--ui-page:#ffffff;--ui-surface:#ffffff;--ui-ink:#333333;--ui-muted:#525252;--ui-border:#dfdfdf;--ui-focus:#262626;--ui-link:#333333;--ui-action:#262626;--ui-pass:#005c32;--ui-pass-soft:#e6efea;--ui-fail:#a5000f;--ui-fail-soft:#f6e6e7;--ui-attention:#b0540e;--ui-attention-soft:#faf4ef;--ui-muted-soft:#eeeeee;--ui-draft:#b0540e;--ui-draft-soft:#faf4ef;--ui-ack:#1d4ed8;--ui-ack-soft:#eff3ff;--ui-resolved:#005c32;--ui-resolved-soft:#e6efea;--ui-error:#a5000f;--ui-marker:#767b85;--ui-marker-important:#d1242f;--ui-marker-pass:#1a7f37;--ui-pin-ring:rgba(176,84,14,0.25);--ui-shadow:rgba(51,51,51,0.14);--ui-radius:8px;--ui-radius-sm:6px;--ui-radius-pill:999px;--ui-space-1:4px;--ui-space-2:8px;--ui-space-3:12px;--ui-space-4:16px;--ui-space-5:24px;--ui-space-6:32px}
+:root{--ui-font:"Inter Variable",Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--ui-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--ui-text-xs:12px;--ui-text-sm:14px;--ui-text-md:16px;--ui-text-lg:20px;--ui-page:#ffffff;--ui-surface:#ffffff;--ui-ink:#333333;--ui-muted:#525252;--ui-border:#dfdfdf;--ui-focus:#262626;--ui-link:#333333;--ui-action:#262626;--ui-pass:#005c32;--ui-pass-soft:#e6efea;--ui-fail:#a5000f;--ui-fail-soft:#f6e6e7;--ui-attention:#b0540e;--ui-attention-soft:#faf4ef;--ui-muted-soft:#eeeeee;--ui-draft:#b0540e;--ui-draft-soft:#faf4ef;--ui-ack:#1d4ed8;--ui-ack-soft:#eff3ff;--ui-resolved:#005c32;--ui-resolved-soft:#e6efea;--ui-error:#a5000f;--ui-marker:#767b85;--ui-marker-important:#d1242f;--ui-marker-pass:#1a7f37;--ui-on-marker:#ffffff;--ui-marker-warning:#e5534b;--ui-pin-ring:rgba(176,84,14,0.25);--ui-shadow:rgba(51,51,51,0.14);--ui-radius:8px;--ui-radius-sm:6px;--ui-radius-pill:999px;--ui-space-1:4px;--ui-space-2:8px;--ui-space-3:12px;--ui-space-4:16px;--ui-space-5:24px;--ui-space-6:32px}
 /* range bar */
 .hx-range-bar{box-sizing:border-box;max-width:720px;margin:var(--ui-space-3) auto 0;padding:var(--ui-space-2) var(--ui-space-3);border:1px solid var(--ui-border);border-radius:var(--ui-radius);background:var(--ui-ack-soft);color:var(--ui-ink);font:var(--ui-text-sm)/1.4 var(--ui-font)}
 .hx-range-row{display:flex;align-items:center;gap:var(--ui-space-2);min-width:0}
@@ -2384,12 +2384,12 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 [data-hx-jev-type=no-behavior-change]{color:var(--spec-muted)!important}
 [data-hx-jev-type=no-behavior-change] :is(h1,h2,h3,h4,h5,h6,p,li,td,th,blockquote,code,strong,em,a){color:inherit!important}
 /* jev markers */
-.hx-jev-marker{position:absolute;top:.35em;left:calc(100% + 10px);z-index:640;box-sizing:border-box;width:10px;height:10px;margin:0;padding:0;border:0;border-radius:50%;background:var(--ui-marker);color:#ffffff;cursor:pointer;display:grid;place-items:center;font:600 var(--ui-text-xs)/1 var(--ui-font)}
+.hx-jev-marker{position:absolute;top:.35em;left:calc(100% + 10px);z-index:640;box-sizing:border-box;width:10px;height:10px;margin:0;padding:0;border:0;border-radius:50%;background:var(--ui-marker);color:var(--ui-on-marker);cursor:pointer;display:grid;place-items:center;font:600 var(--ui-text-xs)/1 var(--ui-font)}
 .hx-jev-marker::before{content:"";position:absolute;inset:-10px 0 -10px -16px}
 .hx-jev-marker[data-attention=true]{width:14px;height:14px;background:var(--ui-marker-important)}
 .hx-jev-marker[data-attention=true]::after{content:"!"}
 .hx-jev-marker[data-passed=true]{width:14px;height:14px;background:var(--ui-marker-pass)}
-.hx-jev-marker[data-warning=true]{background:#e5534b}
+.hx-jev-marker[data-warning=true]{background:var(--ui-marker-warning)}
 .hx-jev-marker[data-passed=true]::after{content:"\\2713"}
 .hx-jev-marker[data-inset=true]{left:auto;right:0}
 .hx-jev-marker:hover,.hx-jev-marker[aria-expanded=true]{box-shadow:0 0 0 3px var(--ui-pin-ring)}
