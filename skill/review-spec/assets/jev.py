@@ -51,8 +51,11 @@ ESCALATED = "escalated"
 REPLACEABLE_OUTCOMES = RETRYABLE_OUTCOMES | {ESCALATED}
 # Draft-check P(yes) below the verify cutoff (jev-suggestions #asymmetric-silent): recorded, no mark, no escalation.
 SILENT_NO = "silent-no"
+# Verify-band draft check the LLM verifier confirmed with a quoted span from each clause, or did not (#verifier, #record-outcome).
+VERIFIED = "verified"
+VERIFIER_REJECTED = "verifier-rejected"
 # Outcomes that let a chain continue: the question was answered (#chains, #asymmetric).
-CHAIN_CONTINUE = frozenset({"shown", SILENT_NO})
+CHAIN_CONTINUE = frozenset({"shown", SILENT_NO, VERIFIED, VERIFIER_REJECTED})
 # Mark levels (jev-suggestions#markers-levels): the single source, mark kind to a human and an agent level, fixed by kind and never
 # by confidence; the agent level is never quieter (#markers-levels-audience). Item labels key it directly; the browser keys derived
 # marks (coverage gaps, QA evidence, unsure words) by the other names and reads only the human column.
@@ -847,7 +850,6 @@ class JevSeam:
         # Provenance (#record-inputs, #record-pairing, #record-verifier)
         inputs = _extract_inputs(question) if kind in DRAFT_CHECK_KINDS else None
         pairing = question.get("pairing") if kind in DRAFT_CHECK_KINDS else None
-        verifier_info = question.get("verifier") if kind in DRAFT_CHECK_KINDS else None
         provider = self.provider()
         # Escalated fast-path: draft checks go to the verifier (#verifier); others to the general LLM.
         if held and provider is not None and (
@@ -887,7 +889,7 @@ class JevSeam:
         if answer is None:
             return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
                                 {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model,
-                                failure=failure, inputs=inputs, pairing=pairing, verifier=verifier_info)
+                                failure=failure, inputs=inputs, pairing=pairing)
         if qset.show_cutoff is not None:
             # Asymmetric threshold for draft-check questions (#asymmetric).
             p_yes = answer["probabilities"].get("yes")
@@ -895,7 +897,7 @@ class JevSeam:
                 p_yes = answer.get("confidence", 0.0) if answer.get("label") == "yes" else 0.0
             if p_yes >= qset.show_cutoff:
                 return self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, "shown", model,
-                                    inputs=inputs, pairing=pairing, verifier=verifier_info)
+                                    inputs=inputs, pairing=pairing)
             elif qset.verify_cutoff is not None and p_yes >= qset.verify_cutoff:
                 self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, ESCALATED, model,
                              inputs=inputs, pairing=pairing)
@@ -909,7 +911,7 @@ class JevSeam:
                          inputs=inputs, pairing=pairing)
             return self._general(question, key, qset, provider)
         return self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, outcome, model,
-                            inputs=inputs, pairing=pairing, verifier=verifier_info)
+                            inputs=inputs, pairing=pairing)
 
     def general_payload(self, question: Mapping[str, Any], qset: QuestionSet, model: str) -> dict[str, Any]:
         """One allowed label by construction: a strict enum schema, served only by providers that enforce it."""
@@ -1016,12 +1018,10 @@ class JevSeam:
         try:
             response = fallback.complete(payload)
             result = json.loads(response["choices"][0]["message"]["content"])
+            said = result.get("answer")
             clause_span = (result.get("clause_span") or "").strip()
             target_span = (result.get("target_span") or "").strip()
-            if result.get("answer") == "yes" and clause_span and target_span:
-                label = "yes"
-            else:
-                label = "no"
+            label = "yes" if said == "yes" and clause_span and target_span else "no"
         except Exception as exc:
             failure = exc
         if label is None:
@@ -1032,8 +1032,11 @@ class JevSeam:
         if label == "yes":
             answer["clause_span"] = clause_span
             answer["target_span"] = target_span
-        return self._record(key, kind, qset, sources, revision, answer, "shown", model, True,
-                            inputs=inputs, pairing=pairing)
+        # The verifier ran (#record-verifier): its answer and quoted spans, as it gave them.
+        verifier = {"ran": True, "answer": said, "spans": {"clause": clause_span, "target": target_span}}
+        return self._record(key, kind, qset, sources, revision, answer,
+                            VERIFIED if label == "yes" else VERIFIER_REJECTED, model, True,
+                            inputs=inputs, pairing=pairing, verifier=verifier)
 
     def ask_chain(self, chain: list[Mapping[str, Any]]) -> dict[str, Any]:
         """Ask a chain's yes/no questions in order, each only when the answer so far needs it (#chains)."""
@@ -1947,7 +1950,7 @@ def _confident_label(record: Mapping[str, Any] | None) -> str | None:
     outcome = record.get("outcome")
     if outcome == SILENT_NO:
         return "no"
-    if outcome != "shown":
+    if outcome not in CHAIN_CONTINUE:
         return None
     answer = record.get("answer")
     label = answer.get("label") if isinstance(answer, Mapping) else None
@@ -3256,7 +3259,7 @@ class JevService:
                 "candidate_offer": candidates, "offer": offer, "levels": dict(MARK_LEVELS)}
 
 
-__all__ = ["BUILDERS", "CHAIN_CONTINUE", "DRAFT_CHECK_KINDS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MARK_LEVELS", "MODEL",
+__all__ = ["BUILDERS", "CHAIN_CONTINUE", "VERIFIED", "VERIFIER_REJECTED", "DRAFT_CHECK_KINDS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MARK_LEVELS", "MODEL",
            "OPENROUTER_DECISIONS_URL", "mount_prefix", "served_path", "OpenRouterProvider", "QuestionSet", "SILENT_NO",
            "anchor_context",
            "build_audience_questions", "build_board_conflict_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_rule_question", "build_scope_questions", "build_type_questions", "chain_result", "changed_leaf_clauses", "draft_check",
