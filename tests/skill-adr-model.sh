@@ -23,12 +23,12 @@ refuse "$SHAPE" "the policy and mechanics that follow from it"
 need "$SHAPE" "An ADR is immutable once committed to the base branch"
 need "$SHAPE" "Superseded by ADR NNNN (date)"
 
-# repair-specs: ADR repair, order, five types, reads ADRs
+# repair-specs: ADR repair, order, six types, reads ADRs
 need "$REPAIR" "### 4. ADR"
-need "$REPAIR" "Run in this fixed order: clean, home, contradict, ADR, criteria."
+need "$REPAIR" "Run in this fixed order: clean, home, contradict, ADR, criteria, presentation."
 need "$REPAIR" "Superseded by ADR NNNN (date)"
-need "$REPAIR" "all five repair types"
+need "$REPAIR" "all six repair types"
 need "$REPAIR" "the repo's specs and ADRs"
-refuse "$REPAIR" "four repair types"
+refuse "$REPAIR" "five repair types"
 
 echo "skill-adr-model tests passed"
