@@ -241,6 +241,16 @@ class InstallSpecChatTest(unittest.TestCase):
                 ROOT / "skill/review-spec",
             )
 
+    def test_onboarding_doc_says_how_to_write_a_project_rule(self):
+        """project-rules #acceptance-onboarding-doc: one onboarding section says to include explicit every-feature
+        wording, with a help center article example."""
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertEqual(readme.count("\n## Writing a project rule\n"), 1)
+        section = readme.split("\n## Writing a project rule\n", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("include explicit every-feature wording in the criterion text", section)
+        self.assertIn("When any change adds a screen", section)
+        self.assertIn("help center article", section)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -220,6 +220,7 @@ class RulesTest(unittest.TestCase):
         self.assertEqual([item.get("level") for item in self.rules(self.read(self.service(covered, "covered", approve=(ONBOARDING,))))], [None])
 
     def test_derive_only_every_feature_criteria_are_rules_and_no_state_names_them(self):
+        """project-rules #acceptance-derive: only the every-feature criterion is a rule; no state names it."""
         self.seed()
         provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95), LOCAL: ("this feature", 0.95)},
                                 rule={ONBOARDING: ("missed", 0.95), LOCAL: ("missed", 0.95)})
@@ -258,6 +259,7 @@ class RulesTest(unittest.TestCase):
         self.assertEqual((self.rules(result), result["rules"]), ([], []))
 
     def test_scope_asked_once_across_heads_and_specs_and_rebuilt_after_records_deleted(self):
+        """project-rules #acceptance-cache-rebuild: with the Jev records deleted, the same rules rebuild from the specs."""
         self.seed()
         self.write("c.spec.html", spec(("c-one", "Another feature criterion."), body="C body."))
         provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("missed", 0.95)})
@@ -658,6 +660,7 @@ class RulesTest(unittest.TestCase):
         return [item for item in self.rules(result) if item["state"] == "label"]
 
     def test_not_here_hides_the_rule_on_that_spec_path_until_its_text_changes(self):
+        """project-rules #acceptance-dismiss-recorded: Not for this spec is recorded unconfirmed."""
         # project-rules #dismiss-here, #dismiss-scope, #acceptance-dismiss, #acceptance-dismiss-return, #proof-dismiss
         self.seed()
         self.write("c.spec.html", spec(("c-one", "Another feature criterion."), body="C body."))
