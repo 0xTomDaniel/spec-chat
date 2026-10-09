@@ -366,7 +366,7 @@ An ADR may name a rule it decided on only by linking that criterion, as in <q>se
 </script>
 <div data-render-target="chart"></div>
 <p data-anchor="flow-prompt">The caller owns the issue; shaping never waits on it.</p>
-<p data-anchor="flow-no-transcript">The issue is always-most-recent and clean, so later passes replace its content rather than retaining the raw prompt or accumulating summaries.</p>
+<p data-anchor="flow-no-transcript">The caller keeps the issue always-most-recent and clean, replacing its content on later passes rather than retaining the raw prompt or accumulating summaries.</p>
 <p data-anchor="flow-branch">The agent creates the work branch, and that branch supplies the local Git comparison baseline.</p>
 <p data-anchor="flow-docs">The short seed pass reads only target instructions, the spec index, clearly related specs and ADRs, and directly relevant product or workflow docs.</p>
 <p data-anchor="flow-docs-exclusion">The seed pass defers code, tests, configuration, and package inspection unless durable docs conflict or cannot identify the correct spec surface.</p>
@@ -434,7 +434,7 @@ Where a repo's ADRs carry no number, the line names the new ADR by a link to its
 <p data-anchor="issue-no-abstraction">The core Spec Chat shaping skill calls no issue operation; creating and editing the issue are the caller's.</p>
 <p data-anchor="issue-direct-tool">The Spec Chat browser runtime, review server, and event protocol contain no tracker client or tracker-specific behavior.</p>
 <p data-anchor="issue-missing-access">Missing access to the repository-selected issue surface is the caller's blocker and never blocks shaping.</p>
-<p data-anchor="issue-current-only">Resolved decisions replace prior issue prose, and resolved material TBDs are removed immediately.</p>
+<p data-anchor="issue-current-only">The caller keeps the issue current: resolved decisions replace prior issue prose, and resolved material TBDs are removed immediately.</p>
 </section>
 
 <section data-anchor="focus-view" id="focus-view">
@@ -674,7 +674,7 @@ Where a repo's ADRs carry no number, the line names the new ADR by a link to its
 <p data-anchor="finish-event">Spec acceptance writes the existing hand-off event with an empty batch.</p>
 <p data-anchor="finish-agent">The parked agent interprets that empty hand-off as explicit completion of the browser review window.</p>
 <p data-anchor="finish-final-batch">The agent reconciles the spec, commits any final changes locally, advances the cursor, and closes the active wait.</p>
-<p data-anchor="finish-alignment">The issue, spec, applicable ADRs, user stories, acceptance criteria, architecture, and TDD contract must describe the same current behavior before spec acceptance is eligible.</p>
+<p data-anchor="finish-alignment">The spec, applicable ADRs, user stories, acceptance criteria, architecture, and TDD contract must describe the same current behavior before spec acceptance is eligible; the caller keeps the issue matching them.</p>
 <p data-anchor="finish-conditional">Absent ADRs, single-module work, docs-only work, and recorded test waivers are valid only when their stated conditions hold.</p>
 <p data-anchor="finish-narrow">Spec acceptance means the human accepts the reviewed canonical spec, the applicable durable surfaces agree, and delivery may start under it.</p>
 <p data-anchor="finish-not-acceptance">Spec acceptance is not human acceptance of delivered software, tracker lifecycle transition, merge approval, or deployment approval.</p>
