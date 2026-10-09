@@ -6,7 +6,7 @@ description: Bring a repo's existing specs and ADRs to the current shaping contr
 # Repair specs
 
 One skill that brings every spec and ADR in a repo to the current [shaping contract](../shape-spec/SKILL.md).
-Reads only Spec Chat's `onboarding.toml` and the repo's specs and ADRs; no peer status file or peer name.
+Reads Spec Chat's `onboarding.toml`, the repo's specs and ADRs, and for the drift check the repo's code and Git history; names no peer status file or peer.
 
 ## Inputs
 

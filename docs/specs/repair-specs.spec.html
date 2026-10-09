@@ -15,7 +15,7 @@
 <nav data-anchor="breadcrumbs">docs / specs / repair-specs.spec.html</nav>
 <p data-anchor="context">One Spec Chat skill that brings a repo's existing specs and ADRs to the current <a href="../../skill/shape-spec/SKILL.md">shaping contract</a>.
 Runnable any time and optionally as onboarding catch-up.
-The skill reads only Spec Chat's own <a href="./review-service.spec.html#published-onboarding">onboarding status</a> and the repo's specs and ADRs; project rules found by <a href="./jev-suggestions.spec.html">Jev</a> drive criterion repairs generically.
+The skill reads Spec Chat's own <a href="./review-service.spec.html#published-onboarding">onboarding status</a>, the repo's specs and ADRs, and for the drift check the repo's code and Git history; project rules found by <a href="./jev-suggestions.spec.html">Jev</a> drive criterion repairs generically.
 Extends <a href="./project-rules.spec.html">project-wide rules</a>: its warm-up, detection, and reconcile offer are unchanged; this spec owns the bulk editing that the offer or a direct invocation triggers.</p>
 </header>
 
@@ -41,7 +41,7 @@ Extends <a href="./project-rules.spec.html">project-wide rules</a>: its warm-up,
 <p data-acceptance-criterion data-anchor="acceptance-retry" data-story="story-repair"><span data-acceptance-scenario>Given the shaping agent that made a repair edit on a clause, When that edit raises a new contradiction on the same clause,</span> <span data-acceptance-observable>Then the committed spec shows an open TBD at that clause, written instead of editing again.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-retry-rule" data-story="story-repair"><span data-acceptance-scenario>Given the shaping agent that made a repair edit on a clause, When that edit raises a new rule miss on the same clause,</span> <span data-acceptance-observable>Then the committed spec shows an open TBD at that clause, written instead of editing again.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-output" data-story="story-review"><span data-acceptance-scenario>Given a reviewer on a repo the shaping agent repaired, When repairs complete and the reviewer opens a changed spec on the review page,</span> <span data-acceptance-observable>Then each changed spec is committed on the current branch and registered with the review server, and the page shows what changed with Git focus.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-input" data-story="story-generic"><span data-acceptance-scenario>Given the shaping agent running the repair skill, When the skill reads its inputs,</span> <span data-acceptance-observable>Then it reads only Spec Chat's onboarding status and the repo's specs and ADRs, and names no peer status file or peer, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-input" data-story="story-generic"><span data-acceptance-scenario>Given the shaping agent running the repair skill, When the skill reads its inputs,</span> <span data-acceptance-observable>Then it reads Spec Chat's onboarding status, the repo's specs and ADRs, and for the drift check the repo's code and Git history, and names no peer status file or peer, proven by a unit test: no screen shows it.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-catch-up" data-story="story-catch-up"><span data-acceptance-scenario>Given the shaping agent on a project new to Spec Chat whose onboarding status shows specs to reconcile, When the agent invokes the skill,</span> <span data-acceptance-observable>Then it runs all six repair types and the drift check on that project's specs and updates the project's onboarding status when done.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-no-jev" data-story="story-repair"><span data-acceptance-scenario>Given the shaping agent on a repo with Jev off, When the agent runs repair,</span> <span data-acceptance-observable>Then the committed specs and ADRs show clean, home, contradiction, ADR, criterion-rule, and presentation repairs, and only Jev project-rule repairs are skipped.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-criteria-split" data-story="story-repair"><span data-acceptance-scenario>Given the shaping agent on a repo whose criterion's When joins two places with <q>or</q>, When the agent runs repair,</span> <span data-acceptance-observable>Then the committed spec shows one criterion per place, the first keeps the original anchor, each new one has a new stable anchor, and each meets every <a href="./prompt-first-shaping.spec.html#complete-criterion-capturable">criterion rule</a> of the shaping contract.</span></p>
@@ -135,6 +135,7 @@ Drift is a criterion whose behavior the code does differently, or a code behavio
 <figcaption data-anchor="drift-find">Steps one to three find the code a spec points to, in order, stopping at the first that yields code; step four always runs, reviewing code no pointer connects to any spec and judging whether its behavior falls within this spec's scope in spirit.
 The check writes no spec-to-code index, because the spec's links and Git history already are the pointers.</figcaption>
 </figure>
+<div class="table-scroll" data-anchor="drift-suggest-scroll">
 <table data-anchor="drift-suggest-table">
 <thead><tr><th>Drift, as the skill judges it</th><th>Suggestion</th></tr></thead>
 <tbody>
@@ -143,6 +144,7 @@ The check writes no spec-to-code index, because the spec's links and Git history
 <tr data-anchor="drift-suggest-unspecced"><td>Code has a behavior no criterion states, whether the spec points to that code or only covers it in spirit</td><td>Add a criterion for it to the owning spec</td></tr>
 </tbody>
 </table>
+</div>
 <p data-anchor="drift-suggestion">For each drift the skill judges whether the code's behavior makes sense and fits the spirit of the spec, and presents the human one suggestion naming the spec anchor, the code location, the mismatch, and which side to change.
 The human settles each suggestion: adjust the spec, fix the code later, or leave it.
 The skill makes only the spec edits the human chose and commits them; it never edits code, so a code fix stays a recommendation to the human.
