@@ -584,6 +584,13 @@ class BootstrapTest(unittest.TestCase):
             with opener.open(url + "/api/jev" + query, timeout=2) as response:
                 self.assertIsNone(json.loads(response.read())["offer"])
             self.assertEqual(post({"offer": "sent"}), (200, {"ok": True}))
+            # an owner's resolution of an Important mark from the agent read (jev-suggestions #record-resolution)
+            miss = answer["offer"]["specs"][0]["rules"][0]["record"]
+            self.assertEqual(post({"resolve": "dismissed", "record": miss})[0], 400)  # an owner dismissal names its reason
+            self.assertEqual(post({"resolve": "thread", "record": "judgment-nope"})[0], 400)
+            self.assertEqual(post({"resolve": "dismissed", "record": miss, "reason": "Not a screen."}), (200, {"ok": True}))
+            self.assertEqual(post({"resolve": "fixed", "record": miss})[0], 400)  # resolved once
+            self.assertEqual(service.seam.store.by_id(miss)["resolution"], {"status": "dismissed", "reason": "Not a screen."})
         finally:
             server.shutdown()
             server.server_close()
