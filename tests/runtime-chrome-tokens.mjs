@@ -28,7 +28,7 @@ const indexStyle = serve.slice(serve.indexOf('/* ui tokens */'));
 const indexLight = tokens(indexStyle.match(/^\/\* ui tokens \*\/\s*:root\s*\{([^}]*)\}/)[1]);
 const indexDark = tokens(indexStyle.match(DARK)[1]);
 const ADDITIONS = ['--ui-ack', '--ui-ack-soft', '--ui-error', '--ui-marker', '--ui-marker-important',
-  '--ui-marker-pass', '--ui-pin-ring', '--ui-shadow'];
+  '--ui-marker-pass', '--ui-marker-warning', '--ui-on-marker', '--ui-pin-ring', '--ui-shadow'];
 const chromeLight = tokens(light[1]);
 const chromeDark = tokens(dark[1]);
 assert.deepEqual(Object.keys(chromeLight).sort(), [...Object.keys(indexLight), ...ADDITIONS].sort(),
@@ -36,6 +36,8 @@ assert.deepEqual(Object.keys(chromeLight).sort(), [...Object.keys(indexLight), .
 for (const [name, value] of Object.entries(indexLight)) assert.equal(chromeLight[name], value, 'light ' + name);
 for (const [name, value] of Object.entries(indexDark)) assert.equal(chromeDark[name], value, 'dark ' + name);
 for (const name of Object.keys(chromeDark)) assert.ok(name in chromeLight, 'dark overrides a declared token: ' + name);
+// #token-on-marker, #token-marker-warning: marks keep their fill and glyph in both themes.
+for (const name of ['--ui-on-marker', '--ui-marker-warning']) assert.ok(!(name in chromeDark), 'dark leaves ' + name);
 
 // Every chrome rule, outside the two token blocks, as { media, sel, decls }.
 function parse(text) {
@@ -65,17 +67,12 @@ const NAMED = /\b(white|black|red|green|blue|gray|grey|orange|yellow|purple|silv
 
 // The open panel reserves its own width on the body: geometry, not spacing.
 const panelWidth = rules.find(rule => rule.sel === '.hx-panel' && !rule.media).decls.find(([p]) => p === 'width')[1];
-// Known gap, not a pattern: marks paint on the document, which stays light under a dark OS with the shared
-// stylesheet, so the glyph white and the light red Warning dot (jev-suggestions #acceptance-warning-color)
-// need one value in both themes, and the token set has none. Nothing else may join this list.
-const MARK_LITERALS = [['.hx-jev-marker', 'color', '#ffffff'], ['.hx-jev-marker[data-warning=true]', 'background', '#e5534b']];
-const markLiteral = (rule, prop, value) => !rule.media && MARK_LITERALS.some(([s, p, v]) => s === rule.sel && p === prop && v === value);
 const problems = [];
 const bad = (rule, prop, value, why) => problems.push(`${rule.sel} { ${prop}: ${value} } ${why}`);
 for (const rule of rules) {
   for (const [prop, value] of rule.decls) {
     // #color-map: every color maps to a token; token-derived mixes and keywords stay allowed.
-    if ((/#[0-9a-f]{3,8}\b|\b(rgba?|hsla?)\(/i.test(value) || NAMED.test(value)) && !markLiteral(rule, prop, value)) bad(rule, prop, value, 'literal color');
+    if ((/#[0-9a-f]{3,8}\b|\b(rgba?|hsla?)\(/i.test(value) || NAMED.test(value))) bad(rule, prop, value, 'literal color');
     // #type-system-rule: index type scale, weights 400 and 600 only.
     if (prop === 'font-size' && !sizes.has(value)) bad(rule, prop, value, 'off-scale font size');
     if (prop === 'font-weight' && !['400', '600'].includes(value)) bad(rule, prop, value, 'weight outside 400/600');

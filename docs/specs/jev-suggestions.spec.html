@@ -81,12 +81,16 @@
 <p data-acceptance-criterion data-anchor="acceptance-cross-lane-board" data-story="story-cross-lane-owner"><span data-acceptance-scenario>Given another tool on a box where Jev gave those answers, a fixture that must be added to provide it, When the tool reads the <a href="#cross-lane-board">board</a>,</span> <span data-acceptance-observable>Then it lists each pair of served paths with a finding once, proven by a unit test: no screen shows it.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-cross-lane-pending" data-story="story-cross-lane-owner"><span data-acceptance-scenario>Given a lane owner whose spec has a cross-lane question not yet answered, a fixture that must be added to provide it, When the owner's agent reads Jev for that spec,</span> <span data-acceptance-observable>Then that question counts as <code>pending</code>, proven by a unit test: no screen shows it.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-cross-lane-wait" data-story="story-cross-lane story-cross-lane-owner"><span data-acceptance-scenario>Given a lane owner whose spec has unanswered cross-lane questions, a fixture that must be added to provide it, When the owner's agent reads Jev for that spec,</span> <span data-acceptance-observable>Then the answer comes at once from held records, and the missing questions are asked after answering, proven by a unit test: no screen shows it.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-cross-lane-wait-board" data-story="story-cross-lane story-cross-lane-owner"><span data-acceptance-scenario>Given another tool on a box whose lanes have unanswered cross-lane questions, a fixture that must be added to provide it, When the tool reads the board,</span> <span data-acceptance-observable>Then the board answers at once from held records, and the missing questions are asked after answering, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-cross-lane-wait-board" data-story="story-cross-lane story-cross-lane-owner"><span data-acceptance-scenario>Given another tool on a box whose lanes have unanswered cross-lane questions, a fixture that must be added to provide it, When the tool reads the board,</span> <span data-acceptance-observable>Then the board answers at once with its last computed answer, and the missing questions are asked after answering, proven by a unit test: no screen shows it.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-cross-lane-repeat" data-story="story-cross-lane story-cross-lane-owner"><span data-acceptance-scenario>Given a lane owner whose spec's cross-lane questions are all answered, a fixture that must be added to provide it, When the owner's agent reads Jev for that spec again with the same heads and target main,</span> <span data-acceptance-observable>Then the answer is the same, and no provider call is made, proven by a unit test: no screen shows it.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-coverage" data-story="story-coverage"><span data-acceptance-scenario>Given a reviewer on a spec under shaping that has a story no criterion verifies and a criterion no story backs, a fixture that must be added to provide it, When the reviewer opens the story's and the criterion's marker popovers,</span> <span data-acceptance-observable>Then the story's popover shows <code>No criterion covers this</code>, and the criterion's shows <code>No story backs this</code>.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-coverage-clear" data-story="story-coverage"><span data-acceptance-scenario>Given a reviewer on that spec, a fixture that must be added to provide it, When the spec's author adds a criterion that verifies the story, the next head is served, and the reviewer reloads the page,</span> <span data-acceptance-observable>Then the story shows no coverage note, and the criterion still shows <code>No story backs this</code>.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-coverage-clear-story" data-story="story-coverage"><span data-acceptance-scenario>Given a reviewer on that spec, a fixture that must be added to provide it, When the spec's author adds a story that the criterion verifies, the next head is served, and the reviewer reloads the page,</span> <span data-acceptance-observable>Then the criterion shows no coverage note, and the first story still shows <code>No criterion covers this</code>.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-reading" data-story="story-reading"><span data-acceptance-scenario>Given a reviewer on a spec whose clauses Jev reads as <code>internals</code> and as <code>for you</code>, a fixture that must be added to provide it, When the reviewer turns reading view on,</span> <span data-acceptance-observable>Then the <code>internals</code> clauses are dimmed in place and readable, and no clause moves or hides.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-reading-notes" data-story="story-reading"><span data-acceptance-scenario>Given a reviewer on a spec showing a <code>Contradicts</code> note, a change-type note, a cross-lane note, and a coverage note, a fixture that must be added to provide it, When the reviewer turns reading view on,</span> <span data-acceptance-observable>Then the contradiction, change-type, and cross-lane notes are gone from the page, and the coverage note still shows.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-request-failed" data-story="story-neutral"><span data-acceptance-scenario>Given a reviewer on a spec under review, which needs an induced failure: the Jev request fails, When the reviewer opens the page,</span> <span data-acceptance-observable>Then the page shows one page-level <code>Jev unavailable</code> note above the spec.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-seam-not-git" data-story="story-levels-api"><span data-acceptance-scenario>Given an agent reading Jev for a spec served from a plain directory outside Git, a fixture that must be added to provide it, When the agent reads Jev for that spec,</span> <span data-acceptance-observable>Then the answer is Jev unavailable with the reason that the spec is not in Git, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-seam-bad-base" data-story="story-levels-api"><span data-acceptance-scenario>Given an agent reading Jev for a spec in Git, When the agent reads Jev for that spec with a base that names no commit,</span> <span data-acceptance-observable>Then the answer is an invalid base error, proven by a unit test: no screen shows it.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-note-draft" data-story="story-note-action"><span data-acceptance-scenario>Given a reviewer on a spec whose clause shows <code>Contradicts</code>, a fixture that must be added to provide it, When the reviewer opens its marker popover and clicks <code>Ask agent to reconcile</code>,</span> <span data-acceptance-observable>Then the comment composer opens at that clause with the <a href="#note-reconcile">note table</a>'s draft text, linking to both clauses, and nothing is written until the reviewer sends.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-note-draft-criterion" data-story="story-note-action"><span data-acceptance-scenario>Given a reviewer on a spec whose story shows <code>No criterion covers this</code>, a fixture that must be added to provide it, When the reviewer opens its marker popover and clicks <code>Ask for a criterion</code>,</span> <span data-acceptance-observable>Then the comment composer opens at that story with the <a href="#note-criterion">note table</a>'s draft text, and nothing is written until the reviewer sends.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-note-draft-change" data-story="story-note-action"><span data-acceptance-scenario>Given a reviewer in Git focus on a spec whose section shows <code>Behavior</code>, a fixture that must be added to provide it, When the reviewer opens its marker popover and clicks <code>Comment on this change</code>,</span> <span data-acceptance-observable>Then the comment composer opens at that section with the <a href="#note-change">note table</a>'s draft text, and nothing is written until the reviewer sends.</span></p>
@@ -154,7 +158,7 @@ CI: the Jev seam and runtime tests run in CI with no Jev provider installed and 
 
 <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
 <h2>Modular boundaries</h2>
-<p data-modular-boundary data-anchor="boundary-seam"><span data-boundary-responsibility>The review server's Jev seam owns questions, provider calls, the retry pause, thresholds (including <a href="#asymmetric">asymmetric</a> show and verify cutoffs), the <a href="#verifier">LLM verifier</a>, and records, which serve as the cache. It also owns the <a href="#candidate-ranking">candidate ranking</a>, <a href="#leaves">leaf filter</a>, <a href="#context">context builder</a>, <a href="#gate">gate question</a>, and <a href="#test-hosts">test-store dispatch</a>.</span> <span data-boundary-seam>Caller-facing seam: <code>GET /api/jev?path=&lt;spec&gt;&amp;base=&lt;id&gt;[&amp;view=reading]</code>, returning on or off, one state per item with its <code>level</code> and <code>agent_level</code> when its label is a mark kind, and the <code>levels</code> table. The gate's <code>about</code> question set is a new set in the same question-set directory.</span> <span data-boundary-dependency>Dependency direction: calls OpenRouter as an external provider (Jev for decisions, the general LLM for the verifier and non-draft-check fallback); reads local Git, served specs, and the spool; nothing calls back. A <code>--test</code> registration uses a second <code>JudgmentStore</code> instance beside the live one. A peer constructs <code>JudgmentStore</code> with a path in its own state; the path names that peer's store.</span> <span data-boundary-scope>Observable scope: the JSON response and records (live or test store), in single-root and registry modes.</span></p>
+<p data-modular-boundary data-anchor="boundary-seam"><span data-boundary-responsibility>The review server's Jev seam owns questions, provider calls, the retry pause, thresholds (including <a href="#asymmetric">asymmetric</a> show and verify cutoffs), the <a href="#verifier">LLM verifier</a>, and records, which serve as the cache. It also owns the <a href="#candidate-ranking">candidate ranking</a>, <a href="#leaves">leaf filter</a>, <a href="#context">context builder</a>, <a href="#gate">gate question</a>, and <a href="#test-hosts">test-store dispatch</a>.</span> <span data-boundary-seam>Caller-facing seam: <code>GET /api/jev?path=&lt;spec&gt;&amp;base=&lt;id&gt;[&amp;view=reading]</code>, returning on or off, one state per item with its <code>level</code> and <code>agent_level</code> when its label is a mark kind, and the <code>levels</code> table. The gate's <code>about</code> question set is a new set in the same question-set directory.</span> <span data-boundary-dependency>Dependency direction: calls OpenRouter as an external provider for Jev decisions, and the box's Claude CLI as the general LLM for the verifier and non-draft-check fallback; reads local Git, served specs, and the spool; nothing calls back. A <code>--test</code> registration uses a second <code>JudgmentStore</code> instance beside the live one. A peer constructs <code>JudgmentStore</code> with a path in its own state; the path names that peer's store.</span> <span data-boundary-scope>Observable scope: the JSON response and records (live or test store), in single-root and registry modes.</span></p>
 <p data-modular-boundary data-anchor="boundary-board"><span data-boundary-responsibility>The same seam owns <a href="#cross-lane">cross-lane checks</a>: which changed clauses of two slugs contradict or overstep, answered from its own registry, served files, local Git, and records.</span> <span data-boundary-seam>Caller-facing seam: <code>lane</code> items in each spec's <code>/api/jev</code>, and the parameterless <code>GET /api/jev/board</code> listing finding pairs of served paths for any reader.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; readers depend on the routes, never the reverse; the seam knows slugs and specs, never lanes, owners, trackers, or what a reader shows.</span> <span data-boundary-scope>Observable scope: the two JSON answers and their records.</span></p>
 <p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns every marker, popover, reading view dim, and note button.</span> <span data-boundary-seam>Caller-facing seam: the rendered page; spool writes use existing events only.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; consumes the seam route; no model, threshold, or key logic.</span> <span data-boundary-scope>Observable scope: what the reviewer sees.</span></p>
 <p data-modular-boundary data-anchor="boundary-qsets"><span data-boundary-responsibility>Question sets own instructions, criteria, examples, and thresholds.</span> <span data-boundary-seam>Caller-facing seam: a set id and version.</span> <span data-boundary-dependency>Dependency direction: self-contained data read by the seam.</span> <span data-boundary-scope>Observable scope: the version named in each record.</span></p>
@@ -210,45 +214,45 @@ CI: the Jev seam and runtime tests run in CI with no Jev provider installed and 
 <figure data-anchor="flow-figure">
 <div class="rail-wrap" data-anchor="flow-figure-scroll">
 <svg viewBox="0 0 780 380" style="min-width: 620px" role="img" aria-label="Swimlane. Browser: 1 focus renders at once, then calls GET /api/jev with path and base. Review server: 2 ranks top-k candidates, builds questions from its own file, Git, and spool; on a cache hit it goes straight to 6; on a miss it posts to Jev. Jev: 4 returns yes/no with probabilities. Review server: 5 applies asymmetric threshold: high P(yes) shows, verify band goes to the general LLM verifier which must quote the conflicting span, low P(yes) is silent. Review server: 6 writes the judgment record and caches. Browser: 7 shows a margin marker, or stays neutral.">
-<rect x="0" y="0" width="780" height="82" fill="#f4f6fb"></rect>
-<rect x="0" y="82" width="780" height="110" fill="#ffffff"></rect>
-<rect x="0" y="192" width="780" height="90" fill="#f4f6fb"></rect>
-<rect x="0" y="282" width="780" height="98" fill="#ffffff"></rect>
-<line x1="0" y1="82" x2="780" y2="82" stroke="#8a8f99"></line>
-<line x1="0" y1="192" x2="780" y2="192" stroke="#8a8f99"></line>
-<line x1="0" y1="282" x2="780" y2="282" stroke="#8a8f99"></line>
-<text x="12" y="50" fill="#171719" font-size="14" font-weight="700">Browser</text>
-<text x="12" y="140" fill="#171719" font-size="14" font-weight="700">Review server</text>
-<text x="12" y="240" fill="#171719" font-size="14" font-weight="700">Jev (OpenRouter)</text>
-<text x="12" y="336" fill="#171719" font-size="14" font-weight="700">General LLM</text>
-<rect x="100" y="22" width="190" height="38" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="112" y="46" fill="#171719" font-size="13">1 Focus renders at once</text>
-<rect x="596" y="22" width="176" height="38" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="608" y="46" fill="#171719" font-size="13">7 Marker, or silent</text>
-<rect x="100" y="96" width="220" height="38" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="112" y="120" fill="#171719" font-size="13">2 Top-k candidates, gate</text>
-<rect x="460" y="96" width="220" height="38" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="472" y="120" fill="#171719" font-size="13">5 Asymmetric threshold</text>
-<rect x="460" y="144" width="220" height="38" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="472" y="168" fill="#171719" font-size="13">6 Record, cache</text>
-<rect x="300" y="214" width="200" height="38" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="312" y="238" fill="#171719" font-size="13">3 Yes/no + probabilities</text>
-<rect x="300" y="306" width="220" height="38" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="312" y="330" fill="#171719" font-size="13">4 Verifier: quote spans</text>
-<path d="M195 60 L210 94" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
-<text x="215" y="78" fill="#171719" font-size="12">GET /api/jev</text>
-<path d="M280 134 L340 212" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
-<text x="130" y="198" fill="#171719" font-size="12">3 miss: POST decisions</text>
-<path d="M320 134 L456 118" stroke="#171719" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#flow-arrow)"></path>
-<text x="358" y="112" fill="#171719" font-size="12">cache hit</text>
-<path d="M460 214 L520 136" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
-<path d="M570 134 L570 142" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
-<path d="M570 134 L540 304" stroke="#171719" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#flow-arrow)"></path>
-<text x="580" y="222" fill="#171719" font-size="12">verify band</text>
-<path d="M480 306 L520 184" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
-<path d="M610 144 L660 62" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
-<text x="642" y="100" fill="#171719" font-size="12">labels</text>
-<defs><marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#171719"></path></marker></defs>
+<rect x="0" y="0" width="780" height="82" style="fill: var(--spec-paper)"></rect>
+<rect x="0" y="82" width="780" height="110" style="fill: var(--spec-surface)"></rect>
+<rect x="0" y="192" width="780" height="90" style="fill: var(--spec-paper)"></rect>
+<rect x="0" y="282" width="780" height="98" style="fill: var(--spec-surface)"></rect>
+<line x1="0" y1="82" x2="780" y2="82" style="stroke: var(--spec-muted)"></line>
+<line x1="0" y1="192" x2="780" y2="192" style="stroke: var(--spec-muted)"></line>
+<line x1="0" y1="282" x2="780" y2="282" style="stroke: var(--spec-muted)"></line>
+<text x="12" y="50" font-size="14" font-weight="700" style="fill: var(--spec-ink)">Browser</text>
+<text x="12" y="140" font-size="14" font-weight="700" style="fill: var(--spec-ink)">Review server</text>
+<text x="12" y="240" font-size="14" font-weight="700" style="fill: var(--spec-ink)">Jev (OpenRouter)</text>
+<text x="12" y="336" font-size="14" font-weight="700" style="fill: var(--spec-ink)">General LLM</text>
+<rect x="100" y="22" width="190" height="38" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="112" y="46" font-size="13" style="fill: var(--spec-ink)">1 Focus renders at once</text>
+<rect x="596" y="22" width="176" height="38" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="608" y="46" font-size="13" style="fill: var(--spec-ink)">7 Marker, or silent</text>
+<rect x="100" y="96" width="220" height="38" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="112" y="120" font-size="13" style="fill: var(--spec-ink)">2 Top-k candidates, gate</text>
+<rect x="460" y="96" width="220" height="38" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="472" y="120" font-size="13" style="fill: var(--spec-ink)">5 Asymmetric threshold</text>
+<rect x="460" y="144" width="220" height="38" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="472" y="168" font-size="13" style="fill: var(--spec-ink)">6 Record, cache</text>
+<rect x="300" y="214" width="200" height="38" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="312" y="238" font-size="13" style="fill: var(--spec-ink)">3 Yes/no + probabilities</text>
+<rect x="300" y="306" width="220" height="38" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="312" y="330" font-size="13" style="fill: var(--spec-ink)">4 Verifier: quote spans</text>
+<path d="M195 60 L210 94" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)" style="stroke: var(--spec-ink)"></path>
+<text x="215" y="78" font-size="12" style="fill: var(--spec-ink)">GET /api/jev</text>
+<path d="M280 134 L340 212" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)" style="stroke: var(--spec-ink)"></path>
+<text x="130" y="198" font-size="12" style="fill: var(--spec-ink)">3 miss: POST decisions</text>
+<path d="M320 134 L456 118" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#flow-arrow)" style="stroke: var(--spec-ink)"></path>
+<text x="358" y="112" font-size="12" style="fill: var(--spec-ink)">cache hit</text>
+<path d="M460 214 L520 136" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)" style="stroke: var(--spec-ink)"></path>
+<path d="M570 134 L570 142" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)" style="stroke: var(--spec-ink)"></path>
+<path d="M570 134 L540 304" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#flow-arrow)" style="stroke: var(--spec-ink)"></path>
+<text x="580" y="222" font-size="12" style="fill: var(--spec-ink)">verify band</text>
+<path d="M480 306 L520 184" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)" style="stroke: var(--spec-ink)"></path>
+<path d="M610 144 L660 62" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)" style="stroke: var(--spec-ink)"></path>
+<text x="642" y="100" font-size="12" style="fill: var(--spec-ink)">labels</text>
+<defs><marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill: var(--spec-ink)"></path></marker></defs>
 </svg>
 </div>
 <figcaption data-anchor="flow-figure-caption">One suggestion round: the page never waits for Jev; a draft-check answer in the verify band goes to the general LLM verifier before showing; the key never leaves the server.</figcaption>
@@ -263,6 +267,7 @@ CI: the Jev seam and runtime tests run in CI with no Jev provider installed and 
 <tr data-anchor="state-error"><td>Error or timeout</td><td><code>Jev unavailable</code> in the popover. The one retry rule for every Jev question: a failed ask is asked again later, in the background, after a pause, never on every load and never held forever. The pause is the wait the provider gives, such as a rate-limit <code>Retry-After</code>; otherwise 60 seconds, after which the next read asks it again.</td></tr>
 <tr data-anchor="state-oversize"><td>Oversize state</td><td>Nothing</td></tr>
 <tr data-anchor="state-off"><td>No key</td><td>One page-level <code>Jev off</code> note</td></tr>
+<tr data-anchor="state-request-failed"><td>The Jev request itself fails or times out</td><td>One page-level <code>Jev unavailable</code> note</td></tr>
 </tbody>
 </table>
 </div>
@@ -348,8 +353,8 @@ CI: the Jev seam and runtime tests run in CI with no Jev provider installed and 
 
 <section data-anchor="verifier">
 <h2>LLM verifier</h2>
-<p data-anchor="verifier-role">When a draft-check answer falls in the <a href="#asymmetric">verify band</a>, the same pair goes once to the general LLM through OpenRouter, using the same <code>llm_model</code> as <a href="./project-rules.spec.html#q-fallback">the LLM fallback</a>. The verifier receives both clauses, their <a href="#context">clause context</a>, and must return a structured answer: yes with a quoted span from each clause that conflicts, or no. A mark shows only if the verifier answers yes and quotes a span from each clause. The verifier extends the existing general-LLM fallback mechanism with a stricter contract; it adds no new provider or endpoint.</p>
-<p data-anchor="verifier-record">The verifier's answer is one record: kind is the draft-check kind (contradicts, oversteps, overlaps), model is the LLM model, and the answer carries the label plus the quoted spans. A verifier call that fails or returns no records the silent no and follows the <a href="#state-error">one retry rule</a>.</p>
+<p data-anchor="verifier-role">When a draft-check answer falls in the <a href="#asymmetric">verify band</a>, the same pair goes once to the general LLM, the box's Claude CLI run the way <a href="./project-rules.spec.html#q-fallback">the LLM fallback</a> runs it, with the same <code>llm_model</code>. The verifier receives both clauses, their <a href="#context">clause context</a>, and must return a structured answer: yes with a quoted span from each clause that conflicts, or no. A mark shows only if the verifier answers yes and quotes a span from each clause. The verifier extends the existing general-LLM fallback mechanism with a stricter contract; it adds no new provider or endpoint.</p>
+<p data-anchor="verifier-record">The verifier's answer is one record: kind is the draft-check kind (contradicts, oversteps, overlaps), model is the LLM model, and the answer carries the label plus the quoted spans. A verifier answer of no records the silent no; a verifier call that fails records <code>Jev unavailable</code> and follows the <a href="#state-error">one retry rule</a>.</p>
 <p data-anchor="verifier-scope">The verifier applies only to draft-check questions. Change type, scope, coverage, and reading view use the symmetric <a href="#chains-threshold">fallback</a>; orphan and resolved show nothing when unsure.</p>
 </section>
 
@@ -386,18 +391,18 @@ CI: the Jev seam and runtime tests run in CI with no Jev provider installed and 
 <figure data-anchor="markers-figure">
 <div class="rail-wrap" data-anchor="markers-figure-scroll">
 <svg viewBox="0 0 760 220" style="min-width: 600px" role="img" aria-label="A spec section with two clauses. The first clause has a neutral grey dot in the right margin. The second has a red dot with an exclamation glyph; its open popover lists Contradicts #non-goal-text with an Ask agent to reconcile button, and Behavior with a Comment on this change button.">
-<text x="12" y="34" fill="#171719" font-size="14">The picker lists at most 20 commits that changed this spec.</text>
-<circle cx="560" cy="29" r="6" fill="#8a8f99"></circle>
-<text x="12" y="74" fill="#171719" font-size="14">The picker also lists commits from other branches.</text>
-<circle cx="560" cy="69" r="8" fill="#b42318"></circle>
-<text x="556" y="74" fill="#ffffff" font-size="12" font-weight="700">!</text>
-<rect x="400" y="86" width="340" height="124" rx="6" fill="#ffffff" stroke="#303036" stroke-width="1.5"></rect>
-<text x="414" y="110" fill="#b42318" font-size="13" font-weight="700">Contradicts #non-goal-head</text>
-<rect x="414" y="118" width="184" height="24" rx="4" fill="#ffffff" stroke="#2947c7"></rect>
-<text x="424" y="135" fill="#2947c7" font-size="12" font-weight="700">Ask agent to reconcile</text>
-<text x="414" y="166" fill="#303036" font-size="13" font-weight="700">Behavior</text>
-<rect x="414" y="174" width="200" height="24" rx="4" fill="#ffffff" stroke="#2947c7"></rect>
-<text x="424" y="191" fill="#2947c7" font-size="12" font-weight="700">Comment on this change</text>
+<text x="12" y="34" font-size="14" style="fill: var(--spec-ink)">The picker lists at most 20 commits that changed this spec.</text>
+<circle cx="560" cy="29" r="6" style="fill: var(--spec-muted)"></circle>
+<text x="12" y="74" font-size="14" style="fill: var(--spec-ink)">The picker also lists commits from other branches.</text>
+<circle cx="560" cy="69" r="8" style="fill: var(--spec-red)"></circle>
+<text x="556" y="74" font-size="12" font-weight="700" style="fill: var(--spec-surface)">!</text>
+<rect x="400" y="86" width="340" height="124" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-body)"></rect>
+<text x="414" y="110" font-size="13" font-weight="700" style="fill: var(--spec-red)">Contradicts #non-goal-head</text>
+<rect x="414" y="118" width="184" height="24" rx="4" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="424" y="135" font-size="12" font-weight="700" style="fill: var(--spec-blue)">Ask agent to reconcile</text>
+<text x="414" y="166" font-size="13" font-weight="700" style="fill: var(--spec-body)">Behavior</text>
+<rect x="414" y="174" width="200" height="24" rx="4" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="424" y="191" font-size="12" font-weight="700" style="fill: var(--spec-blue)">Comment on this change</text>
 </svg>
 </div>
 <figcaption data-anchor="markers-figure-caption">Markers in the margin: neutral for ordinary notes, colored with a glyph for a conflict; the open popover holds the notes and their buttons.</figcaption>
@@ -411,7 +416,7 @@ CI: the Jev seam and runtime tests run in CI with no Jev provider installed and 
 <p data-anchor="corpus-labels">Each changed clause and candidate pair is asked the draft-check <a href="#chains">chain</a>; the first yes shows as <code>Contradicts</code>, <code>Oversteps</code>, or <code>Overlaps</code>, linking the candidate, and all no shows nothing. A non-goal candidate is asked only <q>contradicts?</q>.</p>
 <p data-anchor="corpus-same-spec">Within a spec, only <q>contradicts?</q> is asked: a same-spec candidate, non-goal or not, stops after it, since a spec restates and extends its own clauses. <q>Oversteps?</q> and <q>overlaps?</q> run only against clauses of other specs and in <a href="#cross-lane">cross-lane checks</a>.</p>
 <p data-anchor="corpus-meta">Clauses in the page header, such as title, source issues, and context, and in any section anchored as source issues, are neither asked nor compared against. The <a href="#leaves">leaf filter</a> further excludes headings, figures, examples, captions, audit and history text, and preview blocks.</p>
-<p data-anchor="corpus-gate">Before the contradicts/oversteps chain, each candidate pair is asked the <a href="#gate">gate question</a>; only pairs answered <code>yes</code> proceed. A <code>no</code> or unsure gate answer records <code>unrelated</code> and skips the chain.</p>
+<p data-anchor="corpus-gate">Before the contradicts/oversteps chain, each candidate pair is asked the <a href="#gate">gate question</a>; only pairs answered <code>yes</code> proceed. A <code>no</code> gate answer, from Jev or from the general LLM deciding an unsure one, records <code>unrelated</code> and skips the chain.</p>
 <p data-anchor="corpus-context">Every question carries its clause text plus <a href="#context">clause context</a>: the surface, section heading and, for table rows, column headers.</p>
 <p data-anchor="corpus-top-k" id="top-k">Each changed clause is compared against the <a href="#candidate-ranking">top 5</a> most relevant leaf clauses in the same spec, always including every non-goal, and the top 5 in other specs. Candidates are ranked by rarity-weighted word overlap: shared words weighted by inverse frequency across the spec collection, so domain-common words like <q>spec</q> or <q>clause</q> carry less weight than specific terms. Sibling rows of the same table, and stories paired with criteria in the same spec, remain eligible as candidates; the <a href="#context">clause context</a> (surface, section, column headers) lets the model tell complementary from contradictory.</p>
 <p data-anchor="corpus-others">Other specs are the lane's own served specs, those registered under the page's slug, as served, plus main's copy of every other spec path of the page's project served by the registry, read from <code>origin/main</code> in that resource's root; specs of another project are never candidates. Another lane's served copy is never a candidate, and each project and spec path is a candidate once. A path absent on main is skipped. In single-root mode, other specs are the root's other served specs.</p>
@@ -426,7 +431,7 @@ CI: the Jev seam and runtime tests run in CI with no Jev provider installed and 
 <p data-anchor="cross-lane-finding">A yes to <q>contradicts?</q> or to either <q>oversteps?</q> is a finding; <code>overlaps</code>, all no, unavailable, and off are none. A finding marks both clauses: each spec's <code>/api/jev</code> carries a <code>lane</code> item on its own clause with the label, its side, the other slug, and the other clause's served path and anchor, at the label's <a href="#markers-levels">levels</a>. An overstep reads <code>Oversteps</code> on the clause that oversteps and <code>Overstepped by</code> on the other. Every finding is Important for both owners; for the human, <code>Contradicts</code> is Important and an overstep a Warning.</p>
 <p data-anchor="cross-lane-owner">The marks are the owners' to solve, as any mark Important at the agent level is before hand-off (<a href="./project-rules.spec.html">project rules</a>): a spec fix, a reason line in the spec, or a thread for the human. <code>Ask agent to reconcile</code> works on them as on draft checks, and a reconcile link opens the other slug's served clause.</p>
 <p data-anchor="cross-lane-board">The parameterless <code>GET /api/jev/board</code> keeps its answer shape and lists a pair of served paths once for any finding between them; slugs of different projects are never paired. What a reader of the board shows is the reader's own contract.</p>
-<p data-anchor="cross-lane-async">Both routes answer at once from held records and ask the missing questions after answering. On a page, each unanswered cross-lane question on its clauses counts as <code>pending</code>. In single-root mode there is one slug and no cross-lane check.</p>
+<p data-anchor="cross-lane-async">Each spec's <code>/api/jev</code> answers at once from held records and asks the missing questions after answering. The board answers at once with the last answer its background refresh computed, empty until the first refresh completes, and refreshes after answering. On a page, each unanswered cross-lane question on its clauses counts as <code>pending</code>. In single-root mode there is one slug and no cross-lane check.</p>
 <p data-anchor="cross-lane-test-host">Slugs registered with <code>--test</code> are excluded: their clauses are not candidates for any live slug's cross-lane checks, and their records are kept in a <a href="#test-hosts">separate store</a>.</p>
 </section>
 
@@ -483,7 +488,7 @@ CI: the Jev seam and runtime tests run in CI with no Jev provider installed and 
 <section data-anchor="gate">
 <h2>Gate question</h2>
 <p data-anchor="gate-about">Before asking contradicts or oversteps, each candidate pair is asked: <q>Are these two clauses about the same thing?</q> This is a yes/no Jev question using its own versioned question set, <code>about</code>. A <code>yes</code> answer means the clauses describe the same route, field, element, command, term, surface, or responsibility; the model sees the clause text, the context fields, and nothing else.</p>
-<p data-anchor="gate-chain">The gate precedes the yes/no contradicts/oversteps chain. The full sequence for a pair is: about? (yes) then contradicts? (no) then, for a candidate in another spec, oversteps? A <code>no</code> or unsure (below threshold) gate answer records <code>unrelated</code> for the pair and skips the rest of the chain. The gate's record is keyed like any other question set, by the content hash of its inputs and set version.</p>
+<p data-anchor="gate-chain">The gate precedes the yes/no contradicts/oversteps chain. The full sequence for a pair is: about? (yes) then contradicts? (no) then, for a candidate in another spec, oversteps? A <code>no</code> gate answer records <code>unrelated</code> for the pair and skips the rest of the chain. An unsure (below threshold) gate answer goes once to the general LLM, as <a href="./project-rules.spec.html#q-fallback">the LLM fallback</a> defines, and its yes or no decides the same way. The gate's record is keyed like any other question set, by the content hash of its inputs and set version.</p>
 <p data-anchor="gate-lane">Cross-lane checks use the same gate. For each clause of one slug, the gate is asked against every changed clause of every other slug, and only those answering <code>yes</code> proceed to the lane question.</p>
 <p data-anchor="gate-parallel">Gate questions are asked in parallel within one read, like other questions. A provider failure on the gate follows the <a href="#state-error">one retry rule</a>: the pair is unanswered until its pause ends, and the first read after the pause asks it again in the background. A failed gate is never recorded as <code>unrelated</code>.</p>
 <div class="table-scroll" data-anchor="gate-set-scroll">

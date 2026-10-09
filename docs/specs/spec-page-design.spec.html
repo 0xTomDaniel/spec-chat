@@ -63,6 +63,11 @@ The spec document's own content styling is outside this design.</p>
 <span data-acceptance-observable>Then the markers show the important, neutral, and passed colors of the <a href="#token-marker">marker tokens</a>, each in its level's marker shape and size.</span>
 </p>
 
+<p data-acceptance-criterion data-anchor="acceptance-mark-warning" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>Given a spec reviewer on a spec with a Jev marker whose notes are all Warning level, a fixture that must be added to provide it, When they view the marker,</span>
+<span data-acceptance-observable>Then it shows as a light red dot in the <a href="#token-marker-warning">warning marker</a> color, distinct from the important, neutral, and passed markers.</span>
+</p>
+
 <p data-acceptance-criterion data-anchor="acceptance-contrast" data-story="story-consistent-chrome">
 <span data-acceptance-scenario>Given a spec reviewer on a spec page, When they read every chrome text and control,</span>
 <span data-acceptance-observable>Then normal text meets 4.5:1 contrast and meaningful non-text boundaries (status pill borders, active thread borders, pin outlines) meet 3:1.</span>
@@ -125,6 +130,8 @@ The spec document's own content styling (DOC_CSS <code>article.spec</code> rules
 <tr data-anchor="token-resolved"><td><code>--ui-resolved</code>, <code>--ui-resolved-soft</code></td><td><code>#005c32</code>, <code>#e6efea</code></td><td>Resolved status. Reuses <code>--ui-pass</code> pair.</td></tr>
 <tr data-anchor="token-error"><td><code>--ui-error</code></td><td><code>#a5000f</code></td><td>Error overlay background. Reuses <code>--ui-fail</code>.</td></tr>
 <tr data-anchor="token-marker"><td><code>--ui-marker</code>, <code>--ui-marker-important</code>, <code>--ui-marker-pass</code></td><td><code>#767b85</code>, <code>#d1242f</code>, <code>#1a7f37</code></td><td>Jev markers. Agreed mark level colors.</td></tr>
+<tr data-anchor="token-on-marker"><td><code>--ui-on-marker</code></td><td><code>#ffffff</code></td><td>Glyph on a Jev marker (<code>!</code>, check). Not overridden in dark mode: markers keep their fill in both themes.</td></tr>
+<tr data-anchor="token-marker-warning"><td><code>--ui-marker-warning</code></td><td><code>#e5534b</code></td><td>Warning-level Jev marker. Not overridden in dark mode.</td></tr>
 <tr data-anchor="token-pin"><td><code>--ui-pin-ring</code></td><td><code>rgba(176, 84, 14, 0.25)</code></td><td>Active pin and thread ring glow. Derived from <code>--ui-draft</code>.</td></tr>
 <tr data-anchor="token-shadow"><td><code>--ui-shadow</code></td><td><code>rgba(51, 51, 51, 0.14)</code></td><td>Toolbar, dock, panel box shadow. One shadow token from <code>--ui-ink</code>.</td></tr>
 </tbody>
@@ -146,8 +153,8 @@ Focus: <code>outline: 2px solid var(--ui-focus); outline-offset: 2px</code>.</p>
 <tbody>
 <tr data-anchor="btn-primary"><td>Primary</td><td><code>.hx-btn.pri</code></td><td><code>var(--ui-ink)</code></td><td><code>var(--ui-page)</code></td><td><code>var(--ui-ink)</code></td><td>Hand off, Accept spec, Apply, Move comment here</td></tr>
 <tr data-anchor="btn-secondary"><td>Secondary</td><td><code>.hx-btn</code></td><td><code>var(--ui-surface)</code></td><td><code>var(--ui-ink)</code></td><td><code>var(--ui-border)</code></td><td>Change base, Cancel, Edit, Reply, Resolve, Go to, Reload, Reconcile</td></tr>
-<tr data-anchor="btn-icon"><td>Icon</td><td><code>.hx-btn-icon</code></td><td><code>var(--ui-surface)</code></td><td><code>var(--ui-muted)</code></td><td><code>var(--ui-border)</code></td><td>Panel toggle, gear, dock open, dock thread, disclosure</td></tr>
-<tr data-anchor="btn-text"><td>Text link</td><td><code>.hx-btn-text</code></td><td>transparent</td><td><code>var(--ui-ink)</code></td><td>none</td><td>Popover +N warnings, dismiss X, toolbar Comment/Reading view</td></tr>
+<tr data-anchor="btn-icon"><td>Icon</td><td><code>.hx-panel-toggle</code>, <code>.hx-panel-gear</code>, <code>.hx-dock-open</code>, <code>.hx-dock-thread</code>, <code>.hx-disclosure</code></td><td><code>var(--ui-surface)</code></td><td><code>var(--ui-muted)</code></td><td><code>var(--ui-border)</code></td><td>Panel toggle, gear, dock open, dock thread, disclosure</td></tr>
+<tr data-anchor="btn-text"><td>Text link</td><td><code>.hx-toolbar button</code>, <code>.hx-rule-card-reject</code></td><td>transparent</td><td><code>var(--ui-ink)</code></td><td>none</td><td>Offer Dismiss, rule card Not for this spec and Not a project rule, toolbar Comment/Reading view</td></tr>
 </tbody>
 </table>
 </div>

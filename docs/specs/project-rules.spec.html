@@ -86,7 +86,7 @@
 
 <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
 <h2>Modular boundaries</h2>
-<p data-modular-boundary data-anchor="boundary-seam"><span data-boundary-responsibility>The review server's Jev seam owns the scope and rule-check questions, the general LLM fallback, the warm-up, the onboarding status, their records, and the cache.</span> <span data-boundary-seam>Caller-facing seam: the existing <code>GET /api/jev</code> response, gaining items of kind <code>rule</code> and <code>candidate</code> carrying their rule's criterion text, name, and home, a <code>pending</code> state, a <code>level</code> on every mark, the rules checked, and the one-time offer; the existing Jev record route, taking either rule dismissal, a rule confirmation, and both offers; the project's table in <code>onboarding.toml</code> for readers outside Spec Chat.</span> <span data-boundary-dependency>Dependency direction: external-provider; calls Jev and the general LLM through OpenRouter with the Jev provider's key and model, and reads the served specs as the draft checks do; nothing calls back.</span> <span data-boundary-scope>Observable scope: the JSON response, records, and <code>onboarding.toml</code>.</span></p>
+<p data-modular-boundary data-anchor="boundary-seam"><span data-boundary-responsibility>The review server's Jev seam owns the scope and rule-check questions, the general LLM fallback, the warm-up, the onboarding status, their records, and the cache.</span> <span data-boundary-seam>Caller-facing seam: the existing <code>GET /api/jev</code> response, gaining items of kind <code>rule</code> and <code>candidate</code> carrying their rule's criterion text, name, and home, a <code>pending</code> state, a <code>level</code> on every mark, the rules checked, and the one-time offer; the existing Jev record route, taking either rule dismissal, a rule confirmation, and both offers; the project's table in <code>onboarding.toml</code> for readers outside Spec Chat.</span> <span data-boundary-dependency>Dependency direction: external-provider; calls Jev through OpenRouter with the Jev provider's key, and the general LLM through the box's Claude CLI with the provider's model, and reads the served specs as the draft checks do; nothing calls back.</span> <span data-boundary-scope>Observable scope: the JSON response, records, and <code>onboarding.toml</code>.</span></p>
 <p data-modular-boundary data-anchor="boundary-page"><span data-boundary-responsibility>The browser runtime owns the one <a href="#card">rule card</a> and every place it renders, the pending wheel, the card buttons, and the one-time candidate and reconcile offers.</span> <span data-boundary-seam>Caller-facing seam: the rendered page; writes only through the existing comment composer and the existing Jev record route the offer already uses.</span> <span data-boundary-dependency>Dependency direction: self-contained; consumes the seam route.</span> <span data-boundary-scope>Observable scope: what the reviewer sees.</span></p>
 <p data-modular-boundary data-anchor="boundary-skill"><span data-boundary-responsibility>The shaping skill owns reading and resolving the checks before handing off the link.</span> <span data-boundary-seam>Caller-facing seam: one read command over the running review server, printing compact text, with <code>--anchor</code> for one anchor's detail.</span> <span data-boundary-dependency>Dependency direction: self-contained; the skill calls the server, and the server never calls the skill.</span> <span data-boundary-scope>Observable scope: commits and the hand-off message.</span></p>
 <p data-modular-boundary data-anchor="boundary-light"><span data-boundary-responsibility>Spec Chat's core, the shaping skill, validator, spec format, and spec page runtime without a review service, owns nothing in this spec.</span> <span data-boundary-seam>Caller-facing seam: none new; the runtime renders cards only from a <code>/api/jev</code> answer, and the shaping skill's Jev read already says <code>off</code> when there is none.</span> <span data-boundary-dependency>Dependency direction: self-contained; the review service depends on the core, never the reverse, and no core step calls, waits on, or stores rule approval.</span> <span data-boundary-scope>Observable scope: a spec page and a shaping run with no review service show no rule card, candidate, offer, or error.</span></p>
@@ -104,7 +104,7 @@
 </tbody>
 </table>
 </div>
-<p data-anchor="q-fallback">An answer below threshold, to either question, sends the same question once to a general LLM through OpenRouter, when its question set allows fallback. The model id is the box's one LLM name, <code>llm_model</code> in the Jev provider file beside its key, as <a href="./review-service.spec.html#providers-jev">review service providers</a> define, default <code>anthropic/claude-sonnet-5</code>; question sets name no model, and nothing is read from the environment; its answer decides and is recorded with the same key. If that call fails, the item shows <code>Jev unavailable</code> and is asked again after a pause, by the one retry rule <a href="./jev-suggestions.spec.html#state-error">every Jev question</a> follows.</p>
+<p data-anchor="q-fallback">An answer below threshold, to either question, sends the same question once to a general LLM, when its question set allows fallback. The general LLM is the box's Claude CLI, run once per question isolated from user instructions and hooks, and authenticated by the box's own Claude settings rather than the Jev key. The model id is the box's one LLM name, <code>llm_model</code> in the Jev provider file beside its key, as <a href="./review-service.spec.html#providers-jev">review service providers</a> define; unset, the CLI's own default model answers; question sets name no model, and nothing is read from the environment; its answer decides and is recorded with the same key. If that call fails, the item shows <code>Jev unavailable</code> and is asked again after a pause, by the one retry rule <a href="./jev-suggestions.spec.html#state-error">every Jev question</a> follows.</p>
 <p data-anchor="q-rule-def">A criterion whose decided scope is <code>every feature</code> is a <dfn>candidate rule</dfn>; it becomes a project-wide rule only when a human confirms it, as <a href="#approval">rule approval</a> defines. Only confirmed rules are checked. A spec is never checked against its own criteria.</p>
 <p data-anchor="q-own-project">A spec is checked only against rules from its own project, the project its registry row names. The other specs both questions read are the <a href="./jev-suggestions.spec.html#corpus-others">corpus others</a>, which hold only the page's project; a box serving several projects never mixes their rules, candidates, confirmations, or dismissals. The same holds for every other mark kind, as <a href="./jev-suggestions.spec.html#shared-own-project">one project per mark</a> defines.</p>
 <p data-anchor="q-copies">A rule criterion that links a criterion of another spec in the same project, which is itself a rule, is a copy of that home rule; links are followed to the criterion that links no further rule. Copies are instances of one global rule: there is one rule per home, checked with the home's text, listed once in the rules checked, and shown as one note naming and linking the home. <code>Confirm rule</code>, <code>Not for this spec</code>, and <code>Not a project rule</code> on that card apply to the home, and so to every copy; a copy is never a candidate of its own.</p>
@@ -163,34 +163,34 @@
 <figure data-anchor="card-figure">
 <div class="rail-wrap" data-anchor="card-figure-scroll">
 <svg viewBox="0 0 780 360" style="min-width: 640px; font-family: Inter, system-ui, sans-serif" role="img" aria-label="Mockup. Left, a spec page fragment: the heading Acceptance criteria with a red exclamation marker in the right margin. Right, the open rule card: a small label Missing project rule, the title CI covers every acceptance criterion, the rule's full criterion text quoted at reading size beside a thin rule line, the source link peer-seams, acceptance-ci, a hairline, then a row with two text buttons Not for this spec and Not a project rule on the left and a dark Ask to cover button on the right.">
-<rect x="0" y="0" width="780" height="360" fill="#ffffff"></rect>
-<text x="20" y="52" fill="#171719" font-size="20" font-weight="700">Acceptance criteria</text>
-<circle cx="256" cy="45" r="10" fill="#d1242f"></circle>
-<text x="256" y="50" fill="#ffffff" font-size="14" font-weight="700" text-anchor="middle">!</text>
-<rect x="20" y="78" width="220" height="9" rx="4" fill="#e6e4dd"></rect>
-<rect x="20" y="98" width="200" height="9" rx="4" fill="#e6e4dd"></rect>
-<rect x="20" y="118" width="214" height="9" rx="4" fill="#e6e4dd"></rect>
-<rect x="20" y="150" width="210" height="9" rx="4" fill="#e6e4dd"></rect>
-<rect x="20" y="170" width="190" height="9" rx="4" fill="#e6e4dd"></rect>
-<path d="M268 45 L292 45" stroke="#dfdfdf" stroke-width="1.5"></path>
-<rect x="296" y="24" width="468" height="314" rx="8" fill="#000000" fill-opacity="0.06" transform="translate(0 3)"></rect>
-<rect x="296" y="24" width="468" height="314" rx="8" fill="#ffffff" stroke="#dfdfdf"></rect>
-<text x="320" y="56" fill="#525252" font-size="12" font-weight="600" letter-spacing="0.3">Missing project rule</text>
-<text x="320" y="82" fill="#333333" font-size="17" font-weight="650">CI covers every acceptance criterion</text>
-<rect x="320" y="100" width="3" height="96" rx="1.5" fill="#c8c5bb"></rect>
-<text x="336" y="117" fill="#333333" font-size="14">Given any change to this repository, When it is</text>
-<text x="336" y="139" fill="#333333" font-size="14">pushed or opened as a pull request, Then CI runs</text>
-<text x="336" y="161" fill="#333333" font-size="14">the full suite and one contract test per seam row,</text>
-<text x="336" y="183" fill="#333333" font-size="14">in a clean environment with no other peer installed.</text>
-<text x="320" y="222" fill="#1d4ed8" font-size="13" text-decoration="underline">peer-seams · #acceptance-ci</text>
-<text x="501" y="222" fill="#1d4ed8" font-size="13">↗</text>
-<line x1="296" y1="244" x2="764" y2="244" stroke="#dfdfdf"></line>
-<text x="320" y="294" fill="#333333" font-size="14" font-weight="500" text-decoration="underline">Not for this spec</text>
-<text x="454" y="294" fill="#333333" font-size="14" font-weight="500" text-decoration="underline">Not a project rule</text>
-<rect x="628" y="270" width="116" height="36" rx="6" fill="#333333"></rect>
-<text x="686" y="293" fill="#ffffff" font-size="14" font-weight="600" text-anchor="middle">Ask to cover</text>
-<text x="320" y="326" fill="#525252" font-size="12">Reject Jev, left</text>
-<text x="628" y="326" fill="#525252" font-size="12">Act, rightmost</text>
+<rect x="0" y="0" width="780" height="360" style="fill: var(--ui-surface)"></rect>
+<text x="20" y="52" font-size="20" font-weight="700" style="fill: var(--ui-ink)">Acceptance criteria</text>
+<circle cx="256" cy="45" r="10" style="fill: var(--ui-marker-important)"></circle>
+<text x="256" y="50" font-size="14" font-weight="700" text-anchor="middle" style="fill: var(--ui-on-marker)">!</text>
+<rect x="20" y="78" width="220" height="9" rx="4" style="fill: var(--ui-border)"></rect>
+<rect x="20" y="98" width="200" height="9" rx="4" style="fill: var(--ui-border)"></rect>
+<rect x="20" y="118" width="214" height="9" rx="4" style="fill: var(--ui-border)"></rect>
+<rect x="20" y="150" width="210" height="9" rx="4" style="fill: var(--ui-border)"></rect>
+<rect x="20" y="170" width="190" height="9" rx="4" style="fill: var(--ui-border)"></rect>
+<path d="M268 45 L292 45" stroke-width="1.5" style="stroke: var(--ui-border)"></path>
+<rect x="296" y="24" width="468" height="314" rx="8" fill-opacity="0.06" transform="translate(0 3)" style="fill: var(--ui-ink)"></rect>
+<rect x="296" y="24" width="468" height="314" rx="8" style="fill: var(--ui-surface); stroke: var(--ui-border)"></rect>
+<text x="320" y="56" font-size="12" font-weight="600" letter-spacing="0.3" style="fill: var(--ui-muted)">Missing project rule</text>
+<text x="320" y="82" font-size="17" font-weight="650" style="fill: var(--ui-ink)">CI covers every acceptance criterion</text>
+<rect x="320" y="100" width="3" height="96" rx="1.5" style="fill: var(--ui-border)"></rect>
+<text x="336" y="117" font-size="14" style="fill: var(--ui-ink)">Given any change to this repository, When it is</text>
+<text x="336" y="139" font-size="14" style="fill: var(--ui-ink)">pushed or opened as a pull request, Then CI runs</text>
+<text x="336" y="161" font-size="14" style="fill: var(--ui-ink)">the full suite and one contract test per seam row,</text>
+<text x="336" y="183" font-size="14" style="fill: var(--ui-ink)">in a clean environment with no other peer installed.</text>
+<text x="320" y="222" font-size="13" text-decoration="underline" style="fill: var(--ui-ack)">peer-seams · #acceptance-ci</text>
+<text x="501" y="222" font-size="13" style="fill: var(--ui-ack)">↗</text>
+<line x1="296" y1="244" x2="764" y2="244" style="stroke: var(--ui-border)"></line>
+<text x="320" y="294" font-size="14" font-weight="500" text-decoration="underline" style="fill: var(--ui-ink)">Not for this spec</text>
+<text x="454" y="294" font-size="14" font-weight="500" text-decoration="underline" style="fill: var(--ui-ink)">Not a project rule</text>
+<rect x="628" y="270" width="116" height="36" rx="6" style="fill: var(--ui-ink)"></rect>
+<text x="686" y="293" font-size="14" font-weight="600" text-anchor="middle" style="fill: var(--ui-surface)">Ask to cover</text>
+<text x="320" y="326" font-size="12" style="fill: var(--ui-muted)">Reject Jev, left</text>
+<text x="628" y="326" font-size="12" style="fill: var(--ui-muted)">Act, rightmost</text>
 </svg>
 </div>
 <figcaption data-anchor="card-figure-caption">The missed-rule card. Label, then the rule's name as title, then its full text at reading size, then where it lives; the two rejects say exactly what they mean, and the one action sits rightmost, dark but not alarming.</figcaption>
@@ -250,7 +250,7 @@
 <p data-anchor="agent-read-same">The command reads the <code>/api/jev</code> response for the spec and base the review link serves, from the running server, so the agent and the page see one answer from one cache, and prints only a compact summary so the agent's context stays small.</p>
 <pre data-anchor="agent-read-example">important  acceptance       rule        important  onboarding.spec.html#acceptance-onboarding
 important  save-rule        contradicts important  #non-goal-offline
-warnings   type 3, reader 2
+warnings   corpus 2, unsure 1
 rules      onboarding.spec.html#acceptance-onboarding
 candidates peer-seams.spec.html#acceptance-ci
 pending    0</pre>
@@ -260,7 +260,7 @@ pending    0</pre>
 <li data-anchor="agent-once-solved">Each important mark ends in exactly one of: fixed in the spec; a reason line in the spec, such as <q>Onboarding: not needed, this changes no screen</q>; or, when it is bigger than a simple edit, an open TBD the agent writes at the clause (<code>data-spec-tbd</code>), which blocks <code>Accept spec</code> until the human settles it; the TBD counts as solved for hand-off. A mark the human dismissed is absent from the read and needs nothing.</li>
 <li data-anchor="agent-once-other">Fixes follow the reconcile rule in <a href="../../skill/shape-spec/SKILL.md">shape-spec</a>.</li>
 <li data-anchor="agent-once-stop">The pass stops naturally, with no cap: if a fix raises a new important mark on the same clause, the agent writes an open TBD at that clause instead of fixing again.</li>
-<li data-anchor="agent-once-warnings">Warnings are read, not acted on, and never hidden: the hand-off message starts with <q>N warnings not acted on:</q> and the read's counts by kind, e.g. <q>5 warnings not acted on: type 3, reader 2</q>.</li>
+<li data-anchor="agent-once-warnings">Warnings are read, not acted on, and never hidden: the hand-off message starts with <q>N warnings not acted on:</q> and the read's counts by kind, e.g. <q>3 warnings not acted on: corpus 2, unsure 1</q>.</li>
 <li data-anchor="agent-once-advice">For the human, marks are advice: none blocks <code>Accept spec</code>, and the agent never edits a spec just to raise Jev's confidence.</li>
 </ol>
 <p data-anchor="agent-read-rules">The hand-off message names the rules checked, as home spec and anchor, for visibility only; it asks nothing of the human.</p>
@@ -283,33 +283,33 @@ pending    0</pre>
 <figure data-anchor="offer-figure">
 <div class="rail-wrap" data-anchor="offer-figure-scroll">
 <svg viewBox="0 0 780 352" style="min-width: 640px; font-family: Inter, system-ui, sans-serif" role="img" aria-label="Mockup of the expanded reconcile offer. A note titled 3 existing specs miss project rules, with Dismiss and Reconcile buttons. Below, three lines: Overview misses CI covers every acceptance criterion, expanded to show its rule card with the quoted rule, the source link, and Not for this spec and Not a project rule; Toolchain ownership misses CI covers every acceptance criterion; Evidence review misses CI covers every acceptance criterion and Every screen ships with onboarding.">
-<rect x="0" y="0" width="780" height="352" fill="#ffffff"></rect>
-<rect x="20" y="12" width="740" height="328" rx="8" fill="#ffffff" stroke="#dfdfdf"></rect>
-<text x="40" y="46" fill="#333333" font-size="15" font-weight="650">3 existing specs miss project rules</text>
-<text x="574" y="45" fill="#333333" font-size="14" font-weight="500" text-decoration="underline">Dismiss</text>
-<rect x="638" y="24" width="102" height="34" rx="6" fill="#333333"></rect>
-<text x="689" y="46" fill="#ffffff" font-size="14" font-weight="600" text-anchor="middle">Reconcile</text>
-<line x1="20" y1="72" x2="760" y2="72" stroke="#dfdfdf"></line>
-<text x="40" y="100" fill="#525252" font-size="13">▾</text>
-<text x="60" y="100" fill="#1d4ed8" font-size="14" font-weight="600" text-decoration="underline">Overview</text>
-<text x="132" y="100" fill="#333333" font-size="14">misses  CI covers every acceptance criterion</text>
-<rect x="60" y="114" width="680" height="136" rx="6" fill="#fafafa" stroke="#dfdfdf"></rect>
-<text x="78" y="138" fill="#525252" font-size="12" font-weight="600">Missing project rule</text>
-<text x="78" y="160" fill="#333333" font-size="15" font-weight="650">CI covers every acceptance criterion</text>
-<rect x="78" y="172" width="3" height="40" rx="1.5" fill="#c8c5bb"></rect>
-<text x="92" y="187" fill="#333333" font-size="14">Given any change to this repository, When it is pushed or opened as a pull request, Then CI</text>
-<text x="92" y="207" fill="#333333" font-size="14">runs the full suite and one contract test per seam row, in a clean environment.</text>
-<text x="78" y="236" fill="#1d4ed8" font-size="13" text-decoration="underline">peer-seams · #acceptance-ci</text>
-<text x="504" y="236" fill="#333333" font-size="14" font-weight="500" text-decoration="underline">Not for this spec</text>
-<text x="626" y="236" fill="#333333" font-size="14" font-weight="500" text-decoration="underline">Not a project rule</text>
-<line x1="20" y1="266" x2="760" y2="266" stroke="#eeeeee"></line>
-<text x="40" y="292" fill="#525252" font-size="13">▸</text>
-<text x="60" y="292" fill="#1d4ed8" font-size="14" font-weight="600" text-decoration="underline">Toolchain ownership</text>
-<text x="210" y="292" fill="#333333" font-size="14">misses  CI covers every acceptance criterion</text>
-<line x1="20" y1="306" x2="760" y2="306" stroke="#eeeeee"></line>
-<text x="40" y="328" fill="#525252" font-size="13">▸</text>
-<text x="60" y="328" fill="#1d4ed8" font-size="14" font-weight="600" text-decoration="underline">Evidence review</text>
-<text x="182" y="328" fill="#333333" font-size="14">misses  CI covers every acceptance criterion, Every screen ships with onboarding</text>
+<rect x="0" y="0" width="780" height="352" style="fill: var(--ui-surface)"></rect>
+<rect x="20" y="12" width="740" height="328" rx="8" style="fill: var(--ui-surface); stroke: var(--ui-border)"></rect>
+<text x="40" y="46" font-size="15" font-weight="650" style="fill: var(--ui-ink)">3 existing specs miss project rules</text>
+<text x="574" y="45" font-size="14" font-weight="500" text-decoration="underline" style="fill: var(--ui-ink)">Dismiss</text>
+<rect x="638" y="24" width="102" height="34" rx="6" style="fill: var(--ui-ink)"></rect>
+<text x="689" y="46" font-size="14" font-weight="600" text-anchor="middle" style="fill: var(--ui-surface)">Reconcile</text>
+<line x1="20" y1="72" x2="760" y2="72" style="stroke: var(--ui-border)"></line>
+<text x="40" y="100" font-size="13" style="fill: var(--ui-muted)">▾</text>
+<text x="60" y="100" font-size="14" font-weight="600" text-decoration="underline" style="fill: var(--ui-ack)">Overview</text>
+<text x="132" y="100" font-size="14" style="fill: var(--ui-ink)">misses  CI covers every acceptance criterion</text>
+<rect x="60" y="114" width="680" height="136" rx="6" style="fill: var(--ui-page); stroke: var(--ui-border)"></rect>
+<text x="78" y="138" font-size="12" font-weight="600" style="fill: var(--ui-muted)">Missing project rule</text>
+<text x="78" y="160" font-size="15" font-weight="650" style="fill: var(--ui-ink)">CI covers every acceptance criterion</text>
+<rect x="78" y="172" width="3" height="40" rx="1.5" style="fill: var(--ui-border)"></rect>
+<text x="92" y="187" font-size="14" style="fill: var(--ui-ink)">Given any change to this repository, When it is pushed or opened as a pull request, Then CI</text>
+<text x="92" y="207" font-size="14" style="fill: var(--ui-ink)">runs the full suite and one contract test per seam row, in a clean environment.</text>
+<text x="78" y="236" font-size="13" text-decoration="underline" style="fill: var(--ui-ack)">peer-seams · #acceptance-ci</text>
+<text x="504" y="236" font-size="14" font-weight="500" text-decoration="underline" style="fill: var(--ui-ink)">Not for this spec</text>
+<text x="626" y="236" font-size="14" font-weight="500" text-decoration="underline" style="fill: var(--ui-ink)">Not a project rule</text>
+<line x1="20" y1="266" x2="760" y2="266" style="stroke: var(--ui-border)"></line>
+<text x="40" y="292" font-size="13" style="fill: var(--ui-muted)">▸</text>
+<text x="60" y="292" font-size="14" font-weight="600" text-decoration="underline" style="fill: var(--ui-ack)">Toolchain ownership</text>
+<text x="210" y="292" font-size="14" style="fill: var(--ui-ink)">misses  CI covers every acceptance criterion</text>
+<line x1="20" y1="306" x2="760" y2="306" style="stroke: var(--ui-border)"></line>
+<text x="40" y="328" font-size="13" style="fill: var(--ui-muted)">▸</text>
+<text x="60" y="328" font-size="14" font-weight="600" text-decoration="underline" style="fill: var(--ui-ack)">Evidence review</text>
+<text x="182" y="328" font-size="14" style="fill: var(--ui-ink)">misses  CI covers every acceptance criterion, Every screen ships with onboarding</text>
 </svg>
 </div>
 <figcaption data-anchor="offer-figure-caption">The reconcile offer expanded: one sentence per spec that a person can scan, each opening to the full card; the candidate offer above it uses the same note with candidate cards.</figcaption>

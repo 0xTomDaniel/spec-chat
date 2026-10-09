@@ -57,7 +57,7 @@ CI: the <a href="./review-service.spec.html#acceptance-ci-alone">CI rule</a> cov
 <caption>Per-resource wake state while a batch waits, and what the page shows</caption>
 <thead><tr><th>Evidence</th><th>State</th><th>Host action</th><th>Page</th></tr></thead>
 <tbody>
-<tr data-anchor="wake-state-sent"><td><code>send</code> exit 0, or the host timeout while sending (delivery unconfirmed; never resent)</td><td>sent</td><td>Nothing more for this batch</td><td>Waiting for agent, then the existing timeout message</td></tr>
+<tr data-anchor="wake-state-sent"><td><code>send</code> exit 0, or the host timeout while sending (delivery unconfirmed; never resent)</td><td>sent</td><td>Nothing more for this batch</td><td>Waiting for agent; 30 seconds after the hand-off with no agent event, the existing timeout message</td></tr>
 <tr data-anchor="wake-state-deferred"><td><code>send</code> exit 75</td><td>deferred</td><td>Retry next poll</td><td>Waiting for agent</td></tr>
 <tr data-anchor="wake-state-failed"><td><code>check</code> exits other than 0, or <code>send</code> exits other than 0 or 75</td><td>failed</td><td>Retry next poll</td><td>Wake failed; send a new chat message to resume</td></tr>
 <tr data-anchor="wake-state-unavailable"><td>No valid <code>providers/wake.toml</code> in the service state</td><td>unavailable</td><td>None</td><td>Existing timeout message</td></tr>

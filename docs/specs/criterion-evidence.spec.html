@@ -110,17 +110,17 @@ CI: the evidence route and runtime tests run in CI with no evidence provider ins
 <figure data-anchor="chip-figure">
 <div class="rail-wrap" data-anchor="chip-figure-scroll">
 <svg viewBox="0 0 760 200" style="min-width: 600px" role="img" aria-label="Two acceptance criteria with margin markers. The first marker is a green dot with a check glyph, for QA passed. The second is a red dot with an exclamation glyph; its open popover shows QA stale, context #58 · 9 d · not on main, and a bundle link.">
-<text x="12" y="34" fill="#171719" font-size="14">When the reviewer picks a listed commit, highlighting reflects that base.</text>
-<circle cx="600" cy="29" r="8" fill="#1a7f37"></circle>
-<path d="M596 29 L599 32 L604 26" stroke="#ffffff" stroke-width="2" fill="none"></path>
-<text x="12" y="74" fill="#171719" font-size="14">When the picker opens, it lists at most 20 commits.</text>
-<circle cx="600" cy="69" r="8" fill="#b42318"></circle>
-<text x="596" y="74" fill="#ffffff" font-size="12" font-weight="700">!</text>
-<rect x="420" y="86" width="320" height="100" rx="6" fill="#ffffff" stroke="#303036" stroke-width="1.5"></rect>
-<text x="434" y="112" fill="#303036" font-size="12" font-weight="700">EVIDENCE</text>
-<text x="434" y="138" fill="#b42318" font-size="14" font-weight="700" text-decoration="underline">QA stale</text>
-<text x="484" y="138" fill="#303036" font-size="13">#58 · 9 d · not on main</text>
-<text x="434" y="168" fill="#2947c7" font-size="13" text-decoration="underline">bundle</text>
+<text x="12" y="34" font-size="14" style="fill: var(--spec-ink)">When the reviewer picks a listed commit, highlighting reflects that base.</text>
+<circle cx="600" cy="29" r="8" style="fill: var(--spec-teal)"></circle>
+<path d="M596 29 L599 32 L604 26" stroke-width="2" fill="none" style="stroke: var(--spec-surface)"></path>
+<text x="12" y="74" font-size="14" style="fill: var(--spec-ink)">When the picker opens, it lists at most 20 commits.</text>
+<circle cx="600" cy="69" r="8" style="fill: var(--spec-red)"></circle>
+<text x="596" y="74" font-size="12" font-weight="700" style="fill: var(--spec-surface)">!</text>
+<rect x="420" y="86" width="320" height="100" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-body)"></rect>
+<text x="434" y="112" font-size="12" font-weight="700" style="fill: var(--spec-body)">EVIDENCE</text>
+<text x="434" y="138" font-size="14" font-weight="700" text-decoration="underline" style="fill: var(--spec-red)">QA stale</text>
+<text x="484" y="138" font-size="13" style="fill: var(--spec-body)">#58 · 9 d · not on main</text>
+<text x="434" y="168" font-size="13" text-decoration="underline" style="fill: var(--spec-blue)">bundle</text>
 </svg>
 </div>
 <figcaption data-anchor="chip-figure-caption">Evidence in the marker popover: the label opens the criterion's artifact, <code>bundle</code> opens the bundle page; <code>QA passed</code> marks with a green check, <code>QA failed</code> and <code>QA stale</code> with a colored <code>!</code>.</figcaption>
@@ -192,33 +192,33 @@ A lane spec's owner is the lane owner; a main spec's is the operator. So a reque
 <figure data-anchor="read-figure">
 <div class="rail-wrap" data-anchor="read-figure-scroll">
 <svg viewBox="0 0 780 290" style="min-width: 620px" role="img" aria-label="Swimlane. Browser: 1 the page renders at once, then calls GET /api/evidence with the spec path. Review server: 2 names the spec ID and viewed commit, 3 calls GET /criteria on the evidence service. Evidence service: 4 picks, matches, asks Jev, checks main, and returns criteria. Review server: 5 marks uncommitted criteria and makes links absolute. Browser: 6 shows evidence notes, or nothing.">
-<rect x="0" y="0" width="780" height="92" fill="#f4f6fb"></rect>
-<rect x="0" y="92" width="780" height="100" fill="#ffffff"></rect>
-<rect x="0" y="192" width="780" height="98" fill="#f4f6fb"></rect>
-<line x1="0" y1="92" x2="780" y2="92" stroke="#8a8f99"></line>
-<line x1="0" y1="192" x2="780" y2="192" stroke="#8a8f99"></line>
-<text x="12" y="50" fill="#171719" font-size="14" font-weight="700">Browser</text>
-<text x="12" y="146" fill="#171719" font-size="14" font-weight="700">Review server</text>
-<text x="12" y="238" fill="#171719" font-size="14" font-weight="700">Evidence</text>
-<text x="12" y="256" fill="#171719" font-size="14" font-weight="700">service</text>
-<rect x="140" y="24" width="190" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="152" y="51" fill="#171719" font-size="13">1 Page renders at once</text>
-<rect x="556" y="24" width="216" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="568" y="51" fill="#171719" font-size="13">6 Evidence notes, or nothing</text>
-<rect x="140" y="120" width="210" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="152" y="147" fill="#171719" font-size="13">2 Spec ID, viewed commit</text>
-<rect x="500" y="120" width="220" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="512" y="147" fill="#171719" font-size="13">5 Uncommitted, absolute links</text>
-<rect x="300" y="220" width="250" height="44" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="312" y="247" fill="#171719" font-size="13">4 Pick, match, Jev, main</text>
-<path d="M225 68 L240 118" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#read-arrow)"></path>
-<text x="240" y="92" fill="#171719" font-size="12">GET /api/evidence path</text>
-<path d="M300 164 L360 218" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#read-arrow)"></path>
-<text x="130" y="206" fill="#171719" font-size="12">3 GET /criteria spec, commit</text>
-<path d="M500 220 L560 166" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#read-arrow)"></path>
-<path d="M630 120 L660 70" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#read-arrow)"></path>
-<text x="652" y="100" fill="#171719" font-size="12">entries</text>
-<defs><marker id="read-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#171719"></path></marker></defs>
+<rect x="0" y="0" width="780" height="92" style="fill: var(--spec-paper)"></rect>
+<rect x="0" y="92" width="780" height="100" style="fill: var(--spec-surface)"></rect>
+<rect x="0" y="192" width="780" height="98" style="fill: var(--spec-paper)"></rect>
+<line x1="0" y1="92" x2="780" y2="92" style="stroke: var(--spec-muted)"></line>
+<line x1="0" y1="192" x2="780" y2="192" style="stroke: var(--spec-muted)"></line>
+<text x="12" y="50" font-size="14" font-weight="700" style="fill: var(--spec-ink)">Browser</text>
+<text x="12" y="146" font-size="14" font-weight="700" style="fill: var(--spec-ink)">Review server</text>
+<text x="12" y="238" font-size="14" font-weight="700" style="fill: var(--spec-ink)">Evidence</text>
+<text x="12" y="256" font-size="14" font-weight="700" style="fill: var(--spec-ink)">service</text>
+<rect x="140" y="24" width="190" height="44" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="152" y="51" font-size="13" style="fill: var(--spec-ink)">1 Page renders at once</text>
+<rect x="556" y="24" width="216" height="44" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="568" y="51" font-size="13" style="fill: var(--spec-ink)">6 Evidence notes, or nothing</text>
+<rect x="140" y="120" width="210" height="44" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="152" y="147" font-size="13" style="fill: var(--spec-ink)">2 Spec ID, viewed commit</text>
+<rect x="500" y="120" width="220" height="44" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="512" y="147" font-size="13" style="fill: var(--spec-ink)">5 Uncommitted, absolute links</text>
+<rect x="300" y="220" width="250" height="44" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="312" y="247" font-size="13" style="fill: var(--spec-ink)">4 Pick, match, Jev, main</text>
+<path d="M225 68 L240 118" stroke-width="1.5" fill="none" marker-end="url(#read-arrow)" style="stroke: var(--spec-ink)"></path>
+<text x="240" y="92" font-size="12" style="fill: var(--spec-ink)">GET /api/evidence path</text>
+<path d="M300 164 L360 218" stroke-width="1.5" fill="none" marker-end="url(#read-arrow)" style="stroke: var(--spec-ink)"></path>
+<text x="130" y="206" font-size="12" style="fill: var(--spec-ink)">3 GET /criteria spec, commit</text>
+<path d="M500 220 L560 166" stroke-width="1.5" fill="none" marker-end="url(#read-arrow)" style="stroke: var(--spec-ink)"></path>
+<path d="M630 120 L660 70" stroke-width="1.5" fill="none" marker-end="url(#read-arrow)" style="stroke: var(--spec-ink)"></path>
+<text x="652" y="100" font-size="12" style="fill: var(--spec-ink)">entries</text>
+<defs><marker id="read-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill: var(--spec-ink)"></path></marker></defs>
 </svg>
 </div>
 <figcaption data-anchor="read-figure-caption">One evidence read: the page never waits for it, and the browser names only the spec path.</figcaption>
