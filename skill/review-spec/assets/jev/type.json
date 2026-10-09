@@ -1,6 +1,6 @@
 {
   "id": "type",
-  "version": 5,
+  "version": 6,
   "instructions": "Compare the base and current text for one changed root section. Does this change behavior? Answer yes when the change alters what the result does or covers: a capability, surface, non-goal, rule, interface, edge case, or criterion. Answer no when behavior stays the same: wording, typo, order, style, or meaning stated more precisely. A line that only records provenance, such as which issue shaped or later amended a section, is no. Renaming a term to follow a rename made elsewhere is no, unless the section's own criterion or surface now shows the new name.",
   "threshold": 0.4,
   "fallback": true,
@@ -43,20 +43,6 @@
       "name": "no",
       "description": "Same behavior: wording, typo, order, style, or meaning stated more precisely.",
       "examples": [
-        {
-          "input": {
-            "before": "Each changed root section gets one change-type question.",
-            "after": "Each changed root section gets one Choice question with scope, behavioral, clarification, and cosmetic criteria."
-          },
-          "label": "no"
-        },
-        {
-          "input": {
-            "before": "The seam follows the shared Jev contract.",
-            "after": "The seam follows the current retry, cache, and no-reorder contract."
-          },
-          "label": "no"
-        },
         {
           "input": {
             "before": "The page re-reads the lanes endpoint every 30 seconds and on an explicit Refresh control.",
