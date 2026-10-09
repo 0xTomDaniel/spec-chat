@@ -63,6 +63,11 @@ The spec document's own content styling is outside this design.</p>
 <span data-acceptance-observable>Then the markers show the important, neutral, and passed colors of the <a href="#token-marker">marker tokens</a>, each in its level's marker shape and size.</span>
 </p>
 
+<p data-acceptance-criterion data-anchor="acceptance-mark-warning" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>Given a spec reviewer on a spec with a Jev marker whose notes are all Warning level, a fixture that must be added to provide it, When they view the marker,</span>
+<span data-acceptance-observable>Then it shows as a light red dot, distinct from the important, neutral, and passed markers.</span>
+</p>
+
 <p data-acceptance-criterion data-anchor="acceptance-contrast" data-story="story-consistent-chrome">
 <span data-acceptance-scenario>Given a spec reviewer on a spec page, When they read every chrome text and control,</span>
 <span data-acceptance-observable>Then normal text meets 4.5:1 contrast and meaningful non-text boundaries (status pill borders, active thread borders, pin outlines) meet 3:1.</span>
@@ -146,8 +151,8 @@ Focus: <code>outline: 2px solid var(--ui-focus); outline-offset: 2px</code>.</p>
 <tbody>
 <tr data-anchor="btn-primary"><td>Primary</td><td><code>.hx-btn.pri</code></td><td><code>var(--ui-ink)</code></td><td><code>var(--ui-page)</code></td><td><code>var(--ui-ink)</code></td><td>Hand off, Accept spec, Apply, Move comment here</td></tr>
 <tr data-anchor="btn-secondary"><td>Secondary</td><td><code>.hx-btn</code></td><td><code>var(--ui-surface)</code></td><td><code>var(--ui-ink)</code></td><td><code>var(--ui-border)</code></td><td>Change base, Cancel, Edit, Reply, Resolve, Go to, Reload, Reconcile</td></tr>
-<tr data-anchor="btn-icon"><td>Icon</td><td><code>.hx-btn-icon</code></td><td><code>var(--ui-surface)</code></td><td><code>var(--ui-muted)</code></td><td><code>var(--ui-border)</code></td><td>Panel toggle, gear, dock open, dock thread, disclosure</td></tr>
-<tr data-anchor="btn-text"><td>Text link</td><td><code>.hx-btn-text</code></td><td>transparent</td><td><code>var(--ui-ink)</code></td><td>none</td><td>Popover +N warnings, dismiss X, toolbar Comment/Reading view</td></tr>
+<tr data-anchor="btn-icon"><td>Icon</td><td><code>.hx-panel-toggle</code>, <code>.hx-panel-gear</code>, <code>.hx-dock-open</code>, <code>.hx-dock-thread</code>, <code>.hx-disclosure</code></td><td><code>var(--ui-surface)</code></td><td><code>var(--ui-muted)</code></td><td><code>var(--ui-border)</code></td><td>Panel toggle, gear, dock open, dock thread, disclosure</td></tr>
+<tr data-anchor="btn-text"><td>Text link</td><td><code>.hx-toolbar button</code>, <code>.hx-jev-pop-more</code>, <code>.hx-rule-card-reject</code></td><td>transparent</td><td><code>var(--ui-ink)</code></td><td>none</td><td>Popover +N warnings, dismiss X, toolbar Comment/Reading view</td></tr>
 </tbody>
 </table>
 </div>

@@ -45,6 +45,9 @@
 <p data-acceptance-criterion data-anchor="acceptance-offline-reconnect" data-story="story-offline story-live"><span data-acceptance-scenario>Given a reviewer offline with one waiting comment on a spec under review, and a second reviewer who commented meanwhile. When the first reviewer's browser comes back online.</span> <span data-acceptance-observable>Then within 2 seconds the waiting notice is gone and both pages show both comments, each exactly once.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-offline-closed" data-story="story-offline"><span data-acceptance-scenario>Given a reviewer who saved a comment offline on a spec under review and then closed the tab. When they open the same page again with the service reachable.</span> <span data-acceptance-observable>Then the comment appears as their draft, and another reviewer's page shows it.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-no-presence" data-story="story-live"><span data-acceptance-scenario>Given two reviewers with the same spec under review open in two browsers. When the second reviewer looks at the page before anyone saves anything.</span> <span data-acceptance-observable>Then the page shows the spec and its review controls with no list of viewers and no other reviewer's selection.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-agent-edit-banner" data-story="story-anchor"><span data-acceptance-scenario>Given a reviewer with a spec under review open. When the agent edits the spec.</span> <span data-acceptance-observable>Then within 5 seconds the page shows <q>Spec updated by agent</q> with a Reload button, and the page keeps the text it loaded until the reviewer presses Reload.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-local-file" data-story="story-live story-agent"><span data-acceptance-scenario>Given a reviewer who opens a spec as a plain file in a browser that supports folder access, and grants write access to its folder. When they save a comment and hand off.</span> <span data-acceptance-observable>Then the page shows the thread as pending, and the owning agent's next scan reports that hand-off.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-legacy-author" data-story="story-live"><span data-acceptance-scenario>Given a reviewer on a spec whose spool holds a comment saved by an older page that recorded an author name but no browser, and a comment that recorded neither, on a fixture that must be added to provide them. When they open the threads.</span> <span data-acceptance-observable>Then the first comment shows its saved author name, and the second shows <q>Reviewer</q>.</span></p>
 <p data-anchor="acceptance-rules-note">Onboarding: not needed, shared state extends the review page with no new user surface.</p>
 </section>
 
@@ -83,7 +86,7 @@
 
 <section data-anchor="live">
 <h2>Live review</h2>
-<p data-anchor="live-pull">The page asks the service for events it does not hold at least every 2 seconds, and shows them without reloading.</p>
+<p data-anchor="live-pull">The page reads the review's events from the service at least every 2 seconds, and shows new ones without reloading.</p>
 <p data-anchor="live-save">The page names each event before sending it, so a resend after a lost response stores nothing new.</p>
 <p data-anchor="live-handoff">A hand-off lists the event ids it hands off in <code>events</code>: its browser's drafts. Only those become pending; other reviewers' drafts stay drafts. A hand-off without <code>events</code> hands off every draft.</p>
 <p data-anchor="live-accept">Accept spec is offered when every thread is resolved and no open TBD remains, whoever's thread it is, and writes the existing empty hand-off.</p>
