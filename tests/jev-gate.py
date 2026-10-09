@@ -4,6 +4,7 @@ import importlib.util
 import json
 import threading
 import unittest
+import unittest.mock
 from pathlib import Path
 
 
@@ -293,6 +294,23 @@ class ClaudeCliOnlyTest(unittest.TestCase):
         question = draft_check()["chain"][1]
         result = seam.ask(question)
         self.assertEqual(primary.general_calls, ["contradicts"])
+        self.assertEqual(result["answer"]["label"], "yes")
+
+    def test_verify_band_runs_through_the_cli_provider(self):
+        """#verifier-role: with no injected provider the verify band calls the CLI general LLM and shows its yes."""
+        primary = FakeProvider({"contradicts": ("yes", 0.8)}, general={"contradicts": "yes"})
+        seam = jev.JevSeam(SETS, api_key="fake")
+        seam.provider = lambda: primary
+        payloads = []
+
+        def cli_complete(_self, payload):
+            payloads.append(payload)
+            return primary.complete(payload)
+
+        with unittest.mock.patch.object(jev.ClaudeCliProvider, "complete", cli_complete):
+            result = seam.ask(draft_check()["chain"][1])
+        self.assertEqual([payload["model"] for payload in payloads], [""])
+        self.assertEqual(result["outcome"], "shown")
         self.assertEqual(result["answer"]["label"], "yes")
 
     def test_record_source_jev_for_primary(self):
