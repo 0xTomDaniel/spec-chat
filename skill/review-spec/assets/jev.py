@@ -1996,6 +1996,11 @@ EXCLUDED_COLLECTION_DIRS = frozenset({"evidence", "evidence-bundle", "evidence-b
                                       "support", "supports"})
 # Warm-up status: one table per project in Spec Chat's one onboarding.toml (project-rules #bootstrap-status).
 ONBOARDING_TABLE = "project"
+# The warm-up definition, what the warm-up asks and publishes: bump on any change to either, so every project
+# whose done status ran under an earlier one warms again (project-rules #bootstrap-once).
+WARM_DEFINITION = 1
+# Human decisions in a project's table: each offer's sent or dismissed, kept through a rerun (#bootstrap-once).
+OFFER_FIELDS = ("offer", "offer_at", "candidate_offer", "candidate_offer_at")
 OFFER_ACTIONS = frozenset({"sent", "dismissed"})
 
 
@@ -2858,8 +2863,10 @@ class JevService:
     def warm(self, rows: Any) -> list[str]:
         """Start the warm-up for each registered project not yet warmed; never waits (#bootstrap-once).
 
-        A project is warmed once: a done status is never redone. A failed or interrupted warm-up is started
-        again on the next server start. With Jev off nothing runs and nothing is written, so no offer shows."""
+        A done status is not redone while its warm-up definition is current; one under an earlier definition
+        warms again, keeping each offer's sent or dismissed (rule decisions live in the records). A failed or
+        interrupted warm-up is started again on the next server start. With Jev off nothing runs and nothing is
+        written, so no offer shows."""
         if not self.enabled:
             return []
         projects: dict[str, list[Mapping[str, Any]]] = {}
@@ -2868,17 +2875,19 @@ class JevService:
                 projects.setdefault(str(row["project"]), []).append(row)
         started = []
         for project, members in projects.items():
-            status: dict[str, Any] = {"state": "running",
-                                      "started_at": _now(), "criteria_classified": 0, "candidates": [], "rules": [],
-                                      "specs_to_reconcile": 0, "reconcile": []}
             with self._status_lock:
                 # A later Confirm rule checks main's specs of this project against that rule (#bootstrap-offer).
                 self.__dict__.setdefault("_warm_rows", {})[project] = members
                 if project in self._warm_started:
                     continue
-                if (self.onboarding_status(project) or {}).get("state") == "done":
+                held = self.onboarding_status(project) or {}
+                if held.get("state") == "done" and held.get("definition") == WARM_DEFINITION:
                     self._warm_started.add(project)
                     continue
+                status: dict[str, Any] = {"state": "running", "definition": WARM_DEFINITION,
+                                          "started_at": _now(), "criteria_classified": 0, "candidates": [],
+                                          "rules": [], "specs_to_reconcile": 0, "reconcile": [],
+                                          **{key: held[key] for key in OFFER_FIELDS if key in held}}
                 try:
                     self._write_status(project, status)
                 except (OSError, ValueError):

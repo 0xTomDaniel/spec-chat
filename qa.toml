@@ -193,6 +193,8 @@ cannot_host = "the reviewed base is written by review-host when a hand-off is pr
 cannot_host = "the accepted flag is written by review-host reviewed; review-host does not run here (the fixture writes the registry)"
 [entry.criteria.acceptance-warm]
 cannot_host = "register is review-host's, which does not run here (the fixture writes the registry)"
+[entry.criteria.acceptance-rewarm]
+cannot_host = "the fixture registers fresh projects each reset, so no project holds a done warm-up under an earlier warm-up definition with a confirmed rule, a dismissed rule, and an offer sent; proven by tests/review-serve-jev-bootstrap.py test_changed_warm_up_definition_reruns_keeping_human_decisions"
 [entry.stories.story-proven]
 cannot_host = "no evidence provider (providers/evidence.toml absent), so no criterion carries evidence"
 [entry.stories.story-open-proof]
