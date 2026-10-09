@@ -210,45 +210,45 @@ CI: the Jev seam and runtime tests run in CI with no Jev provider installed and 
 <figure data-anchor="flow-figure">
 <div class="rail-wrap" data-anchor="flow-figure-scroll">
 <svg viewBox="0 0 780 380" style="min-width: 620px" role="img" aria-label="Swimlane. Browser: 1 focus renders at once, then calls GET /api/jev with path and base. Review server: 2 ranks top-k candidates, builds questions from its own file, Git, and spool; on a cache hit it goes straight to 6; on a miss it posts to Jev. Jev: 4 returns yes/no with probabilities. Review server: 5 applies asymmetric threshold: high P(yes) shows, verify band goes to the general LLM verifier which must quote the conflicting span, low P(yes) is silent. Review server: 6 writes the judgment record and caches. Browser: 7 shows a margin marker, or stays neutral.">
-<rect x="0" y="0" width="780" height="82" fill="#f4f6fb"></rect>
-<rect x="0" y="82" width="780" height="110" fill="#ffffff"></rect>
-<rect x="0" y="192" width="780" height="90" fill="#f4f6fb"></rect>
-<rect x="0" y="282" width="780" height="98" fill="#ffffff"></rect>
-<line x1="0" y1="82" x2="780" y2="82" stroke="#8a8f99"></line>
-<line x1="0" y1="192" x2="780" y2="192" stroke="#8a8f99"></line>
-<line x1="0" y1="282" x2="780" y2="282" stroke="#8a8f99"></line>
-<text x="12" y="50" fill="#171719" font-size="14" font-weight="700">Browser</text>
-<text x="12" y="140" fill="#171719" font-size="14" font-weight="700">Review server</text>
-<text x="12" y="240" fill="#171719" font-size="14" font-weight="700">Jev (OpenRouter)</text>
-<text x="12" y="336" fill="#171719" font-size="14" font-weight="700">General LLM</text>
-<rect x="100" y="22" width="190" height="38" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="112" y="46" fill="#171719" font-size="13">1 Focus renders at once</text>
-<rect x="596" y="22" width="176" height="38" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="608" y="46" fill="#171719" font-size="13">7 Marker, or silent</text>
-<rect x="100" y="96" width="220" height="38" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="112" y="120" fill="#171719" font-size="13">2 Top-k candidates, gate</text>
-<rect x="460" y="96" width="220" height="38" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="472" y="120" fill="#171719" font-size="13">5 Asymmetric threshold</text>
-<rect x="460" y="144" width="220" height="38" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="472" y="168" fill="#171719" font-size="13">6 Record, cache</text>
-<rect x="300" y="214" width="200" height="38" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="312" y="238" fill="#171719" font-size="13">3 Yes/no + probabilities</text>
-<rect x="300" y="306" width="220" height="38" rx="6" fill="#ffffff" stroke="#2947c7" stroke-width="1.5"></rect>
-<text x="312" y="330" fill="#171719" font-size="13">4 Verifier: quote spans</text>
-<path d="M195 60 L210 94" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
-<text x="215" y="78" fill="#171719" font-size="12">GET /api/jev</text>
-<path d="M280 134 L340 212" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
-<text x="130" y="198" fill="#171719" font-size="12">3 miss: POST decisions</text>
-<path d="M320 134 L456 118" stroke="#171719" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#flow-arrow)"></path>
-<text x="358" y="112" fill="#171719" font-size="12">cache hit</text>
-<path d="M460 214 L520 136" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
-<path d="M570 134 L570 142" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
-<path d="M570 134 L540 304" stroke="#171719" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#flow-arrow)"></path>
-<text x="580" y="222" fill="#171719" font-size="12">verify band</text>
-<path d="M480 306 L520 184" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
-<path d="M610 144 L660 62" stroke="#171719" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)"></path>
-<text x="642" y="100" fill="#171719" font-size="12">labels</text>
-<defs><marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#171719"></path></marker></defs>
+<rect x="0" y="0" width="780" height="82" style="fill: var(--spec-paper)"></rect>
+<rect x="0" y="82" width="780" height="110" style="fill: var(--spec-surface)"></rect>
+<rect x="0" y="192" width="780" height="90" style="fill: var(--spec-paper)"></rect>
+<rect x="0" y="282" width="780" height="98" style="fill: var(--spec-surface)"></rect>
+<line x1="0" y1="82" x2="780" y2="82" style="stroke: var(--spec-muted)"></line>
+<line x1="0" y1="192" x2="780" y2="192" style="stroke: var(--spec-muted)"></line>
+<line x1="0" y1="282" x2="780" y2="282" style="stroke: var(--spec-muted)"></line>
+<text x="12" y="50" font-size="14" font-weight="700" style="fill: var(--spec-ink)">Browser</text>
+<text x="12" y="140" font-size="14" font-weight="700" style="fill: var(--spec-ink)">Review server</text>
+<text x="12" y="240" font-size="14" font-weight="700" style="fill: var(--spec-ink)">Jev (OpenRouter)</text>
+<text x="12" y="336" font-size="14" font-weight="700" style="fill: var(--spec-ink)">General LLM</text>
+<rect x="100" y="22" width="190" height="38" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="112" y="46" font-size="13" style="fill: var(--spec-ink)">1 Focus renders at once</text>
+<rect x="596" y="22" width="176" height="38" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="608" y="46" font-size="13" style="fill: var(--spec-ink)">7 Marker, or silent</text>
+<rect x="100" y="96" width="220" height="38" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="112" y="120" font-size="13" style="fill: var(--spec-ink)">2 Top-k candidates, gate</text>
+<rect x="460" y="96" width="220" height="38" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="472" y="120" font-size="13" style="fill: var(--spec-ink)">5 Asymmetric threshold</text>
+<rect x="460" y="144" width="220" height="38" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="472" y="168" font-size="13" style="fill: var(--spec-ink)">6 Record, cache</text>
+<rect x="300" y="214" width="200" height="38" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="312" y="238" font-size="13" style="fill: var(--spec-ink)">3 Yes/no + probabilities</text>
+<rect x="300" y="306" width="220" height="38" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="312" y="330" font-size="13" style="fill: var(--spec-ink)">4 Verifier: quote spans</text>
+<path d="M195 60 L210 94" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)" style="stroke: var(--spec-ink)"></path>
+<text x="215" y="78" font-size="12" style="fill: var(--spec-ink)">GET /api/jev</text>
+<path d="M280 134 L340 212" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)" style="stroke: var(--spec-ink)"></path>
+<text x="130" y="198" font-size="12" style="fill: var(--spec-ink)">3 miss: POST decisions</text>
+<path d="M320 134 L456 118" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#flow-arrow)" style="stroke: var(--spec-ink)"></path>
+<text x="358" y="112" font-size="12" style="fill: var(--spec-ink)">cache hit</text>
+<path d="M460 214 L520 136" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)" style="stroke: var(--spec-ink)"></path>
+<path d="M570 134 L570 142" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)" style="stroke: var(--spec-ink)"></path>
+<path d="M570 134 L540 304" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#flow-arrow)" style="stroke: var(--spec-ink)"></path>
+<text x="580" y="222" font-size="12" style="fill: var(--spec-ink)">verify band</text>
+<path d="M480 306 L520 184" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)" style="stroke: var(--spec-ink)"></path>
+<path d="M610 144 L660 62" stroke-width="1.5" fill="none" marker-end="url(#flow-arrow)" style="stroke: var(--spec-ink)"></path>
+<text x="642" y="100" font-size="12" style="fill: var(--spec-ink)">labels</text>
+<defs><marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill: var(--spec-ink)"></path></marker></defs>
 </svg>
 </div>
 <figcaption data-anchor="flow-figure-caption">One suggestion round: the page never waits for Jev; a draft-check answer in the verify band goes to the general LLM verifier before showing; the key never leaves the server.</figcaption>
@@ -386,18 +386,18 @@ CI: the Jev seam and runtime tests run in CI with no Jev provider installed and 
 <figure data-anchor="markers-figure">
 <div class="rail-wrap" data-anchor="markers-figure-scroll">
 <svg viewBox="0 0 760 220" style="min-width: 600px" role="img" aria-label="A spec section with two clauses. The first clause has a neutral grey dot in the right margin. The second has a red dot with an exclamation glyph; its open popover lists Contradicts #non-goal-text with an Ask agent to reconcile button, and Behavior with a Comment on this change button.">
-<text x="12" y="34" fill="#171719" font-size="14">The picker lists at most 20 commits that changed this spec.</text>
-<circle cx="560" cy="29" r="6" fill="#8a8f99"></circle>
-<text x="12" y="74" fill="#171719" font-size="14">The picker also lists commits from other branches.</text>
-<circle cx="560" cy="69" r="8" fill="#b42318"></circle>
-<text x="556" y="74" fill="#ffffff" font-size="12" font-weight="700">!</text>
-<rect x="400" y="86" width="340" height="124" rx="6" fill="#ffffff" stroke="#303036" stroke-width="1.5"></rect>
-<text x="414" y="110" fill="#b42318" font-size="13" font-weight="700">Contradicts #non-goal-head</text>
-<rect x="414" y="118" width="184" height="24" rx="4" fill="#ffffff" stroke="#2947c7"></rect>
-<text x="424" y="135" fill="#2947c7" font-size="12" font-weight="700">Ask agent to reconcile</text>
-<text x="414" y="166" fill="#303036" font-size="13" font-weight="700">Behavior</text>
-<rect x="414" y="174" width="200" height="24" rx="4" fill="#ffffff" stroke="#2947c7"></rect>
-<text x="424" y="191" fill="#2947c7" font-size="12" font-weight="700">Comment on this change</text>
+<text x="12" y="34" font-size="14" style="fill: var(--spec-ink)">The picker lists at most 20 commits that changed this spec.</text>
+<circle cx="560" cy="29" r="6" style="fill: var(--spec-muted)"></circle>
+<text x="12" y="74" font-size="14" style="fill: var(--spec-ink)">The picker also lists commits from other branches.</text>
+<circle cx="560" cy="69" r="8" style="fill: var(--spec-red)"></circle>
+<text x="556" y="74" font-size="12" font-weight="700" style="fill: var(--spec-surface)">!</text>
+<rect x="400" y="86" width="340" height="124" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-body)"></rect>
+<text x="414" y="110" font-size="13" font-weight="700" style="fill: var(--spec-red)">Contradicts #non-goal-head</text>
+<rect x="414" y="118" width="184" height="24" rx="4" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="424" y="135" font-size="12" font-weight="700" style="fill: var(--spec-blue)">Ask agent to reconcile</text>
+<text x="414" y="166" font-size="13" font-weight="700" style="fill: var(--spec-body)">Behavior</text>
+<rect x="414" y="174" width="200" height="24" rx="4" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="424" y="191" font-size="12" font-weight="700" style="fill: var(--spec-blue)">Comment on this change</text>
 </svg>
 </div>
 <figcaption data-anchor="markers-figure-caption">Markers in the margin: neutral for ordinary notes, colored with a glyph for a conflict; the open popover holds the notes and their buttons.</figcaption>

@@ -477,33 +477,34 @@ Where a repo's ADRs carry no number, the line names the new ADR by a link to its
 <svg viewBox="0 0 600 680" role="img">
 <title>Review wake ownership state machine</title>
 <g font-family="ui-monospace, Menlo, monospace">
-<rect x="40" y="35" width="520" height="135" fill="#fffefa" stroke="#171719" stroke-width="3"/>
-<rect x="40" y="35" width="10" height="135" fill="#087158"/>
-<text x="78" y="78" font-size="28" font-weight="700" fill="#171719">TURN-YIELDED</text>
-<text x="78" y="113" font-size="22" fill="#303036">same turn owns wait</text>
-<text x="78" y="143" font-size="20" font-weight="700" fill="#087158">FINAL FORBIDDEN</text>
-<path d="M300 170 V225" fill="none" stroke="#171719" stroke-width="3"/>
-<polygon points="300,237 291,220 309,220" fill="#171719"/>
-<text x="322" y="207" font-size="18" fill="#5c5c63">wake=verified</text>
-<rect x="40" y="237" width="520" height="135" fill="#fffefa" stroke="#171719" stroke-width="3"/>
-<rect x="40" y="237" width="10" height="135" fill="#2947c7"/>
-<text x="78" y="280" font-size="28" font-weight="700" fill="#171719">HOST-WAKE</text>
-<text x="78" y="315" font-size="22" fill="#303036">review host wakes owner pane</text>
-<text x="78" y="345" font-size="20" font-weight="700" fill="#2947c7">FINAL ALLOWED</text>
-<path d="M300 372 V427" fill="none" stroke="#171719" stroke-width="3"/>
-<polygon points="300,439 291,422 309,422" fill="#171719"/>
-<text x="322" y="409" font-size="18" fill="#5c5c63">wake=unavailable</text>
-<rect x="40" y="439" width="520" height="135" fill="#fffefa" stroke="#171719" stroke-width="3"/>
-<rect x="40" y="439" width="10" height="135" fill="#835600"/>
-<text x="78" y="482" font-size="28" font-weight="700" fill="#171719">MANUAL-RESUME</text>
-<text x="78" y="517" font-size="22" fill="#303036">no automatic wake claim</text>
-<text x="78" y="547" font-size="20" font-weight="700" fill="#835600">NEW HUMAN MESSAGE REQUIRED</text>
-<path d="M40 627 H560" fill="none" stroke="#171719" stroke-width="2"/>
-<text x="300" y="654" text-anchor="middle" font-size="20" font-weight="700" fill="#303036">NO GENERIC WATCHING STATE</text>
+<rect x="40" y="35" width="520" height="135" stroke-width="3" style="fill: var(--spec-surface); stroke: var(--spec-ink)"/>
+<rect x="40" y="35" width="10" height="135" style="fill: var(--spec-teal)"/>
+<text x="78" y="78" font-size="28" font-weight="700" style="fill: var(--spec-ink)">TURN-YIELDED</text>
+<text x="78" y="113" font-size="22" style="fill: var(--spec-body)">same turn owns wait</text>
+<text x="78" y="143" font-size="20" font-weight="700" style="fill: var(--spec-teal)">FINAL FORBIDDEN</text>
+<path d="M300 170 V225" fill="none" stroke-width="3" style="stroke: var(--spec-ink)"/>
+<polygon points="300,237 291,220 309,220" style="fill: var(--spec-ink)"/>
+<text x="322" y="207" font-size="18" style="fill: var(--spec-muted)">wake=verified</text>
+<rect x="40" y="237" width="520" height="135" stroke-width="3" style="fill: var(--spec-surface); stroke: var(--spec-ink)"/>
+<rect x="40" y="237" width="10" height="135" style="fill: var(--spec-blue)"/>
+<text x="78" y="280" font-size="28" font-weight="700" style="fill: var(--spec-ink)">HOST-WAKE</text>
+<text x="78" y="315" font-size="22" style="fill: var(--spec-body)">review host wakes owner pane</text>
+<text x="78" y="345" font-size="20" font-weight="700" style="fill: var(--spec-blue)">FINAL ALLOWED</text>
+<path d="M300 372 V427" fill="none" stroke-width="3" style="stroke: var(--spec-ink)"/>
+<polygon points="300,439 291,422 309,422" style="fill: var(--spec-ink)"/>
+<text x="322" y="409" font-size="18" style="fill: var(--spec-muted)">wake=unavailable</text>
+<rect x="40" y="439" width="520" height="135" stroke-width="3" style="fill: var(--spec-surface); stroke: var(--spec-ink)"/>
+<rect x="40" y="439" width="10" height="135" style="fill: var(--spec-amber)"/>
+<text x="78" y="482" font-size="28" font-weight="700" style="fill: var(--spec-ink)">MANUAL-RESUME</text>
+<text x="78" y="517" font-size="22" style="fill: var(--spec-body)">no automatic wake claim</text>
+<text x="78" y="547" font-size="20" font-weight="700" style="fill: var(--spec-amber)">NEW HUMAN MESSAGE REQUIRED</text>
+<path d="M40 627 H560" fill="none" stroke-width="2" style="stroke: var(--spec-ink)"/>
+<text x="300" y="654" text-anchor="middle" font-size="20" font-weight="700" style="fill: var(--spec-body)">NO GENERIC WATCHING STATE</text>
 </g>
 </svg>
 <figcaption id="wake-state-caption">Figure: final response is legal only after host wake is verified or the review is explicitly downgraded to manual resume.</figcaption>
 </figure>
+<div class="table-scroll" data-anchor="wake-state-table-scroll">
 <table data-anchor="wake-state-table">
 <thead><tr><th>Control state</th><th>Wake owner</th><th>Final response</th><th>Reviewer promise</th></tr></thead>
 <tbody>
@@ -512,6 +513,7 @@ Where a repo's ADRs carry no number, the line names the new ADR by a link to its
 <tr data-anchor="wake-state-manual"><td>manual-resume</td><td>The human</td><td>Allowed</td><td>Send a new chat message to drain queued work</td></tr>
 </tbody>
 </table>
+</div>
 <p data-anchor="wake-raw-watcher">A raw shell watcher is detection-only and never establishes turn-yielded or host-wake state.</p>
 <p data-anchor="wake-monitor">The review host observes complete handoffs per registered resource without advancing the processing cursor and wakes that row's owner pane once per unchanged batch, as defined by <a href="./host-wake.spec.html#wake-rule">Review host wakes the owner pane</a>.</p>
 <p data-anchor="wake-exclusive-owner">A local kernel-held lock permits one turn-yielded control owner for each canonical collection root and cursor name, and a second owner fails visibly into manual resume.</p>
@@ -740,6 +742,7 @@ Where a repo's ADRs carry no number, the line names the new ADR by a link to its
 <p data-anchor="visual-quality-recheck">Runtime and shared-style regressions are caught by Spec Chat's own tests and preflight, not by each shaping lane.</p>
 <p data-anchor="visual-quality-evidence">Corrections are grouped before rechecking, and evidence matches the checks performed without regenerating every full page, tile, and contact sheet after each small edit.</p>
 <p data-anchor="visual-quality-focus">The base palette and focus treatment are evaluated together so changed material leads clearly while unchanged context remains readable rather than disappearing into an already weak page.</p>
+<div class="table-scroll" data-anchor="visual-quality-corrections-scroll">
 <table data-anchor="visual-quality-corrections">
 <thead><tr><th>Observed failure</th><th>Required positive case</th><th>Proof before publication</th></tr></thead>
 <tbody>
@@ -751,6 +754,8 @@ Where a repo's ADRs carry no number, the line names the new ADR by a link to its
 <tr data-anchor="visual-quality-correction-review-routing"><td>An existing-spec review materially expands a weak page without loading shaping quality</td><td>The review skill routes material authoring through the shaping skill before editing and old pages receive no exemption</td><td>The complete affected page passes information-shape classification and the structural validator before replies</td></tr>
 </tbody>
 </table>
+</div>
+<div class="table-scroll" data-anchor="visual-quality-forms-scroll">
 <table data-anchor="visual-quality-forms">
 <thead><tr><th>Information</th><th>Preferred artifact</th><th>Quality failure to reject</th></tr></thead>
 <tbody>
@@ -761,12 +766,14 @@ Where a repo's ADRs carry no number, the line names the new ADR by a link to its
 <tr data-anchor="visual-quality-form-obligation"><td>Coverage and proof</td><td>Identified acceptance or failure table</td><td>Unscannable prose checklist</td></tr>
 </tbody>
 </table>
+</div>
 </section>
 
 <section data-anchor="information-shape-doctrine" id="information-shape-doctrine">
 <h2>Information-shape doctrine</h2>
 <p data-anchor="information-shape-question">The organizing question is: what shape is this information, and what medium loses the least of it?</p>
 <p data-anchor="information-shape-visual-rule">A visual element is preferred whenever it materially improves comprehension, comparison, error detection, memory, or review of contract-bearing structure, and prose remains primary only when it is equally or more legible.</p>
+<div class="table-scroll" data-anchor="information-shape-map-scroll">
 <table data-anchor="information-shape-map">
 <thead>
 <tr data-anchor="information-shape-head"><th>Information</th><th>Required form</th><th>Loss prevented</th></tr>
@@ -788,6 +795,7 @@ Where a repo's ADRs carry no number, the line names the new ADR by a link to its
 <tr data-anchor="information-shape-confusion"><td>Predictable confusion</td><td>Disambiguation beside the conflicting terms or values</td><td>Appendices are not consulted at the moment of confusion</td></tr>
 </tbody>
 </table>
+</div>
 <p data-anchor="information-shape-addressability">Everything contract-bearing is addressable through stable section, clause, figure, table-row, and acceptance identifiers so reviewers name the rule rather than describe its location.</p>
 <p data-anchor="information-shape-load-bearing">Visuals are load-bearing: changing a contract diagram changes the contract, and a visual removable without information loss is decoration.</p>
 <p data-anchor="information-shape-resolution">Repetition is allowed only when it presents the same rule at different useful resolutions, never when two forms become competing authorities.</p>
