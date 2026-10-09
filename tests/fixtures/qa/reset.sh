@@ -19,14 +19,15 @@
 # -confirmed, by the fake as that project warms up (serve.py), and a candidate in any
 # other. The entry project is confirmed for the stories below, whose criteria are
 # Given a confirmed rule; rule-candidate and rule-confirmed are each their own project,
-# for a criterion whose Given differs from its story's (qa.toml nav).
+# for a criterion whose Given differs from its story's (qa.toml nav); rule-confirmed-c is
+# a second collection of rule-confirmed's project.
 set -eu
 confirmed_stories=" story-home story-miss story-card story-agent story-dismiss story-copies
   story-own-project story-bootstrap story-labels "
-collections="qa-fixture rule-candidate rule-confirmed tbd-later tbd-later-handoff tbd-open-highlight tbd-open-single
+collections="qa-fixture rule-candidate rule-confirmed rule-confirmed-c tbd-later tbd-later-handoff tbd-open-highlight tbd-open-single
   next-tbd next-tbd-step next-tbd-handoff tbd-open-jump tbd-open-wrap mobile-composer
   block-target-enter block-target-space block-target-off
-  anchor-moved anchor-changed anchor-gone stale-page agent-scan name-reply qa-1 qa-2"
+  anchor-moved anchor-changed anchor-gone stale-page agent-scan name-reply advice qa-1 qa-2"
 site="$QA_ROOT/site"
 serve="$QA_ROOT/serve"
 repo="$site/.repo"
@@ -58,7 +59,8 @@ case "$confirmed_stories" in *" ${QA_STORY:-none} "*) entry="$project-confirmed"
 python3 - "$serve/registry.toml" "$site" "$base" "$entry" "$project" $collections <<'PY'
 import json, os, sys
 registry, site, base, entry, project, *collections = sys.argv[1:]
-own = {"rule-candidate": project + "-rule-candidate", "rule-confirmed": project + "-rule-confirmed"}
+own = {"rule-candidate": project + "-rule-candidate", "rule-confirmed": project + "-rule-confirmed",
+       "rule-confirmed-c": project + "-rule-confirmed"}
 rows = []
 for slug in collections:
     for spec in ("onboarding", "report", "later-only", "one-open"):

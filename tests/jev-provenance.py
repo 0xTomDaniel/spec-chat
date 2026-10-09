@@ -102,28 +102,45 @@ class TestProvenance(unittest.TestCase):
         self.assertEqual(rec["verify_cutoff"], SETS["contradicts"].verify_cutoff)
 
     def test_verifier_field_when_present(self):
-        """#proof-provenance: when verifier ran, record carries verifier answer and spans."""
-        provider = FakeProvider({
-            "contradicts": {"choice": "yes", "probabilities": {"yes": 0.95, "no": 0.05}, "confidence": 0.9},
+        """#proof-provenance, #acceptance-provenance-verifier: a verify-band draft check the verifier ran on
+        carries the same inputs, pairing, and cutoffs, plus the verifier's answer and quoted spans."""
+        class VerifyBand(FakeProvider):
+            def complete(self, payload):
+                return {"choices": [{"message": {"content": json.dumps(
+                    {"answer": "yes", "clause_span": "conflict here", "target_span": "also here"})}}]}
+        provider = VerifyBand({
+            "contradicts": {"choice": "yes", "probabilities": {"yes": 0.80, "no": 0.20}, "confidence": 0.80},
         })
         store = jev.JudgmentStore()
         seam = jev.JevSeam(SETS, provider=provider, api_key="fake",
                            record_store=store, clock=lambda: "2026-09-28T00:00:00.000Z")
-
-        # Simulate a question with verifier info attached
         question = {
             "kind": "contradicts",
             "state": {"before": "old", "after": "new text", "target": "target text"},
             "sources": ["spec#a"], "revision": {"base": "b", "head": "h"},
             "pairing": {"rule": "cross-spec", "rank": 2, "gate": "yes"},
-            "verifier": {"ran": True, "answer": "yes", "spans": ["conflict here", "also here"]},
         }
         record = seam.ask(question)
 
-        self.assertIn("verifier", record)
-        self.assertTrue(record["verifier"]["ran"])
-        self.assertEqual(record["verifier"]["answer"], "yes")
-        self.assertEqual(record["verifier"]["spans"], ["conflict here", "also here"])
+        self.assertEqual(record["outcome"], "verified")
+        self.assertEqual(record["inputs"]["clause_text"], "new text")
+        self.assertEqual(record["pairing"], {"rule": "cross-spec", "rank": 2, "gate": "yes"})
+        self.assertEqual(record["show_cutoff"], SETS["contradicts"].show_cutoff)
+        self.assertEqual(record["verify_cutoff"], SETS["contradicts"].verify_cutoff)
+        self.assertEqual(record["verifier"], {"ran": True, "answer": "yes",
+                                              "spans": {"clause": "conflict here", "target": "also here"}})
+
+    def test_no_verifier_field_when_verifier_did_not_run(self):
+        """#record-verifier: absent when the verifier did not run, even if a question carries one."""
+        provider = FakeProvider({
+            "contradicts": {"choice": "yes", "probabilities": {"yes": 0.95, "no": 0.05}, "confidence": 0.95},
+        })
+        seam = jev.JevSeam(SETS, provider=provider, api_key="fake", record_store=jev.JudgmentStore())
+        record = seam.ask({"kind": "contradicts", "state": {"before": "o", "after": "n", "target": "t"},
+                           "sources": ["spec#a"], "revision": {"base": "b", "head": "h"},
+                           "verifier": {"ran": True, "answer": "yes"}})
+        self.assertEqual(record["outcome"], "shown")
+        self.assertNotIn("verifier", record)
 
     def test_non_draft_check_has_no_provenance(self):
         """Gate and non-draft-check questions have no inputs/pairing/verifier."""

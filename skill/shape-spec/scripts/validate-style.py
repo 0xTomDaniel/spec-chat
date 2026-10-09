@@ -59,15 +59,12 @@ class SpecParser(HTMLParser):
                 "headings": [],
                 "criteria": [],
                 "boundaries": [],
-                "has_tbd": False,
             }
             self.sections.append(section)
             if top_level:
                 self.top_level_sections.append(section)
             self.section_stack.append(section)
         section = self._section()
-        if section and "data-spec-tbd" in values:
-            section["has_tbd"] = True
         if "data-user-story" in values:
             story = {
                 "tag": tag,
@@ -87,7 +84,7 @@ class SpecParser(HTMLParser):
         if tag in {"h2", "h3"} and section:
             self._capture("heading", tag, depth, section)
         if "data-acceptance-criterion" in values:
-            criterion = {"anchor": anchor, "fields": {}, "tag": tag, "depth": depth, "has_tbd": "data-spec-tbd" in values, "stories": (values.get("data-story") or "").split()}
+            criterion = {"anchor": anchor, "fields": {}, "tag": tag, "depth": depth, "stories": (values.get("data-story") or "").split()}
             if section:
                 section["criteria"].append(criterion)
             self.active_criteria.append(criterion)
@@ -259,13 +256,11 @@ def validate_shape_sections(parser):
         if scope:
             if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", scope):
                 return "Acceptance criteria data-acceptance-scope must be descriptive"
-            if scope in {"deferred", "tbd", "unknown"} or acceptance["has_tbd"]:
+            if scope in {"deferred", "tbd", "unknown"}:
                 return f"Acceptance criteria scope {scope} cannot be deferred"
             if scope in scopes:
                 return f"Acceptance criteria scope {scope} is duplicated"
             scopes.append(scope)
-        elif acceptance["has_tbd"]:
-            return "Acceptance criteria without a scope cannot be deferred"
         label = scope or "governing"
         if not acceptance["criteria"]:
             return f"{label} Acceptance criteria section needs at least one data-acceptance-criterion"
@@ -273,8 +268,6 @@ def validate_shape_sections(parser):
         if any(not anchor for anchor in criterion_anchors) or len(set(criterion_anchors)) != len(criterion_anchors):
             return f"every {label} acceptance criterion needs one unique data-anchor"
         for criterion in acceptance["criteria"]:
-            if criterion["has_tbd"]:
-                return f"{label} Acceptance criteria {criterion['anchor']} cannot be deferred"
             if not criterion["fields"].get("scenario"):
                 return f"{label} acceptance criterion {criterion['anchor']} needs an observable scenario"
             if not criterion["fields"].get("observable"):

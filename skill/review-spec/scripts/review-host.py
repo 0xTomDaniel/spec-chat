@@ -21,7 +21,7 @@ import tomllib
 import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Collection, Mapping, Sequence
 
 
 SCRIPT = Path(__file__).resolve()
@@ -406,8 +406,9 @@ def require_fields(record: Mapping[str, Any]) -> None:
         raise LauncherError("resource missing required field: " + ", ".join(missing))
 
 
-def validate_records(records: Sequence[Mapping[str, Any]], stale_ids: frozenset[str] = frozenset()) -> None:
-    """Structural checks always run. Filesystem checks (worktree, spec file, base commit) are skipped for stale_ids."""
+def validate_records(records: Sequence[Mapping[str, Any]], touched: Collection[str] = ()) -> None:
+    """Structural checks always run. An untouched row whose spec cannot be reached is reported as stale and
+    skips filesystem checks (worktree, spec file, base commit); touched rows always get them."""
     ids: set[str] = set()
     stable: set[str] = set()
     for record in records:
@@ -424,7 +425,10 @@ def validate_records(records: Sequence[Mapping[str, Any]], stale_ids: frozenset[
         spec = record["spec"].replace("\\", "/")
         if spec.startswith("/") or not spec.endswith(".spec.html"):
             raise LauncherError(f"resource spec path is invalid: {spec}")
-        if rid not in stale_ids:
+        reason = None if rid in touched else is_row_stale(record)
+        if reason:
+            print(f"review-host: warning: stale row {rid}: {reason}", file=sys.stderr)
+        else:
             top = resource_toplevel(root)
             if root.resolve() != top:
                 raise LauncherError(f"resource root must be worktree toplevel: {rid}")
@@ -456,7 +460,8 @@ def is_row_stale(record: Mapping[str, Any]) -> str | None:
     return None
 
 
-def read_registry_document(path: Path, validate: bool = True) -> dict[str, Any]:
+def read_registry_document(path: Path) -> dict[str, Any]:
+    """Structural read only; each command validates the rows it acts on before any write."""
     document = read_toml(path, missing={"resource": []})
     if not isinstance(document, dict):
         raise LauncherError("registry must be a TOML table")
@@ -466,11 +471,8 @@ def read_registry_document(path: Path, validate: bool = True) -> dict[str, Any]:
     if any(not isinstance(item, dict) for item in records):
         raise LauncherError("registry resource entry must be a table")
     result = [dict(item) for item in records]
-    if validate:
-        validate_records(result)
-    else:
-        for record in result:
-            require_fields(record)
+    for record in result:
+        require_fields(record)
     process = document.get("process")
     if process is not None:
         if not isinstance(process, dict) or not isinstance(process.get("pid"), int) or not isinstance(process.get("port"), int):
@@ -483,9 +485,7 @@ def read_registry_document(path: Path, validate: bool = True) -> dict[str, Any]:
     return {"resource": result, "process": process}
 
 
-def write_registry(path: Path, records: Sequence[Mapping[str, Any]], process: Mapping[str, Any] | None = None,
-                   stale_ids: frozenset[str] = frozenset()) -> None:
-    validate_records(records, stale_ids)
+def write_registry(path: Path, records: Sequence[Mapping[str, Any]], process: Mapping[str, Any] | None = None) -> None:
     cleaned = [{key: record[key] for key in RESOURCE_FIELDS if key in record} for record in records]
     atomic_write(path, dump_registry(process, cleaned))
 
@@ -686,8 +686,8 @@ def state_lock(state: Path):
         os.close(descriptor)
 
 
-def registry_state(path: Path, validate: bool = True) -> tuple[list[dict[str, Any]], dict[str, int] | None]:
-    document = read_registry_document(path, validate)
+def registry_state(path: Path) -> tuple[list[dict[str, Any]], dict[str, int] | None]:
+    document = read_registry_document(path)
     return document["resource"], document["process"]
 
 
@@ -753,7 +753,7 @@ def register(args: argparse.Namespace) -> int:
     with state_lock(state):
         old_bytes = registry.read_bytes() if registry.exists() else None
         # Rows being replaced may point at a deleted root; only the resulting candidate set is validated.
-        existing, process = registry_state(registry, validate=False)
+        existing, process = registry_state(registry)
         additions = []
         for index, item in enumerate(parsed):
             assign_path(existing + parsed[:index], item)
@@ -761,17 +761,8 @@ def register(args: argparse.Namespace) -> int:
             additions.append(registry_record(item, old))
             item.update(additions[-1])
         replacement_ids = {item["id"] for item in additions}
-        stale_ids: set[str] = set()
-        for item in existing:
-            if item["id"] in replacement_ids:
-                continue
-            reason = is_row_stale(item)
-            if reason:
-                print(f"review-host: warning: stale row {item['id']}: {reason}", file=sys.stderr)
-                stale_ids.add(item["id"])
         candidate = [item for item in existing if item["id"] not in replacement_ids] + additions
-        stale = frozenset(stale_ids)
-        validate_records(candidate, stale)
+        validate_records(candidate, replacement_ids)
         child: subprocess.Popen[str] | None = None
         try:
             live = process and process_owns_registry(process["pid"], registry)
@@ -788,7 +779,7 @@ def register(args: argparse.Namespace) -> int:
             if live:
                 url = process.get("url") or running_url(log_path)
                 process = {**process, "url": url}
-                write_registry(registry, candidate, process, stale)
+                write_registry(registry, candidate, process)
                 for item in parsed:
                     prove_resource(url, item)
                 print_access(url, bind)
@@ -797,7 +788,7 @@ def register(args: argparse.Namespace) -> int:
 
             bind, host, recorded_port = plan or start_plan(args, process)
             port = select_start_port(bind, recorded_port)
-            write_registry(registry, candidate, stale_ids=stale)
+            write_registry(registry, candidate)
             command = server_command(registry, bind, port, host)
             with log_path.open("w", encoding="utf-8") as log:
                 child = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
@@ -820,7 +811,7 @@ def register(args: argparse.Namespace) -> int:
                 prove_resource(url, item)
             process = {"pid": child.pid, "port": urllib.parse.urlsplit(url).port or port, "bind": bind,
                        "host": host, "url": url}
-            write_registry(registry, candidate, process, stale)
+            write_registry(registry, candidate, process)
             print_access(url, bind)
             print_urls(url, additions, state)
             return 0
@@ -842,10 +833,11 @@ def remove(args: argparse.Namespace) -> int:
     state = state_dir(args)
     registry, _, _ = paths(state)
     with state_lock(state):
-        records, process = registry_state(registry, validate=False)
+        records, process = registry_state(registry)
         remaining = [record for record in records if record["id"] != args.id]
         if len(remaining) == len(records):
             raise LauncherError(f"unknown resource id: {args.id}")
+        validate_records(remaining)
         write_registry(registry, remaining, process)
         print(f"{args.id}: removed")
         return 0
@@ -860,6 +852,7 @@ def reviewed(args: argparse.Namespace) -> int:
         record = next((item for item in records if item["id"] == args.id), None)
         if record is None:
             raise LauncherError(f"unknown resource id: {args.id}")
+        validate_records(records, {args.id})
         root, spec = Path(record["root"]), record["spec"]
         if run_git(root, "status", "--porcelain", "--", spec):
             run_git(root, "add", "--", spec)
@@ -877,7 +870,7 @@ def stop(args: argparse.Namespace) -> int:
     registry, _, _ = paths(state)
     with state_lock(state):
         # Stop reads only [process]; resource rows may point at specs gone from their checkout.
-        _, process = registry_state(registry, validate=False)
+        _, process = registry_state(registry)
         if not process:
             raise LauncherError("registry has no running process")
         stop_process(process["pid"], registry)

@@ -45,9 +45,14 @@ def delete(text):
     return _replace(text, EXPORT_LINE, "")
 
 
-def _replace(text, old, new):
-    if text.count(old) != 1:
-        raise SystemExit("qa fixture: report spec no longer holds exactly one %r" % old)
+def later_tbds(spool):
+    """Advice: both open TBDs made later, so Accept spec shows beside the missed note."""
+    return lambda text: _replace(text, "data-spec-tbd>", 'data-spec-tbd="later">', count=2)
+
+
+def _replace(text, old, new, count=1):
+    if text.count(old) != count:
+        raise SystemExit("qa fixture: report spec no longer holds exactly %d %r" % (count, old))
     return text.replace(old, new)
 
 
@@ -141,6 +146,7 @@ COLLECTIONS = {
     "name-reply": no_events,
     "qa-1": every_status,
     "qa-2": one_open,
+    "advice": later_tbds,
 }
 # Lane-key collections, reached from the review index root (lane-hosting #index-threads); their
 # other specs have no threads.

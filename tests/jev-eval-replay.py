@@ -1,212 +1,172 @@
-"""Eval replay: baseline pipeline measurement (ANN-397).
+"""Eval replay: live replay of the frozen eval set through the current pipeline.
 
-Replays the frozen eval set through the current pipeline (post-#96), exercising
-candidate ranking (build_corpus_questions), gate question, Jev draft-check
-questions, threshold logic, and fallback. Uses fakes for the Jev provider and
-LLM where the eval set carries answers (jev_answer, jev_probs, jev_confidence).
+Each eval pair is asked through the review server's own Jev seam (JevSeam with
+the box's Jev key and general LLM model): about? gate, the draft-check chain,
+the asymmetric show and verify cutoffs, and the verifier. No recorded answer
+and no simulated filter effect enters the result; each pair makes the calls
+the pipeline makes.
 
-Reports per-stage precision, recall, FP, FN, TP counts with Wilson score
-intervals, split by train/test partition and by question kind.
+Pairs are the eval set's pairs: candidate ranking chose them when they were
+asked, and the set holds no corpus to rank again, so the report starts at the
+gate.
 
-Spec: jev-suggestions #measure-baseline, #measure-replay, #measure-report.
+Reports per stage (gate, Jev threshold, verifier) and per question: pairs,
+prevalence, TP, FP, FN, precision and recall of shown marks, with Wilson score
+intervals, split by train and test partition.
 
-Run: python3 tests/jev-eval-replay.py
+Spec: jev-suggestions #measure-replay, #measure-report, #measure-baseline.
+
+Tests (offline, fake provider):  python3 tests/jev-eval-replay.py
+Live replay (real calls):        python3 tests/jev-eval-replay.py --live \
+    --state <review service state dir> [--sample N] [--partition train|test]
 """
 
+import argparse
 import importlib.util
 import json
 import math
 import os
+import random
 import sys
-import threading
+import tempfile
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-_spec = importlib.util.spec_from_file_location("jev_eval_replay", ROOT / "skill" / "review-spec" / "assets" / "jev.py")
+ASSETS = ROOT / "skill" / "review-spec" / "assets"
+_spec = importlib.util.spec_from_file_location("jev_eval_replay", ASSETS / "jev.py")
 jev = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(jev)
-SETS = jev.load_question_sets(ROOT / "skill" / "review-spec" / "assets" / "jev")
+_serve_spec = importlib.util.spec_from_file_location("jev_eval_replay_serve", ASSETS / "review-serve.py")
+serve = importlib.util.module_from_spec(_serve_spec)
+_serve_spec.loader.exec_module(serve)
+SETS = jev.load_question_sets(ASSETS / "jev")
 
 EVAL_PATH = os.path.expanduser("~/ops/evals/jev-precision/eval-set.jsonl")
-REPORT_PATH = os.path.expanduser("~/ops/evals/jev-precision/live-baseline-report.md")
+REPORT_PATH = os.path.expanduser("~/ops/evals/jev-precision/live-replay-report.md")
+KINDS = ("contradicts", "oversteps", "overlaps")
+STAGES = ("gate", "threshold", "verifier")
+RETRIES = 2
+MAX_PAUSE = 60.0
 
 
 # ---------------------------------------------------------------------------
-# Eval set loading
+# Eval set
 # ---------------------------------------------------------------------------
 
 def load_eval_set(path=EVAL_PATH):
-    entries = []
     with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                entries.append(json.loads(line))
-    return entries
+        return [json.loads(line) for line in f if line.strip()]
+
+
+def sample(entries, n=None, partition=None, seed=0):
+    picked = [e for e in entries if partition is None or e["partition"] == partition]
+    if n is not None and n < len(picked):
+        picked = random.Random(seed).sample(picked, n)
+    return picked
+
+
+def _has_text(entry):
+    clause = (entry.get("clause_text") or "").strip()
+    target = (entry.get("target_text") or "").strip()
+    return bool(clause) and bool(target) and target != "<unresolved>"
+
+
+def _spec_file(addr):
+    """The spec file part of an eval address, "" when the address is a bare anchor."""
+    head = addr.rsplit("#", 1)[0] if "#" in addr else ""
+    return head.split("::")[-1].rsplit("/", 1)[-1].split()[-1] if head.strip() else ""
+
+
+def pair_item(entry):
+    """The draft-check item the pipeline builds for this pair (jev.draft_check)."""
+    target_addr = entry["target_addr"]
+    target_file = _spec_file(target_addr)
+    same_spec = not target_file or target_file == _spec_file(entry["clause_addr"])
+    anchor = target_addr.rsplit("#", 1)[-1]
+    non_goal = "non-goal" in anchor.lower() or "nongoal" in anchor.lower()
+    rule = "non-goal" if non_goal else ("same-spec" if same_spec else "cross-spec")
+    return jev.draft_check(
+        anchor=entry["clause_addr"].rsplit("#", 1)[-1], before="", after=entry["clause_text"],
+        target=target_addr, target_text=entry["target_text"],
+        target_non_goal=non_goal, same_spec=same_spec,
+        path="eval", base="eval-base", revision="eval-head",
+        pairing={"rule": rule, "rank": 0, "gate": "yes"})
 
 
 # ---------------------------------------------------------------------------
-# Translation: old multi-label or yes/no format to uniform yes/no
+# Live replay
 # ---------------------------------------------------------------------------
 
-def translate_to_yesno(entry):
-    """Translate eval entry to yes/no format for pipeline replay.
-
-    Returns dict with label, probs, confidence, or None if not enough data.
-    """
-    kind = entry["kind"]
-    jev_probs = entry.get("jev_probs") or {}
-    jev_answer = entry.get("jev_answer")
-    jev_confidence = entry.get("jev_confidence")
-
-    if jev_answer is None and not jev_probs:
-        return None
-
-    # Already yes/no format: answer is "yes"/"no", or probs have yes/no keys
-    if jev_answer in ("yes", "no") or "yes" in jev_probs or "no" in jev_probs:
-        p_yes = jev_probs.get("yes", 1.0 if jev_answer == "yes" else 0.0)
-        p_no = jev_probs.get("no", 1.0 - p_yes)
-        label = jev_answer if jev_answer in ("yes", "no") else (
-            "yes" if p_yes >= p_no else "no")
-        return {"label": label, "probs": {"yes": p_yes, "no": p_no},
-                "confidence": jev_confidence}
-
-    # Multi-label format (audit entries with old pipeline data): translate
-    p_yes = jev_probs.get(kind, 0.0)
-    if jev_answer == kind:
-        label = "yes"
-        confidence = jev_confidence
-    elif jev_answer is not None:
-        label = "no"
-        confidence = 1.0 - p_yes if p_yes > 0 else jev_confidence
-    else:
-        label = "yes" if p_yes >= 0.5 else "no"
-        confidence = p_yes if label == "yes" else 1.0 - p_yes
-
-    return {"label": label, "probs": {"yes": p_yes, "no": 1.0 - p_yes},
-            "confidence": confidence}
+def live_seam(state_dir, store=None):
+    """The review server's seam: its question sets, Jev key, and general LLM model from the service state."""
+    return jev.JevSeam(SETS, api_key=lambda: serve.jev_provider(state_dir),
+                       llm_model=lambda: serve.jev_llm_model(state_dir),
+                       record_store=store or jev.JudgmentStore())
 
 
-# ---------------------------------------------------------------------------
-# Fake provider: returns pre-recorded answers for eval replay
-# ---------------------------------------------------------------------------
-
-class EvalFakeProvider:
-    """Returns gate passes and pre-recorded Jev answers for one eval entry.
-
-    For the gate (about?): always yes with confidence 1.0.
-    For the entry's kind: uses the translated yes/no answer.
-    For earlier chain steps: confident no so the chain reaches the entry's kind.
-    LLM fallback: returns the same label as Jev.
-    """
-
-    def __init__(self, kind, label, probs, confidence):
-        self._kind = kind
-        self._label = label
-        self._probs = probs
-        self._confidence = confidence
-        self._last_kind = None
-        self._lock = threading.Lock()
-
-    def decide(self, payload):
-        questions = payload.get("questions", {})
-        qname = next(iter(questions))
-
-        with self._lock:
-            self._last_kind = qname
-
-        if qname == "about":
-            return {"model": "eval-gate", "answers": {"about": {
-                "choice": "yes", "probabilities": {"yes": 1.0, "no": 0.0},
-                "confidence": 1.0}}}
-
-        if qname == self._kind:
-            return {"model": "eval-jev", "answers": {qname: {
-                "choice": self._label,
-                "probabilities": dict(self._probs),
-                "confidence": self._confidence}}}
-
-        # Earlier chain step: confident no so chain continues
-        return {"model": "eval-pass", "answers": {qname: {
-            "choice": "no", "probabilities": {"yes": 0.0, "no": 1.0},
-            "confidence": 1.0}}}
-
-    def complete(self, payload):
-        """LLM verifier/fallback: returns the same label Jev gave.
-
-        For draft-check verifier calls, returns the verifier format with
-        answer + quoted spans (#verifier).  For other fallback calls, returns
-        the legacy choice format.
-        """
-        with self._lock:
-            kind = self._last_kind
-        label = self._label if kind == self._kind else "no"
-        # Verifier format: answer + quoted spans (required by _verify)
-        result = {"answer": label}
-        if label == "yes":
-            result["clause_span"] = "clause conflict"
-            result["target_span"] = "target conflict"
-        return {"choices": [{"message": {
-            "content": json.dumps(result)}}]}
+def _step_trace(step, record):
+    answer = record.get("answer") or {}
+    return {"kind": step["kind"], "outcome": record.get("outcome"),
+            "escalated": bool(record.get("escalated")), "label": answer.get("label"),
+            "p_yes": (answer.get("probabilities") or {}).get("yes")}
 
 
-# ---------------------------------------------------------------------------
-# Pipeline replay
-# ---------------------------------------------------------------------------
+def replay_pair(seam, entry, sleep=time.sleep):
+    """Ask one eval pair through the seam's chain; return its outcome and the stage that decided it."""
+    if not _has_text(entry):
+        return {"replayed": False, "shown": False, "stage": "no text", "outcome": None,
+                "answer_label": None, "trace": []}
+    chain = pair_item(entry)["chain"]
+    for attempt in range(RETRIES + 1):
+        trace, records = [], []
 
-def replay_entry(entry, question_sets):
-    """Replay one eval entry through the full pipeline chain.
+        def ask(step):
+            record = seam.ask(step)
+            trace.append(_step_trace(step, record))
+            records.append(record)
+            return record
 
-    Returns dict with: replayed, shown, outcome, answer_label, kind.
-    """
-    kind = entry["kind"]
-    translated = translate_to_yesno(entry)
-
-    if translated is None:
-        # No Jev data: historically shown in old pipeline
-        return {"replayed": False, "shown": True,
-                "outcome": "shown (legacy)", "answer_label": kind,
-                "kind": kind}
-
-    clause_text = entry["clause_text"]
-    target_text = entry["target_text"]
-
-    provider = EvalFakeProvider(
-        kind, translated["label"], translated["probs"],
-        translated["confidence"])
-
-    store = jev.JudgmentStore()
-    seam = jev.JevSeam(question_sets, provider=provider, api_key="fake-key",
-                       llm_model="eval-replay-llm", record_store=store,
-                       clock=lambda: "2026-09-28T00:00:00.000Z")
-
-    # Build the draft-check chain for this pair
-    item = jev.draft_check(
-        anchor="eval-clause", before="", after=clause_text,
-        target="eval-target", target_text=target_text,
-        path="eval", base="base", revision="head")
-
-    # Run through the chain (exercises gate, threshold, fallback)
-    result = seam.ask_chain(item["chain"])
+        result = jev.chain_result(chain, ask)
+        if result.get("outcome") != "unavailable" or attempt == RETRIES:
+            break
+        sleep(min(jev.pause_left(records[-1]), MAX_PAUSE))
     outcome = result.get("outcome")
-    answer_label = result.get("answer", {}).get("label")
+    label = result.get("answer", {}).get("label")
+    shown = outcome == "shown" and label is not None
+    if outcome != "shown":
+        stage = outcome or "unavailable"
+    elif trace[0]["label"] != "yes":
+        stage = "gate"
+    else:
+        stage = "verifier" if trace[-1]["escalated"] else "threshold"
+    return {"replayed": outcome == "shown", "shown": shown, "stage": stage, "outcome": outcome,
+            "answer_label": label, "trace": trace, "unsure": result.get("unsure", 0)}
 
-    # A mark is shown when the chain returns a non-None label with shown outcome
-    shown = outcome == "shown" and answer_label is not None
 
-    return {"replayed": True, "shown": shown, "outcome": outcome,
-            "answer_label": answer_label, "kind": kind,
-            "unsure": result.get("unsure", 0)}
+def kept(result, stage):
+    """Whether the pair is still a mark after the given stage."""
+    trace = result["trace"]
+    if not result["replayed"] or not trace or trace[0]["label"] != "yes":
+        return False
+    if stage == "gate":
+        return True
+    if stage == "threshold":
+        return any(t["escalated"] or (t["kind"] != "about" and t["outcome"] == "shown" and t["label"] == "yes")
+                   for t in trace[1:])
+    return result["shown"]
 
 
-def replay_all(entries, question_sets):
-    """Replay every eval entry and return merged results."""
-    results = []
-    for entry in entries:
-        result = replay_entry(entry, question_sets)
-        results.append({**entry, **result})
-    return results
+def replay_all(seam, entries, workers=4, progress=None):
+    def one(entry):
+        result = {**entry, **replay_pair(seam, entry)}
+        if progress:
+            progress(result)
+        return result
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        return list(pool.map(one, entries))
 
 
 # ---------------------------------------------------------------------------
@@ -221,26 +181,21 @@ def wilson_interval(successes, total, z=1.96):
     denom = 1 + z ** 2 / total
     center = p + z ** 2 / (2 * total)
     margin = z * math.sqrt(p * (1 - p) / total + z ** 2 / (4 * total ** 2))
-    lower = (center - margin) / denom
-    upper = (center + margin) / denom
-    return (max(0.0, lower), min(1.0, upper))
+    return (max(0.0, (center - margin) / denom), min(1.0, (center + margin) / denom))
 
 
-def compute_metrics(results):
+def compute_metrics(results, shown=lambda r: r["shown"]):
     """TP, FP, FN, TN, precision, recall with Wilson intervals."""
-    tp = sum(1 for r in results if r["shown"] and r["ground_truth"] == "yes")
-    fp = sum(1 for r in results if r["shown"] and r["ground_truth"] == "no")
-    fn = sum(1 for r in results if not r["shown"] and r["ground_truth"] == "yes")
-    tn = sum(1 for r in results if not r["shown"] and r["ground_truth"] == "no")
-    total_shown = tp + fp
-    total_positive = tp + fn
-    precision = tp / total_shown if total_shown > 0 else 0.0
-    recall = tp / total_positive if total_positive > 0 else 0.0
+    tp = sum(1 for r in results if shown(r) and r["ground_truth"] == "yes")
+    fp = sum(1 for r in results if shown(r) and r["ground_truth"] == "no")
+    fn = sum(1 for r in results if not shown(r) and r["ground_truth"] == "yes")
+    tn = sum(1 for r in results if not shown(r) and r["ground_truth"] == "no")
+    total_shown, total_positive = tp + fp, tp + fn
     return {
         "tp": tp, "fp": fp, "fn": fn, "tn": tn,
-        "total": len(results), "total_shown": total_shown,
-        "total_positive": total_positive,
-        "precision": precision, "recall": recall,
+        "total": len(results), "total_shown": total_shown, "total_positive": total_positive,
+        "precision": tp / total_shown if total_shown else 0.0,
+        "recall": tp / total_positive if total_positive else 0.0,
         "precision_ci": wilson_interval(tp, total_shown),
         "recall_ci": wilson_interval(tp, total_positive),
     }
@@ -255,435 +210,269 @@ def fmt_ci(ci):
 
 
 # ---------------------------------------------------------------------------
-# Report generation
+# Report
 # ---------------------------------------------------------------------------
 
+def _row(label, m):
+    prevalence = m["total_positive"] / m["total"] if m["total"] else 0.0
+    return (f"| {label} | {m['total']} | {fmt_pct(prevalence)} | {m['total_shown']} | {m['tp']} | {m['fp']} | "
+            f"{m['fn']} | {fmt_pct(m['precision'])} {fmt_ci(m['precision_ci'])} | "
+            f"{fmt_pct(m['recall'])} {fmt_ci(m['recall_ci'])} |")
+
+
+def _table(lines, rows):
+    lines.append("| Scope | Pairs | Prevalence | Kept | TP | FP | FN | Precision (95% CI) | Recall (95% CI) |")
+    lines.append("|---|---|---|---|---|---|---|---|---|")
+    lines.extend(_row(label, m) for label, m in rows)
+    lines.append("")
+
+
 def generate_report(results):
-    """Generate the baseline report as Markdown."""
-    lines = []
-    lines.append("# Jev precision: live baseline report")
-    lines.append("")
-    lines.append("Pipeline: post-#96 (yes/no questions, current thresholds, LLM fallback).")
-    lines.append(f"Eval set: {len(results)} entries "
-                 f"({sum(1 for r in results if r['ground_truth']=='yes')} positive, "
-                 f"{sum(1 for r in results if r['ground_truth']=='no')} negative).")
-
     replayed = [r for r in results if r["replayed"]]
-    legacy = [r for r in results if not r["replayed"]]
-    lines.append(f"Replayed through pipeline: {len(replayed)}. "
-                 f"Legacy (no Jev data, historically shown): {len(legacy)}.")
+    lines = ["# Jev precision: live replay report", ""]
+    lines.append("Live replay through the current pipeline: about? gate, draft-check chain, "
+                 "asymmetric show and verify cutoffs, verifier. Pairs are the eval set's pairs; "
+                 "candidate ranking is not re-run.")
+    lines.append(f"Pairs: {len(results)}. Replayed: {len(replayed)}. "
+                 f"Not replayed: {', '.join(f'{s} {n}' for s, n in _counts(r['stage'] for r in results if not r['replayed']).items()) or 'none'}.")
     lines.append("")
-
-    # Thresholds
-    lines.append("## Thresholds")
+    lines.append("## Cutoffs")
     lines.append("")
-    lines.append("| Question | Threshold | Fallback |")
-    lines.append("|---|---|---|")
-    for name in ("contradicts", "oversteps", "overlaps"):
+    lines.append("| Question | Version | Show | Verify |")
+    lines.append("|---|---|---|---|")
+    for name in ("about",) + KINDS:
         qs = SETS[name]
-        lines.append(f"| {name} | {qs.threshold} | {qs.fallback} |")
+        lines.append(f"| {name} | {qs.version} | {qs.show_cutoff if qs.show_cutoff is not None else qs.threshold} | "
+                     f"{qs.verify_cutoff if qs.verify_cutoff is not None else '-'} |")
     lines.append("")
-
-    # Overall metrics
-    lines.append("## Overall baseline")
-    lines.append("")
-    m = compute_metrics(results)
-    _metrics_table(lines, m)
-
-    # Per-partition
-    for partition in ("train", "test"):
-        subset = [r for r in results if r["partition"] == partition]
-        if not subset:
-            continue
-        lines.append(f"## Partition: {partition}")
-        lines.append("")
-        m = compute_metrics(subset)
-        _metrics_table(lines, m)
-
-    # Per-question kind
-    for kind in ("contradicts", "oversteps", "overlaps"):
-        subset = [r for r in results if r["kind"] == kind]
-        if not subset:
-            continue
-        lines.append(f"## Question: {kind}")
-        lines.append("")
-        m = compute_metrics(subset)
-        _metrics_table(lines, m)
-        # Per partition within kind
-        for partition in ("train", "test"):
-            part = [r for r in subset if r["partition"] == partition]
-            if not part:
-                continue
-            mp = compute_metrics(part)
-            lines.append(f"### {kind} / {partition}")
-            lines.append("")
-            _metrics_table(lines, mp)
-
-    # Replayed-only metrics
-    lines.append("## Replayed entries only")
-    lines.append("")
-    lines.append(f"Entries with Jev data replayed through the current pipeline: {len(replayed)}.")
-    lines.append("")
-    m = compute_metrics(replayed)
-    _metrics_table(lines, m)
-
-    for partition in ("train", "test"):
-        part = [r for r in replayed if r["partition"] == partition]
+    for partition in ("all", "train", "test"):
+        part = [r for r in replayed if partition == "all" or r["partition"] == partition]
         if not part:
             continue
-        lines.append(f"### Replayed / {partition}")
+        lines.append(f"## Per stage: {partition}")
         lines.append("")
-        _metrics_table(lines, compute_metrics(part))
-
-    # Known TPs
+        _table(lines, [(stage, compute_metrics(part, lambda r, s=stage: kept(r, s))) for stage in STAGES])
+        lines.append(f"## Per question: {partition}")
+        lines.append("")
+        _table(lines, [(kind, compute_metrics([r for r in part if r["kind"] == kind]))
+                       for kind in KINDS if any(r["kind"] == kind for r in part)])
     lines.append("## Known true positives")
     lines.append("")
     tps = [r for r in results if r["ground_truth"] == "yes"]
-    shown_tps = [r for r in tps if r["shown"]]
-    missed_tps = [r for r in tps if not r["shown"]]
-    lines.append(f"Total: {len(tps)}. Shown: {len(shown_tps)}. Missed: {len(missed_tps)}.")
+    lines.append(f"Total: {len(tps)}. Shown: {sum(1 for r in tps if r['shown'])}.")
     lines.append("")
-    lines.append("| ID | Kind | Partition | Replayed | Shown | Outcome |")
+    lines.append("| ID | Kind | Partition | Shown | Label | Stage |")
     lines.append("|---|---|---|---|---|---|")
     for r in tps:
-        lines.append(f"| {r['id']} | {r['kind']} | {r['partition']} | "
-                     f"{'yes' if r['replayed'] else 'no'} | "
-                     f"{'yes' if r['shown'] else 'NO'} | {r['outcome']} |")
+        lines.append(f"| {r['id']} | {r['kind']} | {r['partition']} | {'yes' if r['shown'] else 'NO'} | "
+                     f"{r['answer_label'] or '-'} | {r['stage']} |")
     lines.append("")
-
-    if missed_tps:
-        lines.append("### Missed true positives")
-        lines.append("")
-        for r in missed_tps:
-            lines.append(f"- {r['id']} ({r['kind']}): {r['clause_addr']} vs {r['target_addr']}")
-        lines.append("")
-
-    # Summary table
-    lines.append("## Summary")
-    lines.append("")
-    lines.append("| Scope | Total | Shown | TP | FP | FN | Precision | 95% CI | Recall | 95% CI |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|")
-    for label, subset in [
-        ("All", results),
-        ("Replayed", replayed),
-        ("Train", [r for r in results if r["partition"] == "train"]),
-        ("Test", [r for r in results if r["partition"] == "test"]),
-        ("contradicts", [r for r in results if r["kind"] == "contradicts"]),
-        ("oversteps", [r for r in results if r["kind"] == "oversteps"]),
-        ("overlaps", [r for r in results if r["kind"] == "overlaps"]),
-    ]:
-        m = compute_metrics(subset)
-        lines.append(f"| {label} | {m['total']} | {m['total_shown']} | "
-                     f"{m['tp']} | {m['fp']} | {m['fn']} | "
-                     f"{fmt_pct(m['precision'])} | {fmt_ci(m['precision_ci'])} | "
-                     f"{fmt_pct(m['recall'])} | {fmt_ci(m['recall_ci'])} |")
-    lines.append("")
-
     return "\n".join(lines)
 
 
-def _metrics_table(lines, m):
-    lines.append(f"- Pairs: {m['total']}")
-    lines.append(f"- Shown (marks displayed): {m['total_shown']}")
-    lines.append(f"- TP: {m['tp']}, FP: {m['fp']}, FN: {m['fn']}, TN: {m['tn']}")
-    prevalence = m['total_positive'] / m['total'] if m['total'] > 0 else 0
-    lines.append(f"- Prevalence: {fmt_pct(prevalence)} "
-                 f"({m['total_positive']} positives in {m['total']} pairs)")
-    lines.append(f"- Precision: {fmt_pct(m['precision'])} {fmt_ci(m['precision_ci'])}")
-    lines.append(f"- Recall: {fmt_pct(m['recall'])} {fmt_ci(m['recall_ci'])}")
-    lines.append("")
+def _counts(values):
+    out = {}
+    for v in values:
+        out[v] = out.get(v, 0) + 1
+    return out
 
 
 # ---------------------------------------------------------------------------
-# Tests
+# Tests (offline: a fake Jev and general LLM behind the same seam)
 # ---------------------------------------------------------------------------
 
-class TestTranslation(unittest.TestCase):
-    """Translation from eval format to yes/no."""
+class FakeModel:
+    """Answers each question by kind with a set P(yes); the verifier answers `verify`. Records every call."""
 
-    def test_yesno_format_passthrough(self):
-        entry = {"kind": "contradicts", "jev_answer": "no",
-                 "jev_probs": {"yes": 0.02, "no": 0.98}, "jev_confidence": 0.95}
-        t = translate_to_yesno(entry)
-        self.assertEqual(t["label"], "no")
-        self.assertAlmostEqual(t["probs"]["yes"], 0.02)
-        self.assertEqual(t["confidence"], 0.95)
+    def __init__(self, p_yes, verify="yes", fail=0):
+        self.p_yes = p_yes
+        self.verify = verify
+        self.fail = fail
+        self.calls = []
 
-    def test_yesno_format_yes(self):
-        entry = {"kind": "contradicts", "jev_answer": "yes",
-                 "jev_probs": {"yes": 0.55, "no": 0.45}, "jev_confidence": 0.1}
-        t = translate_to_yesno(entry)
-        self.assertEqual(t["label"], "yes")
-        self.assertAlmostEqual(t["probs"]["yes"], 0.55)
-        self.assertEqual(t["confidence"], 0.1)
+    def decide(self, payload):
+        kind = next(iter(payload["questions"]))
+        self.calls.append(("decide", kind, payload["state"]))
+        if self.fail:
+            self.fail -= 1
+            raise jev.ProviderWait("rate limited", 0.0)
+        p = self.p_yes.get(kind, 0.0)
+        return {"model": "fake", "answers": {kind: {
+            "choice": "yes" if p >= 0.5 else "no", "probabilities": {"yes": p, "no": 1 - p},
+            "confidence": max(p, 1 - p)}}}
 
-    def test_multi_label_answer_matches_kind(self):
-        entry = {"kind": "contradicts", "jev_answer": "contradicts",
-                 "jev_probs": {"contradicts": 0.72, "overlaps": 0.24,
-                               "oversteps": 0.03, "unrelated": 0.01},
-                 "jev_confidence": 0.61}
-        t = translate_to_yesno(entry)
-        self.assertEqual(t["label"], "yes")
-        self.assertAlmostEqual(t["probs"]["yes"], 0.72)
-        self.assertEqual(t["confidence"], 0.61)
-
-    def test_multi_label_answer_differs(self):
-        entry = {"kind": "oversteps", "jev_answer": "contradicts",
-                 "jev_probs": {"contradicts": 0.72, "overlaps": 0.24,
-                               "oversteps": 0.03, "unrelated": 0.01},
-                 "jev_confidence": 0.61}
-        t = translate_to_yesno(entry)
-        self.assertEqual(t["label"], "no")
-        self.assertAlmostEqual(t["probs"]["yes"], 0.03)
-        self.assertAlmostEqual(t["confidence"], 0.97)
-
-    def test_no_data_returns_none(self):
-        entry = {"kind": "contradicts", "jev_answer": None,
-                 "jev_probs": {}, "jev_confidence": None}
-        self.assertIsNone(translate_to_yesno(entry))
-
-    def test_answer_only_no_probs(self):
-        entry = {"kind": "overlaps", "jev_answer": "yes",
-                 "jev_probs": {}, "jev_confidence": None}
-        t = translate_to_yesno(entry)
-        self.assertIsNotNone(t)
-        self.assertEqual(t["label"], "yes")
+    def complete(self, payload):
+        self.calls.append(("complete", None, payload["messages"][-1]["content"]))
+        spans = {"clause_span": "a", "target_span": "b"} if self.verify == "yes" else {"clause_span": "", "target_span": ""}
+        return {"choices": [{"message": {"content": json.dumps({"answer": self.verify, **spans})}}]}
 
 
-class TestFakeProvider(unittest.TestCase):
-    """Fake provider returns expected shapes."""
-
-    def test_gate_always_yes(self):
-        provider = EvalFakeProvider("contradicts", "yes", {"yes": 0.7, "no": 0.3}, 0.6)
-        resp = provider.decide({"questions": {"about": {}}, "state": {}})
-        self.assertEqual(resp["answers"]["about"]["choice"], "yes")
-        self.assertEqual(resp["answers"]["about"]["confidence"], 1.0)
-
-    def test_kind_returns_recorded(self):
-        provider = EvalFakeProvider("contradicts", "yes", {"yes": 0.7, "no": 0.3}, 0.6)
-        resp = provider.decide({"questions": {"contradicts": {}}, "state": {}})
-        self.assertEqual(resp["answers"]["contradicts"]["choice"], "yes")
-        self.assertEqual(resp["answers"]["contradicts"]["confidence"], 0.6)
-
-    def test_earlier_step_returns_confident_no(self):
-        provider = EvalFakeProvider("overlaps", "yes", {"yes": 0.8, "no": 0.2}, 0.7)
-        resp = provider.decide({"questions": {"contradicts": {}}, "state": {}})
-        self.assertEqual(resp["answers"]["contradicts"]["choice"], "no")
-        self.assertEqual(resp["answers"]["contradicts"]["confidence"], 1.0)
-
-    def test_llm_verifier(self):
-        provider = EvalFakeProvider("contradicts", "yes", {"yes": 0.5, "no": 0.5}, 0.1)
-        provider.decide({"questions": {"contradicts": {}}, "state": {}})
-        resp = provider.complete({"messages": [], "model": "test"})
-        body = json.loads(resp["choices"][0]["message"]["content"])
-        self.assertEqual(body["answer"], "yes")
-        self.assertTrue(body.get("clause_span"))
-        self.assertTrue(body.get("target_span"))
+def entry(**over):
+    base = {"id": "e1", "kind": "contradicts", "partition": "test", "ground_truth": "yes",
+            "clause_addr": "aa/docs/specs/a.spec.html#c", "target_addr": "aa/docs/specs/b.spec.html#t",
+            "clause_text": "Clause text.", "target_text": "Target text."}
+    base.update(over)
+    return base
 
 
-class TestWilsonInterval(unittest.TestCase):
-    def test_basic(self):
+def fake_seam(model):
+    return jev.JevSeam(SETS, provider=model, api_key="fake-key", record_store=jev.JudgmentStore())
+
+
+class TestReplayPair(unittest.TestCase):
+    def test_pair_text_reaches_provider(self):
+        model = FakeModel({"about": 0.9, "contradicts": 0.95})
+        replay_pair(fake_seam(model), entry())
+        self.assertEqual(model.calls[0][2]["first"]["text"], "Clause text.")
+        self.assertEqual(model.calls[0][2]["second"]["text"], "Target text.")
+        self.assertEqual(model.calls[1][2]["after"], "Clause text.")
+
+    def test_gate_no_stops_chain(self):
+        model = FakeModel({"about": 0.1, "contradicts": 0.99})
+        r = replay_pair(fake_seam(model), entry())
+        self.assertFalse(r["shown"])
+        self.assertEqual(r["stage"], "gate")
+        self.assertEqual([c[1] for c in model.calls], ["about"])
+
+    def test_above_show_cutoff_shows_without_verifier(self):
+        model = FakeModel({"about": 0.9, "contradicts": 0.95})
+        r = replay_pair(fake_seam(model), entry())
+        self.assertTrue(r["shown"])
+        self.assertEqual((r["answer_label"], r["stage"]), ("contradicts", "threshold"))
+        self.assertNotIn("complete", [c[0] for c in model.calls])
+
+    def test_verify_band_calls_verifier(self):
+        for verify, shown in (("yes", True), ("no", False)):
+            model = FakeModel({"about": 0.9, "contradicts": 0.8}, verify=verify)
+            r = replay_pair(fake_seam(model), entry(target_addr="#t"))
+            self.assertEqual(r["shown"], shown)
+            self.assertEqual(r["stage"], "verifier")
+            self.assertIn("complete", [c[0] for c in model.calls])
+            self.assertTrue(kept(r, "threshold"))
+
+    def test_below_verify_cutoff_silent_no(self):
+        model = FakeModel({"about": 0.9, "contradicts": 0.5})
+        r = replay_pair(fake_seam(model), entry(target_addr="#t"))
+        self.assertFalse(r["shown"])
+        self.assertFalse(kept(r, "threshold"))
+        self.assertTrue(kept(r, "gate"))
+        self.assertNotIn("complete", [c[0] for c in model.calls])
+
+    def test_cross_spec_chain_reaches_overlaps(self):
+        model = FakeModel({"about": 0.9, "overlaps": 0.95})
+        r = replay_pair(fake_seam(model), entry())
+        self.assertEqual(r["answer_label"], "overlaps")
+        self.assertEqual([c[1] for c in model.calls], ["about", "contradicts", "oversteps", "overlaps"])
+
+    def test_same_spec_chain_stops_after_contradicts(self):
+        for addr in ("#t", "t", "aa/docs/specs/a.spec.html#t"):
+            model = FakeModel({"about": 0.9, "overlaps": 0.95})
+            r = replay_pair(fake_seam(model), entry(target_addr=addr))
+            self.assertFalse(r["shown"])
+            self.assertEqual([c[1] for c in model.calls], ["about", "contradicts"], addr)
+
+    def test_non_goal_target_asks_nongoal_set(self):
+        model = FakeModel({"about": 0.9})
+        replay_pair(fake_seam(model), entry(target_addr="b.spec.html#non-goal-x"))
+        self.assertEqual([c[1] for c in model.calls], ["about", "contradicts-nongoal"])
+
+    def test_missing_text_not_replayed(self):
+        model = FakeModel({})
+        for over in ({"clause_text": ""}, {"target_text": "<unresolved>"}):
+            r = replay_pair(fake_seam(model), entry(**over))
+            self.assertEqual((r["replayed"], r["stage"]), (False, "no text"))
+        self.assertEqual(model.calls, [])
+
+    def test_rate_limit_retries(self):
+        model = FakeModel({"about": 0.9, "contradicts": 0.95}, fail=1)
+        r = replay_pair(fake_seam(model), entry(), sleep=lambda s: None)
+        self.assertTrue(r["shown"])
+
+    def test_unavailable_after_retries_not_counted(self):
+        model = FakeModel({"about": 0.9}, fail=RETRIES + 1)
+        r = replay_pair(fake_seam(model), entry(), sleep=lambda s: None)
+        self.assertEqual((r["replayed"], r["stage"]), (False, "unavailable"))
+
+
+class TestLiveSeam(unittest.TestCase):
+    def test_uses_service_key_and_real_providers(self):
+        with tempfile.TemporaryDirectory() as state:
+            os.makedirs(os.path.join(state, "providers"))
+            path = os.path.join(state, "providers", "jev.toml")
+            with open(path, "w") as f:
+                f.write('key = "k-test"\nllm_model = "m-test"\n')
+            os.chmod(path, 0o600)
+            seam = live_seam(state)
+            provider = seam.provider()
+            self.assertIsInstance(provider, jev.OpenRouterProvider)
+            self.assertIsInstance(seam._fallback_provider(provider), jev.ClaudeCliProvider)
+            self.assertEqual(seam.llm_model(), "m-test")
+
+    def test_no_key_is_off(self):
+        with tempfile.TemporaryDirectory() as state:
+            self.assertIsNone(live_seam(state).provider())
+
+
+class TestReport(unittest.TestCase):
+    def test_wilson(self):
         lo, hi = wilson_interval(5, 10)
         self.assertAlmostEqual(lo, 0.2366, places=3)
         self.assertAlmostEqual(hi, 0.7634, places=3)
+        self.assertEqual(wilson_interval(0, 0), (0.0, 1.0))
 
-    def test_zero_total(self):
-        lo, hi = wilson_interval(0, 0)
-        self.assertEqual(lo, 0.0)
-        self.assertEqual(hi, 1.0)
-
-    def test_all_success(self):
-        lo, hi = wilson_interval(10, 10)
-        self.assertGreater(lo, 0.7)
-        self.assertAlmostEqual(hi, 1.0, places=2)
-
-    def test_zero_success(self):
-        lo, hi = wilson_interval(0, 10)
-        self.assertAlmostEqual(lo, 0.0, places=2)
-        self.assertLess(hi, 0.3)
-
-
-class TestReplayEntry(unittest.TestCase):
-    """Replay exercises the pipeline correctly."""
-
-    def test_confident_yes_shows_mark(self):
-        entry = {"id": "t1", "kind": "contradicts", "partition": "test",
-                 "source": "test", "ground_truth": "yes",
-                 "clause_text": "A", "target_text": "B",
-                 "clause_addr": "#a", "target_addr": "#b",
-                 "jev_answer": "yes", "jev_probs": {"yes": 0.9, "no": 0.1},
-                 "jev_confidence": 0.85, "jev_outcome": "shown",
-                 "cause": "", "notes": []}
-        result = replay_entry(entry, SETS)
-        self.assertTrue(result["replayed"])
-        self.assertTrue(result["shown"])
-        self.assertEqual(result["answer_label"], "contradicts")
-
-    def test_confident_no_hides_mark(self):
-        entry = {"id": "t2", "kind": "contradicts", "partition": "test",
-                 "source": "test", "ground_truth": "no",
-                 "clause_text": "A", "target_text": "B",
-                 "clause_addr": "#a", "target_addr": "#b",
-                 "jev_answer": "no", "jev_probs": {"yes": 0.02, "no": 0.98},
-                 "jev_confidence": 0.95, "jev_outcome": "shown",
-                 "cause": "", "notes": []}
-        result = replay_entry(entry, SETS)
-        self.assertTrue(result["replayed"])
-        self.assertFalse(result["shown"])
-
-    def test_unsure_yes_in_verify_band_shows(self):
-        # P(yes) in verify band [0.70, 0.90): verifier confirms -> shown
-        entry = {"id": "t3", "kind": "contradicts", "partition": "test",
-                 "source": "test", "ground_truth": "no",
-                 "clause_text": "A", "target_text": "B",
-                 "clause_addr": "#a", "target_addr": "#b",
-                 "jev_answer": "yes", "jev_probs": {"yes": 0.75, "no": 0.25},
-                 "jev_confidence": 0.6, "jev_outcome": "escalated",
-                 "cause": "", "notes": []}
-        result = replay_entry(entry, SETS)
-        self.assertTrue(result["replayed"])
-        self.assertTrue(result["shown"])
-
-    def test_below_verify_cutoff_silent_no(self):
-        # P(yes) < verify_cutoff (0.70): silent no, never shown (#asymmetric)
-        entry = {"id": "t3b", "kind": "contradicts", "partition": "test",
-                 "source": "test", "ground_truth": "no",
-                 "clause_text": "A", "target_text": "B",
-                 "clause_addr": "#a", "target_addr": "#b",
-                 "jev_answer": "yes", "jev_probs": {"yes": 0.55, "no": 0.45},
-                 "jev_confidence": 0.1, "jev_outcome": "escalated",
-                 "cause": "", "notes": []}
-        result = replay_entry(entry, SETS)
-        self.assertTrue(result["replayed"])
-        self.assertFalse(result["shown"])
-
-    def test_legacy_entry_counts_as_shown(self):
-        entry = {"id": "t4", "kind": "contradicts", "partition": "test",
-                 "source": "audit", "ground_truth": "no",
-                 "clause_text": "A", "target_text": "B",
-                 "clause_addr": "#a", "target_addr": "#b",
-                 "jev_answer": None, "jev_probs": {},
-                 "jev_confidence": None, "jev_outcome": "shown",
-                 "cause": "", "notes": []}
-        result = replay_entry(entry, SETS)
-        self.assertFalse(result["replayed"])
-        self.assertTrue(result["shown"])
-
-    def test_oversteps_chain_reaches_oversteps(self):
-        entry = {"id": "t5", "kind": "oversteps", "partition": "test",
-                 "source": "test", "ground_truth": "no",
-                 "clause_text": "X", "target_text": "Y",
-                 "clause_addr": "#a", "target_addr": "#b",
-                 "jev_answer": "yes", "jev_probs": {"yes": 0.9, "no": 0.1},
-                 "jev_confidence": 0.85, "jev_outcome": "shown",
-                 "cause": "", "notes": []}
-        result = replay_entry(entry, SETS)
-        self.assertTrue(result["shown"])
-        self.assertEqual(result["answer_label"], "oversteps")
-
-    def test_overlaps_chain_reaches_overlaps(self):
-        entry = {"id": "t6", "kind": "overlaps", "partition": "test",
-                 "source": "test", "ground_truth": "no",
-                 "clause_text": "P", "target_text": "Q",
-                 "clause_addr": "#a", "target_addr": "#b",
-                 "jev_answer": "yes", "jev_probs": {"yes": 0.9, "no": 0.1},
-                 "jev_confidence": 0.85, "jev_outcome": "shown",
-                 "cause": "", "notes": []}
-        result = replay_entry(entry, SETS)
-        self.assertTrue(result["shown"])
-        self.assertEqual(result["answer_label"], "overlaps")
-
-
-class TestMetrics(unittest.TestCase):
-    def test_simple_metrics(self):
-        results = [
-            {"shown": True, "ground_truth": "yes"},
-            {"shown": True, "ground_truth": "no"},
-            {"shown": False, "ground_truth": "yes"},
-            {"shown": False, "ground_truth": "no"},
-        ]
-        m = compute_metrics(results)
-        self.assertEqual(m["tp"], 1)
-        self.assertEqual(m["fp"], 1)
-        self.assertEqual(m["fn"], 1)
-        self.assertEqual(m["tn"], 1)
-        self.assertAlmostEqual(m["precision"], 0.5)
-        self.assertAlmostEqual(m["recall"], 0.5)
-
-
-class TestBaselineOnEvalSet(unittest.TestCase):
-    """Integration: full replay on the frozen eval set."""
-
-    def setUp(self):
-        if not os.path.exists(EVAL_PATH):
-            self.skipTest("Eval set not available")
-        self.entries = load_eval_set()
-        self.results = replay_all(self.entries, SETS)
-
-    def test_all_entries_processed(self):
-        self.assertEqual(len(self.results), len(self.entries))
-
-    def test_known_tp_count(self):
-        tps = [r for r in self.results if r["ground_truth"] == "yes"]
-        self.assertEqual(len(tps), 17)
-
-    def test_replayed_count(self):
-        replayed = [r for r in self.results if r["replayed"]]
-        # 319 with probs + 7 with answer only = 326
-        self.assertGreaterEqual(len(replayed), 319)
-
-    def test_replayed_tp_recall(self):
-        """Report replayed TP recall; untuned cutoffs may lose some (#measure-bar).
-
-        Tuning runs in a separate correctness loop that uses this
-        infrastructure.  Here we assert that at least half the replayed TPs
-        are shown (sanity) and report the actual recall.
-        """
-        replayed_tps = [r for r in self.results
-                        if r["replayed"] and r["ground_truth"] == "yes"]
-        shown_tps = [r for r in replayed_tps if r["shown"]]
-        self.assertGreater(len(shown_tps), len(replayed_tps) // 2,
-                           f"Too many TPs lost: {len(shown_tps)}/{len(replayed_tps)}")
-
-    def test_precision_below_bar(self):
-        """Baseline precision is expected to be well below 80% (the target)."""
-        m = compute_metrics(self.results)
-        # With ~17 TP and ~2500 FP, precision is < 1%
-        self.assertLess(m["precision"], 0.05)
-
-    def test_report_generated(self):
-        report = generate_report(self.results)
-        self.assertIn("Jev precision: live baseline report", report)
-        self.assertIn("95% CI", report)
-        self.assertIn("TP:", report)
+    def test_report_per_stage_and_question(self):
+        seam = fake_seam(FakeModel({"about": 0.9, "contradicts": 0.95}))
+        results = replay_all(seam, [entry(id="a"), entry(id="b", ground_truth="no", partition="train"),
+                                    entry(id="c", clause_text="")], workers=2)
+        report = generate_report(results)
+        for text in ("## Per stage: test", "## Per question: train", "| verifier |", "| contradicts |",
+                     "Not replayed: no text 1", "95% CI"):
+            self.assertIn(text, report)
+        m = compute_metrics([r for r in results if r["replayed"]])
+        self.assertEqual((m["tp"], m["fp"]), (1, 1))
 
 
 # ---------------------------------------------------------------------------
-# Main: run replay and write report
+# Main
 # ---------------------------------------------------------------------------
+
+def main(argv):
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--live", action="store_true", help="replay through the real providers (makes model calls)")
+    parser.add_argument("--state", help="review service state dir holding providers/jev.toml")
+    parser.add_argument("--eval", default=EVAL_PATH)
+    parser.add_argument("--report", default=REPORT_PATH)
+    parser.add_argument("--records", help="keep the replay's judgment records in this store path")
+    parser.add_argument("--sample", type=int, help="replay a seeded random sample of N pairs")
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--partition", choices=("train", "test"))
+    parser.add_argument("--workers", type=int, default=4)
+    args = parser.parse_args(argv)
+    if not args.state:
+        parser.error("--live needs --state")
+    seam = live_seam(args.state, jev.JudgmentStore(args.records) if args.records else None)
+    if seam.provider() is None:
+        parser.error("no Jev key in %s/providers/jev.toml (mode 0600)" % args.state)
+    entries = sample(load_eval_set(args.eval), args.sample, args.partition, args.seed)
+    print(f"Replaying {len(entries)} pairs live...", flush=True)
+    done = []
+
+    def progress(r):
+        done.append(r)
+        if len(done) % 25 == 0 or len(done) == len(entries):
+            print(f"  {len(done)}/{len(entries)}", flush=True)
+
+    results = replay_all(seam, entries, args.workers, progress)
+    report = generate_report(results)
+    os.makedirs(os.path.dirname(os.path.abspath(args.report)), exist_ok=True)
+    with open(args.report, "w") as f:
+        f.write(report)
+    print(report)
+    print(f"\nReport written to {args.report}")
+
 
 if __name__ == "__main__":
-    if os.path.exists(EVAL_PATH):
-        print("Loading eval set...")
-        entries = load_eval_set()
-        print(f"Loaded {len(entries)} entries.")
-
-        print("Replaying through pipeline...")
-        results = replay_all(entries, SETS)
-        replayed = sum(1 for r in results if r["replayed"])
-        print(f"Replayed: {replayed}, legacy: {len(results) - replayed}")
-
-        print("Computing metrics...")
-        m = compute_metrics(results)
-        print(f"Overall: TP={m['tp']}, FP={m['fp']}, FN={m['fn']}, TN={m['tn']}")
-        print(f"Precision: {fmt_pct(m['precision'])} {fmt_ci(m['precision_ci'])}")
-        print(f"Recall: {fmt_pct(m['recall'])} {fmt_ci(m['recall_ci'])}")
-
-        report = generate_report(results)
-        os.makedirs(os.path.dirname(REPORT_PATH), exist_ok=True)
-        with open(REPORT_PATH, "w") as f:
-            f.write(report)
-        print(f"\nReport written to {REPORT_PATH}")
-        print("\n" + "=" * 60)
-
-    unittest.main(argv=[""], exit=True, verbosity=2)
+    if "--live" in sys.argv[1:]:
+        main(sys.argv[1:])
+    else:
+        unittest.main(argv=sys.argv[:1] + sys.argv[1:], verbosity=2)
