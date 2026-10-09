@@ -280,13 +280,17 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
         result = self.validate(base)
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_rejects_marked_deferred_acceptance(self):
-        base = self.empty_base()
-        self.write_shaped_spec(acceptance_extra=' data-story="story" data-spec-tbd="open"')
-        shutil.copy2(FALLBACK, self.style)
-        result = self.validate(base)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("cannot be deferred", result.stderr)
+    def test_accepts_open_tbd_in_acceptance_criteria(self):
+        """repair-specs #acceptance-criteria-unknown: an open TBD commits; the review page gates Accept spec."""
+        for scope in ("traceability", ""):
+            with self.subTest(scope=scope):
+                base = self.empty_base()
+                self.write_shaped_spec(scope=scope, acceptance_extra=' data-story="story" data-spec-tbd="open"')
+                html = self.spec.read_text().replace('data-anchor="acceptance">', 'data-anchor="acceptance"><p data-spec-tbd="open" data-anchor="acceptance-gap">Missing end state.</p>', 1)
+                self.spec.write_text(html)
+                shutil.copy2(FALLBACK, self.style)
+                result = self.validate(base)
+                self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_rejects_ambiguous_acceptance_scope(self):
         base = self.empty_base()
