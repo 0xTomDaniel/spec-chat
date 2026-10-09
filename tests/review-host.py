@@ -285,6 +285,19 @@ class ReviewHostTest(unittest.TestCase):
         self.assertEqual(removed.returncode, 0, removed.stderr)
         self.assertEqual([row["id"] for row in self.registry(state)["resource"]], [stale_id])
 
+    def test_reviewed_on_row_missing_spec_fails_before_any_commit(self):
+        """A stale row is skipped only when untouched: reviewed of it is rejected before any git write."""
+        state = self.work / "state"
+        started = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        before = self.registry(state)["resource"][0]
+        head = self.git("rev-parse", "HEAD")
+        self.spec.unlink()
+        done = self.run_cli("reviewed", "--state-dir", str(state), "--id", before["id"], state=state)
+        self.assertNotEqual(done.returncode, 0)
+        self.assertEqual(self.git("rev-parse", "HEAD"), head)
+        self.assertEqual(self.registry(state)["resource"][0]["base"], before["base"])
+
     def test_stop_then_register_replaces_resource_and_restarts_server(self):
         state = self.work / "state"
         first = self.run_cli(*self.register_args(state), state=state)
