@@ -300,6 +300,46 @@ class BootstrapTest(unittest.TestCase):
         status = self.settle(again)
         self.assertEqual((status["state"], status["candidates"]), ("done", ["docs/specs/onboarding.spec.html#acceptance-onboarding"]))
 
+    def test_changed_warm_up_definition_reruns_keeping_human_decisions(self):
+        """project-rules #bootstrap-once, #acceptance-rewarm: a done warm-up under an earlier definition warms
+        again; confirmed and dismissed rules and each offer's sent or dismissed survive, also a failed rerun."""
+        fresh = "Every page states its loading state."
+        scope = {ONBOARDING: "every feature", LOCAL: "every feature", fresh: "every feature"}
+        rows = [self.row()]
+        service = self.service(FakeProvider(scope=scope))
+        service.warm(rows)
+        self.assertEqual(self.settle(service)["definition"], jev.WARM_DEFINITION)
+        self.confirm(service, rows[0], ONBOARDING)
+        self.assertTrue(service.dismiss(rows[0], str(self.specs / "export.spec.html"), "rule", LOCAL))
+        self.assertTrue(service.record_offer("proj", "sent"))
+        # current definition: a done warm-up is not redone
+        self.assertEqual(self.service(FakeProvider(scope=scope)).warm(rows), [])
+        path = service.onboarding_path
+        for earlier in (None, jev.WARM_DEFINITION - 1):  # missing, then older
+            document = tomllib.loads(path.read_text(encoding="utf-8"))
+            document["project"]["proj"].pop("definition")
+            if earlier is not None:
+                document["project"]["proj"]["definition"] = earlier
+            path.write_text(jev.dump_toml(document), encoding="utf-8")
+            self.write("loading.spec.html", spec(("loading-one", fresh), body="Loading."))
+            self.main = self.commit()
+            rows = [self.row()]
+
+            down = self.service(FakeProvider(scope=scope))
+            down._main_specs = lambda rows: (_ for _ in ()).throw(RuntimeError("main unreadable"))
+            self.assertEqual(down.warm(rows), ["proj"])
+            failed = self.settle(down)
+            self.assertEqual((failed["state"], failed["offer"]), ("failed", "sent"))
+            again = self.service(FakeProvider(scope=scope))
+            self.assertEqual(again.warm(rows), ["proj"])
+            status = self.settle(again)
+            self.assertEqual((status["state"], status["definition"], status["offer"]), ("done", jev.WARM_DEFINITION, "sent"))
+            self.assertEqual(status["rules"], ["docs/specs/onboarding.spec.html#acceptance-onboarding"])
+            page = self.page(again, rows)
+            self.assertEqual([c["text"] for c in page["candidate_offer"]["candidates"]], [fresh])
+            self.assertIsNone(page["offer"])
+            self.assertEqual(self.service(FakeProvider(scope=scope)).warm(rows), [])
+
     def test_unreadable_main_fails_the_warm_up_and_is_never_kept_as_absent(self):
         """#bootstrap-once: a warm-up that cannot read main's specs (its repo mid-rebuild) fails, so it never
         stands done without them, and a later read of the same commit sees the specs (no failed read is kept)."""
