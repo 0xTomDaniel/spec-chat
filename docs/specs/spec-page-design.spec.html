@@ -65,7 +65,7 @@ The spec document's own content styling is outside this design.</p>
 
 <p data-acceptance-criterion data-anchor="acceptance-mark-warning" data-story="story-consistent-chrome">
 <span data-acceptance-scenario>Given a spec reviewer on a spec with a Jev marker whose notes are all Warning level, a fixture that must be added to provide it, When they view the marker,</span>
-<span data-acceptance-observable>Then it shows as a light red dot, distinct from the important, neutral, and passed markers.</span>
+<span data-acceptance-observable>Then it shows as a light red dot in the <a href="#token-marker-warning">warning marker</a> color, distinct from the important, neutral, and passed markers.</span>
 </p>
 
 <p data-acceptance-criterion data-anchor="acceptance-contrast" data-story="story-consistent-chrome">
@@ -130,6 +130,8 @@ The spec document's own content styling (DOC_CSS <code>article.spec</code> rules
 <tr data-anchor="token-resolved"><td><code>--ui-resolved</code>, <code>--ui-resolved-soft</code></td><td><code>#005c32</code>, <code>#e6efea</code></td><td>Resolved status. Reuses <code>--ui-pass</code> pair.</td></tr>
 <tr data-anchor="token-error"><td><code>--ui-error</code></td><td><code>#a5000f</code></td><td>Error overlay background. Reuses <code>--ui-fail</code>.</td></tr>
 <tr data-anchor="token-marker"><td><code>--ui-marker</code>, <code>--ui-marker-important</code>, <code>--ui-marker-pass</code></td><td><code>#767b85</code>, <code>#d1242f</code>, <code>#1a7f37</code></td><td>Jev markers. Agreed mark level colors.</td></tr>
+<tr data-anchor="token-on-marker"><td><code>--ui-on-marker</code></td><td><code>#ffffff</code></td><td>Glyph on a Jev marker (<code>!</code>, check). Not overridden in dark mode: markers keep their fill in both themes.</td></tr>
+<tr data-anchor="token-marker-warning"><td><code>--ui-marker-warning</code></td><td><code>#e5534b</code></td><td>Warning-level Jev marker. Not overridden in dark mode.</td></tr>
 <tr data-anchor="token-pin"><td><code>--ui-pin-ring</code></td><td><code>rgba(176, 84, 14, 0.25)</code></td><td>Active pin and thread ring glow. Derived from <code>--ui-draft</code>.</td></tr>
 <tr data-anchor="token-shadow"><td><code>--ui-shadow</code></td><td><code>rgba(51, 51, 51, 0.14)</code></td><td>Toolbar, dock, panel box shadow. One shadow token from <code>--ui-ink</code>.</td></tr>
 </tbody>
