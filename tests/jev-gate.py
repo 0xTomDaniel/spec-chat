@@ -297,7 +297,7 @@ class ClaudeCliOnlyTest(unittest.TestCase):
         self.assertEqual(result["answer"]["label"], "yes")
 
     def test_verify_band_runs_through_the_cli_provider(self):
-        """#verifier-role: with no injected provider the verify band calls the CLI general LLM and shows its yes."""
+        """#verifier-role: with no injected provider the verify band calls the CLI general LLM; its yes records verified (jev-suggestions #record-outcome)."""
         primary = FakeProvider({"contradicts": ("yes", 0.8)}, general={"contradicts": "yes"})
         seam = jev.JevSeam(SETS, api_key="fake")
         seam.provider = lambda: primary
@@ -310,7 +310,7 @@ class ClaudeCliOnlyTest(unittest.TestCase):
         with unittest.mock.patch.object(jev.ClaudeCliProvider, "complete", cli_complete):
             result = seam.ask(draft_check()["chain"][1])
         self.assertEqual([payload["model"] for payload in payloads], [""])
-        self.assertEqual(result["outcome"], "shown")
+        self.assertEqual(result["outcome"], "verified")
         self.assertEqual(result["answer"]["label"], "yes")
 
     def test_record_source_jev_for_primary(self):
