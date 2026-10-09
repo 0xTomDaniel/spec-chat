@@ -286,6 +286,8 @@ def rule_identity(text: str) -> str:
 # The human's rule decisions (project-rules #dismiss, #approval): the card action to the resolution it records.
 # Not for this spec (here), Not a project rule (rule), Confirm rule (confirm).
 DECISIONS = {"here": "dismissed", "rule": "not-a-rule", "confirm": "rule"}
+# An owner's resolutions of an Important mark through the agent read (#record-resolution); dismissed names its reason.
+OWNER_RESOLUTIONS = ("fixed", "reason", "dismissed", "thread")
 # Longest rule name kept, written or corrected (project-rules #card-name-source).
 RULE_NAME_LIMIT = 120
 
@@ -546,19 +548,21 @@ class JudgmentStore:
         return None
 
     def resolve(self, record_id: str, resolution: str, reason: str | None = None,
-                confirmed: bool | None = None, **holds: Any) -> dict[str, Any] | None:
+                confirmed: bool | None = None, if_absent: bool = False, **holds: Any) -> dict[str, Any] | None:
         """Set resolution and confirmed on an existing record (#record-resolution, #record-confirmed).
 
         Only a caller that knows a label is confirmed says so: a human's rule decision or an audit. fixed stays
         unconfirmed, since an edit can answer a wrong mark (#measure-feedback). holds names what a rule decision
         holds for (project-rules #dismiss-scope). The amended record is appended to the JSONL so it survives a
-        restart, and a rule decision also to decisions.jsonl, which the server holds whole."""
+        restart, and a rule decision also to decisions.jsonl, which the server holds whole. if_absent leaves a
+        record that already has a resolution unchanged and answers None: a mark ends once."""
         record = self.by_id(record_id)
         if record is None:
             return None
         with self.lock:
             record = self._held_value(record["cache_key"])
-            if record is None or record is _MISS or record.get("record_id") != record_id:
+            if record is None or record is _MISS or record.get("record_id") != record_id \
+                    or (if_absent and record.get("resolution")):
                 return None
             res: dict[str, Any] = {"status": resolution, **holds}
             if reason:
@@ -2156,6 +2160,10 @@ class JevService:
         self._warm_started: set[str] = set()
         self._warm_threads: list[threading.Thread] = []
 
+        # Fixed marks (#record-resolution): each spec's Important marks on its last settled read.
+        self._marks_lock = threading.Lock()
+        self._marks: dict[tuple[Any, ...], dict[tuple[Any, ...], tuple[str, Any]]] = {}
+
     def stop(self) -> None:
         """Stop asking: later reads ask nothing, queued asks are dropped, in-flight asks finish their record."""
         with self._ask_lock:
@@ -3145,6 +3153,36 @@ class JevService:
             self._reconcile_rule(str(project), text)
         return True
 
+    def resolve(self, mount: Mapping[str, Any], record_id: Any, status: Any, reason: Any = None) -> bool:
+        """An owner's resolution of an Important mark through the agent read (#record-resolution): fixed, reason,
+        dismissed with its reason, or thread, on the mark's record, unconfirmed until audited (#measure-feedback).
+        False when the resolution is none of these, a dismissal names no reason, or the record is unknown or
+        already resolved."""
+        reason = " ".join(reason.split()) if isinstance(reason, str) else ""
+        if status not in OWNER_RESOLUTIONS or (status == "dismissed" and not reason) or not isinstance(record_id, str):
+            return False
+        return self._seam_for(mount).store.resolve(record_id, status, reason or None, if_absent=True) is not None
+
+    def _fixed(self, seam: "JevSeam", mount: Mapping[str, Any], relative: str, items: list[dict[str, Any]]) -> None:
+        """A spec fix clears an Important mark on the next head (#record-resolution, #acceptance-resolution-fixed):
+        a mark the spec's last settled read showed, whose record no Important mark now carries, is fixed on that
+        record, unconfirmed until audited. A read with any question pending or unavailable decides nothing; a mark gone because
+        its rule is no project rule now, or already resolved, is not fixed."""
+        spec = (mount.get("root"), mount.get("test"), relative)
+        marks = {(item["kind"], item["id"], item.get("target")): (item["record"], item.get("text"))
+                 for item in items if item.get("agent_level") == "important" and item.get("record")}
+        with self._marks_lock:
+            last = self._marks.get(spec, {})
+            if any(item.get("state") in ("pending", "unavailable") for item in items):
+                self._marks[spec] = {**last, **marks}
+                return
+            self._marks[spec] = marks
+        shown = {record_id for record_id, _ in marks.values()}
+        project = mount.get("project")
+        for record_id, text in last.values():
+            if record_id not in shown and not (text and seam.store.decided(DECISIONS["rule"], project, text)):
+                seam.store.resolve(record_id, "fixed", if_absent=True)
+
     def record_offer(self, project: Any, action: str, offer: str = "reconcile") -> bool:
         """Record either one-time offer, reconcile or candidates, sent or dismissed in the project's table; the
         first record stands (#bootstrap-once)."""
@@ -3233,6 +3271,8 @@ class JevService:
             if unsure:
                 item["unsure"] = unsure
             items.append(item)
+        if facts:
+            self._fixed(seam, mount, relative, items + rule_items)
         offer = None if mount.get("test") else self.offer(mount.get("project"), mount.get("root"))
         candidates = None if mount.get("test") else self.candidate_offer(mount.get("project"), mount.get("root"))
         # Offers list repo paths; the page links them, and their cards' sources, as its mount serves them.
@@ -3247,7 +3287,7 @@ class JevService:
                 "candidate_offer": candidates, "offer": offer, "levels": dict(MARK_LEVELS)}
 
 
-__all__ = ["BUILDERS", "CHAIN_CONTINUE", "DRAFT_CHECK_KINDS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MARK_LEVELS", "MODEL",
+__all__ = ["BUILDERS", "CHAIN_CONTINUE", "DRAFT_CHECK_KINDS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MARK_LEVELS", "MODEL", "OWNER_RESOLUTIONS",
            "OPENROUTER_DECISIONS_URL", "mount_prefix", "served_path", "OpenRouterProvider", "QuestionSet", "SILENT_NO",
            "anchor_context",
            "build_audience_questions", "build_board_conflict_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_rule_question", "build_scope_questions", "build_type_questions", "chain_result", "changed_leaf_clauses", "draft_check",

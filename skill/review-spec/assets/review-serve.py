@@ -1154,8 +1154,9 @@ listenHost();
     def _post_offer(self, query, body):
         """The one Jev record route: either one-time offer, reconcile or candidates (body kind), sent or dismissed
         (project-rules #bootstrap-offer, #bootstrap-candidates), a rule card's Not for this spec or Not a project
-        rule (project-rules #dismiss-store), or a candidate card's Confirm rule with an optional corrected name
-        (project-rules #approval)."""
+        rule (project-rules #dismiss-store), a candidate card's Confirm rule with an optional corrected name
+        (project-rules #approval), or an owner's resolution of an Important mark from the agent read
+        (jev-suggestions #record-resolution)."""
         mount, target, _ = self._resolve_path(query.get("path", [""])[0], spec_only=True)
         if not mount:
             return self._json({"error": "bad path"}, 400)
@@ -1169,6 +1170,12 @@ listenHost();
             try:
                 ok = self.server.jev.dismiss(mount, target, data.get("dismiss"), data.get("rule"), data.get("record"),
                                              data.get("spec"))
+            except OSError:
+                return self._json({"error": "jev unavailable"}, 503)
+            return self._json({"ok": ok}, 200 if ok else 400)
+        if "resolve" in data:
+            try:
+                ok = self.server.jev.resolve(mount, data.get("record"), data.get("resolve"), data.get("reason"))
             except OSError:
                 return self._json({"error": "jev unavailable"}, 503)
             return self._json({"ok": ok}, 200 if ok else 400)

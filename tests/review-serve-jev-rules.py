@@ -913,6 +913,111 @@ class RulesTest(unittest.TestCase):
         service = jev.JevService(state_dir=Path(self.tmp.name) / "state", api_key="")
         self.assertEqual(self.read(service), {"jev": "off", "items": [], "levels": jev.MARK_LEVELS})
 
+    # An Important mark's resolution on its record (jev-suggestions #record-resolution, #acceptance-resolution,
+    # #acceptance-resolution-fixed; project-rules #acceptance-fixed-unconfirmed).
+
+    def record(self, service, record_id):
+        return service.seam.store.by_id(record_id)
+
+    def shown(self, service):
+        self.seed()
+        item = self.missed(self.read(service))[0]
+        self.assertEqual(item["agent_level"], "important")
+        return item
+
+    def test_owner_dismissal_with_reason_is_dismissed_unconfirmed_and_not_a_replay_label(self):
+        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("missed", 0.95)})
+        service = self.service(provider, approve=(ONBOARDING,))
+        item = self.shown(service)
+        mount = self.mount("alpha")
+        # an owner dismissal carries its reason; unknown records and resolutions are refused
+        self.assertFalse(service.resolve(mount, item["record"], "dismissed"))
+        self.assertFalse(service.resolve(mount, item["record"], "rule", "no"))
+        self.assertFalse(service.resolve(mount, "judgment-nope", "thread"))
+        self.assertTrue(service.resolve(mount, item["record"], "dismissed", "The export is a download, no screen."))
+        record = self.record(service, item["record"])
+        self.assertEqual(record["resolution"], {"status": "dismissed", "reason": "The export is a download, no screen."})
+        self.assertNotIn("confirmed", record)
+        self.assertNotIn(item["record"], [r["record_id"] for r in service.seam.store.confirmed_records()])
+        # one resolution per mark: a later one is refused and the first stands
+        self.assertFalse(service.resolve(mount, item["record"], "thread"))
+        self.assertEqual(self.record(service, item["record"])["resolution"]["status"], "dismissed")
+
+    def test_reason_and_thread_resolutions_are_recorded_unconfirmed(self):
+        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("missed", 0.95)})
+        service = self.service(provider, approve=(ONBOARDING,))
+        item = self.shown(service)
+        self.assertTrue(service.resolve(self.mount("alpha"), item["record"], "reason", "Onboarding: not needed"))
+        record = self.record(service, item["record"])
+        self.assertEqual((record["resolution"], "confirmed" in record),
+                         ({"status": "reason", "reason": "Onboarding: not needed"}, False))
+        service2 = self.service(provider, state="state2", approve=(ONBOARDING,))
+        item = self.missed(self.read(service2))[0]
+        self.assertTrue(service2.resolve(self.mount("alpha"), item["record"], "thread"))
+        self.assertEqual(self.record(service2, item["record"])["resolution"], {"status": "thread"})
+
+    def test_a_spec_fix_that_clears_the_mark_on_the_next_head_records_fixed_unconfirmed(self):
+        covered = lambda text: "covered" if "onboarding section" in text else "missed"
+        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: (covered, 0.95)})
+        service = self.service(provider, approve=(ONBOARDING,))
+        item = self.shown(service)
+        # a mark still shown on the next read is not fixed
+        self.assertEqual(self.missed(self.read(service))[0]["record"], item["record"])
+        self.assertNotIn("resolution", self.record(service, item["record"]))
+        self.write("b.spec.html", spec(("b-one", FEATURE + " It adds its onboarding section."), body="Body."))
+        self.commit()
+        self.assertEqual(self.missed(self.read(service)), [])
+        record = self.record(service, item["record"])
+        self.assertEqual(record["resolution"], {"status": "fixed"})
+        self.assertNotIn("confirmed", record)
+        # the eval replay scores only confirmed labels: an audit's label counts, an owner dismissal does not
+        self.assertNotIn(item["record"], [r["record_id"] for r in service.seam.store.confirmed_records()])
+        service.seam.store.resolve(item["record"], "fixed", confirmed=True)
+        self.assertIn(item["record"], [r["record_id"] for r in service.seam.store.confirmed_records()])
+
+    def test_an_owner_resolved_or_human_dismissed_mark_is_not_overwritten_as_fixed(self):
+        covered = lambda text: "covered" if "onboarding section" in text else "missed"
+        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: (covered, 0.95)})
+        service = self.service(provider, approve=(ONBOARDING,))
+        item = self.shown(service)
+        self.assertTrue(service.resolve(self.mount("alpha"), item["record"], "thread"))
+        self.write("b.spec.html", spec(("b-one", FEATURE + " It adds its onboarding section."), body="Body."))
+        self.assertEqual(self.missed(self.read(service)), [])
+        self.assertEqual(self.record(service, item["record"])["resolution"], {"status": "thread"})
+        # the human's Not for this spec hides the mark at once; it stays dismissed, never fixed
+        service = self.service(provider, state="state2", approve=(ONBOARDING,))
+        self.write("b.spec.html", spec(("b-one", FEATURE), body="Body again."))
+        item = self.missed(self.read(service))[0]
+        self.assertTrue(service.dismiss(self.mount("alpha"), str(self.specs / "b.spec.html"), "here", item["text"], item["record"]))
+        self.assertEqual(self.missed(self.read(service)), [])
+        self.assertEqual(self.record(service, item["record"])["resolution"]["status"], "dismissed")
+
+    def test_a_mark_gone_while_its_question_is_unavailable_is_not_fixed(self):
+        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("missed", 0.95)})
+        service = self.service(provider, approve=(ONBOARDING,))
+        item = self.shown(service)
+        unavailable = {**item, "state": "unavailable", "label": None, "record": None, "level": None, "agent_level": None}
+        service._fixed(service.seam, self.mount("alpha"), "specs/b.spec.html", [unavailable])
+        self.assertNotIn("resolution", self.record(service, item["record"]))
+        service._fixed(service.seam, self.mount("alpha"), "specs/b.spec.html", [])
+        self.assertEqual(self.record(service, item["record"])["resolution"], {"status": "fixed"})
+
+    def test_a_mark_gone_while_rules_cannot_be_read_is_not_fixed(self):
+        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("missed", 0.95)})
+        service = self.service(provider, approve=(ONBOARDING,))
+        item = self.shown(service)
+        real, calls = service._read_facts, []
+
+        def busy_once(*args):
+            calls.append(args)
+            if len(calls) == 1:
+                raise RuntimeError("busy")
+            return real(*args)
+
+        with unittest.mock.patch.object(service, "_read_facts", side_effect=busy_once):
+            self.assertEqual(self.missed(self.read(service, settle=False)), [])  # rules unread, questions read
+        self.assertNotIn("resolution", self.record(service, item["record"]))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -48,6 +48,18 @@ class Server:
                     self.send_error(404)
                     return
                 owner.queries.append((parsed.path, parse_qs(parsed.query)))
+                self.answer()
+
+            def do_POST(self):
+                parsed = urlparse(self.path)
+                if parsed.path != "/api/jev/offer":
+                    self.send_error(404)
+                    return
+                data = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                owner.queries.append((parsed.path, parse_qs(parsed.query), data))
+                self.answer()
+
+            def answer(self):
                 body = json.dumps(owner.answers.pop(0) if len(owner.answers) > 1 else owner.answers[0]).encode()
                 self.send_response(owner.status)
                 self.send_header("Content-Type", "application/json")
@@ -159,6 +171,29 @@ class JevReadTest(unittest.TestCase):
     def test_no_candidates_reads_none(self):
         server = self.serve({"jev": "on", "items": [], "rules": []})
         self.assertIn("candidates  none", run(server.url + "/specs/b.spec.html?base=abc").stdout.splitlines())
+
+    def test_resolve_posts_an_owner_resolution_to_the_one_record_route(self):
+        # jev-suggestions #record-resolution, #acceptance-resolution
+        server = self.serve({"ok": True})
+        out = run(server.url + "/specs/b.spec.html?base=abc", "--resolve", "r2", "dismissed", "--reason", "Jev is wrong here")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(out.stdout, "r2  dismissed\n")
+        self.assertEqual(server.queries, [("/api/jev/offer", {"path": ["specs/b.spec.html"]},
+                                           {"resolve": "dismissed", "record": "r2", "reason": "Jev is wrong here"})])
+        out = run(server.url + "/specs/b.spec.html?base=abc", "--resolve", "r1", "thread")
+        self.assertEqual((out.returncode, server.queries[-1][2]), (0, {"resolve": "thread", "record": "r1"}))
+
+    def test_resolve_refused_fails_loudly(self):
+        server = self.serve({"ok": False}, status=400)
+        out = run(server.url + "/specs/b.spec.html?base=abc", "--resolve", "r2", "fixed")
+        self.assertEqual(out.returncode, 1)
+        self.assertIn("HTTP 400", out.stderr)
+        # an owner dismissal names its reason; checked before any request
+        out = run(server.url + "/specs/b.spec.html?base=abc", "--resolve", "r2", "dismissed")
+        self.assertEqual(out.returncode, 2)
+        out = run(server.url + "/specs/b.spec.html?base=abc", "--resolve", "r2", "rule")
+        self.assertEqual(out.returncode, 2)
+        self.assertEqual(len(server.queries), 1)
 
     def test_server_error_fails_loudly(self):
         server = self.serve({"error": "invalid base"}, status=400)
