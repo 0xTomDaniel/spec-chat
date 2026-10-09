@@ -1,12 +1,12 @@
 ---
 name: repair-specs
-description: Bring a repo's existing specs and ADRs to the current shaping contract. Removes non-target text, moves behavior to owning specs, resolves contradictions, reduces ADRs to the ADR model, and rewrites acceptance criteria to the shaping contract's criterion rules and Jev project rules. Runnable any time or as onboarding catch-up.
+description: Bring a repo's existing specs and ADRs to the current shaping contract. Removes non-target text, moves behavior to owning specs, resolves contradictions, reduces ADRs to the ADR model, and rewrites acceptance criteria to the shaping contract's criterion rules and Jev project rules, brings spec pages to the visual quality contract, then checks each spec against its code for drift. Runnable any time or as onboarding catch-up.
 ---
 
 # Repair specs
 
 One skill that brings every spec and ADR in a repo to the current [shaping contract](../shape-spec/SKILL.md).
-Reads only Spec Chat's `onboarding.toml` and the repo's specs and ADRs; no peer status file or peer name.
+Reads Spec Chat's `onboarding.toml`, the repo's specs and ADRs, and for the drift check the repo's code and Git history; names no peer status file or peer.
 
 ## Inputs
 
@@ -17,8 +17,8 @@ When N is zero or the table is absent, there is nothing to reconcile; stop.
 
 ## Repair types
 
-Run in this fixed order: clean, home, contradict, ADR, criteria.
-Each type reads every spec and ADR as the previous type left it.
+Run in this fixed order: clean, home, contradict, ADR, criteria, presentation.
+Each type reads every spec and ADR as the previous type left it, so presentation draws from final text.
 
 ### 1. Clean
 
@@ -73,7 +73,55 @@ Jev project rules, only when Jev is on:
 - For each spec whose criteria miss a rule, rewrite to satisfy the rule using the rule's own wording.
 - The skill names no project's rules and applies whatever Jev found; no rule wording or format is hardcoded.
 
-When Jev is off, skip only the Jev project-rule repair; clean, home, contradict, ADR, and criterion-rule repairs still run.
+When Jev is off, skip only the Jev project-rule repair; clean, home, contradict, ADR, criterion-rule, and presentation repairs still run.
+
+### 6. Presentation
+
+Bring every spec page to the shaping contract's [visual quality contract](../../docs/specs/prompt-first-shaping.spec.html#visual-quality) and the [authoring](../shape-spec/references/authoring.md) figure and layout rules.
+Presentation repair changes how a spec page reads, never what it says: every behavior sentence, acceptance criterion, and boundary keeps its wording.
+The text governs any figure that disagrees with it.
+Applies to specs only; Markdown ADRs have no figures or page styling to repair.
+
+- An ASCII-art figure in a preformatted block, a placeholder figure, or a stale figure: redraw it as a purpose-fit diagram of the mechanism or screen the adjacent text states, with a caption and stable anchor.
+- A figure that contradicts the spec text: make the figure match the text; leave the text unchanged.
+- A figure painting its own fixed colors: take its colors from the shared stylesheet so labels and edges read at the contract's [contrast](../../docs/specs/prompt-first-shaping.spec.html#visual-quality-contrast) in light and dark color schemes.
+- A page-level style block: remove it and link the repo's shared spec stylesheet; the spec must pass the structural validator.
+- Skipped heading levels, unwrapped wide tables, or ad hoc callouts: put headings in order, wrap wide tables to scroll inside the page, and use the shared stylesheet's callout markup.
+- A runtime lacking a capability the bundled runtime requires: replace it through the review [preflight](../review-spec/SKILL.md) (`scripts/preflight.py`), which commits the migration alone, touching only the shared runtime assets.
+- Never turn relational prose into new figures; that changes behavior text and belongs to shaping.
+
+The review chrome is the runtime's, owned by [spec page design](../../docs/specs/spec-page-design.spec.html), and reaches a spec only through preflight.
+
+## Drift check
+
+After the six repairs, check each spec against the code that implements it.
+Drift is a criterion whose behavior the code does differently, or a code behavior no criterion of the owning spec states, including code no pointer connects to any spec whose behavior the spec covers in spirit.
+Read code; never edit it.
+
+Find the code a spec points to, in order, stopping at the first step that yields code:
+1. Code the spec links.
+2. Code committed together with the spec (its shared commits in Git history).
+3. Code named by its modular boundary seams.
+
+Then always review code no pointer connects to any spec, and judge whether its behavior falls within this spec's scope in spirit.
+Write no spec-to-code index; the spec's links and Git history already are the pointers.
+
+For each drift, judge whether the code's behavior makes sense and fits the spirit of the spec, and present the human one suggestion naming the spec anchor, the code location, the mismatch, and which side to change:
+
+| Drift, as judged | Suggestion |
+| --- | --- |
+| Code does a criterion's behavior differently; it makes sense and fits the spirit of the spec (the common case, a spec behind its code) | Update the spec to match the code (default) |
+| Code does a criterion's behavior differently; it looks broken or against the spirit of the spec | Fix the code, saying why; stays a recommendation |
+| Code has a behavior no criterion states, whether the spec points to that code or only covers it in spirit | Add a criterion for it to the owning spec (name the code location and the behavior) |
+
+Ask the human to decide each suggestion: adjust the spec, fix the code later, or leave it.
+- Adjust the spec: make exactly the edit the human chose and no other change for that suggestion, then commit it.
+- Fix the code later: change neither spec nor code; the code fix stays a recommendation to the human.
+- Leave it: change neither spec nor code.
+
+Nothing about drift is written into a spec as a finding, note, or TBD; a spec changes only by the edits the human chose.
+The drift check, and so the run, is not done until the human has settled every suggestion; asked whether the run is done before then, answer that the drift check is waiting on the unsettled suggestion and report no completion.
+A spec whose code the check cannot find gets no suggestion and no change; tell the human that spec was not checked against code.
 
 ## Editing contract
 
@@ -93,9 +141,9 @@ Same rule as the shaping agent's [fix-raises-new-mark](../../docs/specs/project-
 
 ## Output
 
-When repairs complete:
+When repairs and the drift check complete:
 
-1. Commit each changed spec and ADR on the current branch.
+1. Commit each changed spec and ADR on the current branch, including the drift edits the human chose.
 2. Register each changed spec with the review server so the reviewer sees changes with Git focus.
 
 Commits are local only; the skill never pushes, opens a pull request, or creates an issue.
@@ -104,7 +152,7 @@ Commits are local only; the skill never pushes, opens a pull request, or creates
 
 When `onboarding.toml` shows specs to reconcile for a project:
 
-1. Run all five repair types on that project's specs.
+1. Run all six repair types and the drift check on that project's specs.
 2. Update the project's table in `onboarding.toml` when done (reconciled count, timestamp).
 
 ## Burden
