@@ -78,7 +78,7 @@ class AsymmetricThresholdTest(unittest.TestCase):
             p_yes_map={"contradicts": 0.80},
             verifier_response={"answer": "yes", "clause_span": "x", "target_span": "y"})
         record = self.seam(provider).ask(contradicts_step)
-        self.assertEqual(record["outcome"], "shown")
+        self.assertEqual(record["outcome"], "verified")
         self.assertEqual(len(provider.complete_calls), 1)
         self.assertTrue(record.get("escalated"))
 
@@ -119,10 +119,14 @@ class VerifierTest(unittest.TestCase):
             p_yes_map={"contradicts": 0.80},
             verifier_response={"answer": "yes", "clause_span": "text from clause", "target_span": "text from target"})
         record = self.seam(provider).ask(contradicts_step)
-        self.assertEqual(record["outcome"], "shown")
+        self.assertEqual(record["outcome"], "verified")
         self.assertEqual(record["answer"]["label"], "yes")
         self.assertEqual(record["answer"]["clause_span"], "text from clause")
         self.assertEqual(record["answer"]["target_span"], "text from target")
+        self.assertEqual(record["verifier"], {"ran": True, "answer": "yes",
+                                              "spans": {"clause": "text from clause", "target": "text from target"}})
+        result = self.seam(provider).ask_chain(chain)
+        self.assertEqual(result["answer"]["label"], "contradicts")
 
     def test_verifier_no(self):
         """Verifier no: mark does not show."""
@@ -132,8 +136,11 @@ class VerifierTest(unittest.TestCase):
             p_yes_map={"contradicts": 0.80},
             verifier_response={"answer": "no", "clause_span": "", "target_span": ""})
         record = self.seam(provider).ask(contradicts_step)
-        self.assertEqual(record["outcome"], "shown")
+        self.assertEqual(record["outcome"], "verifier-rejected")
         self.assertEqual(record["answer"]["label"], "no")
+        self.assertEqual(record["verifier"], {"ran": True, "answer": "no", "spans": {"clause": "", "target": ""}})
+        result = self.seam(provider).ask_chain(chain)
+        self.assertNotEqual(result["answer"]["label"], "contradicts")
 
     def test_verifier_yes_without_spans(self):
         """Verifier yes without quoted spans: mark does not show."""
@@ -143,8 +150,9 @@ class VerifierTest(unittest.TestCase):
             p_yes_map={"contradicts": 0.80},
             verifier_response={"answer": "yes", "clause_span": "", "target_span": ""})
         record = self.seam(provider).ask(contradicts_step)
-        self.assertEqual(record["outcome"], "shown")
+        self.assertEqual(record["outcome"], "verifier-rejected")
         self.assertEqual(record["answer"]["label"], "no")
+        self.assertEqual(record["verifier"], {"ran": True, "answer": "yes", "spans": {"clause": "", "target": ""}})
 
     def test_verifier_record_fields(self):
         """Verifier record has kind=draft-check kind, model=LLM model (#verifier-record)."""
