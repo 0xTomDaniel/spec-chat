@@ -129,12 +129,6 @@
           "y": 70
         },
         {
-          "id": "issue",
-          "name": "Issue skill",
-          "x": 300,
-          "y": 30
-        },
-        {
           "id": "review",
           "name": "Review skill",
           "x": 300,
@@ -157,20 +151,9 @@
           "name": "Durable files + Git",
           "x": 300,
           "y": 250
-        },
-        {
-          "id": "public",
-          "name": "Public capability",
-          "x": 100,
-          "y": 190
         }
       ],
       "links": [
-        {
-          "source": "shape",
-          "target": "issue",
-          "value": "current issue"
-        },
         {
           "source": "shape",
           "target": "review",
@@ -200,11 +183,6 @@
           "source": "review",
           "target": "files",
           "value": "spec + replies"
-        },
-        {
-          "source": "public",
-          "target": "transport",
-          "value": "approved-port bind"
         }
       ],
       "edgeLabel": {
@@ -844,8 +822,8 @@ Where a repo's ADRs carry no number, the line names the new ADR by a link to its
 
 <section data-anchor="tdd-contract" id="tdd-contract">
 <h2>Implementation and proof contract</h2>
-<p data-anchor="tdd-prompt-red">Before changing shaping instructions, a fresh agent scenario must show that the current skills do not create the prompt-first issue and spec seed or maintain the agreed burden boundary.</p>
-<p data-anchor="tdd-prompt-green">A different fresh agent scenario must run the same request against the new skill and produce the current issue, spec seed, and review handoff without adding excluded machinery.</p>
+<p data-anchor="tdd-prompt-red">Before changing shaping instructions, a fresh agent scenario must show that the current skills do not write the prompt-first spec seed and review hand-off or maintain the agreed burden boundary.</p>
+<p data-anchor="tdd-prompt-green">A different fresh agent scenario must run the same request against the new skill and produce the spec seed and review hand-off, calling no issue operation and adding no excluded machinery.</p>
 <p data-anchor="tdd-focus-red">A runtime test must first fail because current Spec Chat cannot classify current anchored blocks against a Git baseline or render focus solely from that classification.</p>
 <p data-anchor="tdd-exact-baseline">A regression requests both the ref and commit of a sibling snapshot and verifies exact baseline bytes; source-verifier tests cover substituted baselines, wrong served pages, absent-at-base new specs, and uncommitted new files.</p>
 <p data-anchor="tdd-focus-green">The focus test passes for added, modified, unchanged, new-file, normal-view, and unavailable-baseline cases.</p>
