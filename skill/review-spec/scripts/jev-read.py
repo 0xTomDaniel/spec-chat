@@ -34,14 +34,10 @@ def jev_url(review_url: str) -> str:
     return urllib.parse.urlunsplit((parts.scheme, parts.netloc, "/api/jev", urllib.parse.urlencode(params), ""))
 
 
-# An owner's resolutions of an Important mark (jev-suggestions #record-resolution); the server checks them again.
-RESOLUTIONS = ("fixed", "reason", "dismissed", "thread")
-
-
 def record_url(review_url: str) -> str:
     """The one Jev record route for the link's spec (project-rules #dismiss-store)."""
     parts = urllib.parse.urlsplit(jev_url(review_url))
-    path = urllib.parse.parse_qs(parts.query)["path"][0]
+    path = urllib.parse.parse_qs(parts.query).get("path", [""])[0]
     return urllib.parse.urlunsplit((parts.scheme, parts.netloc, "/api/jev/offer", urllib.parse.urlencode({"path": path}), ""))
 
 
@@ -124,15 +120,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--wait", type=float, default=0, metavar="SECONDS",
                         help="re-read every 2s until nothing is pending, at most this long")
     parser.add_argument("--resolve", nargs=2, metavar=("RECORD", "RESOLUTION"),
-                        help="record an Important mark's resolution: " + ", ".join(RESOLUTIONS))
+                        help="record an Important mark's resolution: fixed, reason, thread, or dismissed (the server checks it)")
     parser.add_argument("--reason", help="the reason; a dismissal needs one")
     args = parser.parse_args(argv)
     if args.resolve:
         record, resolution = args.resolve
-        if resolution not in RESOLUTIONS:
-            parser.error("resolution must be one of " + ", ".join(RESOLUTIONS))
-        if resolution == "dismissed" and not (args.reason or "").strip():
-            parser.error("dismissed needs --reason")
         body = {"resolve": resolution, "record": record, **({"reason": args.reason} if args.reason else {})}
         try:
             fetch(record_url(args.review_url), body=body)

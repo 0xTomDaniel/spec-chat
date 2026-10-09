@@ -587,6 +587,7 @@ class BootstrapTest(unittest.TestCase):
             # an owner's resolution of an Important mark from the agent read (jev-suggestions #record-resolution)
             miss = answer["offer"]["specs"][0]["rules"][0]["record"]
             self.assertEqual(post({"resolve": "dismissed", "record": miss})[0], 400)  # an owner dismissal names its reason
+            self.assertIn("refused", post({"resolve": "dismissed", "record": miss})[1]["error"])
             self.assertEqual(post({"resolve": "thread", "record": "judgment-nope"})[0], 400)
             self.assertEqual(post({"resolve": "dismissed", "record": miss, "reason": "Not a screen."}), (200, {"ok": True}))
             self.assertEqual(post({"resolve": "fixed", "record": miss})[0], 400)  # resolved once
