@@ -49,6 +49,8 @@ _wall = time.time
 # Jev was below threshold on a set with a general LLM fallback (project-rules #q-fallback): the LLM decides next.
 ESCALATED = "escalated"
 REPLACEABLE_OUTCOMES = RETRYABLE_OUTCOMES | {ESCALATED}
+# Item states a read has not decided: no mark it lacks is fixed (#record-resolution).
+UNDECIDED = frozenset({"pending", "unavailable", "oversize"})
 # Draft-check P(yes) below the verify cutoff (jev-suggestions #asymmetric-silent): recorded, no mark, no escalation.
 SILENT_NO = "silent-no"
 # Verify-band draft check the LLM verifier confirmed with a quoted span from each clause, or did not (#verifier, #record-outcome).
@@ -2168,9 +2170,9 @@ class JevService:
         self._warm_started: set[str] = set()
         self._warm_threads: list[threading.Thread] = []
 
-        # Fixed marks (#record-resolution): each spec's Important marks on its last settled read.
+        # Fixed marks (#record-resolution): per spec and base, the head last decided and the Important marks shown on it.
         self._marks_lock = threading.Lock()
-        self._marks: dict[tuple[Any, ...], dict[tuple[Any, ...], tuple[str, Any]]] = {}
+        self._marks: dict[tuple[Any, ...], tuple[Any, dict[tuple[Any, ...], tuple[str, Any]]]] = {}
 
     def stop(self) -> None:
         """Stop asking: later reads ask nothing, queued asks are dropped, in-flight asks finish their record."""
@@ -2811,6 +2813,7 @@ class JevService:
             # triggered? then covered?, from held records; a step not final here is pending or unavailable.
             result = chain_result(rule["chain"], final)
             if result["outcome"] == "oversize":
+                items.append({"kind": "rule", "id": mark, "state": "oversize"})
                 continue
             unsure = result["unsure"]
             if result["outcome"] is None:
@@ -2834,12 +2837,14 @@ class JevService:
         return items, sorted(set(rules)), cites
 
     def _rules(self, relative: str, base: str, facts: Mapping[str, Any], seam: "JevSeam | None" = None,
-               mount: Mapping[str, Any] | None = None) -> tuple[list[dict[str, Any]], list[str], dict[str, dict[str, Any]]]:
+               mount: Mapping[str, Any] | None = None) -> tuple[list[dict[str, Any]], list[str], dict[str, dict[str, Any]]] | None:
+        """The read's rule items, rules checked, and cited rule cards; None when they cannot be built, which shows
+        no rules and decides no fix."""
         try:
             return self.rule_items(facts["current"], facts["old"], relative, base, facts["head"], facts["served"], seam,
                                    (mount or {}).get("project"), facts["rel"])
         except Exception:
-            return [], [], {}
+            return None
 
     def _onboarding(self) -> dict[str, Any]:
         """onboarding.toml, empty when missing; raises OSError or ValueError when unreadable, so no write
@@ -3175,24 +3180,26 @@ class JevService:
             return False
         return self._seam_for(mount).store.resolve(record_id, status, reason or None, if_absent=True) is not None
 
-    def _fixed(self, seam: "JevSeam", mount: Mapping[str, Any], relative: str, items: list[dict[str, Any]]) -> None:
+    def _fixed(self, seam: "JevSeam", mount: Mapping[str, Any], relative: str, facts: Mapping[str, Any],
+               items: list[dict[str, Any]]) -> None:
         """A spec fix clears an Important mark on the next head (#record-resolution, #acceptance-resolution-fixed):
-        a mark the spec's last settled read showed, whose record no Important mark now carries, is fixed on that
-        record, unconfirmed until audited. A read with any question pending or unavailable decides nothing; a mark gone because
-        its rule is no project rule now, or already resolved, is not fixed."""
-        spec = (mount.get("root"), mount.get("test"), relative)
+        a mark, by kind, id, and target, shown on a head of this spec and base, and absent from a settled read of a
+        later head, is fixed on its record, unconfirmed until audited. A read with any question pending,
+        unavailable, or oversize decides nothing; a mark gone because its rule is no project rule now, or already
+        resolved, is not fixed."""
+        spec = (mount.get("root"), mount.get("test"), relative, facts.get("base_commit"))
+        head = facts.get("head")
         marks = {(item["kind"], item["id"], item.get("target")): (item["record"], item.get("text"))
                  for item in items if item.get("agent_level") == "important" and item.get("record")}
         with self._marks_lock:
-            last = self._marks.get(spec, {})
-            if any(item.get("state") in ("pending", "unavailable") for item in items):
-                self._marks[spec] = {**last, **marks}
+            last_head, last = self._marks.get(spec, (head, {}))
+            if head == last_head or any(item.get("state") in UNDECIDED for item in items):
+                self._marks[spec] = (last_head, {**last, **marks})
                 return
-            self._marks[spec] = marks
-        shown = {record_id for record_id, _ in marks.values()}
+            self._marks[spec] = (head, marks)
         project = mount.get("project")
-        for record_id, text in last.values():
-            if record_id not in shown and not (text and seam.store.decided(DECISIONS["rule"], project, text)):
+        for key, (record_id, text) in last.items():
+            if key not in marks and not (text and seam.store.decided(DECISIONS["rule"], project, text)):
                 seam.store.resolve(record_id, "fixed", if_absent=True)
 
     def record_offer(self, project: Any, action: str, offer: str = "reconcile") -> bool:
@@ -3220,7 +3227,8 @@ class JevService:
             facts = self._read_facts(mount, target, base, served_mounts, base_commit)
         except Exception:
             facts = None  # no rules; questions reads again and fails as it always has
-        rule_items, rules, cites = self._rules(relative, base, facts, seam, mount) if facts else ([], [], {})
+        ruled = self._rules(relative, base, facts, seam, mount) if facts else None
+        rule_items, rules, cites = ruled or ([], [], {})
         asked = self.questions(mount, target, relative, base, events, view, served_mounts, base_commit, facts)
         questions = [question for question in asked
                      if all(step["kind"] in seam.question_sets for step in question.get("chain", [question]))]
@@ -3247,6 +3255,7 @@ class JevService:
                 continue
             outcome = record.get("outcome")
             if outcome == "oversize":
+                items.append({"kind": question["kind"], "id": question["id"], "state": "oversize"})
                 continue
             answer = record.get("answer", {})
             label = answer.get("label") if isinstance(answer, Mapping) else None
@@ -3283,8 +3292,13 @@ class JevService:
             if unsure:
                 item["unsure"] = unsure
             items.append(item)
-        if facts:
-            self._fixed(seam, mount, relative, items + rule_items)
+        items += rule_items
+        if ruled is not None:
+            try:
+                self._fixed(seam, mount, relative, facts, items)
+            except OSError:
+                pass  # a fixed record unwritten is a fix missed, never a failed read
+        items = [item for item in items if item["state"] != "oversize"]
         offer = None if mount.get("test") else self.offer(mount.get("project"), mount.get("root"))
         candidates = None if mount.get("test") else self.candidate_offer(mount.get("project"), mount.get("root"))
         # Offers list repo paths; the page links them, and their cards' sources, as its mount serves them.
@@ -3295,7 +3309,7 @@ class JevService:
         if candidates:
             candidates = {**candidates, "candidates": [{**card, "target": served_path(mount, card["target"])}
                                                        for card in candidates["candidates"]]}
-        return {"jev": "on", "items": items + rule_items + self._lane_items(mount, served_mounts), "rules": rules,
+        return {"jev": "on", "items": items + self._lane_items(mount, served_mounts), "rules": rules,
                 "candidate_offer": candidates, "offer": offer, "levels": dict(MARK_LEVELS)}
 
 

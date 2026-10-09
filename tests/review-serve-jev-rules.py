@@ -992,15 +992,73 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(self.missed(self.read(service)), [])
         self.assertEqual(self.record(service, item["record"])["resolution"]["status"], "dismissed")
 
-    def test_a_mark_gone_while_its_question_is_unavailable_is_not_fixed(self):
+    def fixed(self, service, items, head, base="b1"):
+        service._fixed(service.seam, self.mount("alpha"), "specs/b.spec.html", {"head": head, "base_commit": base}, items)
+
+    def test_a_mark_gone_while_its_question_is_undecided_is_not_fixed(self):
+        # a read with a question pending, unavailable, or oversize decides nothing
         provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("missed", 0.95)})
         service = self.service(provider, approve=(ONBOARDING,))
         item = self.shown(service)
-        unavailable = {**item, "state": "unavailable", "label": None, "record": None, "level": None, "agent_level": None}
-        service._fixed(service.seam, self.mount("alpha"), "specs/b.spec.html", [unavailable])
-        self.assertNotIn("resolution", self.record(service, item["record"]))
-        service._fixed(service.seam, self.mount("alpha"), "specs/b.spec.html", [])
+        self.fixed(service, [item], "h1")
+        for state in ("unavailable", "pending", "oversize"):
+            undecided = {**item, "state": state, "label": None, "record": None, "level": None, "agent_level": None}
+            self.fixed(service, [undecided], "h2")
+            self.assertNotIn("resolution", self.record(service, item["record"]), state)
+        self.fixed(service, [], "h2")
         self.assertEqual(self.record(service, item["record"])["resolution"], {"status": "fixed"})
+
+    def test_a_mark_gone_on_the_same_head_or_another_base_is_not_fixed(self):
+        # review B1 (a): no edit, so no fix; the owner's later dismissal still records
+        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("missed", 0.95)})
+        service = self.service(provider, approve=(ONBOARDING,))
+        item = self.shown(service)
+        self.fixed(service, [item], "h1")
+        self.fixed(service, [], "h1")
+        self.fixed(service, [], "h2", base="b2")
+        self.assertNotIn("resolution", self.record(service, item["record"]))
+        self.assertTrue(service.resolve(self.mount("alpha"), item["record"], "dismissed", "Jev is wrong here."))
+
+    def test_a_mark_cleared_in_the_working_tree_is_fixed_on_the_next_head(self):
+        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("missed", 0.95)})
+        service = self.service(provider, approve=(ONBOARDING,))
+        item = self.shown(service)
+        self.fixed(service, [item], "h1")
+        self.fixed(service, [], "h1")
+        self.assertNotIn("resolution", self.record(service, item["record"]))
+        self.fixed(service, [], "h2")
+        self.assertEqual(self.record(service, item["record"])["resolution"], {"status": "fixed"})
+
+    def test_a_mark_still_shown_on_a_new_record_is_not_fixed(self):
+        # review B1 (b): a reworded clause asks again; the same mark on its new record is no fix
+        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("missed", 0.95)})
+        service = self.service(provider, approve=(ONBOARDING,))
+        item = self.shown(service)
+        self.fixed(service, [item], "h1")
+        self.fixed(service, [{**item, "record": "judgment-reworded"}], "h2")
+        self.assertNotIn("resolution", self.record(service, item["record"]))
+
+    def test_an_oversize_question_leaves_the_mark_undecided_through_the_read(self):
+        # review B1 (c): an oversize question is skipped from the page, never fixed
+        covered = lambda text: "covered" if "onboarding section" in text else "missed"
+        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: (covered, 0.95)})
+        service = self.service(provider, approve=(ONBOARDING,))
+        item = self.shown(service)
+        self.commit()
+        oversize = lambda chain, final: {"outcome": "oversize", "unsure": 0}
+        with unittest.mock.patch.object(jev, "chain_result", side_effect=oversize):
+            self.assertEqual(self.missed(self.read(service, settle=False)), [])
+        self.assertNotIn("resolution", self.record(service, item["record"]))
+
+    def test_a_fixed_write_that_fails_does_not_fail_the_read(self):
+        covered = lambda text: "covered" if "onboarding section" in text else "missed"
+        provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: (covered, 0.95)})
+        service = self.service(provider, approve=(ONBOARDING,))
+        self.shown(service)
+        self.write("b.spec.html", spec(("b-one", FEATURE + " It adds its onboarding section."), body="Body."))
+        self.commit()
+        with unittest.mock.patch.object(service.seam.store, "resolve", side_effect=OSError("disk")):
+            self.assertEqual(self.missed(self.read(service)), [])
 
     def test_a_mark_gone_while_rules_cannot_be_read_is_not_fixed(self):
         provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("missed", 0.95)})
@@ -1016,6 +1074,11 @@ class RulesTest(unittest.TestCase):
 
         with unittest.mock.patch.object(service, "_read_facts", side_effect=busy_once):
             self.assertEqual(self.missed(self.read(service, settle=False)), [])  # rules unread, questions read
+        self.assertNotIn("resolution", self.record(service, item["record"]))
+        # rules that fail to build on a new head decide nothing either
+        self.commit()
+        with unittest.mock.patch.object(service, "rule_items", side_effect=RuntimeError("busy")):
+            self.assertEqual(self.missed(self.read(service, settle=False)), [])
         self.assertNotIn("resolution", self.record(service, item["record"]))
 
 

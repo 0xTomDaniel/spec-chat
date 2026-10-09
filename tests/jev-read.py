@@ -183,17 +183,17 @@ class JevReadTest(unittest.TestCase):
         out = run(server.url + "/specs/b.spec.html?base=abc", "--resolve", "r1", "thread")
         self.assertEqual((out.returncode, server.queries[-1][2]), (0, {"resolve": "thread", "record": "r1"}))
 
-    def test_resolve_refused_fails_loudly(self):
-        server = self.serve({"ok": False}, status=400)
-        out = run(server.url + "/specs/b.spec.html?base=abc", "--resolve", "r2", "fixed")
-        self.assertEqual(out.returncode, 1)
-        self.assertIn("HTTP 400", out.stderr)
-        # an owner dismissal names its reason; checked before any request
+    def test_resolve_refused_fails_loudly_with_the_server_reason(self):
+        # the server is the one check of a resolution; its refusal reason is printed
+        server = self.serve({"ok": False, "error": "refused: dismissed needs a reason"}, status=400)
         out = run(server.url + "/specs/b.spec.html?base=abc", "--resolve", "r2", "dismissed")
-        self.assertEqual(out.returncode, 2)
-        out = run(server.url + "/specs/b.spec.html?base=abc", "--resolve", "r2", "rule")
-        self.assertEqual(out.returncode, 2)
-        self.assertEqual(len(server.queries), 1)
+        self.assertEqual(out.returncode, 1)
+        self.assertIn("HTTP 400: refused: dismissed needs a reason", out.stderr)
+        self.assertEqual(server.queries[-1][2], {"resolve": "dismissed", "record": "r2"})
+        # a link with no spec path posts to the record route without one, never a traceback
+        out = run(server.url + "/", "--resolve", "r2", "fixed")
+        self.assertEqual(out.returncode, 1)
+        self.assertNotIn("Traceback", out.stderr)
 
     def test_server_error_fails_loudly(self):
         server = self.serve({"error": "invalid base"}, status=400)
