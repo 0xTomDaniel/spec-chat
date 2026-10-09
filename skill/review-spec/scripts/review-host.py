@@ -456,6 +456,17 @@ def is_row_stale(record: Mapping[str, Any]) -> str | None:
     return None
 
 
+def stale_rows(records: Sequence[Mapping[str, Any]]) -> frozenset[str]:
+    """Ids of untouched rows whose spec cannot be reached, each reported; they skip filesystem checks."""
+    stale_ids: set[str] = set()
+    for item in records:
+        reason = is_row_stale(item)
+        if reason:
+            print(f"review-host: warning: stale row {item['id']}: {reason}", file=sys.stderr)
+            stale_ids.add(item["id"])
+    return frozenset(stale_ids)
+
+
 def read_registry_document(path: Path, validate: bool = True) -> dict[str, Any]:
     document = read_toml(path, missing={"resource": []})
     if not isinstance(document, dict):
@@ -761,16 +772,9 @@ def register(args: argparse.Namespace) -> int:
             additions.append(registry_record(item, old))
             item.update(additions[-1])
         replacement_ids = {item["id"] for item in additions}
-        stale_ids: set[str] = set()
-        for item in existing:
-            if item["id"] in replacement_ids:
-                continue
-            reason = is_row_stale(item)
-            if reason:
-                print(f"review-host: warning: stale row {item['id']}: {reason}", file=sys.stderr)
-                stale_ids.add(item["id"])
-        candidate = [item for item in existing if item["id"] not in replacement_ids] + additions
-        stale = frozenset(stale_ids)
+        untouched = [item for item in existing if item["id"] not in replacement_ids]
+        stale = stale_rows(untouched)
+        candidate = untouched + additions
         validate_records(candidate, stale)
         child: subprocess.Popen[str] | None = None
         try:
@@ -846,7 +850,7 @@ def remove(args: argparse.Namespace) -> int:
         remaining = [record for record in records if record["id"] != args.id]
         if len(remaining) == len(records):
             raise LauncherError(f"unknown resource id: {args.id}")
-        write_registry(registry, remaining, process)
+        write_registry(registry, remaining, process, stale_rows(remaining))
         print(f"{args.id}: removed")
         return 0
 
@@ -856,7 +860,7 @@ def reviewed(args: argparse.Namespace) -> int:
     state = state_dir(args)
     registry, _, _ = paths(state)
     with state_lock(state):
-        records, process = registry_state(registry)
+        records, process = registry_state(registry, validate=False)
         record = next((item for item in records if item["id"] == args.id), None)
         if record is None:
             raise LauncherError(f"unknown resource id: {args.id}")
@@ -867,7 +871,7 @@ def reviewed(args: argparse.Namespace) -> int:
         record["base"] = run_git(root, "rev-parse", "HEAD")
         record["accepted"] = args.accepted
         record["updated_at"] = now()
-        write_registry(registry, records, process)
+        write_registry(registry, records, process, stale_rows([item for item in records if item is not record]))
         print(f"{args.id}: base {record['base']}")
         return 0
 

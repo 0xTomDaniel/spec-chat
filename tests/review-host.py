@@ -269,6 +269,22 @@ class ReviewHostTest(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         self.assertIn("stale row", second.stderr)
 
+    def test_remove_and_reviewed_skip_another_rows_missing_spec(self):
+        """review-service #acceptance-stale-skip: a stale row never blocks remove or reviewed of another row."""
+        state = self.work / "state"
+        first = self.run_cli(*self.register_args(state, spec="review"), state=state)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        stale_id = self.registry(state)["resource"][0]["id"]
+        second = self.run_cli(*self.register_args(state, slug="lane2", spec="second"), state=state)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        live_id = next(row["id"] for row in self.registry(state)["resource"] if row["id"] != stale_id)
+        self.spec.unlink()
+        done = self.run_cli("reviewed", "--state-dir", str(state), "--id", live_id, state=state)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        removed = self.run_cli("remove", "--state-dir", str(state), "--id", live_id, state=state)
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        self.assertEqual([row["id"] for row in self.registry(state)["resource"]], [stale_id])
+
     def test_stop_then_register_replaces_resource_and_restarts_server(self):
         state = self.work / "state"
         first = self.run_cli(*self.register_args(state), state=state)
