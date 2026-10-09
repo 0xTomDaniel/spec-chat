@@ -69,6 +69,7 @@ Extends <a href="./project-rules.spec.html">project-wide rules</a>: its warm-up,
 <p data-acceptance-criterion data-anchor="acceptance-drift-spec" data-story="story-drift"><span data-acceptance-scenario>Given the human running repair on a repo whose code does a criterion's behavior differently in a way that makes sense and fits the spirit of the spec, When the run reaches the drift check,</span> <span data-acceptance-observable>Then the skill presents a suggestion to update the spec, which is behind the code, naming the spec anchor, the code location, and the mismatch, and asks the human to decide.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-drift-code" data-story="story-drift"><span data-acceptance-scenario>Given the human running repair on a repo whose code does a criterion's behavior differently in a way that looks broken or against the spirit of the spec, When the run reaches the drift check,</span> <span data-acceptance-observable>Then the skill presents a suggestion to fix the code and says why, naming the spec anchor, the code location, and the mismatch, and asks the human to decide.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-drift-unspecced" data-story="story-drift"><span data-acceptance-scenario>Given the human running repair on a repo whose code has a behavior that no criterion of its spec states, When the run reaches the drift check,</span> <span data-acceptance-observable>Then the skill presents a suggestion to add a criterion for it to the owning spec, naming the code location and the behavior, and asks the human to decide.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-drift-unconnected" data-story="story-drift"><span data-acceptance-scenario>Given the human running repair on a repo with code that no spec links or was committed with, whose behavior falls within one spec's scope in spirit and that no criterion states, When the run reaches the drift check,</span> <span data-acceptance-observable>Then the skill presents a suggestion to add a criterion for it to that spec, naming the code location and the behavior, and asks the human to decide.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-drift-edit" data-story="story-drift"><span data-acceptance-scenario>Given the human settling a drift suggestion, When the human chooses to adjust the spec and says how,</span> <span data-acceptance-observable>Then the committed spec shows that edit and no other change for that suggestion.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-drift-code-later" data-story="story-drift"><span data-acceptance-scenario>Given the human settling a drift suggestion, When the human chooses to fix the code later,</span> <span data-acceptance-observable>Then neither the spec nor the code has changed, and the code fix stays a recommendation to the human.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-drift-leave" data-story="story-drift"><span data-acceptance-scenario>Given the human settling a drift suggestion, When the human chooses to leave it,</span> <span data-acceptance-observable>Then neither the spec nor the code has changed.</span></p>
@@ -121,23 +122,25 @@ The review chrome is the runtime's, owned by <a href="./spec-page-design.spec.ht
 <section data-anchor="drift">
 <h2>Drift check</h2>
 <p data-anchor="drift-when">After the six repairs, the skill checks each spec against the code that implements it.
-Drift is a criterion whose behavior the code does differently, or a code behavior no criterion of the owning spec states.</p>
+Drift is a criterion whose behavior the code does differently, or a code behavior no criterion of the owning spec states, including code no pointer connects to the spec whose behavior the spec should cover in spirit.</p>
 <figure data-anchor="drift-find-figure">
 <div class="rail-wrap" data-anchor="drift-find-scroll">
-<div class="rail" style="grid-template-columns: repeat(3, minmax(200px, 1fr)); min-width: 660px" data-anchor="drift-find-rail">
+<div class="rail" style="grid-template-columns: repeat(4, minmax(190px, 1fr)); min-width: 800px" data-anchor="drift-find-rail">
 <div data-anchor="drift-find-links"><span class="n">01</span>Code the spec links</div>
 <div data-anchor="drift-find-history"><span class="n">02</span>Code committed together with the spec</div>
 <div data-anchor="drift-find-seams"><span class="n">03</span>Code named by its modular boundary seams</div>
+<div data-anchor="drift-find-spirit"><span class="n">04</span>Code no pointer connects whose behavior the spec covers in spirit</div>
 </div>
 </div>
-<figcaption data-anchor="drift-find">The check finds a spec's code from existing pointers in this order and stops at the first that yields code; it writes no spec-to-code index, because the spec's links and Git history already are the pointers.</figcaption>
+<figcaption data-anchor="drift-find">Steps one to three find the code a spec points to, in order, stopping at the first that yields code; step four always runs, reviewing code no pointer connects to any spec and judging whether its behavior falls within this spec's scope in spirit.
+The check writes no spec-to-code index, because the spec's links and Git history already are the pointers.</figcaption>
 </figure>
 <table data-anchor="drift-suggest-table">
 <thead><tr><th>Drift, as the skill judges it</th><th>Suggestion</th></tr></thead>
 <tbody>
 <tr data-anchor="drift-suggest-default"><td>Code does a criterion's behavior differently, and the behavior makes sense and fits the spirit of the spec; the common case, a spec behind its code</td><td>Update the spec to match the code (default)</td></tr>
 <tr data-anchor="drift-suggest-code"><td>Code does a criterion's behavior differently, and the behavior looks broken or against the spirit of the spec</td><td>Fix the code, saying why; stays a recommendation</td></tr>
-<tr data-anchor="drift-suggest-unspecced"><td>Code has a behavior no criterion states</td><td>Add a criterion for it to the owning spec</td></tr>
+<tr data-anchor="drift-suggest-unspecced"><td>Code has a behavior no criterion states, whether the spec points to that code or only covers it in spirit</td><td>Add a criterion for it to the owning spec</td></tr>
 </tbody>
 </table>
 <p data-anchor="drift-suggestion">For each drift the skill judges whether the code's behavior makes sense and fits the spirit of the spec, and presents the human one suggestion naming the spec anchor, the code location, the mismatch, and which side to change.
