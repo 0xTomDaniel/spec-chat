@@ -21,7 +21,6 @@ Create durable current truth before deep investigation.
 - A repo-wide rule lives once, in its home spec, as an acceptance criterion whose text says it applies to every feature, so Jev checks it as a project-wide rule. An ADR may name a rule it decided on only by linking that criterion, as in `see peer-seams#acceptance-ci`, and never restates it: the why lives in the ADR, the what in the spec criterion, and the mechanics in code and the change request.
 - Implementation mechanics no caller depends on, such as storage tables, retry counts, internal keys, timeouts, and delivery details, live in code and the change request; neither a spec nor an ADR states them.
 - Chat and memory never override durable sources; stop on source conflict.
-- Use swimlane diagrams for ownership and handoffs, and Sankey diagrams for flows that split or merge, wherever they clarify the spec.
 - Accepted spec changes are committed locally before refreshed Git focus or review replies.
 - `spec-chat-review` alone owns browser review, server startup and shutdown, spool transactions, transport, wake, recovery, and hosting verification.
 - A remote or cross-machine shaping handoff is blocked until `spec-chat-review` has an `assets/review-serve.py` process serving the narrow collection, never the repository root: exposed as box setup chose (`spec-chat-review` `### Box setup`); lanes pass no exposure argument.
