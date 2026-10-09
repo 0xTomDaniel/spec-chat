@@ -1008,8 +1008,6 @@ class JevSeam:
         pairing = question.get("pairing") if kind in DRAFT_CHECK_KINDS else None
         fallback = self._fallback_provider(provider)
         model = self.llm_model()
-        if isinstance(fallback, ClaudeCliProvider) and not self._raw_llm_model():
-            model = ""
         payload = self.verifier_payload(question, qset, model)
         label = None
         failure = None
