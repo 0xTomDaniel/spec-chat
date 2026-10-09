@@ -49,10 +49,22 @@ touch = true
 # - miss, dismiss: open the rule marker beside Acceptance criteria to show the card first.
 # - dismiss: then click Not for this spec, then reload the page (browser reload). The edit and
 #   commit is the agent's on disk, not a browser step: the When is done after the reload.
-# - dismiss-rule: spec B is this page's report spec, spec C is {review}/next-tbd/docs/specs/
-#   report.spec.html; both show the card, and the "existing spec misses project rules" offer
-#   shows at the top of the page. Open the rule marker, click Not a project rule, reload the
-#   page, then open spec C's address in the same tab: that is the reload of C and of an offer page.
+# - dismiss-rule: its own project (nav), since dismiss's Not for this spec hides the entry
+#   project's report card. Spec B is this page's report spec, spec C is {review}/
+#   rule-confirmed-c/docs/specs/report.spec.html, same project; both show the card, and the
+#   "existing spec misses project rules" offer shows at the top of the page. Open the rule
+#   marker, click Not a project rule, reload the page, then open spec C's address in the same
+#   tab: that is the reload of C and of an offer page. {review}/rule-candidate/docs/specs/
+#   report.spec.html is another project holding the same criterion text, still a candidate.
+# - offer-once: the Given is done in the browser first: click Reconcile on the "1 existing spec
+#   misses project rules" offer, then click Comment in the composer (saving the draft sends
+#   it). Then reload the page (browser reload) and read the top of the page.
+# - offer-dismissed: its own project (nav), since offer-once's send ends the entry project's
+#   offer. The Given is done first: click Dismiss on the "1 existing spec misses project rules"
+#   offer. Then reload the page (browser reload) and read the top of the page.
+# - advice: the page is the report spec with no open TBD (its TBDs are later), so the hand-off
+#   button reads Accept spec, and the missed note is the rule marker beside Acceptance
+#   criteria. Click Accept spec; nothing is typed.
 # - offer: click "Show specs and the rules they miss" to expand the offer, then click the line's
 #   own toggle "Show rules report misses" so the line's rule card shows below it.
 # - confirm: click "Show possible project rules", click Confirm rule on the card, reload the page
@@ -70,6 +82,12 @@ path = "{review}/rule-candidate/docs/specs/report.spec.html"
 path = "{review}/rule-candidate/docs/specs/report.spec.html"
 [nav.acceptance-dismiss-return]
 path = "{review}/rule-confirmed/docs/specs/report.spec.html"
+[nav.acceptance-dismiss-rule]
+path = "{review}/rule-confirmed/docs/specs/report.spec.html"
+[nav.acceptance-offer-dismissed]
+path = "{review}/rule-confirmed/docs/specs/report.spec.html"
+[nav.acceptance-advice]
+path = "{review}/advice/docs/specs/report.spec.html"
 [nav.acceptance-tbd-later]
 path = "{review}/tbd-later/docs/specs/later-only.spec.html"
 [nav.acceptance-tbd-later-handoff]
@@ -244,6 +262,10 @@ cannot_host = "fake Jev answers only scope, rule, and coverage questions; no fla
 # Rule criteria the fixture cannot drive: one rule, one home, answered only by the fake.
 [entry.criteria.acceptance-pending]
 cannot_host = "fake Jev answers every rule check at 0.95, so no check escalates to the general LLM and no checking wheel shows"
+[entry.criteria.acceptance-pending-plain]
+cannot_host = "fake Jev answers every rule check instantly at 0.95, so no check is ever pending; proven by tests/runtime-jev-rules.mjs (#mark-none: plain pending shows nothing)"
+[entry.criteria.acceptance-pending-motion]
+cannot_host = "fake Jev answers every rule check instantly at 0.95, so no check escalates and no checking wheel shows; proven by tests/runtime-jev-rules.mjs (reduced motion stops the wheel)"
 [entry.criteria.acceptance-card-cites]
 cannot_host = "fake Jev answers only scope, rule, and coverage questions, so no clause is marked Contradicts against a rule"
 [entry.criteria.acceptance-copies]
@@ -256,6 +278,16 @@ cannot_host = "fake Jev answers no contradiction question, so no two lanes contr
 cannot_host = "the When is an agent edit to the spec file while the reviewer views the card; capture edits no file and the fixture lands no edit on a plain reload"
 [entry.criteria.acceptance-dismiss-return]
 cannot_host = "the When changes the rule's text in its home spec file; capture edits no file, and fake Jev reads only the fixture's one rule text as applying to every feature"
+[entry.criteria.acceptance-dismiss-return-rule]
+cannot_host = "the When changes the rule's text in its home spec file; capture edits no file, and fake Jev reads only the fixture's one rule text as applying to every feature; proven by tests/review-serve-jev-rules.py test_dismiss_rule_removes_the_rule_from_every_spec_of_that_project_only"
+[entry.criteria.acceptance-reword]
+cannot_host = "the When is an author edit to the rule's home spec file mid-scenario; capture edits no file; proven by tests/review-serve-jev-rules.py test_reworded_or_deleted_rule_shows_no_mark_on_next_load"
+[entry.criteria.acceptance-reword-delete]
+cannot_host = "the When is an author edit deleting the rule's criterion from its home spec file mid-scenario; capture edits no file; proven by tests/review-serve-jev-rules.py test_reworded_or_deleted_rule_shows_no_mark_on_next_load"
+[entry.criteria.acceptance-clear-reason]
+cannot_host = "the When is an author edit to the spec file while the reviewer views the card; capture edits no file and the fixture lands no edit on a plain reload; proven by tests/review-serve-jev-rules.py test_cover_or_reason_line_clears_a_thread_alone_does_not_and_untriggered_never_shows"
+[entry.criteria.acceptance-onboarding-doc]
+cannot_host = "the onboarding documentation is the repo README, which the review service does not serve; proven by tests/install-spec-chat.py test_onboarding_doc_says_how_to_write_a_project_rule"
 [entry.criteria.acceptance-new-candidate]
 cannot_host = "the fixture's head adds no every-feature criterion: fake Jev reads only the onboarding rule, in the base, as one, and a second would change every other criterion's rule counts"
 [entry.criteria.acceptance-index-sections]
