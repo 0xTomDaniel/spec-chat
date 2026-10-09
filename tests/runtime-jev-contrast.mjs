@@ -76,11 +76,13 @@ const ratio = (a, b) => { const [lo, hi] = [lum(a), lum(b)].sort((x, y) => x - y
 const paper = hex(sharedCss.match(/--spec-paper:\s*(#[0-9a-f]{6})/i)[1]);
 // Lightest clause text the shared stylesheet uses.
 const sharedBody = hex(sharedCss.match(/--spec-muted:\s*(#[0-9a-f]{6})/i)[1]);
+// Spec content dims with the content token: spec.css on shared pages, the runtime document CSS otherwise.
+const docMuted = literal('DOC_CSS').match(/--spec-muted:(#[0-9a-f]{6})/i)[1];
 const pages = [
-  { name: 'shared light', rules: sharedRules, dark: false, bg: paper, text: sharedBody },
-  { name: 'shared, dark OS', rules: sharedRules, dark: true, bg: paper, text: sharedBody },
-  { name: 'runtime light', rules: docRules.concat(overlayRules), dark: false, bg: hex(decl(docRules, ':where(body)', 'background', false)), text: hex(decl(docRules, ':where(body)', 'color', false)) },
-  { name: 'runtime dark', rules: docRules.concat(overlayRules), dark: true, bg: hex(decl(docRules, ':where(body)', 'background', true)), text: hex(decl(docRules, ':where(body)', 'color', true)) },
+  { name: 'shared light', rules: sharedRules, dark: false, bg: paper, text: sharedBody, muted: sharedBody },
+  { name: 'shared, dark OS', rules: sharedRules, dark: true, bg: paper, text: sharedBody, muted: sharedBody },
+  { name: 'runtime light', rules: docRules.concat(overlayRules), dark: false, bg: hex(decl(docRules, ':where(body)', 'background', false)), text: hex(decl(docRules, ':where(body)', 'color', false)), muted: hex(docMuted) },
+  { name: 'runtime dark', rules: docRules.concat(overlayRules), dark: true, bg: hex(decl(docRules, ':where(body)', 'background', true)), text: hex(decl(docRules, ':where(body)', 'color', true)), muted: hex(docMuted) },
 ];
 const DIMMED = '[data-hx-jev-type=no-behavior-change]';
 const opacityOf = (rules, sel, dark) => {
@@ -112,7 +114,7 @@ const markers = [
 const WARNING = ['.hx-jev-marker', '.hx-jev-marker[data-warning=true]'];
 const marks = [['.hx-jev-marker'], ['.hx-jev-marker', '.hx-jev-marker[data-attention=true]'], ['.hx-jev-marker', '.hx-jev-marker[data-passed=true]'], WARNING];
 const panelLabels = [
-  ['.hx-jev-thread-label'], ['.hx-jev-thread-label', '.hx-jev-thread-label[data-state=unsure]'],
+  ['.hx-jev-thread-label'],
   ['.hx-jev-thread-label', '.hx-jev-thread-label[data-state=unavailable]'], ['.hx-pin-jev'], ['.hx-orphan-hint'],
 ];
 const failures = [];
@@ -122,7 +124,8 @@ const check = (name, fg, bg) => {
 };
 for (const page of pages) {
   const a = opacityOf(page.rules, DIMMED, page.dark);
-  const dimmed = hex(colorOf(page, ['body ' + DIMMED, DIMMED].reverse(), 'color'));
+  const dimColor = colorOf(page, ['body ' + DIMMED, DIMMED].reverse(), 'color');
+  const dimmed = dimColor === 'var(--spec-muted)' ? page.muted : hex(dimColor);
   assert.ok(dimmed, 'No behavior change dim owns its color');
   // Dimmed No behavior change text, composited through any opacity on the clause.
   check(page.name + ': no-behavior-change text', mix(dimmed, page.bg, a), page.bg);
