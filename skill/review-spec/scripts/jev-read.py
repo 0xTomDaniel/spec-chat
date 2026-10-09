@@ -6,6 +6,8 @@ one line per important mark, warning counts by kind with the count of answers Je
 general LLM settled (jev-suggestions #markers-agent-unsure), the rules checked, the candidate rules awaiting the
 human (project-rules #approval-agent), the pending count; or `off`.
 `--anchor <id>` prints full detail for that anchor only. Marks are keyed on each item's `agent_level` (jev-suggestions #markers-levels-source).
+`--resolve <record> <resolution>` records the owner's resolution of an Important mark on its record: fixed, reason,
+thread, or dismissed with `--reason` (jev-suggestions #record-resolution), through the one Jev record route.
 """
 
 from __future__ import annotations
@@ -32,9 +34,18 @@ def jev_url(review_url: str) -> str:
     return urllib.parse.urlunsplit((parts.scheme, parts.netloc, "/api/jev", urllib.parse.urlencode(params), ""))
 
 
-def fetch(url: str, timeout: float = 60.0) -> dict[str, Any]:
+def record_url(review_url: str) -> str:
+    """The one Jev record route for the link's spec (project-rules #dismiss-store)."""
+    parts = urllib.parse.urlsplit(jev_url(review_url))
+    path = urllib.parse.parse_qs(parts.query).get("path", [""])[0]
+    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, "/api/jev/offer", urllib.parse.urlencode({"path": path}), ""))
+
+
+def fetch(url: str, timeout: float = 60.0, body: dict[str, Any] | None = None) -> dict[str, Any]:
+    request = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
+                                     headers={"Content-Type": "application/json"}) if body is not None else url
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             return json.load(response)
     except urllib.error.HTTPError as exc:
         try:
@@ -108,7 +119,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--anchor", help="print full detail for this anchor only")
     parser.add_argument("--wait", type=float, default=0, metavar="SECONDS",
                         help="re-read every 2s until nothing is pending, at most this long")
+    parser.add_argument("--resolve", nargs=2, metavar=("RECORD", "RESOLUTION"),
+                        help="record an Important mark's resolution: fixed, reason, thread, or dismissed (the server checks it)")
+    parser.add_argument("--reason", help="the reason; a dismissal needs one")
     args = parser.parse_args(argv)
+    if args.resolve:
+        record, resolution = args.resolve
+        body = {"resolve": resolution, "record": record, **({"reason": args.reason} if args.reason else {})}
+        try:
+            fetch(record_url(args.review_url), body=body)
+        except (ValueError, OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
+            print(f"jev-read: {exc}", file=sys.stderr)
+            return 1
+        print(f"{record}  {resolution}")
+        return 0
     try:
         url = jev_url(args.review_url)
         result = fetch(url)

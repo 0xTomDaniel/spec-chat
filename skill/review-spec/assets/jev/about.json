@@ -1,6 +1,6 @@
 {
   "id": "about",
-  "version": 1,
+  "version": 2,
   "instructions": "Are these two clauses about the same thing? Answer yes when both clauses describe the same route, field, element, command, term, surface, or responsibility. Answer no when the clauses are about different things, different layers, or different surfaces.",
   "threshold": 0.4,
   "fallback": true,
@@ -10,11 +10,15 @@
       "description": "Both clauses describe the same route, field, element, command, term, surface, or responsibility.",
       "examples": [
         {
-          "input": {"first": {"text": "The upload endpoint validates file size before storing."}, "second": {"text": "Files over 10 MB are rejected at the upload boundary."}},
+          "input": {"first": {"text": "Conflicts: a lane's changed clauses are its spec text against target main, the row root's origin/HEAD as last fetched, so shaping and delivering lanes alike are compared until they merge."}, "second": {"text": "A slug's changed clauses are the leaf clauses of its served specs that differ from target main, each row root's origin/HEAD as last fetched, so shaping and delivering slugs alike are compared until they merge. Header clauses are excluded as in draft checks."}},
           "label": "yes"
         },
         {
-          "input": {"first": {"text": "Session tokens expire after 30 minutes of inactivity."}, "second": {"text": "A session that has been idle for the configured timeout is invalidated."}},
+          "input": {"first": {"text": "bundle and criterion are the evidence service's bundle ID and criterion ID, not URLs, so the plugin opens only its own Proof page."}, "second": {"text": "When the reviewer clicks the evidence label, the bundle page opens with that criterion's artifact open in its viewer, not at the bundle top."}},
+          "label": "yes"
+        },
+        {
+          "input": {"first": {"text": "03 / MacInstall Download, verify checksum and BB pin, extract, remove any installed build, bb plugin install path:."}, "second": {"text": "An exact plugin head may be installed on the Mac BB app through the plugin candidate convention; that convention supplies the artifact and install path only, not this proof."}},
           "label": "yes"
         }
       ]
@@ -24,11 +28,15 @@
       "description": "The clauses are about different things, different layers, or different surfaces.",
       "examples": [
         {
-          "input": {"first": {"text": "The dashboard shows a bar chart of daily active users."}, "second": {"text": "The export endpoint writes CSV with one row per transaction."}},
+          "input": {"first": {"text": "Each entry carries the picked evidence's proven text as /criteria returns it, for the diff."}, "second": {"text": "For every shown or withheld answer, one judgment record carries every contract field, and no record, log, or response contains the key."}},
           "label": "no"
         },
         {
-          "input": {"first": {"text": "Error pages render a support link in the footer."}, "second": {"text": "The worker retries failed jobs up to three times with backoff."}},
+          "input": {"first": {"text": "The review server reads the evidence service's public base URL from SPEC_CHAT_EVIDENCE_URL in its environment; unset means no read and no chips."}, "second": {"text": "Onboarding: not needed, this changes marker colors and note words only, with no new screen or step."}},
+          "label": "no"
+        },
+        {
+          "input": {"first": {"text": "As an operator, the floor shows only what /lanes says: nothing it cannot know is drawn as a value, and nothing on it acts."}, "second": {"text": "As an operator, when two lanes in flight change their specs in ways that contradict, each card's spec link says so and names the other lane, quietly, without moving either card."}},
           "label": "no"
         }
       ]

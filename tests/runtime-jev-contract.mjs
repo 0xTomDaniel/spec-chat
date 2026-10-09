@@ -129,6 +129,16 @@ assert.equal(openOrphanHint({ id: 't', status: 'acknowledged' }).target, 'moved'
 assert.equal(openOrphanHint({ id: 't', status: 'resolved' }), null, 'no Possibly moved to, Go to, or move button once resolved');
 assert.equal(openOrphanHint({ id: 'unsure', status: 'resolved' }), null, 'no unsure Jev label once resolved');
 
+// #state-unsure: an unsure orphan or resolved answer shows nothing on the thread card; Jev unavailable is named.
+const noticeStart = runtime.indexOf('function threadJevNotice(');
+assert.ok(noticeStart >= 0, 'runtime exposes the thread Jev notice');
+const threadJevNotice = Function(runtime.slice(noticeStart, runtime.indexOf('\n}\n', noticeStart) + 2) + '; return threadJevNotice;')();
+const unsure = kind => ({ kind, id: 't', state: 'unsure' });
+assert.equal(threadJevNotice(unsure('orphan'), unsure('resolved')), null, 'unsure orphan and resolved show nothing');
+assert.equal(threadJevNotice(null, unsure('resolved')), null);
+assert.equal(threadJevNotice(unsure('orphan'), { kind: 'resolved', id: 't', state: 'unavailable' }).state, 'unavailable');
+assert.doesNotMatch(runtime, /data-state=unsure/, 'no unsure thread label style');
+
 // #acceptance-note-draft: a draft button only opens the existing composer with fixed text; nothing is written.
 const composerStart = runtime.indexOf('function openComposer(');
 const composerEnd = runtime.indexOf('\n\nconst label', composerStart);

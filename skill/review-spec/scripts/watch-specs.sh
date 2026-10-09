@@ -66,10 +66,7 @@ scan_once() {
       new=$(LC_ALL=C ls -1 "$REVIEW/human" 2>/dev/null || true)
     fi
     if [ -n "$new" ]; then
-      ready=$new
-      if [ "${LIVE:-0}" != 1 ]; then
-        ready=$(python3 "$SPOOL" batch "$REVIEW" "$CURSOR_NAME")
-      fi
+      ready=$(python3 "$SPOOL" batch "$REVIEW" "$CURSOR_NAME")
       if [ -n "$ready" ]; then
         printf '%s\n' "$ready" | while IFS= read -r EVENT; do
           printf '%s\t%s\n' "$SPEC" "$EVENT"

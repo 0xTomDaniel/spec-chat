@@ -107,6 +107,7 @@ Give every rule one authoritative expression: artifacts replace relational prose
 Choose the least-lossy form:
 
 - topology or module ownership: directed semantic diagram with labeled seams
+- ownership and handoffs across actors: swimlane diagram
 - guarded state: state machine with guards and meaningful self-loops
 - lifecycle, order, or cycle: rail, numbered sequence, or loop
 - spatial behavior: proportional wireframe

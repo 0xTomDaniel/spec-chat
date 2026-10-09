@@ -49,10 +49,15 @@ _wall = time.time
 # Jev was below threshold on a set with a general LLM fallback (project-rules #q-fallback): the LLM decides next.
 ESCALATED = "escalated"
 REPLACEABLE_OUTCOMES = RETRYABLE_OUTCOMES | {ESCALATED}
+# Item states a read has not decided: no mark it lacks is fixed (#record-resolution).
+UNDECIDED = frozenset({"pending", "unavailable", "oversize"})
 # Draft-check P(yes) below the verify cutoff (jev-suggestions #asymmetric-silent): recorded, no mark, no escalation.
 SILENT_NO = "silent-no"
+# Verify-band draft check the LLM verifier confirmed with a quoted span from each clause, or did not (#verifier, #record-outcome).
+VERIFIED = "verified"
+VERIFIER_REJECTED = "verifier-rejected"
 # Outcomes that let a chain continue: the question was answered (#chains, #asymmetric).
-CHAIN_CONTINUE = frozenset({"shown", SILENT_NO})
+CHAIN_CONTINUE = frozenset({"shown", SILENT_NO, VERIFIED, VERIFIER_REJECTED})
 # Mark levels (jev-suggestions#markers-levels): the single source, mark kind to a human and an agent level, fixed by kind and never
 # by confidence; the agent level is never quieter (#markers-levels-audience). Item labels key it directly; the browser keys derived
 # marks (coverage gaps, QA evidence, unsure words) by the other names and reads only the human column.
@@ -286,6 +291,8 @@ def rule_identity(text: str) -> str:
 # The human's rule decisions (project-rules #dismiss, #approval): the card action to the resolution it records.
 # Not for this spec (here), Not a project rule (rule), Confirm rule (confirm).
 DECISIONS = {"here": "dismissed", "rule": "not-a-rule", "confirm": "rule"}
+# An owner's resolutions of an Important mark through the agent read (#record-resolution); dismissed names its reason.
+OWNER_RESOLUTIONS = ("fixed", "reason", "dismissed", "thread")
 # Longest rule name kept, written or corrected (project-rules #card-name-source).
 RULE_NAME_LIMIT = 120
 
@@ -546,19 +553,21 @@ class JudgmentStore:
         return None
 
     def resolve(self, record_id: str, resolution: str, reason: str | None = None,
-                confirmed: bool | None = None, **holds: Any) -> dict[str, Any] | None:
+                confirmed: bool | None = None, if_absent: bool = False, **holds: Any) -> dict[str, Any] | None:
         """Set resolution and confirmed on an existing record (#record-resolution, #record-confirmed).
 
         Only a caller that knows a label is confirmed says so: a human's rule decision or an audit. fixed stays
         unconfirmed, since an edit can answer a wrong mark (#measure-feedback). holds names what a rule decision
         holds for (project-rules #dismiss-scope). The amended record is appended to the JSONL so it survives a
-        restart, and a rule decision also to decisions.jsonl, which the server holds whole."""
+        restart, and a rule decision also to decisions.jsonl, which the server holds whole. if_absent leaves a
+        record that already has a resolution unchanged and answers None: a mark ends once."""
         record = self.by_id(record_id)
         if record is None:
             return None
         with self.lock:
             record = self._held_value(record["cache_key"])
-            if record is None or record is _MISS or record.get("record_id") != record_id:
+            if record is None or record is _MISS or record.get("record_id") != record_id \
+                    or (if_absent and record.get("resolution")):
                 return None
             res: dict[str, Any] = {"status": resolution, **holds}
             if reason:
@@ -847,7 +856,6 @@ class JevSeam:
         # Provenance (#record-inputs, #record-pairing, #record-verifier)
         inputs = _extract_inputs(question) if kind in DRAFT_CHECK_KINDS else None
         pairing = question.get("pairing") if kind in DRAFT_CHECK_KINDS else None
-        verifier_info = question.get("verifier") if kind in DRAFT_CHECK_KINDS else None
         provider = self.provider()
         # Escalated fast-path: draft checks go to the verifier (#verifier); others to the general LLM.
         if held and provider is not None and (
@@ -887,7 +895,7 @@ class JevSeam:
         if answer is None:
             return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
                                 {"label": None, "probabilities": {}, "confidence": None}, "unavailable", model,
-                                failure=failure, inputs=inputs, pairing=pairing, verifier=verifier_info)
+                                failure=failure, inputs=inputs, pairing=pairing)
         if qset.show_cutoff is not None:
             # Asymmetric threshold for draft-check questions (#asymmetric).
             p_yes = answer["probabilities"].get("yes")
@@ -895,7 +903,7 @@ class JevSeam:
                 p_yes = answer.get("confidence", 0.0) if answer.get("label") == "yes" else 0.0
             if p_yes >= qset.show_cutoff:
                 return self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, "shown", model,
-                                    inputs=inputs, pairing=pairing, verifier=verifier_info)
+                                    inputs=inputs, pairing=pairing)
             elif qset.verify_cutoff is not None and p_yes >= qset.verify_cutoff:
                 self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, ESCALATED, model,
                              inputs=inputs, pairing=pairing)
@@ -909,7 +917,7 @@ class JevSeam:
                          inputs=inputs, pairing=pairing)
             return self._general(question, key, qset, provider)
         return self._record(key, kind, qset, question.get("sources", []), question.get("revision"), answer, outcome, model,
-                            inputs=inputs, pairing=pairing, verifier=verifier_info)
+                            inputs=inputs, pairing=pairing)
 
     def general_payload(self, question: Mapping[str, Any], qset: QuestionSet, model: str) -> dict[str, Any]:
         """One allowed label by construction: a strict enum schema, served only by providers that enforce it."""
@@ -1014,12 +1022,10 @@ class JevSeam:
         try:
             response = fallback.complete(payload)
             result = json.loads(response["choices"][0]["message"]["content"])
+            said = result.get("answer")
             clause_span = (result.get("clause_span") or "").strip()
             target_span = (result.get("target_span") or "").strip()
-            if result.get("answer") == "yes" and clause_span and target_span:
-                label = "yes"
-            else:
-                label = "no"
+            label = "yes" if said == "yes" and clause_span and target_span else "no"
         except Exception as exc:
             failure = exc
         if label is None:
@@ -1030,8 +1036,11 @@ class JevSeam:
         if label == "yes":
             answer["clause_span"] = clause_span
             answer["target_span"] = target_span
-        return self._record(key, kind, qset, sources, revision, answer, "shown", model, True,
-                            inputs=inputs, pairing=pairing)
+        # The verifier ran (#record-verifier): its answer and quoted spans, as it gave them.
+        verifier = {"ran": True, "answer": said, "spans": {"clause": clause_span, "target": target_span}}
+        return self._record(key, kind, qset, sources, revision, answer,
+                            VERIFIED if label == "yes" else VERIFIER_REJECTED, model, True,
+                            inputs=inputs, pairing=pairing, verifier=verifier)
 
     def ask_chain(self, chain: list[Mapping[str, Any]]) -> dict[str, Any]:
         """Ask a chain's yes/no questions in order, each only when the answer so far needs it (#chains)."""
@@ -1945,7 +1954,7 @@ def _confident_label(record: Mapping[str, Any] | None) -> str | None:
     outcome = record.get("outcome")
     if outcome == SILENT_NO:
         return "no"
-    if outcome != "shown":
+    if outcome not in CHAIN_CONTINUE:
         return None
     answer = record.get("answer")
     label = answer.get("label") if isinstance(answer, Mapping) else None
@@ -2158,6 +2167,10 @@ class JevService:
         self._status_lock = threading.Lock()
         self._warm_started: set[str] = set()
         self._warm_threads: list[threading.Thread] = []
+
+        # Fixed marks (#record-resolution): per spec and base, the head last decided and the Important marks shown on it.
+        self._marks_lock = threading.Lock()
+        self._marks: dict[tuple[Any, ...], tuple[Any, dict[tuple[Any, ...], tuple[str, Any]]]] = {}
 
     def stop(self) -> None:
         """Stop asking: later reads ask nothing, queued asks are dropped, in-flight asks finish their record."""
@@ -2798,6 +2811,7 @@ class JevService:
             # triggered? then covered?, from held records; a step not final here is pending or unavailable.
             result = chain_result(rule["chain"], final)
             if result["outcome"] == "oversize":
+                items.append({"kind": "rule", "id": mark, "state": "oversize"})
                 continue
             unsure = result["unsure"]
             if result["outcome"] is None:
@@ -2821,12 +2835,14 @@ class JevService:
         return items, sorted(set(rules)), cites
 
     def _rules(self, relative: str, base: str, facts: Mapping[str, Any], seam: "JevSeam | None" = None,
-               mount: Mapping[str, Any] | None = None) -> tuple[list[dict[str, Any]], list[str], dict[str, dict[str, Any]]]:
+               mount: Mapping[str, Any] | None = None) -> tuple[list[dict[str, Any]], list[str], dict[str, dict[str, Any]]] | None:
+        """The read's rule items, rules checked, and cited rule cards; None when they cannot be built, which shows
+        no rules and decides no fix."""
         try:
             return self.rule_items(facts["current"], facts["old"], relative, base, facts["head"], facts["served"], seam,
                                    (mount or {}).get("project"), facts["rel"])
         except Exception:
-            return [], [], {}
+            return None
 
     def _onboarding(self) -> dict[str, Any]:
         """onboarding.toml, empty when missing; raises OSError or ValueError when unreadable, so no write
@@ -3152,6 +3168,38 @@ class JevService:
             self._reconcile_rule(str(project), text)
         return True
 
+    def resolve(self, mount: Mapping[str, Any], record_id: Any, status: Any, reason: Any = None) -> bool:
+        """An owner's resolution of an Important mark through the agent read (#record-resolution): fixed, reason,
+        dismissed with its reason, or thread, on the mark's record, unconfirmed until audited (#measure-feedback).
+        False when the resolution is none of these, a dismissal names no reason, or the record is unknown or
+        already resolved."""
+        reason = " ".join(reason.split()) if isinstance(reason, str) else ""
+        if status not in OWNER_RESOLUTIONS or (status == "dismissed" and not reason) or not isinstance(record_id, str):
+            return False
+        return self._seam_for(mount).store.resolve(record_id, status, reason or None, if_absent=True) is not None
+
+    def _fixed(self, seam: "JevSeam", mount: Mapping[str, Any], relative: str, facts: Mapping[str, Any],
+               items: list[dict[str, Any]]) -> None:
+        """A spec fix clears an Important mark on the next head (#record-resolution, #acceptance-resolution-fixed):
+        a mark, by kind, id, and target, shown on a head of this spec and base, and absent from a settled read of a
+        later head, is fixed on its record, unconfirmed until audited. A read with any question pending,
+        unavailable, or oversize decides nothing; a mark gone because its rule is no project rule now, or already
+        resolved, is not fixed."""
+        spec = (mount.get("root"), mount.get("test"), relative, facts.get("base_commit"))
+        head = facts.get("head")
+        marks = {(item["kind"], item["id"], item.get("target")): (item["record"], item.get("text"))
+                 for item in items if item.get("agent_level") == "important" and item.get("record")}
+        with self._marks_lock:
+            last_head, last = self._marks.get(spec, (head, {}))
+            if head == last_head or any(item.get("state") in UNDECIDED for item in items):
+                self._marks[spec] = (last_head, {**last, **marks})
+                return
+            self._marks[spec] = (head, marks)
+        project = mount.get("project")
+        for key, (record_id, text) in last.items():
+            if key not in marks and not (text and seam.store.decided(DECISIONS["rule"], project, text)):
+                seam.store.resolve(record_id, "fixed", if_absent=True)
+
     def record_offer(self, project: Any, action: str, offer: str = "reconcile") -> bool:
         """Record either one-time offer, reconcile or candidates, sent or dismissed in the project's table; the
         first record stands (#bootstrap-once)."""
@@ -3177,7 +3225,8 @@ class JevService:
             facts = self._read_facts(mount, target, base, served_mounts, base_commit)
         except Exception:
             facts = None  # no rules; questions reads again and fails as it always has
-        rule_items, rules, cites = self._rules(relative, base, facts, seam, mount) if facts else ([], [], {})
+        ruled = self._rules(relative, base, facts, seam, mount) if facts else None
+        rule_items, rules, cites = ruled or ([], [], {})
         asked = self.questions(mount, target, relative, base, events, view, served_mounts, base_commit, facts)
         questions = [question for question in asked
                      if all(step["kind"] in seam.question_sets for step in question.get("chain", [question]))]
@@ -3204,6 +3253,7 @@ class JevService:
                 continue
             outcome = record.get("outcome")
             if outcome == "oversize":
+                items.append({"kind": question["kind"], "id": question["id"], "state": "oversize"})
                 continue
             answer = record.get("answer", {})
             label = answer.get("label") if isinstance(answer, Mapping) else None
@@ -3240,6 +3290,13 @@ class JevService:
             if unsure:
                 item["unsure"] = unsure
             items.append(item)
+        items += rule_items
+        if ruled is not None:
+            try:
+                self._fixed(seam, mount, relative, facts, items)
+            except OSError:
+                pass  # a fixed record unwritten is a fix missed, never a failed read
+        items = [item for item in items if item["state"] != "oversize"]
         offer = None if mount.get("test") else self.offer(mount.get("project"), mount.get("root"))
         candidates = None if mount.get("test") else self.candidate_offer(mount.get("project"), mount.get("root"))
         # Offers list repo paths; the page links them, and their cards' sources, as its mount serves them.
@@ -3250,11 +3307,11 @@ class JevService:
         if candidates:
             candidates = {**candidates, "candidates": [{**card, "target": served_path(mount, card["target"])}
                                                        for card in candidates["candidates"]]}
-        return {"jev": "on", "items": items + rule_items + self._lane_items(mount, served_mounts), "rules": rules,
+        return {"jev": "on", "items": items + self._lane_items(mount, served_mounts), "rules": rules,
                 "candidate_offer": candidates, "offer": offer, "levels": dict(MARK_LEVELS)}
 
 
-__all__ = ["BUILDERS", "CHAIN_CONTINUE", "DRAFT_CHECK_KINDS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MARK_LEVELS", "MODEL",
+__all__ = ["BUILDERS", "CHAIN_CONTINUE", "VERIFIED", "VERIFIER_REJECTED", "DRAFT_CHECK_KINDS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MARK_LEVELS", "MODEL", "OWNER_RESOLUTIONS",
            "OPENROUTER_DECISIONS_URL", "mount_prefix", "served_path", "OpenRouterProvider", "QuestionSet", "SILENT_NO",
            "anchor_context",
            "build_audience_questions", "build_board_conflict_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_rule_question", "build_scope_questions", "build_type_questions", "chain_result", "changed_leaf_clauses", "draft_check",
