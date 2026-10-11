@@ -340,6 +340,36 @@ class BootstrapTest(unittest.TestCase):
             self.assertIsNone(page["offer"])
             self.assertEqual(self.service(FakeProvider(scope=scope)).warm(rows), [])
 
+    def test_warm_up_finding_no_criterion_is_not_done_and_warms_again(self):
+        """project-rules #bootstrap-once, #acceptance-warm-none: a warm-up that finds no criterion on main
+        publishes a not-done status and warms again on the next server start, so criteria added later get
+        their real warm-up."""
+        for name in ("onboarding", "export", "import", "plain"):
+            self.write(name + ".spec.html", spec(body="No criteria yet."))
+        self.main = self.commit()
+        rows = [self.row()]
+        service = self.service(FakeProvider())
+        self.assertEqual(service.warm(rows), ["proj"])
+        status = self.settle(service)
+        self.assertEqual((status["state"], status["criteria_classified"], status["definition"]),
+                         ("no_criteria", 0, jev.WARM_DEFINITION))
+        self.assertIsNone(self.page(service, rows)["offer"])
+        self.assertEqual(service.warm(rows), [])  # same server run: not restarted
+        # next server start, still no criterion: warms again, still not done
+        again = self.service(FakeProvider())
+        self.assertEqual(again.warm(rows), ["proj"])
+        self.assertEqual(self.settle(again)["state"], "no_criteria")
+        # criteria added on main: the next server start does the real warm-up
+        self.write("onboarding.spec.html", spec(("acceptance-onboarding", ONBOARDING), ("local", LOCAL)))
+        self.main = self.commit()
+        rows = [self.row()]
+        later = self.service(FakeProvider())
+        self.assertEqual(later.warm(rows), ["proj"])
+        status = self.settle(later)
+        self.assertEqual((status["state"], status["criteria_classified"], status["candidates"]),
+                         ("done", 2, ["docs/specs/onboarding.spec.html#acceptance-onboarding"]))
+        self.assertEqual(self.service(FakeProvider()).warm(rows), [])
+
     def test_unreadable_main_fails_the_warm_up_and_is_never_kept_as_absent(self):
         """#bootstrap-once: a warm-up that cannot read main's specs (its repo mid-rebuild) fails, so it never
         stands done without them, and a later read of the same commit sees the specs (no failed read is kept)."""
