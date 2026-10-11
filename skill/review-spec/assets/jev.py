@@ -2445,11 +2445,12 @@ class JevService:
         return record
 
     def _held_record(self, key: str, seam: "JevSeam | None" = None) -> dict[str, Any] | None:
-        """A held record. `off` is no answer (the key was missing when asked), so it is asked again, and a
-        failed one answers only until its pause ends (#state-error)."""
+        """A held record. `off` is no answer (the key was missing when asked), and `escalated` is an answer
+        not yet settled (an ask that stopped after recording it): both are asked again, the escalated one
+        through the escalated fast-path. A failed one answers only until its pause ends (#state-error)."""
         store = (seam or self.seam).store
         record = store.get(key)
-        if record is None or record.get("outcome") == "off":
+        if record is None or record.get("outcome") in ("off", ESCALATED):
             return None
         if record.get("outcome") == "unavailable" and not pause_left(record):
             return None
@@ -2602,10 +2603,11 @@ class JevService:
                 and not row.get("test")]
         sets = self.seam.question_sets
         misses: dict[str, dict[str, Any]] = {}
+        get_held = lambda step: self._held_record(self.seam.key(step))
 
         def held_chain(item: Mapping[str, Any]) -> dict[str, Any]:
             # A chain waiting on a step is asked whole, so each answer asks on from it (#chains).
-            result = chain_result(item["chain"], lambda step: self.seam.store.get(self.seam.key(step)))
+            result = chain_result(item["chain"], get_held)
             if result["outcome"] is None:
                 misses.setdefault(self.seam.key(result["step"]), dict(item))
             return result
@@ -2618,7 +2620,6 @@ class JevService:
                 questions = None
             answer_rows.append({"id": str(row.get("id", "")),
                                 "material": "unknown" if questions is None else material([held_chain(q) for q in questions])})
-        get_held = lambda step: self.seam.store.get(self.seam.key(step))
         conflict_pairs: set[tuple[str, str]] = set()
         for chain in self._lane_questions(rows):
             results = lane_result(chain["chain"], get_held)
@@ -2654,7 +2655,7 @@ class JevService:
             inflight = key in self._asking
         if _final(record):
             return "final", record
-        if inflight or self._held_record(key, seam) is None or record.get("outcome") == ESCALATED:
+        if inflight or self._held_record(key, seam) is None:
             return "pending", record
         return "unavailable", record
 
