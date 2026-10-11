@@ -2829,7 +2829,7 @@ class JevService:
                 item["level"], item["agent_level"] = MARK_LEVELS[item["label"]]["human"], MARK_LEVELS[item["label"]]["agent"]
             if state == "pending":
                 item["escalated"] = _escalated(record)
-            if unsure:
+            if unsure and item["state"] == "label":  # behind a shown mark only (#markers-agent-unsure)
                 item["unsure"] = unsure
             items.append(item)
         return items, sorted(set(rules)), cites
@@ -3285,9 +3285,10 @@ class JevService:
                 if seam.store.decided(DECISIONS["here"], mount.get("project"), cited["text"], facts and facts["rel"]):
                     continue
                 item["rule"] = dict(cited)
-            # Answers Jev was unsure of, settled by the general LLM: counted by the agent read only (#markers-agent-unsure).
+            # Answers Jev was unsure of, settled by the general LLM, behind a note the page shows: counted by the agent
+            # read only (#markers-agent-unsure). A coverage pair shows no note of its own; the gap is derived.
             unsure = record.get("unsure", int(outcome == "shown" and bool(record.get("escalated"))))
-            if unsure:
+            if unsure and state == "label" and question["kind"] != "coverage":
                 item["unsure"] = unsure
             items.append(item)
         items += rule_items
