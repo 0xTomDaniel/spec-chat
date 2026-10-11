@@ -1,11 +1,11 @@
 {
   "id": "contradicts-nongoal",
-  "version": 1,
+  "version": 2,
   "instructions": "The linked clause lists items its spec excludes as non-goals. Does the changed clause add or require something the non-goal excludes? Answer yes only when you can name the specific listed item the changed clause adds or requires. Answer no when the changed clause does not add any item the non-goal lists, even when the wording overlaps.",
   "threshold": 0.4,
   "fallback": true,
-  "show_cutoff": 0.90,
-  "verify_cutoff": 0.70,
+  "show_cutoff": 0.9,
+  "verify_cutoff": 0.7,
   "labels": [
     {
       "name": "yes",
@@ -31,7 +31,7 @@
     },
     {
       "name": "no",
-      "description": "No conflict: the changed clause does not add any item the non-goal lists, even when the wording relates to the same area.",
+      "description": "No conflict: the changed clause does not add any item the non-goal lists, even when the wording relates to the same area. A non-goal that explicitly allows the thing, or leaves out only an automatic or unrequested form of it, is no conflict.",
       "examples": [
         {
           "input": {
@@ -46,6 +46,22 @@
             "before": "",
             "after": "The settings page lists all notification channels the user has configured.",
             "target": "Automated notifications, email digests, or push alerts."
+          },
+          "label": "no"
+        },
+        {
+          "input": {
+            "before": "",
+            "after": "Given a checkout behind its remote with a clean working tree, When the operator clicks Update, Then the checkout moves to the remote head and the page shows the new commit.",
+            "target": "Out of scope: updating a checkout without the operator's click, a rollback screen, and cloning, deleting, or switching branches of a checkout."
+          },
+          "label": "no"
+        },
+        {
+          "input": {
+            "before": "",
+            "after": "When a reviewer clicks Approve on an answer, the answer's record carries an approved label.",
+            "target": "Tag lists, side files, or saved state holding team knowledge (an approval judges the answer and is not team knowledge); approval by a bot; an undo for approvals."
           },
           "label": "no"
         }

@@ -165,6 +165,14 @@ class VerifierTest(unittest.TestCase):
         self.assertEqual(record["kind"], "contradicts")
         self.assertNotEqual(record["model"], "fake-jev")  # LLM model, not Jev model
 
+    def test_verifier_sends_the_sets_examples(self):
+        """The verifier reads the same set's examples, no second example store (#qset-examples)."""
+        qset = SETS["overlaps"]
+        payload = self.seam(AsymmetricProvider()).verifier_payload({"state": {"after": "a", "target": "b"}}, qset, "m")
+        system = json.loads(payload["messages"][0]["content"])
+        self.assertEqual(system["examples"], qset.examples())
+        self.assertTrue(any(example["label"] == "no" for example in system["examples"]))
+
 
 if __name__ == "__main__":
     unittest.main()
