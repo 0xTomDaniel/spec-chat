@@ -15,6 +15,9 @@ SETS = jev.load_question_sets(ROOT / "skill" / "review-spec" / "assets" / "jev")
 
 BASE = '<section data-anchor="s"><p data-anchor="new">Old words.</p><p data-anchor="other">Other clause here.</p></section>'
 CURRENT = '<section data-anchor="s"><p data-anchor="new">New clause words here.</p><p data-anchor="other">Other clause here.</p></section>'
+# Draft checks pair only with clauses of other specs (#corpus-same-spec).
+OTHER = '<section data-anchor="s"><p data-anchor="other">Other clause here.</p><p data-anchor="non-goal">Offline.</p></section>'
+SERVED = [{"path": "other.spec.html", "source": OTHER}]
 
 
 class AsymmetricProvider:
@@ -48,8 +51,8 @@ class AsymmetricProvider:
 
 
 def draft_check():
-    items = [item for item in jev.build_corpus_questions(CURRENT, BASE, "spec.html", "base", "head")
-             if item["target"] == "other"]
+    items = [item for item in jev.build_corpus_questions(CURRENT, BASE, "spec.html", "base", "head", SERVED)
+             if item["target"] == "other.spec.html#other"]
     return items[0]
 
 
@@ -93,15 +96,15 @@ class AsymmetricThresholdTest(unittest.TestCase):
         self.assertFalse(record.get("escalated"))
 
     def test_silent_no_full_chain(self):
-        """Same-spec: about(yes) then contradicts P(yes) below verify ends chain, no mark."""
+        """about(yes) then every P(yes) below verify runs the chain to no mark."""
         chain = draft_check()["chain"]
         provider = AsymmetricProvider(
-            p_yes_map={"about": 0.95, "contradicts": 0.50})
+            p_yes_map={"about": 0.95, "contradicts": 0.50, "oversteps": 0.50, "overlaps": 0.50})
         result = self.seam(provider).ask_chain(chain)
         self.assertIsNone(result["answer"]["label"])
         self.assertEqual(result["outcome"], "shown")
         self.assertEqual(provider.complete_calls, [])
-        self.assertEqual(sorted(provider.decide_calls), ["about", "contradicts"])
+        self.assertEqual(sorted(provider.decide_calls), ["about", "contradicts", "overlaps", "oversteps"])
 
 
 class VerifierTest(unittest.TestCase):

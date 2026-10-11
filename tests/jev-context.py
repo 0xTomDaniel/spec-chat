@@ -128,7 +128,9 @@ class CorpusContextTest(unittest.TestCase):
             '<section data-anchor="sec" data-spec-section="rules"><h2>Rules</h2>'
             '<p data-anchor="clause-x">New changed text.</p>'
             '<p data-anchor="clause-y">Candidate text.</p></section>')
-        questions = jev.build_corpus_questions(current, baseline)
+        # Candidates come only from other specs (#corpus-same-spec): serve a copy as one.
+        questions = jev.build_corpus_questions(current, baseline, "spec.html", "", "head",
+                                               [{"path": "other.spec.html", "source": current}])
         self.assertTrue(len(questions) > 0, "expected at least one corpus question")
         for q in questions:
             # Gate step (about) carries context inside first/second (#gate-set-state)
@@ -157,7 +159,9 @@ class CorpusContextTest(unittest.TestCase):
             '<table data-anchor="tbl"><thead><tr><th>A</th><th>B</th></tr></thead>'
             '<tbody><tr data-anchor="r1"><td>new changed</td><td>val</td></tr>'
             '<tr data-anchor="r2"><td>other</td><td>candidate</td></tr></tbody></table></section>')
-        questions = jev.build_corpus_questions(current, baseline)
+        # Candidates come only from other specs (#corpus-same-spec): serve a copy as one.
+        questions = jev.build_corpus_questions(current, baseline, "spec.html", "", "head",
+                                               [{"path": "other.spec.html", "source": current}])
         self.assertTrue(len(questions) > 0)
         # Gate step (about) carries columns inside first (#gate-set-state)
         gate = questions[0]["chain"][0]

@@ -1473,13 +1473,13 @@ def _is_non_goal(anchor: str, anchors: Mapping[str, Mapping[str, Any]]) -> bool:
     return False
 
 
-TOPK_SAME = 5
 TOPK_CROSS = 5
 
 
 def build_corpus_questions(current: str | bytes, baseline: str | bytes | None, path: str = "spec", base: str = "",
                            revision: Any = "head", served_specs: Any = None) -> list[dict[str, Any]]:
-    """Build one corpus question for each changed leaf and candidate clause."""
+    """Build one corpus question for each changed leaf and cross-spec candidate clause; no clause of its own
+    spec is a candidate (#corpus-same-spec)."""
     now, old = extract_anchors(current), extract_anchors(baseline)
     leaves = _corpus_leaf_anchors(now)
     other_specs: list[tuple[str, dict[str, dict[str, Any]]]] = []
@@ -1506,16 +1506,6 @@ def build_corpus_questions(current: str | bytes, baseline: str | bytes | None, p
             continue
 
         source_words = _anchor_words(after)
-        own_keys = [key for key in _corpus_leaf_anchors(now) if key != anchor]
-        # Rank same-spec candidates by rarity-weighted overlap.
-        own_scored = sorted(own_keys, key=lambda k: (-_rarity_score(source_words, _anchor_words(str(now[k].get("text", ""))), freqs), k))
-        non_goals = [key for key in own_scored if _is_non_goal(key, now)]
-        own_keys = own_scored[:TOPK_SAME]
-        for key in non_goals:
-            if key not in own_keys:
-                own_keys.append(key)
-        candidates = [(key, str(now[key].get("text", "")), key in non_goals, now) for key in own_keys]
-
         # Rank cross-spec candidates by rarity-weighted overlap.
         cross: list[tuple[float, str, str, str, bool, dict]] = []
         for other_path, other_anchors in other_specs:
@@ -1524,32 +1514,24 @@ def build_corpus_questions(current: str | bytes, baseline: str | bytes | None, p
                 score = _rarity_score(source_words, _anchor_words(text), freqs)
                 cross.append((-score, other_path, key, text, _is_non_goal(key, other_anchors), other_anchors))
         cross.sort(key=lambda item: (item[0], item[1], item[2]))
-        candidates.extend((other_path + "#" + key, text, non_goal, ca) for _, other_path, key, text, non_goal, ca in cross[:TOPK_CROSS])
 
         ctx = anchor_context(anchor, now)
-        for rank_index, (target, target_text, non_goal, target_anchors) in enumerate(candidates):
-            tctx = anchor_context(target.split("#")[-1], target_anchors)
-            if non_goal:
-                rule = "non-goal"
-            elif "#" in str(target):
-                rule = "cross-spec"
-            else:
-                rule = "same-spec"
-            pair_info = {"rule": rule, "rank": rank_index, "gate": "yes"}
-            result.append(draft_check(anchor, before, after, target, target_text, target_non_goal=non_goal,
-                                      same_spec=(rule == "same-spec"),
-                                      path=path, base=base, revision=revision,
-                                      context=ctx, target_context=tctx, pairing=pair_info))
+        for rank_index, (_, other_path, key, target_text, non_goal, target_anchors) in enumerate(cross[:TOPK_CROSS]):
+            pair_info = {"rule": "non-goal" if non_goal else "cross-spec", "rank": rank_index, "gate": "yes"}
+            result.append(draft_check(anchor, before, after, other_path + "#" + key, target_text,
+                                      target_non_goal=non_goal, path=path, base=base, revision=revision,
+                                      context=ctx, target_context=anchor_context(key, target_anchors),
+                                      pairing=pair_info))
     return result
 
 
 def draft_check(anchor: str, before: str, after: str, target: str, target_text: str, *,
-                target_non_goal: bool = False, same_spec: bool = False, path: str, base: str, revision: Any,
+                target_non_goal: bool = False, path: str, base: str, revision: Any,
                 context: Mapping[str, Any] | None = None, target_context: Mapping[str, Any] | None = None,
                 pairing: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    """The draft-check chain for one clause and candidate (#corpus-labels, #gate-chain): about? gate first,
-    then contradicts?, then oversteps?, then overlaps?, the first yes decides; a non-goal candidate is asked
-    only contradicts? after the gate."""
+    """The draft-check chain for one clause and cross-spec candidate (#corpus-labels, #gate-chain): about? gate
+    first, then contradicts?, then oversteps?, then overlaps?, the first yes decides; a non-goal candidate is
+    asked only contradicts? after the gate."""
     # Gate state: first/second each with context fields (#gate-set-state)
     first_obj: dict[str, Any] = {"text": after}
     if context:
@@ -1569,7 +1551,7 @@ def draft_check(anchor: str, before: str, after: str, target: str, target_text: 
     steps = [gate,
              _step(_question(contradicts_kind, anchor, pair,
                              path, base, revision, target), yes="contradicts")]
-    if target_non_goal or same_spec:
+    if target_non_goal:
         steps[1]["then"]["no"] = None
     else:
         steps += [_step(_question("oversteps", anchor, pair, path, base, revision, target), yes="oversteps"),
