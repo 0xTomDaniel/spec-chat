@@ -1987,7 +1987,7 @@ EXCLUDED_COLLECTION_DIRS = frozenset({"evidence", "evidence-bundle", "evidence-b
 ONBOARDING_TABLE = "project"
 # The warm-up definition, what the warm-up asks and publishes: bump on any change to either, so every project
 # whose done status ran under an earlier one warms again (project-rules #bootstrap-once).
-WARM_DEFINITION = 1
+WARM_DEFINITION = 2
 # Human decisions in a project's table: each offer's sent or dismissed, kept through a rerun (#bootstrap-once).
 OFFER_FIELDS = ("offer", "offer_at", "candidate_offer", "candidate_offer_at")
 OFFER_ACTIONS = frozenset({"sent", "dismissed"})
@@ -2862,7 +2862,7 @@ class JevService:
 
         A done status is not redone while its warm-up definition is current; one under an earlier definition
         warms again, keeping each offer's sent or dismissed (rule decisions live in the records). A failed or
-        interrupted warm-up is started again on the next server start. With Jev off nothing runs and nothing is
+        interrupted warm-up, or one that found no criterion on main, is started again on the next server start. With Jev off nothing runs and nothing is
         written, so no offer shows."""
         if not self.enabled:
             return []
@@ -2945,6 +2945,10 @@ class JevService:
         try:
             commit, specs = self._main_specs(rows)
             scopes = list(self._built("scope", specs))
+            if not scopes:
+                # No criterion on main is not done: the next server start warms again (#bootstrap-once).
+                status.update({"state": "no_criteria", "main": commit})
+                return self._publish_warm(project, status)
             self._warm_submit(scopes)
             decided = [self.seam.store.get(self.seam.key(s)) for s in scopes]
             labels = [_confident_label(record) for record in decided]
@@ -2966,6 +2970,10 @@ class JevService:
             })
         except Exception as exc:
             status.update({"state": "failed", "error": str(exc) or type(exc).__name__})
+        self._publish_warm(project, status)
+
+    def _publish_warm(self, project: str, status: dict[str, Any]) -> None:
+        """Publish a finished warm-up's status; nothing writes after stop returns."""
         if self._ask_pool is None:
             return  # stopped: nothing writes after stop returns
         status["finished_at"] = _now()
