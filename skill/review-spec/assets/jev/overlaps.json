@@ -1,11 +1,11 @@
 {
   "id": "overlaps",
-  "version": 4,
+  "version": 5,
   "instructions": "Compare the changed clause with the linked clause; they neither contradict nor overstep each other. Do they say the same thing? Answer yes when both clauses describe the same behavior, surface, or responsibility. Answer no when they describe different things, even if related. A criterion or test that checks the behavior the other clause states says the same thing: yes.",
   "threshold": 0.4,
   "fallback": true,
-  "show_cutoff": 0.90,
-  "verify_cutoff": 0.70,
+  "show_cutoff": 0.9,
+  "verify_cutoff": 0.7,
   "labels": [
     {
       "name": "yes",
@@ -51,17 +51,25 @@
         },
         {
           "input": {
-            "before": "The page shows a comment label.",
-            "after": "The page shows a comment label with text.",
-            "target": "The compared base determines the Git focus."
+            "before": "The export route returns CSV.",
+            "after": "The export route returns CSV and names the file after the report.",
+            "target": "The report header shows the report's owner and its creation date."
           },
           "label": "no"
         },
         {
           "input": {
-            "before": "The export route returns CSV.",
-            "after": "The export route returns CSV and names the file after the report.",
-            "target": "The report header shows the report's owner and its creation date."
+            "before": "",
+            "after": "The invoice exporter reads saved reports only through the report store's read interface and writes no record of its own.",
+            "target": "The report store keys each saved report by its owner and creation date and returns it unchanged on read."
+          },
+          "label": "no"
+        },
+        {
+          "input": {
+            "before": "",
+            "after": "The export settings file owns the CSV column order. Caller-facing seam: a settings id and version, loaded by the existing settings loader.",
+            "target": "Settings files own formats, defaults, and limits. Caller-facing seam: a settings id and version."
           },
           "label": "no"
         }

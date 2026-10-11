@@ -73,7 +73,7 @@ class AudienceSetTest(unittest.TestCase):
         kinds = {
             "for you": {
                 "user-facing": "never covers the spec or review controls",
-                "behavioral": "handed-off events remain durably queued",
+                "behavioral": "leaves an open question there instead of editing again",
                 "key architecture": "Spec Chat depends on no tracker or orchestrator",
                 "typical criterion": "When the reviewer pastes a valid commit id",
             },

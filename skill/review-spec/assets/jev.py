@@ -996,7 +996,7 @@ class JevSeam:
             verify_input["clause_context"] = state["context"]
         if state.get("target_context"):
             verify_input["target_context"] = state["target_context"]
-        system = {"question": qset.instructions,
+        system = {"question": qset.instructions, "examples": qset.examples(),
                   "verify": "If yes, quote the exact span from the clause and the target that conflict. If no, leave spans empty."}
         schema = {"type": "object",
                   "properties": {"answer": {"type": "string", "enum": ["yes", "no"]},
