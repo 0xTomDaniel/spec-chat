@@ -16,6 +16,9 @@ SETS = jev.load_question_sets(ROOT / "skill" / "review-spec" / "assets" / "jev")
 
 BASE = '<section data-anchor="s"><p data-anchor="new">Old words.</p><p data-anchor="other">Other clause here.</p></section>'
 CURRENT = '<section data-anchor="s"><p data-anchor="new">New clause words here.</p><p data-anchor="other">Other clause here.</p></section>'
+# Draft checks pair only with clauses of other specs (#corpus-same-spec).
+OTHER = '<section data-anchor="s"><p data-anchor="other">Other clause here.</p><p data-anchor="non-goal">Offline.</p></section>'
+SERVED = [{"path": "other.spec.html", "source": OTHER}]
 
 
 class FakeProvider:
@@ -48,8 +51,8 @@ class FakeProvider:
 
 
 def draft_check():
-    items = [item for item in jev.build_corpus_questions(CURRENT, BASE, "spec.html", "base", "head")
-             if item["target"] == "other"]
+    items = [item for item in jev.build_corpus_questions(CURRENT, BASE, "spec.html", "base", "head", SERVED)
+             if item["target"] == "other.spec.html#other"]
     return items[0]
 
 
@@ -95,10 +98,10 @@ class GateTest(unittest.TestCase):
         self.assertEqual(result["answer"]["label"], "contradicts")
 
     def test_gate_yes_full_chain(self):
-        """#gate-chain: same-spec about?(yes) then contradicts?(no) ends the chain."""
-        provider = FakeProvider({"about": ("yes", 0.95), "contradicts": ("no", 0.95)})
+        """#gate-chain: about?(yes) then three no answers run the whole chain to no mark."""
+        provider = FakeProvider({"about": ("yes", 0.95)})
         result = self.seam(provider).ask_chain(draft_check()["chain"])
-        self.assertEqual(provider.calls, ["about", "contradicts"])
+        self.assertEqual(provider.calls, ["about", "contradicts", "oversteps", "overlaps"])
         self.assertIsNone(result["answer"]["label"])
 
     def test_gate_no_fewer_provider_calls(self):
@@ -108,9 +111,9 @@ class GateTest(unittest.TestCase):
         self.assertEqual(len(provider.calls), 1)  # only about, no contradicts
 
     def test_gate_display_labels_exclude_gate(self):
-        """Gate answer is not a display label; same-spec shows only contradicts."""
+        """Gate answer is not a display label."""
         item = draft_check()
-        self.assertEqual(item["display_labels"], ["contradicts"])
+        self.assertEqual(item["display_labels"], ["contradicts", "oversteps", "overlaps"])
 
     def test_gate_cache_by_content_hash(self):
         """#acceptance-gate-cache: same clause pair reuses cached gate record."""

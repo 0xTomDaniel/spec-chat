@@ -15,6 +15,9 @@ SETS = jev.load_question_sets(ROOT / "skill" / "review-spec" / "assets" / "jev")
 
 BASE = '<section data-anchor="s"><p data-anchor="new">Old words.</p><p data-anchor="other">Other clause here.</p></section>'
 CURRENT = '<section data-anchor="s"><p data-anchor="new">New clause words here.</p><p data-anchor="other">Other clause here.</p></section>'
+# Draft checks pair only with clauses of other specs (#corpus-same-spec).
+OTHER = '<section data-anchor="s"><p data-anchor="other">Other clause here.</p><p data-anchor="non-goal">Offline.</p></section>'
+SERVED = [{"path": "other.spec.html", "source": OTHER}]
 
 
 class FakeProvider:
@@ -41,8 +44,8 @@ class FakeProvider:
 
 
 def draft_check(target_non_goal=False):
-    items = [item for item in jev.build_corpus_questions(CURRENT, BASE, "spec.html", "base", "head")
-             if item["target"] == ("non-goal" if target_non_goal else "other")]
+    items = [item for item in jev.build_corpus_questions(CURRENT, BASE, "spec.html", "base", "head", SERVED)
+             if item["target"] == "other.spec.html#" + ("non-goal" if target_non_goal else "other")]
     return items[0]
 
 
@@ -57,21 +60,17 @@ class ChainTest(unittest.TestCase):
         self.assertEqual(provider.calls, ["about", "contradicts"])
         self.assertEqual(result["answer"]["label"], "contradicts")
         self.assertEqual(result["outcome"], "shown")
-        # Same-spec: about(yes) then contradicts(no) ends the chain; no oversteps/overlaps.
-        provider = FakeProvider({"about": ("yes", 0.95), "contradicts": ("no", 0.95)})
+        # about(yes) then three no answers: the whole chain, no mark.
+        provider = FakeProvider({"about": ("yes", 0.95)})
         result = self.seam(provider).ask_chain(draft_check()["chain"])
-        self.assertEqual(provider.calls, ["about", "contradicts"])
+        self.assertEqual(provider.calls, ["about", "contradicts", "oversteps", "overlaps"])
         self.assertIsNone(result["answer"]["label"])
 
-    def test_same_spec_and_non_goal_ask_only_contradicts(self):
-        # Same-spec: only about + contradicts, no oversteps/overlaps.
-        provider = FakeProvider({"about": ("yes", 0.95), "contradicts": ("no", 0.95)})
-        result = self.seam(provider).ask_chain(draft_check()["chain"])
-        self.assertEqual(provider.calls, ["about", "contradicts"])
-        self.assertIsNone(result["answer"]["label"])
+    def test_no_own_spec_candidate_and_non_goal_asks_only_contradicts(self):
+        # #corpus-same-spec: no clause of the own spec, non-goal or not, is a candidate.
         source = CURRENT.replace("</section>", '</section><section data-anchor="non-goals"><p data-anchor="non-goal">Offline.</p></section>')
-        items = [item for item in jev.build_corpus_questions(source, BASE, "spec.html", "base", "head")
-                 if item["target"] == "non-goal"]
+        self.assertEqual(jev.build_corpus_questions(source, BASE, "spec.html", "base", "head"), [])
+        items = [draft_check(target_non_goal=True)]
         self.assertEqual([step["kind"] for step in items[0]["chain"]], ["about", "contradicts-nongoal"])
         self.assertTrue(items[0]["chain"][1]["state"]["target_non_goal"])
         provider = FakeProvider({"about": ("yes", 0.95)})
@@ -79,12 +78,11 @@ class ChainTest(unittest.TestCase):
         self.assertEqual(provider.calls, ["about", "contradicts-nongoal"])
 
     def test_every_chain_record_is_yes_or_no_and_one_record_per_question(self):
-        # Same-spec chain: about + contradicts only.
-        provider = FakeProvider({"about": ("yes", 0.95), "contradicts": ("no", 0.95)})
+        provider = FakeProvider({"about": ("yes", 0.95)})
         seam = self.seam(provider)
         seam.ask_chain(draft_check()["chain"])
         records = list(seam.store.records())
-        self.assertEqual(len(records), 2)
+        self.assertEqual(len(records), 4)
         self.assertEqual({record["answer"]["label"] for record in records}, {"yes", "no"})
         for name in ("about", "type", "contradicts", "oversteps", "overlaps", "triggered", "covered"):
             with self.subTest(set=name):
@@ -92,7 +90,7 @@ class ChainTest(unittest.TestCase):
                 self.assertTrue(SETS[name].fallback)
         # A repeat asks nothing: each question is its own cache entry.
         seam.ask_chain(draft_check()["chain"])
-        self.assertEqual(len(provider.calls), 2)
+        self.assertEqual(len(provider.calls), 4)
 
     def test_unavailable_stops_the_chain(self):
         class Down(FakeProvider):

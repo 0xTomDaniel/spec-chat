@@ -79,8 +79,10 @@ class CorpusTest(unittest.TestCase):
     def test_non_goal_contradicts_restated_overlaps_and_unrelated_shows_nothing(self):
         baseline = page("The service reads review events.")
         current = page("The service writes review events.")
+        # Candidates come only from other specs (#corpus-same-spec): the non-goal lives there too.
         other = ('<section data-anchor="o"><p data-anchor="restated">The service writes review events.</p>'
-                 '<p data-anchor="unrelated">Mobile markers stay visible at narrow widths.</p></section>')
+                 '<p data-anchor="unrelated">Mobile markers stay visible at narrow widths.</p></section>'
+                 '<section data-anchor="non-goals"><p data-anchor="non-goal-text">The service never writes review events.</p></section>')
         labels = {"The service never writes review events.": "contradicts",
                   "The service writes review events.": "overlaps"}
         provider = FakeProvider(labels)
@@ -90,9 +92,9 @@ class CorpusTest(unittest.TestCase):
         service.questions = lambda *args, **kwargs: questions
         items = settled(service, {}, "", "", "base", [])["items"]
         by_target = {item["target"]: item for item in items}
-        self.assertEqual(by_target["non-goal-text"]["state"], "label")
-        self.assertEqual(by_target["non-goal-text"]["label"], "contradicts")
-        self.assertEqual(by_target["non-goal-text"]["level"], "important")
+        non_goal = by_target["lane/docs/specs/other.spec.html#non-goal-text"]
+        self.assertEqual((non_goal["state"], non_goal["label"], non_goal["level"]), ("label", "contradicts", "important"))
+        self.assertFalse([target for target in by_target if "#" not in target])
         restated = by_target["lane/docs/specs/other.spec.html#restated"]
         self.assertEqual((restated["state"], restated["label"], restated["level"]), ("label", "overlaps", "warning"))
         unrelated = by_target["lane/docs/specs/other.spec.html#unrelated"]
@@ -179,10 +181,11 @@ class CorpusTest(unittest.TestCase):
         leaves = "".join(f'<p data-anchor="c{i}">Clause {i} about review events.</p>' for i in range(12))
         before = page("The service reads review events.") + f'<section data-anchor="more">{leaves}</section>'
         after = before.replace("reads review", "writes review").replace("Context words.", "Context next.")
-        lane_a = self.repo("a", {SPEC: after}, {SPEC: before})
+        lane_a = self.repo("a", {SPEC: after}, {SPEC: before, OWN: page("Own rule.")})
         lanes = [lane_a] + [self.worktree(lane_a, f"l{n}", {SPEC: after.replace("Clause", f"Lane {n} clause")})
                             for n in range(4)]
-        mounts = [self.row(root, f"l{n}", SPEC) for n, root in enumerate(lanes)]
+        # Draft checks pair only with other specs (#corpus-same-spec): the lane serves one more.
+        mounts = [self.row(root, f"l{n}", SPEC) for n, root in enumerate(lanes)] + [self.row(lane_a, "l0", OWN)]
         service = object.__new__(jev.JevService)
         now = jev.build_corpus_questions(after, before, "l0/" + SPEC, "base", "head",
                                          service._served_specs(mounts, str(lane_a / SPEC), mounts[0]))
