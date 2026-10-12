@@ -783,7 +783,7 @@ class JevSeamTest(unittest.TestCase):
         sets = jev.load_question_sets(ROOT / "skill" / "review-spec" / "assets" / "jev")
         draft = jev.draft_check("clause", "", "x", "other", "y", path="spec", base="base", revision="head")
         self.assertEqual([step["kind"] for step in draft["chain"]], ["about", "contradicts", "oversteps", "overlaps"])
-        self.assertEqual(draft["display_labels"], ["contradicts", "oversteps", "overlaps"])
+        self.assertEqual(draft["display_labels"], ["contradicts", "oversteps", "overlaps", "partial-overlap"])
         for step in draft["chain"]:
             self.assertEqual(set(sets[step["kind"]].criteria()), {"yes", "no"})
 
