@@ -292,6 +292,31 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
                 result = self.validate(base)
                 self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_project_rule_mark_needs_a_name_on_an_acceptance_criterion(self):
+        """project-rules #declare-text: a mark with an empty name, or on anything but a criterion, is rejected."""
+        cases = {
+            ' data-story="story" data-project-rule="Every change ships its onboarding"': None,
+            ' data-story="story" data-project-rule=""': "project rule mark on acceptance-rule needs a short name",
+            ' data-story="story" data-project-rule="  "': "project rule mark on acceptance-rule needs a short name",
+        }
+        for extra, error in cases.items():
+            with self.subTest(extra=extra):
+                base = self.empty_base()
+                self.write_shaped_spec(acceptance_extra=extra)
+                shutil.copy2(FALLBACK, self.style)
+                result = self.validate(base)
+                if error is None:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(error, result.stderr)
+        base = self.empty_base()
+        self.write_shaped_spec(boundary_extra=' data-project-rule="Boundaries"')
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("project rule mark on boundary-rule is not on an acceptance criterion", result.stderr)
+
     def test_rejects_ambiguous_acceptance_scope(self):
         base = self.empty_base()
         self.write_shaped_spec(scope="deferred")

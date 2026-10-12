@@ -1,7 +1,7 @@
 #!/bin/sh
 # QA fixture reset (qa.toml fixture.spec_review_site): rebuild the served spec repo
 # and the review registry under $QA_ROOT. base/ is the compared base commit, head/
-# the specs under shaping on top of it. Jev records and onboarding status under
+# the specs under shaping on top of it. Jev records and the warning ledger under
 # $QA_ROOT/state are kept: the running service holds them in memory too, and the
 # fake is deterministic, so they match every reset's identical commits.
 #
@@ -13,18 +13,13 @@
 # are lane keys, so the review index shows them as lane cards (QA-1, QA-2) under In
 # progress; every other collection settles.
 #
-# Rule state (project-rules #approval) is the project's, and a project's decisions hold
-# for good, so each reset registers fresh projects: a story's clicks never reach the
-# next one. The fixture's onboarding rule is confirmed in a project whose name ends in
-# -confirmed, by the fake as that project warms up (serve.py), and a candidate in any
-# other. The entry project is confirmed for the stories below, whose criteria are
-# Given a confirmed rule; rule-candidate and rule-confirmed are each their own project,
-# for a criterion whose Given differs from its story's (qa.toml nav); rule-confirmed-c is
-# a second collection of rule-confirmed's project.
+# A rule is its criterion's mark in its home spec (project-rules #declare): onboarding.spec.html
+# marks its onboarding criterion. Dismissals live in the warning ledger by project and spec
+# path, and hold for good, so each reset registers a fresh project: a story's clicks never
+# reach the next one. rule-candidate is its own project whose onboarding criterion is
+# unmarked, so it is a candidate on its home spec (qa.toml nav).
 set -eu
-confirmed_stories=" story-home story-miss story-card story-agent story-dismiss story-copies
-  story-own-project story-bootstrap story-labels "
-collections="qa-fixture rule-candidate rule-confirmed rule-confirmed-c tbd-later tbd-later-handoff tbd-open-highlight tbd-open-single
+collections="qa-fixture rule-candidate tbd-later tbd-later-handoff tbd-open-highlight tbd-open-single
   next-tbd next-tbd-step next-tbd-handoff tbd-open-jump tbd-open-wrap mobile-composer
   block-target-enter block-target-space block-target-off
   anchor-moved anchor-changed anchor-gone stale-page agent-scan name-reply advice qa-1 qa-2"
@@ -50,17 +45,18 @@ for collection in $collections; do
   cp -R "$repo" "$site/$collection"
 done
 rm -rf "$repo"
+# rule-candidate: the onboarding criterion unmarked in the working tree, a candidate (#q-candidate).
+sed 's/ data-project-rule="[^"]*"//' "$site/rule-candidate/docs/specs/onboarding.spec.html" > "$site/rule-candidate/onboarding.tmp"
+mv "$site/rule-candidate/onboarding.tmp" "$site/rule-candidate/docs/specs/onboarding.spec.html"
 # Review-state collections: seeded spools and agent edits (spools.py).
 python3 "$QA_FIXTURE/spools.py" "$site"
 # Registry: every spec of every collection, in this reset's projects. Python writes it
 # so paths are escaped as TOML strings.
 project="qa-$(date +%s%N)"
-case "$confirmed_stories" in *" ${QA_STORY:-none} "*) entry="$project-confirmed" ;; *) entry="$project" ;; esac
-python3 - "$serve/registry.toml" "$site" "$base" "$entry" "$project" $collections <<'PY'
+python3 - "$serve/registry.toml" "$site" "$base" "$project" $collections <<'PY'
 import json, os, sys
-registry, site, base, entry, project, *collections = sys.argv[1:]
-own = {"rule-candidate": project + "-rule-candidate", "rule-confirmed": project + "-rule-confirmed",
-       "rule-confirmed-c": project + "-rule-confirmed"}
+registry, site, base, entry, *collections = sys.argv[1:]
+own = {"rule-candidate": entry + "-rule-candidate"}
 rows = []
 for slug in collections:
     for spec in ("onboarding", "report", "later-only", "one-open"):
@@ -76,27 +72,3 @@ with open(registry + ".tmp", "w", encoding="utf-8") as out:
     out.write("\n".join(rows))
 os.replace(registry + ".tmp", registry)
 PY
-# A story's reset waits until the running service has warmed this reset's projects:
-# confirmed ones offer reconcile, the others their candidates. Capture's first page
-# then shows the rule state its Given names.
-if [ -n "${QA_URL_REVIEW:-}" ]; then
-  python3 - "$QA_URL_REVIEW" "$entry" "$project" <<'PY'
-import json, sys, time, urllib.parse, urllib.request
-url, entry, project = sys.argv[1:]
-waits = {"qa-fixture": entry, "rule-candidate": project + "-rule-candidate", "rule-confirmed": project + "-rule-confirmed"}
-for collection, name in waits.items():
-    offer = "offer" if name.endswith("-confirmed") else "candidate_offer"
-    query = urllib.parse.urlencode({"path": "%s/docs/specs/report.spec.html" % collection})
-    until = time.monotonic() + 60
-    while True:
-        try:
-            with urllib.request.urlopen("%s/api/jev?%s" % (url, query), timeout=10) as response:
-                if json.load(response).get(offer):
-                    break
-        except (OSError, ValueError):
-            pass
-        if time.monotonic() > until:
-            sys.exit("qa reset: %s (project %s) shows no %s after 60s" % (collection, name, offer))
-        time.sleep(0.2)
-PY
-fi

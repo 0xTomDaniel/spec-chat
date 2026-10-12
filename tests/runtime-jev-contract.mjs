@@ -37,8 +37,10 @@ const fakeFetch = async url => {
     { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2' },
     { kind: 'lane', id: 'rule', state: 'label', label: 'contradicts', side: 'first', other: 'ann2', target: 'ann2/y.spec.html#b', record: 'r3', level: 'important', agent_level: 'important' },
     { kind: 'corpus', id: 'cite', state: 'label', label: 'contradicts', target: 'r.spec.html#a', record: 'r4', level: 'important',
-      rule: { target: 'r.spec.html#a', text: 'Every feature has a.', name: null, extra: 1 } },
-  ], candidate_offer: { count: 1, candidates: [{ target: 'r.spec.html#a', text: 'Every feature has a.', name: 'A' }] }, levels: { overlaps: { human: 'warning', agent: 'warning' }, contradicts: { human: 'important', agent: 'important' } } }) };
+      rule: { target: 'r.spec.html#a', text: 'Every feature has a.', name: 'A', home: 'docs/r.spec.html#a', extra: 1 } },
+    { kind: 'rule', id: 'acceptance', state: 'label', label: 'missed', target: 'r.spec.html#a', record: 'r5', level: 'important',
+      text: 'Every feature has a.', name: 'A', home: 'docs/r.spec.html#a' },
+  ], levels: { overlaps: { human: 'warning', agent: 'warning' }, contradicts: { human: 'important', agent: 'important' } } }) };
 };
 const fetchJev = Function('fetch', 'jevParams', 'location', 'URLSearchParams', runtime.slice(fetchStart, fetchEnd) + '; return fetchJev;')(
   fakeFetch,
@@ -52,16 +54,17 @@ assert.match(requested, /^\/api\/jev\\?/);
 assert.deepEqual(answer, {
   jev: 'on',
   items: [
-    { kind: 'corpus', id: 'draft', state: 'label', label: 'overlaps', target: 'other#flow', record: 'r1', level: 'warning', side: null, other: null, word: null, text: null, name: null, rule: null, escalated: false },
-    { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2', level: null, side: null, other: null, word: null, text: null, name: null, rule: null, escalated: false },
-    { kind: 'lane', id: 'rule', state: 'label', label: 'contradicts', target: 'ann2/y.spec.html#b', record: 'r3', level: 'important', side: 'first', other: 'ann2', word: null, text: null, name: null, rule: null, escalated: false },
-    // a mark citing a confirmed rule keeps that rule's target, text, and name for its card (project-rules #card-cites)
-    { kind: 'corpus', id: 'cite', state: 'label', label: 'contradicts', target: 'r.spec.html#a', record: 'r4', level: 'important', side: null, other: null, word: null, text: null, name: null,
-      rule: { target: 'r.spec.html#a', text: 'Every feature has a.', name: null }, escalated: false },
+    { kind: 'corpus', id: 'draft', state: 'label', label: 'overlaps', target: 'other#flow', record: 'r1', level: 'warning', side: null, other: null, word: null, text: null, name: null, home: null, rule: null, escalated: false },
+    { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2', level: null, side: null, other: null, word: null, text: null, name: null, home: null, rule: null, escalated: false },
+    { kind: 'lane', id: 'rule', state: 'label', label: 'contradicts', target: 'ann2/y.spec.html#b', record: 'r3', level: 'important', side: 'first', other: 'ann2', word: null, text: null, name: null, home: null, rule: null, escalated: false },
+    // a mark citing a marked rule keeps that rule's target, text, name, and home for its card (project-rules #card-variants)
+    { kind: 'corpus', id: 'cite', state: 'label', label: 'contradicts', target: 'r.spec.html#a', record: 'r4', level: 'important', side: null, other: null, word: null, text: null, name: null, home: null,
+      rule: { target: 'r.spec.html#a', text: 'Every feature has a.', name: 'A', home: 'docs/r.spec.html#a' }, escalated: false },
+    // a rule item carries its criterion text, name, and home (project-rules #boundaries)
+    { kind: 'rule', id: 'acceptance', state: 'label', label: 'missed', target: 'r.spec.html#a', record: 'r5', level: 'important', side: null, other: null, word: null,
+      text: 'Every feature has a.', name: 'A', home: 'docs/r.spec.html#a', rule: null, escalated: false },
   ],
   levels: { overlaps: { human: 'warning', agent: 'warning' }, contradicts: { human: 'important', agent: 'important' } },
-  offer: null,
-  candidateOffer: { count: 1, candidates: [{ target: 'r.spec.html#a', text: 'Every feature has a.', name: 'A' }] },
 });
 assert.equal((runtime.match(/fetch\('\/api\/jev\?/g) || []).length, 1, 'all Jev display uses one request seam');
 assert.match(runtime, /120000/, 'Jev fetch allows a cold provider request to finish');
@@ -149,7 +152,7 @@ const openComposer = Function('state', 'setCommentMode', 'openPanel', 'renderPan
 posted.length = 0;
 openComposer('story-a', null, null, 'Add an acceptance criterion that verifies this story.');
 assert.deepEqual(composerState.composer, { kind: 'comment', anchorId: 'story-a', target: null, quote: null,
-  text: 'Add an acceptance criterion that verifies this story.', onSent: null });
+  text: 'Add an acceptance criterion that verifies this story.' });
 openComposer('clause-a', { type: 'element', key: 'p:1' }, 'quote');
 assert.equal(composerState.composer.text, '', 'ordinary comments still open empty');
 assert.equal(posted.length, 0, 'opening a draft writes nothing');

@@ -108,24 +108,6 @@ class TestHostStore(unittest.TestCase):
 
             service.stop()
 
-    def test_test_slug_excluded_from_warmup(self):
-        """Test-flagged rows are excluded from warm."""
-        with tempfile.TemporaryDirectory() as tmp:
-            service = jev.JevService(state_dir=tmp, api_key="fake-key")
-
-            rows = [
-                {"slug": "ann1", "spec": "a.spec.html", "root": "/tmp/r", "project": "proj", "id": "x"},
-                {"slug": "ann2", "spec": "b.spec.html", "root": "/tmp/r", "project": "proj", "test": True, "id": "y"},
-            ]
-            # Filter the way warm() does
-            filtered = [row for row in rows
-                        if isinstance(row, dict) and row.get("project") and row.get("root")
-                        and not row.get("test")]
-            self.assertEqual(len(filtered), 1)
-            self.assertEqual(filtered[0]["slug"], "ann1")
-
-            service.stop()
-
     def test_lane_items_excluded_for_test_mount(self):
         """_lane_items returns [] for a test-flagged mount."""
         with tempfile.TemporaryDirectory() as tmp:

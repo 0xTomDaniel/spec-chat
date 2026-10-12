@@ -58,6 +58,11 @@ class LedgerTest(unittest.TestCase):
         human = ledger.append({**WHERE, "kind": "candidate", "outcome": "not-a-rule", "judgment": "j", "by": "human"})
         dismissed = ledger.append({**WHERE, "outcome": "dismissed", "judgment": "j", "by": "human"})
         self.assertEqual((human["confirmed"], dismissed["confirmed"]), (True, False))
+        # a spec's mark is the human's decision whoever writes it; ignored stays unconfirmed (project-rules #dismiss-trace)
+        where = {**WHERE, "kind": "candidate", "anchor": "other"}
+        marked = ledger.append({**where, "outcome": "marked", "judgment": "j", "by": "server"})
+        ignored = ledger.append({**where, "anchor": "third", "outcome": "ignored", "judgment": "j", "by": "human"})
+        self.assertEqual((marked["confirmed"], ignored["confirmed"]), (True, False))
 
     def test_an_outcome_without_kind_outcome_or_by_is_refused(self):
         ledger = jev.WarningLedger(self.path)
