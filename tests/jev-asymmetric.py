@@ -179,6 +179,119 @@ class VerifierTest(unittest.TestCase):
         self.assertTrue(any(example["label"] == "no" for example in system["examples"]))
 
 
+def default_verifier_payload(question, qset, model):
+    """The verifier payload of a set without verify levels, as it was before levels (contradicts, oversteps)."""
+    state = question.get("state", {})
+    verify_input = {"clause": state.get("after", ""), "target": state.get("target", "")}
+    if state.get("context"):
+        verify_input["clause_context"] = state["context"]
+    if state.get("target_context"):
+        verify_input["target_context"] = state["target_context"]
+    system = {"question": qset.instructions, "examples": qset.examples(),
+              "verify": "If yes, quote the exact span from the clause and the target that conflict. If no, leave spans empty."}
+    schema = {"type": "object",
+              "properties": {"answer": {"type": "string", "enum": ["yes", "no"]},
+                             "clause_span": {"type": "string"}, "target_span": {"type": "string"}},
+              "required": ["answer", "clause_span", "target_span"], "additionalProperties": False}
+    return {"model": model,
+            "messages": [{"role": "system", "content": jev._canonical(system)},
+                         {"role": "user", "content": jev._canonical(verify_input)}],
+            "response_format": {"type": "json_schema", "json_schema": {"name": "answer", "strict": True, "schema": schema}},
+            "provider": {"require_parameters": True}}
+
+
+class VerifyLevelsTest(unittest.TestCase):
+    """#proof-verifier, #verifier-role, #verifier-scope: on the overlaps set a verifier returning partial with spans
+    shows Partial overlap, same shows Overlaps, different shows nothing; contradicts and oversteps keep yes/no."""
+
+    def seam(self, provider):
+        return jev.JevSeam(SETS, provider=provider, api_key="fake")
+
+    def overlaps(self, said, clause_span="shared words", target_span="shared words too"):
+        chain = draft_check()["chain"]
+        provider = AsymmetricProvider(
+            p_yes_map={"about": 0.95, "contradicts": 0.10, "oversteps": 0.10, "overlaps": 0.80},
+            verifier_response={"answer": said, "clause_span": clause_span, "target_span": target_span})
+        seam = self.seam(provider)
+        return seam.ask(chain[3]), seam.ask_chain(chain), provider
+
+    def test_partial_shows_partial_overlap(self):
+        record, result, _ = self.overlaps("partial")
+        self.assertEqual(record["outcome"], jev.VERIFIED)
+        self.assertEqual(record["answer"]["label"], "yes")
+        self.assertEqual(record["answer"]["level"], "partial")
+        self.assertEqual(record["verifier"], {"ran": True, "answer": "partial",
+                                              "spans": {"clause": "shared words", "target": "shared words too"}})
+        self.assertEqual(result["answer"]["label"], "partial-overlap")
+        self.assertNotIn("partial-overlap", jev.MARK_LEVELS)  # None/None: a quiet grey dot (#level-partial)
+
+    def test_partial_without_spans_shows_nothing(self):
+        record, result, _ = self.overlaps("partial", "", "")
+        self.assertEqual(record["outcome"], jev.VERIFIER_REJECTED)
+        self.assertNotIn("level", record["answer"])
+        self.assertIsNone(result["answer"]["label"])
+
+    def test_same_shows_overlaps(self):
+        record, result, _ = self.overlaps("same")
+        self.assertEqual(record["outcome"], jev.VERIFIED)
+        self.assertNotIn("level", record["answer"])
+        self.assertEqual(result["answer"]["label"], "overlaps")
+
+    def test_different_shows_nothing(self):
+        record, result, _ = self.overlaps("different", "", "")
+        self.assertEqual(record["outcome"], jev.VERIFIER_REJECTED)
+        self.assertEqual(record["verifier"]["answer"], "different")
+        self.assertIsNone(result["answer"]["label"])
+
+    def test_overlaps_payload_asks_its_levels(self):
+        _, _, provider = self.overlaps("same")
+        payload = provider.complete_calls[0]
+        schema = payload["response_format"]["json_schema"]["schema"]
+        self.assertEqual(schema["properties"]["answer"]["enum"], ["same", "partial", "different"])
+        system = json.loads(payload["messages"][0]["content"])
+        qset = SETS["overlaps"]
+        self.assertEqual(system["verify"], qset.verify["rule"])
+        self.assertEqual(set(system["levels"]), {"same", "partial", "different"})
+        self.assertEqual(system["labels"], qset.criteria())
+
+    def test_sets_without_levels_keep_their_payload(self):
+        """Contradicts and oversteps define no levels: their verifier payload is byte-identical to before."""
+        chain = draft_check()["chain"]
+        seam = self.seam(AsymmetricProvider())
+        for kind in ("contradicts", "contradicts-nongoal", "oversteps"):
+            with self.subTest(kind=kind):
+                qset = SETS[kind]
+                self.assertIsNone(qset.verify)
+                self.assertEqual(json.dumps(seam.verifier_payload(chain[1], qset, "m")),
+                                 json.dumps(default_verifier_payload(chain[1], qset, "m")))
+
+    def test_partial_item_has_no_level(self):
+        """The served item is labeled partial-overlap with no level or agent level: a quiet grey dot (#level-partial)."""
+        with tempfile.TemporaryDirectory() as directory:
+            provider = AsymmetricProvider(
+                p_yes_map={"about": 0.95, "contradicts": 0.10, "oversteps": 0.10, "overlaps": 0.80},
+                verifier_response={"answer": "partial", "clause_span": "a", "target_span": "b"})
+            service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
+            self.addCleanup(service.stop)
+            draft = draft_check()
+            service.questions = lambda *args, **kwargs: [draft]
+            service.seam.ask_chain(draft["chain"])
+            item = service.response({}, "", "", "base", [])["items"][0]
+            self.assertEqual((item["state"], item["label"], item["target"]), ("label", "partial-overlap", "other.spec.html#other"))
+            self.assertNotIn("level", item)
+            self.assertNotIn("agent_level", item)
+
+    def test_lane_partial_overlap_is_no_finding(self):
+        """A cross-lane overlaps answer, partial or same, is no finding (#cross-lane-finding)."""
+        self.assertNotIn("partial-overlap", jev.LANE_FINDINGS)
+
+    def test_invalid_verify_levels_rejected(self):
+        for verify in ({}, {"levels": {}}, {"levels": {"a": {"shows": "maybe"}}}, {"levels": {"a": "x"}}, "x"):
+            with self.subTest(verify=verify):
+                with self.assertRaises(ValueError):
+                    jev.QuestionSet.from_mapping({"id": "s", "verify": verify}, "s")
+
+
 class HeldEscalationTest(unittest.TestCase):
     """#state-error: an escalated record left without its answer (the ask crashed after recording it) is
     pending on every read path and asked again through the escalated fast-path, never a lasting unavailable."""
