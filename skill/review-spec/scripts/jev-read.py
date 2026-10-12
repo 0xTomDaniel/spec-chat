@@ -6,8 +6,9 @@ one line per important mark, warning counts by kind with the count of answers Je
 general LLM settled (jev-suggestions #markers-agent-unsure), the rules checked, the candidate rules awaiting the
 human (project-rules #approval-agent), the pending count; or `off`.
 `--anchor <id>` prints full detail for that anchor only. Marks are keyed on each item's `agent_level` (jev-suggestions #markers-levels-source).
-`--resolve <record> <resolution>` records the owner's resolution of an Important mark on its record: fixed, reason,
-thread, or dismissed with `--reason` (jev-suggestions #record-resolution), through the one Jev record route.
+`--resolve <record> <resolution>` records the owner's resolution of an Important mark the read showed, one outcome in
+the warning ledger citing its record: fixed, reason, thread, or dismissed with `--reason` (jev-suggestions #ledger),
+through the one Jev record route.
 """
 
 from __future__ import annotations

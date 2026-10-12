@@ -1175,12 +1175,12 @@ listenHost();
             return self._json({"ok": ok}, 200 if ok else 400)
         if "resolve" in data:
             try:
-                ok = self.server.jev.resolve(mount, data.get("record"), data.get("resolve"), data.get("reason"))
+                ok = self.server.jev.resolve(mount, target, data.get("record"), data.get("resolve"), data.get("reason"))
             except OSError:
                 return self._json({"error": "jev unavailable"}, 503)
             if not ok:
                 return self._json({"ok": False, "error": "refused: resolution is fixed, reason, thread, or dismissed "
-                                   "with a reason, on a known record not yet resolved"}, 400)
+                                   "with a reason, on a mark shown here not yet resolved"}, 400)
             return self._json({"ok": True})
         if "confirm" in data:
             try:

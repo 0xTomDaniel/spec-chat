@@ -50,8 +50,8 @@ class TestHostStore(unittest.TestCase):
                         "sources": ["spec#a"], "revision": "head"}
             service.test_seam.ask(question)
 
-            # The test store, files beside the live store's, has the record; the live store has none
-            test_lines = [line for f in (Path(tmp) / "records-test").glob("*.jsonl") for line in f.read_text().splitlines()]
+            # The test namespace, the store's test directory, has the record; the live store has none (#test-host-rule)
+            test_lines = [line for f in (Path(tmp) / "test" / "records").glob("*.jsonl") for line in f.read_text().splitlines()]
             self.assertEqual(len(test_lines), 1, "test store should have one record")
             self.assertEqual(list(service.seam.store.records()), [], "live store should be empty")
 

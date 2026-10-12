@@ -195,7 +195,7 @@ class BootstrapTest(unittest.TestCase):
         text = service.onboarding_path.read_text(encoding="utf-8")
         self.assertNotIn("w1:p1", text)  # names no peer
         self.assertEqual(tomllib.loads(text)["project"]["proj"], status)
-        self.assertEqual(sorted(p.name for p in service.state_dir.iterdir()), ["onboarding.toml", "records"])
+        self.assertEqual(sorted(p.name for p in service.state_dir.iterdir()), ["ledger.jsonl", "onboarding.toml", "records"])
 
     def test_warm_up_collapses_linked_copies_to_their_home_rule(self):
         # project-rules #q-copies: one rule per home, checked with the home's text, listed once
@@ -616,12 +616,18 @@ class BootstrapTest(unittest.TestCase):
             self.assertEqual(post({"offer": "sent"}), (200, {"ok": True}))
             # an owner's resolution of an Important mark from the agent read (jev-suggestions #record-resolution)
             miss = answer["offer"]["specs"][0]["rules"][0]["record"]
+            # the mark as a read of this page showed it, which a resolution must name
+            service._fixed(service.seam, self.row(), "docs/specs/export.spec.html",
+                           {"head": "h", "base_commit": self.main, "rel": "docs/specs/export.spec.html"},
+                           [{"kind": "rule", "id": None, "target": "specs/onboarding.spec.html#acceptance-onboarding",
+                             "record": miss, "agent_level": "important", "state": "label"}])
             self.assertEqual(post({"resolve": "dismissed", "record": miss})[0], 400)  # an owner dismissal names its reason
             self.assertIn("refused", post({"resolve": "dismissed", "record": miss})[1]["error"])
             self.assertEqual(post({"resolve": "thread", "record": "judgment-nope"})[0], 400)
             self.assertEqual(post({"resolve": "dismissed", "record": miss, "reason": "Not a screen."}), (200, {"ok": True}))
             self.assertEqual(post({"resolve": "fixed", "record": miss})[0], 400)  # resolved once
-            self.assertEqual(service.seam.store.by_id(miss)["resolution"], {"status": "dismissed", "reason": "Not a screen."})
+            self.assertEqual([(e["outcome"], e["reason"], e["by"]) for e in service.seam.ledger.entries() if e["judgment"] == miss],
+                             [("dismissed", "Not a screen.", "owner")])
         finally:
             server.shutdown()
             server.server_close()

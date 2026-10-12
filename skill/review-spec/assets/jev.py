@@ -8,7 +8,6 @@ import math
 import os
 import posixpath
 import re
-import shutil
 import subprocess
 import threading
 import time
@@ -288,21 +287,13 @@ def rule_identity(text: str) -> str:
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-# The human's rule decisions (project-rules #dismiss, #approval): the card action to the resolution it records.
+# The human's rule decisions (project-rules #dismiss, #approval): the card action to the ledger outcome it records.
 # Not for this spec (here), Not a project rule (rule), Confirm rule (confirm).
-DECISIONS = {"here": "dismissed", "rule": "not-a-rule", "confirm": "rule"}
+RULE_DECISIONS = {"here": "dismissed", "rule": "not-a-rule", "confirm": "rule"}
 # An owner's resolutions of an Important mark through the agent read (#record-resolution); dismissed names its reason.
 OWNER_RESOLUTIONS = ("fixed", "reason", "dismissed", "thread")
 # Longest rule name kept, written or corrected (project-rules #card-name-source).
 RULE_NAME_LIMIT = 120
-
-
-def _decision(resolution: Any) -> list[tuple[tuple[str, str, str, str | None], dict[str, Any]]]:
-    """The rule decision a resolution records, by what it holds for (project-rules #dismiss-scope, #approval-key)."""
-    if isinstance(resolution, Mapping) and resolution.get("status") in DECISIONS.values() and resolution.get("project"):
-        held = (resolution["status"], str(resolution["project"]), str(resolution.get("rule")), resolution.get("spec"))
-        return [(held, dict(resolution))]
-    return []
 
 
 # The record store's files (#record-store): records split by cache key across this many plain JSONL files, so a
@@ -313,11 +304,10 @@ STORE_HELD = 20000
 _MISS = object()
 
 
-def _replaces(current: Mapping[str, Any] | None, record: Mapping[str, Any]) -> bool:
-    """Whether a later line for the same cache key replaces the one held: a retryable or escalated outcome is
-    replaced, and an amendment (a resolution or a rule name) replaces the record it amends."""
-    return current is None or current.get("outcome") in REPLACEABLE_OUTCOMES or "resolution" in record \
-        or record.get("record_id") == current.get("record_id")
+def _replaces(current: Mapping[str, Any] | None) -> bool:
+    """Whether a later line for the same cache key replaces the one held: only a retryable or escalated outcome is
+    replaced, since a record is never amended (#record-immutable)."""
+    return current is None or current.get("outcome") in REPLACEABLE_OUTCOMES
 
 
 def _lines(path: Path):
@@ -355,23 +345,18 @@ class JudgmentStore:
     """Append-only JSONL records, also used as the cache (#record-store, #record-held, #record-lock).
 
     The path names the store: its records live in the directory beside it named by the path's stem, split by
-    cache key into STORE_SHARDS files, plus decisions.jsonl, the human's rule decisions. Memory holds the records
-    recent reads and writes used, up to `held`, and every rule decision. No lock is held while a file is read.
-    A store written as one file at the path is split on first use, streaming, and that file is kept renamed.
-    Construction reads nothing (review-service #acceptance-restart). Without a path the store is memory only."""
+    cache key into STORE_SHARDS files. A record is never amended (#record-immutable): outcomes live in the
+    WarningLedger. The records are a disposable cache (#record-disposable). Memory holds the records recent
+    reads and writes used, up to `held`. No lock is held while a file is read. Construction reads nothing
+    (review-service #acceptance-restart). Without a path the store is memory only."""
 
     def __init__(self, path: str | Path | None = None, *, held: int = STORE_HELD):
         self.path = Path(path) if path else None
         self.dir = self.path.with_name(self.path.stem) if self.path else None
         self.limit = held
         self._held: OrderedDict[str, Any] = OrderedDict()
-        # Every rule decision ever recorded, by what it holds for, never by cache key (project-rules #dismiss-scope).
-        self._decisions: dict[tuple[str, str, str, str | None], dict[str, Any]] = {}
-        self._decisions_loaded = not self.path
         self._writes: dict[str, int] = {}
         self.lock = threading.RLock()
-        self._split_lock = threading.Lock()
-        self._split = not self.path
 
     # Files
 
@@ -381,51 +366,6 @@ class JudgmentStore:
     def _shard_path(self, shard: str) -> Path:
         return self.dir / (shard + ".jsonl")  # type: ignore[operator]
 
-    def _decisions_path(self) -> Path:
-        return self.dir / "decisions.jsonl"  # type: ignore[operator]
-
-    def _ready(self) -> None:
-        """Split a single-file store at the path once, on first use: streamed into a scratch directory that is
-        renamed into place only when whole, so an interrupted split starts again; the file is then kept renamed."""
-        if self._split:
-            return
-        with self._split_lock:
-            if self._split:
-                return
-            if self.path.is_file() and not self.dir.is_dir():
-                scratch = self.dir.with_name(self.dir.name + ".splitting")
-                if scratch.exists():
-                    shutil.rmtree(scratch)
-                scratch.mkdir(parents=True)
-                pending: dict[str, list[bytes]] = {}
-                size = 0
-
-                def flush() -> None:
-                    for name, lines in pending.items():
-                        with (scratch / name).open("ab") as stream:
-                            stream.writelines(lines)
-                    pending.clear()
-
-                for line in _lines(self.path):
-                    record = _parsed(line)
-                    if record is None:
-                        continue
-                    line = line if line.endswith(b"\n") else line + b"\n"
-                    pending.setdefault(self._shard(record["cache_key"]) + ".jsonl", []).append(line)
-                    if _decision(record.get("resolution")):
-                        pending.setdefault("decisions.jsonl", []).append(
-                            (json.dumps(record["resolution"], ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8"))
-                    size += len(line)
-                    if size > 8 << 20:
-                        flush()
-                        size = 0
-                flush()
-                os.rename(scratch, self.dir)
-            if self.path.is_file():
-                os.replace(self.path, self.path.with_name(self.path.name + ".unsplit"))
-            self.dir.mkdir(parents=True, exist_ok=True)
-            self._split = True
-
     def _scan(self, key: str) -> dict[str, Any] | None:
         """The key's current record from its file, streamed with no lock held; only lines naming the key parse."""
         needle = json.dumps(key, ensure_ascii=False)[1:-1].encode("utf-8")
@@ -433,7 +373,7 @@ class JudgmentStore:
         for line in _lines(self._shard_path(self._shard(key))):
             if needle in line:
                 record = _parsed(line)
-                if record is not None and record["cache_key"] == key and _replaces(current, record):
+                if record is not None and record["cache_key"] == key and _replaces(current):
                     current = record
         return current
 
@@ -442,6 +382,7 @@ class JudgmentStore:
         key = record["cache_key"]
         if self.path:
             shard = self._shard(key)
+            self.dir.mkdir(parents=True, exist_ok=True)  # type: ignore[union-attr]
             _append_line(self._shard_path(shard), record)
             self._writes[shard] = self._writes.get(shard, 0) + 1
         self._hold(key, record)
@@ -466,7 +407,6 @@ class JudgmentStore:
             value = self._held_value(key)
             if value is not None or not self.path:
                 return None if value is _MISS else value
-        self._ready()
         shard = self._shard(key)
         while True:
             with self.lock:
@@ -485,102 +425,10 @@ class JudgmentStore:
         self.get(record["cache_key"])  # holds the current record, if any
         with self.lock:
             current = self._held_value(record["cache_key"])
-            if current is not None and current is not _MISS and current.get("outcome") not in REPLACEABLE_OUTCOMES:
+            if current is not None and current is not _MISS and not _replaces(current):
                 return current
             self._write(record)
             return record
-
-    def amend(self, key: str, **fields: Any) -> dict[str, Any] | None:
-        """Add fields to a held record, such as a rule's written name (project-rules #card-name-source);
-        appended to the JSONL so it survives a restart."""
-        if self.get(key) is None:
-            return None
-        with self.lock:
-            record = self._held_value(key)
-            if record is None or record is _MISS:
-                return None
-            updated = {**record, **fields}
-            self._write(updated)
-            return updated
-
-    # Rule decisions
-
-    def _decided(self) -> dict[tuple[str, str, str, str | None], dict[str, Any]]:
-        """Every rule decision, read from decisions.jsonl once, with no lock held during the read."""
-        if not self._decisions_loaded:
-            self._ready()
-            loaded: dict[tuple[str, str, str, str | None], dict[str, Any]] = {}
-            for line in _lines(self._decisions_path()):
-                try:
-                    loaded.update(_decision(json.loads(line)))
-                except (ValueError, TypeError):
-                    continue
-            with self.lock:
-                if not self._decisions_loaded:
-                    loaded.update(self._decisions)  # decisions recorded during the read are newer
-                    self._decisions, self._decisions_loaded = loaded, True
-        return self._decisions
-
-    def decided(self, status: str, project: Any, text: str, spec: str | None = None) -> dict[str, Any] | None:
-        """The project's decision on this rule text, else None: dismissed on this spec path, or, for every
-        spec, not-a-rule or rule (confirmed, with any corrected name)."""
-        if not project:
-            return None
-        decisions = self._decided()
-        with self.lock:
-            return decisions.get((status, str(project), rule_identity(text), spec))
-
-    # By record id, and streaming
-
-    def by_id(self, record_id: str) -> dict[str, Any] | None:
-        """The current record with this id: a held one, else found by streaming the files with no lock held."""
-        with self.lock:
-            for value in reversed(self._held.values()):
-                if value is not _MISS and value.get("record_id") == record_id:
-                    return value
-        if not self.path:
-            return None
-        self._ready()
-        needle = json.dumps(record_id, ensure_ascii=False)[1:-1].encode("utf-8")
-        for shard in range(STORE_SHARDS):
-            for line in _lines(self._shard_path("%03x" % shard)):
-                if needle in line:
-                    record = _parsed(line)
-                    if record is not None and record.get("record_id") == record_id:
-                        current = self.get(record["cache_key"])
-                        if current is not None and current.get("record_id") == record_id:
-                            return current
-        return None
-
-    def resolve(self, record_id: str, resolution: str, reason: str | None = None,
-                confirmed: bool | None = None, if_absent: bool = False, **holds: Any) -> dict[str, Any] | None:
-        """Set resolution and confirmed on an existing record (#record-resolution, #record-confirmed).
-
-        Only a caller that knows a label is confirmed says so: a human's rule decision or an audit. fixed stays
-        unconfirmed, since an edit can answer a wrong mark (#measure-feedback). holds names what a rule decision
-        holds for (project-rules #dismiss-scope). The amended record is appended to the JSONL so it survives a
-        restart, and a rule decision also to decisions.jsonl, which the server holds whole. if_absent leaves a
-        record that already has a resolution unchanged and answers None: a mark ends once."""
-        record = self.by_id(record_id)
-        if record is None:
-            return None
-        with self.lock:
-            record = self._held_value(record["cache_key"])
-            if record is None or record is _MISS or record.get("record_id") != record_id \
-                    or (if_absent and record.get("resolution")):
-                return None
-            res: dict[str, Any] = {"status": resolution, **holds}
-            if reason:
-                res["reason"] = reason
-            updated = {**record, "resolution": res}
-            if confirmed is not None:
-                updated["confirmed"] = confirmed
-            self._write(updated)
-            decision = _decision(res)
-            if decision and self.path:
-                _append_line(self._decisions_path(), res)
-            self._decisions.update(decision)
-            return updated
 
     def records(self):
         """Every current record, streamed one file at a time with no lock held."""
@@ -589,18 +437,105 @@ class JudgmentStore:
                 held = [value for value in self._held.values() if value is not _MISS]
             yield from held
             return
-        self._ready()
         for shard in range(STORE_SHARDS):
             current: dict[str, dict[str, Any]] = {}
             for line in _lines(self._shard_path("%03x" % shard)):
                 record = _parsed(line)
-                if record is not None and _replaces(current.get(record["cache_key"]), record):
+                if record is not None and _replaces(current.get(record["cache_key"])):
                     current[record["cache_key"]] = record
             yield from current.values()
 
-    def confirmed_records(self):
-        """Every confirmed record, the labels the eval replay scores (#measure-feedback), streamed."""
-        return (record for record in self.records() if record.get("confirmed"))
+
+# Who records a warning outcome (#ledger-table).
+LEDGER_BY = frozenset({"human", "owner", "server", "audit"})
+# A human's decision on a candidate rule is a confirmed label at once (#record-confirmed, #measure-feedback).
+CONFIRMED_HUMAN_OUTCOMES = frozenset({"marked", "not-a-rule", "rule"})
+LEDGER_WHERE = ("project", "spec", "anchor", "kind", "target")
+LEDGER_FIELDS = LEDGER_WHERE + ("outcome", "judgment", "by", "reason", "name")
+
+
+class WarningLedger:
+    """Every human or owner outcome of a Jev warning, once (#ledger): one plain JSONL file apart from the records,
+    one line appended per outcome, held whole in memory once first used. Keyed by where the warning sits, never by
+    cache key, so an outcome survives rewording, new heads, set versions, and deleting the records
+    (#ledger-survives); a later outcome for the same where replaces the earlier one. Without a path, memory only."""
+
+    def __init__(self, path: str | Path | None = None):
+        self.path = Path(path) if path else None
+        self._latest: dict[tuple[Any, ...], dict[str, Any]] = {}
+        self._entries: list[dict[str, Any]] = []
+        self._loaded = not self.path
+        self.lock = threading.RLock()
+
+    @staticmethod
+    def _where(entry: Mapping[str, Any]) -> tuple[Any, ...]:
+        return tuple(entry.get(field) or None for field in LEDGER_WHERE)
+
+    def _keep(self, entry: dict[str, Any]) -> None:
+        self._entries.append(entry)
+        self._latest[self._where(entry)] = entry
+
+    def _load(self) -> None:
+        """Called under the lock: the whole ledger, read once; an unreadable line is skipped."""
+        if self._loaded:
+            return
+        for line in _lines(self.path):  # type: ignore[arg-type]
+            try:
+                entry = json.loads(line)
+            except (ValueError, TypeError):
+                continue
+            if isinstance(entry, dict) and entry.get("outcome") and entry.get("kind"):
+                self._keep(entry)
+        self._loaded = True
+
+    def append(self, outcome: Mapping[str, Any], clock: Callable[[], str] = _now) -> dict[str, Any]:
+        """Record one outcome: project, spec, anchor, kind, target (a cited clause or rule, when any), outcome,
+        judgment (the record id it answers), by, and reason when given. Confirmed when an audit labels it or a
+        human decides a candidate rule. The same outcome as the latest for its where is not written again.
+        Raises ValueError when the kind, outcome, or by is missing."""
+        entry = {field: outcome[field] for field in LEDGER_FIELDS if outcome.get(field) is not None}
+        if not all(isinstance(entry.get(field), str) and entry[field] for field in ("kind", "outcome")) \
+                or entry.get("by") not in LEDGER_BY:
+            raise ValueError("a ledger outcome names its kind, outcome, and by")
+        entry["confirmed"] = entry["by"] == "audit" or (
+            entry["by"] == "human" and entry["outcome"] in CONFIRMED_HUMAN_OUTCOMES)
+        with self.lock:
+            self._load()
+            latest = self._latest.get(self._where(entry))
+            if latest is not None and all(latest.get(field) == entry.get(field) for field in LEDGER_FIELDS):
+                return latest
+            entry["time"] = clock()
+            if self.path:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                _append_line(self.path, entry)
+            self._keep(entry)
+            return entry
+
+    def latest(self, project: Any, spec: Any, anchor: Any, kind: Any, target: Any = None) -> dict[str, Any] | None:
+        """The latest outcome for this where, else None."""
+        with self.lock:
+            self._load()
+            return self._latest.get(tuple(value or None for value in (project, spec, anchor, kind, target)))
+
+    def entries(self) -> list[dict[str, Any]]:
+        """Every outcome, in the order recorded."""
+        with self.lock:
+            self._load()
+            return list(self._entries)
+
+
+def eval_read(records, ledger: WarningLedger, confirmed: bool = False):
+    """The one eval read (#record-read): stream records, from the store or an eval's copy, one at a time, each
+    with the ledger outcomes citing it; with confirmed, only confirmed labels, and only records that have one
+    (#measure-feedback). Yields (record, outcomes)."""
+    cited: dict[str, list[dict[str, Any]]] = {}
+    for entry in ledger.entries():
+        if entry.get("judgment") and (entry.get("confirmed") or not confirmed):
+            cited.setdefault(entry["judgment"], []).append(entry)
+    for record in records:
+        outcomes = cited.get(record.get("record_id"), [])
+        if outcomes or not confirmed:
+            yield record, outcomes
 
 
 def given_wait(value: str | None, now: Callable[[], float] = time.time) -> float | None:
@@ -762,13 +697,14 @@ def _extract_inputs(question: Mapping[str, Any]) -> dict[str, Any] | None:
 class JevSeam:
     def __init__(self, question_sets: Mapping[str, QuestionSet] | None = None, *, provider: Any = None,
                  api_key: str | Callable[[], str] | None = None, llm_model: str | Callable[[], str] | None = None,
-                 record_store: JudgmentStore | None = None,
+                 record_store: JudgmentStore | None = None, ledger: WarningLedger | None = None,
                  clock: Callable[[], str] = _now, max_input_tokens: int = DEFAULT_MAX_INPUT_TOKENS):
         self.question_sets = dict(question_sets or load_question_sets())
         self.api_key = _key_reader(api_key)
         self.llm_model = _model_reader(llm_model)
         self._provider = provider
         self.store = record_store or JudgmentStore()
+        self.ledger = ledger or WarningLedger()
         self.clock = clock
         self.max_input_tokens = max_input_tokens
         self._key_locks: dict[str, threading.Lock] = {}
@@ -968,16 +904,20 @@ class JevSeam:
                 "response_format": {"type": "json_schema", "json_schema": {"name": RULE_NAME_SCHEMA, "strict": True, "schema": schema}},
                 "provider": {"require_parameters": True}}
 
+    def named(self, scope: Mapping[str, Any]) -> str | None:
+        """A rule's written name, from its own cached record, else None."""
+        record = self.store.get("name:" + self.key(scope))
+        return str(record["name"]) if record and record.get("name") else None
+
     def name(self, scope: Mapping[str, Any]) -> str | None:
-        """Write a rule's plain-words name once per rule text, onto its scope record, cached like any answer
-        (project-rules #card-name-source). None when the scope is no candidate, or the LLM failed; the next
-        server start asks again."""
+        """Write a rule's plain-words name once per rule text, a record of its own keyed by the scope's key, cached
+        like any answer, never amending the scope record (project-rules #card-name-source, #record-immutable).
+        None when the scope is no candidate, or the LLM failed; the next server start asks again."""
         key = self.key(scope)
-        record = self.store.get(key)
-        if _confident_label(record) != RULE_SCOPE:
+        if _confident_label(self.store.get(key)) != RULE_SCOPE:
             return None
-        if record.get("name"):
-            return record["name"]
+        if self.named(scope):
+            return self.named(scope)
         provider = self.provider()
         if provider is None:
             return None
@@ -985,7 +925,8 @@ class JevSeam:
         name = " ".join(str(json.loads(response["choices"][0]["message"]["content"])["name"]).split())[:RULE_NAME_LIMIT]
         if not name:
             return None
-        self.store.amend(key, name=name)
+        self.store.append({"cache_key": "name:" + key, "record_id": "judgment-" + uuid.uuid4().hex, "kind": "name",
+                           "outcome": "shown", "name": name, "source": "llm", "time": self.clock()})
         return name
 
     def verifier_payload(self, question: Mapping[str, Any], qset: QuestionSet, model: str) -> dict[str, Any]:
@@ -2120,13 +2061,13 @@ class JevService:
         # Spec Chat's one onboarding.toml (review-service #published-onboarding); beside the records under a test state.
         self.onboarding_path = Path(onboarding_path) if onboarding_path else (
             self.state_dir / "onboarding.toml" if state_dir else spec_chat_state() / "onboarding.toml")
-        path = self.state_dir / "records.jsonl"
-        self.seam = JevSeam(self.question_sets, provider=provider, api_key=api_key, llm_model=llm_model,
-                            record_store=JudgmentStore(path))
-        # Test store (#test-hosts): a second JudgmentStore for test-flagged slugs, beside the live one.
-        test_path = self.state_dir / "records-test.jsonl"
-        self.test_seam = JevSeam(self.question_sets, provider=provider, api_key=api_key, llm_model=llm_model,
-                                 record_store=JudgmentStore(test_path))
+        # Records and the warning ledger side by side (#ledger); test-flagged slugs use the same layout in the
+        # store's test directory, never the live one (#test-host-rule).
+        self.seam, self.test_seam = (
+            JevSeam(self.question_sets, provider=provider, api_key=api_key, llm_model=llm_model,
+                    record_store=JudgmentStore(directory / "records.jsonl"),
+                    ledger=WarningLedger(directory / "ledger.jsonl"))
+            for directory in (self.state_dir, self.state_dir / "test"))
 
         # Board state (#jev-board-answer): the last answer and the rows the board thread answers next.
         self._board_lock = threading.Lock()
@@ -2665,16 +2606,31 @@ class JevService:
             named.add(key)
             self._asking[key] = self._ask_pool.submit(self._asked_quietly, (key,), lambda: seam.name(scope))
 
+    @staticmethod
+    def _rule_where(project: Any, text: str, spec: str | None = None) -> dict[str, Any]:
+        """Where a human's rule decision sits in the warning ledger: the project's rule, by its text's identity so
+        no line names the text, and the repo spec path for Not for this spec (project-rules #dismiss-scope)."""
+        return {"project": str(project), "spec": spec, "anchor": None, "kind": "rule", "target": rule_identity(text)}
+
+    def _decided(self, seam: "JevSeam", outcome: str, project: Any, text: str,
+                 spec: str | None = None) -> dict[str, Any] | None:
+        """The project's latest decision on this rule text when it is outcome, else None: dismissed on a spec path,
+        or, for every spec, not-a-rule or rule (confirmed, with any corrected name)."""
+        if not project:
+            return None
+        latest = seam.ledger.latest(**self._rule_where(project, text, spec))
+        return latest if latest and latest["outcome"] == outcome else None
+
     def _rule_name(self, scope: Mapping[str, Any], project: Any, seam: "JevSeam", ask: bool = True) -> str | None:
         """A rule's plain-words name: the human's correction at Confirm rule, else the written one, else None
         while it is written (project-rules #card-name-source); asked only when ask, for a card a page renders."""
         text = scope["state"]["criterion"]
-        confirmed = seam.store.decided(DECISIONS["confirm"], project, text)
+        confirmed = self._decided(seam, "rule", project, text)
         if confirmed and confirmed.get("name"):
             return str(confirmed["name"])
-        record = seam.store.get(seam.key(scope))
-        if record and record.get("name"):
-            return str(record["name"])
+        written = seam.named(scope)
+        if written:
+            return written
         if ask:
             self._name_submit(scope, seam)
         return None
@@ -2719,7 +2675,7 @@ class JevService:
         homes = rule_homes(list(corpus.values()), lambda scope: _confident_label(final(scope)) == RULE_SCOPE)
 
         def decided(action: str, text: str, where: str | None = None) -> dict[str, Any] | None:
-            return seam.store.decided(DECISIONS[action], project, text, where)
+            return self._decided(seam, RULE_DECISIONS[action], project, text, where)
 
         def linked(scope: Mapping[str, Any]) -> list[Mapping[str, Any]]:
             return [corpus[target] for target in scope.get("links", ()) if target in corpus]
@@ -2992,9 +2948,9 @@ class JevService:
     def _standing(self, project: Any, scope: Mapping[str, Any]) -> str | None:
         """A home's standing for the project (#approval): rule once confirmed, None once rejected, else candidate."""
         text = scope["state"]["criterion"]
-        if self.seam.store.decided(DECISIONS["rule"], project, text):
+        if self._decided(self.seam, "not-a-rule", project, text):
             return None
-        return "rule" if self.seam.store.decided(DECISIONS["confirm"], project, text) else RULE_CANDIDATE
+        return "rule" if self._decided(self.seam, "rule", project, text) else RULE_CANDIDATE
 
     def _check_main(self, commit: str, specs: list[Mapping[str, Any]],
                     rules: list[Mapping[str, Any]]) -> dict[str, list[dict[str, str]]]:
@@ -3103,22 +3059,22 @@ class JevService:
                     standing = self._standing(project, scope) if scope is not None else None
                     cards[rule["target"]] = self._rule_card(scope, project, self.seam) if standing == "rule" else None
         specs = [{**entry, "rules": [{**rule, **cards[rule["target"]]} for rule in entry["rules"] if cards[rule["target"]]
-                                     and not self.seam.store.decided(DECISIONS["here"], project,
-                                                                     cards[rule["target"]]["text"], entry["spec"])]}
+                                     and not self._decided(self.seam, "dismissed", project,
+                                                          cards[rule["target"]]["text"], entry["spec"])]}
                  for entry in status.get("reconcile", [])]
         specs = [entry for entry in specs if entry["rules"]]
         return {"count": len(specs), "specs": specs} if specs else None
 
     def dismiss(self, mount: Mapping[str, Any], target: str, action: str, text: str,
                 record_id: str | None = None, spec: Any = None) -> bool:
-        """The human's Not for this spec (action here, on the card's rule-check record_id, or the record of a
-        draft-check mark citing the rule) or Not a project rule (action rule, on the rule's scope record), for
-        the page's project (#dismiss, #card-cites-reject). Held by project, repo spec path for Not for this spec,
-        and rule text, never by cache key. Not a project rule is a confirmed scope label (#approval-labels); Not
-        for this spec stays unconfirmed until audited (jev-suggestions #measure-feedback). False when the action
-        is neither, the text is no rule held here, or the record is no rule check or draft check: the one check
-        of a dismissal, so the record route only relays it. spec is the repo spec path a reconcile offer line
-        names, which the page's own target is not (#card-offer-row)."""
+        """The human's Not for this spec (action here, citing the card's rule-check record_id, or the record of a
+        draft-check mark citing the rule) or Not a project rule (action rule, citing the rule's scope record), for
+        the page's project (#dismiss, #card-cites-reject), one outcome in the warning ledger (#ledger). Held by
+        project, repo spec path for Not for this spec, and rule text, never by cache key. Not a project rule is a
+        confirmed scope label (#approval-labels); Not for this spec stays unconfirmed until audited
+        (jev-suggestions #measure-feedback). False when the action is neither, the text is no rule held here, or
+        Not for this spec names no record: the one check of a dismissal, so the record route only relays it. spec
+        is the repo spec path a reconcile offer line names, which the page's own target is not (#card-offer-row)."""
         project = mount.get("project")
         seam = self._seam_for(mount)
         if action not in ("here", "rule") or not project or not isinstance(text, str) or not text \
@@ -3127,56 +3083,76 @@ class JevService:
         scope = seam.store.get(seam.key({"kind": "scope", "state": {"criterion": text}}))
         if _confident_label(scope) != RULE_SCOPE:
             return False
-        holds: dict[str, Any] = {"project": str(project), "rule": rule_identity(text)}
         if action == "rule":
-            return seam.store.resolve(scope["record_id"], DECISIONS["rule"], confirmed=True, **holds) is not None
-        record = seam.store.by_id(record_id) if isinstance(record_id, str) else None
-        if not record or (record.get("kind") != "covered" and record.get("kind") not in DRAFT_CHECK_KINDS):
+            seam.ledger.append({**self._rule_where(project, text), "outcome": RULE_DECISIONS["rule"],
+                                "judgment": scope["record_id"], "by": "human"})
+            return True
+        if not isinstance(record_id, str) or not record_id:
             return False
-        holds["spec"] = spec if isinstance(spec, str) and spec else os.path.relpath(target, mount["root"]).replace(os.sep, "/")
-        return seam.store.resolve(record_id, DECISIONS["here"], **holds) is not None
+        where = spec if isinstance(spec, str) and spec else os.path.relpath(target, mount["root"]).replace(os.sep, "/")
+        seam.ledger.append({**self._rule_where(project, text, where), "outcome": RULE_DECISIONS["here"],
+                            "judgment": record_id, "by": "human"})
+        return True
 
     def confirm(self, mount: Mapping[str, Any], text: str, name: Any = None) -> bool:
-        """The human's Confirm rule on a candidate card, for the page's project (#approval): resolution rule on
-        the rule's scope record, a confirmed scope label, with the human's corrected name when given, which
-        replaces the written one (#card-name-source). Held by project and rule text, like a dismissal. False when
-        the text is no candidate held here or the project already decided it; a warmed project's main is then
-        checked against the rule for the reconcile offer."""
+        """The human's Confirm rule on a candidate card, for the page's project (#approval): outcome rule in the
+        warning ledger citing the rule's scope record, a confirmed scope label, with the human's corrected name when
+        given, which replaces the written one (#card-name-source). Held by project and rule text, like a dismissal.
+        False when the text is no candidate held here or the project already decided it; a warmed project's main
+        is then checked against the rule for the reconcile offer."""
         project = mount.get("project")
         seam = self._seam_for(mount)
         if not project or not isinstance(text, str) or not text or "scope" not in seam.question_sets:
             return False
         scope = seam.store.get(seam.key({"kind": "scope", "state": {"criterion": text}}))
-        if _confident_label(scope) != RULE_SCOPE or any(
-                seam.store.decided(DECISIONS[action], project, text) for action in ("rule", "confirm")):
+        if _confident_label(scope) != RULE_SCOPE or seam.ledger.latest(**self._rule_where(project, text)):
             return False
-        holds: dict[str, Any] = {"project": str(project), "rule": rule_identity(text)}
+        outcome: dict[str, Any] = {**self._rule_where(project, text), "outcome": RULE_DECISIONS["confirm"],
+                                   "judgment": scope["record_id"], "by": "human"}
         if isinstance(name, str) and " ".join(name.split()):
-            holds["name"] = " ".join(name.split())[:RULE_NAME_LIMIT]
-        if seam.store.resolve(scope["record_id"], DECISIONS["confirm"], confirmed=True, **holds) is None:
-            return False
+            outcome["name"] = " ".join(name.split())[:RULE_NAME_LIMIT]
+        seam.ledger.append(outcome)
         if not mount.get("test"):
             self._reconcile_rule(str(project), text)
         return True
 
-    def resolve(self, mount: Mapping[str, Any], record_id: Any, status: Any, reason: Any = None) -> bool:
+    def _mark_where(self, mount: Mapping[str, Any], rel: str, key: tuple[Any, ...]) -> dict[str, Any]:
+        """Where an Important mark sits in the warning ledger: project, repo spec path, anchor, kind, cited clause."""
+        kind, anchor, target = key
+        return {"project": mount.get("project"), "spec": rel, "anchor": anchor, "kind": kind, "target": target}
+
+    def resolve(self, mount: Mapping[str, Any], target: str, record_id: Any, status: Any, reason: Any = None) -> bool:
         """An owner's resolution of an Important mark through the agent read (#record-resolution): fixed, reason,
-        dismissed with its reason, or thread, on the mark's record, unconfirmed until audited (#measure-feedback).
-        False when the resolution is none of these, a dismissal names no reason, or the record is unknown or
-        already resolved."""
+        dismissed with its reason, or thread, one outcome in the warning ledger citing the mark's record, which is
+        unchanged, unconfirmed until audited (#measure-feedback). The mark is one this server last showed on the
+        spec at target. False when the resolution is none of these, a dismissal names no reason, or the mark is
+        unknown or already has an outcome: a mark ends once."""
         reason = " ".join(reason.split()) if isinstance(reason, str) else ""
         if status not in OWNER_RESOLUTIONS or (status == "dismissed" and not reason) or not isinstance(record_id, str):
             return False
-        return self._seam_for(mount).store.resolve(record_id, status, reason or None, if_absent=True) is not None
+        rel = os.path.relpath(target, mount["root"]).replace(os.sep, "/")
+        with self._marks_lock:
+            shown = [key for spec, (_, marks) in self._marks.items()
+                     if spec[:3] == (mount.get("root"), mount.get("test"), rel)
+                     for key, (cited, _) in marks.items() if cited == record_id]
+        if not shown:
+            return False
+        seam = self._seam_for(mount)
+        where = self._mark_where(mount, rel, shown[0])
+        if seam.ledger.latest(**where):
+            return False
+        seam.ledger.append({**where, "outcome": status, "judgment": record_id, "by": "owner", "reason": reason or None})
+        return True
 
     def _fixed(self, seam: "JevSeam", mount: Mapping[str, Any], relative: str, facts: Mapping[str, Any],
                items: list[dict[str, Any]]) -> None:
         """A spec fix clears an Important mark on the next head (#record-resolution, #acceptance-resolution-fixed):
         a mark, by kind, id, and target, shown on a head of this spec and base, and absent from a settled read of a
-        later head, is fixed on its record, unconfirmed until audited. A read with any question pending,
-        unavailable, or oversize decides nothing; a mark gone because its rule is no project rule now, or already
-        resolved, is not fixed."""
-        spec = (mount.get("root"), mount.get("test"), relative, facts.get("base_commit"))
+        later head, is fixed in the warning ledger citing its record, unconfirmed until audited. A read with any
+        question pending, unavailable, or oversize decides nothing; a mark gone because its rule is no project rule
+        now, or with an outcome already, is not fixed."""
+        rel = facts.get("rel") or relative
+        spec = (mount.get("root"), mount.get("test"), rel, facts.get("base_commit"))
         head = facts.get("head")
         marks = {(item["kind"], item["id"], item.get("target")): (item["record"], item.get("text"))
                  for item in items if item.get("agent_level") == "important" and item.get("record")}
@@ -3188,8 +3164,10 @@ class JevService:
             self._marks[spec] = (head, marks)
         project = mount.get("project")
         for key, (record_id, text) in last.items():
-            if key not in marks and not (text and seam.store.decided(DECISIONS["rule"], project, text)):
-                seam.store.resolve(record_id, "fixed", if_absent=True)
+            where = self._mark_where(mount, rel, key)
+            if key not in marks and not (text and self._decided(seam, "not-a-rule", project, text)) \
+                    and not seam.ledger.latest(**where):
+                seam.ledger.append({**where, "outcome": "fixed", "judgment": record_id, "by": "server"})
 
     def record_offer(self, project: Any, action: str, offer: str = "reconcile") -> bool:
         """Record either one-time offer, reconcile or candidates, sent or dismissed in the project's table; the
@@ -3273,7 +3251,7 @@ class JevService:
             # gone after Not for this spec on this spec path, a plain note after Not a project rule (#card-cites-reject).
             cited = cites.get(str(target_anchor)) if question["kind"] == "corpus" and state == "label" else None
             if cited:
-                if seam.store.decided(DECISIONS["here"], mount.get("project"), cited["text"], facts and facts["rel"]):
+                if self._decided(seam, "dismissed", mount.get("project"), cited["text"], facts and facts["rel"]):
                     continue
                 item["rule"] = dict(cited)
             # Answers Jev was unsure of, settled by the general LLM, behind a note the page shows: counted by the agent
@@ -3287,7 +3265,7 @@ class JevService:
             try:
                 self._fixed(seam, mount, relative, facts, items)
             except OSError:
-                pass  # a fixed record unwritten is a fix missed, never a failed read
+                pass  # a fixed outcome unwritten is a fix missed, never a failed read
         items = [item for item in items if item["state"] != "oversize"]
         offer = None if mount.get("test") else self.offer(mount.get("project"), mount.get("root"))
         candidates = None if mount.get("test") else self.candidate_offer(mount.get("project"), mount.get("root"))
@@ -3303,7 +3281,7 @@ class JevService:
                 "candidate_offer": candidates, "offer": offer, "levels": dict(MARK_LEVELS)}
 
 
-__all__ = ["BUILDERS", "CHAIN_CONTINUE", "VERIFIED", "VERIFIER_REJECTED", "DRAFT_CHECK_KINDS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MARK_LEVELS", "MODEL", "OWNER_RESOLUTIONS",
+__all__ = ["BUILDERS", "CHAIN_CONTINUE", "VERIFIED", "VERIFIER_REJECTED", "DRAFT_CHECK_KINDS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "WarningLedger", "eval_read", "MARK_LEVELS", "MODEL", "OWNER_RESOLUTIONS",
            "OPENROUTER_DECISIONS_URL", "mount_prefix", "served_path", "OpenRouterProvider", "QuestionSet", "SILENT_NO",
            "anchor_context",
            "build_audience_questions", "build_board_conflict_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_rule_question", "build_scope_questions", "build_type_questions", "chain_result", "changed_leaf_clauses", "draft_check",

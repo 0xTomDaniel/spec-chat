@@ -1,4 +1,4 @@
-"""Record store files, held set, and lock (jev-suggestions #record-store, #record-held, #record-lock, #proof-store)."""
+"""Record store files, held set, and lock (jev-suggestions #record-store, #record-held, #record-lock, #proof-store, #record-immutable)."""
 import hashlib
 import importlib.util
 import json
@@ -65,8 +65,6 @@ for n in range(ops):
     if n % 10 == 0:
         store.append({"cache_key": key_of(count * 3 + n), "record_id": "judgment-new-%d" % n, "outcome": "hidden",
                       "answer": {"label": "no", "probabilities": {"no": 0.9}}})
-    if n % 100 == 0:
-        store.decided("dismissed", "project", "rule text", "a.spec.html")
 assert len(store._held) <= held
 miss.sort()
 print(json.dumps({"rss_kb": PEAK,
@@ -140,7 +138,7 @@ class StoreLockTest(unittest.TestCase):
                     store.append(record("sha256:other", "judgment-other", "shown"))
                 return lines(path)
 
-            store.get("sha256:warm")  # splits the store before the race
+            store.get("sha256:warm")
             with patch.object(jev, "_lines", racing):
                 self.assertEqual(store.get("sha256:k")["record_id"], "judgment-k")
 
@@ -162,35 +160,16 @@ class StoreFilesTest(unittest.TestCase):
             self.assertEqual(again.get(key_of(7))["record_id"], "judgment-7")
             self.assertEqual(len(list(again.records())), 50)
 
-    def test_replace_rule_is_unchanged_resolution_wins(self):
+    def test_replace_rule_is_unchanged_and_a_record_is_never_amended(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "records.jsonl"
             store = jev.JudgmentStore(path)
             store.append(record("sha256:k", "judgment-off", "off"))
             store.append(record("sha256:k", "judgment-shown", "shown"))
             self.assertEqual(store.append(record("sha256:k", "judgment-late", "shown"))["record_id"], "judgment-shown")
-            store.resolve("judgment-shown", "dismissed", reason="wrong", project="p", rule="r", spec="a.spec.html")
-            store.amend("sha256:k", name="named")
             again = jev.JudgmentStore(path)
-            held = again.get("sha256:k")
-            self.assertEqual((held["record_id"], held["resolution"]["status"], held["name"]),
-                             ("judgment-shown", "dismissed", "named"))
-
-    def test_by_id_resolve_and_decisions_work_after_restart_without_holding_the_record(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "records.jsonl"
-            store = jev.JudgmentStore(path)
-            store.append(record("sha256:scope", "judgment-scope", "shown"))
-            again = jev.JudgmentStore(path, held=4)
-            for i in range(10):
-                again.get(key_of(i))
-            holds = {"project": "p", "rule": jev.rule_identity("text")}
-            self.assertEqual(again.resolve("judgment-scope", "not-a-rule", confirmed=True, **holds)["record_id"],
-                             "judgment-scope")
-            third = jev.JudgmentStore(path)
-            self.assertIsNotNone(third.decided("not-a-rule", "p", "text"))
-            self.assertEqual([r["record_id"] for r in third.confirmed_records()], ["judgment-scope"])
-            self.assertEqual(third._held, {}, "decisions were read from the records")
+            self.assertEqual(again.get("sha256:k")["record_id"], "judgment-shown")
+            self.assertEqual([r["record_id"] for r in again.records()], ["judgment-shown"])
 
     def test_construction_reads_and_writes_nothing(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -199,67 +178,6 @@ class StoreFilesTest(unittest.TestCase):
             with patch.object(jev, "_lines", side_effect=AssertionError("read at start")):
                 jev.JudgmentStore(path)
             self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()), ["records.jsonl"])
-
-
-class StoreSplitTest(unittest.TestCase):
-    """A store written as one file is split on first use, streaming, safe if interrupted, the file kept renamed."""
-
-    def single(self, tmp):
-        path = Path(tmp) / "records.jsonl"
-        lines = [json.dumps(record(key_of(i), "judgment-%d" % i, "shown")) for i in range(200)]
-        lines += ["not json", json.dumps(record(key_of(0), "judgment-retry", "shown"))]
-        lines.insert(0, json.dumps(record(key_of(1), "judgment-off", "off")))
-        dismissed = record(key_of(2), "judgment-2", "shown", resolution={
-            "status": "dismissed", "project": "p", "rule": jev.rule_identity("text"), "spec": "a.spec.html"})
-        lines.append(json.dumps(dismissed))
-        path.write_text("\n".join(lines) + "\n")
-        return path
-
-    def test_split_keeps_every_answer_and_decision_and_renames_the_file(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = self.single(tmp)
-            original = path.read_bytes()
-            store = jev.JudgmentStore(path)
-            self.assertEqual(store.get(key_of(0))["record_id"], "judgment-0")
-            self.assertEqual(store.get(key_of(1))["record_id"], "judgment-1")
-            self.assertEqual(store.get(key_of(2))["resolution"]["status"], "dismissed")
-            self.assertIsNotNone(store.decided("dismissed", "p", "text", "a.spec.html"))
-            self.assertFalse(path.exists())
-            self.assertEqual((Path(tmp) / "records.jsonl.unsplit").read_bytes(), original)
-            self.assertEqual(len(list(jev.JudgmentStore(path).records())), 200)
-
-    def test_interrupted_split_starts_again(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = self.single(tmp)
-            scratch = Path(tmp) / "records.splitting"
-            scratch.mkdir()
-            (scratch / "abc.jsonl").write_text("partial")
-            store = jev.JudgmentStore(path)
-            with patch.object(jev.os, "rename", side_effect=OSError("killed")):
-                with self.assertRaises(OSError):
-                    store.get(key_of(5))
-            self.assertTrue(path.is_file(), "an interrupted split lost the original")
-            self.assertEqual(store.get(key_of(5))["record_id"], "judgment-5")
-            self.assertFalse(scratch.exists())
-            self.assertEqual(len(list(store.records())), 200)
-
-    def test_split_memory_does_not_grow_with_the_file(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            peaks = []
-            for count in (2000, 200000):
-                path = Path(tmp) / str(count) / "records.jsonl"
-                path.parent.mkdir()
-                with path.open("w") as stream:
-                    stream.writelines(LINE % (key_of(i), "hidden", i) for i in range(count))
-                script = ("import importlib.util,sys;s=importlib.util.spec_from_file_location('j',sys.argv[1]);"
-                          "j=importlib.util.module_from_spec(s);s.loader.exec_module(j);"
-                          "st=j.JudgmentStore(sys.argv[2]);assert st.get(sys.argv[3]);"
-                          "print(" + PEAK + ")")
-                out = subprocess.run([sys.executable, "-c", script, str(JEV), str(path), key_of(count - 1)],
-                                     capture_output=True, text=True, check=True)
-                peaks.append(int(out.stdout))
-            print("split memory: 2k %d kB, 200k %d kB" % tuple(peaks), file=sys.stderr)
-            self.assertLess(peaks[1] - peaks[0], 24 * 1024)
 
 
 if __name__ == "__main__":
