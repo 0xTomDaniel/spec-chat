@@ -3,7 +3,9 @@
 
 import importlib.util
 import json
+import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -15,6 +17,9 @@ SETS = jev.load_question_sets(ROOT / "skill" / "review-spec" / "assets" / "jev")
 
 BASE = '<section data-anchor="s"><p data-anchor="new">Old words.</p><p data-anchor="other">Other clause here.</p></section>'
 CURRENT = '<section data-anchor="s"><p data-anchor="new">New clause words here.</p><p data-anchor="other">Other clause here.</p></section>'
+# Draft checks pair only with clauses of other specs (#corpus-same-spec).
+OTHER = '<section data-anchor="s"><p data-anchor="other">Other clause here.</p><p data-anchor="non-goal">Offline.</p></section>'
+SERVED = [{"path": "other.spec.html", "source": OTHER}]
 
 
 class AsymmetricProvider:
@@ -48,8 +53,8 @@ class AsymmetricProvider:
 
 
 def draft_check():
-    items = [item for item in jev.build_corpus_questions(CURRENT, BASE, "spec.html", "base", "head")
-             if item["target"] == "other"]
+    items = [item for item in jev.build_corpus_questions(CURRENT, BASE, "spec.html", "base", "head", SERVED)
+             if item["target"] == "other.spec.html#other"]
     return items[0]
 
 
@@ -93,15 +98,15 @@ class AsymmetricThresholdTest(unittest.TestCase):
         self.assertFalse(record.get("escalated"))
 
     def test_silent_no_full_chain(self):
-        """Same-spec: about(yes) then contradicts P(yes) below verify ends chain, no mark."""
+        """about(yes) then every P(yes) below verify runs the chain to no mark."""
         chain = draft_check()["chain"]
         provider = AsymmetricProvider(
-            p_yes_map={"about": 0.95, "contradicts": 0.50})
+            p_yes_map={"about": 0.95, "contradicts": 0.50, "oversteps": 0.50, "overlaps": 0.50})
         result = self.seam(provider).ask_chain(chain)
         self.assertIsNone(result["answer"]["label"])
         self.assertEqual(result["outcome"], "shown")
         self.assertEqual(provider.complete_calls, [])
-        self.assertEqual(sorted(provider.decide_calls), ["about", "contradicts"])
+        self.assertEqual(sorted(provider.decide_calls), ["about", "contradicts", "overlaps", "oversteps"])
 
 
 class VerifierTest(unittest.TestCase):
@@ -164,6 +169,78 @@ class VerifierTest(unittest.TestCase):
         record = self.seam(provider).ask(contradicts_step)
         self.assertEqual(record["kind"], "contradicts")
         self.assertNotEqual(record["model"], "fake-jev")  # LLM model, not Jev model
+
+    def test_verifier_sends_the_sets_examples(self):
+        """The verifier reads the same set's examples, no second example store (#qset-examples)."""
+        qset = SETS["overlaps"]
+        payload = self.seam(AsymmetricProvider()).verifier_payload({"state": {"after": "a", "target": "b"}}, qset, "m")
+        system = json.loads(payload["messages"][0]["content"])
+        self.assertEqual(system["examples"], qset.examples())
+        self.assertTrue(any(example["label"] == "no" for example in system["examples"]))
+
+
+class HeldEscalationTest(unittest.TestCase):
+    """#state-error: an escalated record left without its answer (the ask crashed after recording it) is
+    pending on every read path and asked again through the escalated fast-path, never a lasting unavailable."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def service(self, provider, questions):
+        service = jev.JevService(state_dir=tempfile.mkdtemp(dir=self.tmp.name), provider=provider, api_key="fake")
+        self.addCleanup(service.stop)
+        service.questions = lambda *args, **kwargs: questions
+        return service
+
+    def crash_left(self, service, step):
+        """Record the step escalated, as the old ask did before its verifier raised."""
+        def crash(*args, **kwargs):
+            raise AttributeError("crash after escalated was recorded")
+        service.seam._verify = crash
+        with self.assertRaises(AttributeError):
+            service.seam.ask(step)
+        del service.seam._verify
+        self.assertEqual(service.seam.store.get(service.seam.key(step))["outcome"], jev.ESCALATED)
+
+    def settled(self, service):
+        deadline = time.monotonic() + 10
+        while True:
+            result = service.response({}, "", "", "base", [])
+            if all(item["state"] != "pending" for item in result["items"]) or time.monotonic() > deadline:
+                return result
+            time.sleep(0.01)
+
+    def test_escalated_draft_check_is_pending_then_asked_again(self):
+        draft = draft_check()
+        provider = AsymmetricProvider(
+            p_yes_map={"about": 0.95, "contradicts": 0.80},
+            verifier_response={"answer": "yes", "clause_span": "a", "target_span": "b"})
+        for question in (draft, dict(draft["chain"][1], id="single")):
+            with self.subTest(chain="chain" in question):
+                service = self.service(provider, [question])
+                service.seam.ask(draft["chain"][0])  # the about gate answered yes: the chain waits on contradicts
+                self.crash_left(service, draft["chain"][1])
+                calls = len(provider.complete_calls)
+                first = service.response({}, "", "", "base", [])
+                self.assertEqual(first["items"][0]["state"], "pending")
+                self.settled(service)
+                self.assertEqual(len(provider.complete_calls), calls + 1)
+                held = service.seam.store.get(service.seam.key(draft["chain"][1]))
+                self.assertEqual(held["outcome"], jev.VERIFIED)
+                if "chain" in question:
+                    self.assertEqual(self.settled(service)["items"][0]["label"], "contradicts")
+
+    def test_escalated_lane_step_is_a_miss(self):
+        provider = AsymmetricProvider(p_yes_map={"contradicts": 0.80})
+        service = self.service(provider, [])
+        step = draft_check()["chain"][1]
+        self.crash_left(service, step)
+        chain = {"kind": "lane", "pair": ("a", "b"), "chain": [step]}
+        service._material_questions = lambda row: []
+        service._lane_questions = lambda rows, **kwargs: [chain]
+        _, misses = service._board_from_records([{"slug": "a", "spec": "x", "id": "1"}])
+        self.assertIn(service.seam.key(step), misses)
 
 
 if __name__ == "__main__":

@@ -734,14 +734,15 @@ class JevSeamTest(unittest.TestCase):
         current = baseline.replace("reads review events", "writes review events")
         other = """
         <section data-anchor="other"><p data-anchor="same-surface" data-modular-boundary>The review service reads review events.</p></section>
+        <section data-anchor="non-goals"><p data-anchor="non-goal-other">The review service never deletes review events.</p></section>
         """
         questions = jev.build_corpus_questions(current, baseline, "docs/current.spec.html", "base", "head",
                                                [{"path": "docs/other.spec.html", "source": other}])
         targets = {question["target"] for question in questions}
-        self.assertIn("non-goal-text", targets)
-        self.assertIn("docs/other.spec.html#same-surface", targets)
+        # No clause of its own spec, non-goal or not, is a candidate (#corpus-same-spec).
+        self.assertEqual(targets, {"docs/other.spec.html#same-surface", "docs/other.spec.html#non-goal-other"})
         non_goal = {question["target"]: question["chain"][1]["state"]["target_non_goal"] for question in questions}
-        self.assertTrue(non_goal["non-goal-text"])
+        self.assertTrue(non_goal["docs/other.spec.html#non-goal-other"])
         self.assertFalse(non_goal["docs/other.spec.html#same-surface"])
         changed = [question for question in questions if question["id"] == "changed"]
         self.assertTrue(changed)
@@ -763,22 +764,20 @@ class JevSeamTest(unittest.TestCase):
         own_targets = [q["target"] for q in questions if "#" not in q["target"]]
         cross_targets = [q["target"] for q in questions if "#" in q["target"]]
         self.assertEqual({q["id"] for q in questions}, {"changed"})
-        self.assertLessEqual(len(own_targets), 8 + 2)
-        self.assertIn("non-goal-a", own_targets)
-        self.assertIn("non-goal-b", own_targets)
-        self.assertLessEqual(len(cross_targets), 8)
+        self.assertEqual(own_targets, [])
+        self.assertLessEqual(len(cross_targets), jev.TOPK_CROSS)
         for question in questions:
             # chain[0] is the about gate; chain[1] is contradicts with target_non_goal
             self.assertEqual(question["chain"][0]["kind"], "about")
             self.assertEqual(set(question["chain"][1]["state"]), {"before", "after", "target", "target_non_goal"})
-            self.assertEqual(question["chain"][1]["state"]["target_non_goal"], question["target"].startswith("non-goal-"))
+            self.assertFalse(question["chain"][1]["state"]["target_non_goal"])
 
         fresh = jev.build_corpus_questions(current, None, "docs/current.spec.html", "base", "head", others)
         per_leaf = {}
         for question in fresh:
             per_leaf[question["id"]] = per_leaf.get(question["id"], 0) + 1
         self.assertTrue(per_leaf)
-        self.assertLessEqual(max(per_leaf.values()), 8 + 2 + 8)
+        self.assertLessEqual(max(per_leaf.values()), jev.TOPK_CROSS)
 
     def test_draft_check_chain_asks_each_relationship_as_yes_or_no(self):
         sets = jev.load_question_sets(ROOT / "skill" / "review-spec" / "assets" / "jev")
@@ -787,6 +786,31 @@ class JevSeamTest(unittest.TestCase):
         self.assertEqual(draft["display_labels"], ["contradicts", "oversteps", "overlaps"])
         for step in draft["chain"]:
             self.assertEqual(set(sets[step["kind"]].criteria()), {"yes", "no"})
+
+
+class JevUnsureCountTest(unittest.TestCase):
+    """jev-suggestions #markers-agent-unsure, #acceptance-yes-no-unsure-count: unsure counts only behind a shown note."""
+
+    def test_unsure_counted_only_behind_a_shown_note(self):
+        with tempfile.TemporaryDirectory() as directory:
+            service = jev.JevService(state_dir=directory, provider=FakeProvider(), api_key="fake")
+            step = {"kind": "about", "then": {"no": None}}
+            chain = lambda id: {"kind": "corpus", "id": id, "target": "other", "chain": [step],
+                                "display_labels": ["overlaps"]}
+            pair = {"kind": "coverage", "id": "s::c", "target": "s", "story": "s", "criterion": "c"}
+            service.questions = lambda *args, **kwargs: [chain("shown"), chain("gate-no"), pair]
+            settled_by_llm = {"shown": {"outcome": "shown", "answer": {"label": "overlaps"}, "record_id": "r1", "unsure": 2},
+                              "gate-no": {"outcome": "shown", "answer": {"label": None}, "record_id": "r2", "unsure": 1}}
+            walked = iter(["shown", "gate-no"])
+            verifies = {"outcome": "shown", "answer": {"label": "verifies"}, "record_id": "r3", "escalated": True}
+            with patch.object(jev, "chain_result", lambda chain, get: settled_by_llm[next(walked)]), \
+                    patch.object(service, "_held", lambda question, misses, seam: verifies):
+                items = {item["id"]: item for item in service.response({}, "", "", "base", [])["items"]}
+            self.assertEqual((items["shown"]["state"], items["shown"].get("unsure")), ("label", 2))
+            self.assertEqual(items["gate-no"]["state"], "none")
+            self.assertNotIn("unsure", items["gate-no"])
+            self.assertEqual(items["s::c"]["state"], "label")
+            self.assertNotIn("unsure", items["s::c"])
 
 
 if __name__ == "__main__":

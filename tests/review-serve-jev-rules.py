@@ -279,6 +279,19 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(rebuilt["rules"], [])
         self.assertEqual([i["target"] for i in self.candidates(rebuilt)], first["rules"])
 
+    def test_unsure_settled_to_nothing_shown_is_not_counted(self):
+        """jev-suggestions #markers-agent-unsure: an unsure answer the LLM settled to no mark carries no unsure count."""
+        self.seed()
+        for settled in ("covered", "not triggered"):
+            with self.subTest(settled=settled):
+                provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("covered", 0.2)},
+                                        general={("rule", ONBOARDING): settled})
+                result = self.read(self.service(provider, state="state-" + settled, approve=(ONBOARDING,)))
+                onboarding = [i for i in self.rules(result) if i["target"].endswith("#acceptance-onboarding")]
+                self.assertEqual([i["state"] for i in onboarding], ["none"])
+                self.assertTrue(provider.general_asked("triggered"))
+                self.assertNotIn("unsure", onboarding[0])
+
     def test_unsure_goes_once_to_general_llm_which_decides_and_is_reused(self):
         self.seed()
         provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.2)}, rule={ONBOARDING: ("covered", 0.2)},

@@ -1,6 +1,6 @@
 {
   "id": "audience",
-  "version": 5,
+  "version": 6,
   "instructions": "Classify one leaf clause of a spec for a reading view. Choose for you when the clause is user-facing or behavioral (what a user sees or what the result does), or states highly important architecture (a hard-to-reverse boundary, a dependency direction, or a key interface). Choose internals for everything else: implementation detail, mechanics, proofs, fixture or test detail, and minor structure. An acceptance criterion is usually for you; choose internals only when it is about proof or fixture mechanics.",
   "labels": [
     {
@@ -15,7 +15,7 @@
         },
         {
           "input": {
-            "clause": "When no agent process exists, handed-off events remain durably queued and no claim of active processing is made."
+            "clause": "When a cleanup edit raises a new conflict on the same paragraph, the tool leaves an open question there instead of editing again, and sign-off stays blocked until a person settles it."
           },
           "label": "for you"
         },

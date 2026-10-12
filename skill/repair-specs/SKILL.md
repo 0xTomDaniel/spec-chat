@@ -39,8 +39,8 @@ Move behavior to its owning spec:
 
 ### 3. Contradict
 
-Resolve contradictions between specs:
-- When two specs' clauses contradict and one side is out of date, update the out-of-date side.
+Resolve contradictions between two clauses, in one spec or in two, including a clause against its own spec's non-goals (Jev draft checks never compare clauses inside one spec):
+- When two clauses contradict and one side is out of date, update the out-of-date side.
 - When the contradiction is a real design choice, write an open TBD (`data-spec-tbd`) at the clause instead.
 
 ### 4. ADR

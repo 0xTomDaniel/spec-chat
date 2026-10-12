@@ -67,7 +67,7 @@ class TestProvenance(unittest.TestCase):
             path="spec.html", base="abc", revision="def",
             context={"surface": "My Spec", "section": "Rules"},
             target_context={"surface": "Other Spec", "section": "Scope", "columns": ["A", "B"]},
-            pairing={"rule": "same-spec", "rank": 0, "gate": "yes"})
+            pairing={"rule": "cross-spec", "rank": 0, "gate": "yes"})
 
         result = seam.ask_chain(item["chain"])
         self.assertEqual(result["outcome"], "shown")
@@ -91,7 +91,7 @@ class TestProvenance(unittest.TestCase):
 
         # pairing (#record-pairing)
         self.assertIn("pairing", rec)
-        self.assertEqual(rec["pairing"]["rule"], "same-spec")
+        self.assertEqual(rec["pairing"]["rule"], "cross-spec")
         self.assertEqual(rec["pairing"]["rank"], 0)
         self.assertEqual(rec["pairing"]["gate"], "yes")
 
@@ -210,7 +210,7 @@ class TestResolution(unittest.TestCase):
             "show_cutoff": 0.9,
             "verify_cutoff": 0.7,
             "inputs": {"clause_text": "new text", "target_text": "target"},
-            "pairing": {"rule": "same-spec", "rank": 0, "gate": "yes"},
+            "pairing": {"rule": "cross-spec", "rank": 0, "gate": "yes"},
         })
         return store, record
 

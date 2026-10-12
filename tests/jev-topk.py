@@ -1,13 +1,12 @@
-"""Spec #proof-top-k: build_corpus_questions returns at most 5 same-spec and 5 cross-spec
-candidates per changed clause, always including non-goals regardless of rank."""
+"""Spec #proof-top-k: build_corpus_questions returns at most 5 cross-spec candidates per changed clause
+and none for a clause of its own spec, non-goal or not."""
 import os, sys, unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "skill", "review-spec", "assets"))
 import jev
 
 
-def _clause(anchor, text, non_goal=False):
+def _clause(anchor, text):
     """HTML paragraph with data-anchor."""
-    parent = "non-goals" if non_goal else "clauses"
     return f'<p data-anchor="{anchor}">{text}</p>'
 
 
@@ -19,71 +18,33 @@ def _spec(clauses, non_goal_clauses=None):
     return f"<html><body>{body}</body></html>"
 
 
-def _other_spec(clauses):
-    return f"<html><body><section data-anchor='other-root'>\n" + "\n".join(clauses) + "\n</section></body></html>"
-
-
 class TestTopK(unittest.TestCase):
 
-    def test_at_most_5_same_spec_and_5_cross_spec_plus_non_goals(self):
-        """With a changed clause and 20 same-spec + 20 cross-spec candidates,
-        build_corpus_questions returns questions for at most 5 same-spec and
-        5 cross-spec candidates, always including non-goals."""
-        # The changed clause uses a unique rare word "zephyr" shared with some candidates.
+    def test_at_most_5_cross_spec_and_no_own_spec_candidate(self):
+        """With a changed clause, 20 own-spec clauses and own non-goals, and 20 cross-spec candidates,
+        build_corpus_questions returns questions for at most 5 cross-spec candidates and none for a
+        clause of its own spec, non-goal or not."""
         changed = _clause("changed", "The zephyr routing module handles authentication tokens")
-
-        # 20 same-spec candidates, each with some overlapping words.
-        same_clauses = []
-        for i in range(20):
-            same_clauses.append(_clause(f"same-{i}", f"Candidate {i} uses the routing module for processing"))
-
-        # 2 non-goal clauses ranked outside top 5 (no overlapping words beyond trivial).
+        same_clauses = [_clause(f"same-{i}", f"Candidate {i} uses the zephyr routing module for tokens")
+                        for i in range(20)]
         non_goal_clauses = [
-            f'<p data-anchor="non-goal-a">Non-goal alpha: unrelated concept about painting</p>',
-            f'<p data-anchor="non-goal-b">Non-goal beta: unrelated concept about gardening</p>',
+            _clause("non-goal-a", "Non-goal alpha: zephyr routing never handles authentication tokens"),
+            _clause("non-goal-b", "Non-goal beta: unrelated concept about gardening"),
         ]
-
-        baseline_clauses = [_clause("changed", "Old text before change")]
-        baseline = _spec(baseline_clauses + same_clauses, non_goal_clauses)
+        baseline = _spec([_clause("changed", "Old text before change")] + same_clauses, non_goal_clauses)
         current = _spec([changed] + same_clauses, non_goal_clauses)
-
-        # 20 cross-spec candidates.
-        cross_clauses = []
-        for i in range(20):
-            cross_clauses.append(_clause(f"cross-{i}", f"Cross candidate {i} with routing and tokens"))
-        other = _other_spec(cross_clauses)
+        cross_clauses = [_clause(f"cross-{i}", f"Cross candidate {i} with routing and tokens") for i in range(20)]
+        other = _spec(cross_clauses)
 
         questions = jev.build_corpus_questions(current, baseline, "spec.html", "base", "head",
                                                [{"path": "other.spec.html", "source": other}])
+        targets = [q["target"] for q in questions if q.get("id") == "changed"]
 
-        # Collect targets per changed clause.
-        same_targets = []
-        cross_targets = []
-        for q in questions:
-            if q.get("id") != "changed":
-                continue
-            target = q["target"]
-            if "#" in target:
-                cross_targets.append(target)
-            else:
-                same_targets.append(target)
-
-        # Separate non-goals from regular same-spec.
-        same_non_goals = [t for t in same_targets if "non-goal" in t]
-        same_regular = [t for t in same_targets if "non-goal" not in t]
-
-        # At most 5 regular same-spec candidates.
-        self.assertLessEqual(len(same_regular), 5,
-                             f"Expected at most 5 same-spec candidates, got {len(same_regular)}")
-        # At most 5 cross-spec candidates.
-        self.assertLessEqual(len(cross_targets), 5,
-                             f"Expected at most 5 cross-spec candidates, got {len(cross_targets)}")
-        # Both non-goals included.
-        self.assertEqual(len(same_non_goals), 2,
-                         f"Expected 2 non-goals, got {len(same_non_goals)}: {same_non_goals}")
-        # Total same-spec is at most 5 regular + all non-goals.
-        self.assertLessEqual(len(same_regular), jev.TOPK_SAME)
-        self.assertLessEqual(len(cross_targets), jev.TOPK_CROSS)
+        self.assertEqual(len(targets), 5)
+        self.assertEqual(jev.TOPK_CROSS, 5)
+        self.assertTrue(all(t.startswith("other.spec.html#cross-") for t in targets), targets)
+        # No own-spec candidate at all, and none without other specs served.
+        self.assertEqual(jev.build_corpus_questions(current, baseline, "spec.html", "base", "head"), [])
 
     def test_rarity_weighted_scoring(self):
         """Rare shared words rank higher than common shared words."""

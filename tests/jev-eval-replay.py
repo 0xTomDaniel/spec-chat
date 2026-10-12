@@ -80,20 +80,22 @@ def _spec_file(addr):
     return head.split("::")[-1].rsplit("/", 1)[-1].split()[-1] if head.strip() else ""
 
 
+def _own_spec(entry):
+    """Whether the pair is inside one spec, which the pipeline never pairs (#corpus-same-spec)."""
+    target_file = _spec_file(entry["target_addr"])
+    return not target_file or target_file == _spec_file(entry["clause_addr"])
+
+
 def pair_item(entry):
-    """The draft-check item the pipeline builds for this pair (jev.draft_check)."""
+    """The draft-check item the pipeline builds for this cross-spec pair (jev.draft_check)."""
     target_addr = entry["target_addr"]
-    target_file = _spec_file(target_addr)
-    same_spec = not target_file or target_file == _spec_file(entry["clause_addr"])
     anchor = target_addr.rsplit("#", 1)[-1]
     non_goal = "non-goal" in anchor.lower() or "nongoal" in anchor.lower()
-    rule = "non-goal" if non_goal else ("same-spec" if same_spec else "cross-spec")
     return jev.draft_check(
         anchor=entry["clause_addr"].rsplit("#", 1)[-1], before="", after=entry["clause_text"],
-        target=target_addr, target_text=entry["target_text"],
-        target_non_goal=non_goal, same_spec=same_spec,
+        target=target_addr, target_text=entry["target_text"], target_non_goal=non_goal,
         path="eval", base="eval-base", revision="eval-head",
-        pairing={"rule": rule, "rank": 0, "gate": "yes"})
+        pairing={"rule": "non-goal" if non_goal else "cross-spec", "rank": 0, "gate": "yes"})
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +120,9 @@ def replay_pair(seam, entry, sleep=time.sleep):
     """Ask one eval pair through the seam's chain; return its outcome and the stage that decided it."""
     if not _has_text(entry):
         return {"replayed": False, "shown": False, "stage": "no text", "outcome": None,
+                "answer_label": None, "trace": []}
+    if _own_spec(entry):
+        return {"replayed": False, "shown": False, "stage": "own spec", "outcome": None,
                 "answer_label": None, "trace": []}
     chain = pair_item(entry)["chain"]
     for attempt in range(RETRIES + 1):
@@ -343,8 +348,8 @@ class TestReplayPair(unittest.TestCase):
 
     def test_verify_band_calls_verifier(self):
         for verify, shown in (("yes", True), ("no", False)):
-            model = FakeModel({"about": 0.9, "contradicts": 0.8}, verify=verify)
-            r = replay_pair(fake_seam(model), entry(target_addr="#t"))
+            model = FakeModel({"about": 0.9, "contradicts": 0.8, "oversteps": 0.8, "overlaps": 0.8}, verify=verify)
+            r = replay_pair(fake_seam(model), entry())
             self.assertEqual(r["shown"], shown)
             self.assertEqual(r["stage"], "verifier")
             self.assertIn("complete", [c[0] for c in model.calls])
@@ -352,7 +357,7 @@ class TestReplayPair(unittest.TestCase):
 
     def test_below_verify_cutoff_silent_no(self):
         model = FakeModel({"about": 0.9, "contradicts": 0.5})
-        r = replay_pair(fake_seam(model), entry(target_addr="#t"))
+        r = replay_pair(fake_seam(model), entry())
         self.assertFalse(r["shown"])
         self.assertFalse(kept(r, "threshold"))
         self.assertTrue(kept(r, "gate"))
@@ -364,12 +369,12 @@ class TestReplayPair(unittest.TestCase):
         self.assertEqual(r["answer_label"], "overlaps")
         self.assertEqual([c[1] for c in model.calls], ["about", "contradicts", "oversteps", "overlaps"])
 
-    def test_same_spec_chain_stops_after_contradicts(self):
-        for addr in ("#t", "t", "aa/docs/specs/a.spec.html#t"):
+    def test_own_spec_pair_not_replayed(self):
+        for addr in ("#t", "t", "aa/docs/specs/a.spec.html#t", "aa/docs/specs/a.spec.html#non-goal-x"):
             model = FakeModel({"about": 0.9, "overlaps": 0.95})
             r = replay_pair(fake_seam(model), entry(target_addr=addr))
-            self.assertFalse(r["shown"])
-            self.assertEqual([c[1] for c in model.calls], ["about", "contradicts"], addr)
+            self.assertEqual((r["replayed"], r["shown"], r["stage"]), (False, False, "own spec"), addr)
+            self.assertEqual(model.calls, [], addr)
 
     def test_non_goal_target_asks_nongoal_set(self):
         model = FakeModel({"about": 0.9})

@@ -13,7 +13,7 @@ Create durable current truth before deep investigation.
 - Before shaping, list every spec and ADR in the target repo (at least their titles) and read the ones that own the behavior you are changing.
 - Put behavior in the spec that already owns it. Create a new spec only for a genuinely new part of the system, never a spec named after a change, fix, or lane.
 - A change that alters behavior another spec describes updates that spec in the same PR.
-- A contradiction between specs means one is out of date: update it in the same PR; a real design choice goes to the human as an open TBD.
+- A contradiction between two clauses, in one spec or in two, means one is out of date: update it in the same PR; a real design choice goes to the human as an open TBD. Jev never compares clauses inside one spec, so check the spec you shape against its own clauses and non-goals yourself.
 - Shaping commits locally only. It never pushes, opens a pull request, or creates or edits an issue or ticket, whatever target instructions say; publishing and tracker work are the caller's.
 - Specs and ADRs name no ticket and no pane; the caller's tracker keeps the ticket to spec link.
 - The canonical spec owns what the result must do: current stories, behavior, edge cases, interaction contracts, and acceptance.

@@ -996,7 +996,7 @@ class JevSeam:
             verify_input["clause_context"] = state["context"]
         if state.get("target_context"):
             verify_input["target_context"] = state["target_context"]
-        system = {"question": qset.instructions,
+        system = {"question": qset.instructions, "examples": qset.examples(),
                   "verify": "If yes, quote the exact span from the clause and the target that conflict. If no, leave spans empty."}
         schema = {"type": "object",
                   "properties": {"answer": {"type": "string", "enum": ["yes", "no"]},
@@ -1473,13 +1473,13 @@ def _is_non_goal(anchor: str, anchors: Mapping[str, Mapping[str, Any]]) -> bool:
     return False
 
 
-TOPK_SAME = 5
 TOPK_CROSS = 5
 
 
 def build_corpus_questions(current: str | bytes, baseline: str | bytes | None, path: str = "spec", base: str = "",
                            revision: Any = "head", served_specs: Any = None) -> list[dict[str, Any]]:
-    """Build one corpus question for each changed leaf and candidate clause."""
+    """Build one corpus question for each changed leaf and cross-spec candidate clause; no clause of its own
+    spec is a candidate (#corpus-same-spec)."""
     now, old = extract_anchors(current), extract_anchors(baseline)
     leaves = _corpus_leaf_anchors(now)
     other_specs: list[tuple[str, dict[str, dict[str, Any]]]] = []
@@ -1506,16 +1506,6 @@ def build_corpus_questions(current: str | bytes, baseline: str | bytes | None, p
             continue
 
         source_words = _anchor_words(after)
-        own_keys = [key for key in _corpus_leaf_anchors(now) if key != anchor]
-        # Rank same-spec candidates by rarity-weighted overlap.
-        own_scored = sorted(own_keys, key=lambda k: (-_rarity_score(source_words, _anchor_words(str(now[k].get("text", ""))), freqs), k))
-        non_goals = [key for key in own_scored if _is_non_goal(key, now)]
-        own_keys = own_scored[:TOPK_SAME]
-        for key in non_goals:
-            if key not in own_keys:
-                own_keys.append(key)
-        candidates = [(key, str(now[key].get("text", "")), key in non_goals, now) for key in own_keys]
-
         # Rank cross-spec candidates by rarity-weighted overlap.
         cross: list[tuple[float, str, str, str, bool, dict]] = []
         for other_path, other_anchors in other_specs:
@@ -1524,32 +1514,24 @@ def build_corpus_questions(current: str | bytes, baseline: str | bytes | None, p
                 score = _rarity_score(source_words, _anchor_words(text), freqs)
                 cross.append((-score, other_path, key, text, _is_non_goal(key, other_anchors), other_anchors))
         cross.sort(key=lambda item: (item[0], item[1], item[2]))
-        candidates.extend((other_path + "#" + key, text, non_goal, ca) for _, other_path, key, text, non_goal, ca in cross[:TOPK_CROSS])
 
         ctx = anchor_context(anchor, now)
-        for rank_index, (target, target_text, non_goal, target_anchors) in enumerate(candidates):
-            tctx = anchor_context(target.split("#")[-1], target_anchors)
-            if non_goal:
-                rule = "non-goal"
-            elif "#" in str(target):
-                rule = "cross-spec"
-            else:
-                rule = "same-spec"
-            pair_info = {"rule": rule, "rank": rank_index, "gate": "yes"}
-            result.append(draft_check(anchor, before, after, target, target_text, target_non_goal=non_goal,
-                                      same_spec=(rule == "same-spec"),
-                                      path=path, base=base, revision=revision,
-                                      context=ctx, target_context=tctx, pairing=pair_info))
+        for rank_index, (_, other_path, key, target_text, non_goal, target_anchors) in enumerate(cross[:TOPK_CROSS]):
+            pair_info = {"rule": "non-goal" if non_goal else "cross-spec", "rank": rank_index, "gate": "yes"}
+            result.append(draft_check(anchor, before, after, other_path + "#" + key, target_text,
+                                      target_non_goal=non_goal, path=path, base=base, revision=revision,
+                                      context=ctx, target_context=anchor_context(key, target_anchors),
+                                      pairing=pair_info))
     return result
 
 
 def draft_check(anchor: str, before: str, after: str, target: str, target_text: str, *,
-                target_non_goal: bool = False, same_spec: bool = False, path: str, base: str, revision: Any,
+                target_non_goal: bool = False, path: str, base: str, revision: Any,
                 context: Mapping[str, Any] | None = None, target_context: Mapping[str, Any] | None = None,
                 pairing: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    """The draft-check chain for one clause and candidate (#corpus-labels, #gate-chain): about? gate first,
-    then contradicts?, then oversteps?, then overlaps?, the first yes decides; a non-goal candidate is asked
-    only contradicts? after the gate."""
+    """The draft-check chain for one clause and cross-spec candidate (#corpus-labels, #gate-chain): about? gate
+    first, then contradicts?, then oversteps?, then overlaps?, the first yes decides; a non-goal candidate is
+    asked only contradicts? after the gate."""
     # Gate state: first/second each with context fields (#gate-set-state)
     first_obj: dict[str, Any] = {"text": after}
     if context:
@@ -1569,7 +1551,7 @@ def draft_check(anchor: str, before: str, after: str, target: str, target_text: 
     steps = [gate,
              _step(_question(contradicts_kind, anchor, pair,
                              path, base, revision, target), yes="contradicts")]
-    if target_non_goal or same_spec:
+    if target_non_goal:
         steps[1]["then"]["no"] = None
     else:
         steps += [_step(_question("oversteps", anchor, pair, path, base, revision, target), yes="oversteps"),
@@ -2445,11 +2427,12 @@ class JevService:
         return record
 
     def _held_record(self, key: str, seam: "JevSeam | None" = None) -> dict[str, Any] | None:
-        """A held record. `off` is no answer (the key was missing when asked), so it is asked again, and a
-        failed one answers only until its pause ends (#state-error)."""
+        """A held record. `off` is no answer (the key was missing when asked), and `escalated` is an answer
+        not yet settled (an ask that stopped after recording it): both are asked again, the escalated one
+        through the escalated fast-path. A failed one answers only until its pause ends (#state-error)."""
         store = (seam or self.seam).store
         record = store.get(key)
-        if record is None or record.get("outcome") == "off":
+        if record is None or record.get("outcome") in ("off", ESCALATED):
             return None
         if record.get("outcome") == "unavailable" and not pause_left(record):
             return None
@@ -2602,10 +2585,11 @@ class JevService:
                 and not row.get("test")]
         sets = self.seam.question_sets
         misses: dict[str, dict[str, Any]] = {}
+        get_held = lambda step: self._held_record(self.seam.key(step))
 
         def held_chain(item: Mapping[str, Any]) -> dict[str, Any]:
             # A chain waiting on a step is asked whole, so each answer asks on from it (#chains).
-            result = chain_result(item["chain"], lambda step: self.seam.store.get(self.seam.key(step)))
+            result = chain_result(item["chain"], get_held)
             if result["outcome"] is None:
                 misses.setdefault(self.seam.key(result["step"]), dict(item))
             return result
@@ -2618,7 +2602,6 @@ class JevService:
                 questions = None
             answer_rows.append({"id": str(row.get("id", "")),
                                 "material": "unknown" if questions is None else material([held_chain(q) for q in questions])})
-        get_held = lambda step: self.seam.store.get(self.seam.key(step))
         conflict_pairs: set[tuple[str, str]] = set()
         for chain in self._lane_questions(rows):
             results = lane_result(chain["chain"], get_held)
@@ -2654,7 +2637,7 @@ class JevService:
             inflight = key in self._asking
         if _final(record):
             return "final", record
-        if inflight or self._held_record(key, seam) is None or record.get("outcome") == ESCALATED:
+        if inflight or self._held_record(key, seam) is None:
             return "pending", record
         return "unavailable", record
 
@@ -2829,7 +2812,7 @@ class JevService:
                 item["level"], item["agent_level"] = MARK_LEVELS[item["label"]]["human"], MARK_LEVELS[item["label"]]["agent"]
             if state == "pending":
                 item["escalated"] = _escalated(record)
-            if unsure:
+            if unsure and item["state"] == "label":  # behind a shown mark only (#markers-agent-unsure)
                 item["unsure"] = unsure
             items.append(item)
         return items, sorted(set(rules)), cites
@@ -3293,9 +3276,10 @@ class JevService:
                 if seam.store.decided(DECISIONS["here"], mount.get("project"), cited["text"], facts and facts["rel"]):
                     continue
                 item["rule"] = dict(cited)
-            # Answers Jev was unsure of, settled by the general LLM: counted by the agent read only (#markers-agent-unsure).
+            # Answers Jev was unsure of, settled by the general LLM, behind a note the page shows: counted by the agent
+            # read only (#markers-agent-unsure). A coverage pair shows no note of its own; the gap is derived.
             unsure = record.get("unsure", int(outcome == "shown" and bool(record.get("escalated"))))
-            if unsure:
+            if unsure and state == "label" and question["kind"] != "coverage":
                 item["unsure"] = unsure
             items.append(item)
         items += rule_items
