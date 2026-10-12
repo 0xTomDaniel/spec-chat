@@ -1,6 +1,6 @@
 {
   "id": "overlaps",
-  "version": 5,
+  "version": 6,
   "instructions": "Compare the changed clause with the linked clause; they neither contradict nor overstep each other. Do they say the same thing? Answer yes when both clauses describe the same behavior, surface, or responsibility. Answer no when they describe different things, even if related. A criterion or test that checks the behavior the other clause states says the same thing: yes.",
   "threshold": 0.4,
   "fallback": true,
@@ -75,5 +75,22 @@
         }
       ]
     }
-  ]
+  ],
+  "verify": {
+    "rule": "Read both clauses as wholes and choose one level. For same or partial, quote the exact span from the clause and the target that carry the shared content. For different, leave spans empty.",
+    "levels": {
+      "same": {
+        "shows": "yes",
+        "description": "The two clauses state the same thing as a whole: each quoted span carries its clause's main point. A criterion or test that checks the whole behavior the other clause states is same."
+      },
+      "partial": {
+        "shows": "partial",
+        "description": "One clause repeats one part of the other on the same surface and actor: a criterion or test that checks one sub-claim of a broader clause, or a clause that restates one point of a longer one."
+      },
+      "different": {
+        "shows": "no",
+        "description": "Anything else: the same rule held for a different surface or actor, a module boundary against one feature's behavior (another layer), or only a shared phrase or topic."
+      }
+    }
+  }
 }

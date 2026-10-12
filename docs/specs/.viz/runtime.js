@@ -1278,7 +1278,7 @@ function jevDisplayLabel(item) {
 }
 
 function corpusFlags(items) {
-  const labels = { contradicts: 'Contradicts', overlaps: 'Overlaps', oversteps: 'Oversteps' };
+  const labels = { contradicts: 'Contradicts', overlaps: 'Overlaps', 'partial-overlap': 'Partial overlap', oversteps: 'Oversteps' };
   const seenUnavailable = new Set();
   const result = [];
   for (const item of Array.isArray(items) ? items : []) {

@@ -113,7 +113,7 @@ class GateTest(unittest.TestCase):
     def test_gate_display_labels_exclude_gate(self):
         """Gate answer is not a display label."""
         item = draft_check()
-        self.assertEqual(item["display_labels"], ["contradicts", "oversteps", "overlaps"])
+        self.assertEqual(item["display_labels"], ["contradicts", "oversteps", "overlaps", "partial-overlap"])
 
     def test_gate_cache_by_content_hash(self):
         """#acceptance-gate-cache: same clause pair reuses cached gate record."""
