@@ -4,11 +4,15 @@
 Reads GET /api/jev for the spec and base the review link serves, from the running server, and prints:
 one line per important mark, warning counts by kind with the count of answers Jev was unsure of and the
 general LLM settled (jev-suggestions #markers-agent-unsure), the rules checked, the candidate rules awaiting the
-human (project-rules #approval-agent), the pending count; or `off`.
+human (project-rules #agent-ask), the pending count; or `off`.
 `--anchor <id>` prints full detail for that anchor only. Marks are keyed on each item's `agent_level` (jev-suggestions #markers-levels-source).
 `--resolve <record> <resolution>` records the owner's resolution of an Important mark the read showed, one outcome in
 the warning ledger citing its record: fixed, reason, thread, or dismissed with `--reason` (jev-suggestions #ledger),
 through the one Jev record route.
+`--not-a-rule <anchor>` records the human's no to the shaping ask on a candidate of the link's spec: Not a project rule,
+not-a-rule in the warning ledger (project-rules #agent-ask, #dismiss-rule). `--not-for-spec <home> <record>` records
+Not for this spec on a rule miss the read showed, its home and record from `--anchor`: dismissed for the link's spec
+(project-rules #dismiss, repair-specs #catch-up). Both go through the same record route; the server checks each answer.
 """
 
 from __future__ import annotations
@@ -84,7 +88,7 @@ def summary(result: dict[str, Any]) -> list[str]:
         return ["off"]
     marks = [["important", str(item.get("id") or ""), _mark(item), "important", _target(item)]
              for item in items(result) if item.get("agent_level") == "important"]
-    # Candidates await the human, need no agent action (project-rules #approval-agent): own line, not warnings.
+    # Candidates await the human, are the human's to settle (project-rules #agent-ask): own line, not warnings.
     counts = Counter(str(item.get("kind") or "") for item in items(result)
                      if item.get("agent_level") == "warning" and item.get("kind") != "candidate")
     warnings = ", ".join(f"{kind} {count}" for kind, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
@@ -120,19 +124,32 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--anchor", help="print full detail for this anchor only")
     parser.add_argument("--wait", type=float, default=0, metavar="SECONDS",
                         help="re-read every 2s until nothing is pending, at most this long")
-    parser.add_argument("--resolve", nargs=2, metavar=("RECORD", "RESOLUTION"),
+    answer = parser.add_mutually_exclusive_group()
+    answer.add_argument("--resolve", nargs=2, metavar=("RECORD", "RESOLUTION"),
                         help="record an Important mark's resolution: fixed, reason, thread, or dismissed (the server checks it)")
+    answer.add_argument("--not-a-rule", metavar="ANCHOR",
+                        help="record Not a project rule for the candidate at this anchor of the link's spec")
+    answer.add_argument("--not-for-spec", nargs=2, metavar=("HOME", "RECORD"),
+                        help="record Not for this spec for a rule miss: its home and record, from --anchor")
     parser.add_argument("--reason", help="the reason; a dismissal needs one")
     args = parser.parse_args(argv)
     if args.resolve:
         record, resolution = args.resolve
-        body = {"resolve": resolution, "record": record, **({"reason": args.reason} if args.reason else {})}
+        body, shown = {"resolve": resolution, "record": record, **({"reason": args.reason} if args.reason else {})}, (record, resolution)
+    elif args.not_a_rule:
+        body, shown = {"dismiss": "rule", "anchor": args.not_a_rule}, (args.not_a_rule, "not-a-rule")
+    elif args.not_for_spec:
+        home, record = args.not_for_spec
+        body, shown = {"dismiss": "here", "home": home, "record": record}, (home, "dismissed")
+    else:
+        body = None
+    if body is not None:
         try:
             fetch(record_url(args.review_url), body=body)
         except (ValueError, OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
             print(f"jev-read: {exc}", file=sys.stderr)
             return 1
-        print(f"{record}  {resolution}")
+        print("  ".join(shown))
         return 0
     try:
         url = jev_url(args.review_url)

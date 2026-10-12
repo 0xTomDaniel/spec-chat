@@ -195,6 +195,37 @@ class JevReadTest(unittest.TestCase):
         self.assertEqual(out.returncode, 1)
         self.assertNotIn("Traceback", out.stderr)
 
+    def test_not_a_rule_posts_the_candidate_anchor_to_the_one_record_route(self):
+        # project-rules #agent-ask, #dismiss-rule, #acceptance-shape-ask-no
+        server = self.serve({"ok": True})
+        out = run(server.url + "/specs/b.spec.html?base=abc", "--not-a-rule", "acceptance-backup")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(out.stdout, "acceptance-backup  not-a-rule\n")
+        self.assertEqual(server.queries, [("/api/jev/offer", {"path": ["specs/b.spec.html"]},
+                                           {"dismiss": "rule", "anchor": "acceptance-backup"})])
+
+    def test_not_for_spec_posts_the_rule_and_record_to_the_one_record_route(self):
+        # repair-specs #catch-up step 2, project-rules #dismiss
+        server = self.serve({"ok": True})
+        out = run(server.url + "/specs/b.spec.html?base=abc", "--not-for-spec", RULE, "r1")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(out.stdout, RULE + "  dismissed\n")
+        self.assertEqual(server.queries, [("/api/jev/offer", {"path": ["specs/b.spec.html"]},
+                                           {"dismiss": "here", "home": RULE, "record": "r1"})])
+
+    def test_refused_answer_fails_loudly(self):
+        # the server is the one check of an answer: a criterion not held as a candidate is refused
+        server = self.serve({"ok": False}, status=400)
+        out = run(server.url + "/specs/b.spec.html?base=abc", "--not-a-rule", "acceptance-x")
+        self.assertEqual(out.returncode, 1)
+        self.assertIn("HTTP 400", out.stderr)
+        self.assertEqual(out.stdout, "")
+
+    def test_one_answer_per_call(self):
+        out = run("http://127.0.0.1:9/specs/b.spec.html", "--not-a-rule", "a", "--resolve", "r1", "fixed")
+        self.assertEqual(out.returncode, 2)
+        self.assertIn("not allowed with", out.stderr)
+
     def test_server_error_fails_loudly(self):
         server = self.serve({"error": "invalid base"}, status=400)
         out = run(server.url + "/specs/b.spec.html?base=nope")
