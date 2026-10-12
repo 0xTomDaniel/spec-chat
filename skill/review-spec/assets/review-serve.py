@@ -1143,7 +1143,7 @@ listenHost();
 
     def _post_offer(self, query, body):
         """The one Jev record route: a rule card's Not for this spec or a candidate card's Not a project rule
-        (project-rules #dismiss), or an owner's resolution of an Important mark from the agent read
+        (project-rules #dismiss), a candidate catch-up passed over (repair-specs #catch-up-table), or an owner's resolution of an Important mark from the agent read
         (jev-suggestions #record-resolution)."""
         mount, target, _ = self._resolve_path(query.get("path", [""])[0], spec_only=True)
         if not mount:

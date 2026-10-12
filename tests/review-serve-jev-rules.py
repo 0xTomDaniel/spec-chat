@@ -725,6 +725,28 @@ class RulesTest(unittest.TestCase):
         service.accepted(self.mount(), self.b())
         self.assertEqual(len(self.ledger()), 2)
 
+    def test_catch_up_skip_records_the_candidate_ignored_and_proposes_it_again(self):
+        """repair-specs #catch-up-table, #acceptance-catch-up-skipped; project-rules #q-trace: catch-up passes one over."""
+        provider = self.candidate_spec()
+        service = self.service(provider)
+        item = self.candidates(self.read(service))[0]
+        alpha, b = self.mount("alpha"), self.b()
+        self.assertFalse(service.dismiss(alpha, b, "ignored", anchor="b-one"))  # no candidate: answered this feature
+        self.assertFalse(service.dismiss(alpha, b, "ignored", anchor="nope"))  # no such criterion
+        self.assertFalse(service.dismiss(self.mount(), b, "ignored", anchor="b-every"))  # no project
+        self.assertTrue(service.dismiss(alpha, b, "ignored", anchor="b-every"))
+        self.assertTrue(service.dismiss(alpha, b, "ignored", anchor="b-every"))  # a second run writes nothing new
+        self.assertEqual([(e["spec"], e["anchor"], e["kind"], e["outcome"], e["judgment"], e["by"], e["confirmed"])
+                          for e in self.ledger()],
+                         [("docs/specs/b.spec.html", "b-every", "candidate", "ignored", item["record"], "owner", False)])
+        # ignored settles nothing: the next catch-up proposes it again
+        self.assertEqual(len(self.candidates(self.read(service))), 1)
+        # a settled candidate is never ignored: not-a-rule stays the latest, so it is never proposed again
+        self.assertTrue(service.dismiss(alpha, b, "rule", anchor="b-every"))
+        self.assertFalse(service.dismiss(alpha, b, "ignored", anchor="b-every"))
+        self.assertEqual([e["outcome"] for e in self.ledger()], ["ignored", "not-a-rule"])
+        self.assertEqual(self.candidates(self.read(service)), [])
+
     def test_scope_eval_reports_precision_and_recall_against_candidate_outcomes(self):
         """project-rules #acceptance-scope-eval: each outcome joined to its scope record."""
         criteria = {"b-tp": ("Every feature logs its errors.", "every feature", "marked"),
@@ -822,6 +844,7 @@ class RulesTest(unittest.TestCase):
         rule = next(i for i in items if i["kind"] == "rule")
         self.assertEqual(call("/api/jev/offer" + page, {"dismiss": "here", "home": rule["home"]})[0], 400)  # no record
         self.assertEqual(call("/api/jev/offer" + page, {"dismiss": "rule", "anchor": "b-one"})[0], 400)  # no candidate
+        self.assertEqual(call("/api/jev/offer" + page, {"dismiss": "ignored", "anchor": "b-one"})[0], 400)  # no candidate
         self.assertEqual(call("/api/jev/offer" + page, {"offer": "dismissed"})[0], 400)  # no offers
         self.assertEqual(call("/api/jev/offer" + page, {"confirm": True, "rule": ONBOARDING})[0], 400)  # no Confirm rule
         self.assertEqual(call("/api/jev/offer" + page, {"dismiss": "here", "home": rule["home"], "record": rule["record"]}),

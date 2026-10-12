@@ -2602,7 +2602,8 @@ class JevService:
         citing the rule, names the rule's home (repo spec path and anchor) and the note's record: dismissed for this
         repo spec path, unconfirmed until audited. Not a project rule (action rule) names the page spec's unmarked
         criterion at anchor that Jev reads as every feature: not-a-rule citing its scope record, a confirmed label.
-        False when the action is neither or names what is not held here: the one check of an answer."""
+        A candidate catch-up passes over (action ignored, repair-specs #catch-up-table) is the owner's ignored citing
+        its scope record, unconfirmed, settling nothing; a settled candidate is never ignored. False when the action is neither or names what is not held here: the one check of an answer."""
         project = mount.get("project")
         seam = self._seam_for(mount)
         if not project or not isinstance(action, str) or "scope" not in seam.question_sets:
@@ -2615,7 +2616,7 @@ class JevService:
             seam.ledger.append({"project": str(project), "spec": rel, "anchor": anchor if isinstance(anchor, str) else None,
                                 "kind": "rule", "target": home, "outcome": "dismissed", "judgment": record_id, "by": "human"})
             return True
-        if action != "rule" or not isinstance(anchor, str):
+        if action not in ("rule", IGNORED) or not isinstance(anchor, str):
             return False
         try:
             current = Path(target).read_bytes()
@@ -2626,6 +2627,12 @@ class JevService:
         record = seam.cached(scope) if scope else None
         if _confident_label(record) != RULE_SCOPE:
             return False
+        if action == IGNORED:
+            if self._settled(seam, project, scope):
+                return False
+            seam.ledger.append({**self._candidate_where(project, scope), "outcome": IGNORED,
+                                "judgment": record["record_id"], "by": "owner"})
+            return True
         seam.ledger.append({**self._candidate_where(project, scope), "outcome": NOT_A_RULE,
                             "judgment": record["record_id"], "by": "human"})
         return True

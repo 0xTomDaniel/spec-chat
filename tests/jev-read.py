@@ -204,6 +204,15 @@ class JevReadTest(unittest.TestCase):
         self.assertEqual(server.queries, [("/api/jev/offer", {"path": ["specs/b.spec.html"]},
                                            {"dismiss": "rule", "anchor": "acceptance-backup"})])
 
+    def test_ignored_posts_the_skipped_candidate_anchor_to_the_one_record_route(self):
+        # repair-specs #catch-up-table: a candidate skipped in catch-up is ignored in the warning ledger
+        server = self.serve({"ok": True})
+        out = run(server.url + "/specs/b.spec.html?base=abc", "--ignored", "acceptance-backup")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(out.stdout, "acceptance-backup  ignored\n")
+        self.assertEqual(server.queries, [("/api/jev/offer", {"path": ["specs/b.spec.html"]},
+                                           {"dismiss": "ignored", "anchor": "acceptance-backup"})])
+
     def test_not_for_spec_posts_the_rule_and_record_to_the_one_record_route(self):
         # repair-specs #catch-up step 2, project-rules #dismiss
         server = self.serve({"ok": True})

@@ -158,7 +158,7 @@ Then present the proposals in two steps, one line per proposal, and let the huma
 
 | Step | Proposes | The human settles each as | Recorded |
 | --- | --- | --- | --- |
-| 1. Candidates | Each candidates entry whose path is the spec read: an unmarked criterion Jev reads as applying to every feature | Mark it with a short name; Not a project rule; or skip | Mark: add `data-project-rule="<short name>"` to the criterion and commit. Not a project rule: `--not-a-rule <anchor>`. Skip: nothing; it is proposed again next run |
+| 1. Candidates | Each candidates entry whose path is the spec read: an unmarked criterion Jev reads as applying to every feature | Mark it with a short name; Not a project rule; or skip | Mark: add `data-project-rule="<short name>"` to the criterion and commit. Not a project rule: `--not-a-rule <anchor>`. Skip: `--ignored <anchor>`; it is proposed again next run |
 | 2. Misses | Each `rule` important line, one per spec and rule | Cover it; add a reason line; or Not for this spec | Cover: rewrite the spec's criteria to satisfy the rule using its own wording, and commit. Reason line: add it to the spec, commit, and `--resolve <record> reason --reason '<reason>'`. Not for this spec: `--not-for-spec <home> <record>`, home and record from `--anchor` |
 
 Step 2 runs after step 1: read every spec again once step 1 is settled and committed, so a rule the human just marked is checked in the same run.

@@ -12,7 +12,9 @@ through the one Jev record route.
 `--not-a-rule <anchor>` records the human's no to the shaping ask on a candidate of the link's spec: Not a project rule,
 not-a-rule in the warning ledger (project-rules #agent-ask, #dismiss-rule). `--not-for-spec <home> <record>` records
 Not for this spec on a rule miss the read showed, its home and record from `--anchor`: dismissed for the link's spec
-(project-rules #dismiss, repair-specs #catch-up). Both go through the same record route; the server checks each answer.
+(project-rules #dismiss, repair-specs #catch-up). `--ignored <anchor>` records a candidate the human skipped in
+catch-up: ignored in the warning ledger, settling nothing, so it is proposed again (repair-specs #catch-up-table).
+All go through the same record route; the server checks each answer.
 """
 
 from __future__ import annotations
@@ -129,6 +131,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="record an Important mark's resolution: fixed, reason, thread, or dismissed (the server checks it)")
     answer.add_argument("--not-a-rule", metavar="ANCHOR",
                         help="record Not a project rule for the candidate at this anchor of the link's spec")
+    answer.add_argument("--ignored", metavar="ANCHOR",
+                        help="record a candidate at this anchor of the link's spec skipped in catch-up: ignored")
     answer.add_argument("--not-for-spec", nargs=2, metavar=("HOME", "RECORD"),
                         help="record Not for this spec for a rule miss: its home and record, from --anchor")
     parser.add_argument("--reason", help="the reason; a dismissal needs one")
@@ -138,6 +142,8 @@ def main(argv: list[str] | None = None) -> int:
         body, shown = {"resolve": resolution, "record": record, **({"reason": args.reason} if args.reason else {})}, (record, resolution)
     elif args.not_a_rule:
         body, shown = {"dismiss": "rule", "anchor": args.not_a_rule}, (args.not_a_rule, "not-a-rule")
+    elif args.ignored:
+        body, shown = {"dismiss": "ignored", "anchor": args.ignored}, (args.ignored, "ignored")
     elif args.not_for_spec:
         home, record = args.not_for_spec
         body, shown = {"dismiss": "here", "home": home, "record": record}, (home, "dismissed")
