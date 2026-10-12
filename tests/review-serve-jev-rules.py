@@ -94,7 +94,12 @@ class FakeProvider:
         elif kind in ("about", "contradicts", "oversteps", "overlaps"):
             target = state.get("target", (state.get("second") or {}).get("text"))
             wanted = self.draft.get(target)
-            label, confidence = ("yes" if wanted and kind in ("about", wanted) else "no"), 0.95
+            if wanted == "partial-overlap":  # overlaps below show_cutoff: the verifier answers partial (#level-partial)
+                wanted = "overlaps"
+                confidence = 0.8 if kind == "overlaps" else 0.95
+            else:
+                confidence = 0.95
+            label = "yes" if wanted and kind in ("about", wanted) else "no"
         else:
             label, confidence = "unrelated", 0.95
         return {"answers": {kind: {"choice": label, "confidence": confidence}}}
@@ -111,6 +116,9 @@ class FakeProvider:
             if isinstance(answer, BaseException):
                 raise answer
             return {"model": payload["model"], "choices": [{"message": {"content": json.dumps({"name": answer})}}]}
+        if kind == "overlaps":  # the overlaps verifier: partial, quoting both clauses
+            answer = {"answer": "partial", "clause_span": state["clause"], "target_span": state["target"]}
+            return {"model": payload["model"], "choices": [{"message": {"content": json.dumps(answer)}}]}
         answer = self.general.get(("scope" if kind == "scope" else "rule", state.get("criterion", state.get("rule"))))
         if isinstance(answer, list):  # one answer per call, the last repeating
             answer = answer.pop(0) if len(answer) > 1 else answer[0]
@@ -882,10 +890,10 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(result["rules"], ["specs/onboarding.spec.html#acceptance-onboarding"])
         self.assertEqual([i["target"] for i in self.candidates(result)], ["specs/e.spec.html#e-rule"])
 
-    def cites(self, approve=(ONBOARDING,), state="state"):
+    def cites(self, approve=(ONBOARDING,), state="state", draft="contradicts"):
         self.seed()
         provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("missed", 0.95)},
-                                draft={ONBOARDING: "contradicts"})
+                                draft={ONBOARDING: draft})
         service = self.service(provider, state, approve=approve)
         return service, provider
 
@@ -907,6 +915,14 @@ class RulesTest(unittest.TestCase):
         plain, _ = self.cites(approve=(), state="plain")
         self.assertTrue(self.marks(self.read(plain)))
         self.assertTrue(all("rule" not in m for m in self.marks(self.read(plain))))
+
+    def test_partial_overlap_on_a_confirmed_rule_cites_no_rule(self):
+        # project-rules #card-cites lists Contradicts, Oversteps, Overlaps only; jev-suggestions #level-partial
+        service, _ = self.cites(draft="partial-overlap", state="partial")
+        marks = self.marks(self.read(service))
+        self.assertEqual({(m["label"], m["target"]) for m in marks},
+                         {("partial-overlap", "specs/onboarding.spec.html#acceptance-onboarding")})
+        self.assertTrue(all("rule" not in m for m in marks))
 
     def test_not_for_this_spec_on_a_cited_mark_removes_it_and_not_a_project_rule_leaves_a_plain_note(self):
         # project-rules #card-cites-reject

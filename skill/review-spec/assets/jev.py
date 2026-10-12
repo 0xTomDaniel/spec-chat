@@ -3290,7 +3290,9 @@ class JevService:
                 item["level"], item["agent_level"] = MARK_LEVELS[label]["human"], MARK_LEVELS[label]["agent"]
             # A draft-check mark whose other clause is a confirmed rule is a rule card (project-rules #card-cites):
             # gone after Not for this spec on this spec path, a plain note after Not a project rule (#card-cites-reject).
-            cited = cites.get(str(target_anchor)) if question["kind"] == "corpus" and state == "label" else None
+            # A Partial overlap never cites a rule: it is no card-cites label and has no button (#level-partial).
+            cited = (cites.get(str(target_anchor))
+                     if question["kind"] == "corpus" and state == "label" and label != "partial-overlap" else None)
             if cited:
                 if seam.store.decided(DECISIONS["here"], mount.get("project"), cited["text"], facts and facts["rel"]):
                     continue

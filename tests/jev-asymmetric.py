@@ -285,6 +285,10 @@ class VerifyLevelsTest(unittest.TestCase):
         """A cross-lane overlaps answer, partial or same, is no finding (#cross-lane-finding)."""
         self.assertNotIn("partial-overlap", jev.LANE_FINDINGS)
 
+    def test_overlaps_levels_are_a_new_version(self):
+        """#qset-data, #cache-key: adding verify levels is a new set version, so held v5 Overlaps records miss."""
+        self.assertEqual(SETS["overlaps"].version, 6)
+
     def test_invalid_verify_levels_rejected(self):
         for verify in ({}, {"levels": {}}, {"levels": {"a": {"shows": "maybe"}}}, {"levels": {"a": "x"}}, "x"):
             with self.subTest(verify=verify):
