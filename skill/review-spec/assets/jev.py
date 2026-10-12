@@ -167,6 +167,7 @@ class QuestionSet:
         self.threshold = threshold
         self.show_cutoff = show_cutoff
         self.verify_cutoff = verify_cutoff
+        self.verify: dict[str, Any] | None = None  # the set's own verifier levels (#verifier-role); None asks yes or no
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any], fallback_id: str) -> "QuestionSet":
@@ -191,8 +192,16 @@ class QuestionSet:
             verify_cutoff = float(verify_cutoff)
             if not math.isfinite(verify_cutoff) or not 0 <= verify_cutoff <= 1:
                 raise ValueError("invalid verify_cutoff")
-        return cls(identifier, version, str(raw.get("instructions", "")), labels, threshold, fallback,
+        qset = cls(identifier, version, str(raw.get("instructions", "")), labels, threshold, fallback,
                    show_cutoff, verify_cutoff)
+        verify = raw.get("verify")
+        if verify is not None:
+            levels = verify.get("levels") if isinstance(verify, Mapping) else None
+            if not isinstance(levels, Mapping) or not levels or any(
+                    not isinstance(v, Mapping) or v.get("shows") not in ("yes", "partial", "no") for v in levels.values()):
+                raise ValueError("invalid verify")
+            qset.verify = {"rule": str(verify.get("rule", "")), "levels": {str(k): dict(v) for k, v in levels.items()}}
+        return qset
 
     def criteria(self) -> dict[str, str]:
         if isinstance(self.labels, Mapping):
@@ -939,8 +948,14 @@ class JevSeam:
             verify_input["target_context"] = state["target_context"]
         system = {"question": qset.instructions, "examples": qset.examples(),
                   "verify": "If yes, quote the exact span from the clause and the target that conflict. If no, leave spans empty."}
+        answers = ["yes", "no"]
+        if qset.verify:  # a set's own verify levels replace yes and no (#verifier-role); sets without one are unchanged
+            levels = qset.verify["levels"]
+            system = {"question": qset.instructions, "labels": qset.criteria(), "examples": qset.examples(),
+                      "verify": qset.verify["rule"], "levels": {k: str(v.get("description", "")) for k, v in levels.items()}}
+            answers = list(levels)
         schema = {"type": "object",
-                  "properties": {"answer": {"type": "string", "enum": ["yes", "no"]},
+                  "properties": {"answer": {"type": "string", "enum": answers},
                                  "clause_span": {"type": "string"}, "target_span": {"type": "string"}},
                   "required": ["answer", "clause_span", "target_span"], "additionalProperties": False}
         return {"model": model,
@@ -966,7 +981,8 @@ class JevSeam:
             said = result.get("answer")
             clause_span = (result.get("clause_span") or "").strip()
             target_span = (result.get("target_span") or "").strip()
-            label = "yes" if said == "yes" and clause_span and target_span else "no"
+            shows = qset.verify["levels"].get(said, {}).get("shows") if qset.verify else said
+            label = "yes" if shows in ("yes", "partial") and clause_span and target_span else "no"
         except Exception as exc:
             failure = exc
         if label is None:
@@ -977,6 +993,8 @@ class JevSeam:
         if label == "yes":
             answer["clause_span"] = clause_span
             answer["target_span"] = target_span
+            if shows == "partial":
+                answer["level"] = "partial"  # shows as a Partial overlap note (#verifier-record, #level-partial)
         # The verifier ran (#record-verifier): its answer and quoted spans, as it gave them.
         verifier = {"ran": True, "answer": said, "spans": {"clause": clause_span, "target": target_span}}
         return self._record(key, kind, qset, sources, revision, answer,
@@ -993,11 +1011,12 @@ class JevSeam:
 
 
 def _chain_label(record: Mapping[str, Any]) -> str | None:
-    """The label the chain walks on: a silent-no is a no for chain purposes (#asymmetric)."""
+    """The label the chain walks on: a silent-no is a no for chain purposes (#asymmetric); a partial verifier
+    level walks as partial, which only the overlaps step maps (#corpus-labels)."""
     if record.get("outcome") == SILENT_NO:
         return "no"
     answer = record.get("answer")
-    return answer.get("label") if isinstance(answer, Mapping) else None
+    return answer.get("level") or answer.get("label") if isinstance(answer, Mapping) else None
 
 
 def chain_result(chain: list[Mapping[str, Any]], get: Callable[[Mapping[str, Any]], Mapping[str, Any] | None]) -> dict[str, Any]:
@@ -1496,7 +1515,7 @@ def draft_check(anchor: str, before: str, after: str, target: str, target_text: 
         steps[1]["then"]["no"] = None
     else:
         steps += [_step(_question("oversteps", anchor, pair, path, base, revision, target), yes="oversteps"),
-                  _step(_question("overlaps", anchor, pair, path, base, revision, target), yes="overlaps", no=None)]
+                  _step(_question("overlaps", anchor, pair, path, base, revision, target), yes="overlaps", partial="partial-overlap", no=None)]
     sources = [path + "#" + anchor, target]
     for step in steps:
         step["sources"] = sources
@@ -3249,7 +3268,9 @@ class JevService:
                 item["level"], item["agent_level"] = MARK_LEVELS[label]["human"], MARK_LEVELS[label]["agent"]
             # A draft-check mark whose other clause is a confirmed rule is a rule card (project-rules #card-cites):
             # gone after Not for this spec on this spec path, a plain note after Not a project rule (#card-cites-reject).
-            cited = cites.get(str(target_anchor)) if question["kind"] == "corpus" and state == "label" else None
+            # A Partial overlap never cites a rule: it is no card-cites label and has no button (#level-partial).
+            cited = (cites.get(str(target_anchor))
+                     if question["kind"] == "corpus" and state == "label" and label != "partial-overlap" else None)
             if cited:
                 if self._decided(seam, "dismissed", mount.get("project"), cited["text"], facts and facts["rel"]):
                     continue

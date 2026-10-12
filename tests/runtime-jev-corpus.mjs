@@ -18,6 +18,7 @@ const { corpusTargetLink } = Function(runtime.slice(targetStart, targetEnd) + ';
 assert.deepEqual(corpusFlags([
   { kind: 'corpus', id: 'draft', state: 'label', label: 'contradicts', target: 'non-goal-text', level: 'important' },
   { kind: 'corpus', id: 'draft', state: 'label', label: 'overlaps', target: 'compared-range#bar-flow' },
+  { kind: 'corpus', id: 'part', state: 'label', label: 'partial-overlap', target: 'other#flow' },
   { kind: 'corpus', id: 'mixed', state: 'label', label: 'oversteps', target: 'other#flow', level: 'warning' },
   { kind: 'corpus', id: 'quiet', state: 'none', label: null, target: null },
   { kind: 'corpus', id: 'draft', state: 'label', label: 'unrelated', target: 'other' },
@@ -26,6 +27,7 @@ assert.deepEqual(corpusFlags([
 ]), [
   { anchor: 'draft', state: 'label', label: 'Contradicts', level: 'important', target: 'non-goal-text', record: null, rule: null },
   { anchor: 'draft', state: 'label', label: 'Overlaps', level: null, target: 'compared-range#bar-flow', record: null, rule: null },
+  { anchor: 'part', state: 'label', label: 'Partial overlap', level: null, target: 'other#flow', record: null, rule: null },
   { anchor: 'mixed', state: 'label', label: 'Oversteps', level: 'warning', target: 'other#flow', record: null, rule: null },
   { anchor: 'draft', state: 'unavailable', label: 'Jev unavailable', target: null },
 ]);
@@ -36,6 +38,7 @@ assert.deepEqual(corpusTargetLink('compared-range#bar-flow'), {
 assert.equal(corpusTargetLink(''), null);
 assert.match(runtime, /Contradicts/);
 assert.match(runtime, /Overlaps/);
+assert.match(runtime, /Partial overlap/);
 assert.match(runtime, /Oversteps/);
 
 console.log('runtime Jev corpus tests passed');

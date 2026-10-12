@@ -115,6 +115,7 @@ const suggestionItems = [
   item('corpus', 'rule', 'label', 'contradicts', 'non-goal-text'),
   item('corpus', 'crowded', 'label', 'overlaps', 'other#flow'),
   item('corpus', 'overstep', 'label', 'oversteps', 'other#scope'),
+  item('corpus', 'row', 'label', 'partial-overlap', 'other#part'),
   item('coverage', 'crowded::criterion-gap', 'label', 'unrelated'),
   item('coverage', 'story-gap::criterion-gap', 'label', 'unrelated'),
   item('coverage', 'story-down::criterion-down', 'unavailable'),
@@ -286,7 +287,9 @@ assert.deepEqual(pop().querySelector('.hx-jev-pop-batch').children.map(c => [c.c
   [['hx-btn', 'Reconcile all (1)'], ['hx-jev-pop-more', '+1 warning']]);
 assert.deepEqual(noteButtons('crowded'), [['Overlaps other#flow', []], ['No criterion covers this', ['Ask for a criterion', 'Ask about all gaps (3)']], ['Behavior', ['Comment on this change']]]);
 assert.deepEqual(noteButtons('criterion-gap'), [['No story backs this', ['Ask for a story', 'Ask about all gaps (3)']]]);
-assert.deepEqual(noteButtons('row'), [['Behavior', ['Comment on this change']]]);
+// #acceptance-verifier-partial, #note-none: Partial overlap links its candidate at a quiet grey dot, with no button.
+assert.deepEqual(noteButtons('row'), [['Partial overlap other#part', []], ['Behavior', ['Comment on this change']]]);
+assert.equal(pop().querySelector('a').href, '/other#part');
 for (const a of ['typo', 'type-down', 'story-down', 'criterion-down']) {
   assert.ok(noteButtons(a).every(([, buttons]) => buttons.length === 0), a + ' shows no button');
 }
