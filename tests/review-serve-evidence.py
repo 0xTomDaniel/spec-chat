@@ -205,6 +205,7 @@ class EvidenceRouteTest(unittest.TestCase):
             self.assertEqual(self.evidence(url), {"criteria": None, "levels": serve.MARK_LEVELS})
 
     def test_provider_plugs_and_unplugs_live(self):
+        """review-service #acceptance-provider-no-restart: one server process answers before, while, and after plugged."""
         service = self.fake(body={"criteria": {"ok": entry()}})
         url, _, _ = self.single(page(ok="Shows ok."))
         with self.plugged(service.url):

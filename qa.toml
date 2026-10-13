@@ -45,17 +45,21 @@ touch = true
 # the "Jev notes" button beside the Acceptance criteria heading; opening it shows the rule card
 # "Every change ships its onboarding". Every collection except rule-candidate is the same
 # project, so its report spec is another spec of the project missing the same rule.
-# - miss, dismiss, dismiss-no-unrule, ask: open the rule marker beside Acceptance criteria to
-#   show the card first.
-# - dismiss: then click Not for this spec, then reload the page (browser reload). The edit and
+# - miss, dismiss, dismiss-reload, dismiss-head, dismiss-other, dismiss-no-unrule, ask: open the
+#   rule marker beside Acceptance criteria to show the card first.
+# - dismiss: then click Not for this spec; capture the card closing, with no reload.
+# - dismiss-reload: then click Not for this spec, then reload the page (browser reload).
+# - dismiss-head: then click Not for this spec, then reload the page (browser reload). The edit and
 #   commit is the agent's on disk, not a browser step: the When is done after the reload.
 # - advice: the page is the report spec with no open TBD (its TBDs are later), so the hand-off
 #   button reads Accept spec, and the missed note is the rule marker beside Acceptance
 #   criteria. Click Accept spec; nothing is typed.
-# - candidates, mark-as-rule, not-a-rule: the page is rule-candidate's onboarding spec, whose
-#   onboarding criterion is unmarked; open the marker beside that criterion to show the
-#   candidate card first. not-a-rule: click Not a project rule, then reload the page (browser
-#   reload); the rewording and commit is the agent's on disk, not a browser step.
+# - candidates, mark-as-rule, not-a-rule, not-a-rule-reworded: the page is rule-candidate's
+#   onboarding spec, whose onboarding criterion is unmarked; open the marker beside that
+#   criterion to show the candidate card first.
+# - not-a-rule: then click Not a project rule; capture the card closing, with no reload.
+# - not-a-rule-reworded: then click Not a project rule, then reload the page (browser reload); the
+#   rewording and commit is the agent's on disk, not a browser step; then reload again.
 #
 # Each criterion below starts on its own clean copy of the fixture repo (reset.sh
 # collections): a story resets once, and earlier criteria leave drafts and hand-offs
@@ -65,6 +69,8 @@ path = "{review}/rule-candidate/docs/specs/onboarding.spec.html"
 [nav.acceptance-mark-as-rule]
 path = "{review}/rule-candidate/docs/specs/onboarding.spec.html"
 [nav.acceptance-not-a-rule]
+path = "{review}/rule-candidate/docs/specs/onboarding.spec.html"
+[nav.acceptance-not-a-rule-reworded]
 path = "{review}/rule-candidate/docs/specs/onboarding.spec.html"
 [nav.acceptance-advice]
 path = "{review}/advice/docs/specs/report.spec.html"

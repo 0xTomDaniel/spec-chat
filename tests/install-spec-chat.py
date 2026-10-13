@@ -291,5 +291,21 @@ class InstallSpecChatTest(unittest.TestCase):
         self.assertIn('data-project-rule="', section)
 
 
+class CiTest(unittest.TestCase):
+    def test_ci_runs_the_full_suite_alone_with_one_contract_test_per_provider(self):
+        """review-service #acceptance-ci-alone: every push and pull request runs every test, this fresh-install test
+        among them, under a fresh HOME with no XDG state or config, so no other box tool and no provider file; each
+        provider has its file present / absent contract test."""
+        workflow = (ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
+        self.assertIn("on: [push, pull_request]", workflow)
+        self.assertIn("for f in tests/*.py tests/*.sh tests/*.mjs; do", workflow)
+        self.assertIn('export HOME="$RUNNER_TEMP/home"', workflow)
+        self.assertIn("unset XDG_STATE_HOME XDG_CONFIG_HOME", workflow)
+        for test, name in (("review-serve-evidence.py", "def test_provider_plugs_and_unplugs_live("),
+                           ("review-serve-evidence.py", "def test_jev_key_is_read_at_each_use_and_only_from_a_private_file("),
+                           ("review-host-wake.py", "def test_without_provider_nothing_is_sent_and_plugging_needs_no_restart(")):
+            self.assertIn(name, (ROOT / "tests" / test).read_text(encoding="utf-8"), test)
+
+
 if __name__ == "__main__":
     unittest.main()

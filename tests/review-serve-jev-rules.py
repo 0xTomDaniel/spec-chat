@@ -263,7 +263,8 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(provider.asked("rule"), [])
 
     def test_unmarked_or_deleted_rule_shows_no_mark_on_next_load(self):
-        # project-rules #acceptance-reword, #acceptance-reword-delete, #declare-change
+        # project-rules #acceptance-reword, #acceptance-reword-delete, #acceptance-reword-all, #acceptance-reword-delete-all,
+        # #declare-change
         self.seed()
         provider = FakeProvider(rule={ONBOARDING: ("missed", 0.95)})
         service = self.service(provider)
@@ -281,7 +282,7 @@ class RulesTest(unittest.TestCase):
         self.assertEqual([i["text"] for i in self.missed(self.read(service))], [reworded])
 
     def test_marking_a_missed_criterion_shows_its_rule_card(self):
-        # project-rules #acceptance-mark-new: an unmarked every-feature criterion becomes a rule once marked
+        # project-rules #acceptance-mark-new, #acceptance-mark-new-checked: an unmarked every-feature criterion becomes a rule once marked
         self.seed(marked=False)
         provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("missed", 0.95)})
         service = self.service(provider)
@@ -315,7 +316,7 @@ class RulesTest(unittest.TestCase):
                 self.assertNotIn("unsure", self.rules(result)[0])
 
     def test_unsure_goes_once_to_general_llm_which_decides_and_is_reused(self):
-        # project-rules #acceptance-fallback-miss, #q-fallback
+        # project-rules #acceptance-fallback-miss, #acceptance-fallback-miss-recorded, #q-fallback
         self.seed()
         provider = FakeProvider(rule={ONBOARDING: ("covered", 0.2)}, general={("rule", ONBOARDING): "missed"})
         service = self.service(provider)
@@ -518,7 +519,7 @@ class RulesTest(unittest.TestCase):
                                   ("story-b", "crit-a"): "unrelated", ("story-b", "crit-b"): "verifies"})
 
     def test_rules_come_only_from_the_page_project(self):
-        """project-rules #proof own-project, #acceptance-own-project: mounts of two projects, each marking a rule;
+        """project-rules #proof own-project, #acceptance-own-project, #acceptance-own-project-read: mounts of two projects, each marking a rule;
         /api/jev for a spec of the first lists only the first project's rule."""
         OTHER_RULE = "Every feature ships with its audit log entry."
         self.seed()
@@ -565,7 +566,8 @@ class RulesTest(unittest.TestCase):
         return str(self.specs / "b.spec.html")
 
     def test_not_for_this_spec_hides_the_rule_on_that_spec_path_for_good(self):
-        """project-rules #proof dismiss, #acceptance-dismiss, #acceptance-dismiss-recorded, #dismiss-where."""
+        """project-rules #proof dismiss, #acceptance-dismiss, #acceptance-dismiss-read, #acceptance-dismiss-recorded,
+        #dismiss-where."""
         self.seed()
         self.write("c.spec.html", spec(("c-one", "Another feature criterion."), body="C body."))
         provider = FakeProvider(rule={ONBOARDING: ("missed", 0.95)})
@@ -626,7 +628,7 @@ class RulesTest(unittest.TestCase):
         return FakeProvider(scope={criterion: (label, 0.95)}, rule={ONBOARDING: ("covered", 0.95), criterion: ("missed", 0.95)})
 
     def test_first_failing_candidate_until_settled(self):
-        """project-rules #proof candidate, #acceptance-candidates, #q-candidate: a candidate is flagged, never checked."""
+        """project-rules #proof candidate, #acceptance-candidates, #acceptance-candidates-unchecked, #q-candidate: a candidate is flagged, never checked."""
         provider = self.candidate_spec()
         service = self.service(provider)
         result = self.read(service)
@@ -650,7 +652,8 @@ class RulesTest(unittest.TestCase):
                          [(None, "specs/b.spec.html#b-every")])
 
     def test_not_a_project_rule_settles_the_criterion_through_rewording(self):
-        """project-rules #proof candidate, #acceptance-not-a-rule, #acceptance-not-a-rule-recorded, #dismiss-candidate."""
+        """project-rules #proof candidate, #acceptance-not-a-rule, #acceptance-not-a-rule-read, #acceptance-not-a-rule-recorded,
+        #dismiss-candidate."""
         provider = self.candidate_spec()
         service = self.service(provider)
         item = self.candidates(self.read(service))[0]

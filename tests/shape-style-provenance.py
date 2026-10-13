@@ -1,3 +1,4 @@
+import ast
 import shutil
 import subprocess
 import sys
@@ -156,6 +157,7 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
         self.assertIn("no explicit data-user-story", result.stderr)
 
     def test_rejects_user_facing_story_without_binary_declaration(self):
+        """prompt-first-shaping #acceptance-guided-declared."""
         base = self.empty_base()
         self.write_spec(body='<p data-user-story data-anchor="story" data-user-facing="true">Story</p>')
         shutil.copy2(FALLBACK, self.style)
@@ -164,6 +166,44 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("needs data-guided-journey=yes|no", result.stderr)
+
+    def test_rejects_yes_declaration_without_exactly_one_step_link(self):
+        """prompt-first-shaping #acceptance-guided-step."""
+        base = self.empty_base()
+        (self.spec.parent / "guided.spec.html").write_text('<section data-anchor="guided-step">Step</section>\n')
+        link = '<a data-guided-journey-step href="guided.spec.html#guided-step">Guided step</a>'
+        shutil.copy2(FALLBACK, self.style)
+        for links in ("", link + link):
+            self.write_spec(body='<p data-user-story data-anchor="story" data-user-facing="true" data-guided-journey="yes" data-guided-journey-mode="passive">Story ' + links + '</p>')
+            result = self.validate(base)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("yes declaration on story story needs exactly one guided-journey step link", result.stderr)
+
+    def test_rejects_yes_declaration_without_passive_or_required_mode(self):
+        """prompt-first-shaping #acceptance-guided-mode."""
+        base = self.empty_base()
+        (self.spec.parent / "guided.spec.html").write_text('<section data-anchor="guided-step">Step</section>\n')
+        self.write_spec(body='<p data-user-story data-anchor="story" data-user-facing="true" data-guided-journey="yes">Story <a data-guided-journey-step href="guided.spec.html#guided-step">Guided step</a></p>')
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("yes declaration on story story needs passive|required mode", result.stderr)
+
+    def test_validation_reports_alone_and_never_waits_on_jev(self):
+        """project-rules #acceptance-light-validate: with no review service, validation reports its result; the validator
+        imports no Jev, network, or service module."""
+        base = self.empty_base()
+        self.write_spec()
+        shutil.copy2(FALLBACK, self.style)
+        result = self.validate(base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("stories=valid", result.stdout)
+        tree = ast.parse(VALIDATOR.read_text(encoding="utf-8"))
+        modules = {alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names}
+        modules |= {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
+        self.assertFalse({m for m in modules if m.split(".")[0] in {"socket", "http", "importlib", "asyncio"}
+                          or m == "urllib.request"}, modules)
+        self.assertNotIn("jev", VALIDATOR.read_text(encoding="utf-8").lower())
 
     def test_accepts_passive_extension_with_resolved_step_link(self):
         base = self.empty_base()
@@ -342,6 +382,7 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
         self.assertIn("needs observable scope", result.stderr)
 
     def test_rejects_criterion_without_story_claim(self):
+        """prompt-first-shaping #acceptance-trace-criterion: no story named."""
         base = self.empty_base()
         self.write_shaped_spec(acceptance_extra="")
         shutil.copy2(FALLBACK, self.style)
@@ -350,6 +391,7 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
         self.assertIn("acceptance-rule needs data-story", result.stderr)
 
     def test_rejects_criterion_naming_unknown_story(self):
+        """prompt-first-shaping #acceptance-trace-criterion: the named story is not this spec's."""
         base = self.empty_base()
         self.write_shaped_spec(acceptance_extra=' data-story="story missing"')
         shutil.copy2(FALLBACK, self.style)
@@ -358,6 +400,7 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
         self.assertIn("names unknown story missing", result.stderr)
 
     def test_rejects_story_no_criterion_names(self):
+        """prompt-first-shaping #acceptance-trace-story."""
         base = self.empty_base()
         extra = '<p data-user-story data-anchor="orphan" data-user-facing="false">Orphan</p>'
         self.write_shaped_spec(story=DEFAULT_STORY + extra)

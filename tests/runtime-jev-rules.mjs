@@ -164,7 +164,7 @@ const cardButtons = card.querySelectorAll('button');
 assert.deepEqual(cardButtons.map(b => b.className), ['hx-rule-card-reject', 'hx-btn pri'],
   'the reject is a text-link button, the action is the primary button');
 assert.equal(note.querySelector('.hx-jev-pop-sentence'), null, 'a card shows no hover sentence of its own');
-// #acceptance-ask: the composer opens at the Acceptance criteria section with the fixed draft; nothing is written.
+// #acceptance-ask, #acceptance-ask-unsent: the composer opens at the Acceptance criteria section with the fixed draft; nothing is written.
 cardButtons[1].fire('click');
 assert.deepEqual(composed.pop(), ['acceptance', null, null,
   'Cover ' + target + ' with a criterion, or add one line saying why it does not apply.']);
@@ -296,7 +296,7 @@ assert.deepEqual([candidateCard.querySelector('.hx-rule-card-label').textContent
 assert.equal(candidateCard.getAttribute('aria-label'), 'Possible project rule: #story');
 assert.deepEqual(buttons(candidateCard), ['Not a project rule', 'Mark as rule']);
 assert.deepEqual(candidateCard.querySelectorAll('button').map(b => b.className), ['hx-rule-card-reject', 'hx-btn pri']);
-// #acceptance-mark-as-rule: the composer opens at the criterion with the draft; nothing is written.
+// #acceptance-mark-as-rule, #acceptance-mark-as-rule-unsent: the composer opens at the criterion with the draft; nothing is written.
 candidateCard.querySelectorAll('button')[1].fire('click');
 assert.deepEqual(composed.pop(), ['story', null, null, 'Mark this criterion as a project rule with a short name.']);
 assert.equal(posted.length, 0);

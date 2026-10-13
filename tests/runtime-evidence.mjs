@@ -200,7 +200,8 @@ for (const a of ['reworded', 'failed-reworded', 'material', 'unsure', 'uncommitt
   assert.deepEqual(diffOf(a), [['SPAN', 'Criterion'], ['DEL', 'old text'], ['INS', a]], a);
 for (const a of ['passed', 'failed', 'lane', 'none']) assert.equal(diffOf(a), null, a);
 assert.deepEqual(evidenceDiff('a b c d', 'a x c d e').map(p => p.op + ':' + p.text), ['same:a', 'del:b', 'ins:x', 'same:c d', 'ins:e']);
-// Only QA stale gets Ask for re-proof; it drafts the fixed text in the composer and writes nothing.
+// Only QA stale gets Ask for re-proof; it drafts the fixed text in the composer and writes nothing
+// (#acceptance-reproof-draft-unsent, #acceptance-reproof-all-unsent).
 const actionsOf = anchor => row(anchor).querySelectorAll('.hx-btn').map(b => b.textContent);
 for (const a of ['passed', 'failed', 'reworded', 'failed-reworded', 'lane', 'plain', 'none']) assert.deepEqual(actionsOf(a), [], a);
 for (const a of ['material', 'unsure', 'uncommitted']) assert.deepEqual(actionsOf(a), ['Ask for re-proof', 'Re-proof all stale (3)'], a);

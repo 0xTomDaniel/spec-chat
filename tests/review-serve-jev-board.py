@@ -354,6 +354,7 @@ class BoardTest(unittest.TestCase):
         self.assertFalse(service._asking)
 
     def test_lane_items_on_both_specs_after_answers(self):
+        """jev-suggestions #acceptance-cross-lane-api: each spec's read holds both findings at agent level Important."""
         rows = self.cross_lane()
         service, provider = self.service(self.cross_answer)
         y = "ann2/docs/specs/y.spec.html"

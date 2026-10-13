@@ -103,6 +103,7 @@ class PlainDirectoryTest(unittest.TestCase):
         return server
 
     def test_plain_directory_serves_pages_and_event_spools(self):
+        """review-service #acceptance-local-server-alone: review-serve on a plain folder, no registry or box service."""
         self.assertNotEqual(subprocess.run(
             ("git", "-C", str(self.collection), "rev-parse", "--show-toplevel"),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
