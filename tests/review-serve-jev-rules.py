@@ -941,8 +941,8 @@ class RulesTest(unittest.TestCase):
         service2 = self.service(provider, state="state2")
         item = self.missed(self.read(service2))[0]
         self.assertTrue(service2.resolve(self.mount("alpha"), b, item["record"], "fixed"))
-        self.assertEqual((self.outcome(service2, item["record"])["outcome"], self.outcome(service2, item["record"])["by"]),
-                         ("fixed", "owner"))
+        outcome = self.outcome(service2, item["record"])
+        self.assertEqual((outcome["outcome"], outcome["by"], outcome["confirmed"]), ("fixed", "owner", False))
 
     def test_a_spec_fix_that_clears_the_mark_on_the_next_head_records_fixed_unconfirmed(self):
         # jev-suggestions #acceptance-resolution-fixed, #proof-resolution

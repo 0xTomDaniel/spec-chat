@@ -31,7 +31,7 @@ from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
 from urllib.request import urlopen
 
 try:
-    from jev import MARK_LEVELS, JevService, enumerate_served_specs, extract_anchors, mount_prefix as _mount_prefix
+    from jev import MARK_LEVELS, OWNER_RESOLUTIONS, JevService, enumerate_served_specs, extract_anchors, mount_prefix as _mount_prefix
 except ModuleNotFoundError:
     import importlib.util
     _jev_spec = importlib.util.spec_from_file_location("review_serve_jev", os.path.join(os.path.dirname(__file__), "jev.py"))
@@ -39,6 +39,7 @@ except ModuleNotFoundError:
     _jev_spec.loader.exec_module(_jev_module)
     JevService = _jev_module.JevService
     MARK_LEVELS = _jev_module.MARK_LEVELS
+    OWNER_RESOLUTIONS = _jev_module.OWNER_RESOLUTIONS
     enumerate_served_specs = _jev_module.enumerate_served_specs
     extract_anchors = _jev_module.extract_anchors
     _mount_prefix = _jev_module.mount_prefix
@@ -1167,8 +1168,8 @@ listenHost();
             except OSError:
                 return self._json({"error": "jev unavailable"}, 503)
             if not ok:
-                return self._json({"ok": False, "error": "refused: resolution is fixed, reason, or dismissed "
-                                   "with a reason, on a mark shown here not yet resolved"}, 400)
+                return self._json({"ok": False, "error": "refused: resolution is one of " + ", ".join(OWNER_RESOLUTIONS)
+                                   + " (dismissed with a reason), on a mark shown here not yet resolved"}, 400)
             return self._json({"ok": True})
         return self._json({"error": "body names dismiss or resolve"}, 400)
 
