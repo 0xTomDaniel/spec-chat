@@ -293,7 +293,7 @@ class VerifyLevelsTest(unittest.TestCase):
         for verify in ({}, {"levels": {}}, {"levels": {"a": {"shows": "maybe"}}}, {"levels": {"a": "x"}}, "x"):
             with self.subTest(verify=verify):
                 with self.assertRaises(ValueError):
-                    jev.QuestionSet.from_mapping({"id": "s", "verify": verify}, "s")
+                    jev.QuestionSet.from_mapping({"id": "s", "version": 1, "verify": verify}, "s")
 
 
 class HeldEscalationTest(unittest.TestCase):
