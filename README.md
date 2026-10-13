@@ -64,7 +64,7 @@ Caveats:
 - Marks follow agent edits only over HTTP; loopback is enough. On `file://` a mark places by its anchor and quote.
 - Jev suggestions are off without a key ([jev-suggestions](docs/specs/jev-suggestions.spec.html)).
 
-A rerun changes nothing. `--undo` removes only what earlier runs added (recorded in `$XDG_STATE_HOME/spec-chat/install.toml`).
+A rerun changes nothing. `--undo` removes only what earlier runs added, recorded under `[installed]` in that same `onboarding.toml`, then the file. It is Spec Chat's one onboarding file; an older `install.toml` is folded in and deleted.
 
 ### Optional: hosted review service
 
