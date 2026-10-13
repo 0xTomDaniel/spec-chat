@@ -3,8 +3,9 @@
 
 Links the skills, installs the page runtime and style into a named spec folder,
 sets up the box's review service through review-host.py, and publishes
-$XDG_STATE_HOME/spec-chat/onboarding.toml. A rerun changes nothing; --undo
-removes only what an earlier run added (recorded in install.toml).
+$XDG_STATE_HOME/spec-chat/onboarding.toml, which also records what it added
+under [installed]. A rerun changes nothing; --undo removes only what that file
+records, then the file.
 """
 
 from __future__ import annotations
@@ -56,8 +57,23 @@ def read_toml(path: Path) -> dict:
         return {}
 
 
-def write_manifest(path: Path, manifest: dict[str, list[str]]) -> None:
-    write_if_changed(path, "".join(f"{key} = {toml_list(manifest[key])}\n" for key in ("links", "copies", "resources")))
+KEYS = ("links", "copies", "resources")
+
+
+def recorded(state: Path) -> tuple[dict, dict[str, list[str]]]:
+    """onboarding.toml and its [installed] record, with a legacy install.toml folded in."""
+    onboarding = read_toml(state / "onboarding.toml")
+    sources = (onboarding.get("installed", {}), read_toml(state / "install.toml"))
+    return onboarding, {key: list(dict.fromkeys(v for src in sources for v in src.get(key, []))) for key in KEYS}
+
+
+def write_onboarding(state: Path, status: str, installed: dict[str, list[str]]) -> Path:
+    # status and doc are published (review-service #published-onboarding); [installed] is the installer's own.
+    path = state / "onboarding.toml"
+    text = f'status = "{status}"\ndoc = {toml_list([DOC])[1:-1]}\n\n[installed]\n'
+    write_if_changed(path, text + "".join(f"{key} = {toml_list(installed[key])}\n" for key in KEYS))
+    (state / "install.toml").unlink(missing_ok=True)
+    return path
 
 
 def _normalize_origin(url: str) -> str:
@@ -117,7 +133,8 @@ def link(source: Path, target: Path, added: list[str]) -> None:
         return
     target.parent.mkdir(parents=True, exist_ok=True)
     target.symlink_to(source)
-    added.append(str(target))
+    if str(target) not in added:
+        added.append(str(target))
 
 
 def copy_assets(specs: Path, added: list[str]) -> None:
@@ -161,16 +178,14 @@ def review_first_spec(spec: Path, state: Path, visibility: list[str]) -> str:
 
 
 def install(args: argparse.Namespace, prefix: Path, state: Path) -> None:
-    manifest_path, onboarding_path = state / "install.toml", state / "onboarding.toml"
-    old = read_toml(manifest_path)
-    manifest = {key: list(old.get(key, [])) for key in ("links", "copies", "resources")}
+    onboarding, manifest = recorded(state)
+    done = onboarding.get("status") == "done"
     try:
         for name, source in SKILLS.items():
             for base in SKILL_DIRS:
                 link(source, prefix / base / name, manifest["links"])
         if args.specs:
             copy_assets(Path(args.specs).expanduser().resolve(), manifest["copies"])
-        done = read_toml(onboarding_path).get("status") == "done"
         visibility = (["--public", args.public] if args.public else ["--private"] if args.private else [])
         visibility += ["--proof-host", args.proof_host] if args.proof_host else []
         if visibility and not args.review:
@@ -181,11 +196,8 @@ def install(args: argparse.Namespace, prefix: Path, state: Path) -> None:
                 manifest["resources"].append(rid)
             done = True
     finally:
-        if any(manifest.values()):
-            write_manifest(manifest_path, manifest)
-    status = "done" if done else "pending"
-    # The file holds status and doc only (review-service #published-onboarding).
-    write_if_changed(onboarding_path, f'status = "{status}"\ndoc = {toml_list([DOC])[1:-1]}\n')
+        status = "done" if done else "pending"
+        onboarding_path = write_onboarding(state, status, manifest)
     print(f"spec-chat onboarding {status}: {onboarding_path}")
     if status == "pending":
         print("next: install-spec-chat --specs <spec folder> --review <first .spec.html>")
@@ -225,14 +237,13 @@ def _stop_review_server(state: Path) -> None:
 
 
 def undo(state: Path) -> None:
-    manifest_path = state / "install.toml"
-    manifest = read_toml(manifest_path)
+    _, manifest = recorded(state)
     sources = {str(s.resolve()) for s in SKILLS.values()}
-    for item in manifest.get("links", []):
+    for item in manifest["links"]:
         path = Path(item)
         if path.is_symlink() and (not path.exists() or str(path.resolve()) in sources):
             path.unlink()
-    for item in manifest.get("copies", []):
+    for item in manifest["copies"]:
         path = Path(item)
         source = ASSETS.get(path.name)
         if source and path.is_dir() and same_tree(source, path):
@@ -242,10 +253,10 @@ def undo(state: Path) -> None:
                 shutil.rmtree(path)
         elif path.exists():
             print(f"left changed {path}")
-    for rid in manifest.get("resources", []):
+    for rid in manifest["resources"]:
         subprocess.run([sys.executable, str(HOST), "remove", "--id", rid], stdout=subprocess.DEVNULL)
     _stop_review_server(state)
-    for path in (state / "onboarding.toml", manifest_path):
+    for path in (state / "onboarding.toml", state / "install.toml"):
         path.unlink(missing_ok=True)
     print("spec-chat install undone")
 
