@@ -59,6 +59,11 @@ Criterion-rule repair runs whether Jev is on or off.
 Criterion rules:
 - For each criterion that breaks a criterion rule, rewrite it to meet every rule.
 - A Given or When that joins alternatives splits into one criterion per alternative; the first keeps the original anchor, each new one gets a new stable anchor, and each meets every criterion rule.
+- When a Given holds a state the user reaches by a gesture, move that gesture into the When as its opening step and keep in the Given only state a fixture can set and the user's device and appearance context (`Given a creator with the sidebar collapsed` becomes `Given a creator on the projects page, When the creator collapses the sidebar`).
+- When a Then needs two screens, split it into one criterion per screen; the first keeps the original anchor, the new one gets a new stable anchor and a When reaching its screen, and each meets every criterion rule.
+- When a When ends by dismissing something, such as pressing Escape, and the Then says only that something closed, rewrite the Then to name what the screen shows after the dismissal, as the specs state it.
+- When a criterion names a thing by screen position or order, such as `the first card`, rewrite it to name the thing by what it is, as the specs state it (`the first card` becomes `the lane with a QA bundle`).
+- When the specs do not say what the screen shows after a dismissal or which thing a position names, write an open TBD (`data-spec-tbd`) at that criterion naming what is missing; never invent it.
 - When a criterion's When skips a step to its Then that the specs do not state, write an open TBD (`data-spec-tbd`) at that criterion naming the missing step; never invent a step.
 - When the visible end state or the providing fixture cannot be read from the specs, write an open TBD (`data-spec-tbd`) at that criterion naming what is missing; never invent an end state or a fixture.
 - When a Given does not say who the user is and the specs do not say it either, write an open TBD (`data-spec-tbd`) at that criterion asking who the user is; never invent a user.

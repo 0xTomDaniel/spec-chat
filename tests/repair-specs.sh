@@ -28,6 +28,20 @@ if grep -qF 'terminal output or a named file' "$AUTHORING"; then
   echo "$AUTHORING still allows a file-backed Then" >&2; exit 1
 fi
 need "$REPAIR" "QA harness setup"
+# fixture-only Given, final-screen Then, one screen, names not positions
+need "$AUTHORING" "A Given holds only state a fixture can set"
+need "$AUTHORING" "never only that something closed"
+need "$AUTHORING" "A Then reads from one screen"
+need "$AUTHORING" "never by screen position or order"
+need "$AUTHORING" "the structural validator does not"
+need "$AUTHORING" "the outcome lies outside the page"
+need "$SHAPE" "one screen per Then"
+need "$SHAPE" "never by screen position or order"
+need "$SHAPE" "the validator does not check them"
+need "$REPAIR" "move that gesture into the When"
+need "$REPAIR" "one criterion per screen"
+need "$REPAIR" "what the screen shows after the dismissal"
+need "$REPAIR" "by screen position or order"
 need "$REPAIR" "artifact path"
 need "$REPAIR" "QA docs"
 # presentation repair, sixth after criteria
