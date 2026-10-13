@@ -166,6 +166,19 @@
         "The analytics Then states the event is recorded once and reads \"proven by a unit test: no screen shows it\"",
         "The spec names neither the provider stub nor the capture file"
       ]
+    },
+    {
+      "id": 15,
+      "eval_name": "capturable-criterion-shape",
+      "prompt": "Shape a feature for a creator on a phone in dark appearance whose outcome shows while the sidebar is collapsed, where pressing Escape closes a menu and returns to the list, whose accept action updates both the inbox and the board, whose outcome shows on the card of the lane holding a QA bundle, and which plays a sound.",
+      "expectations": [
+        "Each Given holds only who the user is, where, fixture data, and the phone and dark appearance; the When says the creator collapses the sidebar",
+        "The Escape criterion's Then names what the list shows after Escape, not only that the menu closed",
+        "The accept outcome is two criteria: one Then reads from the inbox, a separate one's When opens the board and its Then reads from it",
+        "The card is named as the lane with a QA bundle, never by screen position or order",
+        "The sound Then states it in product terms and reads \"proven by a unit test: no screen shows it\"",
+        "Changes no validator to check these rules"
+      ]
     }
   ]
 }
