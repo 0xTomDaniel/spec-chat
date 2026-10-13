@@ -57,8 +57,6 @@ touch = true
 # - clear-thread: the page is the clear-thread report spec. Open the rule marker to show the card,
 #   turn on Comment (C), click the Acceptance criteria heading, type the value, save, then reload
 #   the page (browser reload); the marker is still there.
-# - clear-untriggered: the page is the clear-untriggered later-only spec; open it, nothing else.
-#   Its Acceptance criteria heading shows no rule marker.
 # - candidates, mark-as-rule, not-a-rule, not-a-rule-reworded: the page is rule-candidate's
 #   onboarding spec, whose onboarding criterion is unmarked; open the marker beside that
 #   criterion to show the candidate card first.
@@ -79,8 +77,6 @@ path = "{review}/rule-candidate/docs/specs/onboarding.spec.html"
 path = "{review}/rule-candidate/docs/specs/onboarding.spec.html"
 [nav.acceptance-clear-thread]
 path = "{review}/clear-thread/docs/specs/report.spec.html"
-[nav.acceptance-clear-untriggered]
-path = "{review}/clear-untriggered/docs/specs/later-only.spec.html"
 [nav.acceptance-advice]
 path = "{review}/advice/docs/specs/report.spec.html"
 [nav.acceptance-tbd-later]
@@ -290,6 +286,8 @@ cannot_host = "fake Jev answers no contradiction question, so no two lanes contr
 cannot_host = "fake Jev answers no contradiction question, so no two lanes contradict and no cross-lane mark or pair exists; proven by tests/review-serve-jev-board.py test_slugs_of_different_projects_are_never_paired"
 [entry.criteria.acceptance-clear]
 cannot_host = "the When is an agent edit to the spec file while the reviewer views the card; capture edits no file and the fixture lands no edit on a plain reload"
+[entry.criteria.acceptance-clear-untriggered]
+cannot_host = "no fixture spec leaves the rule untriggered; later-only and one-open mention onboarding, so they are covered; proven by tests/review-serve-jev-rules.py test_cover_or_reason_line_clears_a_thread_alone_does_not_and_untriggered_never_shows"
 [entry.criteria.acceptance-reword]
 cannot_host = "the When is an author edit to the rule's home spec file mid-scenario; capture edits no file; proven by tests/review-serve-jev-rules.py test_unmarked_or_deleted_rule_shows_no_mark_on_next_load"
 [entry.criteria.acceptance-reword-delete]

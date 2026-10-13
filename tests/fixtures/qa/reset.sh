@@ -23,7 +23,7 @@ collections="qa-fixture rule-candidate tbd-later tbd-later-handoff tbd-open-high
   next-tbd next-tbd-step next-tbd-handoff tbd-open-jump tbd-open-wrap mobile-composer
   block-target-enter block-target-space block-target-off
   anchor-moved anchor-changed anchor-gone stale-page agent-scan name-reply advice
-  clear-thread clear-untriggered qa-1 qa-2"
+  clear-thread qa-1 qa-2"
 site="$QA_ROOT/site"
 serve="$QA_ROOT/serve"
 repo="$site/.repo"

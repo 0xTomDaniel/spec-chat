@@ -421,7 +421,8 @@ class RulesTest(unittest.TestCase):
         self.assertNotIn("escalated", item)
 
     def test_cover_or_reason_line_clears_a_thread_alone_does_not_and_untriggered_never_shows(self):
-        # project-rules #acceptance-clear, #acceptance-clear-reason, #mark-clear
+        # project-rules #acceptance-clear, #acceptance-clear-reason, #acceptance-clear-thread, #acceptance-clear-untriggered,
+        # #mark-clear
         self.seed()
         reason = "Onboarding: not needed, this changes no screen."
         provider = FakeProvider(rule={ONBOARDING: (lambda text: "covered" if reason in text else "missed", 0.95)})
