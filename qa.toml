@@ -54,6 +54,11 @@ touch = true
 # - advice: the page is the report spec with no open TBD (its TBDs are later), so the hand-off
 #   button reads Accept spec, and the missed note is the rule marker beside Acceptance
 #   criteria. Click Accept spec; nothing is typed.
+# - clear-thread: the page is the clear-thread report spec. Open the rule marker to show the card,
+#   turn on Comment (C), click the Acceptance criteria heading, type the value, save, then reload
+#   the page (browser reload); the marker is still there.
+# - clear-untriggered: the page is the clear-untriggered later-only spec; open it, nothing else.
+#   Its Acceptance criteria heading shows no rule marker.
 # - candidates, mark-as-rule, not-a-rule, not-a-rule-reworded: the page is rule-candidate's
 #   onboarding spec, whose onboarding criterion is unmarked; open the marker beside that
 #   criterion to show the candidate card first.
@@ -72,6 +77,10 @@ path = "{review}/rule-candidate/docs/specs/onboarding.spec.html"
 path = "{review}/rule-candidate/docs/specs/onboarding.spec.html"
 [nav.acceptance-not-a-rule-reworded]
 path = "{review}/rule-candidate/docs/specs/onboarding.spec.html"
+[nav.acceptance-clear-thread]
+path = "{review}/clear-thread/docs/specs/report.spec.html"
+[nav.acceptance-clear-untriggered]
+path = "{review}/clear-untriggered/docs/specs/later-only.spec.html"
 [nav.acceptance-advice]
 path = "{review}/advice/docs/specs/report.spec.html"
 [nav.acceptance-tbd-later]
@@ -144,6 +153,8 @@ path = "{review}/name-reply/docs/specs/report.spec.html"
 # - review-index, index-threads, index-threads-none: read the QA-1 card. Its Weekly report
 #   row holds a draft, a handed-off, a replied, and a resolved thread (3 Open, 1 Resolved);
 #   its other rows have no threads.
+# - index-design: read the In progress cards and the settled specs below them: no spec row reads
+#   "Up to date", each status shows once, and the page has no sideways scroll.
 # - index-threads-refresh: QA-2's Weekly report has one open thread, replied by the agent.
 #   Steps: click that row's "Weekly report" title in the QA-2 card; open the thread with its
 #   "Open thread 1" button; click its "✓ Resolve" button; click "Back to Spec Chat index" (the
@@ -156,12 +167,16 @@ path = "{review}/"
 path = "{review}/"
 [nav.acceptance-index-threads-refresh]
 path = "{review}/"
+[nav.acceptance-index-design]
+path = "{review}/"
 
-# Typed text for the review-state criteria that save a message (capture types only these).
+# Typed text for the criteria that save a message (capture types only these).
 [entry.criteria.acceptance-name]
 values = ["First note from this browser.", "Reply after reload."]
 [entry.criteria.acceptance-anchor-stale-page]
 values = ["Name the CSV columns."]
+[entry.criteria.acceptance-clear-thread]
+values = ["Does the export need onboarding?"]
 # One capture browser: a When by another live browser, or a Given of two live drafts,
 # cannot be driven; the two-browser runtime test proves these.
 [entry.criteria.acceptance-live-comment]
@@ -295,8 +310,6 @@ cannot_host = "the When is an author edit to the spec file while the reviewer vi
 cannot_host = "the onboarding documentation is the repo README, which the review service does not serve; proven by tests/install-spec-chat.py test_onboarding_doc_says_how_to_write_a_project_rule"
 [entry.criteria.acceptance-index-sections]
 cannot_host = "every fixture spec is served with a registry row, so the Given's specs served without a row are absent; proven by tests/review-serve-multi.py"
-[entry.criteria.acceptance-index-design]
-cannot_host = "a criterion runs at one viewport, and the When needs desktop then phone; the token block is CSS source; proven by tests/review-serve-multi.py"
 [entry.criteria.acceptance-index-design-phone]
 cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone screen cannot be reached; proven by tests/review-serve-multi.py"
 # Setting the system appearance is not a browser capability (jev-capture #jc-capabilities).
