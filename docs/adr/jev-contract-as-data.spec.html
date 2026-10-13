@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ADR: the Jev contract is data, with an adapter per program</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../specs/.style/spec.css">
+<script defer src="../specs/.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">The Jev contract is data, with an adapter per program</h1>
+<nav data-anchor="breadcrumbs">docs / adr / jev-contract-as-data.spec.html</nav>
+<p data-anchor="behind">Decision behind <a href="../specs/jev-contract.spec.html">Jev contract</a>.</p>
+</header>
+
+<section data-anchor="context">
+<h2>Context</h2>
+<p data-anchor="context-two">More than one program on a box asks Jev, each with its own question sets, request builder, cache key, record shape, outcome names, and retry rule, and they disagree on all of them.</p>
+<p data-anchor="context-tuning">A question set tuned and measured in one program never reaches the others, and their records cannot be read with one tool.</p>
+<p data-anchor="context-alone">Each repository on the box must install, test, and run with no other installed, and none vendors or pins another.</p>
+</section>
+
+<section data-anchor="decision">
+<h2>Decision</h2>
+<p data-anchor="decision-owner">Spec Chat owns the one written Jev contract: one spec plus conformance cases as plain JSON files in its repository.</p>
+<p data-anchor="decision-adapter">Every program that asks Jev keeps its own small adapter that conforms to the contract; it shares formats, never code, and asks Jev itself, never through another program's server.</p>
+<p data-anchor="decision-run">A program runs the cases from a Spec Chat checkout on its box; nothing else of Spec Chat is needed, and without a checkout it still builds and runs.</p>
+</section>
+
+<section data-anchor="why">
+<h2>Why</h2>
+<p data-anchor="why-alone">Formats cross repositories without an import, a pin, or a running service, so each repository still works alone.</p>
+<p data-anchor="why-cases">Cases with recorded replies turn the written rules into a check any language can run, so drift shows up as a named failing case instead of a field that differs in production.</p>
+<p data-anchor="why-spec-chat">Spec Chat already holds the tuned question sets and the eval loop, so the contract lives beside the data it governs.</p>
+</section>
+
+<section data-anchor="alternatives">
+<h2>Alternatives rejected</h2>
+<div class="table-scroll" data-anchor="alternatives-table-scroll">
+<table data-anchor="alternatives-table">
+<thead><tr><th>Option</th><th>Rejected because</th></tr></thead>
+<tbody>
+<tr data-anchor="alt-import"><td>Other programs import Spec Chat's Jev module</td><td>A repository could no longer test or run without Spec Chat installed</td></tr>
+<tr data-anchor="alt-http"><td>Other programs ask Spec Chat's review server over HTTP</td><td>Their own Jev features would vanish whenever Spec Chat is absent or its server is down</td></tr>
+<tr data-anchor="alt-package"><td>A published shared library or package</td><td>A pinned dependency between peers, and a shallow base class that moves code without removing any</td></tr>
+<tr data-anchor="alt-copy"><td>Each program keeps a copy of the cases</td><td>Copies drift and become a second owner of the same rules</td></tr>
+<tr data-anchor="alt-none"><td>No contract; each program keeps its own rules</td><td>The disagreements stay, and tuning never crosses programs</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section data-anchor="consequences">
+<h2>Consequences</h2>
+<p data-anchor="cons-change">A contract change is a Spec Chat spec change with its cases in the same commit; other programs learn of it the next time they run the cases.</p>
+<p data-anchor="cons-ci">A program's own CI, with no Spec Chat checkout, cannot run the cases; conformance is checked on a box where both are present.</p>
+<p data-anchor="cons-adapters">Two or more adapters exist on purpose: one contract, one adapter per program, not one mechanism duplicated.</p>
+<p data-anchor="cons-reopen">Move trigger: if programs keep drifting despite the cases, revisit a published contract version that adapters declare.</p>
+</section>
+
+</article>
+</body>
+</html>
