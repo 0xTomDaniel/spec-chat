@@ -92,13 +92,53 @@ class InstallSpecChatTest(unittest.TestCase):
         registry = tomllib.loads((self.state / "spec-chat/hosting/default/registry.toml").read_text())
         self.assertEqual(registry.get("resource", []), [])
 
-    def test_onboarding_holds_status_and_doc_only(self):
+    def test_onboarding_holds_status_doc_and_installed_only(self):
         """review-service #published-onboarding: no other table survives a rerun."""
         self.onboarding.parent.mkdir(parents=True)
         self.onboarding.write_text('status = "pending"\n\n[project.example]\nstate = "done"\nspecs_to_reconcile = 2\n')
         self.run_install()
-        self.assertEqual(set(self.status()), {"status", "doc"})
+        self.assertEqual(set(self.status()), {"status", "doc", "installed"})
         self.assertEqual(self.status()["status"], "pending")
+
+    def state_files(self):
+        return sorted(p.name for p in self.onboarding.parent.iterdir() if p.is_file())
+
+    def test_one_onboarding_file_records_install_rerun_and_undo(self):
+        """review-service #acceptance-onboarding-one-file."""
+        self.run_install("--specs", str(self.specs), "--review", str(self.spec))
+        self.assertEqual(self.state_files(), ["onboarding.toml"])
+        installed = self.status()["installed"]
+        self.assertEqual(len(installed["links"]), 6)
+        self.assertEqual(sorted(Path(c).name for c in installed["copies"]), [".style", ".viz"])
+        self.assertEqual(len(installed["resources"]), 1)
+
+        # The rerun reads what was added from the file: it still owns the links it made.
+        for item in installed["links"]:
+            Path(item).unlink()
+        self.run_install("--specs", str(self.specs), "--review", str(self.spec))
+        self.assertEqual(self.state_files(), ["onboarding.toml"])
+        self.assertEqual(self.status()["installed"], installed)
+
+        self.run_install("--undo")
+        for item in installed["links"] + installed["copies"]:
+            self.assertFalse(os.path.lexists(item), item)
+        registry = tomllib.loads((self.state / "spec-chat/hosting/default/registry.toml").read_text())
+        self.assertEqual(registry.get("resource", []), [])
+        self.assertEqual(self.state_files(), [])
+
+    def test_legacy_install_record_is_folded_in_then_deleted(self):
+        legacy = self.state / "spec-chat/install.toml"
+        stale = self.home / ".claude/skills/spec-chat-old"
+        stale.parent.mkdir(parents=True)
+        stale.symlink_to(ROOT / "skill/review-spec")
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text(f'links = ["{stale}"]\ncopies = []\nresources = []\n')
+        self.run_install()
+        self.assertFalse(legacy.exists())
+        self.assertIn(str(stale), self.status()["installed"]["links"])
+        self.run_install("--undo")
+        self.assertFalse(stale.is_symlink())
+        self.assertEqual(self.state_files(), [])
 
     def test_box_setup_moves_a_live_private_service_to_public(self):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
@@ -201,10 +241,8 @@ class InstallSpecChatTest(unittest.TestCase):
                 p = self.home / base / name
                 self.assertTrue(p.is_symlink())
                 self.assertEqual(p.resolve(), tgt.resolve())
-        # Manifest has no links (all adopted, none created); file may not exist
-        mpath = self.state / "spec-chat/install.toml"
-        manifest = tomllib.loads(mpath.read_text()) if mpath.exists() else {}
-        self.assertEqual(manifest.get("links", []), [])
+        # The install record has no links (all adopted, none created)
+        self.assertEqual(self.status()["installed"]["links"], [])
 
     def test_skip_occupied_path_and_continue(self):
         """link() skips occupied non-clone paths and the installer continues."""
