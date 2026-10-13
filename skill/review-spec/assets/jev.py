@@ -40,7 +40,7 @@ DEFAULT_MAX_INPUT_TOKENS = 32000
 RETRYABLE_OUTCOMES = frozenset({"off", "unavailable"})
 # Draft-check question kinds that carry provenance fields (#record-inputs, #record-pairing).
 DRAFT_CHECK_KINDS = frozenset({"contradicts", "contradicts-nongoal", "oversteps", "overlaps"})
-# The one retry rule (jev-suggestions #state-error): a failed ask is asked again after a pause, the provider's
+# The one retry rule (jev-contract #retry): a failed ask is asked again after a pause, the provider's
 # given wait, else this many seconds; the pause is written on its record, so no worker waits it out.
 RETRY_PAUSE = 60.0
 _wall = time.time
@@ -171,7 +171,9 @@ class QuestionSet:
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any], fallback_id: str) -> "QuestionSet":
         identifier = str(raw.get("id", fallback_id)).strip()
-        version = raw.get("version", 1)
+        version = raw.get("version")
+        if isinstance(version, bool) or not isinstance(version, int) or version < 0:
+            raise ValueError("question set version is a whole number (jev-contract #qset-version)")
         labels = raw.get("labels", [])
         threshold = float(raw.get("threshold", DEFAULT_THRESHOLD))
         if not identifier or not math.isfinite(threshold) or not 0 <= threshold <= 1:
@@ -579,7 +581,7 @@ class OpenRouterProvider:
         return self._post(self.endpoint, payload)
 
     def _post(self, endpoint: str, payload: Mapping[str, Any], timeout: float | None = None) -> Mapping[str, Any]:
-        """One call, never a wait: a 429 raises its given wait for the record's pause (jev-suggestions #state-error)."""
+        """One call, never a wait: a 429 raises its given wait for the record's pause (jev-contract #retry-pause)."""
         data = json.dumps(_jsonable(payload), ensure_ascii=False).encode("utf-8")
         request = Request(endpoint, data=data,
                           headers={"Authorization": "Bearer " + self._api_key, "Content-Type": "application/json"},
@@ -803,7 +805,8 @@ class JevSeam:
         kind = str(question.get("kind", "type"))
         qset = self.question_set(kind)
         held = self.store.get(key)
-        if held and held.get("outcome") not in REPLACEABLE_OUTCOMES:
+        # A final record is reused; a failed one answers until its pause ends (jev-contract #key-reuse, #retry-before).
+        if held and (held.get("outcome") not in REPLACEABLE_OUTCOMES or pause_left(held)):
             return held
         # Provenance (#record-inputs, #record-pairing, #record-verifier)
         inputs = _extract_inputs(question) if kind in DRAFT_CHECK_KINDS else None
@@ -822,7 +825,7 @@ class JevSeam:
             criteria = {str(k): str(v) for k, v in dynamic.items()}
         examples = qset.examples()
         instructions = {"question": qset.instructions, "examples": examples} if isinstance(dynamic, Mapping) and examples else qset.instructions
-        payload = {"model": MODEL, "questions": {kind: {"criteria": criteria,
+        payload = {"model": MODEL, "questions": {qset.id: {"criteria": criteria,
                     "instructions": instructions, "type": "choice"}},
                    "state": _jsonable(question.get("state", {}))}
         if (len(_canonical(payload)) + 3) // 4 > self.max_input_tokens:
@@ -838,7 +841,7 @@ class JevSeam:
         model = MODEL
         try:
             response = provider.decide(payload) if hasattr(provider, "decide") else provider(payload)
-            label, confidence, probabilities, model = _parse_provider_answer(response, kind)
+            label, confidence, probabilities, model = _parse_provider_answer(response, qset.id)
             answer = {"label": label, "probabilities": probabilities, "confidence": confidence}
             if isinstance(question.get("candidate_anchors"), Mapping):
                 answer = _anchor_answer(answer, question["candidate_anchors"])
@@ -2244,7 +2247,7 @@ class JevService:
 
     def _held(self, question: Mapping[str, Any], misses: dict[str, dict[str, Any]],
               seam: "JevSeam | None" = None) -> dict[str, Any] | None:
-        """The held record; a failed one only during its pause (#state-error). A miss is collected."""
+        """The held record; a failed one only during its pause (jev-contract #retry-before). A miss is collected."""
         seam = seam or self.seam
         key = seam.key(question)
         record = self._held_record(key, seam)
@@ -2255,7 +2258,7 @@ class JevService:
     def _held_record(self, key: str, seam: "JevSeam | None" = None) -> dict[str, Any] | None:
         """A held record. `off` is no answer (the key was missing when asked), and `escalated` is an answer
         not yet settled (an ask that stopped after recording it): both are asked again, the escalated one
-        through the escalated fast-path. A failed one answers only until its pause ends (#state-error)."""
+        through the escalated fast-path. A failed one answers only until its pause ends (jev-contract #retry-before)."""
         store = (seam or self.seam).store
         record = store.get(key)
         if record is None or record.get("outcome") in ("off", ESCALATED):

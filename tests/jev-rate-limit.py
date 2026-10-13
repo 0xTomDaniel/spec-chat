@@ -1,4 +1,4 @@
-"""OpenRouter 429 under the one retry rule (jev-suggestions #state-error, project-rules #q-fallback): one call per
+"""OpenRouter 429 under the one retry rule (jev-contract #retry, project-rules #q-fallback): one call per
 ask, never a sleep in a worker; the record's pause is the provider's given wait, else RETRY_PAUSE."""
 
 import importlib.util
@@ -79,8 +79,8 @@ class RateLimit(unittest.TestCase):
         provider = jev.OpenRouterProvider("test-key", endpoint=server.url + "/decisions")
         return server, provider
 
-    def ask(self, seam, q=None):
-        with unittest.mock.patch.object(jev, "_wall", lambda: 1000.0):
+    def ask(self, seam, q=None, at=1000.0):
+        with unittest.mock.patch.object(jev, "_wall", lambda: at):
             started = time.monotonic()
             record = seam.ask(q or question())
             self.assertLess(time.monotonic() - started, 1.0)  # no wait in the worker
@@ -131,13 +131,16 @@ class RateLimit(unittest.TestCase):
         self.assertEqual((record["outcome"], record["escalated"]), ("unavailable", True))
         self.assertEqual(fail_count[0], 1)
         self.assertEqual(pause, 45.0)
+        # asked during its pause: nothing is called (jev-contract #retry-before)
+        self.ask(seam, at=1044.0)
+        self.assertEqual(fail_count[0], 1)
         # asked again after its pause: only the general LLM, once
-        record, pause = self.ask(seam)
+        record, pause = self.ask(seam, at=1045.0)
         self.assertEqual(fail_count[0], 2)
         self.assertEqual(pause, 45.0)
         # Now LLM succeeds
         ep.complete = lambda payload: {"choices": [{"message": {"content": json.dumps({"choice": "every feature"})}}]}
-        record, _ = self.ask(seam)
+        record, _ = self.ask(seam, at=1090.0)
         self.assertEqual((record["outcome"], record["answer"]["label"]), ("shown", "every feature"))
 
     def test_other_errors_are_one_call_and_pause_the_default(self):

@@ -318,7 +318,9 @@ class JevSeamTest(unittest.TestCase):
         seam = jev.JevSeam(self.question_sets(), provider=provider, api_key="fake")
         question = {"kind": "type", "state": {"after": "new"}, "sources": [], "revision": "head"}
         failed = seam.ask(question)
-        recovered = seam.ask(question)
+        self.assertEqual(seam.ask(question)["record_id"], failed["record_id"])  # during its pause nothing is called (jev-contract #retry-before)
+        with patch.object(jev, "_wall", lambda: time.time() + jev.RETRY_PAUSE):
+            recovered = seam.ask(question)
         self.assertEqual(failed["outcome"], "unavailable")
         self.assertEqual(recovered["outcome"], "shown")
         self.assertEqual(len(provider.calls), 2)

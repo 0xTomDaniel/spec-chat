@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./.style/spec.css">
+<title>Jev contract</title>
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Jev contract</h1>
+<nav data-anchor="breadcrumbs">docs / specs / jev-contract.spec.html</nav>
+<p data-anchor="context">The one written contract for asking Jev: the question-set format, the request sent, the cache key, the judgment record, the outcome names, and the retry rule, plus conformance cases any program that asks Jev runs on its own.
+Spec Chat's <a href="./jev-suggestions.spec.html">Jev review suggestions</a> conform to it; why it is data and not shared code is in the <a href="../adr/jev-contract-as-data.spec.html">ADR</a>.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="false" data-anchor="story-one-contract">As a maintainer of a program that asks Jev, I read one contract for every format and rule, and build my own small adapter without importing Spec Chat's code or calling its server.</p>
+<p data-user-story data-user-facing="false" data-anchor="story-conformance">As a maintainer of a program that asks Jev, I run the conformance cases against my adapter and see which case my request, key, or record breaks.</p>
+<p data-user-story data-user-facing="false" data-anchor="story-same-answer">As the operator, the same question asked by any conforming program sends the same request, gets the same cache key, and writes a record with the same fields and outcome names, so a question set tuned once works everywhere.</p>
+<p data-user-story data-user-facing="false" data-anchor="story-retry">As the operator, a failed Jev ask in any conforming program waits the same pause before it is asked again, never retried in a loop.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="jev-contract" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-cases-pass" data-story="story-conformance story-same-answer"><span data-acceptance-scenario>Given a Spec Chat contributor's change, When the test suite runs,</span> <span data-acceptance-observable>Then Spec Chat's Jev seam passes every conformance case: the request it sends, the cache key it computes, and the record it writes match each case, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-cases-plain" data-story="story-one-contract story-conformance"><span data-acceptance-scenario>Given a maintainer of another program with a Spec Chat checkout on the box and no Spec Chat server running or package installed, When the maintainer's test reads the conformance cases,</span> <span data-acceptance-observable>Then every case is a plain JSON file holding its own question set, question, provider reply, and expected request, key, and record, so it runs with no Spec Chat code, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-case-break" data-story="story-conformance"><span data-acceptance-scenario>Given a Spec Chat contributor whose change makes the Jev seam send a request one case does not expect, When the test suite runs,</span> <span data-acceptance-observable>Then the suite fails naming that case and the field that differs, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-qset-invalid" data-story="story-one-contract"><span data-acceptance-scenario>Given a Spec Chat contributor who adds a question set whose version is not a whole number, When the test suite runs,</span> <span data-acceptance-observable>Then the suite fails naming that question-set file, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-key-order" data-story="story-same-answer"><span data-acceptance-scenario>Given the operator of a box with Jev on, When the same question is asked once with its state fields in one order and once in another,</span> <span data-acceptance-observable>Then both asks have the same cache key and only the first calls Jev, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-key-version" data-story="story-same-answer"><span data-acceptance-scenario>Given the operator of a box with Jev on and a record for a question, When the question's set gains a new version and the question is asked again,</span> <span data-acceptance-observable>Then the ask has a new cache key and calls Jev once, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-retry-given" data-story="story-retry"><span data-acceptance-scenario>Given the operator of a box with Jev on, which needs an induced failure: Jev rate-limits with a given wait, When a question is asked,</span> <span data-acceptance-observable>Then its record is unavailable and holds the instant the given wait ends, and an ask of the same question before that instant calls nothing, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-retry-default" data-story="story-retry"><span data-acceptance-scenario>Given the operator of a box with Jev on, which needs an induced failure: Jev fails with no given wait, When a question is asked,</span> <span data-acceptance-observable>Then its record is unavailable and holds the instant 60 seconds later, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-retry-after" data-story="story-retry"><span data-acceptance-scenario>Given the operator of a box with Jev on and an unavailable record whose pause has ended, When the same question is asked,</span> <span data-acceptance-observable>Then Jev is called once and the new record is the question's answer, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-outcome-names" data-story="story-same-answer"><span data-acceptance-scenario>Given the operator of a box with Jev on, When any question is asked,</span> <span data-acceptance-observable>Then its record's outcome is one of the <a href="#outcomes">outcome names</a> and the record holds no provider key, proven by a unit test: no screen shows it.</span></p>
+<p data-anchor="acceptance-rules-note">Onboarding: not needed, the contract adds no user surface.
+CI: the <a href="./review-service.spec.html#acceptance-ci-alone">CI rule</a> covers the conformance cases; they use a recorded provider reply and no provider file.</p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-contract"><span data-boundary-responsibility>The contract owns the question-set format, the request, the cache key, the record's core fields, the outcome names, and the retry rule, and its conformance cases are the executable form of those rules.</span> <span data-boundary-seam>Caller-facing seam: this spec and the case files in the <a href="#cases">conformance cases</a> directory, read as plain JSON.</span> <span data-boundary-dependency>Dependency direction: self-contained data; Spec Chat's Jev seam and any other program read it, and it names no program that reads it.</span> <span data-boundary-scope>Observable scope: the case files and each conforming program's test result.</span></p>
+<p data-modular-boundary data-anchor="boundary-adapter"><span data-boundary-responsibility>Each program that asks Jev owns its own adapter: loading sets, building the request, calling Jev, and writing its records in its own store.</span> <span data-boundary-seam>Caller-facing seam: its own; the contract fixes only what crosses into Jev and into a record.</span> <span data-boundary-dependency>Dependency direction: external-provider, Jev decisions; the adapter reads the contract and imports no other program's code or calls its server.</span> <span data-boundary-scope>Observable scope: its requests, its records, and its run of the cases.</span></p>
+<p data-modular-boundary data-anchor="boundary-extension"><span data-boundary-responsibility>A feature that asks Jev owns the record fields it adds beyond the core, and their meaning.</span> <span data-boundary-seam>Caller-facing seam: the feature's own spec, as <a href="./jev-suggestions.spec.html#record-table">draft-check provenance</a> is.</span> <span data-boundary-dependency>Dependency direction: self-contained within the feature, which extends the core record; the contract never depends on a feature.</span> <span data-boundary-scope>Observable scope: the added fields on that feature's records.</span></p>
+</section>
+
+<section data-anchor="question-sets">
+<h2>Question sets</h2>
+<p data-anchor="qset-file">A question set is one JSON file. Its id and whole-number version name it everywhere; any change to the file is a new version.</p>
+<div class="table-scroll" data-anchor="qset-table-scroll">
+<table data-anchor="qset-table">
+<thead><tr><th>Field</th><th>Holds</th><th>Required</th></tr></thead>
+<tbody>
+<tr data-anchor="qset-id"><td><code>id</code></td><td>The question's name; it is also the question's key in the request</td><td>yes</td></tr>
+<tr data-anchor="qset-version"><td><code>version</code></td><td>A whole number, raised on every change</td><td>yes</td></tr>
+<tr data-anchor="qset-instructions"><td><code>instructions</code></td><td>One atomic judgment, as text</td><td>yes</td></tr>
+<tr data-anchor="qset-labels"><td><code>labels</code></td><td>A list of labels, each a <code>name</code>, a <code>description</code>, and <code>examples</code>: each an <code>input</code> object in the question's state shape and the <code>label</code> it deserves</td><td>yes</td></tr>
+<tr data-anchor="qset-threshold"><td><code>threshold</code></td><td>The confidence at or above which a label is shown, between 0 and 1</td><td>yes</td></tr>
+<tr data-anchor="qset-fallback"><td><code>fallback</code></td><td>True when an answer below threshold goes to the asking program's general LLM; sets name no model</td><td>no, false</td></tr>
+<tr data-anchor="qset-cutoffs"><td><code>show_cutoff</code>, <code>verify_cutoff</code></td><td>An asymmetric threshold on the yes probability in place of <code>threshold</code>, as <a href="./jev-suggestions.spec.html#asymmetric">draft checks</a> use it</td><td>no</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="qset-unknown">A program ignores a set field it does not use, so a feature may add one in its own spec, as the <a href="./jev-suggestions.spec.html#verifier-role">verifier levels</a> are.</p>
+</section>
+
+<section data-anchor="request">
+<h2>Request</h2>
+<p data-anchor="request-one">Every ask is one call to Jev decisions, <code>POST https://openrouter.ai/api/alpha/decisions</code> with model <code>typesafe/jev-1.13</code>, asking one question about one state.</p>
+<div class="table-scroll" data-anchor="request-table-scroll">
+<table data-anchor="request-table">
+<thead><tr><th>Request field</th><th>Holds</th></tr></thead>
+<tbody>
+<tr data-anchor="request-model"><td><code>model</code></td><td><code>typesafe/jev-1.13</code></td></tr>
+<tr data-anchor="request-question"><td><code>questions.&lt;id&gt;</code></td><td><code>type</code> <code>choice</code>, the set's <code>instructions</code>, and <code>criteria</code></td></tr>
+<tr data-anchor="request-criteria"><td><code>criteria.&lt;label&gt;</code></td><td>The label's <code>description</code> and its <code>examples</code>, each <code>input</code> and <code>label</code>: examples ride with the label they illustrate, never folded into the instructions text</td></tr>
+<tr data-anchor="request-dynamic"><td>question-supplied labels</td><td>When a question supplies its own labels, such as candidate anchors, <code>criteria</code> holds those labels' descriptions and <code>instructions</code> becomes <code>question</code> (the set's instructions) plus the set's <code>examples</code></td></tr>
+<tr data-anchor="request-state"><td><code>state</code></td><td>The question's inputs as one JSON object</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="request-reply">The reply's <code>answers.&lt;id&gt;</code> gives the <code>choice</code>, the <code>probabilities</code> per label, and the <code>confidence</code>; its <code>model</code> is the model version Jev reports.</p>
+<p data-anchor="request-oversize">A request whose canonical JSON length, divided by 4 and rounded up, exceeds 32,000 tokens is never sent and never truncated: its outcome is <code>oversize</code>.</p>
+<p data-anchor="request-key-secret">The provider key travels only in the request's authorization header; no record, log, case, or reply holds it.</p>
+</section>
+
+<section data-anchor="cache">
+<h2>Cache key</h2>
+<p data-anchor="key-formula"><code>key = "sha256:" + hex(sha256(canonical({state, criteria, question_set: {id, version}})))</code></p>
+<p data-anchor="key-gloss">The key hashes the question's content and set version only, so the same text asked at any revision, head, or lane reuses one record; <code>criteria</code> is the question-supplied labels, or empty when the set's own labels are asked.</p>
+<p data-anchor="key-canonical">Canonical JSON is UTF-8 with object keys sorted, no whitespace between tokens, and non-ASCII characters written as themselves.</p>
+<p data-anchor="key-reuse">A record whose key matches and whose outcome is final is reused without calling Jev; a key's record is its latest line.</p>
+</section>
+
+<section data-anchor="record">
+<h2>Judgment record</h2>
+<p data-anchor="record-one">Every ask appends one judgment record, one JSON line, whether its label shows or not. A record is never amended; what a person decides about it lives elsewhere and cites its id.</p>
+<div class="table-scroll" data-anchor="core-table-scroll">
+<table data-anchor="core-table">
+<thead><tr><th>Field</th><th>Holds</th></tr></thead>
+<tbody>
+<tr data-anchor="core-id"><td><code>record_id</code></td><td><code>judgment-</code> plus a unique id</td></tr>
+<tr data-anchor="core-key"><td><code>cache_key</code></td><td>The <a href="#cache">cache key</a></td></tr>
+<tr data-anchor="core-model"><td><code>model</code></td><td>The model version Jev reports, or the general LLM's model when <code>source</code> is <code>llm</code></td></tr>
+<tr data-anchor="core-set"><td><code>question_set</code></td><td>The set's <code>id</code> and <code>version</code></td></tr>
+<tr data-anchor="core-source"><td><code>source</code></td><td><code>jev</code>, or <code>llm</code> when the general LLM answered</td></tr>
+<tr data-anchor="core-sources"><td><code>sources</code></td><td>The <code>addresses</code> the inputs were read from and the <code>revision</code> they were read at; addresses only, no source text</td></tr>
+<tr data-anchor="core-answer"><td><code>answer</code></td><td><code>label</code>, <code>probabilities</code> per label, and <code>confidence</code>; all empty when nothing answered</td></tr>
+<tr data-anchor="core-threshold"><td><code>threshold</code></td><td>The threshold used</td></tr>
+<tr data-anchor="core-outcome"><td><code>outcome</code></td><td>One of the <a href="#outcomes">outcome names</a></td></tr>
+<tr data-anchor="core-retry"><td><code>retry_at</code></td><td>Only on <code>unavailable</code>: the UTC instant the <a href="#retry">pause</a> ends</td></tr>
+<tr data-anchor="core-time"><td><code>time</code></td><td>The UTC instant of the ask, to the millisecond, ending in <code>Z</code></td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="record-extension">A feature may add fields its own spec defines, such as the inputs it sent; a reader ignores fields it does not know.</p>
+<p data-anchor="record-cache-lifetime">Records are a cache: deleting them costs only asking again, so no record is the only copy of anything a person decided.</p>
+</section>
+
+<section data-anchor="outcomes">
+<h2>Outcome names</h2>
+<p data-anchor="outcomes-rule">These are the only outcome names. A final outcome is never asked again; a waiting outcome is replaced by the next ask's record.</p>
+<div class="table-scroll" data-anchor="outcomes-table-scroll">
+<table data-anchor="outcomes-table">
+<thead><tr><th>Outcome</th><th>Means</th><th>Kind</th></tr></thead>
+<tbody>
+<tr data-anchor="outcome-shown"><td><code>shown</code></td><td>Confidence at or above threshold, or yes probability at or above the show cutoff</td><td>final</td></tr>
+<tr data-anchor="outcome-unsure"><td><code>unsure</code></td><td>Below threshold, and the set has no fallback</td><td>final</td></tr>
+<tr data-anchor="outcome-silent-no"><td><code>silent-no</code></td><td>Yes probability below the verify cutoff</td><td>final</td></tr>
+<tr data-anchor="outcome-escalated"><td><code>escalated</code></td><td>Below threshold with fallback, or in the verify band: the general LLM or verifier answers next</td><td>waiting</td></tr>
+<tr data-anchor="outcome-verified"><td><code>verified</code></td><td>The verifier confirmed a verify-band answer</td><td>final</td></tr>
+<tr data-anchor="outcome-verifier-rejected"><td><code>verifier-rejected</code></td><td>The verifier did not confirm it</td><td>final</td></tr>
+<tr data-anchor="outcome-oversize"><td><code>oversize</code></td><td>The request is over the token limit and was not sent</td><td>final</td></tr>
+<tr data-anchor="outcome-off"><td><code>off</code></td><td>No provider key; asked again on the next read once a key exists</td><td>waiting</td></tr>
+<tr data-anchor="outcome-unavailable"><td><code>unavailable</code></td><td>The call failed; asked again after its <a href="#retry">pause</a></td><td>waiting</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section data-anchor="retry">
+<h2>Retry rule</h2>
+<p data-anchor="retry-one-call">An ask makes one call and never waits inside it. A failed call writes an <code>unavailable</code> record whose <code>retry_at</code> is the end of the pause.</p>
+<p data-anchor="retry-pause">The pause is the wait the provider gives, such as a rate-limit <code>Retry-After</code> in seconds or as a date; otherwise 60 seconds.</p>
+<p data-anchor="retry-before">Before <code>retry_at</code>, an ask of the same key answers from its <code>unavailable</code> record and calls nothing; the first ask after it calls Jev once.</p>
+<p data-anchor="retry-no-loop">No program retries in a loop, backs off by doubling, or holds a failed ask open.</p>
+</section>
+
+<section data-anchor="cases">
+<h2>Conformance cases</h2>
+<p data-anchor="cases-where">The cases are JSON files in <code>skill/review-spec/assets/jev/cases/</code> in this repository, one case per file. A program runs them from a Spec Chat checkout on its box; it needs nothing else of Spec Chat.</p>
+<div class="table-scroll" data-anchor="case-table-scroll">
+<table data-anchor="case-table">
+<thead><tr><th>Case field</th><th>Holds</th></tr></thead>
+<tbody>
+<tr data-anchor="case-about"><td><code>about</code></td><td>The rule the case proves, with its anchor in this spec</td></tr>
+<tr data-anchor="case-set"><td><code>question_set</code></td><td>The whole question set, frozen in the case so a tuned set's new version never changes it</td></tr>
+<tr data-anchor="case-question"><td><code>question</code></td><td>The question id, <code>state</code>, any question-supplied labels, <code>sources</code>, and the clock's <code>now</code></td></tr>
+<tr data-anchor="case-held"><td><code>held</code></td><td>The record already held for the key, when the case starts from one</td></tr>
+<tr data-anchor="case-reply"><td><code>reply</code></td><td>Jev's reply body, or a failure with its status and given wait, or no key</td></tr>
+<tr data-anchor="case-expect"><td><code>expect</code></td><td>The <code>request</code> sent, or none; the <code>key</code>; and the <code>record</code> written, or none: every listed field must match exactly, and <code>record_id</code> is matched by its prefix</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="cases-cover">The cases cover at least: a shown answer, an unsure answer, an escalated answer, an oversize request, no key, a failure with a given wait, a failure without one, an ask during a pause, an ask after it, a question with its own labels, and two state orders with one key.</p>
+<p data-anchor="cases-change">A change to any rule here changes its case in the same commit; a program that conforms to the contract at a commit passes that commit's cases.</p>
+</section>
+
+<section data-anchor="non-goals">
+<h2>Non-goals</h2>
+<p data-anchor="non-goal-code">No shared code, package, or library: each program writes its own adapter.</p>
+<p data-anchor="non-goal-http">No program asks another program's server to ask Jev for it.</p>
+<p data-anchor="non-goal-store">Where and how a program stores its records, and how it reads its provider key, stay its own.</p>
+<p data-anchor="non-goal-ledger">What a person decides about a record is not part of this contract; Spec Chat's is its <a href="./jev-suggestions.spec.html#ledger">warning ledger</a>.</p>
+</section>
+
+</article>
+</body>
+</html>

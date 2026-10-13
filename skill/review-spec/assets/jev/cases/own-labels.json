@@ -1,0 +1,139 @@
+{
+  "about": "A question with its own labels sends them as criteria and the set's examples with its instructions (#request-dynamic, #key-gloss).",
+  "question_set": {
+    "id": "change-type",
+    "version": 3,
+    "instructions": "Does this edit change what the system does, or only how it reads?",
+    "labels": [
+      {
+        "name": "behavioral",
+        "description": "The edit changes a rule, value, or outcome.",
+        "examples": [
+          {
+            "input": {
+              "before": "Retry after 30 s.",
+              "after": "Retry after 60 s."
+            },
+            "label": "behavioral"
+          }
+        ]
+      },
+      {
+        "name": "cosmetic",
+        "description": "The edit changes wording only.",
+        "examples": [
+          {
+            "input": {
+              "before": "Retry after 60 secs.",
+              "after": "Retry after 60 s."
+            },
+            "label": "cosmetic"
+          }
+        ]
+      }
+    ],
+    "threshold": 0.4
+  },
+  "question": {
+    "id": "change-type",
+    "state": {
+      "before": "A failed ask is asked again after 30 seconds.",
+      "after": "A failed ask is asked again after 60 seconds."
+    },
+    "sources": {
+      "addresses": [
+        "docs/specs/example.spec.html#retry"
+      ],
+      "revision": "4b0a901"
+    },
+    "now": "2026-10-13T12:00:00.000Z",
+    "labels": {
+      "retry": "The clause states the retry rule.",
+      "cache": "The clause states the cache key.",
+      "none": "Neither."
+    }
+  },
+  "reply": {
+    "body": {
+      "model": "typesafe/jev-1.13-2026-09",
+      "answers": {
+        "change-type": {
+          "choice": "retry",
+          "probabilities": {
+            "retry": 0.81,
+            "cache": 0.12,
+            "none": 0.07
+          },
+          "confidence": 0.81
+        }
+      }
+    }
+  },
+  "expect": {
+    "request": {
+      "model": "typesafe/jev-1.13",
+      "questions": {
+        "change-type": {
+          "type": "choice",
+          "instructions": {
+            "question": "Does this edit change what the system does, or only how it reads?",
+            "examples": [
+              {
+                "input": {
+                  "before": "Retry after 30 s.",
+                  "after": "Retry after 60 s."
+                },
+                "label": "behavioral"
+              },
+              {
+                "input": {
+                  "before": "Retry after 60 secs.",
+                  "after": "Retry after 60 s."
+                },
+                "label": "cosmetic"
+              }
+            ]
+          },
+          "criteria": {
+            "retry": "The clause states the retry rule.",
+            "cache": "The clause states the cache key.",
+            "none": "Neither."
+          }
+        }
+      },
+      "state": {
+        "before": "A failed ask is asked again after 30 seconds.",
+        "after": "A failed ask is asked again after 60 seconds."
+      }
+    },
+    "key": "sha256:ac256af67ec0d026d409c03070ff4111cfa5b75b65122b0f6e6c7c18b4be131e",
+    "record": {
+      "record_id": "judgment-",
+      "cache_key": "sha256:ac256af67ec0d026d409c03070ff4111cfa5b75b65122b0f6e6c7c18b4be131e",
+      "model": "typesafe/jev-1.13-2026-09",
+      "question_set": {
+        "id": "change-type",
+        "version": 3
+      },
+      "source": "jev",
+      "sources": {
+        "addresses": [
+          "docs/specs/example.spec.html#retry"
+        ],
+        "revision": "4b0a901"
+      },
+      "answer": {
+        "label": "retry",
+        "probabilities": {
+          "retry": 0.81,
+          "cache": 0.12,
+          "none": 0.07
+        },
+        "confidence": 0.81
+      },
+      "threshold": 0.4,
+      "outcome": "shown",
+      "time": "2026-10-13T12:00:00.000Z"
+    }
+  }
+}

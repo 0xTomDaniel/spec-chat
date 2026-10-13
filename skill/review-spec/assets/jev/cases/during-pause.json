@@ -1,0 +1,96 @@
+{
+  "about": "Before retry_at an ask answers from its unavailable record and calls nothing (#retry-before).",
+  "question_set": {
+    "id": "change-type",
+    "version": 3,
+    "instructions": "Does this edit change what the system does, or only how it reads?",
+    "labels": [
+      {
+        "name": "behavioral",
+        "description": "The edit changes a rule, value, or outcome.",
+        "examples": [
+          {
+            "input": {
+              "before": "Retry after 30 s.",
+              "after": "Retry after 60 s."
+            },
+            "label": "behavioral"
+          }
+        ]
+      },
+      {
+        "name": "cosmetic",
+        "description": "The edit changes wording only.",
+        "examples": [
+          {
+            "input": {
+              "before": "Retry after 60 secs.",
+              "after": "Retry after 60 s."
+            },
+            "label": "cosmetic"
+          }
+        ]
+      }
+    ],
+    "threshold": 0.4
+  },
+  "question": {
+    "id": "change-type",
+    "state": {
+      "before": "A failed ask is asked again after 30 seconds.",
+      "after": "A failed ask is asked again after 60 seconds."
+    },
+    "sources": {
+      "addresses": [
+        "docs/specs/example.spec.html#retry"
+      ],
+      "revision": "4b0a901"
+    },
+    "now": "2026-10-13T12:00:10.000Z"
+  },
+  "held": {
+    "record_id": "judgment-held",
+    "cache_key": "sha256:b20a6ed194a66cf2e92d4ced222398fa98f4ce328f219d1d1d82d20e466eb1e0",
+    "model": "typesafe/jev-1.13",
+    "question_set": {
+      "id": "change-type",
+      "version": 3
+    },
+    "source": "jev",
+    "sources": {
+      "addresses": [
+        "docs/specs/example.spec.html#retry"
+      ],
+      "revision": "4b0a901"
+    },
+    "answer": {
+      "label": null,
+      "probabilities": {},
+      "confidence": null
+    },
+    "threshold": 0.4,
+    "outcome": "unavailable",
+    "retry_at": "2026-10-13T12:00:30.000Z",
+    "time": "2026-10-13T12:00:00.000Z"
+  },
+  "reply": {
+    "body": {
+      "model": "typesafe/jev-1.13-2026-09",
+      "answers": {
+        "change-type": {
+          "choice": "behavioral",
+          "probabilities": {
+            "behavioral": 0.92,
+            "cosmetic": 0.08
+          },
+          "confidence": 0.92
+        }
+      }
+    }
+  },
+  "expect": {
+    "request": null,
+    "key": "sha256:b20a6ed194a66cf2e92d4ced222398fa98f4ce328f219d1d1d82d20e466eb1e0",
+    "record": null
+  }
+}
