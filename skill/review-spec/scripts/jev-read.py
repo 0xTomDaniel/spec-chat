@@ -7,7 +7,7 @@ general LLM settled (jev-suggestions #markers-agent-unsure), the rules checked, 
 human (project-rules #agent-ask), the pending count; or `off`.
 `--anchor <id>` prints full detail for that anchor only. Marks are keyed on each item's `agent_level` (jev-suggestions #markers-levels-source).
 `--resolve <record> <resolution>` records the owner's resolution of an Important mark the read showed, one outcome in
-the warning ledger citing its record: fixed, reason, thread, or dismissed with `--reason` (jev-suggestions #ledger),
+the warning ledger citing its record: fixed, reason, or dismissed with `--reason` (jev-suggestions #ledger),
 through the one Jev record route.
 `--not-a-rule <anchor>` records the human's no to the shaping ask on a candidate of the link's spec: Not a project rule,
 not-a-rule in the warning ledger (project-rules #agent-ask, #dismiss-rule). `--not-for-spec <home> <record>` records
@@ -128,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="re-read every 2s until nothing is pending, at most this long")
     answer = parser.add_mutually_exclusive_group()
     answer.add_argument("--resolve", nargs=2, metavar=("RECORD", "RESOLUTION"),
-                        help="record an Important mark's resolution: fixed, reason, thread, or dismissed (the server checks it)")
+                        help="record an Important mark's resolution: fixed, reason, or dismissed (the server checks it)")
     answer.add_argument("--not-a-rule", metavar="ANCHOR",
                         help="record Not a project rule for the candidate at this anchor of the link's spec")
     answer.add_argument("--ignored", metavar="ANCHOR",

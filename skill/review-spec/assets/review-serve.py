@@ -1167,7 +1167,7 @@ listenHost();
             except OSError:
                 return self._json({"error": "jev unavailable"}, 503)
             if not ok:
-                return self._json({"ok": False, "error": "refused: resolution is fixed, reason, thread, or dismissed "
+                return self._json({"ok": False, "error": "refused: resolution is fixed, reason, or dismissed "
                                    "with a reason, on a mark shown here not yet resolved"}, 400)
             return self._json({"ok": True})
         return self._json({"error": "body names dismiss or resolve"}, 400)

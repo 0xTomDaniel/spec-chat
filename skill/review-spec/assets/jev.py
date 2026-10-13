@@ -294,7 +294,7 @@ def load_question_sets(*directories: str | Path | None) -> dict[str, QuestionSet
 NOT_A_RULE, MARKED, IGNORED = "not-a-rule", "marked", "ignored"
 SETTLED = frozenset({NOT_A_RULE, MARKED})
 # An owner's resolutions of an Important mark through the agent read (#record-resolution); dismissed names its reason.
-OWNER_RESOLUTIONS = ("fixed", "reason", "dismissed", "thread")
+OWNER_RESOLUTIONS = ("fixed", "reason", "dismissed")
 
 
 # The record store's files (#record-store): records split by cache key across this many plain JSONL files, so a
@@ -2658,7 +2658,7 @@ class JevService:
 
     def resolve(self, mount: Mapping[str, Any], target: str, record_id: Any, status: Any, reason: Any = None) -> bool:
         """An owner's resolution of an Important mark through the agent read (#record-resolution): fixed, reason,
-        dismissed with its reason, or thread, one outcome in the warning ledger citing the mark's record, which is
+        or dismissed with its reason, one outcome in the warning ledger citing the mark's record, which is
         unchanged, unconfirmed until audited (#measure-feedback). The mark is one this server last showed on the
         spec at target. False when the resolution is none of these, a dismissal names no reason, or the mark is
         unknown or already has an outcome: a mark ends once."""
