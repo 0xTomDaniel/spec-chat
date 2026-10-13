@@ -897,8 +897,9 @@ class RulesTest(unittest.TestCase):
         # an owner dismissal carries its reason; unknown marks and resolutions are refused
         self.assertFalse(service.resolve(mount, b, item["record"], "dismissed"))
         self.assertFalse(service.resolve(mount, b, item["record"], "rule", "no"))
-        self.assertFalse(service.resolve(mount, b, "judgment-nope", "thread"))
-        self.assertFalse(service.resolve(mount, str(self.specs / "c.spec.html"), item["record"], "thread"))
+        self.assertFalse(service.resolve(mount, b, item["record"], "thread"), "a thread is no owner resolution")
+        self.assertFalse(service.resolve(mount, b, "judgment-nope", "fixed"))
+        self.assertFalse(service.resolve(mount, str(self.specs / "c.spec.html"), item["record"], "fixed"))
         self.assertTrue(service.resolve(mount, b, item["record"], "dismissed", "The export is a download, no screen."))
         outcome = service.seam.ledger.latest(*self.where(item))
         self.assertEqual((outcome["outcome"], outcome["reason"], outcome["judgment"], outcome["by"], outcome["confirmed"]),
@@ -907,7 +908,7 @@ class RulesTest(unittest.TestCase):
         labels = jev.eval_read(service.seam.store.records(), service.seam.ledger, confirmed=True)
         self.assertNotIn(item["record"], [record["record_id"] for record, _ in labels])
         # one resolution per mark: a later one is refused and the first stands
-        self.assertFalse(service.resolve(mount, b, item["record"], "thread"))
+        self.assertFalse(service.resolve(mount, b, item["record"], "reason", "Onboarding: not needed"))
         self.assertEqual(self.outcome(service, item["record"])["outcome"], "dismissed")
         self.assertEqual(len(self.outcomes(service, item["record"])), 1)
 
@@ -925,10 +926,10 @@ class RulesTest(unittest.TestCase):
         shown = self.missed(self.read(again))[0]
         self.assertNotEqual(shown["record"], item["record"], "the answer was asked again")
         self.assertEqual(again.seam.ledger.latest(*self.where(shown))["outcome"], "dismissed")
-        self.assertFalse(again.resolve(self.mount("alpha"), b, shown["record"], "thread"), "the mark stays dismissed")
+        self.assertFalse(again.resolve(self.mount("alpha"), b, shown["record"], "fixed"), "the mark stays dismissed")
         self.assertEqual([e["outcome"] for e in self.ledger()], ["dismissed"])
 
-    def test_reason_and_thread_resolutions_are_recorded_unconfirmed(self):
+    def test_reason_and_fixed_resolutions_are_recorded_unconfirmed(self):
         provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: ("missed", 0.95)})
         service = self.service(provider)
         item = self.shown(service)
@@ -939,9 +940,9 @@ class RulesTest(unittest.TestCase):
                          ("reason", "Onboarding: not needed", False))
         service2 = self.service(provider, state="state2")
         item = self.missed(self.read(service2))[0]
-        self.assertTrue(service2.resolve(self.mount("alpha"), b, item["record"], "thread"))
-        self.assertEqual((self.outcome(service2, item["record"])["outcome"], "reason" in self.outcome(service2, item["record"])),
-                         ("thread", False))
+        self.assertTrue(service2.resolve(self.mount("alpha"), b, item["record"], "fixed"))
+        outcome = self.outcome(service2, item["record"])
+        self.assertEqual((outcome["outcome"], outcome["by"], outcome["confirmed"]), ("fixed", "owner", False))
 
     def test_a_spec_fix_that_clears_the_mark_on_the_next_head_records_fixed_unconfirmed(self):
         # jev-suggestions #acceptance-resolution-fixed, #proof-resolution
@@ -970,10 +971,11 @@ class RulesTest(unittest.TestCase):
         provider = FakeProvider(scope={ONBOARDING: ("every feature", 0.95)}, rule={ONBOARDING: (covered, 0.95)})
         service = self.service(provider)
         item = self.shown(service)
-        self.assertTrue(service.resolve(self.mount("alpha"), str(self.specs / "b.spec.html"), item["record"], "thread"))
+        self.assertTrue(service.resolve(self.mount("alpha"), str(self.specs / "b.spec.html"), item["record"], "reason",
+                                        "Onboarding: not needed"))
         self.write("b.spec.html", spec(("b-one", FEATURE + " It adds its onboarding section."), body="Body."))
         self.assertEqual(self.missed(self.read(service)), [])
-        self.assertEqual([e["outcome"] for e in self.outcomes(service, item["record"])], ["thread"])
+        self.assertEqual([e["outcome"] for e in self.outcomes(service, item["record"])], ["reason"])
         # the human's Not for this spec hides the mark at once; it stays dismissed, never fixed
         service = self.service(provider, state="state2")
         self.write("b.spec.html", spec(("b-one", FEATURE), body="Body again."))

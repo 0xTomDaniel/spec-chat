@@ -180,8 +180,8 @@ class JevReadTest(unittest.TestCase):
         self.assertEqual(out.stdout, "r2  dismissed\n")
         self.assertEqual(server.queries, [("/api/jev/offer", {"path": ["specs/b.spec.html"]},
                                            {"resolve": "dismissed", "record": "r2", "reason": "Jev is wrong here"})])
-        out = run(server.url + "/specs/b.spec.html?base=abc", "--resolve", "r1", "thread")
-        self.assertEqual((out.returncode, server.queries[-1][2]), (0, {"resolve": "thread", "record": "r1"}))
+        out = run(server.url + "/specs/b.spec.html?base=abc", "--resolve", "r1", "fixed")
+        self.assertEqual((out.returncode, server.queries[-1][2]), (0, {"resolve": "fixed", "record": "r1"}))
 
     def test_resolve_refused_fails_loudly_with_the_server_reason(self):
         # the server is the one check of a resolution; its refusal reason is printed

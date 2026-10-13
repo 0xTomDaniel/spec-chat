@@ -76,8 +76,8 @@ class LedgerTest(unittest.TestCase):
         self.path.write_text("not json\n")
         jev.WarningLedger(self.path)  # unread until first use
         memory = jev.WarningLedger()
-        memory.append({**WHERE, "outcome": "thread", "judgment": "j", "by": "owner"})
-        self.assertEqual(memory.latest(*where())["outcome"], "thread")
+        memory.append({**WHERE, "outcome": "reason", "judgment": "j", "by": "owner"})
+        self.assertEqual(memory.latest(*where())["outcome"], "reason")
         self.assertEqual(jev.WarningLedger(self.path).latest(*where()), None, "unreadable lines are skipped")
 
 
