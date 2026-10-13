@@ -44,12 +44,17 @@ The spec document's own content styling is outside this design.</p>
 </div>
 
 <p data-acceptance-criterion data-anchor="acceptance-token-block" data-story="story-token-reuse">
-<span data-acceptance-scenario>Given a contributor editing runtime.js, When they look up a chrome color, font size, weight, radius, or spacing value,</span>
+<span data-acceptance-scenario>Given a contributor editing the review runtime, When they look up a chrome color, font size, weight, radius, or spacing value,</span>
 <span data-acceptance-observable>Then they find it as a named token in the one token block, which holds the index tokens plus <a href="#token-additions">the token additions</a>, and every chrome style uses those tokens, with literal values only for the pin teardrop radius, stacking order, transitions, animations, and positions, proven by a unit test: no screen shows it.</span>
 </p>
 
 <p data-acceptance-criterion data-anchor="acceptance-button-system" data-story="story-consistent-chrome">
-<span data-acceptance-scenario>Given a spec reviewer on a spec page, When they view it at desktop and at phone width,</span>
+<span data-acceptance-scenario>Given a spec reviewer on a desktop screen on a spec page, When they view it,</span>
+<span data-acceptance-observable>Then every chrome button matches one of the four <a href="#button-variants">button variants</a> (primary, secondary, icon, text-link) with its shared properties, and no button has a shape, size, radius, font, or color outside the system.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-button-system-phone" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>Given a spec reviewer on a phone on a spec page, When they view it,</span>
 <span data-acceptance-observable>Then every chrome button matches one of the four <a href="#button-variants">button variants</a> (primary, secondary, icon, text-link) with its shared properties, and no button has a shape, size, radius, font, or color outside the system.</span>
 </p>
 
@@ -74,7 +79,12 @@ The spec document's own content styling is outside this design.</p>
 </p>
 
 <p data-acceptance-criterion data-anchor="acceptance-no-content-change" data-story="story-consistent-chrome">
-<span data-acceptance-scenario>Given a spec reviewer on a spec that uses the shared stylesheet, When they view it at desktop and at phone width,</span>
+<span data-acceptance-scenario>Given a spec reviewer on a desktop screen on a spec that uses the shared stylesheet, When they view it,</span>
+<span data-acceptance-observable>Then the spec content (headings, prose, tables, figures, code blocks, section borders, page background) takes its look from the shared stylesheet and the runtime's document rules alone, and no chrome token restyles it.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-no-content-change-phone" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>Given a spec reviewer on a phone on a spec that uses the shared stylesheet, When they view it,</span>
 <span data-acceptance-observable>Then the spec content (headings, prose, tables, figures, code blocks, section borders, page background) takes its look from the shared stylesheet and the runtime's document rules alone, and no chrome token restyles it.</span>
 </p>
 
