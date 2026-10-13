@@ -855,12 +855,14 @@ cursor_name = ".cursor-test"
     def test_lane_flags_appear_only_under_box_setup(self):
         """review-service #acceptance-lane-args: the skills name visibility, proof host, state, bind, port, and address
         arguments only under Box setup; the lane command takes none."""
-        flags = re.compile(r"--(public|private|proof-host|state-dir|bind|port|host)\b")
+        flags = re.compile(r"--(public|private|proof-host|state-dir|bind|port|host)(?![\w-])")
         found = []
         for path in sorted((ROOT / "skill").rglob("*.md")):
-            heading = ""
+            heading, fenced = "", False
             for line in path.read_text(encoding="utf-8").splitlines():
-                if line.startswith("#"):
+                if line.lstrip().startswith(("```", "~~~")):
+                    fenced = not fenced
+                elif not fenced and re.match(r"#{1,6} ", line):
                     heading = line
                 elif flags.search(line):
                     found.append((path.relative_to(ROOT).as_posix(), heading))

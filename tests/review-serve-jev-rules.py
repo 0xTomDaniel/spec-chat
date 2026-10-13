@@ -568,7 +568,7 @@ class RulesTest(unittest.TestCase):
 
     def test_not_for_this_spec_hides_the_rule_on_that_spec_path_for_good(self):
         """project-rules #proof dismiss, #acceptance-dismiss, #acceptance-dismiss-read, #acceptance-dismiss-recorded,
-        #acceptance-dismiss-other, #dismiss-where."""
+        #acceptance-dismiss-other, #acceptance-dismiss-head, #dismiss-where."""
         self.seed()
         self.write("c.spec.html", spec(("c-one", "Another feature criterion."), body="C body."))
         provider = FakeProvider(rule={ONBOARDING: ("missed", 0.95)})
@@ -654,7 +654,7 @@ class RulesTest(unittest.TestCase):
 
     def test_not_a_project_rule_settles_the_criterion_through_rewording(self):
         """project-rules #proof candidate, #acceptance-not-a-rule, #acceptance-not-a-rule-read, #acceptance-not-a-rule-recorded,
-        #dismiss-candidate."""
+        #acceptance-not-a-rule-reworded, #dismiss-candidate."""
         provider = self.candidate_spec()
         service = self.service(provider)
         item = self.candidates(self.read(service))[0]

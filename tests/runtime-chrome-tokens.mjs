@@ -112,4 +112,16 @@ for (const rule of desktop) {
       bad(rule, prop, value, 'resizes a shared button');
 }
 assert.deepEqual(problems, [], 'no context resizes a button');
+
+// #acceptance-button-system-phone, #acceptance-no-content-change-phone: the phone block keeps every button at its
+// 44px mobile size, with color, font, and radius held to the tokens by the checks above, and restyles only chrome.
+const phone = rules.filter(rule => rule.media === '@media(max-width:640px)');
+assert.ok(phone.length > 10, 'parsed the phone block');
+const parts = rule => rule.sel.split(/,(?![^(]*\))/).map(s => s.trim());
+for (const rule of phone) {
+  for (const sel of parts(rule)) assert.match(sel, /\.hx-|\bhx-/, 'phone rule restyles only chrome: ' + sel);
+  if (!parts(rule).some(sel => BUTTONS.includes(sel) || SQUARE.includes(sel))) continue;
+  for (const [prop, value] of rule.decls)
+    if (/^(min-)?(height|width)$/.test(prop)) assert.equal(value, '44px', rule.sel + ' ' + prop + ' is the mobile size');
+}
 console.log('ok runtime chrome tokens');

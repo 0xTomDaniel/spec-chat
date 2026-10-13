@@ -253,12 +253,23 @@ class ReviewStateCollections(unittest.TestCase):
         items, answer = jev("rule-candidate", "onboarding")
         self.assertEqual([(i["kind"], i["id"], i["text"]) for i in items], [("candidate", "rule-onboarding", ONBOARDING)])
         self.assertEqual(jev("rule-candidate")[1]["rules"], [])
-        rule = jev("qa-fixture")[0][0]
-        body = json.dumps({"dismiss": "here", "home": rule["home"], "record": rule["record"]}).encode()
-        request = urllib.request.Request(base + "/api/jev/offer?path=qa-fixture/docs/specs/report.spec.html", data=body, method="POST")
-        with urllib.request.urlopen(request) as response:
-            self.assertTrue(json.load(response)["ok"])
-        self.assertEqual(jev("qa-fixture")[0], [])
+        items, _ = jev("not-a-rule", "onboarding")
+        self.assertEqual([(i["kind"], i["id"]) for i in items], [("candidate", "rule-onboarding")])
+
+        def dismiss(collection):
+            rule = jev(collection)[0][0]
+            body = json.dumps({"dismiss": "here", "home": rule["home"], "record": rule["record"]}).encode()
+            request = urllib.request.Request(base + "/api/jev/offer?path=%s/docs/specs/report.spec.html" % collection,
+                                             data=body, method="POST")
+            with urllib.request.urlopen(request) as response:
+                self.assertTrue(json.load(response)["ok"])
+            self.assertEqual(jev(collection)[0], [])
+
+        # a dismissing criterion's own project: its click hides no sibling criterion's marker
+        dismiss("dismiss")
+        for collection in ("qa-fixture", "dismiss-reload"):
+            self.assertEqual([i["kind"] for i in jev(collection)[0]], ["rule"], collection)
+        dismiss("qa-fixture")
         site.reset(QA_STORY="story-dismiss", QA_URL_REVIEW=base)
         self.assertEqual([i["kind"] for i in jev("qa-fixture")[0]], ["rule"])
 

@@ -124,6 +124,7 @@ class JevBackgroundTest(unittest.TestCase):
         self.assertEqual(provider.calls, 20)
 
     def test_read_while_asks_are_in_flight_starts_none(self):
+        """jev-suggestions #acceptance-cache-call: once labels show, a reload at the same base and head makes no Jev call."""
         provider = GatedProvider()
         service = self.service(provider)
         try:
@@ -134,8 +135,9 @@ class JevBackgroundTest(unittest.TestCase):
             self.assertEqual([item["state"] for item in again["items"]], ["pending"] * 20)
         finally:
             provider.release.set()
-        self.settled(service)
-        self.read(service)
+        labels = self.settled(service)
+        self.assertEqual(provider.calls, 20)
+        self.assertEqual(self.read(service), labels)
         self.assertEqual(provider.calls, 20)
 
     def test_failed_is_held_unavailable_during_its_pause_and_changed_inputs_ask_at_once(self):
