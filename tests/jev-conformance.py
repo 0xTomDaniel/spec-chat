@@ -71,22 +71,22 @@ class Recording(jev.JudgmentStore):
         return super().append(record)
 
 
-def differences(expected, actual, field):
-    """(field, expected, actual) for every listed value that differs; record_id matches by its prefix."""
-    if isinstance(expected, dict) and isinstance(actual, dict) and not field.endswith(("request", "state")):
-        for name, value in expected.items():
+def differences(expected, actual, field, exact=False):
+    """(field, expected, actual) for every listed value that differs; record_id matches by its prefix.
+    A request, a state, and probabilities match exactly, key for key, all the way down."""
+    exact = exact or field.endswith(("request", "state", "probabilities"))
+    if isinstance(expected, dict) and isinstance(actual, dict):
+        for name in sorted(set(expected) | set(actual)) if exact else expected:
             path = field + "." + name
             if name not in actual:
-                yield path, value, "<missing>"
-            elif name == "record_id":
-                if not (isinstance(actual[name], str) and actual[name].startswith(value)):
-                    yield path, value + "*", actual[name]
+                yield path, expected[name], "<missing>"
+            elif name not in expected:
+                yield path, "<missing>", actual[name]
+            elif name == "record_id" and not exact:
+                if not (isinstance(actual[name], str) and actual[name].startswith(expected[name])):
+                    yield path, expected[name] + "*", actual[name]
             else:
-                yield from differences(value, actual[name], path)
-        return
-    if isinstance(expected, dict) and isinstance(actual, dict):  # a request or state matches exactly, key for key
-        for name in sorted(set(expected) | set(actual)):
-            yield from differences(expected.get(name, "<missing>"), actual.get(name, "<missing>"), field + "." + name)
+                yield from differences(expected[name], actual[name], path, exact)
         return
     if expected != actual:
         yield field, expected, actual
@@ -161,6 +161,13 @@ class ConformanceTest(unittest.TestCase):
         case["expect"]["request"]["questions"]["change-type"]["type"] = "multiple"
         self.assertEqual(run_case(self.jev, "shown", case),
                          ["shown: expect.request.questions.change-type.type differs: expected 'multiple', got 'choice'"])
+        case = cases()["shown"]
+        del case["expect"]["request"]["questions"]["change-type"]["criteria"]["cosmetic"]["description"]
+        del case["expect"]["record"]["answer"]["probabilities"]["cosmetic"]
+        self.assertEqual(run_case(self.jev, "shown", case), [
+            "shown: expect.request.questions.change-type.criteria.cosmetic.description differs: "
+            "expected '<missing>', got 'The edit changes wording only.'",
+            "shown: expect.record.answer.probabilities.cosmetic differs: expected '<missing>', got 0.08"])
         case = cases()["during-pause"]
         case["question"]["now"] = "2026-10-13T12:00:31.000Z"
         failures = run_case(self.jev, "during-pause", case)
