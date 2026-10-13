@@ -567,7 +567,7 @@ class RulesTest(unittest.TestCase):
 
     def test_not_for_this_spec_hides_the_rule_on_that_spec_path_for_good(self):
         """project-rules #proof dismiss, #acceptance-dismiss, #acceptance-dismiss-read, #acceptance-dismiss-recorded,
-        #dismiss-where."""
+        #acceptance-dismiss-other, #dismiss-where."""
         self.seed()
         self.write("c.spec.html", spec(("c-one", "Another feature criterion."), body="C body."))
         provider = FakeProvider(rule={ONBOARDING: ("missed", 0.95)})

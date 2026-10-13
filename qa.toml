@@ -45,8 +45,8 @@ touch = true
 # the "Jev notes" button beside the Acceptance criteria heading; opening it shows the rule card
 # "Every change ships its onboarding". Every collection except rule-candidate is the same
 # project, so its report spec is another spec of the project missing the same rule.
-# - miss, dismiss, dismiss-reload, dismiss-head, dismiss-other, dismiss-no-unrule, ask: open the
-#   rule marker beside Acceptance criteria to show the card first.
+# - miss, dismiss, dismiss-reload, dismiss-head, dismiss-no-unrule, ask: open the rule marker
+#   beside Acceptance criteria to show the card first.
 # - dismiss: then click Not for this spec; capture the card closing, with no reload.
 # - dismiss-reload: then click Not for this spec, then reload the page (browser reload).
 # - dismiss-head: then click Not for this spec, then reload the page (browser reload). The edit and
@@ -168,21 +168,35 @@ values = ["Name the CSV columns."]
 cannot_host = "capture has one browser context and cannot save from the first reviewer's page while watching the second; proven by tests/runtime-review-live.mjs"
 [entry.criteria.acceptance-live-concurrent]
 cannot_host = "capture has one browser context, so two pages cannot save within the same second; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-live-concurrent-other]
+cannot_host = "capture has one browser context, so two pages cannot save within the same second; proven by tests/runtime-review-live.mjs"
 [entry.criteria.acceptance-name-collision]
+cannot_host = "capture has one browser context; the Then needs both reviewers' pages showing each other's names; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-name-collision-other]
 cannot_host = "capture has one browser context; the Then needs both reviewers' pages showing each other's names; proven by tests/runtime-review-live.mjs"
 [entry.criteria.acceptance-edit-race]
 cannot_host = "capture has one browser context; the Then needs both reviewers' pages showing the same edit; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-edit-race-other]
+cannot_host = "capture has one browser context; the Then needs both reviewers' pages showing the same edit; proven by tests/runtime-review-live.mjs"
 [entry.criteria.acceptance-handoff-own]
+cannot_host = "capture has one browser context; the Given needs two live browsers each holding a draft, and a seeded draft cannot carry the capture browser's own id; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-handoff-own-other]
 cannot_host = "capture has one browser context; the Given needs two live browsers each holding a draft, and a seeded draft cannot carry the capture browser's own id; proven by tests/runtime-review-live.mjs"
 # Capture runs story-review-index at desktop viewport; criteria cannot set a viewport.
 [entry.criteria.acceptance-index-link-panel]
 cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone-width open panel state cannot be reached; proven by tests/runtime-mobile-contract.mjs"
+[entry.criteria.acceptance-index-link-panel-closed]
+cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone-width open-then-closed panel state cannot be reached; proven by tests/runtime-mobile-contract.mjs"
 # Going offline is the device capability capture does not support (jev-capture #jc-capabilities).
 [entry.criteria.acceptance-offline-save]
 cannot_host = "capture cannot take the browser offline (device capability unsupported); proven by tests/runtime-review-live.mjs"
 [entry.criteria.acceptance-offline-reconnect]
 cannot_host = "capture cannot take the browser offline (device capability unsupported), so no reconnect; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-offline-reconnect-other]
+cannot_host = "capture cannot take the browser offline (device capability unsupported), so no reconnect; proven by tests/runtime-review-live.mjs"
 [entry.criteria.acceptance-offline-closed]
+cannot_host = "capture cannot take the browser offline (device capability unsupported), so no offline save to reopen; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-offline-closed-other]
 cannot_host = "capture cannot take the browser offline (device capability unsupported), so no offline save to reopen; proven by tests/runtime-review-live.mjs"
 
 # Stories this environment cannot host. services.review runs with HOME and XDG under
@@ -191,6 +205,8 @@ cannot_host = "capture cannot take the browser offline (device capability unsupp
 # answers scope, rule, and coverage (each criterion verifies its data-story story);
 # every other question answers unrelated. Each reset registers fresh projects.
 [entry.criteria.acceptance-reviewed-kept]
+cannot_host = "the reviewed base is written by review-host when a hand-off is processed; review-host does not run here (the fixture writes the registry)"
+[entry.criteria.acceptance-reviewed-kept-clean]
 cannot_host = "the reviewed base is written by review-host when a hand-off is processed; review-host does not run here (the fixture writes the registry)"
 [entry.criteria.acceptance-reviewed-accepted]
 cannot_host = "the accepted flag is written by review-host reviewed; review-host does not run here (the fixture writes the registry)"
@@ -253,6 +269,10 @@ cannot_host = "fake Jev answers only scope, rule, and coverage questions, so no 
 cannot_host = "the fixture's projects are copies of one repo with the same marked rule, and fake Jev answers no Contradicts, Oversteps, Overlaps, or cross-lane question, so no mark can show which project it cites; proven by tests/review-serve-jev-rules.py test_rules_come_only_from_the_page_project"
 [entry.criteria.acceptance-own-project-lane]
 cannot_host = "fake Jev answers no contradiction question, so no two lanes contradict and no cross-lane mark or pair exists"
+[entry.criteria.acceptance-own-project-lane-b]
+cannot_host = "fake Jev answers no contradiction question, so no two lanes contradict and no cross-lane mark or pair exists; proven by tests/review-serve-jev-board.py test_slugs_of_different_projects_are_never_paired"
+[entry.criteria.acceptance-own-project-board]
+cannot_host = "fake Jev answers no contradiction question, so no two lanes contradict and no cross-lane mark or pair exists; proven by tests/review-serve-jev-board.py test_slugs_of_different_projects_are_never_paired"
 [entry.criteria.acceptance-clear]
 cannot_host = "the When is an agent edit to the spec file while the reviewer views the card; capture edits no file and the fixture lands no edit on a plain reload"
 [entry.criteria.acceptance-reword]
@@ -263,6 +283,8 @@ cannot_host = "the When is an author edit deleting the rule's criterion from its
 cannot_host = "the When is an author edit marking a criterion in its home spec file mid-scenario; capture edits no file; proven by tests/review-serve-jev-rules.py test_marking_a_missed_criterion_shows_its_rule_card"
 [entry.criteria.acceptance-not-a-rule-mark]
 cannot_host = "the When is an author edit marking a criterion in its home spec file mid-scenario; capture edits no file; proven by tests/review-serve-jev-rules.py test_a_criterion_answered_not_a_rule_still_becomes_a_rule_once_marked"
+[entry.criteria.acceptance-dismiss-other]
+cannot_host = "a dismissal holds for one project and spec path, every collection's report spec is the same project and path, and no second spec misses the rule (later-only and one-open mention onboarding); proven by tests/review-serve-jev-rules.py test_not_for_this_spec_hides_the_rule_on_that_spec_path_for_good"
 [entry.criteria.acceptance-fallback-miss]
 cannot_host = "fake Jev answers every rule check at 0.95, so no question goes to the general LLM; proven by tests/review-serve-jev-rules.py test_unsure_goes_once_to_general_llm_which_decides_and_is_reused"
 [entry.criteria.acceptance-shape-ask]
@@ -275,6 +297,8 @@ cannot_host = "the onboarding documentation is the repo README, which the review
 cannot_host = "every fixture spec is served with a registry row, so the Given's specs served without a row are absent; proven by tests/review-serve-multi.py"
 [entry.criteria.acceptance-index-design]
 cannot_host = "a criterion runs at one viewport, and the When needs desktop then phone; the token block is CSS source; proven by tests/review-serve-multi.py"
+[entry.criteria.acceptance-index-design-phone]
+cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone screen cannot be reached; proven by tests/review-serve-multi.py"
 # Setting the system appearance is not a browser capability (jev-capture #jc-capabilities).
 [entry.criteria.acceptance-index-dark]
 cannot_host = "capture cannot set the system appearance to dark; the QA-1 lane card has threads in every status; proven by tests/review-serve-multi.py (dark tokens, 4.5:1 per pill)"
