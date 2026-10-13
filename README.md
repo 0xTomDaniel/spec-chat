@@ -87,9 +87,16 @@ Canonical contract: [remote hosting lifecycle](skill/review-spec/SKILL.md#remote
 
 ## Writing a project rule
 
-A project rule is an acceptance criterion that applies to every feature, such as *"When any change adds a screen or alters what a user can do, the change ships with its help center article."* Jev finds these automatically and checks every spec under shaping against them ([project-wide rules](docs/specs/project-rules.spec.html)).
+A project rule is an acceptance criterion that applies to every feature, such as *"When any change adds a screen or alters what a user can do, the change ships with its help center article."* Jev checks every spec under shaping against the project's rules ([project-wide rules](docs/specs/project-rules.spec.html)).
 
-To make a criterion a project rule, include explicit every-feature wording in the criterion text: *every feature*, *every change*, *any change*, or equivalent. Jev reads the text and decides; no tag, list, or declaration is needed.
+To declare one, mark its criterion in its home spec with a short name, and say in its text that it applies to every feature:
+
+```html
+<p data-acceptance-criterion data-anchor="acceptance-help" data-project-rule="Every screen ships its help article">
+  When any change adds a screen or alters what a user can do, the change ships with its help center article.</p>
+```
+
+The mark is the whole declaration: removing it, or the criterion, retires the rule. Jev flags an unmarked criterion that reads as project-wide as a possible project rule, so none slips in unmarked.
 
 ## Repo layout
 

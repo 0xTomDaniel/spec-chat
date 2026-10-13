@@ -2,7 +2,6 @@
 import contextlib
 import importlib.util
 import io
-import json
 import sys
 import tempfile
 import unittest
@@ -19,7 +18,7 @@ jev = sys.modules["jev"]
 
 
 class StoreUnreadAtStartTest(unittest.TestCase):
-    """Start never reads the record store, however large; the first store use splits records.jsonl once."""
+    """Start never reads the record store, however large; the first lookup reads only its key's file."""
 
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
@@ -27,7 +26,7 @@ class StoreUnreadAtStartTest(unittest.TestCase):
         self.state = Path(temp.name) / "spec-chat"
         (self.state / "jev").mkdir(parents=True)
         record = {"cache_key": "sha256:held", "outcome": "ok", "record_id": "judgment-held"}
-        (self.state / "jev" / "records.jsonl").write_text(json.dumps(record) + "\n")
+        jev.JudgmentStore(self.state / "jev" / "records.jsonl").append(record)
         self.reads = []
         lines = jev._lines
 
@@ -47,8 +46,7 @@ class StoreUnreadAtStartTest(unittest.TestCase):
         self.addCleanup(service.stop)
         self.assertEqual(self.reads, [], "JevService read the record store at construction")
         self.assertEqual(service.seam.store.get("sha256:held")["record_id"], "judgment-held")
-        self.assertEqual(self.reads[0], "records.jsonl")
-        self.assertEqual(len(self.reads), 2, "the first use read more than the old file and the key's own")
+        self.assertEqual(len(self.reads), 1, "the first use read more than the key's own file")
 
     def test_server_prints_url_without_reading_store(self):
         out = io.StringIO()

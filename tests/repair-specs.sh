@@ -54,7 +54,26 @@ need "$REPAIR" "adjust the spec, fix the code later, or leave it"
 need "$REPAIR" "Nothing about drift is written into a spec"
 need "$REPAIR" "not done until the human has settled every suggestion"
 need "$REPAIR" "not checked against code"
-need "$REPAIR" "Run all six repair types and the drift check"
+# catch-up: the batch rule checks through the agent read, idempotent, no onboarding status read
+need "$REPAIR" "## Catch-up"
+need "$REPAIR" "jev-read.py"
+need "$REPAIR" "--not-a-rule"
+need "$REPAIR" "--not-for-spec"
+need "$REPAIR" "Mark it with a short name; Not a project rule; or skip"
+need "$REPAIR" "Cover it; add a reason line; or Not for this spec"
+need "$REPAIR" "Step 2 runs after step 1"
+need "$REPAIR" "idempotent"
+need "$REPAIR" "the rule checks need Jev"
+if grep -qF 'onboarding.toml' "$REPAIR"; then
+  echo "$REPAIR still reads onboarding status" >&2; exit 1
+fi
+# shaping asks the human per own-spec candidate
+need "$SHAPE" "--not-a-rule"
+need "$SHAPE" "data-project-rule"
+need "$SHAPE" "Candidates on other specs are only listed"
+if grep -qF 'Never confirm or reject a rule' "$SHAPE"; then
+  echo "$SHAPE still never asks about a candidate" >&2; exit 1
+fi
 if grep -qiw 'five' "$REPAIR"; then
   echo "$REPAIR still counts five repair types" >&2; exit 1
 fi

@@ -213,7 +213,6 @@ class MountState:
         self.path = os.path.realpath(path) if path else None
         self.records = tuple(records)
         self.signature = self._signature() if self.path else None
-        self.on_change = None  # called with the new rows after each registry reload
 
     def _signature(self):
         try:
@@ -234,16 +233,7 @@ class MountState:
             return self.records
         self.records = tuple(records)
         self.signature = signature
-        self.changed()
         return self.records
-
-    def changed(self):
-        """Run on_change with the current rows; a failed warm-up start never fails a request or server start."""
-        if self.on_change:
-            try:
-                self.on_change(self.records)
-            except Exception as exc:
-                print("review-serve: registry change hook failed: %r" % exc, file=sys.stderr, flush=True)
 
 
 BROAD_HOME_CHILDREN = ("Desktop", "Documents", "Downloads")
@@ -1152,48 +1142,35 @@ listenHost();
             return self._json({"error": "jev unavailable"}, 503)
 
     def _post_offer(self, query, body):
-        """The one Jev record route: either one-time offer, reconcile or candidates (body kind), sent or dismissed
-        (project-rules #bootstrap-offer, #bootstrap-candidates), a rule card's Not for this spec or Not a project
-        rule (project-rules #dismiss-store), a candidate card's Confirm rule with an optional corrected name
-        (project-rules #approval), or an owner's resolution of an Important mark from the agent read
+        """The one Jev record route: a rule card's Not for this spec or a candidate card's Not a project rule
+        (project-rules #dismiss), a candidate catch-up passed over (repair-specs #catch-up-table), or an owner's resolution of an Important mark from the agent read
         (jev-suggestions #record-resolution)."""
         mount, target, _ = self._resolve_path(query.get("path", [""])[0], spec_only=True)
         if not mount:
             return self._json({"error": "bad path"}, 400)
         try:
             data = json.loads(body)
-            action = data.get("offer")
+            data.get("dismiss")
         except (ValueError, AttributeError):
             return self._json({"error": "bad json"}, 400)
         if "dismiss" in data:
             # jev.dismiss is the one check of a dismissal; a refused one is a 400, and the page's re-read brings its note back.
             try:
-                ok = self.server.jev.dismiss(mount, target, data.get("dismiss"), data.get("rule"), data.get("record"),
-                                             data.get("spec"))
+                ok = self.server.jev.dismiss(mount, target, data.get("dismiss"), data.get("home"), data.get("record"),
+                                             data.get("anchor"))
             except OSError:
                 return self._json({"error": "jev unavailable"}, 503)
             return self._json({"ok": ok}, 200 if ok else 400)
         if "resolve" in data:
             try:
-                ok = self.server.jev.resolve(mount, data.get("record"), data.get("resolve"), data.get("reason"))
+                ok = self.server.jev.resolve(mount, target, data.get("record"), data.get("resolve"), data.get("reason"))
             except OSError:
                 return self._json({"error": "jev unavailable"}, 503)
             if not ok:
                 return self._json({"ok": False, "error": "refused: resolution is fixed, reason, thread, or dismissed "
-                                   "with a reason, on a known record not yet resolved"}, 400)
+                                   "with a reason, on a mark shown here not yet resolved"}, 400)
             return self._json({"ok": True})
-        if "confirm" in data:
-            try:
-                ok = self.server.jev.confirm(mount, data.get("rule"), data.get("name"))
-            except OSError:
-                return self._json({"error": "jev unavailable"}, 503)
-            return self._json({"ok": ok}, 200 if ok else 400)
-        if action not in ("sent", "dismissed") or data.get("kind", "reconcile") not in ("reconcile", "candidates"):
-            return self._json({"error": "offer must be sent or dismissed"}, 400)
-        try:
-            return self._json({"ok": self.server.jev.record_offer(mount.get("project"), action, data.get("kind", "reconcile"))})
-        except OSError:
-            return self._json({"error": "jev unavailable"}, 503)
+        return self._json({"error": "body names dismiss or resolve"}, 400)
 
     def _post_event(self, query, body):
         mount, review = self._route_review(query)
@@ -1227,6 +1204,13 @@ listenHost();
             return self._json({"error": "event not stored"}, 503)
         if not stored:
             return self._json({"error": "event file exists with different bytes"}, 409)
+        if event_name == "handoff" and "events" not in event:
+            # Accept spec writes the hand-off without a list: open candidates are recorded ignored (project-rules
+            # #dismiss-trace). A failed trace never fails the stored hand-off.
+            try:
+                self.server.jev.accepted(mount, review[:-len(".review")])
+            except OSError as exc:
+                print("review-serve: candidate trace not recorded: %r" % exc, file=sys.stderr, flush=True)
         return self._json({"ok": True, "name": name})
 
     def _send_file(self, path):
@@ -1349,9 +1333,6 @@ def main(argv=None):
     server.state_dir = os.path.dirname(os.path.abspath(args.registry)) if args.registry else None
     server.jev = JevService(api_key=lambda: jev_provider(server.state_dir),
                             llm_model=lambda: jev_llm_model(server.state_dir))
-    # Bootstrap (project-rules #bootstrap-home): a project's first registration starts its warm-up here.
-    state.on_change = server.jev.warm
-    state.changed()
     server.wake_controller = WakeController(server)
     wake_thread = threading.Thread(target=server.wake_controller.run, name="spec-chat-wake", daemon=True)
     wake_thread.start()

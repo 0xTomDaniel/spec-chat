@@ -332,27 +332,15 @@ class JevSeamTest(unittest.TestCase):
 
     def test_judgment_store_skips_corrupt_and_truncated_records(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "records.jsonl"
-            path.write_bytes(
+            store = jev.JudgmentStore(Path(directory) / "records.jsonl")
+            shard = store._shard_path("000")
+            shard.parent.mkdir()
+            shard.write_bytes(
                 b"not json\n"
                 b'{"cache_key":"valid","outcome":"shown"}\n'
                 b'{"cache_key":"truncated","outcome":"shown"\xe2'
             )
-            store = jev.JudgmentStore(path)
             self.assertEqual([r["cache_key"] for r in store.records()], ["valid"])
-
-    def test_judgment_store_split_failure_raises_and_retries_never_partial(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "records.jsonl"
-            path.write_text('{"cache_key":"first","outcome":"shown"}\n')
-            store = jev.JudgmentStore(path)
-            with patch.object(jev.os, "rename", side_effect=OSError("unreadable state")):
-                with self.assertRaises(OSError):
-                    store.get("first")
-                with self.assertRaises(OSError):
-                    store.append({"cache_key": "first", "outcome": "shown"})
-            self.assertFalse((Path(directory) / "records").exists(), "a failed split let a write append")
-            self.assertEqual(store.get("first")["outcome"], "shown")
 
     def test_resolved_unrelated_is_not_displayed(self):
         provider = FakeProvider({"answers": {"resolved": {"choice": "unrelated", "confidence": 0.9}}})

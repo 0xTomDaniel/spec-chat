@@ -1,19 +1,17 @@
 ---
 name: repair-specs
-description: Bring a repo's existing specs and ADRs to the current shaping contract. Removes non-target text, moves behavior to owning specs, resolves contradictions, reduces ADRs to the ADR model, and rewrites acceptance criteria to the shaping contract's criterion rules and Jev project rules, brings spec pages to the visual quality contract, then checks each spec against its code for drift. Runnable any time or as onboarding catch-up.
+description: Bring a repo's existing specs and ADRs to the current shaping contract. Removes non-target text, moves behavior to owning specs, resolves contradictions, reduces ADRs to the ADR model, and rewrites acceptance criteria to the shaping contract's criterion rules, brings spec pages to the visual quality contract, then checks each spec against its code for drift. Its catch-up runs the Jev project rule checks over every spec in batch. Runnable any time or as onboarding catch-up.
 ---
 
 # Repair specs
 
 One skill that brings every spec and ADR in a repo to the current [shaping contract](../shape-spec/SKILL.md).
-Reads Spec Chat's `onboarding.toml`, the repo's specs and ADRs, and for the drift check the repo's code and Git history; names no peer status file or peer.
+Reads the repo's specs and ADRs, Jev's checks through the agent read (`spec-chat-review`'s `scripts/jev-read.py`), and for the drift check the repo's code and Git history; reads no onboarding status or peer status file and names no peer.
 
 ## Inputs
 
-The caller names the repo root and optionally a project slug for onboarding context.
-
-When invoked as onboarding catch-up, read `$XDG_STATE_HOME/spec-chat/onboarding.toml` for the project's table: warm-up state, rules found, and N specs to reconcile.
-When N is zero or the table is absent, there is nothing to reconcile; stop.
+The caller names the repo root and optionally catch-up.
+A repair run is all six repair types and the drift check; a catch-up run is the [catch-up](#catch-up) steps only.
 
 ## Repair types
 
@@ -55,7 +53,7 @@ For an ADR with a policy or rules section, a restated rule, mechanics, or amendm
 
 ### 5. Criteria
 
-Rewrite acceptance criteria to the shaping contract's [criterion rules](../../docs/specs/prompt-first-shaping.spec.html#complete-criterion-capturable), then to any missed Jev project rule.
+Rewrite acceptance criteria to the shaping contract's [criterion rules](../../docs/specs/prompt-first-shaping.spec.html#complete-criterion-capturable).
 Criterion-rule repair runs whether Jev is on or off.
 
 Criterion rules:
@@ -68,12 +66,8 @@ Criterion rules:
 - When a Given names a fixture identifier or fixture user and the specs say which role it is, rewrite the Given to that role (`Given tf-admin is signed in` becomes `Given an internal admin acting in a client account`) and list the fixture user in the repair commit message as that role's fixture user for the target's qa.toml.
 - When a Then names an artifact path, capture file, command, or test output, rewrite it to the outcome in product terms; when no screen shows the outcome, the Then reads `proven by a unit test: no screen shows it` (`posthog-captures.jsonl holds one funnel event` becomes `the funnel step is recorded once, proven by a unit test: no screen shows it`). List each artifact path moved out in the repair commit message for the target's qa.toml.
 
-Jev project rules, only when Jev is on:
-- Read the project's Jev rules: project-wide rules are acceptance criteria from other specs whose scope is `every feature`, as [project-rules](../../docs/specs/project-rules.spec.html) defines.
-- For each spec whose criteria miss a rule, rewrite to satisfy the rule using the rule's own wording.
-- The skill names no project's rules and applies whatever Jev found; no rule wording or format is hardcoded.
-
-When Jev is off, skip only the Jev project-rule repair; clean, home, contradict, ADR, criterion-rule, and presentation repairs still run.
+Project-rule misses are not a criteria repair: [catch-up](#catch-up) proposes them for the human to settle.
+With Jev off, clean, home, contradict, ADR, criterion-rule, and presentation repairs still run; only the Jev project-rule checks of catch-up are skipped.
 
 ### 6. Presentation
 
@@ -148,12 +142,28 @@ When repairs and the drift check complete:
 
 Commits are local only; the skill never pushes, opens a pull request, or creates an issue.
 
-## Onboarding catch-up
+## Catch-up
 
-When `onboarding.toml` shows specs to reconcile for a project:
+Catch-up is the batch entry point of the [project rule checks](../../docs/specs/project-rules.spec.html): the same scope and rule-check questions the review page and the agent read use, over every spec of the project at once.
+Onboarding runs it once when a box is set up; anyone may run it again at any time as a check.
+The skill names no project's rules and keeps no rule list: rules are the criteria the specs mark with `data-project-rule`, and Jev's checks find the rest.
 
-1. Run all six repair types and the drift check on that project's specs.
-2. Update the project's table in `onboarding.toml` when done (reconciled count, timestamp).
+Read Jev through the agent read, one review link per spec:
+1. Serve the project's specs with `spec-chat-review` (its lane command), so the read sees every other spec's marked rules.
+2. For each spec, take a base the spec differs from, such as the repo's first commit (`git rev-list --max-parents=0 HEAD`), since rules are checked only on a spec that differs from its base; a spec unchanged since that base is not rule-checked, so tell the human.
+3. Run `scripts/jev-read.py '<review-url>' --wait 300` per spec; `--anchor <id>` gives an item's full detail.
+4. When the read says `off`, report that the rule checks need Jev, propose nothing, and change no spec.
+
+Then present the proposals in two steps, one line per proposal, and let the human settle each:
+
+| Step | Proposes | The human settles each as | Recorded |
+| --- | --- | --- | --- |
+| 1. Candidates | Each candidates entry whose path is the spec read: an unmarked criterion Jev reads as applying to every feature | Mark it with a short name; Not a project rule; or skip | Mark: add `data-project-rule="<short name>"` to the criterion and commit. Not a project rule: `--not-a-rule <anchor>`. Skip: `--ignored <anchor>`; it is proposed again next run |
+| 2. Misses | Each `rule` important line, one per spec and rule | Cover it; add a reason line; or Not for this spec | Cover: rewrite the spec's criteria to satisfy the rule using its own wording, and commit. Reason line: add it to the spec, commit, and `--resolve <record> reason --reason '<reason>'`. Not for this spec: `--not-for-spec <home> <record>`, home and record from `--anchor` |
+
+Step 2 runs after step 1: read every spec again once step 1 is settled and committed, so a rule the human just marked is checked in the same run.
+Catch-up is idempotent: a marked criterion, one answered Not a project rule, and a covered, reasoned, or dismissed miss are absent from the read, so a second run proposes only what is still open, and reports nothing to settle when nothing is.
+The run is not done until the human has settled or skipped every proposal; make only the spec edits the human chose, under the one retry rule.
 
 ## Burden
 

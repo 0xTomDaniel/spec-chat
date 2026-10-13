@@ -50,8 +50,8 @@ class TestHostStore(unittest.TestCase):
                         "sources": ["spec#a"], "revision": "head"}
             service.test_seam.ask(question)
 
-            # The test store, files beside the live store's, has the record; the live store has none
-            test_lines = [line for f in (Path(tmp) / "records-test").glob("*.jsonl") for line in f.read_text().splitlines()]
+            # The test namespace, the store's test directory, has the record; the live store has none (#test-host-rule)
+            test_lines = [line for f in (Path(tmp) / "test" / "records").glob("*.jsonl") for line in f.read_text().splitlines()]
             self.assertEqual(len(test_lines), 1, "test store should have one record")
             self.assertEqual(list(service.seam.store.records()), [], "live store should be empty")
 
@@ -102,24 +102,6 @@ class TestHostStore(unittest.TestCase):
             # _board_from_records filters test rows
             filtered = [row for row in rows
                         if isinstance(row, dict) and row.get("slug") and row.get("spec")
-                        and not row.get("test")]
-            self.assertEqual(len(filtered), 1)
-            self.assertEqual(filtered[0]["slug"], "ann1")
-
-            service.stop()
-
-    def test_test_slug_excluded_from_warmup(self):
-        """Test-flagged rows are excluded from warm."""
-        with tempfile.TemporaryDirectory() as tmp:
-            service = jev.JevService(state_dir=tmp, api_key="fake-key")
-
-            rows = [
-                {"slug": "ann1", "spec": "a.spec.html", "root": "/tmp/r", "project": "proj", "id": "x"},
-                {"slug": "ann2", "spec": "b.spec.html", "root": "/tmp/r", "project": "proj", "test": True, "id": "y"},
-            ]
-            # Filter the way warm() does
-            filtered = [row for row in rows
-                        if isinstance(row, dict) and row.get("project") and row.get("root")
                         and not row.get("test")]
             self.assertEqual(len(filtered), 1)
             self.assertEqual(filtered[0]["slug"], "ann1")

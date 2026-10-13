@@ -8,11 +8,9 @@ import math
 import os
 import posixpath
 import re
-import shutil
 import subprocess
 import threading
 import time
-import tomllib
 import uuid
 from collections import OrderedDict
 from concurrent.futures import Future, ThreadPoolExecutor, wait
@@ -292,26 +290,11 @@ def load_question_sets(*directories: str | Path | None) -> dict[str, QuestionSet
     return result
 
 
-def rule_identity(text: str) -> str:
-    """What a dismissal holds for in place of the rule's criterion text, so no record names it (project-rules #dismiss-scope)."""
-    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-# The human's rule decisions (project-rules #dismiss, #approval): the card action to the resolution it records.
-# Not for this spec (here), Not a project rule (rule), Confirm rule (confirm).
-DECISIONS = {"here": "dismissed", "rule": "not-a-rule", "confirm": "rule"}
+# A candidate's outcomes (project-rules #dismiss-trace): settled by a human or a spec mark, or passed over.
+NOT_A_RULE, MARKED, IGNORED = "not-a-rule", "marked", "ignored"
+SETTLED = frozenset({NOT_A_RULE, MARKED})
 # An owner's resolutions of an Important mark through the agent read (#record-resolution); dismissed names its reason.
 OWNER_RESOLUTIONS = ("fixed", "reason", "dismissed", "thread")
-# Longest rule name kept, written or corrected (project-rules #card-name-source).
-RULE_NAME_LIMIT = 120
-
-
-def _decision(resolution: Any) -> list[tuple[tuple[str, str, str, str | None], dict[str, Any]]]:
-    """The rule decision a resolution records, by what it holds for (project-rules #dismiss-scope, #approval-key)."""
-    if isinstance(resolution, Mapping) and resolution.get("status") in DECISIONS.values() and resolution.get("project"):
-        held = (resolution["status"], str(resolution["project"]), str(resolution.get("rule")), resolution.get("spec"))
-        return [(held, dict(resolution))]
-    return []
 
 
 # The record store's files (#record-store): records split by cache key across this many plain JSONL files, so a
@@ -322,11 +305,10 @@ STORE_HELD = 20000
 _MISS = object()
 
 
-def _replaces(current: Mapping[str, Any] | None, record: Mapping[str, Any]) -> bool:
-    """Whether a later line for the same cache key replaces the one held: a retryable or escalated outcome is
-    replaced, and an amendment (a resolution or a rule name) replaces the record it amends."""
-    return current is None or current.get("outcome") in REPLACEABLE_OUTCOMES or "resolution" in record \
-        or record.get("record_id") == current.get("record_id")
+def _replaces(current: Mapping[str, Any] | None) -> bool:
+    """Whether a later line for the same cache key replaces the one held: only a retryable or escalated outcome is
+    replaced, since a record is never amended (#record-immutable)."""
+    return current is None or current.get("outcome") in REPLACEABLE_OUTCOMES
 
 
 def _lines(path: Path):
@@ -364,23 +346,18 @@ class JudgmentStore:
     """Append-only JSONL records, also used as the cache (#record-store, #record-held, #record-lock).
 
     The path names the store: its records live in the directory beside it named by the path's stem, split by
-    cache key into STORE_SHARDS files, plus decisions.jsonl, the human's rule decisions. Memory holds the records
-    recent reads and writes used, up to `held`, and every rule decision. No lock is held while a file is read.
-    A store written as one file at the path is split on first use, streaming, and that file is kept renamed.
-    Construction reads nothing (review-service #acceptance-restart). Without a path the store is memory only."""
+    cache key into STORE_SHARDS files. A record is never amended (#record-immutable): outcomes live in the
+    WarningLedger. The records are a disposable cache (#record-disposable). Memory holds the records recent
+    reads and writes used, up to `held`. No lock is held while a file is read. Construction reads nothing
+    (review-service #acceptance-restart). Without a path the store is memory only."""
 
     def __init__(self, path: str | Path | None = None, *, held: int = STORE_HELD):
         self.path = Path(path) if path else None
         self.dir = self.path.with_name(self.path.stem) if self.path else None
         self.limit = held
         self._held: OrderedDict[str, Any] = OrderedDict()
-        # Every rule decision ever recorded, by what it holds for, never by cache key (project-rules #dismiss-scope).
-        self._decisions: dict[tuple[str, str, str, str | None], dict[str, Any]] = {}
-        self._decisions_loaded = not self.path
         self._writes: dict[str, int] = {}
         self.lock = threading.RLock()
-        self._split_lock = threading.Lock()
-        self._split = not self.path
 
     # Files
 
@@ -390,51 +367,6 @@ class JudgmentStore:
     def _shard_path(self, shard: str) -> Path:
         return self.dir / (shard + ".jsonl")  # type: ignore[operator]
 
-    def _decisions_path(self) -> Path:
-        return self.dir / "decisions.jsonl"  # type: ignore[operator]
-
-    def _ready(self) -> None:
-        """Split a single-file store at the path once, on first use: streamed into a scratch directory that is
-        renamed into place only when whole, so an interrupted split starts again; the file is then kept renamed."""
-        if self._split:
-            return
-        with self._split_lock:
-            if self._split:
-                return
-            if self.path.is_file() and not self.dir.is_dir():
-                scratch = self.dir.with_name(self.dir.name + ".splitting")
-                if scratch.exists():
-                    shutil.rmtree(scratch)
-                scratch.mkdir(parents=True)
-                pending: dict[str, list[bytes]] = {}
-                size = 0
-
-                def flush() -> None:
-                    for name, lines in pending.items():
-                        with (scratch / name).open("ab") as stream:
-                            stream.writelines(lines)
-                    pending.clear()
-
-                for line in _lines(self.path):
-                    record = _parsed(line)
-                    if record is None:
-                        continue
-                    line = line if line.endswith(b"\n") else line + b"\n"
-                    pending.setdefault(self._shard(record["cache_key"]) + ".jsonl", []).append(line)
-                    if _decision(record.get("resolution")):
-                        pending.setdefault("decisions.jsonl", []).append(
-                            (json.dumps(record["resolution"], ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8"))
-                    size += len(line)
-                    if size > 8 << 20:
-                        flush()
-                        size = 0
-                flush()
-                os.rename(scratch, self.dir)
-            if self.path.is_file():
-                os.replace(self.path, self.path.with_name(self.path.name + ".unsplit"))
-            self.dir.mkdir(parents=True, exist_ok=True)
-            self._split = True
-
     def _scan(self, key: str) -> dict[str, Any] | None:
         """The key's current record from its file, streamed with no lock held; only lines naming the key parse."""
         needle = json.dumps(key, ensure_ascii=False)[1:-1].encode("utf-8")
@@ -442,7 +374,7 @@ class JudgmentStore:
         for line in _lines(self._shard_path(self._shard(key))):
             if needle in line:
                 record = _parsed(line)
-                if record is not None and record["cache_key"] == key and _replaces(current, record):
+                if record is not None and record["cache_key"] == key and _replaces(current):
                     current = record
         return current
 
@@ -451,6 +383,7 @@ class JudgmentStore:
         key = record["cache_key"]
         if self.path:
             shard = self._shard(key)
+            self.dir.mkdir(parents=True, exist_ok=True)  # type: ignore[union-attr]
             _append_line(self._shard_path(shard), record)
             self._writes[shard] = self._writes.get(shard, 0) + 1
         self._hold(key, record)
@@ -475,7 +408,6 @@ class JudgmentStore:
             value = self._held_value(key)
             if value is not None or not self.path:
                 return None if value is _MISS else value
-        self._ready()
         shard = self._shard(key)
         while True:
             with self.lock:
@@ -494,102 +426,10 @@ class JudgmentStore:
         self.get(record["cache_key"])  # holds the current record, if any
         with self.lock:
             current = self._held_value(record["cache_key"])
-            if current is not None and current is not _MISS and current.get("outcome") not in REPLACEABLE_OUTCOMES:
+            if current is not None and current is not _MISS and not _replaces(current):
                 return current
             self._write(record)
             return record
-
-    def amend(self, key: str, **fields: Any) -> dict[str, Any] | None:
-        """Add fields to a held record, such as a rule's written name (project-rules #card-name-source);
-        appended to the JSONL so it survives a restart."""
-        if self.get(key) is None:
-            return None
-        with self.lock:
-            record = self._held_value(key)
-            if record is None or record is _MISS:
-                return None
-            updated = {**record, **fields}
-            self._write(updated)
-            return updated
-
-    # Rule decisions
-
-    def _decided(self) -> dict[tuple[str, str, str, str | None], dict[str, Any]]:
-        """Every rule decision, read from decisions.jsonl once, with no lock held during the read."""
-        if not self._decisions_loaded:
-            self._ready()
-            loaded: dict[tuple[str, str, str, str | None], dict[str, Any]] = {}
-            for line in _lines(self._decisions_path()):
-                try:
-                    loaded.update(_decision(json.loads(line)))
-                except (ValueError, TypeError):
-                    continue
-            with self.lock:
-                if not self._decisions_loaded:
-                    loaded.update(self._decisions)  # decisions recorded during the read are newer
-                    self._decisions, self._decisions_loaded = loaded, True
-        return self._decisions
-
-    def decided(self, status: str, project: Any, text: str, spec: str | None = None) -> dict[str, Any] | None:
-        """The project's decision on this rule text, else None: dismissed on this spec path, or, for every
-        spec, not-a-rule or rule (confirmed, with any corrected name)."""
-        if not project:
-            return None
-        decisions = self._decided()
-        with self.lock:
-            return decisions.get((status, str(project), rule_identity(text), spec))
-
-    # By record id, and streaming
-
-    def by_id(self, record_id: str) -> dict[str, Any] | None:
-        """The current record with this id: a held one, else found by streaming the files with no lock held."""
-        with self.lock:
-            for value in reversed(self._held.values()):
-                if value is not _MISS and value.get("record_id") == record_id:
-                    return value
-        if not self.path:
-            return None
-        self._ready()
-        needle = json.dumps(record_id, ensure_ascii=False)[1:-1].encode("utf-8")
-        for shard in range(STORE_SHARDS):
-            for line in _lines(self._shard_path("%03x" % shard)):
-                if needle in line:
-                    record = _parsed(line)
-                    if record is not None and record.get("record_id") == record_id:
-                        current = self.get(record["cache_key"])
-                        if current is not None and current.get("record_id") == record_id:
-                            return current
-        return None
-
-    def resolve(self, record_id: str, resolution: str, reason: str | None = None,
-                confirmed: bool | None = None, if_absent: bool = False, **holds: Any) -> dict[str, Any] | None:
-        """Set resolution and confirmed on an existing record (#record-resolution, #record-confirmed).
-
-        Only a caller that knows a label is confirmed says so: a human's rule decision or an audit. fixed stays
-        unconfirmed, since an edit can answer a wrong mark (#measure-feedback). holds names what a rule decision
-        holds for (project-rules #dismiss-scope). The amended record is appended to the JSONL so it survives a
-        restart, and a rule decision also to decisions.jsonl, which the server holds whole. if_absent leaves a
-        record that already has a resolution unchanged and answers None: a mark ends once."""
-        record = self.by_id(record_id)
-        if record is None:
-            return None
-        with self.lock:
-            record = self._held_value(record["cache_key"])
-            if record is None or record is _MISS or record.get("record_id") != record_id \
-                    or (if_absent and record.get("resolution")):
-                return None
-            res: dict[str, Any] = {"status": resolution, **holds}
-            if reason:
-                res["reason"] = reason
-            updated = {**record, "resolution": res}
-            if confirmed is not None:
-                updated["confirmed"] = confirmed
-            self._write(updated)
-            decision = _decision(res)
-            if decision and self.path:
-                _append_line(self._decisions_path(), res)
-            self._decisions.update(decision)
-            return updated
 
     def records(self):
         """Every current record, streamed one file at a time with no lock held."""
@@ -598,18 +438,120 @@ class JudgmentStore:
                 held = [value for value in self._held.values() if value is not _MISS]
             yield from held
             return
-        self._ready()
         for shard in range(STORE_SHARDS):
             current: dict[str, dict[str, Any]] = {}
             for line in _lines(self._shard_path("%03x" % shard)):
                 record = _parsed(line)
-                if record is not None and _replaces(current.get(record["cache_key"]), record):
+                if record is not None and _replaces(current.get(record["cache_key"])):
                     current[record["cache_key"]] = record
             yield from current.values()
 
-    def confirmed_records(self):
-        """Every confirmed record, the labels the eval replay scores (#measure-feedback), streamed."""
-        return (record for record in self.records() if record.get("confirmed"))
+
+# Who records a warning outcome (#ledger-table).
+LEDGER_BY = frozenset({"human", "owner", "server", "audit"})
+# A human's decision on a candidate rule, marked or not-a-rule, is a confirmed label at once (#measure-feedback).
+CONFIRMED_OUTCOMES = SETTLED
+LEDGER_WHERE = ("project", "spec", "anchor", "kind", "target")
+LEDGER_FIELDS = LEDGER_WHERE + ("outcome", "judgment", "by", "reason")
+
+
+class WarningLedger:
+    """Every human or owner outcome of a Jev warning, once (#ledger): one plain JSONL file apart from the records,
+    one line appended per outcome, held whole in memory once first used. Keyed by where the warning sits, never by
+    cache key, so an outcome survives rewording, new heads, set versions, and deleting the records
+    (#ledger-survives); a later outcome for the same where replaces the earlier one. Without a path, memory only."""
+
+    def __init__(self, path: str | Path | None = None):
+        self.path = Path(path) if path else None
+        self._latest: dict[tuple[Any, ...], dict[str, Any]] = {}
+        self._entries: list[dict[str, Any]] = []
+        self._loaded = not self.path
+        self.lock = threading.RLock()
+
+    @staticmethod
+    def _where(entry: Mapping[str, Any]) -> tuple[Any, ...]:
+        return tuple(entry.get(field) or None for field in LEDGER_WHERE)
+
+    def _keep(self, entry: dict[str, Any]) -> None:
+        self._entries.append(entry)
+        self._latest[self._where(entry)] = entry
+
+    def _load(self) -> None:
+        """Called under the lock: the whole ledger, read once; an unreadable line is skipped."""
+        if self._loaded:
+            return
+        for line in _lines(self.path):  # type: ignore[arg-type]
+            try:
+                entry = json.loads(line)
+            except (ValueError, TypeError):
+                continue
+            if isinstance(entry, dict) and entry.get("outcome") and entry.get("kind"):
+                self._keep(entry)
+        self._loaded = True
+
+    def append(self, outcome: Mapping[str, Any], clock: Callable[[], str] = _now) -> dict[str, Any]:
+        """Record one outcome: project, spec, anchor, kind, target (a cited clause or rule, when any), outcome,
+        judgment (the record id it answers), by, and reason when given. Confirmed when an audit labels it or a
+        human decides a candidate rule, marked or not-a-rule. The same outcome as the latest for its where is not written again.
+        Raises ValueError when the kind, outcome, or by is missing."""
+        entry = {field: outcome[field] for field in LEDGER_FIELDS if outcome.get(field) is not None}
+        if not all(isinstance(entry.get(field), str) and entry[field] for field in ("kind", "outcome")) \
+                or entry.get("by") not in LEDGER_BY:
+            raise ValueError("a ledger outcome names its kind, outcome, and by")
+        entry["confirmed"] = entry["by"] == "audit" or entry["outcome"] in CONFIRMED_OUTCOMES
+        with self.lock:
+            self._load()
+            latest = self._latest.get(self._where(entry))
+            if latest is not None and all(latest.get(field) == entry.get(field) for field in LEDGER_FIELDS):
+                return latest
+            entry["time"] = clock()
+            if self.path:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                _append_line(self.path, entry)
+            self._keep(entry)
+            return entry
+
+    def latest(self, project: Any, spec: Any, anchor: Any, kind: Any, target: Any = None) -> dict[str, Any] | None:
+        """The latest outcome for this where, else None."""
+        with self.lock:
+            self._load()
+            return self._latest.get(tuple(value or None for value in (project, spec, anchor, kind, target)))
+
+    def entries(self) -> list[dict[str, Any]]:
+        """Every outcome, in the order recorded."""
+        with self.lock:
+            self._load()
+            return list(self._entries)
+
+
+def eval_read(records, ledger: WarningLedger, confirmed: bool = False):
+    """The one eval read (#record-read): stream records, from the store or an eval's copy, one at a time, each
+    with the ledger outcomes citing it; with confirmed, only confirmed labels, and only records that have one
+    (#measure-feedback). Yields (record, outcomes)."""
+    cited: dict[str, list[dict[str, Any]]] = {}
+    for entry in ledger.entries():
+        if entry.get("judgment") and (entry.get("confirmed") or not confirmed):
+            cited.setdefault(entry["judgment"], []).append(entry)
+    for record in records:
+        outcomes = cited.get(record.get("record_id"), [])
+        if outcomes or not confirmed:
+            yield record, outcomes
+
+
+def scope_eval(records, ledger: WarningLedger) -> dict[str, Any]:
+    """The scope question's precision and recall of every feature against candidate outcomes (project-rules
+    #dismiss-trace, jev-suggestions #measure-feedback), from the one eval read's confirmed labels: marked is a rule,
+    not-a-rule is none. joined lists each (scope record, outcome)."""
+    joined = [(record, outcome) for record, outcomes in eval_read(records, ledger, confirmed=True)
+              if record.get("kind") == "scope" for outcome in outcomes if outcome.get("kind") == RULE_CANDIDATE]
+    counts = {"tp": 0, "fp": 0, "fn": 0, "tn": 0}
+    for record, outcome in joined:
+        said = _confident_label(record) == RULE_SCOPE
+        rule = outcome["outcome"] == MARKED
+        counts[("t" if said == rule else "f") + ("p" if said else "n")] += 1
+    ratio = lambda part, whole: part / whole if whole else None
+    return {**counts, "precision": ratio(counts["tp"], counts["tp"] + counts["fp"]),
+            "recall": ratio(counts["tp"], counts["tp"] + counts["fn"]), "joined": joined}
 
 
 def given_wait(value: str | None, now: Callable[[], float] = time.time) -> float | None:
@@ -771,13 +713,14 @@ def _extract_inputs(question: Mapping[str, Any]) -> dict[str, Any] | None:
 class JevSeam:
     def __init__(self, question_sets: Mapping[str, QuestionSet] | None = None, *, provider: Any = None,
                  api_key: str | Callable[[], str] | None = None, llm_model: str | Callable[[], str] | None = None,
-                 record_store: JudgmentStore | None = None,
+                 record_store: JudgmentStore | None = None, ledger: WarningLedger | None = None,
                  clock: Callable[[], str] = _now, max_input_tokens: int = DEFAULT_MAX_INPUT_TOKENS):
         self.question_sets = dict(question_sets or load_question_sets())
         self.api_key = _key_reader(api_key)
         self.llm_model = _model_reader(llm_model)
         self._provider = provider
         self.store = record_store or JudgmentStore()
+        self.ledger = ledger or WarningLedger()
         self.clock = clock
         self.max_input_tokens = max_input_tokens
         self._key_locks: dict[str, threading.Lock] = {}
@@ -966,36 +909,6 @@ class JevSeam:
         return self._record(key, kind, qset, sources, revision,
                             {"label": label, "probabilities": {}, "confidence": None}, "shown", model, True,
                             inputs=inputs, pairing=pairing)
-
-    def name_payload(self, text: str, model: str) -> dict[str, Any]:
-        """The rule's plain-words name (project-rules #card-name-source): one general LLM call, a strict schema."""
-        schema = {"type": "object", "properties": {"name": {"type": "string", "maxLength": RULE_NAME_LIMIT}},
-                  "required": ["name"], "additionalProperties": False}
-        return {"model": model,
-                "messages": [{"role": "system", "content": RULE_NAME_INSTRUCTIONS},
-                             {"role": "user", "content": _canonical({"rule": text})}],
-                "response_format": {"type": "json_schema", "json_schema": {"name": RULE_NAME_SCHEMA, "strict": True, "schema": schema}},
-                "provider": {"require_parameters": True}}
-
-    def name(self, scope: Mapping[str, Any]) -> str | None:
-        """Write a rule's plain-words name once per rule text, onto its scope record, cached like any answer
-        (project-rules #card-name-source). None when the scope is no candidate, or the LLM failed; the next
-        server start asks again."""
-        key = self.key(scope)
-        record = self.store.get(key)
-        if _confident_label(record) != RULE_SCOPE:
-            return None
-        if record.get("name"):
-            return record["name"]
-        provider = self.provider()
-        if provider is None:
-            return None
-        response = self._fallback_provider(provider).complete(self.name_payload(scope["state"]["criterion"], self.llm_model()))
-        name = " ".join(str(json.loads(response["choices"][0]["message"]["content"])["name"]).split())[:RULE_NAME_LIMIT]
-        if not name:
-            return None
-        self.store.amend(key, name=name)
-        return name
 
     def verifier_payload(self, question: Mapping[str, Any], qset: QuestionSet, model: str) -> dict[str, Any]:
         """Verifier payload (#verifier): both clauses with context; strict schema requiring quoted spans."""
@@ -1266,6 +1179,9 @@ class _AnchorParser(HTMLParser):
                 "spec_section": attrs.get("data-spec-section"),
                 "story": "data-user-story" in attrs,
                 "criterion": "data-acceptance-criterion" in attrs,
+                # A project rule's declaration (project-rules #declare): its mark's name, on a criterion only.
+                "rule": " ".join(str(attrs.get("data-project-rule") or "").split()) or None
+                if "data-acceptance-criterion" in attrs else None,
                 "parent": parent,
                 "children": [],
                 "structural": False,
@@ -1762,10 +1678,6 @@ RULE_SCOPE = "every feature"
 RULE_MISSED = "missed"
 # A candidate rule's item label (project-rules #mark-candidate), a row of MARK_LEVELS.
 RULE_CANDIDATE = "candidate"
-RULE_NAME_SCHEMA = "rule_name"
-RULE_NAME_INSTRUCTIONS = ("Name this acceptance criterion, a rule every feature of the project must meet, in a few plain "
-                          "words a reviewer reads at a glance, e.g. CI covers every acceptance criterion. Say what it "
-                          "requires; no quotes, no trailing period.")
 SPEC_SUFFIX = ".spec.html"
 
 
@@ -1791,19 +1703,10 @@ def rule_mark_anchor(source: str | bytes | None) -> str | None:
     return next((key for key, value in anchors.items() if value.get("section") and not value.get("meta")), None)
 
 
-def _linked_criterion(path: str, href: str) -> str | None:
-    """A link to a clause of another spec, as that spec's repo path and anchor; None for any other link."""
-    file, _, anchor = href.partition("#")
-    if not file or not anchor or file.startswith("/") or ":" in file:
-        return None
-    target = posixpath.normpath(posixpath.join(posixpath.dirname(path), file))
-    return None if target == path else target + "#" + anchor
-
-
 def build_scope_questions(served_specs: Any) -> list[dict[str, Any]]:
-    """One scope question per acceptance criterion of every other spec; the key is its text alone (#q-scope).
-    clause names the criterion by repo path, which one project's lanes share whatever slug serves it, and links
-    names the other specs' clauses it links in that same form, so copies resolve to their home (#q-copies)."""
+    """One scope question per acceptance criterion of each served spec, its key the criterion text alone (#q-scope).
+    name is the criterion's project-rule mark, None when unmarked (#declare); clause names it by repo path, which
+    one project's lanes share whatever slug serves it, as the warning ledger and a rule's home name it."""
     result = []
     for raw in served_specs or []:
         part = _served_spec_parts(raw)
@@ -1818,35 +1721,15 @@ def build_scope_questions(served_specs: Any) -> list[dict[str, Any]]:
             question["revision"] = None
             question["word"] = rule_word(path)
             question["clause"] = repo + "#" + anchor
-            question["links"] = [link for link in (_linked_criterion(repo, href) for href in value["links"]) if link]
+            question["name"] = value.get("rule")
             result.append(question)
     return result
 
 
-def rule_homes(scopes: list[Mapping[str, Any]], is_rule: Callable[[Mapping[str, Any]], bool]) -> dict[str, str]:
-    """Each rule's home (#q-copies): a rule's links are followed through rules to the criterion that links no
-    further rule. A link loop, which no copy should form, has its least target as home, so the loop is one rule."""
-    by_target = {scope["clause"]: scope for scope in scopes}
-    rules = {target for target, scope in by_target.items() if is_rule(scope)}
-    homes: dict[str, str] = {}
-    for start in rules:
-        chain = [start]
-        while True:
-            step = next((link for link in by_target[chain[-1]].get("links", ()) if link in rules and link != chain[-1]), None)
-            if step is None:
-                homes[start] = chain[-1]
-                break
-            if step in chain:
-                homes[start] = min(chain[chain.index(step):])
-                break
-            chain.append(step)
-    return homes
-
-
 def build_rule_question(scope: Mapping[str, Any], current: str | bytes, path: str, base: str,
                         revision: Any, mark: str) -> dict[str, Any]:
-    """Does this spec trigger the rule? then, only if yes, does it cover it? Each sees the rule text and the
-    spec's text (#q-rule); triggered and not covered is missed."""
+    """Does this spec trigger the marked rule? then, only if yes, does it cover it? Each sees the rule text and the
+    spec's text (#q-rule-def); triggered and not covered is missed."""
     state = {"rule": scope["state"]["criterion"], "spec": spec_text(current)}
     sources = [path, scope["target"]]
     steps = [_step(_question("triggered", mark, state, path, base, revision, scope["target"]), no=None),
@@ -1860,7 +1743,7 @@ def build_rule_question(scope: Mapping[str, Any], current: str | bytes, path: st
 
 def build_rule_questions(scopes: list[Mapping[str, Any]], current: str | bytes, path: str, base: str,
                          revision: Any, mark: str) -> list[dict[str, Any]]:
-    """One rule question per scope, in scope order."""
+    """One rule question per marked rule, in order."""
     return [build_rule_question(scope, current, path, base, revision, mark) for scope in scopes]
 
 
@@ -2000,71 +1883,6 @@ def _commit(root: str, ref: str) -> str | None:
     return value.decode().strip() if value else None
 
 
-EXCLUDED_COLLECTION_DIRS = frozenset({"evidence", "evidence-bundle", "evidence-bundles", "fixture", "fixtures",
-                                      "support", "supports"})
-# Warm-up status: one table per project in Spec Chat's one onboarding.toml (project-rules #bootstrap-status).
-ONBOARDING_TABLE = "project"
-# The warm-up definition, what the warm-up asks and publishes: bump on any change to either, so every project
-# whose done status ran under an earlier one warms again (project-rules #bootstrap-once).
-WARM_DEFINITION = 2
-# Human decisions in a project's table: each offer's sent or dismissed, kept through a rerun (#bootstrap-once).
-OFFER_FIELDS = ("offer", "offer_at", "candidate_offer", "candidate_offer_at")
-OFFER_ACTIONS = frozenset({"sent", "dismissed"})
-
-
-def _main_commit(root: str) -> str | None:
-    """Main's commit for a project: origin/main, else a local main (#bootstrap-table)."""
-    return next((commit for commit in (_commit(root, ref) for ref in ("origin/main", "main")) if commit), None)
-
-
-def _collection_paths(root: str, commit: str, collection: str) -> list[str]:
-    """Repo-relative spec paths in main's tree under one collection, as the review index would list them.
-    Raises when Git gave no listing, so an unreadable main is never an empty one."""
-    listing = _git_answer(root, "ls-tree", "-r", "-z", "--name-only", "--end-of-options", commit, "--",
-                          collection if collection not in ("", ".") else ".")
-    result = []
-    for name in listing.decode("utf-8", "replace").split("\0"):
-        parts = name.split("/")
-        if not name.endswith(SPEC_SUFFIX) or parts[-1].startswith("."):
-            continue
-        if any(part.startswith(".") or part.endswith(".review") or part.lower() in EXCLUDED_COLLECTION_DIRS
-               for part in parts[:-1]):
-            continue
-        result.append(name)
-    return result
-
-
-def _toml_value(value: Any) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (int, float)):
-        return repr(value)
-    if isinstance(value, Mapping):
-        return "{" + ", ".join(_toml_key(k) + " = " + _toml_value(v) for k, v in value.items() if v is not None) + "}"
-    if isinstance(value, (list, tuple)):
-        return "[" + ", ".join(_toml_value(item) for item in value) + "]"
-    return json.dumps(str(value), ensure_ascii=False)
-
-
-def _toml_key(key: Any) -> str:
-    key = str(key)
-    return key if re.fullmatch(r"[A-Za-z0-9_-]+", key) else json.dumps(key, ensure_ascii=False)
-
-
-def dump_toml(document: Mapping[str, Any]) -> str:
-    """Top-level keys, then one [table."name"] per entry of each table of tables; None values are left out."""
-    lines = [_toml_key(k) + " = " + _toml_value(v) for k, v in document.items()
-             if v is not None and not isinstance(v, Mapping)]
-    for table, entries in document.items():
-        if not isinstance(entries, Mapping):
-            continue
-        for name, entry in entries.items():
-            if isinstance(entry, Mapping):
-                lines += ["", "[" + _toml_key(table) + "." + _toml_key(name) + "]"]
-                lines += [_toml_key(k) + " = " + _toml_value(v) for k, v in entry.items() if v is not None]
-    return "\n".join(lines).lstrip("\n") + "\n"
-
-
 # Fast reads (jev-suggestions #fast-marks-section): results kept in memory by the content of their inputs.
 KEPT_LIMIT = 512
 
@@ -2133,19 +1951,16 @@ def default_state_dir() -> Path:
 class JevService:
     def __init__(self, *, state_dir: str | Path | None = None, provider: Any = None,
                  api_key: str | Callable[[], str] | None = None, llm_model: str | Callable[[], str] | None = None,
-                 question_dirs: list[str | Path] | None = None, onboarding_path: str | Path | None = None):
+                 question_dirs: list[str | Path] | None = None):
         self.question_sets = load_question_sets(*(question_dirs or []))
         self.state_dir = Path(state_dir) if state_dir else default_state_dir()
-        # Spec Chat's one onboarding.toml (review-service #published-onboarding); beside the records under a test state.
-        self.onboarding_path = Path(onboarding_path) if onboarding_path else (
-            self.state_dir / "onboarding.toml" if state_dir else spec_chat_state() / "onboarding.toml")
-        path = self.state_dir / "records.jsonl"
-        self.seam = JevSeam(self.question_sets, provider=provider, api_key=api_key, llm_model=llm_model,
-                            record_store=JudgmentStore(path))
-        # Test store (#test-hosts): a second JudgmentStore for test-flagged slugs, beside the live one.
-        test_path = self.state_dir / "records-test.jsonl"
-        self.test_seam = JevSeam(self.question_sets, provider=provider, api_key=api_key, llm_model=llm_model,
-                                 record_store=JudgmentStore(test_path))
+        # Records and the warning ledger side by side (#ledger); test-flagged slugs use the same layout in the
+        # store's test directory, never the live one (#test-host-rule).
+        self.seam, self.test_seam = (
+            JevSeam(self.question_sets, provider=provider, api_key=api_key, llm_model=llm_model,
+                    record_store=JudgmentStore(directory / "records.jsonl"),
+                    ledger=WarningLedger(directory / "ledger.jsonl"))
+            for directory in (self.state_dir, self.state_dir / "test"))
 
         # Board state (#jev-board-answer): the last answer and the rows the board thread answers next.
         self._board_lock = threading.Lock()
@@ -2164,11 +1979,6 @@ class JevService:
         self._ask_pool: ThreadPoolExecutor | None = ThreadPoolExecutor(
             max_workers=ASK_WORKERS, thread_name_prefix="spec-chat-jev-ask")
 
-        # Bootstrap (project-rules #bootstrap): one background warm-up per project, its table in onboarding.toml.
-        self._status_lock = threading.Lock()
-        self._warm_started: set[str] = set()
-        self._warm_threads: list[threading.Thread] = []
-
         # Fixed marks (#record-resolution): per spec and base, the head last decided and the Important marks shown on it.
         self._marks_lock = threading.Lock()
         self._marks: dict[tuple[Any, ...], tuple[Any, dict[tuple[Any, ...], tuple[str, Any]]]] = {}
@@ -2182,9 +1992,6 @@ class JevService:
             self._asking.clear()
         if pool is not None:
             pool.shutdown(wait=True)
-        for t in self._warm_threads:
-            t.join(timeout=5)
-        self._warm_threads.clear()
 
     def _seam_for(self, mount: Mapping[str, Any] | None = None) -> "JevSeam":
         """The live seam, or the test seam when the mount is test-flagged (#test-hosts)."""
@@ -2632,20 +2439,15 @@ class JevService:
         answer = {"jev": "on", "rows": answer_rows, "conflicts": [{"a": a, "b": b} for a, b in sorted(conflict_pairs)]}
         return answer, misses
 
-    def _rule_task(self, scope: Mapping[str, Any], rule: Mapping[str, Any] | None,
-                   seam: "JevSeam | None" = None) -> None:
-        seam = seam or self.seam
-        if _confident_label(seam.ask(scope)) == RULE_SCOPE and rule is not None:
-            seam.ask_chain(rule["chain"])
-
     def _ask_submit(self, question: Mapping[str, Any], seam: "JevSeam | None" = None) -> None:
-        """Ask a single question on the shared pool; a question in flight is not asked again."""
+        """Ask a single question, or a chain by its last step's key, on the shared pool; one in flight is not asked again."""
         seam = seam or self.seam
-        key = seam.key(question)
+        key = seam.key(question["chain"][-1] if "chain" in question else question)
         with self._ask_lock:
             if self._ask_pool is None or key in self._asking:
                 return
-            self._asking[key] = self._ask_pool.submit(self._asked_quietly, (key,), lambda: seam.ask(question))
+            ask = (lambda: seam.ask_chain(question["chain"])) if "chain" in question else (lambda: seam.ask(question))
+            self._asking[key] = self._ask_pool.submit(self._asked_quietly, (key,), ask)
 
     def _rule_held(self, question: Mapping[str, Any], seam: "JevSeam | None" = None) -> tuple[str, dict[str, Any] | None]:
         """final, pending (to ask or in flight), or unavailable during its pause, with the record; never asks."""
@@ -2660,158 +2462,105 @@ class JevService:
             return "pending", record
         return "unavailable", record
 
-    def _rule_submit(self, scope: Mapping[str, Any], rule: Mapping[str, Any], seam: "JevSeam | None" = None) -> None:
-        """Ask a scope, then its rule chain, on the one ask pool; a rule in flight is not asked again."""
-        seam = seam or self.seam
-        with self._ask_lock:
-            rule_keys = tuple(seam.key(step) for step in rule["chain"])
-            last_key = rule_keys[-1]
-            if self._ask_pool is None or last_key in self._asking:
-                return
-            # The task holds only keys no other ask holds, so each ask releases exactly its own.
-            keys = tuple(key for key in (seam.key(scope), *rule_keys) if key not in self._asking)
-            future = self._ask_pool.submit(self._asked_quietly, keys, lambda: self._rule_task(scope, rule, seam))
-            for key in keys:
-                self._asking[key] = future
+    def _candidate_where(self, project: Any, scope: Mapping[str, Any]) -> dict[str, Any]:
+        """Where a candidate's outcome sits in the warning ledger: project, repo spec path, anchor (#dismiss-trace)."""
+        spec, _, anchor = scope["clause"].partition("#")
+        return {"project": str(project), "spec": spec, "anchor": anchor, "kind": RULE_CANDIDATE, "target": None}
 
-    def _name_submit(self, scope: Mapping[str, Any], seam: "JevSeam") -> None:
-        """Ask a candidate's name once per server process, on the one ask pool (project-rules #card-name-source)."""
-        key = "name:" + seam.key(scope)
-        with self._ask_lock:
-            named = self.__dict__.setdefault("_named", set())
-            if self._ask_pool is None or key in named:
-                return
-            named.add(key)
-            self._asking[key] = self._ask_pool.submit(self._asked_quietly, (key,), lambda: seam.name(scope))
+    def _settled(self, seam: "JevSeam", project: Any, scope: Mapping[str, Any]) -> bool:
+        """A criterion marked or answered Not a project rule is never proposed again, through rewording too (#q-candidate)."""
+        latest = seam.ledger.latest(**self._candidate_where(project, scope)) if project else None
+        return bool(latest and latest["outcome"] in SETTLED)
 
-    def _rule_name(self, scope: Mapping[str, Any], project: Any, seam: "JevSeam", ask: bool = True) -> str | None:
-        """A rule's plain-words name: the human's correction at Confirm rule, else the written one, else None
-        while it is written (project-rules #card-name-source); asked only when ask, for a card a page renders."""
-        text = scope["state"]["criterion"]
-        confirmed = seam.store.decided(DECISIONS["confirm"], project, text)
-        if confirmed and confirmed.get("name"):
-            return str(confirmed["name"])
-        record = seam.store.get(seam.key(scope))
-        if record and record.get("name"):
-            return str(record["name"])
-        if ask:
-            self._name_submit(scope, seam)
-        return None
+    def _marked(self, seam: "JevSeam", project: Any, scope: Mapping[str, Any]) -> None:
+        """A served spec's mark on a criterion Jev answered at any scope label: one marked outcome citing that scope
+        record, so a mark on a this feature answer counts as a miss (#dismiss-trace). Never asks."""
+        if not project:
+            return
+        where = self._candidate_where(project, scope)
+        latest = seam.ledger.latest(**where)
+        if latest and latest["outcome"] == MARKED:
+            return
+        record = seam.cached(scope)
+        if record and record.get("record_id"):
+            seam.ledger.append({**where, "outcome": MARKED, "judgment": record["record_id"], "by": "server"})
 
-    def _rule_card(self, scope: Mapping[str, Any], project: Any, seam: "JevSeam", ask: bool = True) -> dict[str, Any]:
-        """What every rule card shows of its rule (project-rules #card): home target, verbatim text, name."""
-        return {"target": scope["target"], "text": scope["state"]["criterion"],
-                "name": self._rule_name(scope, project, seam, ask)}
+    @staticmethod
+    def _rule_card(rule: Mapping[str, Any]) -> dict[str, Any]:
+        """What every rule card shows of its rule (#card-parts): served target, verbatim text, the mark's name,
+        and home, its repo spec path and anchor, as the warning ledger names it."""
+        return {"target": rule["target"], "text": rule["state"]["criterion"], "name": rule["name"], "home": rule["clause"]}
+
+    def _scope_item(self, scope: Mapping[str, Any], anchor: str | None, state: str,
+                    record: Mapping[str, Any] | None) -> dict[str, Any]:
+        """A candidate item (#mark-candidate): the criterion quoted in full; id its anchor on its own spec, None on
+        another spec, where it is data for the agent read only."""
+        item = {"kind": RULE_CANDIDATE, "id": anchor, "target": scope["target"], "text": scope["state"]["criterion"],
+                "state": state, "label": RULE_CANDIDATE if state == "label" else None,
+                "record": record.get("record_id") if record and state == "label" else None}
+        if state == "label":
+            item["level"], item["agent_level"] = MARK_LEVELS[RULE_CANDIDATE]["human"], MARK_LEVELS[RULE_CANDIDATE]["agent"]
+        elif state == "pending":
+            item["escalated"] = _escalated(record)
+        return item
 
     def rule_items(self, current: bytes, old: bytes | None, path: str, base: str, revision: Any,
                    served: Any, seam: "JevSeam | None" = None, project: Any = None,
                    spec: str | None = None) -> tuple[list[dict[str, Any]], list[str], dict[str, dict[str, Any]]]:
-        """Rule and candidate items for a page, the rules checked, and the confirmed rules other specs' clauses
-        are, by served target, for marks that cite them (#marks, #pending, #approval, #card-cites).
+        """Rule and candidate items for a page, the rules checked, and the marked rules other specs' clauses are,
+        by served target, for marks that cite them (#marks, #pending, #card-variants).
 
-        A criterion scoped every feature is a candidate until the page's project confirms it (#q-rule-def):
-        candidate items list every undecided home of the project, with id the criterion's anchor only on its
-        home spec; only confirmed rules are checked, and only on a spec that differs from its compared base.
-        Answers come from held records only; misses are asked in the background and show as pending, with
-        escalated true once Jev was unsure and the general LLM has the question. A copy is no rule or candidate
-        of its own: its home stands for it, and a copy of this spec's own rule is none (#q-copies). spec is this
-        spec's repo path, as other specs' links name it. Not for this spec hides a rule on this repo spec path,
-        Not a project rule everywhere, its copies included (#dismiss)."""
+        A rule is a criterion its home spec marks (#declare); only marked rules of the other served specs, the
+        page's project alone, are checked, and only on a spec that differs from its compared base (#q-rule-def).
+        The page's own unmarked criteria are asked the scope question; one Jev reads as every feature is a
+        candidate until marked or answered Not a project rule, flagged and never checked (#q-candidate). Other
+        specs' candidates are listed from held answers only. Answers come from held records; misses are asked in
+        the background and show as pending, escalated true once the general LLM has the question. Not for this
+        spec hides a rule on this repo spec path (#dismiss). spec is this spec's repo path."""
         seam = seam or self.seam
         sets = seam.question_sets
         mark = self._built("mark", current)
         if not {"scope", "triggered", "covered"} <= set(sets) or mark is None:
             return [], [], {}
-        # An unchanged spec asks nothing and checks nothing; held records still show its cards (#bootstrap-after).
         checking = old != current
-        items: list[dict[str, Any]] = []
-        rules: list[str] = []
-        cites: dict[str, dict[str, Any]] = {}
-        scopes = self._build("scope", served)
-        own = self._build("scope", [{"path": path, "spec": spec or path, "source": current}])
+        rel = spec or path
+        own = self._build("scope", [{"path": path, "spec": rel, "source": current}])
+        others = self._build("scope", served)
+        rules = [scope for scope in others if scope["name"]]
+        cites = {rule["target"]: self._rule_card(rule) for rule in rules}
+        for scope in own + rules:
+            if scope["name"]:
+                self._marked(seam, project, scope)
 
         def final(question: Mapping[str, Any]) -> dict[str, Any] | None:
             state, record = self._rule_held(question, seam)
             return record if state == "final" else None
 
-        corpus = {scope["clause"]: scope for scope in scopes + own}
-        homes = rule_homes(list(corpus.values()), lambda scope: _confident_label(final(scope)) == RULE_SCOPE)
-
-        def decided(action: str, text: str, where: str | None = None) -> dict[str, Any] | None:
-            return seam.store.decided(DECISIONS[action], project, text, where)
-
-        def linked(scope: Mapping[str, Any]) -> list[Mapping[str, Any]]:
-            return [corpus[target] for target in scope.get("links", ()) if target in corpus]
-
-        def ask_pending(questions: list[Mapping[str, Any]]) -> None:
-            for question in questions:
-                if self._rule_held(question, seam)[0] == "pending":
-                    self._ask_submit(question, seam)
-
-        def standing(scope: Mapping[str, Any]) -> str | None:
-            """rule or candidate for a decided home whose copies are known; None for anything else."""
-            text = scope["state"]["criterion"]
-            if decided("rule", text) or homes.get(scope["clause"]) != scope["clause"]:
-                return None
-            if any(self._rule_held(question, seam)[0] != "final" for question in linked(scope)):
-                return None
-            return "rule" if decided("confirm", text) else RULE_CANDIDATE
-
-        def candidate(scope: Mapping[str, Any], anchor: str | None, record: Mapping[str, Any] | None,
-                      state: str = "label") -> dict[str, Any]:
-            # A candidate off its home spec is data for the agent read only; no page renders it, so its name is not asked.
-            item = {"kind": RULE_CANDIDATE, "id": anchor, **self._rule_card(scope, project, seam, anchor is not None), "state": state,
-                    "label": RULE_CANDIDATE if state == "label" else None,
-                    "record": record.get("record_id") if record and state == "label" else None}
-            if state == "label":
-                item["level"], item["agent_level"] = MARK_LEVELS[RULE_CANDIDATE]["human"], MARK_LEVELS[RULE_CANDIDATE]["agent"]
-            else:
-                item["escalated"] = _escalated(record)
-            return item
-
-        # This spec's own criteria: a candidate card on the criterion (#mark-candidate, #acceptance-new-candidate);
-        # only new or changed criterion text is asked, since records answer the rest (#bootstrap-after).
-        before = {scope["state"]["criterion"] for scope in self._build("scope", [{"path": path, "source": old}])} \
-            if checking else None
+        items: list[dict[str, Any]] = []
         for scope in own:
+            if scope["name"] or self._settled(seam, project, scope):
+                continue
             state, record = self._rule_held(scope, seam)
-            asking = before is not None and scope["state"]["criterion"] not in before
-            if asking:
-                ask_pending([scope, *linked(scope)])
-            if state == "final" and standing(scope) == RULE_CANDIDATE:
-                items.append(candidate(scope, scope["target"].rsplit("#", 1)[-1], record))
-            elif asking and state == "pending" and not decided("rule", scope["state"]["criterion"]):
-                items.append(candidate(scope, scope["target"].rsplit("#", 1)[-1], record, "pending"))
-
-        for scope, rule in zip(scopes, self._build("rule", scopes, current, path, base, revision, mark)):
-            text = scope["state"]["criterion"]
-            state, record = self._rule_held(scope, seam)
+            if state == "pending":
+                self._ask_submit(scope, seam)
             if state != "final":
-                # An undecided scope is no rule yet: show nothing (non-goals: no scope mark); a pending one is asked.
-                if state == "pending" and checking and not decided("rule", text):
-                    ask_pending([scope, *linked(scope)])
-                continue
-            if _confident_label(record) != RULE_SCOPE:
-                continue
-            if checking and homes.get(scope["clause"]) == scope["clause"]:
-                ask_pending(linked(scope))
-            kind = standing(scope)
-            if kind == RULE_CANDIDATE:
-                items.append(candidate(scope, None, record))
-                continue
-            if kind != "rule":
-                continue
-            card = self._rule_card(scope, project, seam)
-            for clause, home in homes.items():
-                if home == scope["clause"] and clause in corpus:
-                    cites[corpus[clause]["target"]] = card
-            if not checking:
-                continue
-            rules.append(scope["target"])
-            if decided("here", text, spec):
-                continue
+                items.append(self._scope_item(scope, scope["id"], state, record))
+            elif _confident_label(record) == RULE_SCOPE:
+                items.append(self._scope_item(scope, scope["id"], "label", record))
+        for scope in others:
+            record = None if scope["name"] else final(scope)
+            if _confident_label(record) == RULE_SCOPE and not self._settled(seam, project, scope):
+                items.append(self._scope_item(scope, None, "label", record))
+
+        checked: list[str] = []
+        if not checking:
+            return items, checked, cites
+        for rule, question in zip(rules, self._build("rule", rules, current, path, base, revision, mark)):
+            checked.append(rule["target"])
+            if project and seam.ledger.latest(project, rel, None, "rule", rule["clause"]):
+                continue  # Not for this spec, on this spec path (#dismiss-where)
             # triggered? then covered?, from held records; a step not final here is pending or unavailable.
-            result = chain_result(rule["chain"], final)
+            result = chain_result(question["chain"], final)
             if result["outcome"] == "oversize":
                 items.append({"kind": "rule", "id": mark, "state": "oversize"})
                 continue
@@ -2819,11 +2568,11 @@ class JevService:
             if result["outcome"] is None:
                 state, record = self._rule_held(result["step"], seam)
             else:
-                record = result
+                state, record = "final", result
             if state == "pending":
-                self._rule_submit(scope, rule, seam)
+                self._ask_submit(question, seam)
             label = _confident_label(record) if state == "final" else None
-            item = {"kind": "rule", "id": mark, **card, "word": scope["word"],
+            item = {"kind": "rule", "id": mark, **cites[rule["target"]], "word": rule["word"],
                     "state": "label" if label == RULE_MISSED else ("none" if state == "final" else state),
                     "label": RULE_MISSED if label == RULE_MISSED else None,
                     "record": record.get("record_id") if record and state == "final" else None}
@@ -2834,7 +2583,7 @@ class JevService:
             if unsure and item["state"] == "label":  # behind a shown mark only (#markers-agent-unsure)
                 item["unsure"] = unsure
             items.append(item)
-        return items, sorted(set(rules)), cites
+        return items, sorted(set(checked)), cites
 
     def _rules(self, relative: str, base: str, facts: Mapping[str, Any], seam: "JevSeam | None" = None,
                mount: Mapping[str, Any] | None = None) -> tuple[list[dict[str, Any]], list[str], dict[str, dict[str, Any]]] | None:
@@ -2846,358 +2595,101 @@ class JevService:
         except Exception:
             return None
 
-    def _onboarding(self) -> dict[str, Any]:
-        """onboarding.toml, empty when missing; raises OSError or ValueError when unreadable, so no write
-        ever replaces a file it could not read (install's status and other projects' tables)."""
-        try:
-            text = self.onboarding_path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return {}
-        return tomllib.loads(text)
-
-    def onboarding_status(self, project: str) -> dict[str, Any] | None:
-        """One project's warm-up table in onboarding.toml (#bootstrap-status); None before the first warm-up
-        or while the file cannot be read."""
-        try:
-            table = self._onboarding().get(ONBOARDING_TABLE)
-        except (OSError, ValueError):
-            return None
-        value = table.get(project) if isinstance(table, dict) else None
-        return value if isinstance(value, dict) else None
-
-    def _write_status(self, project: str, status: Mapping[str, Any]) -> None:
-        """Replace one project's table, keeping install's status and doc and every other project's table."""
-        document = self._onboarding()
-        table = document.get(ONBOARDING_TABLE)
-        document[ONBOARDING_TABLE] = {**(table if isinstance(table, dict) else {}), project: _jsonable(status)}
-        path = self.onboarding_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_name("." + path.name + "." + uuid.uuid4().hex + ".tmp")
-        temporary.write_text(dump_toml(document), encoding="utf-8")
-        os.replace(temporary, path)
-
-    def warm(self, rows: Any) -> list[str]:
-        """Start the warm-up for each registered project not yet warmed; never waits (#bootstrap-once).
-
-        A done status is not redone while its warm-up definition is current; one under an earlier definition
-        warms again, keeping each offer's sent or dismissed (rule decisions live in the records). A failed or
-        interrupted warm-up, or one that found no criterion on main, is started again on the next server start. With Jev off nothing runs and nothing is
-        written, so no offer shows."""
-        if not self.enabled:
-            return []
-        projects: dict[str, list[Mapping[str, Any]]] = {}
-        for row in rows or []:
-            if isinstance(row, Mapping) and row.get("project") and row.get("root") and not row.get("test"):
-                projects.setdefault(str(row["project"]), []).append(row)
-        started = []
-        for project, members in projects.items():
-            with self._status_lock:
-                # A later Confirm rule checks main's specs of this project against that rule (#bootstrap-offer).
-                self.__dict__.setdefault("_warm_rows", {})[project] = members
-                if project in self._warm_started:
-                    continue
-                held = self.onboarding_status(project) or {}
-                if held.get("state") == "done" and held.get("definition") == WARM_DEFINITION:
-                    self._warm_started.add(project)
-                    continue
-                status: dict[str, Any] = {"state": "running", "definition": WARM_DEFINITION,
-                                          "started_at": _now(), "criteria_classified": 0, "candidates": [],
-                                          "rules": [], "specs_to_reconcile": 0, "reconcile": [],
-                                          **{key: held[key] for key in OFFER_FIELDS if key in held}}
-                try:
-                    self._write_status(project, status)
-                except (OSError, ValueError):
-                    continue  # unreadable onboarding.toml: never overwritten; the next change or start retries
-                self._warm_started.add(project)
-            t = threading.Thread(target=self._warm_project, args=(project, members, status), daemon=True,
-                                name="spec-chat-jev-warm")
-            self._warm_threads.append(t)
-            t.start()
-            started.append(project)
-        return started
-
-    def _main_specs(self, rows: list[Mapping[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
-        """Main's copy of every spec in the project's collections, once per repo-relative path."""
-        root = str(rows[0]["root"])
-        commit = _main_commit(root)
-        if not commit:
-            raise RuntimeError("project has no main")
-        paths: list[str] = []
-        for row in rows:
-            narrow = str(row.get("narrow_root") or row["root"])
-            collection = os.path.relpath(narrow, str(row["root"])).replace(os.sep, "/")
-            if collection.startswith("../"):
-                continue
-            paths.extend(path for path in _collection_paths(root, commit, collection) if path not in paths)
-        specs = []
-        for path in paths:
-            source = self._at(root, commit, path)
-            if source is None:
-                raise RuntimeError("main's %s is unreadable" % path)  # listed, so a failed read, never a miss
-            specs.append({"path": path, "source": source})
-        return commit, specs
-
-    def _warm_submit(self, questions: list[Mapping[str, Any]]) -> None:
-        """Submit questions on the shared pool, skipping final records but re-asking unavailable ones.
-        Chain questions use the first step's key for dedup and finality check."""
-        futures: list[Future] = []
-        with self._ask_lock:
-            if self._ask_pool is None:
-                return
-            for question in questions:
-                if "chain" in question:
-                    key = self.seam.key(question["chain"][0])
-                else:
-                    key = self.seam.key(question)
-                if key in self._asking:
-                    futures.append(self._asking[key])
-                elif not _final(self.seam.store.get(key)):
-                    self._asking[key] = self._ask_pool.submit(self._ask_quietly, key, dict(question))
-                    futures.append(self._asking[key])
-        if futures:
-            wait(futures)
-
-    def _warm_project(self, project: str, rows: list[Mapping[str, Any]], status: dict[str, Any]) -> None:
-        """Classify every criterion and check every spec of main in parallel, then publish the status
-        (#bootstrap-table). Answers are ordinary records, so later pages reuse them without new calls.
-        Asks use the shared _ask_pool with its in-flight dedupe; stop() drops queued warm-up asks."""
-        try:
-            commit, specs = self._main_specs(rows)
-            scopes = list(self._built("scope", specs))
-            if not scopes:
-                # No criterion on main is not done: the next server start warms again (#bootstrap-once).
-                status.update({"state": "no_criteria", "main": commit})
-                return self._publish_warm(project, status)
-            self._warm_submit(scopes)
-            decided = [self.seam.store.get(self.seam.key(s)) for s in scopes]
-            labels = [_confident_label(record) for record in decided]
-            unfinished = sum(not _final(record) for record in decided)
-            if unfinished:
-                raise RuntimeError("%d of %d answers not final" % (unfinished, len(decided)))
-            homes = self._main_homes(scopes)
-            # Candidates wait for a human; only confirmed rules are checked (#approval, #bootstrap-first).
-            candidates = [scope for scope in homes if self._standing(project, scope) == RULE_CANDIDATE]
-            rules = [scope for scope in homes if self._standing(project, scope) == "rule"]
-            missed = self._check_main(commit, specs, rules)
-            status.update({
-                "state": "done", "main": commit,
-                "criteria_classified": sum(label is not None for label in labels),
-                "candidates": sorted(scope["target"] for scope in candidates),
-                "rules": sorted(scope["target"] for scope in rules),
-                "specs_to_reconcile": len(missed),
-                "reconcile": [{"spec": path, "rules": missed[path]} for path in sorted(missed)],
-            })
-        except Exception as exc:
-            status.update({"state": "failed", "error": str(exc) or type(exc).__name__})
-        self._publish_warm(project, status)
-
-    def _publish_warm(self, project: str, status: dict[str, Any]) -> None:
-        """Publish a finished warm-up's status; nothing writes after stop returns."""
-        if self._ask_pool is None:
-            return  # stopped: nothing writes after stop returns
-        status["finished_at"] = _now()
-        with self._status_lock:
-            try:
-                self._write_status(project, status)
-            except (OSError, ValueError):
-                pass  # unreadable onboarding.toml is never overwritten; the next start warms again
-
-    def _main_homes(self, scopes: list[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
-        """The rule homes among main's criteria, from held scope answers; a copy stands for its home (#q-copies)."""
-        rules = {scope["clause"] for scope in scopes if _confident_label(self.seam.store.get(self.seam.key(scope))) == RULE_SCOPE}
-        homes = rule_homes(scopes, lambda scope: scope["clause"] in rules)
-        return [scope for scope in scopes if homes.get(scope["clause"]) == scope["clause"]]
-
-    def _standing(self, project: Any, scope: Mapping[str, Any]) -> str | None:
-        """A home's standing for the project (#approval): rule once confirmed, None once rejected, else candidate."""
-        text = scope["state"]["criterion"]
-        if self.seam.store.decided(DECISIONS["rule"], project, text):
-            return None
-        return "rule" if self.seam.store.decided(DECISIONS["confirm"], project, text) else RULE_CANDIDATE
-
-    def _check_main(self, commit: str, specs: list[Mapping[str, Any]],
-                    rules: list[Mapping[str, Any]]) -> dict[str, list[dict[str, str]]]:
-        """Check main's specs against confirmed rules, never a spec against its own; the misses by spec path.
-        Raises unless every answer is final, so an outage leaves the work for the next start."""
-        checks: list[tuple[str, Mapping[str, Any], dict[str, Any]]] = []
-        for spec in specs:
-            mark = self._built("mark", spec["source"])
-            if mark is None:
-                continue
-            others = [scope for scope in rules if scope["target"].split("#", 1)[0] != spec["path"]]
-            built = self._built("rule", others, spec["source"], spec["path"], commit, commit, mark)
-            checks.extend((spec["path"], scope, rule) for scope, rule in zip(others, built))
-        self._warm_submit([c[2] for c in checks])
-        answers = [chain_result(c[2]["chain"], lambda step: self.seam.store.get(self.seam.key(step))) for c in checks]
-        unfinished = sum(not _final(record) for record in answers)
-        if unfinished:
-            raise RuntimeError("%d of %d answers not final" % (unfinished, len(answers)))
-        missed: dict[str, list[dict[str, str]]] = {}
-        for (path, scope, _), record in zip(checks, answers):
-            if _confident_label(record) == RULE_MISSED:
-                missed.setdefault(path, []).append({"target": scope["target"], "word": scope["word"],
-                                                    "record": record.get("record_id")})
-        return missed
-
-    def _reconcile_rule(self, project: str, text: str) -> None:
-        """After Confirm rule, check main's specs of a warmed project against that rule in the background and
-        add its misses to the reconcile offer (#bootstrap-offer, #bootstrap-status)."""
-        rows = self.__dict__.get("_warm_rows", {}).get(project)
-        if not rows or self._ask_pool is None or (self.onboarding_status(project) or {}).get("state") != "done":
-            return
-
-        def run() -> None:
-            try:
-                commit, specs = self._main_specs(rows)
-                rules = [scope for scope in self._main_homes(list(self._built("scope", specs)))
-                         if scope["state"]["criterion"] == text and self._standing(project, scope) == "rule"]
-                missed = self._check_main(commit, specs, rules) if rules else {}
-            except Exception:
-                return
-            if self._ask_pool is None or not rules:
-                return
-            with self._status_lock:
-                try:
-                    status = self.onboarding_status(project)
-                    if not status or status.get("state") != "done":
-                        return
-                    targets = {scope["target"] for scope in rules}
-                    status["rules"] = sorted(set(status.get("rules", [])) | targets)
-                    entries = {entry["spec"]: list(entry["rules"]) for entry in status.get("reconcile", [])}
-                    for path, rules_missed in missed.items():
-                        held = entries.setdefault(path, [])
-                        held.extend(rule for rule in rules_missed if rule["target"] not in {r["target"] for r in held})
-                    status["reconcile"] = [{"spec": path, "rules": entries[path]} for path in sorted(entries)]
-                    status["specs_to_reconcile"] = len(entries)
-                    self._write_status(project, status)
-                except (OSError, ValueError):
-                    pass
-
-        t = threading.Thread(target=run, daemon=True, name="spec-chat-jev-confirm")
-        self._warm_threads[:] = [held for held in self._warm_threads if held.is_alive()]  # bounded by live work
-        self._warm_threads.append(t)
-        t.start()
-
-    def _main_scope(self, root: str, main: str, target: str) -> dict[str, Any] | None:
-        """A listed home clause's scope question, read from the warm-up's main."""
-        path = target.partition("#")[0]
-        source = self._at(root, main, path)
-        scopes = self._build("scope", [{"path": path, "source": source}]) if source is not None else []
-        return next((scope for scope in scopes if scope["target"] == target), None)
-
-    def _undecided(self, project: Any, root: str, status: Mapping[str, Any]) -> list[dict[str, Any]]:
-        """The warm-up's candidates no human has decided yet, as rule cards (#bootstrap-candidates)."""
-        result = []
-        for target in status.get("candidates", []):
-            scope = self._main_scope(root, status["main"], target) if status.get("main") else None
-            if scope is not None and self._standing(project, scope) == RULE_CANDIDATE:
-                result.append(self._rule_card(scope, project, self.seam))
-        return result
-
-    def candidate_offer(self, project: Any, root: str | None = None) -> dict[str, Any] | None:
-        """The one-time candidate offer (#bootstrap-candidates): after warm-up, while any warm-up candidate is
-        undecided and the offer was never dismissed."""
-        status = self.onboarding_status(str(project)) if project else None
-        if not root or not status or status.get("state") != "done" or status.get("candidate_offer"):
-            return None
-        candidates = self._undecided(project, root, status)
-        return {"count": len(candidates), "candidates": candidates} if candidates else None
-
-    def offer(self, project: Any, root: str | None = None) -> dict[str, Any] | None:
-        """The one-time reconcile offer (#bootstrap-offer): after warm-up, N above zero, never sent or dismissed,
-        and once no warm-up candidate is undecided or the candidate offer was dismissed. It counts confirmed rules
-        only: a rule not confirmed, or rejected since, is not listed, and a spec missing only such rules is not
-        counted (#approval); its text is read from the warm-up's main, where the listed home clause lives."""
-        status = self.onboarding_status(str(project)) if project else None
-        if not root or not status or status.get("state") != "done" or status.get("offer") \
-                or not status.get("specs_to_reconcile") or not status.get("main"):
-            return None
-        if not status.get("candidate_offer") and self._undecided(project, root, status):
-            return None
-        cards: dict[str, dict[str, Any] | None] = {}
-        for entry in status.get("reconcile", []):
-            for rule in entry["rules"]:
-                if rule["target"] not in cards:
-                    scope = self._main_scope(root, status["main"], rule["target"])
-                    standing = self._standing(project, scope) if scope is not None else None
-                    cards[rule["target"]] = self._rule_card(scope, project, self.seam) if standing == "rule" else None
-        specs = [{**entry, "rules": [{**rule, **cards[rule["target"]]} for rule in entry["rules"] if cards[rule["target"]]
-                                     and not self.seam.store.decided(DECISIONS["here"], project,
-                                                                     cards[rule["target"]]["text"], entry["spec"])]}
-                 for entry in status.get("reconcile", [])]
-        specs = [entry for entry in specs if entry["rules"]]
-        return {"count": len(specs), "specs": specs} if specs else None
-
-    def dismiss(self, mount: Mapping[str, Any], target: str, action: str, text: str,
-                record_id: str | None = None, spec: Any = None) -> bool:
-        """The human's Not for this spec (action here, on the card's rule-check record_id, or the record of a
-        draft-check mark citing the rule) or Not a project rule (action rule, on the rule's scope record), for
-        the page's project (#dismiss, #card-cites-reject). Held by project, repo spec path for Not for this spec,
-        and rule text, never by cache key. Not a project rule is a confirmed scope label (#approval-labels); Not
-        for this spec stays unconfirmed until audited (jev-suggestions #measure-feedback). False when the action
-        is neither, the text is no rule held here, or the record is no rule check or draft check: the one check
-        of a dismissal, so the record route only relays it. spec is the repo spec path a reconcile offer line
-        names, which the page's own target is not (#card-offer-row)."""
+    def dismiss(self, mount: Mapping[str, Any], target: str, action: Any, home: Any = None,
+                record_id: Any = None, anchor: Any = None) -> bool:
+        """The human's answer on a rule or candidate card, for the page's project, one outcome in the warning ledger
+        (#dismiss, jev-suggestions #ledger). Not for this spec (action here) on a rule card, or on a mark at anchor
+        citing the rule, names the rule's home (repo spec path and anchor) and the note's record: dismissed for this
+        repo spec path, unconfirmed until audited. Not a project rule (action rule) names the page spec's unmarked
+        criterion at anchor that Jev reads as every feature: not-a-rule citing its scope record, a confirmed label.
+        A candidate catch-up passes over (action ignored, repair-specs #catch-up-table) is the owner's ignored citing
+        its scope record, unconfirmed, settling nothing; a settled candidate is never ignored. False when the action is neither or names what is not held here: the one check of an answer."""
         project = mount.get("project")
         seam = self._seam_for(mount)
-        if action not in ("here", "rule") or not project or not isinstance(text, str) or not text \
-                or "scope" not in seam.question_sets:
+        if not project or not isinstance(action, str) or "scope" not in seam.question_sets:
             return False
-        scope = seam.store.get(seam.key({"kind": "scope", "state": {"criterion": text}}))
-        if _confident_label(scope) != RULE_SCOPE:
+        rel = os.path.relpath(target, mount["root"]).replace(os.sep, "/")
+        if action == "here":
+            path, _, clause = home.partition("#") if isinstance(home, str) else ("", "", "")
+            if not path or not clause or not isinstance(record_id, str) or not record_id:
+                return False
+            seam.ledger.append({"project": str(project), "spec": rel, "anchor": anchor if isinstance(anchor, str) else None,
+                                "kind": "rule", "target": home, "outcome": "dismissed", "judgment": record_id, "by": "human"})
+            return True
+        if action not in ("rule", IGNORED) or not isinstance(anchor, str):
             return False
-        holds: dict[str, Any] = {"project": str(project), "rule": rule_identity(text)}
-        if action == "rule":
-            return seam.store.resolve(scope["record_id"], DECISIONS["rule"], confirmed=True, **holds) is not None
-        record = seam.store.by_id(record_id) if isinstance(record_id, str) else None
-        if not record or (record.get("kind") != "covered" and record.get("kind") not in DRAFT_CHECK_KINDS):
+        try:
+            current = Path(target).read_bytes()
+        except OSError:
             return False
-        holds["spec"] = spec if isinstance(spec, str) and spec else os.path.relpath(target, mount["root"]).replace(os.sep, "/")
-        return seam.store.resolve(record_id, DECISIONS["here"], **holds) is not None
-
-    def confirm(self, mount: Mapping[str, Any], text: str, name: Any = None) -> bool:
-        """The human's Confirm rule on a candidate card, for the page's project (#approval): resolution rule on
-        the rule's scope record, a confirmed scope label, with the human's corrected name when given, which
-        replaces the written one (#card-name-source). Held by project and rule text, like a dismissal. False when
-        the text is no candidate held here or the project already decided it; a warmed project's main is then
-        checked against the rule for the reconcile offer."""
-        project = mount.get("project")
-        seam = self._seam_for(mount)
-        if not project or not isinstance(text, str) or not text or "scope" not in seam.question_sets:
+        scope = next((scope for scope in self._build("scope", [{"path": rel, "spec": rel, "source": current}])
+                      if scope["id"] == anchor and not scope["name"]), None)
+        record = seam.cached(scope) if scope else None
+        if _confident_label(record) != RULE_SCOPE:
             return False
-        scope = seam.store.get(seam.key({"kind": "scope", "state": {"criterion": text}}))
-        if _confident_label(scope) != RULE_SCOPE or any(
-                seam.store.decided(DECISIONS[action], project, text) for action in ("rule", "confirm")):
-            return False
-        holds: dict[str, Any] = {"project": str(project), "rule": rule_identity(text)}
-        if isinstance(name, str) and " ".join(name.split()):
-            holds["name"] = " ".join(name.split())[:RULE_NAME_LIMIT]
-        if seam.store.resolve(scope["record_id"], DECISIONS["confirm"], confirmed=True, **holds) is None:
-            return False
-        if not mount.get("test"):
-            self._reconcile_rule(str(project), text)
+        if action == IGNORED:
+            if self._settled(seam, project, scope):
+                return False
+            seam.ledger.append({**self._candidate_where(project, scope), "outcome": IGNORED,
+                                "judgment": record["record_id"], "by": "owner"})
+            return True
+        seam.ledger.append({**self._candidate_where(project, scope), "outcome": NOT_A_RULE,
+                            "judgment": record["record_id"], "by": "human"})
         return True
 
-    def resolve(self, mount: Mapping[str, Any], record_id: Any, status: Any, reason: Any = None) -> bool:
+    def accepted(self, mount: Mapping[str, Any], target: str) -> None:
+        """Accept spec with a candidate still unsettled: one ignored outcome per open candidate of the spec, citing
+        its scope record (#dismiss-trace). Reads held answers only; asks nothing."""
+        project = mount.get("project")
+        seam = self._seam_for(mount)
+        if not project or not self.enabled or "scope" not in seam.question_sets:
+            return
+        rel = os.path.relpath(target, mount["root"]).replace(os.sep, "/")
+        for scope in self._build("scope", [{"path": rel, "spec": rel, "source": Path(target).read_bytes()}]):
+            record = seam.cached(scope)
+            if not scope["name"] and _confident_label(record) == RULE_SCOPE and not self._settled(seam, project, scope):
+                seam.ledger.append({**self._candidate_where(project, scope), "outcome": IGNORED,
+                                    "judgment": record["record_id"], "by": "human"})
+
+    def _mark_where(self, mount: Mapping[str, Any], rel: str, key: tuple[Any, ...]) -> dict[str, Any]:
+        """Where an Important mark sits in the warning ledger: project, repo spec path, anchor, kind, cited clause."""
+        kind, anchor, target = key
+        return {"project": mount.get("project"), "spec": rel, "anchor": anchor, "kind": kind, "target": target}
+
+    def resolve(self, mount: Mapping[str, Any], target: str, record_id: Any, status: Any, reason: Any = None) -> bool:
         """An owner's resolution of an Important mark through the agent read (#record-resolution): fixed, reason,
-        dismissed with its reason, or thread, on the mark's record, unconfirmed until audited (#measure-feedback).
-        False when the resolution is none of these, a dismissal names no reason, or the record is unknown or
-        already resolved."""
+        dismissed with its reason, or thread, one outcome in the warning ledger citing the mark's record, which is
+        unchanged, unconfirmed until audited (#measure-feedback). The mark is one this server last showed on the
+        spec at target. False when the resolution is none of these, a dismissal names no reason, or the mark is
+        unknown or already has an outcome: a mark ends once."""
         reason = " ".join(reason.split()) if isinstance(reason, str) else ""
         if status not in OWNER_RESOLUTIONS or (status == "dismissed" and not reason) or not isinstance(record_id, str):
             return False
-        return self._seam_for(mount).store.resolve(record_id, status, reason or None, if_absent=True) is not None
+        rel = os.path.relpath(target, mount["root"]).replace(os.sep, "/")
+        with self._marks_lock:
+            shown = [key for spec, (_, marks) in self._marks.items()
+                     if spec[:3] == (mount.get("root"), mount.get("test"), rel)
+                     for key, cited in marks.items() if cited == record_id]
+        if not shown:
+            return False
+        seam = self._seam_for(mount)
+        where = self._mark_where(mount, rel, shown[0])
+        if seam.ledger.latest(**where):
+            return False
+        seam.ledger.append({**where, "outcome": status, "judgment": record_id, "by": "owner", "reason": reason or None})
+        return True
 
     def _fixed(self, seam: "JevSeam", mount: Mapping[str, Any], relative: str, facts: Mapping[str, Any],
-               items: list[dict[str, Any]]) -> None:
+               items: list[dict[str, Any]], rules: Any = None) -> None:
         """A spec fix clears an Important mark on the next head (#record-resolution, #acceptance-resolution-fixed):
         a mark, by kind, id, and target, shown on a head of this spec and base, and absent from a settled read of a
-        later head, is fixed on its record, unconfirmed until audited. A read with any question pending,
-        unavailable, or oversize decides nothing; a mark gone because its rule is no project rule now, or already
-        resolved, is not fixed."""
-        spec = (mount.get("root"), mount.get("test"), relative, facts.get("base_commit"))
+        later head, is fixed in the warning ledger citing its record, unconfirmed until audited. A read with any
+        question pending, unavailable, or oversize decides nothing; a mark gone because its rule is no project rule
+        now (rules holds the marked rules' served targets), or with an outcome already, is not fixed."""
+        rel = facts.get("rel") or relative
+        spec = (mount.get("root"), mount.get("test"), rel, facts.get("base_commit"))
         head = facts.get("head")
-        marks = {(item["kind"], item["id"], item.get("target")): (item["record"], item.get("text"))
+        marks = {(item["kind"], item["id"], item.get("target")): item["record"]
                  for item in items if item.get("agent_level") == "important" and item.get("record")}
         with self._marks_lock:
             last_head, last = self._marks.get(spec, (head, {}))
@@ -3205,25 +2697,11 @@ class JevService:
                 self._marks[spec] = (last_head, {**last, **marks})
                 return
             self._marks[spec] = (head, marks)
-        project = mount.get("project")
-        for key, (record_id, text) in last.items():
-            if key not in marks and not (text and seam.store.decided(DECISIONS["rule"], project, text)):
-                seam.store.resolve(record_id, "fixed", if_absent=True)
-
-    def record_offer(self, project: Any, action: str, offer: str = "reconcile") -> bool:
-        """Record either one-time offer, reconcile or candidates, sent or dismissed in the project's table; the
-        first record stands (#bootstrap-once)."""
-        field = {"reconcile": "offer", "candidates": "candidate_offer"}.get(offer)
-        if action not in OFFER_ACTIONS or not project or field is None:
-            return False
-        with self._status_lock:
-            status = self.onboarding_status(str(project))
-            if not status or status.get("state") != "done":
-                return False
-            if not status.get(field):
-                status.update({field: action, field + "_at": _now()})
-                self._write_status(str(project), status)
-        return True
+        for key, record_id in last.items():
+            where = self._mark_where(mount, rel, key)
+            retired = key[0] == "rule" and key[2] not in (rules or ())
+            if key not in marks and not retired and not seam.ledger.latest(**where):
+                seam.ledger.append({**where, "outcome": "fixed", "judgment": record_id, "by": "server"})
 
     def response(self, mount: Mapping[str, Any], target: str, relative: str, base: str,
                  events: list[Mapping[str, Any]], view: str = "", served_mounts: Any = None,
@@ -3288,13 +2766,14 @@ class JevService:
                     "target": target_anchor, "record": record.get("record_id")}
             if state == "label" and question["kind"] != "orphan" and label in MARK_LEVELS:
                 item["level"], item["agent_level"] = MARK_LEVELS[label]["human"], MARK_LEVELS[label]["agent"]
-            # A draft-check mark whose other clause is a confirmed rule is a rule card (project-rules #card-cites):
-            # gone after Not for this spec on this spec path, a plain note after Not a project rule (#card-cites-reject).
+            # A draft-check mark whose other clause is a marked rule is a rule card (project-rules #card-variants):
+            # gone after Not for this spec on this spec path and clause (#card-cites-reject).
             # A Partial overlap never cites a rule: it is no card-cites label and has no button (#level-partial).
             cited = (cites.get(str(target_anchor))
                      if question["kind"] == "corpus" and state == "label" and label != "partial-overlap" else None)
             if cited:
-                if seam.store.decided(DECISIONS["here"], mount.get("project"), cited["text"], facts and facts["rel"]):
+                if mount.get("project") and facts and seam.ledger.latest(
+                        mount.get("project"), facts["rel"], question["id"], "rule", cited["home"]):
                     continue
                 item["rule"] = dict(cited)
             # Answers Jev was unsure of, settled by the general LLM, behind a note the page shows: counted by the agent
@@ -3306,27 +2785,17 @@ class JevService:
         items += rule_items
         if ruled is not None:
             try:
-                self._fixed(seam, mount, relative, facts, items)
+                self._fixed(seam, mount, relative, facts, items, cites)
             except OSError:
-                pass  # a fixed record unwritten is a fix missed, never a failed read
+                pass  # a fixed outcome unwritten is a fix missed, never a failed read
         items = [item for item in items if item["state"] != "oversize"]
-        offer = None if mount.get("test") else self.offer(mount.get("project"), mount.get("root"))
-        candidates = None if mount.get("test") else self.candidate_offer(mount.get("project"), mount.get("root"))
-        # Offers list repo paths; the page links them, and their cards' sources, as its mount serves them.
-        if offer:
-            offer = {**offer, "specs": [{**entry, "path": served_path(mount, entry["spec"]),
-                                         "rules": [{**rule, "target": served_path(mount, rule["target"])} for rule in entry["rules"]]}
-                                        for entry in offer["specs"]]}
-        if candidates:
-            candidates = {**candidates, "candidates": [{**card, "target": served_path(mount, card["target"])}
-                                                       for card in candidates["candidates"]]}
         return {"jev": "on", "items": items + self._lane_items(mount, served_mounts), "rules": rules,
-                "candidate_offer": candidates, "offer": offer, "levels": dict(MARK_LEVELS)}
+                "levels": dict(MARK_LEVELS)}
 
 
-__all__ = ["BUILDERS", "CHAIN_CONTINUE", "VERIFIED", "VERIFIER_REJECTED", "DRAFT_CHECK_KINDS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "MARK_LEVELS", "MODEL", "OWNER_RESOLUTIONS",
+__all__ = ["BUILDERS", "CHAIN_CONTINUE", "VERIFIED", "VERIFIER_REJECTED", "DRAFT_CHECK_KINDS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "WarningLedger", "eval_read", "MARK_LEVELS", "MODEL", "OWNER_RESOLUTIONS",
            "OPENROUTER_DECISIONS_URL", "mount_prefix", "served_path", "OpenRouterProvider", "QuestionSet", "SILENT_NO",
            "anchor_context",
            "build_audience_questions", "build_board_conflict_questions", "build_corpus_questions", "build_coverage_questions", "build_orphan_questions", "build_resolved_questions", "build_rule_question", "build_scope_questions", "build_type_questions", "chain_result", "changed_leaf_clauses", "draft_check",
            "extract_anchors", "lane_result",
-           "load_question_sets", "material", "rule_homes", "rule_identity", "rule_mark_anchor", "rule_word", "spec_text"]
+           "load_question_sets", "material", "rule_mark_anchor", "rule_word", "scope_eval", "spec_text"]

@@ -226,49 +226,41 @@ class ReviewStateCollections(unittest.TestCase):
         self.assertEqual(len(agent), 1)
 
 
-    def test_rule_state_follows_the_story_and_the_criterion_given(self):
-        """project-rules #approval: a confirmed-rule story's entry shows the rule card and reconcile offer, story-approve's
-        the candidate; rule-candidate and rule-confirmed hold their state in either story; a reset forgets clicks."""
+    def test_rule_state_follows_the_marks_and_a_reset_forgets_clicks(self):
+        """project-rules #declare: every collection's report spec shows the marked onboarding rule's card under its
+        mark's name; rule-candidate's unmarked onboarding criterion is a candidate on its home spec, checked nowhere;
+        a reset registers a fresh project, so a story's Not for this spec never reaches the next one."""
         site = Site()  # its own site: its resets replace the shared site's collections
         self.addCleanup(site.tmp.cleanup)
         base = self.serve(site)
 
-        def jev(collection):
-            query = urllib.parse.urlencode({"path": "%s/docs/specs/report.spec.html" % collection})
-            with urllib.request.urlopen(base + "/api/jev?" + query) as response:
-                answer = json.load(response)
-            return {item["kind"] for item in answer["items"]} & {"rule", "candidate"}, answer
-
-        def confirmed(collection):
-            kinds, answer = jev(collection)
-            self.assertEqual(kinds, {"rule"}, collection)
-            self.assertIsNone(answer["candidate_offer"], collection)
-            self.assertEqual(answer["offer"]["count"], 1, collection)
-            self.assertEqual(len(answer["rules"]), 1, collection)
-
-        def candidate(collection):
-            kinds, answer = jev(collection)
-            self.assertNotIn("rule", kinds, collection)
-            self.assertEqual(answer["candidate_offer"]["count"], 1, collection)
-            self.assertIsNone(answer["offer"], collection)
-            self.assertEqual(answer["rules"], [], collection)
+        def jev(collection, spec="report"):
+            query = urllib.parse.urlencode({"path": "%s/docs/specs/%s.spec.html" % (collection, spec)})
+            until = time.monotonic() + 20
+            while True:
+                with urllib.request.urlopen(base + "/api/jev?" + query) as response:
+                    answer = json.load(response)
+                items = [i for i in answer["items"] if i["kind"] in ("rule", "candidate")]
+                if items and all(i["state"] != "pending" for i in items) or time.monotonic() > until:
+                    return items, answer
+                time.sleep(0.1)
 
         site.reset(QA_STORY="story-miss", QA_URL_REVIEW=base)
-        confirmed("qa-fixture"), confirmed("rule-confirmed"), candidate("rule-candidate")
-        until = time.monotonic() + 20  # the card's title is the fixture's plain-words name, written by the general LLM
-        while (names := {i.get("name") for i in jev("qa-fixture")[1]["items"] if i["kind"] == "rule"}) != {RULE_NAME}:
-            self.assertLess(time.monotonic(), until, names)
-            time.sleep(0.2)
-        body = json.dumps({"dismiss": "rule", "rule": ONBOARDING}).encode()
+        items, answer = jev("qa-fixture")
+        self.assertEqual([(i["kind"], i["label"], i["name"]) for i in items], [("rule", "missed", RULE_NAME)])
+        self.assertNotIn("offer", answer)
+        self.assertNotIn("candidate_offer", answer)
+        items, answer = jev("rule-candidate", "onboarding")
+        self.assertEqual([(i["kind"], i["id"], i["text"]) for i in items], [("candidate", "rule-onboarding", ONBOARDING)])
+        self.assertEqual(jev("rule-candidate")[1]["rules"], [])
+        rule = jev("qa-fixture")[0][0]
+        body = json.dumps({"dismiss": "here", "home": rule["home"], "record": rule["record"]}).encode()
         request = urllib.request.Request(base + "/api/jev/offer?path=qa-fixture/docs/specs/report.spec.html", data=body, method="POST")
         with urllib.request.urlopen(request) as response:
             self.assertTrue(json.load(response)["ok"])
-        self.assertEqual(jev("qa-fixture")[0], set())
-        site.reset(QA_STORY="story-approve", QA_URL_REVIEW=base)
-        candidate("qa-fixture"), confirmed("rule-confirmed"), candidate("rule-candidate")
+        self.assertEqual(jev("qa-fixture")[0], [])
         site.reset(QA_STORY="story-dismiss", QA_URL_REVIEW=base)
-        confirmed("qa-fixture")
-
+        self.assertEqual([i["kind"] for i in jev("qa-fixture")[0]], ["rule"])
 
 if __name__ == "__main__":
     unittest.main()

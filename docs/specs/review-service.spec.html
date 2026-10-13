@@ -89,7 +89,7 @@ Any other tool reaches Spec Chat's install only through it.</p>
 <tbody>
 <tr data-anchor="published-process"><td><code>registry.toml</code> <code>[process]</code></td><td><code>pid</code>, <code>bind</code>, <code>port</code>, <code>host</code> (proof host), and <code>url</code>, the URL the service printed.</td></tr>
 <tr data-anchor="published-rows"><td><code>registry.toml</code> <code>[[resource]]</code></td><td>One row per registered spec: <code>id</code>, slug, project, <code>path</code>, <code>spec</code>, root, <code>narrow_root</code>, base, <code>accepted</code>, owner, <code>checker</code>, <code>cursor_name</code>, <code>test</code>, <code>registered_at</code>, and <code>updated_at</code> (<a href="./lane-hosting.spec.html#paths">lane hosting</a>).</td></tr>
-<tr data-anchor="published-onboarding"><td><code>$XDG_STATE_HOME/spec-chat/onboarding.toml</code></td><td><code>status</code>, <code>pending</code> or <code>done</code>, and <code>doc</code>, a link to Spec Chat's own install and first-run steps, which Spec Chat alone owns. Below them, one table per project holds Jev's warm-up state, which the review service writes, as <a href="./project-rules.spec.html#bootstrap-status">project rules</a> define.</td></tr>
+<tr data-anchor="published-onboarding"><td><code>$XDG_STATE_HOME/spec-chat/onboarding.toml</code></td><td><code>status</code>, <code>pending</code> or <code>done</code>, and <code>doc</code>, a link to Spec Chat's own install and first-run steps, which Spec Chat alone owns.</td></tr>
 <tr data-anchor="published-routes"><td>Routes under <code>url</code></td><td>Spec pages, the review index, and <code>/api/jev/board</code>.</td></tr>
 </tbody>
 </table>

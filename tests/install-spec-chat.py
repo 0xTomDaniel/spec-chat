@@ -92,12 +92,13 @@ class InstallSpecChatTest(unittest.TestCase):
         registry = tomllib.loads((self.state / "spec-chat/hosting/default/registry.toml").read_text())
         self.assertEqual(registry.get("resource", []), [])
 
-    def test_rerun_keeps_the_review_service_warm_up_tables(self):
+    def test_onboarding_holds_status_and_doc_only(self):
+        """review-service #published-onboarding: no other table survives a rerun."""
         self.onboarding.parent.mkdir(parents=True)
         self.onboarding.write_text('status = "pending"\n\n[project.example]\nstate = "done"\nspecs_to_reconcile = 2\n')
         self.run_install()
+        self.assertEqual(set(self.status()), {"status", "doc"})
         self.assertEqual(self.status()["status"], "pending")
-        self.assertEqual(self.status()["project"], {"example": {"state": "done", "specs_to_reconcile": 2}})
 
     def test_box_setup_moves_a_live_private_service_to_public(self):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
@@ -242,14 +243,14 @@ class InstallSpecChatTest(unittest.TestCase):
             )
 
     def test_onboarding_doc_says_how_to_write_a_project_rule(self):
-        """project-rules #acceptance-onboarding-doc: one onboarding section says to include explicit every-feature
-        wording, with a help center article example."""
+        """project-rules #acceptance-onboarding-doc: one onboarding section says how to declare a project rule: mark
+        its criterion in its home spec with a short name, and say in its text that it applies to every feature."""
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertEqual(readme.count("\n## Writing a project rule\n"), 1)
         section = readme.split("\n## Writing a project rule\n", 1)[1].split("\n## ", 1)[0]
-        self.assertIn("include explicit every-feature wording in the criterion text", section)
-        self.assertIn("When any change adds a screen", section)
-        self.assertIn("help center article", section)
+        self.assertIn("mark its criterion in its home spec with a short name", section)
+        self.assertIn("say in its text that it applies to every feature", section)
+        self.assertIn('data-project-rule="', section)
 
 
 if __name__ == "__main__":

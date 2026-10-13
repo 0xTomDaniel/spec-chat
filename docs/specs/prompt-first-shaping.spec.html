@@ -218,7 +218,7 @@ On a single-module spec, the section defines that module's own boundaries.</p>
 <p data-anchor="source-linear-story-boundary">Linear carries issue lifecycle and governing links, not canonical story or guided-journey declaration text.</p>
 <p data-anchor="source-markdown-story-boundary">Markdown story catalogs remain generated downstream QA output.</p>
 <p data-anchor="source-adr">An ADR owns one hard-to-reverse decision: its context, the decision, why, alternatives rejected, and consequences, kept short; it holds no policy section and no mechanics.</p>
-<p data-anchor="source-rules">A repo-wide rule lives once, in its home spec, as an acceptance criterion whose text says it applies to every feature, so Jev checks it as a <a href="./project-rules.spec.html#explicit-rule-principle">project-wide rule</a>.
+<p data-anchor="source-rules">A repo-wide rule lives once, in its home spec, as an acceptance criterion whose text says it applies to every feature and that its home spec <a href="./project-rules.spec.html#declare-mark">marks as a project rule</a>, so Jev checks it as a project-wide rule.
 An ADR may name a rule it decided on only by linking that criterion, as in <q>see peer-seams#acceptance-ci</q>, and never restates it: the why lives in the ADR, the what in the spec criterion, and the mechanics in code and the change request.</p>
 <p data-anchor="source-mechanics">Implementation mechanics no caller depends on, such as storage tables, retry counts, internal keys, timeouts, and delivery details, live in code and the change request; neither a spec nor an ADR states them.</p>
 <p data-anchor="source-issues">Specs carry no ticket or issue link; git history is the provenance record.</p>

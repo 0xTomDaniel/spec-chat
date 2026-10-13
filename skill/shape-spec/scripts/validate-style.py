@@ -28,6 +28,7 @@ class SpecParser(HTMLParser):
         self.active_boundaries = []
         self.captures = []
         self.contract = None
+        self.rule_marks = []
 
     def _section(self):
         return self.section_stack[-1] if self.section_stack else None
@@ -81,6 +82,8 @@ class SpecParser(HTMLParser):
             self.current_story = story
         if self.current_story and tag == "a" and "data-guided-journey-step" in values:
             self.current_story["steps"].append(values.get("href", ""))
+        if "data-project-rule" in values:  # project-rules #declare: a rule's short name on its criterion
+            self.rule_marks.append((anchor, "data-acceptance-criterion" in values, values.get("data-project-rule") or ""))
         if tag in {"h2", "h3"} and section:
             self._capture("heading", tag, depth, section)
         if "data-acceptance-criterion" in values:
@@ -223,6 +226,16 @@ def section_heading(section):
 
 def has_heading(section, text):
     return ("h2", text) in section_heading(section)
+
+
+def validate_rule_marks(parser):
+    """project-rules #declare-text: a project rule mark names the rule and sits on an acceptance criterion."""
+    for anchor, criterion, name in parser.rule_marks:
+        if not criterion:
+            return f"project rule mark on {anchor or 'an element'} is not on an acceptance criterion"
+        if not name.strip():
+            return f"project rule mark on {anchor or 'a criterion'} needs a short name"
+    return None
 
 
 def validate_shape_sections(parser):
@@ -370,7 +383,7 @@ def main(argv):
         story_error = validate_stories(parser, repository, spec)
         if story_error:
             return fail(story_error)
-        section_error = validate_shape_sections(parser)
+        section_error = validate_rule_marks(parser) or validate_shape_sections(parser)
         if section_error:
             return fail(section_error)
         story_state = "valid"

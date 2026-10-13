@@ -214,75 +214,40 @@ class TestResolution(unittest.TestCase):
         })
         return store, record
 
-    def test_dismissed_is_unconfirmed(self):
-        """Dismissing a mark sets resolution=dismissed and does NOT auto-confirm."""
-        store, record = self._make_store_with_record()
-        updated = store.resolve("judgment-test-001", "dismissed", reason="Jev is wrong here")
-        self.assertIsNotNone(updated)
-        self.assertEqual(updated["resolution"]["status"], "dismissed")
-        self.assertEqual(updated["resolution"]["reason"], "Jev is wrong here")
-        self.assertNotIn("confirmed", updated)
+    WHERE = {"project": "p", "spec": "docs/specs/a.spec.html", "anchor": "a", "kind": "contradicts",
+             "target": "docs/specs/b.spec.html#b"}
+
+    def test_dismissed_is_one_unconfirmed_ledger_outcome_and_the_record_is_unchanged(self):
+        """#proof-resolution: a dismissal with a reason is one dismissed outcome by spec and anchor citing the
+        record, unconfirmed, and the record file is byte-identical."""
+        with tempfile.TemporaryDirectory() as tmp:
+            store = jev.JudgmentStore(Path(tmp) / "records.jsonl")
+            ledger = jev.WarningLedger(Path(tmp) / "ledger.jsonl")
+            store.append({"record_id": "judgment-test-001", "cache_key": "sha256:aaa", "kind": "contradicts",
+                          "outcome": "shown", "answer": {"label": "yes"}})
+            before = {f.name: f.read_bytes() for f in (Path(tmp) / "records").iterdir()}
+            ledger.append({**self.WHERE, "outcome": "dismissed", "judgment": "judgment-test-001", "by": "owner",
+                           "reason": "Jev is wrong here"})
+            self.assertEqual({f.name: f.read_bytes() for f in (Path(tmp) / "records").iterdir()}, before)
+            lines = [json.loads(line) for line in (Path(tmp) / "ledger.jsonl").read_text().splitlines()]
+            self.assertEqual([(e["spec"], e["anchor"], e["outcome"], e["judgment"], e["reason"], e["confirmed"])
+                              for e in lines],
+                             [("docs/specs/a.spec.html", "a", "dismissed", "judgment-test-001", "Jev is wrong here", False)])
 
     def test_fixed_is_unconfirmed_until_audited(self):
         """project-rules #acceptance-fixed-unconfirmed: an edit can answer a wrong mark, so fixed proves nothing;
-        the eval replay's labels, confirmed_records, exclude it until an audit labels it."""
-        store, record = self._make_store_with_record()
-        updated = store.resolve("judgment-test-001", "fixed")
-        self.assertIsNotNone(updated)
-        self.assertEqual(updated["resolution"]["status"], "fixed")
-        self.assertNotIn("confirmed", updated)
-        self.assertEqual(list(store.confirmed_records()), [])
-        audited = store.resolve("judgment-test-001", "fixed", confirmed=True)
-        self.assertEqual([r["record_id"] for r in store.confirmed_records()], [audited["record_id"]])
-
-    def test_resolve_unknown_record_returns_none(self):
+        the eval read's confirmed labels exclude it, and the unconfirmed dismissal, until an audit labels it."""
         store, _ = self._make_store_with_record()
-        self.assertIsNone(store.resolve("nonexistent", "fixed"))
-
-    def test_resolution_persists_to_file(self):
-        """Resolution amendment is appended to JSONL and survives reload."""
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "records.jsonl"
-            store = jev.JudgmentStore(path)
-            store.append({
-                "record_id": "judgment-persist-001",
-                "cache_key": "sha256:bbb",
-                "model": "fake",
-                "question_set": {"id": "contradicts", "version": 3},
-                "kind": "contradicts", "pair_kind": "contradicts",
-                "sources": {"addresses": [], "revision": None},
-                "answer": {"label": "yes", "probabilities": {"yes": 0.95}, "confidence": 0.9},
-                "threshold": 0.4, "outcome": "shown",
-                "time": "2026-09-28T00:00:00.000Z",
-            })
-            store.resolve("judgment-persist-001", "fixed", confirmed=True)  # as an audit labels it
-
-            # Reload
-            store2 = jev.JudgmentStore(path)
-            rec = store2.get("sha256:bbb")
-            self.assertIsNotNone(rec)
-            self.assertEqual(rec["resolution"]["status"], "fixed")
-            self.assertTrue(rec["confirmed"])
-
-    def test_confirmed_records_returns_only_confirmed(self):
-        """confirmed_records filters to confirmed=True only."""
-        store, _ = self._make_store_with_record()
-        # Before resolution: no confirmed records
-        self.assertEqual(len(list(store.confirmed_records())), 0)
-
-        # Dismiss (unconfirmed)
-        store2, _ = self._make_store_with_record()
-        store2.resolve("judgment-test-001", "dismissed", reason="wrong")
-        self.assertEqual(len(list(store2.confirmed_records())), 0)
-
-        # Fix: unconfirmed; an audit's label confirms it
-        store3, _ = self._make_store_with_record()
-        store3.resolve("judgment-test-001", "fixed")
-        self.assertEqual(len(list(store3.confirmed_records())), 0)
-        store3.resolve("judgment-test-001", "fixed", confirmed=True)
-        confirmed = list(store3.confirmed_records())
-        self.assertEqual(len(confirmed), 1)
-        self.assertTrue(confirmed[0]["confirmed"])
+        ledger = jev.WarningLedger()
+        ledger.append({**self.WHERE, "anchor": "other", "outcome": "dismissed", "judgment": "judgment-test-001",
+                       "by": "owner", "reason": "wrong"})
+        fixed = ledger.append({**self.WHERE, "outcome": "fixed", "judgment": "judgment-test-001", "by": "server"})
+        self.assertFalse(fixed["confirmed"])
+        self.assertEqual(list(jev.eval_read(store.records(), ledger, confirmed=True)), [])
+        ledger.append({**self.WHERE, "outcome": "fixed", "judgment": "judgment-test-001", "by": "audit"})
+        labels = [(record["record_id"], [(o["outcome"], o["by"]) for o in outcomes])
+                  for record, outcomes in jev.eval_read(store.records(), ledger, confirmed=True)]
+        self.assertEqual(labels, [("judgment-test-001", [("fixed", "audit")])])
 
 
 if __name__ == "__main__":
