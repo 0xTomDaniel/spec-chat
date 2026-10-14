@@ -83,7 +83,8 @@ def record(key, record_id, outcome="hidden", **fields):
 
 
 class StoreMemoryTest(unittest.TestCase):
-    """#proof-store, #acceptance-store-memory: peak memory after many reads and writes does not grow with the store."""
+    """#proof-store, #acceptance-store-memory: peak memory after many reads and writes does not grow with the store;
+    #acceptance-store-flow-speed: a missed lookup on a large store is as fast (p99), and held reads never wait (StoreLockTest)."""
 
     def test_peak_memory_is_independent_of_store_size(self):
         large = int(os.environ.get("JEV_STORE_RECORDS", "1000000"))

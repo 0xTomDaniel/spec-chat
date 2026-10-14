@@ -12,6 +12,7 @@ import tempfile
 import time
 import types
 import unittest
+from unittest import mock
 import urllib.request
 from pathlib import Path
 
@@ -122,9 +123,22 @@ class WakeControllerTest(unittest.TestCase):
         return self.controller.status(self.record["id"])
 
     def test_owner_is_woken_exactly_once_per_unchanged_batch(self):
+        """host-wake #acceptance-wake-once; prompt-first-shaping #acceptance-agent-wake (the host only runs the provider's
+        check and send, so no second processor); review-service #acceptance-wake (wake half)."""
         self.event("100-comment-a.json")
         self.event("110-handoff-a.json")
-        self.controller.poll()
+        launched = []
+        popen = subprocess.Popen
+
+        def record(argv, *args, **kwargs):
+            launched.append(argv[0])
+            return popen(argv, *args, **kwargs)
+
+        with mock.patch.object(serve.subprocess, "Popen", side_effect=record):
+            self.controller.poll()
+            for _ in range(3):
+                self.controller.poll()
+        self.assertEqual(launched, [str(self.waker.check), str(self.waker.send)])
         says = self.waker.says()
         self.assertEqual(len(says), 1)
         owner, artifact, message = says[0]
@@ -132,10 +146,22 @@ class WakeControllerTest(unittest.TestCase):
         for part in (str(self.spec), str(self.collection), ".cursor-owner", "2 events", "zero-wait scan", "park"):
             self.assertIn(part, message)
         self.assertEqual(self.status(), "sent")
-        for _ in range(3):
-            self.controller.poll()
-        self.assertEqual(len(self.waker.says()), 1)
         self.assertFalse(self.cursor.exists(), "the host never advances the cursor")
+
+    def test_reproof_request_hand_off_wakes_the_row_owner(self):
+        """criterion-evidence #acceptance-reproof-owner, #acceptance-reproof-owner-main: a re-proof request is a comment, so
+        its hand-off wakes the row's owner, the lane owner's pane, or the operator's pane for a spec on main."""
+        for owner in ("w1:pLane", "w1:pOperator"):
+            for path in self.human.iterdir():
+                path.unlink()
+            self.record["owner"] = owner
+            self.waker.agent(owner)
+            self.write("100-comment-r.json", {"event": "comment", "id": "r",
+                                              "text": "acceptance-x changed since its evidence: please recapture it."})
+            self.write("110-handoff-r.json", {"event": "handoff", "id": "h", "events": ["r"]})
+            self.controller = self.new_controller()
+            self.controller.poll()
+            self.assertEqual(self.waker.says()[-1][:2], [owner, str(self.spec)])
 
     def test_no_wake_without_completed_handoff(self):
         self.event("100-comment-a.json")
@@ -178,7 +204,7 @@ class WakeControllerTest(unittest.TestCase):
         self.assertEqual(serve._wake_batch(self.record), expected)
 
     def test_two_handoffs_then_cursor_advance_leaves_nothing(self):
-        # review-state #acceptance-agent-cursor (server side).
+        # review-state #acceptance-agent-cursor, #acceptance-agent-cursor-scan (server side).
         self.write("100-comment-a1.json", {"event": "comment", "id": "a1"})
         self.write("110-comment-b1.json", {"event": "comment", "id": "b1"})
         self.write("120-handoff-ha.json", {"event": "handoff", "id": "ha", "events": ["a1"]})
@@ -210,6 +236,7 @@ class WakeControllerTest(unittest.TestCase):
         self.assertEqual(serve._wake_batch(self.record), ("120-handoff-h2.json",))
 
     def test_later_handoff_wakes_once_before_and_after_cursor_advance(self):
+        """host-wake #acceptance-next-batch."""
         self.event("100-handoff-a.json")
         self.controller.poll()
         self.event("200-handoff-b.json")
@@ -227,6 +254,7 @@ class WakeControllerTest(unittest.TestCase):
         self.assertIn("1 events", self.waker.says()[2][2])
 
     def test_send_exit_75_is_deferred_and_retried_each_poll(self):
+        """host-wake #acceptance-defer: exit 75 is busy, nothing delivered; one prompt once delivery succeeds."""
         self.waker.send_rc(75)
         self.event("100-handoff-a.json")
         self.controller.poll()
@@ -240,6 +268,7 @@ class WakeControllerTest(unittest.TestCase):
         self.assertEqual(self.status(), "sent")
 
     def test_failed_check_fails_and_reregistered_owner_is_woken(self):
+        """host-wake #acceptance-failed-reregister."""
         self.waker.agent("w1:pOwner", False)
         self.event("100-handoff-a.json")
         self.controller.poll()
@@ -292,6 +321,7 @@ class WakeControllerTest(unittest.TestCase):
         self.assertEqual(len(self.waker.says()), 1)
 
     def test_without_provider_nothing_is_sent_and_plugging_needs_no_restart(self):
+        """host-wake #acceptance-no-provider-report (no pane prompted; review-host.py proves the report)."""
         self.waker.unplug()
         self.event("100-handoff-a.json")
         self.controller.poll()
@@ -321,7 +351,21 @@ class WakeControllerTest(unittest.TestCase):
         self.controller.poll()
         self.assertIsNone(self.status())
 
+    def test_registering_with_the_pane_is_the_whole_wake_setup(self):
+        """host-wake #acceptance-deleted: the skill names registering with the pane as the whole wake setup, beside
+        turn-yielded and manual-resume, and no external wake mode, wake adapter, adapter environment, or monitor."""
+        adapters = (ROOT / "skill/review-spec/references/cli-adapters.md").read_text(encoding="utf-8")
+        self.assertIn("Registering the spec with the lane command and the owner pane id is the whole wake setup", adapters)
+        for mode in ("## Turn-yielded", "## Host-wake", "## Manual-resume"):
+            self.assertIn(mode, adapters)
+        for path in (ROOT / "skill/review-spec").rglob("*.md"):
+            text = path.read_text(encoding="utf-8").lower()
+            for word in ("external wake", "external-wake", "wake adapter", "wake-adapter", "wake_"):
+                self.assertNotIn(word, text, str(path))
+            self.assertNotRegex(text, r"\bmonitor\b", str(path))  # the word, not monitoring or monitored
+
     def test_no_pane_tool_is_named(self):
+        """review-service #acceptance-wake-only."""
         roots = [ROOT / "skill", ROOT / "DESIGN.md", ROOT / "README.md"]
         roots += [path for path in (ROOT / "docs/specs").glob("*.spec.html")]
         for root in roots:

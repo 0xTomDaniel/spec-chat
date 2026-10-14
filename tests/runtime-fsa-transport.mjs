@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime.js'), 'utf8');
@@ -137,5 +139,49 @@ assert.match(runtime, /id="hx-repick"/, 'reconnect UI exposes a separate folder-
 assert.match(runtime, /state\.transport\.resume\(\)/, 'reconnect UI uses persisted-handle regrant');
 assert.match(runtime, /Allow this site to edit files/, 'picker UI names the browser permission step explicitly');
 assert.match(runtime, /:where\(body\)\{margin:0;/, 'runtime document defaults remain lower-specificity than a spec theme');
+
+// review-state #acceptance-local-file-scan: a comment and hand-off saved through the granted folder land in the spec's
+// spool on disk, and the owning agent's next scan reports that hand-off.
+class DiskDirectory {
+  constructor(path) { this.kind = 'directory'; this.path = path; }
+  async queryPermission() { return 'granted'; }
+  async getFileHandle(name, { create } = {}) {
+    const file = join(this.path, name);
+    if (create) writeFileSync(file, '', { flag: 'a' });
+    statSync(file);
+    return { kind: 'file', name, createWritable: async () => {
+      let data = '';
+      return { write: async chunk => { data += chunk; }, close: async () => writeFileSync(file, data) };
+    } };
+  }
+  async getDirectoryHandle(name, { create } = {}) {
+    const dir = join(this.path, name);
+    if (create) mkdirSync(dir, { recursive: true });
+    if (!statSync(dir).isDirectory()) throw new Error('not a directory ' + dir);
+    return new DiskDirectory(dir);
+  }
+}
+const disk = mkdtempSync(join(tmpdir(), 'spec-chat-fsa-'));
+try {
+  writeFileSync(join(disk, specFile), '<!doctype html><p data-anchor="a">A</p>');
+  stored.clear();
+  stored.set('scope-root', new DiskDirectory(disk));
+  const diskTransport = Function('SPEC_FILE', 'REVIEW_DIRNAME', 'location', 'indexedDB', 'navigator', 'window', 'toast',
+    `${runtime.slice(start, end)}; return fsaTransport;`)(specFile, specFile + '.review', location, indexedDB, navigator, window, () => {})();
+  assert.equal(await diskTransport.tryRestore(), 'granted', 'a granted folder reconnects');
+  const slice = (from, to) => runtime.slice(runtime.indexOf(from), runtime.indexOf(to, runtime.indexOf(from)));
+  const { nextStamp, eventName } = Function(slice('function nextStamp(', '\n\nfunction offlineNotice(') + '; return { nextStamp, eventName };')();
+  const comment = { event: 'comment', id: 'c1', anchor: 'a', text: 'Name the columns.' };
+  const handoff = { event: 'handoff', id: 'h1', events: ['c1'] };
+  const first = nextStamp(null, Date.now(), Math.random);
+  const names = [eventName(comment, first), eventName(handoff, nextStamp(first, Date.now(), Math.random))];
+  assert.equal(await diskTransport.postEvent({ name: names[0], body: comment }), 'stored');
+  assert.equal(await diskTransport.postEvent({ name: names[1], body: handoff }), 'stored');
+  const scan = execFileSync('sh', [resolve(root, 'skill/review-spec/scripts/watch-specs.sh'), disk, '.cursor-owner', '0', '1'],
+    { encoding: 'utf8' });
+  assert.deepEqual(scan.trim().split('\n').map(line => line.split('\t')[1]), names, 'the next scan reports the hand-off');
+} finally {
+  rmSync(disk, { recursive: true, force: true });
+}
 
 console.log('runtime FSA transport tests passed');

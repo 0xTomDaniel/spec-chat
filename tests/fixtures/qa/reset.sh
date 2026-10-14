@@ -17,12 +17,15 @@
 # marks its onboarding criterion. Dismissals live in the warning ledger by project and spec
 # path, and hold for good, so each reset registers a fresh project: a story's clicks never
 # reach the next one. rule-candidate is its own project whose onboarding criterion is
-# unmarked, so it is a candidate on its home spec (qa.toml nav).
+# unmarked, so it is a candidate on its home spec (qa.toml nav). Capture resets once per
+# story, so a criterion that dismisses starts on its own project too (dismiss, dismiss-reload,
+# not-a-rule): its click never hides the marker a sibling criterion of the story needs.
 set -eu
 collections="qa-fixture rule-candidate tbd-later tbd-later-handoff tbd-open-highlight tbd-open-single
   next-tbd next-tbd-step next-tbd-handoff tbd-open-jump tbd-open-wrap mobile-composer
   block-target-enter block-target-space block-target-off
-  anchor-moved anchor-changed anchor-gone stale-page agent-scan name-reply advice qa-1 qa-2"
+  anchor-moved anchor-changed anchor-gone stale-page agent-scan name-reply advice
+  clear-thread qa-1 qa-2 dismiss dismiss-reload not-a-rule"
 site="$QA_ROOT/site"
 serve="$QA_ROOT/serve"
 repo="$site/.repo"
@@ -45,9 +48,11 @@ for collection in $collections; do
   cp -R "$repo" "$site/$collection"
 done
 rm -rf "$repo"
-# rule-candidate: the onboarding criterion unmarked in the working tree, a candidate (#q-candidate).
-sed 's/ data-project-rule="[^"]*"//' "$site/rule-candidate/docs/specs/onboarding.spec.html" > "$site/rule-candidate/onboarding.tmp"
-mv "$site/rule-candidate/onboarding.tmp" "$site/rule-candidate/docs/specs/onboarding.spec.html"
+# rule-candidate, not-a-rule: the onboarding criterion unmarked in the working tree, a candidate (#q-candidate).
+for collection in rule-candidate not-a-rule; do
+  sed 's/ data-project-rule="[^"]*"//' "$site/$collection/docs/specs/onboarding.spec.html" > "$site/$collection/onboarding.tmp"
+  mv "$site/$collection/onboarding.tmp" "$site/$collection/docs/specs/onboarding.spec.html"
+done
 # Review-state collections: seeded spools and agent edits (spools.py).
 python3 "$QA_FIXTURE/spools.py" "$site"
 # Registry: every spec of every collection, in this reset's projects. Python writes it
@@ -56,7 +61,7 @@ project="qa-$(date +%s%N)"
 python3 - "$serve/registry.toml" "$site" "$base" "$project" $collections <<'PY'
 import json, os, sys
 registry, site, base, entry, *collections = sys.argv[1:]
-own = {"rule-candidate": entry + "-rule-candidate"}
+own = {slug: entry + "-" + slug for slug in ("rule-candidate", "not-a-rule", "dismiss", "dismiss-reload")}
 rows = []
 for slug in collections:
     for spec in ("onboarding", "report", "later-only", "one-open"):

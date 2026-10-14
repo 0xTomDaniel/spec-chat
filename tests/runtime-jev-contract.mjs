@@ -142,7 +142,10 @@ assert.equal(threadJevNotice(null, unsure('resolved')), null);
 assert.equal(threadJevNotice(unsure('orphan'), { kind: 'resolved', id: 't', state: 'unavailable' }).state, 'unavailable');
 assert.doesNotMatch(runtime, /data-state=unsure/, 'no unsure thread label style');
 
-// #acceptance-note-draft: a draft button only opens the existing composer with fixed text; nothing is written.
+// #acceptance-note-draft: a draft button only opens the existing composer with fixed text; nothing is written. Every
+// note draft button opens it (runtime-jev-render.mjs): #acceptance-note-draft-unsent, #acceptance-note-draft-criterion-unsent,
+// #acceptance-note-draft-change-unsent, #acceptance-reconcile-all-unsent, #acceptance-reconcile-all-warnings-unsent,
+// #acceptance-gaps-all-unsent.
 const composerStart = runtime.indexOf('function openComposer(');
 const composerEnd = runtime.indexOf('\n\nconst label', composerStart);
 assert.ok(composerStart >= 0 && composerEnd > composerStart, 'runtime exposes the comment composer');

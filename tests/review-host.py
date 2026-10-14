@@ -2,6 +2,7 @@ import email.utils
 import importlib.util
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -125,6 +126,8 @@ class ReviewHostTest(unittest.TestCase):
             return tomllib.load(stream)
 
     def test_register_remove_stop_and_registry_shape(self):
+        """review-service #acceptance-standalone: a first spec starts a private loopback service and reports its
+        tunnel. compared-range #acceptance-compat: registration proves the served spec and baseline, then succeeds."""
         state = self.work / "state"
         started = self.run_cli(*self.register_args(state), state=state)
         self.assertEqual(started.returncode, 0, started.stderr)
@@ -165,6 +168,8 @@ class ReviewHostTest(unittest.TestCase):
                 if " URL: " in line and not line.startswith("review URL: ")]
 
     def test_register_prints_wake_verified_only_when_the_wake_provider_resolves_owner(self):
+        """host-wake #acceptance-register-report, #acceptance-register-unverified; review-service #acceptance-wake
+        (registration half; review-host-wake.py proves the wake)."""
         state = self.work / "state"
         waker = FakeWaker(self.work, state)
         waker.agent("owner")
@@ -178,6 +183,8 @@ class ReviewHostTest(unittest.TestCase):
         self.assertEqual(waker.says(), [], "registration never prompts the owner")
 
     def test_register_without_wake_provider_prints_wake_unavailable(self):
+        """review-service #acceptance-standalone-no-providers-wake; host-wake #acceptance-no-provider-report
+        (registration half)."""
         state = self.work / "state"
         started = self.run_cli(*self.register_args(state), state=state)
         self.assertEqual(started.returncode, 0, started.stderr)
@@ -244,7 +251,7 @@ class ReviewHostTest(unittest.TestCase):
         self.assertFalse(review_host.process_owns_registry(pid, Path(state) / "registry.toml"))
 
     def test_remove_succeeds_when_registered_spec_file_is_deleted(self):
-        """review-service #acceptance-remove-stale."""
+        """review-service #acceptance-remove-stale-report."""
         state = self.work / "state"
         started = self.run_cli(*self.register_args(state), state=state)
         self.assertEqual(started.returncode, 0, started.stderr)
@@ -385,6 +392,7 @@ finish_event = ""
         self.assertFalse((state / "registry.toml").exists())
 
     def test_bind_choice_is_explicit_then_recorded(self):
+        """review-service #acceptance-standalone-public: once made public, a later registration with no flag joins it public."""
         def args(public=None, private=False):
             return review_host.build_parser().parse_args(
                 ["register", "--resource", "x", "--owner", "o", "--checker", "c", "--cursor-name", ".c",
@@ -692,7 +700,7 @@ cursor_name = ".cursor-test"
                          (200, self.second_spec.read_bytes()))
 
     def test_dead_service_restarts_on_its_recorded_port_else_another(self):
-        """review-service acceptance-restart."""
+        """review-service acceptance-restart, acceptance-restart-port-taken."""
         env, default = self.lane_env()
         first = self.run_lane("--slug", "lane", "--owner", "p1", str(self.spec), env=env)
         self.assertEqual(first.returncode, 0, first.stderr)
@@ -805,6 +813,63 @@ cursor_name = ".cursor-test"
         row = self.registry(default)["resource"][0]
         self.assertEqual((row["accepted"], row["cursor_name"], row["checker"], row["base"], row["owner"]),
                          (True, ".cursor-p3", "c3", self.base, "p3"))
+
+    def test_spec_outside_any_docs_folder_fails_naming_the_missing_collection(self):
+        """review-service #acceptance-plain-path-docs."""
+        env, default = self.lane_env()
+        loose = self.repo / "specs/loose.spec.html"
+        loose.parent.mkdir()
+        loose.write_text("<!doctype html><title>loose</title>\n", encoding="utf-8")
+        result = self.run_lane("--slug", "lane", "--owner", "p1", str(loose), env=env)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("spec has no docs collection strictly inside its worktree", result.stderr)
+        self.assertFalse((default / "registry.toml").exists())
+
+    def test_reserved_slug_fails_naming_it(self):
+        """review-service #acceptance-slug-reserved."""
+        state = self.work / "state"
+        for slug in ("api", "static"):
+            result = self.run_cli(*self.register_args(state, slug=slug), state=state)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"invalid or reserved resource slug: {slug}", result.stderr)
+        self.assertFalse((state / "registry.toml").exists())
+
+    def test_service_listens_on_a_port_from_the_approved_list(self):
+        """review-service #acceptance-ports-list (private here; test_live_host_keeps_its_bind proves public)."""
+        state, port = self.work / "state", self.port()
+        with socket.socket() as held:
+            held.bind(("127.0.0.1", 0))
+            held.listen()
+            started = self.run_cli(*self.register_args(state), state=state, ports=f"{held.getsockname()[1]},{port}")
+        self.assertEqual(started.returncode, 0, started.stderr)
+        self.assertEqual(self.registry(state)["process"]["port"], port)
+        self.assertTrue(self.url(started).endswith(f":{port}"))
+
+    def test_approved_ports_fall_back_to_the_firewall_allowed_ports(self):
+        """review-service #acceptance-ports-firewall: with no approved list, the ports the firewall allows."""
+        status = "Status: active\n\nTo  Action  From\n--  ------  ----\n8443/tcp  ALLOW  Anywhere\n22/tcp  ALLOW  Anywhere\n"
+        ufw = subprocess.CompletedProcess(("ufw", "status"), 0, stdout=status)
+        with mock.patch.object(review_host.subprocess, "run", return_value=ufw):
+            self.assertEqual(review_host.approved_ports({}), (8443, 22))
+
+    def test_lane_flags_appear_only_under_box_setup(self):
+        """review-service #acceptance-lane-args: the skills name visibility, proof host, state, bind, port, and address
+        arguments only under Box setup; the lane command takes none."""
+        flags = re.compile(r"--(public|private|proof-host|state-dir|bind|port|host)(?![\w-])")
+        found = []
+        for path in sorted((ROOT / "skill").rglob("*.md")):
+            heading, fenced = "", False
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if line.lstrip().startswith(("```", "~~~")):
+                    fenced = not fenced
+                elif not fenced and re.match(r"#{1,6} ", line):
+                    heading = line
+                elif flags.search(line):
+                    found.append((path.relative_to(ROOT).as_posix(), heading))
+        self.assertTrue(found)
+        self.assertEqual(set(found), {("skill/review-spec/SKILL.md", "### Box setup")})
+        skill = (ROOT / "skill/review-spec/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("scripts/review-host.py register --slug <lane-key> --owner <pane> <spec path>", skill)
 
     def test_proof_rejects_wrong_bytes(self):
         resource = review_host.parse_resource_spec(

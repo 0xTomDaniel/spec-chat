@@ -45,6 +45,12 @@ class SpecStyleContractTest(unittest.TestCase):
                     contrast(self.colors[foreground], self.colors["spec-surface"]), 4.5
                 )
 
+    def test_dark_appearance_renders_the_light_palette(self):
+        """repair-specs #acceptance-presentation-theme-dark: the shared stylesheet pins color-scheme light and has no
+        dark override, so a reader in dark appearance sees the palette whose contrast the tests above prove."""
+        self.assertRegex(self.css, r"^:root\s*\{\s*color-scheme:\s*light;")
+        self.assertNotIn("prefers-color-scheme", self.css)
+
     def test_default_language_avoids_decorative_wash(self):
         self.assertNotIn("linear-gradient", self.css)
         self.assertNotIn("backdrop-filter", self.css)

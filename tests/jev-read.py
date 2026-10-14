@@ -105,6 +105,7 @@ class JevReadTest(unittest.TestCase):
         self.assertNotIn("{", out.stdout)
 
     def test_keys_on_agent_level_not_level(self):
+        """jev-suggestions #acceptance-cross-lane-api (with review-serve-jev-board.py: lane items are agent Important)."""
         items = [
             {"kind": "corpus", "id": "over", "state": "label", "label": "oversteps", "target": "non-goal-x",
              "record": "r1", "level": "warning", "agent_level": "important"},
@@ -140,6 +141,7 @@ class JevReadTest(unittest.TestCase):
         self.assertEqual(run(server.url + "/specs/b.spec.html?base=abc", "--anchor", "a").stdout, "off\n")
 
     def test_anchor_prints_full_detail_for_that_anchor_only(self):
+        """project-rules #acceptance-agent-read-anchor."""
         server = self.serve(ON)
         out = run(server.url + "/specs/b.spec.html?base=abc", "--anchor", "save-rule").stdout
         self.assertIn("label  contradicts", out)
