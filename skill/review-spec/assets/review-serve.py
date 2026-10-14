@@ -125,6 +125,18 @@ def _normalise_spec(value):
     return value
 
 
+def stale_reason(root, narrow_root, spec):
+    """Why a row's spec cannot be reached (review-service #service-stale), else None. review-host uses this rule too."""
+    root = os.path.realpath(root)
+    if not os.path.isdir(root) or _git(root, "rev-parse", "--show-toplevel", optional=True) is None:
+        return "worktree is unreachable"
+    if not os.path.isdir(os.path.realpath(narrow_root)):
+        return "collection is missing"
+    if not os.path.isfile(os.path.join(root, *spec.split("/"))):
+        return "spec file is missing"
+    return None
+
+
 def _resource_records(document, *, check_refs=False, trust=False):
     records = document.get("resource", [])
     if not isinstance(records, list):
@@ -155,8 +167,15 @@ def _resource_records(document, *, check_refs=False, trust=False):
         narrow = os.path.realpath(raw["narrow_root"])
         if not os.path.isabs(raw["root"]):
             raise ValueError("resource root must be absolute: " + rid)
-        if not trust:
-            if not os.path.isdir(root) or not os.path.isdir(narrow) or not _inside(narrow, root, strict=True):
+        spec = _normalise_spec(raw["spec"])
+        spec_file = os.path.realpath(os.path.join(root, *spec.split("/")))
+        # A stale row affects only itself: it stays listed, serves no page, and skips its filesystem checks.
+        # Decided on every load, trusted reloads too, so routing and the index read one answer.
+        stale = stale_reason(root, narrow, spec)
+        if stale and not trust:
+            print("review-serve: warning: stale row %s: %s" % (rid, stale), file=sys.stderr, flush=True)
+        if not trust and not stale:
+            if not _inside(narrow, root, strict=True):
                 raise ValueError("resource roots are invalid: " + rid)
             try:
                 top = os.path.realpath(_repo_root(root))
@@ -164,17 +183,15 @@ def _resource_records(document, *, check_refs=False, trust=False):
                 raise ValueError("resource root is not a Git worktree: " + rid) from exc
             if root != top:
                 raise ValueError("resource root must be the Git worktree toplevel: " + rid)
-        spec = _normalise_spec(raw["spec"])
-        spec_file = os.path.realpath(os.path.join(root, *spec.split("/")))
-        if not trust and (not _inside(spec_file, narrow, strict=True) or not os.path.isfile(spec_file)):
-            raise ValueError("resource spec is missing or outside its collection: " + rid)
+            if not _inside(spec_file, narrow, strict=True):
+                raise ValueError("resource spec is outside its collection: " + rid)
         # The host records each row's served path; rows without one serve at <slug>/<spec>.
         key = raw.get("path") or slug + "/" + spec
         if key in stable:
             raise ValueError("duplicate stable resource path: " + key)
         if not SAFE_CURSOR_RE.fullmatch(raw["cursor_name"]):
             raise ValueError("invalid cursor name: " + raw["cursor_name"])
-        if check_refs:
+        if check_refs and not stale:
             checked = subprocess.run(
                 ("git", "-C", root, "rev-parse", "--verify", raw["base"] + "^{commit}"),
                 stdout=subprocess.DEVNULL,
@@ -189,6 +206,7 @@ def _resource_records(document, *, check_refs=False, trust=False):
             "spec": spec,
             "spec_file": spec_file,
             "path": key,
+            "stale": stale,
         })
         ids.add(rid)
         stable.add(key)
@@ -848,6 +866,10 @@ class MountHandler(SimpleHTTPRequestHandler):
                     continue
                 seen.add(stable)
                 href = ("/" if mount["slug"] else "") + quote(stable, safe="/") + (("?" + query) if query else "")
+                if mount.get("stale"):
+                    # A stale row: its spec path as plain text, no link, no status (#index-entry-stale).
+                    lanes.setdefault(lane, {}).setdefault(project, []).append((None, spec, None, None))
+                    continue
                 status, title = _index_row(mount, path, row)
                 lanes.setdefault(lane, {}).setdefault(project, []).append(
                     (status, title, href, _thread_counts(mount, path)))
@@ -863,7 +885,10 @@ class MountHandler(SimpleHTTPRequestHandler):
             parts = []
             for project in sorted(projects):
                 parts.append('<p class="label">%s</p><ul>' % html.escape(project))
-                for status, title, href, counts in sorted(projects[project], key=lambda spec: (not spec[0], spec[1].casefold(), spec[2])):
+                for status, title, href, counts in sorted(projects[project], key=lambda spec: (not spec[0], spec[1].casefold(), spec[2] or "")):
+                    if href is None:
+                        parts.append('<li><div class="row"><span class="stale-path">%s</span><span class="pill stale">Stale</span></div></li>' % html.escape(title))
+                        continue
                     # The lane count says up to date; a row's only status word is its Changed pill.
                     pill = '<span class="pill">Changed</span>' if status else ""
                     # Count pills, Open then Resolved; a status with no threads has no pill (#index-threads).
@@ -941,6 +966,8 @@ li a { flex: 1 1 auto; min-width: 0; color: var(--ui-link); font-weight: 600; te
 li a:hover, li a:focus-visible { text-decoration: underline; }
 a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; border-radius: var(--ui-radius-sm); }
 .pill { flex: none; margin-left: auto; padding: 0 var(--ui-space-2); line-height: 1.6; border-radius: var(--ui-radius-pill); background: var(--ui-attention-soft); color: var(--ui-attention); font-size: var(--ui-text-xs); font-weight: 600; }
+.pill.stale { background: var(--ui-surface); color: var(--ui-muted); border: 1px solid var(--ui-border); }
+li .stale-path { flex: 1 1 auto; min-width: 0; color: var(--ui-muted); overflow-wrap: anywhere; }
 .tallies { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); margin-top: var(--ui-space-1); }
 .tally { display: inline-flex; gap: var(--ui-space-1); padding: 0 var(--ui-space-2); line-height: 1.6; border-radius: var(--ui-radius-pill); font-size: var(--ui-text-xs); font-weight: 400; }
 .tally b { font-weight: 600; }
@@ -961,6 +988,8 @@ listenHost();
         if not decoded.startswith("/"):
             decoded = "/" + decoded
         for mount in self.mounts:
+            if mount.get("stale"):
+                continue
             prefix = "/" + _mount_prefix(mount)
             if not mount["slug"]:
                 relative = _safe_relative(decoded)
@@ -992,6 +1021,8 @@ listenHost();
         if decoded is None:
             return None, None
         for mount in self.mounts:
+            if mount.get("stale"):
+                continue
             prefix = _mount_prefix(mount)
             relative = decoded.lstrip("/")
             if prefix and not relative.startswith(prefix):

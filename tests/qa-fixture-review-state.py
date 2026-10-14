@@ -159,8 +159,9 @@ class ReviewStateCollections(unittest.TestCase):
             return json.load(response)
 
     def test_index_lanes_show_their_seeded_thread_counts(self):
-        """lane-hosting #acceptance-index-threads, -threads-none, -threads-refresh Givens: QA-1 holds every
-        status (3 Open, 1 Resolved) on its report spec and none on the others; QA-2 one open thread."""
+        """lane-hosting #acceptance-index-threads, -threads-none, -threads-refresh, -index-stale Givens: QA-1 holds
+        every status (3 Open, 1 Resolved) on its report spec and none on the others; QA-2 one open thread, and a
+        spec registered from a removed worktree, shown as its path with a Stale pill and no link."""
         import html
         import re
 
@@ -179,7 +180,11 @@ class ReviewStateCollections(unittest.TestCase):
 
         quiet = {"Onboarding": [], "Report filters": [], "Report sorting": []}
         self.assertEqual(rows(cards["QA-1"]), {**quiet, "Weekly report": ["3", "Open", "1", "Resolved"]})
-        self.assertEqual(rows(cards["QA-2"]), {**quiet, "Weekly report": ["1", "Open"]})
+        stale = "docs/specs/archive.spec.html"
+        self.assertEqual(rows(cards["QA-2"]), {**quiet, "Weekly report": ["1", "Open"], stale: ["Stale"]})
+        links = re.findall(r"<a [^>]*>([^<]*)</a>", cards["QA-2"])
+        self.assertEqual(sorted(links), ["Onboarding", "Report filters", "Report sorting", "Weekly report"])
+        self.assertIn(">3 of 4 changed<", cards["QA-2"])  # a stale row counts toward no status
         statuses = {th["id"]: th["status"] for th in spool.fold_threads(self.site.events("qa-1") + [
             {"name": name, "actor": "agent", "body": json.loads((Path(self.site.spec("qa-1") + ".review") / "agent" / name).read_text())}
             for name in os.listdir(self.site.spec("qa-1") + ".review/agent")]).values()}

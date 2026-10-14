@@ -33,6 +33,10 @@ _verify_spec = importlib.util.spec_from_file_location("spec_chat_verify_review",
 _verify_module = importlib.util.module_from_spec(_verify_spec)
 assert _verify_spec.loader is not None
 _verify_spec.loader.exec_module(_verify_module)
+_serve_spec = importlib.util.spec_from_file_location("spec_chat_review_serve", SERVER)
+_serve_module = importlib.util.module_from_spec(_serve_spec)
+assert _serve_spec.loader is not None
+_serve_spec.loader.exec_module(_serve_module)
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
 SAFE_CURSOR_RE = re.compile(r"[^/\\]+\Z")
 PROCESS_FIELDS = ("pid", "port", "bind", "host", "url", "public_base", "unit", "public_bind", "public_host")
@@ -452,15 +456,8 @@ def validate_records(records: Sequence[Mapping[str, Any]], touched: Collection[s
 
 
 def is_row_stale(record: Mapping[str, Any]) -> str | None:
-    """Return a reason when the row's spec file cannot be reached, else None."""
-    try:
-        top = resource_toplevel(Path(record["root"]))
-    except LauncherError:
-        return "worktree is unreachable"
-    spec_file = (top / record["spec"].replace("\\", "/")).resolve()
-    if not spec_file.is_file():
-        return "spec file is missing"
-    return None
+    """Return a reason when the row's spec cannot be reached, else None: review-serve's one stale rule."""
+    return _serve_module.stale_reason(record["root"], record["narrow_root"], record["spec"].replace("\\", "/"))
 
 
 def read_registry_document(path: Path) -> dict[str, Any]:

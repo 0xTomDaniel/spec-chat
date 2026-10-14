@@ -280,6 +280,37 @@ class ReviewHostTest(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         self.assertIn("stale row", second.stderr)
 
+    def test_register_keeps_row_whose_main_clone_is_gone(self):
+        """review-service #service-stale: worktree and spec intact, main clone deleted; register and serve both
+        report it stale by one rule, and the service keeps serving the new row."""
+        state = self.work / "state"
+        clone = self.work / "clone"
+        subprocess.run(["git", "clone", "-q", str(self.repo), str(clone)], check=True)
+        linked = self.work / "linked"
+        subprocess.run(["git", "-C", str(clone), "worktree", "add", "-q", str(linked)], check=True)
+        first = self.run_cli(
+            "register", "--state-dir", str(state), "--resource",
+            f"linked={linked}:docs/specs/review.spec.html@{self.base}",
+            "--owner", "owner", "--checker", "checker", "--cursor-name", ".cursor-test", "--slug", "linked",
+            state=state,
+        )
+        self.assertEqual(first.returncode, 0, first.stderr)
+        stale_id = self.registry(state)["resource"][0]["id"]
+        shutil.rmtree(clone)
+        self.assertTrue((linked / "docs/specs/review.spec.html").is_file())
+        stopped = self.run_cli("stop", "--state-dir", str(state), state=state)
+        self.assertEqual(stopped.returncode, 0, stopped.stderr)
+        # The next register starts the service afresh, so review-serve checks every row itself.
+        second = self.run_cli(*self.register_args(state, slug="lane2", spec="second"), state=state)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertIn(f"stale row {stale_id}: worktree is unreachable", second.stderr)
+        document = self.registry(state)
+        self.assertIn(stale_id, {row["id"] for row in document["resource"]})
+        url = document["process"]["url"].rstrip("/")
+        live = next(row for row in document["resource"] if row["id"] != stale_id)
+        with urllib.request.urlopen(url + "/" + live["path"], timeout=5) as response:
+            self.assertEqual(response.status, 200)
+
     def test_remove_and_reviewed_skip_another_rows_missing_spec(self):
         """review-service #acceptance-stale-skip: a stale row never blocks remove or reviewed of another row."""
         state = self.work / "state"

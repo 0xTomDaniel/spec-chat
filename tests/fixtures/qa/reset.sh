@@ -11,7 +11,9 @@
 # other collection is one criterion's start, named by its qa.toml nav hint. Review-state
 # collections also get their seeded spool and agent edit from spools.py. qa-1 and qa-2
 # are lane keys, so the review index shows them as lane cards (QA-1, QA-2) under In
-# progress; every other collection settles.
+# progress; every other collection settles. QA-2 also holds a spec registered from a
+# worktree since removed (its root is never created), so its card shows that row Stale
+# (lane-hosting #acceptance-index-stale).
 #
 # A rule is its criterion's mark in its home spec (project-rules #declare): onboarding.spec.html
 # marks its onboarding criterion. Dismissals live in the warning ledger by project and spec
@@ -62,17 +64,22 @@ python3 - "$serve/registry.toml" "$site" "$base" "$project" $collections <<'PY'
 import json, os, sys
 registry, site, base, entry, *collections = sys.argv[1:]
 own = {slug: entry + "-" + slug for slug in ("rule-candidate", "not-a-rule", "dismiss", "dismiss-reload")}
-rows = []
-for slug in collections:
-    for spec in ("onboarding", "report", "later-only", "one-open"):
-        root = os.path.join(site, slug)
-        fields = {
-            "id": "spec:%s::docs/specs/%s.spec.html" % (slug, spec), "slug": slug, "project": own.get(slug, entry),
-            "root": root, "narrow_root": os.path.join(root, "docs"), "spec": "docs/specs/%s.spec.html" % spec,
-            "base": base, "owner": "qa", "checker": "qa", "lifecycle": "serving", "cursor_name": ".cursor-qa",
-            "registered_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z",
-        }
-        rows.append("[[resource]]\n" + "".join("%s = %s\n" % (k, json.dumps(v)) for k, v in fields.items()))
+
+
+def row(slug, root, spec):
+    fields = {
+        "id": "spec:%s::%s" % (slug, spec), "slug": slug, "project": own.get(slug, entry),
+        "root": root, "narrow_root": os.path.join(root, "docs"), "spec": spec,
+        "base": base, "owner": "qa", "checker": "qa", "lifecycle": "serving", "cursor_name": ".cursor-qa",
+        "registered_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z",
+    }
+    return "[[resource]]\n" + "".join("%s = %s\n" % (k, json.dumps(v)) for k, v in fields.items())
+
+
+rows = [row(slug, os.path.join(site, slug), "docs/specs/%s.spec.html" % spec)
+        for slug in collections for spec in ("onboarding", "report", "later-only", "one-open")]
+# QA-2's removed worktree: a spec registered from a root since gone (review-service #service-stale).
+rows.append(row("qa-2", os.path.join(site, "qa-2-removed"), "docs/specs/archive.spec.html"))
 with open(registry + ".tmp", "w", encoding="utf-8") as out:
     out.write("\n".join(rows))
 os.replace(registry + ".tmp", registry)
