@@ -18,6 +18,8 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER_PATH = ROOT / "skill/review-spec/scripts/review-host.py"
+FAKE_SYSTEMD = ROOT / "tests/fixtures/fake-systemd"
+UNIT = "spec-chat-review.service"
 SERVER_PATH = ROOT / "skill/review-spec/assets/review-serve.py"
 
 _spec = importlib.util.spec_from_file_location("review_host", LAUNCHER_PATH)
@@ -99,11 +101,11 @@ class ReviewHostTest(unittest.TestCase):
     def resource(self, project="review", spec="review"):
         return f"{project}={self.repo}:docs/specs/{spec}.spec.html@{self.base}"
 
-    def run_cli(self, *args, state=None, ports=None):
+    def run_cli(self, *args, state=None, ports=None, env=None):
         state = Path(state or self.work / "state")
         if state not in self.states:
             self.states.append(state)
-        env = os.environ.copy()
+        env = {**os.environ, **(env or {})}
         env["SPEC_CHAT_APPROVED_INGRESS_PORTS"] = str(ports or self.port())
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         return subprocess.run(
@@ -855,7 +857,7 @@ cursor_name = ".cursor-test"
     def test_lane_flags_appear_only_under_box_setup(self):
         """review-service #acceptance-lane-args: the skills name visibility, proof host, state, bind, port, and address
         arguments only under Box setup; the lane command takes none."""
-        flags = re.compile(r"--(public|private|proof-host|state-dir|bind|port|host)(?![\w-])")
+        flags = re.compile(r"--(public|private|proof-host|public-base|unit|state-dir|bind|port|host)(?![\w-])")
         found = []
         for path in sorted((ROOT / "skill").rglob("*.md")):
             heading, fenced = "", False
@@ -881,7 +883,113 @@ cursor_name = ".cursor-test"
 
     def test_only_register_remove_stop_commands_exist(self):
         commands = set(review_host.build_parser()._subparsers._group_actions[0].choices)
-        self.assertEqual(commands, {"register", "remove", "reviewed", "stop"})
+        self.assertEqual(commands, {"register", "remove", "reviewed", "stop", "serve"})
+
+    def test_public_base_starts_the_published_url_and_every_link(self):
+        """review-service #acceptance-public-base: links and [process] url start with the recorded public base; the
+        proof still checks the service's own listener."""
+        state = self.work / "state"
+        base = "https://spec.203-0-113-9.sslip.io"
+        first = self.run_cli(*self.register_args(state, public_base=base + "/"), state=state)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(self.url(first), base)
+        self.assertIn(f"URL: {base}/ann45/docs/specs/review.spec.html ", first.stdout)
+        process = self.registry(state)["process"]
+        self.assertEqual((process["url"], process["public_base"]), (base, base))
+        listener = f"http://127.0.0.1:{process['port']}"
+        self.assertEqual(request(listener + "/ann45/docs/specs/review.spec.html"), (200, self.spec.read_bytes()))
+        joined = self.run_cli(*self.register_args(state, slug="other", spec="second"), state=state)
+        self.assertEqual(joined.returncode, 0, joined.stderr)
+        self.assertIn(f"URL: {base}/other/docs/specs/second.spec.html ", joined.stdout)
+        self.assertEqual(self.run_cli("stop", "--state-dir", str(state), state=state).returncode, 0)
+        again = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertEqual(self.url(again), base)
+        cleared = self.run_cli(*self.register_args(state, public_base=""), state=state)
+        self.assertEqual(cleared.returncode, 0, cleared.stderr)
+        process = self.registry(state)["process"]
+        self.assertEqual(self.url(cleared), f"http://127.0.0.1:{process['port']}")
+        self.assertNotIn("public_base", process)
+
+    def test_public_base_must_be_an_http_address(self):
+        state = self.work / "state"
+        for bad in ("spec.example.invalid", "ftp://spec.example.invalid", "https://spec.example.invalid/?q=1"):
+            result = self.run_cli(*self.register_args(state, public_base=bad), state=state)
+            self.assertEqual(result.returncode, 1, bad)
+            self.assertIn("public base", result.stderr)
+        self.assertFalse((state / "registry.toml").exists())
+
+    def unit_env(self, state):
+        config = self.work / "config"
+        unit = config / "systemd/user" / UNIT
+        unit.parent.mkdir(parents=True, exist_ok=True)
+        unit.write_text(f'[Service]\nExecStart="python3" "{LAUNCHER_PATH}" "serve" "--state-dir" "{state}"\n')
+        fake = self.work / "fake-systemd"
+        env = {"PATH": f"{FAKE_SYSTEMD}:{os.environ['PATH']}", "XDG_CONFIG_HOME": str(config),
+               "FAKE_SYSTEMD_DIR": str(fake)}
+        return env, fake, unit
+
+    def calls(self, fake):
+        path = fake / "calls"
+        return path.read_text().splitlines() if path.exists() else []
+
+    def test_service_unit_starts_restarts_and_stops_the_service(self):
+        """review-service #service-unit: a recorded unit runs the service; register and stop go through it."""
+        state = self.work / "state"
+        env, fake, _ = self.unit_env(state)
+        started = self.run_cli(*self.register_args(state, unit=UNIT), state=state, env=env)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        self.assertEqual(self.calls(fake)[-1], f"systemctl --user restart {UNIT}")
+        before = len(self.calls(fake))
+        process = self.registry(state)["process"]
+        self.assertEqual(process["unit"], UNIT)
+        self.assertEqual(process["pid"], int((fake / f"{UNIT}.pid").read_text()))
+        self.assertEqual(process["url"], self.url(started))
+        self.assertEqual(request(self.url(started) + "/ann45/docs/specs/review.spec.html"),
+                         (200, self.spec.read_bytes()))
+
+        joined = self.run_cli(*self.register_args(state, slug="other", spec="second"), state=state, env=env)
+        self.assertEqual(joined.returncode, 0, joined.stderr)
+        self.assertEqual(len(self.calls(fake)), before)
+        self.assertEqual(self.registry(state)["process"], process)
+
+        stopped = self.run_cli("stop", "--state-dir", str(state), state=state, env=env)
+        self.assertEqual(stopped.returncode, 0, stopped.stderr)
+        self.assertEqual(self.calls(fake)[-1], f"systemctl --user stop {UNIT}")
+        self.assertTrue(review_host.process_exited(process["pid"]))
+
+        again = self.run_cli(*self.register_args(state), state=state, env=env)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertEqual(self.calls(fake)[-1], f"systemctl --user restart {UNIT}")
+        restarted = self.registry(state)["process"]
+        self.assertNotEqual(restarted["pid"], process["pid"])
+        self.assertEqual({k: restarted[k] for k in ("port", "bind", "host", "unit")},
+                         {k: process[k] for k in ("port", "bind", "host", "unit")})
+
+    def test_service_unit_takes_over_a_live_own_child(self):
+        state = self.work / "state"
+        env, fake, _ = self.unit_env(state)
+        own = self.run_cli(*self.register_args(state), state=state, env=env)
+        self.assertEqual(own.returncode, 0, own.stderr)
+        child = self.registry(state)["process"]
+        moved = self.run_cli(*self.register_args(state, unit=UNIT), state=state, env=env)
+        self.assertEqual(moved.returncode, 0, moved.stderr)
+        self.assertTrue(review_host.process_exited(child["pid"]))
+        process = self.registry(state)["process"]
+        self.assertEqual((process["unit"], process["port"]), (UNIT, child["port"]))
+        self.assertEqual(process["pid"], int((fake / f"{UNIT}.pid").read_text()))
+
+    def test_a_recorded_unit_that_is_gone_is_dropped(self):
+        state = self.work / "state"
+        env, fake, unit = self.unit_env(state)
+        self.assertEqual(self.run_cli(*self.register_args(state, unit=UNIT), state=state, env=env).returncode, 0)
+        self.assertEqual(self.run_cli("stop", "--state-dir", str(state), state=state, env=env).returncode, 0)
+        unit.unlink()
+        again = self.run_cli(*self.register_args(state), state=state, env=env)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        process = self.registry(state)["process"]
+        self.assertNotIn("unit", process)
+        self.assertNotEqual(self.calls(fake)[-1], f"systemctl --user restart {UNIT}")
 
 
 if __name__ == "__main__":

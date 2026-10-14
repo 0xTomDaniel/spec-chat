@@ -11,6 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 INSTALL = ROOT / "scripts/install-spec-chat"
 HOST = ROOT / "skill/review-spec/scripts/review-host.py"
+FAKE_SYSTEMD = ROOT / "tests/fixtures/fake-systemd"
+UNIT = "spec-chat-review.service"
 
 
 def snapshot(*roots):
@@ -169,6 +171,47 @@ class InstallSpecChatTest(unittest.TestCase):
         rows = [[{k: v for k, v in r.items() if k not in stamps} for r in d["resource"]] for d in (before, after)]
         self.assertEqual(rows[1], rows[0])
 
+
+    def test_service_box_setup_runs_a_boot_user_service_on_the_public_base_and_undo_removes_it(self):
+        """review-service #service-unit and #acceptance-public-base, through onboarding's box setup."""
+        fake = Path(self.temp.name) / "fake-systemd"
+        self.env.update({"PATH": f"{FAKE_SYSTEMD}:/usr/bin:/bin", "XDG_CONFIG_HOME": str(self.home / ".config"),
+                         "FAKE_SYSTEMD_DIR": str(fake), "USER": "boxuser"})
+        unit = self.home / ".config/systemd/user" / UNIT
+        base = "https://spec.203-0-113-9.sslip.io"
+        result = self.run_install("--specs", str(self.specs), "--review", str(self.spec), "--service",
+                                  "--public-base", base)
+        self.assertIn(f"review URL: {base}\n", result.stdout)
+        text = unit.read_text()
+        state = self.state / "spec-chat/hosting/default"
+        self.assertRegex(text, rf'\nExecStart="/[^"]*python[^"]*" "{HOST}" "serve" "--state-dir" "{state}"\n')
+        for line in ("Restart=always", "WantedBy=default.target", f"WorkingDirectory={ROOT}"):
+            self.assertIn(line + "\n", text)
+        calls = (fake / "calls").read_text().splitlines()
+        for call in ("loginctl enable-linger boxuser", "systemctl --user daemon-reload",
+                     f"systemctl --user enable {UNIT}", f"systemctl --user restart {UNIT}"):
+            self.assertIn(call, calls)
+        process = tomllib.loads((state / "registry.toml").read_text())["process"]
+        self.assertEqual((process["unit"], process["url"]), (UNIT, base))
+        self.assertEqual(process["pid"], int((fake / f"{UNIT}.pid").read_text()))
+        self.assertEqual(self.status()["installed"]["units"], [str(unit)])
+
+        before = snapshot(self.home, self.state, self.repo)
+        self.run_install("--specs", str(self.specs), "--review", str(self.spec))
+        self.assertEqual(snapshot(self.home, self.state, self.repo), before)
+
+        self.run_install("--undo")
+        self.assertIn(f"systemctl --user disable --now {UNIT}", (fake / "calls").read_text().splitlines())
+        self.assertFalse(unit.exists())
+        self.assertFalse(self.onboarding.exists())
+        with self.assertRaises(OSError):
+            os.kill(process["pid"], 0)
+
+    def test_service_flags_are_box_setup(self):
+        for flags in (["--service"], ["--public-base", "https://spec.example.invalid"]):
+            result = subprocess.run([str(INSTALL), *flags], env=self.env, text=True, capture_output=True, timeout=40)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("need --review", result.stderr)
 
     # --- F-S1: undo stops the review server -----------------------------------
 

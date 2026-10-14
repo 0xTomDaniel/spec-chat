@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+"""Test double for `systemctl --user` and `loginctl`.
+
+Logs every call to $FAKE_SYSTEMD_DIR/calls. start, restart, and stop run or end the unit's ExecStart (read from
+$XDG_CONFIG_HOME/systemd/user/<unit>) as a detached process whose pid it keeps in $FAKE_SYSTEMD_DIR/<unit>.pid.
+"""
+
+import os
+import shlex
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+home = Path(os.environ["FAKE_SYSTEMD_DIR"])
+home.mkdir(parents=True, exist_ok=True)
+tool = Path(sys.argv[0]).name
+with (home / "calls").open("a", encoding="utf-8") as calls:
+    calls.write(" ".join([tool, *sys.argv[1:]]) + "\n")
+if tool == "loginctl":
+    raise SystemExit(0)
+args = [arg for arg in sys.argv[1:] if arg != "--user"]
+now = "--now" in args
+args = [arg for arg in args if arg != "--now"]
+verb, units = args[0], args[1:]
+config = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "systemd/user"
+
+
+def stop(unit):
+    pidfile = home / f"{unit}.pid"
+    if not pidfile.exists():
+        return
+    pid = int(pidfile.read_text())
+    pidfile.unlink()
+    try:
+        os.killpg(pid, signal.SIGTERM)
+    except OSError:
+        return
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and Path(f"/proc/{pid}").exists():
+        stat = Path(f"/proc/{pid}/stat").read_text(errors="replace") if Path(f"/proc/{pid}/stat").exists() else ""
+        if stat.rpartition(")")[2].split()[:1] in (["Z"], ["X"], []):
+            return
+        time.sleep(0.05)
+
+
+def start(unit):
+    path = config / unit
+    if not path.is_file():
+        raise SystemExit(5)
+    line = next(text for text in path.read_text().splitlines() if text.startswith("ExecStart="))
+    with (home / f"{unit}.log").open("a") as log:
+        child = subprocess.Popen(shlex.split(line[len("ExecStart="):]), stdin=subprocess.DEVNULL, stdout=log,
+                                 stderr=subprocess.STDOUT, start_new_session=True)
+    (home / f"{unit}.pid").write_text(str(child.pid))
+
+
+for unit in units:
+    if verb in ("stop", "restart") or (verb == "disable" and now):
+        stop(unit)
+    if verb in ("start", "restart") or (verb == "enable" and now):
+        start(unit)
+    if verb == "enable":
+        (home / f"{unit}.enabled").touch()
+    if verb == "disable":
+        (home / f"{unit}.enabled").unlink(missing_ok=True)
+    if verb == "cat" and not (config / unit).is_file():
+        raise SystemExit(1)
+if verb not in ("daemon-reload", "start", "restart", "stop", "enable", "disable", "cat"):
+    raise SystemExit(2)
