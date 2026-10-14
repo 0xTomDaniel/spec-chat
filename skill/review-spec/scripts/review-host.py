@@ -35,8 +35,10 @@ assert _verify_spec.loader is not None
 _verify_spec.loader.exec_module(_verify_module)
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
 SAFE_CURSOR_RE = re.compile(r"[^/\\]+\Z")
-PROCESS_FIELDS = ("pid", "port", "bind", "host", "url", "public_base", "unit")
+PROCESS_FIELDS = ("pid", "port", "bind", "host", "url", "public_base", "unit", "public_bind", "public_host")
 SETUP_FIELDS = ("public_base", "unit")
+# The public visibility and proof host kept while an HTTPS public base holds the listener on loopback.
+KEPT_FIELDS = ("public_bind", "public_host")
 DEFAULT_CURSOR = ".cursor-owner"
 RESOURCE_FIELDS = (
     "id", "slug", "project", "root", "narrow_root", "spec", "path", "base", "accepted", "owner", "checker",
@@ -481,7 +483,7 @@ def read_registry_document(path: Path) -> dict[str, Any]:
         bind = process.get("bind")
         if bind is not None and not isinstance(bind, str):
             raise LauncherError("registry process bind must be a string")
-        extra = {key: process[key] for key in ("host", "url", *SETUP_FIELDS)
+        extra = {key: process[key] for key in ("host", "url", *SETUP_FIELDS, *KEPT_FIELDS)
                  if isinstance(process.get(key), str) and process[key]}
         process = {"pid": process["pid"], "port": process["port"], **({"bind": bind} if bind else {}), **extra}
     return {"resource": result, "process": process}
@@ -638,19 +640,40 @@ def bind_ports(bind: str) -> tuple[int, ...]:
     return (0,)
 
 
-def start_plan(args: argparse.Namespace, process: Mapping[str, Any] | None) -> tuple[str, str, int | None]:
-    """Bind, proof host, and recorded port to try first; a service on its recorded bind keeps its host and port.
+def fronted(base: str | None) -> bool:
+    """An HTTPS public base address: the box's HTTPS front proxies to a loopback listener (review-service #service-front)."""
+    return bool(base) and base.startswith("https://")
 
-    A changed bind keeps the recorded port only where that bind may take it: any port on loopback, else an
-    approved one."""
+
+def visibility(process: Mapping[str, Any]) -> dict[str, Any]:
+    """The recorded visibility and proof host: the kept public ones while fronted, else the listener's own."""
+    if process.get("public_bind"):
+        return {"bind": process["public_bind"], "host": process.get("public_host")}
+    return {"bind": process.get("bind"), "host": process.get("host")}
+
+
+def listen_bind(args: argparse.Namespace, process: Mapping[str, Any] | None) -> str:
+    """Where the service listens on the given and recorded setup: loopback while fronted, else its visibility."""
+    if fronted(setup_fields(process, args).get("public_base")):
+        return LOOPBACK
+    return select_bind(args, visibility(process or {}))
+
+
+def start_plan(args: argparse.Namespace, process: Mapping[str, Any] | None) -> tuple[str, str, int | None, dict[str, str]]:
+    """Listener bind, proof host, recorded port to try first, and the kept visibility while fronted.
+
+    A service on its recorded visibility keeps its proof host. A changed listener keeps the recorded port only
+    where it may take it: any port on loopback, else an approved one."""
     recorded = process or {}
-    bind = select_bind(args, process)
-    same = (recorded.get("bind") or LOOPBACK) == bind
-    host = recorded.get("host") if same and not args.proof_host else None
+    prior = visibility(recorded)
+    shown = select_bind(args, prior)
+    same = (prior["bind"] or LOOPBACK) == shown
+    shown_host = (prior["host"] if same and not args.proof_host else None) or proof_host(args, shown)
+    bind, host = (LOOPBACK, LOOPBACK) if listen_bind(args, process) != shown else (shown, shown_host)
     port = recorded.get("port")
-    if port and not same and not is_loopback(bind) and port not in approved_ports():
+    if port and (recorded.get("bind") or LOOPBACK) != bind and not is_loopback(bind) and port not in approved_ports():
         port = None
-    return bind, host or proof_host(args, bind), port
+    return bind, host, port, ({"public_bind": shown, "public_host": shown_host} if bind != shown else {})
 
 
 def public_base(value: str) -> str:
@@ -876,16 +899,18 @@ def register_locked(args: argparse.Namespace, registry: Path, log_path: Path,
     child: subprocess.Popen[str] | None = None
     try:
         live = bool(process and process_owns_registry(process["pid"], registry))
-        # A registry without bind is private. An explicit different visibility, or a newly given unit, restarts the
-        # live server, planned first so a bad bind or proof host leaves it running.
+        # A registry without bind is private. An explicit change that moves the listener (visibility, or giving or
+        # clearing an HTTPS public base), or a newly given unit, restarts the live server, planned first so a bad
+        # bind or proof host leaves it running.
         bind, plan = (process or {}).get("bind") or LOOPBACK, None
-        moving = live and (((args.public or args.private) and select_bind(args, None) != bind)
-                           or (process or {}).get("unit") != unit)
+        changed = args.public or args.private or args.public_base is not None
+        moving = live and ((changed and listen_bind(args, process) != bind) or (process or {}).get("unit") != unit)
         if live and not moving:
             assert process is not None
             listener = listener_url(process, log_path)
+            kept = start_plan(args, process)[3] if changed else {k: process[k] for k in KEPT_FIELDS if k in process}
             process = {key: process[key] for key in ("pid", "port", "bind", "host") if key in process}
-            process.update(setup, url=setup.get("public_base") or listener)
+            process.update(setup, **kept, url=setup.get("public_base") or listener)
             write_registry(registry, candidate, process)
             for item in parsed:
                 prove_resource(listener, item)
@@ -902,15 +927,15 @@ def register_locked(args: argparse.Namespace, registry: Path, log_path: Path,
             plan = start_plan(args, process)
             if not plan[2]:
                 # No recorded port this bind may take: pick one while the old service still runs.
-                plan = (*plan[:2], select_port(bind_ports(plan[0]), plan[0]))
+                plan = (*plan[:2], select_port(bind_ports(plan[0]), plan[0]), plan[3])
             if not (unit and process.get("unit") == unit):
                 stop_live(process, registry)
 
-        bind, host, recorded_port = plan or start_plan(args, process)
+        bind, host, recorded_port, kept = plan or start_plan(args, process)
         if unit:
             old_pid = (process or {}).get("pid", 0)
             write_registry(registry, candidate, {"pid": old_pid, "port": recorded_port or 0, "bind": bind,
-                                                 "host": host, **setup})
+                                                 "host": host, **setup, **kept})
             return unit, old_pid, additions
         port = select_start_port(bind, recorded_port)
         write_registry(registry, candidate)
@@ -935,7 +960,7 @@ def register_locked(args: argparse.Namespace, registry: Path, log_path: Path,
         for item in parsed:
             prove_resource(listener, item)
         process = {"pid": child.pid, "port": urllib.parse.urlsplit(listener).port or port, "bind": bind,
-                   "host": host, **setup, "url": setup.get("public_base") or listener}
+                   "host": host, **setup, **kept, "url": setup.get("public_base") or listener}
         write_registry(registry, candidate, process)
         print_access(process["url"], bind)
         print_urls(process["url"], additions, state)
@@ -956,12 +981,12 @@ def serve(args: argparse.Namespace) -> int:
     with state_lock(state):
         rows, process = registry_state(registry)
         recorded = process or {}
-        bind = recorded.get("bind") or LOOPBACK
-        host = recorded.get("host") or proof_host(argparse.Namespace(proof_host=None), bind)
-        port = select_start_port(bind, recorded.get("port"))
+        bind, host, recorded_port, kept = start_plan(
+            argparse.Namespace(public=None, private=False, proof_host=None, public_base=None, unit=None), process)
+        port = select_start_port(bind, recorded_port)
         setup = {key: recorded[key] for key in SETUP_FIELDS if recorded.get(key)}
         listener = f"http://{host}:{port}"
-        write_registry(registry, rows, {"pid": os.getpid(), "port": port, "bind": bind, "host": host, **setup,
+        write_registry(registry, rows, {"pid": os.getpid(), "port": port, "bind": bind, "host": host, **setup, **kept,
                                         "url": setup.get("public_base") or listener})
     command = server_command(registry, bind, port, host)
     sys.stdout.flush()

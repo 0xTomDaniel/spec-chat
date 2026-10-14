@@ -71,7 +71,7 @@ A rerun changes nothing. `--undo` removes only what earlier runs added, recorded
 For reviewers on other machines: box hosting, the service registry, owner wake, Jev suggestions, and live multi-reviewer review. Opt-in steps:
 
 1. `install-spec-chat --specs <spec folder> --review <first .spec.html>` starts or joins the box's review service with that spec, prints its URL, and sets `status = "done"`. The spec must be in a Git repository.
-2. Box setup, by the box owner, once: add `--public <host>`, `--private`, `--proof-host <host>`, `--public-base <address>` (e.g. `https://spec.<a-b-c-d>.sslip.io`; every review link starts with it), or `--service` (run the review service as a box user service: systemd `--user` with lingering, up at boot, restarted when it dies, from this clone; `--undo` removes it) to step 1. Lanes never pass them.
+2. Box setup, by the box owner, once: add `--public <host>`, `--private`, `--proof-host <host>`, `--public-base <address>` (e.g. `https://spec.<a-b-c-d>.sslip.io`; every review link starts with it; an `https://` address keeps the service on loopback behind that front until cleared), or `--service` (run the review service as a box user service: systemd `--user` with lingering, up at boot, restarted when it dies, from this clone; `--undo` removes it) to step 1. Lanes never pass them.
 3. Owner wake and Jev suggestions are providers the service reads from its state ([Providers](docs/specs/review-service.spec.html#providers)).
 
 Canonical contract: [remote hosting lifecycle](skill/review-spec/SKILL.md#remote-hosting-lifecycle).
