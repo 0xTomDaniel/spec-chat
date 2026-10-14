@@ -630,6 +630,13 @@ class MultiReviewServeTest(unittest.TestCase):
                 self.assertGreaterEqual(contrast(text, ground), 4.5, (scheme, text, ground))
             for _, token in stripes:
                 self.assertGreaterEqual(contrast(token, "--ui-surface"), 3, (scheme, token))
+            # Every rule that sets both a background and a text token reads at 4.5:1 in this scheme.
+            for selector, body in re.findall(r"([^{}]*)\{([^}]*)\}", rules):
+                ground = re.search(r"background(?:-color)?\s*:\s*var\((--[\w-]+)\)", body)
+                text = re.search(r"(?<![\w-])color\s*:\s*var\((--[\w-]+)\)", body)
+                if ground and text:
+                    self.assertGreaterEqual(contrast(text.group(1), ground.group(1)), 4.5,
+                                            (scheme, selector.strip(), text.group(1), ground.group(1)))
         # Count pills sit on their status soft color (#index-threads-table).
         self.assertRegex(rules, r"\.tally\.open \{ background: var\(--ui-draft-soft\); color: var\(--ui-draft\); \}")
         self.assertRegex(rules, r"\.tally\.resolved \{ background: var\(--ui-resolved-soft\); color: var\(--ui-resolved\); \}")
@@ -837,19 +844,24 @@ class MultiReviewServeTest(unittest.TestCase):
         removed = self.make_resource("ann796")
         shutil.rmtree(removed["root"])
         missing = self.make_resource("ann797") | {"spec": "docs/specs/gone.spec.html", "base": "not-a-ref"}
-        self.write_registry([valid, removed, missing])
+        # Its directory and spec are intact, but Git no longer resolves it (its main clone is gone).
+        orphan = self.make_resource("ann799")
+        shutil.rmtree(Path(orphan["root"], ".git"))
+        self.write_registry([valid, removed, missing, orphan])
         before = self.registry.read_bytes()
-        self.start([valid, removed, missing])
-        reports = [self.server.stderr.readline() for _ in range(2)]
+        self.start([valid, removed, missing, orphan])
+        reports = [self.server.stderr.readline() for _ in range(3)]
         self.assertEqual(reports, [
             f"review-serve: warning: stale row {removed['id']}: worktree is unreachable\n",
             f"review-serve: warning: stale row {missing['id']}: spec file is missing\n",
+            f"review-serve: warning: stale row {orphan['id']}: worktree is unreachable\n",
         ])
         status, body = self.request(self.stable(valid))
         self.assertEqual(status, 200)
         self.assertIn(b"current ann795", body)
         self.assertEqual(self.request(self.stable(removed))[0], 404)
         self.assertEqual(self.request(self.stable(missing))[0], 404)
+        self.assertEqual(self.request(self.stable(orphan))[0], 404)
         self.assertEqual(self.registry.read_bytes(), before)
 
     def test_index_marks_a_stale_row_with_its_path_and_no_link(self):

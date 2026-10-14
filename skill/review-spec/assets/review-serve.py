@@ -125,15 +125,16 @@ def _normalise_spec(value):
     return value
 
 
-def _stale_reason(root, narrow, spec_file):
-    """Why a row's spec cannot be reached (review-service #service-stale), else None."""
-    if os.path.isfile(spec_file):
-        return None
-    if not os.path.isdir(root):
+def stale_reason(root, narrow_root, spec):
+    """Why a row's spec cannot be reached (review-service #service-stale), else None. review-host uses this rule too."""
+    root = os.path.realpath(root)
+    if not os.path.isdir(root) or _git(root, "rev-parse", "--show-toplevel", optional=True) is None:
         return "worktree is unreachable"
-    if not os.path.isdir(narrow):
+    if not os.path.isdir(os.path.realpath(narrow_root)):
         return "collection is missing"
-    return "spec file is missing"
+    if not os.path.isfile(os.path.join(root, *spec.split("/"))):
+        return "spec file is missing"
+    return None
 
 
 def _resource_records(document, *, check_refs=False, trust=False):
@@ -169,7 +170,8 @@ def _resource_records(document, *, check_refs=False, trust=False):
         spec = _normalise_spec(raw["spec"])
         spec_file = os.path.realpath(os.path.join(root, *spec.split("/")))
         # A stale row affects only itself: it stays listed, serves no page, and skips its filesystem checks.
-        stale = _stale_reason(root, narrow, spec_file)
+        # Decided on every load, trusted reloads too, so routing and the index read one answer.
+        stale = stale_reason(root, narrow, spec)
         if stale and not trust:
             print("review-serve: warning: stale row %s: %s" % (rid, stale), file=sys.stderr, flush=True)
         if not trust and not stale:
@@ -204,6 +206,7 @@ def _resource_records(document, *, check_refs=False, trust=False):
             "spec": spec,
             "spec_file": spec_file,
             "path": key,
+            "stale": stale,
         })
         ids.add(rid)
         stable.add(key)
@@ -863,7 +866,7 @@ class MountHandler(SimpleHTTPRequestHandler):
                     continue
                 seen.add(stable)
                 href = ("/" if mount["slug"] else "") + quote(stable, safe="/") + (("?" + query) if query else "")
-                if row and not os.path.isfile(path):
+                if mount.get("stale"):
                     # A stale row: its spec path as plain text, no link, no status (#index-entry-stale).
                     lanes.setdefault(lane, {}).setdefault(project, []).append((None, spec, None, None))
                     continue
@@ -963,7 +966,7 @@ li a { flex: 1 1 auto; min-width: 0; color: var(--ui-link); font-weight: 600; te
 li a:hover, li a:focus-visible { text-decoration: underline; }
 a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; border-radius: var(--ui-radius-sm); }
 .pill { flex: none; margin-left: auto; padding: 0 var(--ui-space-2); line-height: 1.6; border-radius: var(--ui-radius-pill); background: var(--ui-attention-soft); color: var(--ui-attention); font-size: var(--ui-text-xs); font-weight: 600; }
-.pill.stale { background: var(--ui-muted-soft); color: var(--ui-muted); }
+.pill.stale { background: var(--ui-surface); color: var(--ui-muted); border: 1px solid var(--ui-border); }
 li .stale-path { flex: 1 1 auto; min-width: 0; color: var(--ui-muted); overflow-wrap: anywhere; }
 .tallies { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); margin-top: var(--ui-space-1); }
 .tally { display: inline-flex; gap: var(--ui-space-1); padding: 0 var(--ui-space-2); line-height: 1.6; border-radius: var(--ui-radius-pill); font-size: var(--ui-text-xs); font-weight: 400; }
@@ -985,6 +988,8 @@ listenHost();
         if not decoded.startswith("/"):
             decoded = "/" + decoded
         for mount in self.mounts:
+            if mount.get("stale"):
+                continue
             prefix = "/" + _mount_prefix(mount)
             if not mount["slug"]:
                 relative = _safe_relative(decoded)
@@ -1016,6 +1021,8 @@ listenHost();
         if decoded is None:
             return None, None
         for mount in self.mounts:
+            if mount.get("stale"):
+                continue
             prefix = _mount_prefix(mount)
             relative = decoded.lstrip("/")
             if prefix and not relative.startswith(prefix):
