@@ -794,10 +794,12 @@ def wake_status(owner: str, state: Path) -> str:
     return "verified" if code == 0 else "unavailable"
 
 
-def print_access(url: str, bind: str | None) -> None:
-    port = urllib.parse.urlsplit(url).port
-    if bind and not is_loopback(bind):
-        print(f"warning: public review page on {bind}:{port} has no login; anyone who can reach it can read and comment",
+def print_access(process: Mapping[str, Any]) -> None:
+    """How the page is reached: an HTTPS front's public base, else the listener's own bind and port."""
+    bind, port, base = process.get("bind"), process["port"], process.get("public_base")
+    if fronted(base) or (bind and not is_loopback(bind)):
+        where = f"at {base}" if fronted(base) else f"on {bind}:{port}"
+        print(f"warning: public review page {where} has no login; anyone who can reach it can read and comment",
               file=sys.stderr)
     else:
         print(f"private: loopback only; reach it with ssh -L {port}:127.0.0.1:{port} <box>, "
@@ -844,7 +846,7 @@ def register(args: argparse.Namespace) -> int:
             rows = read_registry_document_bytes(old_bytes)
             write_registry(registry, rows, current)
         raise
-    print_access(process["url"], process.get("bind"))
+    print_access(process)
     print_urls(process["url"], additions, state)
     return 0
 
@@ -914,7 +916,7 @@ def register_locked(args: argparse.Namespace, registry: Path, log_path: Path,
             write_registry(registry, candidate, process)
             for item in parsed:
                 prove_resource(listener, item)
-            print_access(process["url"], bind)
+            print_access(process)
             print_urls(process["url"], additions, state)
             return None
         if unit and systemctl("cat", unit):
@@ -962,7 +964,7 @@ def register_locked(args: argparse.Namespace, registry: Path, log_path: Path,
         process = {"pid": child.pid, "port": urllib.parse.urlsplit(listener).port or port, "bind": bind,
                    "host": host, **setup, **kept, "url": setup.get("public_base") or listener}
         write_registry(registry, candidate, process)
-        print_access(process["url"], bind)
+        print_access(process)
         print_urls(process["url"], additions, state)
         return None
     except BaseException:
