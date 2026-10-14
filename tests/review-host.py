@@ -1,5 +1,7 @@
+import contextlib
 import email.utils
 import importlib.util
+import io
 import json
 import os
 import re
@@ -406,11 +408,27 @@ finish_event = ""
         self.assertEqual(review_host.select_bind(args(), recorded), "0.0.0.0")
         self.assertEqual(review_host.select_bind(args(private=True), recorded), "127.0.0.1")
 
-    def test_public_bind_warns_no_login(self):
-        with mock.patch("sys.stderr") as err, mock.patch("sys.stdout"):
-            review_host.print_access("http://203.0.113.9:45583", "0.0.0.0")
-        written = "".join(call.args[0] for call in err.write.call_args_list)
-        self.assertIn("has no login", written)
+    def access(self, **process):
+        with mock.patch("sys.stderr", new_callable=io.StringIO) as err, \
+                mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            review_host.print_access({"pid": 1, "port": 45583, **process})
+        return out.getvalue(), err.getvalue()
+
+    def test_access_note_names_the_way_in(self):
+        """review-service #service-visibility, #service-front: a public bind warns at its listener, a fronted service
+        warns at its public base with no tunnel or --public hint, and a private one gives its listener's tunnel."""
+        out, err = self.access(bind="0.0.0.0", host="203.0.113.9", url="http://203.0.113.9:45583")
+        self.assertIn("0.0.0.0:45583 has no login", err)
+        self.assertEqual(out, "")
+        base = "https://spec.203-0-113-9.sslip.io"
+        for bind in ("127.0.0.1", None):
+            out, err = self.access(bind=bind, host="127.0.0.1", url=base, public_base=base)
+            self.assertIn(f"{base} has no login", err)
+            self.assertEqual(out, "")
+        plain = "http://spec.example.invalid"
+        out, err = self.access(bind="127.0.0.1", host="127.0.0.1", url=plain, public_base=plain)
+        self.assertIn("ssh -L 45583:127.0.0.1:45583 <box>", out)
+        self.assertEqual(err, "")
 
     def test_live_host_keeps_its_bind_and_restarts_on_a_different_one(self):
         state = self.work / "state"
@@ -918,6 +936,135 @@ cursor_name = ".cursor-test"
             self.assertEqual(result.returncode, 1, bad)
             self.assertIn("public base", result.stderr)
         self.assertFalse((state / "registry.toml").exists())
+
+    def reachable(self, host, port):
+        with contextlib.suppress(OSError), socket.create_connection((host, port), 1):
+            return True
+        return False
+
+    def start_public(self, state, port, env=None, **extra):
+        proof = outbound_address()
+        started = self.run_cli(*self.register_args(state, **extra), "--public", "0.0.0.0", "--proof-host", proof,
+                               state=state, ports=port, env=env)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        return proof, self.registry(state)["process"]
+
+    def test_https_base_moves_a_public_service_to_loopback_and_clearing_returns_it(self):
+        """review-service #acceptance-https-base-loopback, #acceptance-https-base-clear."""
+        state, port, base = self.work / "state", self.port(), "https://spec.203-0-113-9.sslip.io"
+        proof, public = self.start_public(state, port)
+        self.assertEqual((public["bind"], public["port"]), ("0.0.0.0", port))
+        fronted = self.run_cli(*self.register_args(state, public_base=base), state=state, ports=port)
+        self.assertEqual(fronted.returncode, 0, fronted.stderr)
+        process = self.registry(state)["process"]
+        self.assertNotEqual(process["pid"], public["pid"])
+        self.assertEqual({k: process[k] for k in ("bind", "host", "port", "url", "public_bind", "public_host")},
+                         {"bind": "127.0.0.1", "host": "127.0.0.1", "port": port, "url": base,
+                          "public_bind": "0.0.0.0", "public_host": proof})
+        self.assertTrue(self.reachable("127.0.0.1", port))
+        self.assertFalse(self.reachable(proof, port))
+        self.assertEqual(self.url(fronted), base)
+        joined = self.run_cli(*self.register_args(state, slug="other", spec="second"), state=state, ports=port)
+        self.assertEqual(joined.returncode, 0, joined.stderr)
+        self.assertEqual(self.registry(state)["process"], process)
+        for result in (fronted, joined):
+            self.assertFronted(result, base)
+        cleared = self.run_cli(*self.register_args(state, public_base=""), state=state, ports=port)
+        self.assertEqual(cleared.returncode, 0, cleared.stderr)
+        back = self.registry(state)["process"]
+        self.assertEqual({k: back[k] for k in ("bind", "host", "port")}, {"bind": "0.0.0.0", "host": proof, "port": port})
+        self.assertFalse({"public_bind", "public_host", "public_base"} & set(back))
+        self.assertTrue(self.reachable(proof, port))
+        self.assertIn("has no login", cleared.stderr)
+
+    def test_fronted_service_keeps_visibility_changes_and_a_plain_base_returns_it(self):
+        """review-service #service-front: --private or --public while fronted changes only the kept visibility, with
+        no restart, and replacing the HTTPS base with one that is not HTTPS returns the service to it."""
+        state, port, base = self.work / "state", self.port(), "https://spec.203-0-113-9.sslip.io"
+        proof, _ = self.start_public(state, port)
+        fronted = self.run_cli(*self.register_args(state, public_base=base), state=state, ports=port)
+        self.assertEqual(fronted.returncode, 0, fronted.stderr)
+        held = self.registry(state)["process"]
+        private = self.run_cli(*self.register_args(state), "--private", state=state, ports=port)
+        self.assertEqual(private.returncode, 0, private.stderr)
+        self.assertEqual(self.registry(state)["process"],
+                         {k: v for k, v in held.items() if k not in ("public_bind", "public_host")})
+        self.assertFronted(private, base)
+        public = self.run_cli(*self.register_args(state), "--public", "0.0.0.0", "--proof-host", proof, state=state,
+                              ports=port)
+        self.assertEqual(public.returncode, 0, public.stderr)
+        self.assertEqual(self.registry(state)["process"], held)
+        self.assertFronted(public, base)
+        self.assertFalse(self.reachable(proof, port))
+        plain_base = "http://spec.example.invalid"
+        plain = self.run_cli(*self.register_args(state, public_base=plain_base), state=state, ports=port)
+        self.assertEqual(plain.returncode, 0, plain.stderr)
+        back = self.registry(state)["process"]
+        self.assertEqual({k: back[k] for k in ("bind", "host", "port", "url")},
+                         {"bind": "0.0.0.0", "host": proof, "port": port, "url": plain_base})
+        self.assertFalse({"public_bind", "public_host"} & set(back))
+        self.assertTrue(self.reachable(proof, port))
+        self.assertIn(f"0.0.0.0:{port} has no login", plain.stderr)
+
+    def assertFronted(self, result, base):
+        """A fronted service's note warns at its public base, never a tunnel or --public hint."""
+        self.assertIn(f"{base} has no login", result.stderr)
+        self.assertNotIn("ssh -L", result.stdout)
+        self.assertNotIn("--public", result.stdout)
+
+    def test_https_base_start_listens_on_loopback(self):
+        """review-service #acceptance-https-base-start: every start, by register or the service manager, takes
+        loopback from a recorded public setup with an HTTPS base, including a record written before this rule."""
+        state, port, base = self.work / "state", self.port(), "https://spec.203-0-113-9.sslip.io"
+        env, fake, _ = self.unit_env(state)
+        proof, _ = self.start_public(state, port, unit=UNIT, env=env)
+        self.assertEqual(self.run_cli("stop", "--state-dir", str(state), state=state, env=env).returncode, 0)
+        registry = state / "registry.toml"
+        text = registry.read_text(encoding="utf-8")
+        registry.write_text(text.replace("[process]\n", f'[process]\npublic_base = "{base}"\n'), encoding="utf-8")
+        again = self.run_cli(*self.register_args(state), state=state, ports=port, env=env)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertEqual(self.calls(fake)[-1], f"systemctl --user restart {UNIT}")
+        self.assertFronted(again, base)
+        process = self.registry(state)["process"]
+        self.assertEqual({k: process[k] for k in ("bind", "host", "port", "url", "public_bind", "public_host")},
+                         {"bind": "127.0.0.1", "host": "127.0.0.1", "port": port, "url": base,
+                          "public_bind": "0.0.0.0", "public_host": proof})
+        self.assertFalse(self.reachable(proof, port))
+        # The service manager's own start after a death keeps it on loopback.
+        self.assertEqual(self.run_cli("stop", "--state-dir", str(state), state=state, env=env).returncode, 0)
+        subprocess.run(["systemctl", "--user", "start", UNIT], env={**os.environ, **env}, check=True)
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and not self.reachable("127.0.0.1", port):
+            time.sleep(0.1)
+        served = self.registry(state)["process"]
+        self.assertEqual({k: served[k] for k in ("bind", "host", "port", "public_bind", "public_host")},
+                         {"bind": "127.0.0.1", "host": "127.0.0.1", "port": port,
+                          "public_bind": "0.0.0.0", "public_host": proof})
+        self.assertFalse(self.reachable(proof, port))
+
+    def test_plain_base_keeps_the_listener_with_no_restart(self):
+        """review-service #acceptance-plain-base-keeps: a public base that is not HTTPS moves nothing."""
+        private_state = self.work / "private"
+        first = self.run_cli(*self.register_args(private_state), state=private_state)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        before = self.registry(private_state)["process"]
+        plain = self.run_cli(*self.register_args(private_state, public_base="http://spec.example.invalid"),
+                             state=private_state)
+        self.assertEqual(plain.returncode, 0, plain.stderr)
+        after = self.registry(private_state)["process"]
+        self.assertEqual({k: after[k] for k in ("pid", "bind", "host", "port")},
+                         {k: before[k] for k in ("pid", "bind", "host", "port")})
+        state, port = self.work / "public", self.port()
+        proof, public = self.start_public(state, port)
+        plain = self.run_cli(*self.register_args(state, public_base="http://spec.example.invalid"), state=state,
+                             ports=port)
+        self.assertEqual(plain.returncode, 0, plain.stderr)
+        after = self.registry(state)["process"]
+        self.assertEqual({k: after[k] for k in ("pid", "bind", "host", "port")},
+                         {k: public[k] for k in ("pid", "bind", "host", "port")})
+        self.assertNotIn("public_bind", after)
+        self.assertTrue(self.reachable(proof, port))
 
     def unit_env(self, state):
         config = self.work / "config"
