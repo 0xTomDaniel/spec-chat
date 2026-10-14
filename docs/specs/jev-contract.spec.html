@@ -37,6 +37,7 @@ Spec Chat's <a href="./jev-suggestions.spec.html">Jev review suggestions</a> con
 <p data-acceptance-criterion data-anchor="acceptance-retry-default" data-story="story-retry"><span data-acceptance-scenario>Given the operator of a box with Jev on, which needs an induced failure: Jev fails with no given wait, When a question is asked,</span> <span data-acceptance-observable>Then its record is unavailable and holds the instant 60 seconds later, proven by a unit test: no screen shows it.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-retry-after" data-story="story-retry"><span data-acceptance-scenario>Given the operator of a box with Jev on and an unavailable record whose pause has ended, When the same question is asked,</span> <span data-acceptance-observable>Then Jev is called once and the new record is the question's answer, proven by a unit test: no screen shows it.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-outcome-names" data-story="story-same-answer"><span data-acceptance-scenario>Given the operator of a box with Jev on, When any question is asked,</span> <span data-acceptance-observable>Then its record's outcome is one of the <a href="#outcomes">outcome names</a> and the record holds no provider key, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-oversize-estimate" data-story="story-same-answer"><span data-acceptance-scenario>Given the operator of a box with Jev on, When a question is asked whose request's estimated size is just over the token limit,</span> <span data-acceptance-observable>Then Jev is not called and the question's record is oversize, proven by a unit test: no screen shows it.</span></p>
 <p data-anchor="acceptance-rules-note">Onboarding: not needed, the contract adds no user surface.
 CI: the <a href="./review-service.spec.html#acceptance-ci-alone">CI rule</a> covers the conformance cases; they use a recorded provider reply and no provider file.</p>
 </section>
@@ -84,7 +85,8 @@ CI: the <a href="./review-service.spec.html#acceptance-ci-alone">CI rule</a> cov
 </table>
 </div>
 <p data-anchor="request-reply">The reply's <code>answers.&lt;id&gt;</code> gives the <code>choice</code>, the <code>probabilities</code> per label, and the <code>confidence</code>; its <code>model</code> is the model version Jev reports.</p>
-<p data-anchor="request-oversize">A request whose canonical JSON length, divided by 4 and rounded up, exceeds 32,000 tokens is never sent and never truncated: its outcome is <code>oversize</code>.</p>
+<p data-anchor="request-oversize">A request's size in tokens is estimated as the byte length of its <a href="#key-canonical">canonical JSON</a> in UTF-8, divided by 2 and rounded up; a request whose estimate exceeds 32,000 tokens is never sent and never truncated: its outcome is <code>oversize</code>.</p>
+<p data-anchor="request-oversize-why">Jev counts about 2.1 bytes of request JSON per token, so 2 bytes per token keeps a small margin under its limit.</p>
 <p data-anchor="request-key-secret">The provider key travels only in the request's authorization header; no record, log, case, or reply holds it.</p>
 </section>
 
@@ -166,7 +168,7 @@ CI: the <a href="./review-service.spec.html#acceptance-ci-alone">CI rule</a> cov
 </tbody>
 </table>
 </div>
-<p data-anchor="cases-cover">The cases cover at least: a shown answer, an unsure answer, an escalated answer, an oversize request, no key, a failure with a given wait, a failure without one, an ask during a pause, an ask after it, a question with its own labels, and two state orders with one key.</p>
+<p data-anchor="cases-cover">The cases cover at least: a shown answer, an unsure answer, an escalated answer, an oversize request, a request whose estimate is just over the limit, one whose estimate is just under it, no key, a failure with a given wait, a failure without one, an ask during a pause, an ask after it, a question with its own labels, and two state orders with one key.</p>
 <p data-anchor="cases-change">A change to any rule here changes its case in the same commit; a program that conforms to the contract at a commit passes that commit's cases.</p>
 </section>
 
