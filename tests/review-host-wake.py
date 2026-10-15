@@ -374,15 +374,16 @@ class WakeControllerTest(unittest.TestCase):
     def test_no_pane_tool_is_named(self):
         """review-service #acceptance-wake-only: Herdr appears only as the session that scopes the service, by its name
         Herdr and its key HERDR_SESSION; every other spelling, in any case (a command such as herdr or herdr-..., or
-        another HERDR_ variable), names the pane tool."""
-        roots = [ROOT / "skill", ROOT / "DESIGN.md", ROOT / "README.md"]
-        roots += [path for path in (ROOT / "docs/specs").glob("*.spec.html")]
-        for root in roots:
-            for path in ([root] if root.is_file() else root.rglob("*")):
-                if path.is_file() and "vendor" not in path.parts:
-                    text = path.read_text(encoding="utf-8", errors="replace")
-                    named = {m.group() for m in re.finditer(r"herdr[\w-]*", text, re.IGNORECASE)}
-                    self.assertLessEqual(named, {"Herdr", "HERDR_SESSION"}, str(path))
+        another HERDR_ variable), names the pane tool. The scan reads the tracked sources only, never generated files."""
+        roots = ["skill", "DESIGN.md", "README.md", ":(glob)docs/specs/*.spec.html"]
+        tracked = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-z", "--", *roots],
+                                 capture_output=True, text=True, check=True).stdout.split("\0")
+        paths = [ROOT / name for name in tracked if name and "vendor" not in Path(name).parts]
+        self.assertIn(ROOT / "skill/review-spec/assets/review-serve.py", paths)
+        for path in paths:
+            text = path.read_text(encoding="utf-8", errors="replace")
+            named = {m.group() for m in re.finditer(r"herdr[\w-]*", text, re.IGNORECASE)}
+            self.assertLessEqual(named, {"Herdr", "HERDR_SESSION"}, str(path))
 
 
 class RegistryReloadTest(unittest.TestCase):
