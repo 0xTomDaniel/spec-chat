@@ -244,10 +244,10 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertEqual(events, [])
 
     def test_spec_page_is_served_with_missing_share_meta_added(self):
-        # sc#120, prompt-first-shaping #public-review-anywhere: some reviewers' clients read description and og:* meta
-        # and throw when absent. Only missing ones are added, and only to the response: the file keeps its bytes,
-        # and the ETag and stored version name the served body (lane-hosting #index-http-caching, review-state
-        # #model-versions).
+        # review-service #acceptance-share-meta, #published-spec-page; prompt-first-shaping #public-review-anywhere:
+        # some reviewers' clients read description and og:* meta and throw when absent. Only missing ones are added,
+        # and only to the response: the file keeps its bytes, and the ETag and stored version name the served body
+        # (lane-hosting #index-http-caching, review-state #model-versions).
         resource = self.make_resource("share")
         self.start([resource])
         source = Path(resource["root"]) / resource["spec"]

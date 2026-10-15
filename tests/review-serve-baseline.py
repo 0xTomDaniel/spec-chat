@@ -173,6 +173,22 @@ class BaselineRouteTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["source"], "new")
 
+    def test_verifier_compares_the_served_page_with_the_file_plus_the_meta_the_service_adds(self):
+        # prompt-first-shaping #compatibility-http-proof, review-service #published-spec-page,
+        # #acceptance-share-meta-register: a page with a real head and no share meta is served with meta the file lacks.
+        source = (b'<!doctype html><html><head><meta charset="utf-8"><title>Focus</title></head>'
+                  b'<body><p data-anchor="rule">changed rule</p></body></html>\n')
+        self.spec.write_bytes(source)
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/specs/focus.spec.html") as response:
+            self.assertNotEqual(response.read(), source)
+        result = self.verify()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.spec.read_bytes(), source)
+        url = f"http://127.0.0.1:{self.port}/specs/focus.spec.html"
+        with patch.object(verifier, "read_url", side_effect=[source]):
+            with self.assertRaisesRegex(ValueError, "served spec bytes differ"):
+                verifier.verify(self.repo, self.spec, url, "main")
+
     def test_verifier_rejects_a_different_served_spec(self):
         result = self.verify(local_spec=self.specs / "new.spec.html")
         self.assertEqual(result.returncode, 2)

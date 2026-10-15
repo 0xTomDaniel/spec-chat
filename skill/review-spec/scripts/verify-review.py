@@ -3,12 +3,22 @@
 
 import argparse
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
 import sys
 from urllib.parse import parse_qs, unquote, urlencode, urlsplit, urlunsplit
 from urllib.request import urlopen
+
+
+# The served page is the file plus the meta the service adds (review-service #published-spec-page): the proof applies
+# the server's own transform, never a copy of it.
+_serve_spec = importlib.util.spec_from_file_location(
+    "spec_chat_review_serve", Path(__file__).resolve().parents[1] / "assets" / "review-serve.py"
+)
+_serve = importlib.util.module_from_spec(_serve_spec)
+_serve_spec.loader.exec_module(_serve)
 
 
 def git(repository, *args, optional=False):
@@ -45,8 +55,8 @@ def verify(repository, spec, review_url, requested_base):
         raise ValueError("review URL selects a different baseline")
     if focused and link_base != base:
         raise ValueError("focused review URL must pin the resolved baseline commit")
-    if read_url(urlunsplit(url._replace(fragment=""))) != current:
-        raise ValueError("served spec bytes differ from the local spec")
+    if read_url(urlunsplit(url._replace(fragment=""))) != _serve._share_meta(current, str(spec)):
+        raise ValueError("served spec bytes differ from the local spec plus the meta the service adds")
 
     query = urlencode({"path": unquote(url.path).lstrip("/"), "base": base})
     result = json.loads(read_url(urlunsplit((url.scheme, url.netloc, "/api/baseline", query, ""))))
