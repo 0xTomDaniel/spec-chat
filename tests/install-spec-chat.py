@@ -217,12 +217,13 @@ class InstallSpecChatTest(unittest.TestCase):
         document = tomllib.loads((hosting / "default/registry.toml").read_text())
         self.assertEqual([r["spec"] for r in document["resource"]], ["docs/specs/first.spec.html"])
         os.kill(document["process"]["pid"], 0)
+        environ = Path(f"/proc/{document['process']['pid']}/environ").read_bytes().split(b"\0")
         self.run_install("--undo")
         self.assertEqual(sorted(p.name for p in hosting.iterdir()), ["default"])
         self.assertEqual(tomllib.loads((hosting / "default/registry.toml").read_text()).get("resource", []), [])
         with self.assertRaises(OSError):
             os.kill(document["process"]["pid"], 0)
-        return document["process"]
+        return document["process"], environ
 
     def test_onboarding_in_a_named_session_sets_up_the_default_sessions_box_user_service(self):
         """review-service #acceptance-session-onboarding: the box user service runs the default session's service
@@ -230,14 +231,17 @@ class InstallSpecChatTest(unittest.TestCase):
         fake = Path(self.temp.name) / "fake-systemd"
         self.env.update({"PATH": f"{FAKE_SYSTEMD}:/usr/bin:/bin", "XDG_CONFIG_HOME": str(self.home / ".config"),
                          "FAKE_SYSTEMD_DIR": str(fake), "USER": "boxuser"})
-        process = self.onboard_in_named_session("--service")
+        process, _ = self.onboard_in_named_session("--service")
         self.assertEqual(process["unit"], UNIT)
         self.assertIn(f"systemctl --user restart {UNIT}", (fake / "calls").read_text().splitlines())
 
     def test_onboarding_in_a_named_session_registers_and_stops_the_default_sessions_service(self):
         """review-service #onboarding-entry: whatever session it runs in, onboarding registers on, and undo stops
-        and removes from, the default session's service."""
-        self.assertNotIn("unit", self.onboard_in_named_session())
+        and removes from, the default session's service, which runs in the default session (#service-session-ids)."""
+        process, environ = self.onboard_in_named_session()
+        self.assertNotIn("unit", process)
+        self.assertIn(b"XDG_STATE_HOME=" + str(self.state).encode(), environ)
+        self.assertFalse([v for v in environ if v.startswith(b"HERDR_SESSION=")])
 
     def test_service_flags_are_box_setup(self):
         for flags in (["--service"], ["--public-base", "https://spec.example.invalid"]):

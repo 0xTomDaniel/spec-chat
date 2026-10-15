@@ -44,9 +44,12 @@ def service_state(state: Path) -> Path:
     return state / "hosting/default"
 
 
-def review_host(state: Path, command: str, *args: str) -> list[str]:
-    """A review-host command on the default session's service."""
-    return [sys.executable, str(HOST), command, "--state-dir", str(service_state(state)), *args]
+def review_host(state: Path, command: str, *args: str, **run) -> subprocess.CompletedProcess:
+    """Run a review-host command on the default session's service, in the default session: without the caller's
+    HERDR_SESSION, so a server it starts wakes panes of the default session."""
+    env = {k: v for k, v in os.environ.items() if k != "HERDR_SESSION"}
+    return subprocess.run([sys.executable, str(HOST), command, "--state-dir", str(service_state(state)), *args],
+                          env=env, **run)
 
 
 def toml_list(values: list[str]) -> str:
@@ -216,8 +219,7 @@ def review_first_spec(spec: Path, state: Path, visibility: list[str]) -> str:
     origin = subprocess.run(["git", "-C", str(top), "remote", "get-url", "origin"], text=True, capture_output=True)
     name = origin.stdout.strip().rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1] if origin.returncode == 0 else top.name
     slug = re.sub(r"[^a-z0-9-]+", "-", name.removesuffix(".git").lower()).strip("-")[:63] or "spec"
-    command = review_host(state, "register", "--slug", slug, "--owner", ONBOARDING_OWNER, str(spec), *visibility)
-    if subprocess.run(command).returncode:
+    if review_host(state, "register", "--slug", slug, "--owner", ONBOARDING_OWNER, str(spec), *visibility).returncode:
         raise InstallError("review-host register failed")
     rows = read_toml(service_state(state) / "registry.toml").get("resource", [])
     row = next((r for r in rows if r.get("root") == str(top) and r.get("spec") == rel and r.get("slug") == slug), None)
@@ -282,7 +284,7 @@ def _stop_review_server(state: Path) -> None:
         os.kill(int(pid), 0)  # probe: is it alive?
     except (OSError, ValueError):
         return
-    subprocess.run(review_host(state, "stop"), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    review_host(state, "stop", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print(f"stopped review server (pid {pid})")
 
 
@@ -304,7 +306,7 @@ def undo(state: Path) -> None:
         elif path.exists():
             print(f"left changed {path}")
     for rid in manifest["resources"]:
-        subprocess.run(review_host(state, "remove", "--id", rid), stdout=subprocess.DEVNULL)
+        review_host(state, "remove", "--id", rid, stdout=subprocess.DEVNULL)
     _stop_review_server(state)
     for item in manifest["units"]:
         path = Path(item)
