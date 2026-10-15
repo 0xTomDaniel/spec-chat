@@ -1,4 +1,5 @@
 """Record store files, held set, and lock (jev-suggestions #record-store, #record-held, #record-lock, #proof-store, #record-immutable)."""
+import gc
 import hashlib
 import importlib.util
 import json
@@ -111,7 +112,11 @@ def spec_page(words, n=12):
 
 class ReadMemoryTest(unittest.TestCase):
     """#acceptance-store-memory (sc#157): Jev reads of specs being edited keep the service's memory under a fixed
-    ceiling. Kept builder results are bounded by bytes, not count, and an ask's per-key lock goes when it is done."""
+    ceiling. Kept builder results are bounded by bytes, not count, and an ask's per-key lock goes when it is done.
+
+    No growth with the number of reads, as a ratio, not a byte count: twice as many later reads grow memory less
+    than the first reads did. A ceiling the first reads fill passes it with room for allocator and interpreter
+    noise; growth per read fails it once each read adds a quarter of that ceiling."""
 
     def test_memory_does_not_grow_with_reads_of_edited_specs(self):
         tmp = tempfile.TemporaryDirectory()
@@ -147,18 +152,16 @@ class ReadMemoryTest(unittest.TestCase):
             deadline = time.monotonic() + 30
             while service._asking and time.monotonic() < deadline:
                 time.sleep(0.01)
+            gc.collect()  # garbage awaiting the cycle collector is no memory the service keeps
+            return tracemalloc.get_traced_memory()[0]
 
-        tracemalloc.start()
+        tracemalloc.start()  # counts only what is allocated from here on and still held
         self.addCleanup(tracemalloc.stop)
-        for n in range(3):
-            read(n)
-        warm = tracemalloc.get_traced_memory()[0]
-        for n in range(3, 11):
-            read(n)
-        grown = tracemalloc.get_traced_memory()[0] - warm
-        print("read memory: grew %d KB over 8 reads per edited spec; %d key locks left"
-              % (grown >> 10, len(service.seam._key_locks)), file=sys.stderr)
-        self.assertLess(grown, 1 << 20, "memory grew with reads")
+        first = [read(n) for n in range(4)][-1]
+        later = [read(n) for n in range(4, 12)][-1] - first
+        print("read memory: the first 4 reads grew %d KB, the next 8 grew %d KB; %d key locks left"
+              % (first >> 10, later >> 10, len(service.seam._key_locks)), file=sys.stderr)
+        self.assertLess(later, first, "memory grew with reads")
         self.assertLessEqual(service._kept.used, limit)
         self.assertEqual(len(service.seam._key_locks), 0, "a lock kept per asked key")
 
