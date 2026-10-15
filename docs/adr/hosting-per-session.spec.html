@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ADR: one review service per Herdr session</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../specs/.style/spec.css">
+<script defer src="../specs/.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">One review service per Herdr session</h1>
+<nav data-anchor="breadcrumbs">docs / adr / hosting-per-session.spec.html</nav>
+<p data-anchor="behind">Decision behind <a href="../specs/review-service.spec.html#service">One service per session</a>.</p>
+</header>
+
+<section data-anchor="context">
+<h2>Context</h2>
+<p data-anchor="context-shared">Several Herdr sessions on one box shared one review service: one registry, server, review index, and log, so each session's operator saw and acted on the other's specs.</p>
+<p data-anchor="context-ids">Rows hold owner panes as bare Herdr pane ids, and Herdr repeats pane ids across sessions, so a wake could reach a pane of the wrong session.</p>
+<p data-anchor="context-principle">The Herdr session is the box's isolation unit; Herdr exports its name to every pane of a named session, and other tools on the box scope their state by the same key.</p>
+<p data-anchor="context-box">A box with one session must keep working with nothing moved, and providers plug in once per box, before any named session exists.</p>
+</section>
+
+<section data-anchor="decision">
+<h2>Decision</h2>
+<p data-anchor="decision-service">Each Herdr session has its own review service, at a service state named by the session key, the default session's being the one a one-session box already has.</p>
+<p data-anchor="decision-key">Spec Chat reads the session key from Herdr's own variable, and names Herdr for nothing else: wake still reaches panes only through the wake provider.</p>
+<p data-anchor="decision-providers">Providers stay the box's, in the default session's service state, and every session's service reads them there; a service and its wakes run in its own session.</p>
+</section>
+
+<section data-anchor="why">
+<h2>Why</h2>
+<p data-anchor="why-isolation">A service per session isolates registry, index, log, and wake by where state lives, with no session field in any row and no new flag.</p>
+<p data-anchor="why-no-move">The default key keeps the existing service state, so a running box, its unit, its rows, and its links are untouched.</p>
+<p data-anchor="why-providers">Box providers keep each provider's one registration working for every session, so no provider learns about sessions.</p>
+</section>
+
+<section data-anchor="alternatives">
+<h2>Alternatives rejected</h2>
+<div class="table-scroll" data-anchor="alternatives-table-scroll">
+<table data-anchor="alternatives-table">
+<thead><tr><th>Option</th><th>Rejected because</th></tr></thead>
+<tbody>
+<tr data-anchor="alt-one-server"><td>One server serving each session's registry under its own path</td><td>The shared server would have to run each wake in another session and keep per-session logs and indexes apart itself</td></tr>
+<tr data-anchor="alt-session-field"><td>One registry with a session field on every row</td><td>Every reader and command would have to filter by it, and one missed filter mixes sessions again</td></tr>
+<tr data-anchor="alt-session-providers"><td>Providers per session</td><td>A provider registered once per box would be missing from every later session</td></tr>
+<tr data-anchor="alt-own-key"><td>A Spec Chat variable or flag naming the session</td><td>A second name for a key Herdr already exports, set by hand in every pane</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section data-anchor="consequences">
+<h2>Consequences</h2>
+<p data-anchor="cons-ports">A named session's service takes its own port and starts private on loopback; making it public, or putting a front before it, is that session's box setup.</p>
+<p data-anchor="cons-unit">The box user service runs the default session's service; a named session's service starts on its first registration.</p>
+<p data-anchor="cons-reopen">Move trigger: if named sessions routinely need public links, revisit one public entry that routes to each session's service.</p>
+</section>
+
+</article>
+</body>
+</html>
