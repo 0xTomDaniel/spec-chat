@@ -33,9 +33,16 @@ _verify_spec = importlib.util.spec_from_file_location("spec_chat_verify_review",
 _verify_module = importlib.util.module_from_spec(_verify_spec)
 assert _verify_spec.loader is not None
 _verify_spec.loader.exec_module(_verify_module)
+_serve_spec = importlib.util.spec_from_file_location("spec_chat_review_serve", SERVER)
+_serve_module = importlib.util.module_from_spec(_serve_spec)
+assert _serve_spec.loader is not None
+_serve_spec.loader.exec_module(_serve_module)
 SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
 SAFE_CURSOR_RE = re.compile(r"[^/\\]+\Z")
-PROCESS_FIELDS = ("pid", "port", "bind", "host", "url")
+PROCESS_FIELDS = ("pid", "port", "bind", "host", "url", "public_base", "unit", "public_bind", "public_host")
+SETUP_FIELDS = ("public_base", "unit")
+# The public visibility and proof host kept while an HTTPS public base holds the listener on loopback.
+KEPT_FIELDS = ("public_bind", "public_host")
 DEFAULT_CURSOR = ".cursor-owner"
 RESOURCE_FIELDS = (
     "id", "slug", "project", "root", "narrow_root", "spec", "path", "base", "accepted", "owner", "checker",
@@ -189,11 +196,11 @@ def select_port(ports: Sequence[int], bind: str) -> int:
         try:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.bind((bind, port))
+            return sock.getsockname()[1]  # port 0 resolves to a concrete free port
         except OSError:
             continue
         finally:
             sock.close()
-        return port
     raise LauncherError("no approved ingress port is free")
 
 
@@ -449,15 +456,8 @@ def validate_records(records: Sequence[Mapping[str, Any]], touched: Collection[s
 
 
 def is_row_stale(record: Mapping[str, Any]) -> str | None:
-    """Return a reason when the row's spec file cannot be reached, else None."""
-    try:
-        top = resource_toplevel(Path(record["root"]))
-    except LauncherError:
-        return "worktree is unreachable"
-    spec_file = (top / record["spec"].replace("\\", "/")).resolve()
-    if not spec_file.is_file():
-        return "spec file is missing"
-    return None
+    """Return a reason when the row's spec cannot be reached, else None: review-serve's one stale rule."""
+    return _serve_module.stale_reason(record["root"], record["narrow_root"], record["spec"].replace("\\", "/"))
 
 
 def read_registry_document(path: Path) -> dict[str, Any]:
@@ -480,7 +480,8 @@ def read_registry_document(path: Path) -> dict[str, Any]:
         bind = process.get("bind")
         if bind is not None and not isinstance(bind, str):
             raise LauncherError("registry process bind must be a string")
-        extra = {key: process[key] for key in ("host", "url") if isinstance(process.get(key), str) and process[key]}
+        extra = {key: process[key] for key in ("host", "url", *SETUP_FIELDS, *KEPT_FIELDS)
+                 if isinstance(process.get(key), str) and process[key]}
         process = {"pid": process["pid"], "port": process["port"], **({"bind": bind} if bind else {}), **extra}
     return {"resource": result, "process": process}
 
@@ -636,19 +637,83 @@ def bind_ports(bind: str) -> tuple[int, ...]:
     return (0,)
 
 
-def start_plan(args: argparse.Namespace, process: Mapping[str, Any] | None) -> tuple[str, str, int | None]:
-    """Bind, proof host, and recorded port to try first; a service on its recorded bind keeps its host and port.
+def fronted(base: str | None) -> bool:
+    """An HTTPS public base address: the box's HTTPS front proxies to a loopback listener (review-service #service-front)."""
+    return bool(base) and base.startswith("https://")
 
-    A changed bind keeps the recorded port only where that bind may take it: any port on loopback, else an
-    approved one."""
+
+def visibility(process: Mapping[str, Any]) -> dict[str, Any]:
+    """The recorded visibility and proof host: the kept public ones while fronted, else the listener's own."""
+    if process.get("public_bind"):
+        return {"bind": process["public_bind"], "host": process.get("public_host")}
+    return {"bind": process.get("bind"), "host": process.get("host")}
+
+
+def listen_bind(args: argparse.Namespace, process: Mapping[str, Any] | None) -> str:
+    """Where the service listens on the given and recorded setup: loopback while fronted, else its visibility."""
+    if fronted(setup_fields(process, args).get("public_base")):
+        return LOOPBACK
+    return select_bind(args, visibility(process or {}))
+
+
+def start_plan(args: argparse.Namespace, process: Mapping[str, Any] | None) -> tuple[str, str, int | None, dict[str, str]]:
+    """Listener bind, proof host, recorded port to try first, and the kept visibility while fronted.
+
+    A service on its recorded visibility keeps its proof host. A changed listener keeps the recorded port only
+    where it may take it: any port on loopback, else an approved one."""
     recorded = process or {}
-    bind = select_bind(args, process)
-    same = (recorded.get("bind") or LOOPBACK) == bind
-    host = recorded.get("host") if same and not args.proof_host else None
+    prior = visibility(recorded)
+    shown = select_bind(args, prior)
+    same = (prior["bind"] or LOOPBACK) == shown
+    shown_host = (prior["host"] if same and not args.proof_host else None) or proof_host(args, shown)
+    bind, host = (LOOPBACK, LOOPBACK) if listen_bind(args, process) != shown else (shown, shown_host)
     port = recorded.get("port")
-    if port and not same and not is_loopback(bind) and port not in approved_ports():
+    if port and (recorded.get("bind") or LOOPBACK) != bind and not is_loopback(bind) and port not in approved_ports():
         port = None
-    return bind, host or proof_host(args, bind), port
+    return bind, host, port, ({"public_bind": shown, "public_host": shown_host} if bind != shown else {})
+
+
+def public_base(value: str) -> str:
+    """A box setup public base address: an http(s) URL with a host and no query or fragment; "" clears it."""
+    value = value.strip().rstrip("/")
+    if not value:
+        return ""
+    parts = urllib.parse.urlsplit(value)
+    if parts.scheme not in ("http", "https") or not parts.hostname or parts.query or parts.fragment:
+        raise LauncherError(f"public base must be an http(s) address with a host: {value}")
+    return value
+
+
+def setup_fields(process: Mapping[str, Any] | None, args: argparse.Namespace) -> dict[str, str]:
+    """Public base and service unit: what box setup gave, else what is recorded."""
+    recorded = process or {}
+    given = {"public_base": args.public_base, "unit": args.unit}
+    values = {key: recorded.get(key) if given[key] is None else given[key] for key in SETUP_FIELDS}
+    return {key: value for key, value in values.items() if value}
+
+
+def listener_url(process: Mapping[str, Any], log_path: Path) -> str:
+    """The service's own listener, which the box-side proof checks whatever its public base."""
+    if process.get("host"):
+        return f"http://{process['host']}:{process['port']}"
+    return process.get("url") or running_url(log_path)
+
+
+def systemctl(*args: str) -> int:
+    try:
+        return subprocess.run(("systemctl", "--user", *args), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL, check=False).returncode
+    except OSError:
+        return 127
+
+
+def stop_live(process: Mapping[str, Any], registry: Path) -> None:
+    """A service under a unit stops through its service manager, a clean stop; an own child by SIGTERM."""
+    if process.get("unit"):
+        if systemctl("stop", process["unit"]):
+            raise LauncherError(f"systemctl --user stop {process['unit']} failed")
+        return
+    stop_process(process["pid"], registry)
 
 
 def select_start_port(bind: str, recorded: int | None) -> int:
@@ -726,10 +791,12 @@ def wake_status(owner: str, state: Path) -> str:
     return "verified" if code == 0 else "unavailable"
 
 
-def print_access(url: str, bind: str | None) -> None:
-    port = urllib.parse.urlsplit(url).port
-    if bind and not is_loopback(bind):
-        print(f"warning: public review page on {bind}:{port} has no login; anyone who can reach it can read and comment",
+def print_access(process: Mapping[str, Any]) -> None:
+    """How the page is reached: an HTTPS front's public base, else the listener's own bind and port."""
+    bind, port, base = process.get("bind"), process["port"], process.get("public_base")
+    if fronted(base) or (bind and not is_loopback(bind)):
+        where = f"at {base}" if fronted(base) else f"on {bind}:{port}"
+        print(f"warning: public review page {where} has no login; anyone who can reach it can read and comment",
               file=sys.stderr)
     else:
         print(f"private: loopback only; reach it with ssh -L {port}:127.0.0.1:{port} <box>, "
@@ -747,86 +814,183 @@ def register(args: argparse.Namespace) -> int:
     state = state_dir(args)
     registry, log_path, _ = paths(state)
     parsed = parse_resources(args)
+    if args.public_base is not None:
+        args.public_base = public_base(args.public_base)
     if args.test:
         for item in parsed:
             item["test"] = True
     with state_lock(state):
         old_bytes = registry.read_bytes() if registry.exists() else None
-        # Rows being replaced may point at a deleted root; only the resulting candidate set is validated.
-        existing, process = registry_state(registry)
-        additions = []
-        for index, item in enumerate(parsed):
-            assign_path(existing + parsed[:index], item)
-            old = next((row for row in existing if row["id"] == item["id"]), None)
-            additions.append(registry_record(item, old))
-            item.update(additions[-1])
-        replacement_ids = {item["id"] for item in additions}
-        candidate = [item for item in existing if item["id"] not in replacement_ids] + additions
-        validate_records(candidate, replacement_ids)
-        child: subprocess.Popen[str] | None = None
         try:
-            live = process and process_owns_registry(process["pid"], registry)
-            # A registry without bind is private. An explicit different visibility restarts the live server,
-            # planned first so a bad bind or proof host leaves it running.
-            bind, plan = (process or {}).get("bind") or LOOPBACK, None
-            if live and (args.public or args.private) and select_bind(args, None) != bind:
-                plan = start_plan(args, process)
-                if not plan[2]:
-                    # No recorded port this bind may take: pick one while the old service still runs.
-                    plan = (*plan[:2], select_port(bind_ports(plan[0]), plan[0]))
-                stop_process(process["pid"], registry)
-                live = False
-            if live:
-                url = process.get("url") or running_url(log_path)
-                process = {**process, "url": url}
-                write_registry(registry, candidate, process)
-                for item in parsed:
-                    prove_resource(url, item)
-                print_access(url, bind)
-                print_urls(url, additions, state)
-                return 0
-
-            bind, host, recorded_port = plan or start_plan(args, process)
-            port = select_start_port(bind, recorded_port)
-            write_registry(registry, candidate)
-            command = server_command(registry, bind, port, host)
-            with log_path.open("w", encoding="utf-8") as log:
-                child = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
-                                         start_new_session=True, text=True)
-            deadline = time.monotonic() + 8
-            pattern = re.compile(r"spec-chat review-serve on (https?://\S+)")
-            url = None
-            while time.monotonic() < deadline:
-                if child.poll() is not None:
-                    raise LauncherError("review server exited before printing its URL")
-                text = log_path.read_text(encoding="utf-8", errors="replace")
-                matches = pattern.findall(text)
-                if matches:
-                    url = matches[-1]
-                    break
-                time.sleep(0.05)
-            if not url:
-                raise LauncherError("review server did not print a URL")
-            for item in parsed:
-                prove_resource(url, item)
-            process = {"pid": child.pid, "port": urllib.parse.urlsplit(url).port or port, "bind": bind,
-                       "host": host, "url": url}
-            write_registry(registry, candidate, process)
-            print_access(url, bind)
-            print_urls(url, additions, state)
-            return 0
+            pending = register_locked(args, registry, log_path, parsed)
         except BaseException:
-            if child is not None and child.poll() is None:
-                with contextlib.suppress(OSError):
-                    os.kill(child.pid, signal.SIGTERM)
-                with contextlib.suppress(Exception):
-                    child.wait(timeout=3)
-            if old_bytes is None:
-                with contextlib.suppress(FileNotFoundError):
-                    registry.unlink()
-            else:
-                atomic_write(registry, old_bytes.decode("utf-8"))
+            restore_registry(registry, old_bytes)
             raise
+    if pending is None:
+        return 0
+    # The unit's service takes the state lock to record itself, so it starts outside the lock.
+    unit, old_pid, additions = pending
+    try:
+        if systemctl("restart", unit):
+            raise LauncherError(f"systemctl --user restart {unit} failed")
+        process = await_unit(registry, old_pid, unit)
+        listener = listener_url(process, log_path)
+        for item in parsed:
+            prove_resource(listener, item)
+    except BaseException:
+        with state_lock(state):
+            _, current = registry_state(registry)
+            rows = read_registry_document_bytes(old_bytes)
+            write_registry(registry, rows, current)
+        raise
+    print_access(process)
+    print_urls(process["url"], additions, state)
+    return 0
+
+
+def read_registry_document_bytes(data: bytes | None) -> list[dict[str, Any]]:
+    if data is None:
+        return []
+    try:
+        document = tomllib.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return []
+    return [dict(row) for row in document.get("resource", []) if isinstance(row, dict)]
+
+
+def restore_registry(registry: Path, old_bytes: bytes | None) -> None:
+    if old_bytes is None:
+        with contextlib.suppress(FileNotFoundError):
+            registry.unlink()
+    else:
+        atomic_write(registry, old_bytes.decode("utf-8"))
+
+
+def await_unit(registry: Path, old_pid: int, unit: str) -> dict[str, Any]:
+    """Wait until the unit's service has recorded itself and its listener accepts connections."""
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        _, process = registry_state(registry)
+        if process and process["pid"] != old_pid and process_owns_registry(process["pid"], registry):
+            with contextlib.suppress(OSError), socket.create_connection((process["host"], process["port"]), 1):
+                return process
+        time.sleep(0.1)
+    raise LauncherError(f"{unit} did not start; see journalctl --user -u {unit}")
+
+
+def register_locked(args: argparse.Namespace, registry: Path, log_path: Path,
+                    parsed: list[dict[str, Any]]) -> tuple[str, int, list[dict[str, Any]]] | None:
+    """Join, start an own child, or prepare a unit start; a unit start is returned to run outside the lock."""
+    state = registry.parent
+    # Rows being replaced may point at a deleted root; only the resulting candidate set is validated.
+    existing, process = registry_state(registry)
+    additions = []
+    for index, item in enumerate(parsed):
+        assign_path(existing + parsed[:index], item)
+        old = next((row for row in existing if row["id"] == item["id"]), None)
+        additions.append(registry_record(item, old))
+        item.update(additions[-1])
+    replacement_ids = {item["id"] for item in additions}
+    candidate = [item for item in existing if item["id"] not in replacement_ids] + additions
+    validate_records(candidate, replacement_ids)
+    setup = setup_fields(process, args)
+    unit = setup.get("unit")
+    child: subprocess.Popen[str] | None = None
+    try:
+        live = bool(process and process_owns_registry(process["pid"], registry))
+        # A registry without bind is private. An explicit change that moves the listener (visibility, or giving or
+        # clearing an HTTPS public base), or a newly given unit, restarts the live server, planned first so a bad
+        # bind or proof host leaves it running.
+        bind, plan = (process or {}).get("bind") or LOOPBACK, None
+        changed = args.public or args.private or args.public_base is not None
+        moving = live and ((changed and listen_bind(args, process) != bind) or (process or {}).get("unit") != unit)
+        if live and not moving:
+            assert process is not None
+            listener = listener_url(process, log_path)
+            kept = start_plan(args, process)[3] if changed else {k: process[k] for k in KEPT_FIELDS if k in process}
+            process = {key: process[key] for key in ("pid", "port", "bind", "host") if key in process}
+            process.update(setup, **kept, url=setup.get("public_base") or listener)
+            write_registry(registry, candidate, process)
+            for item in parsed:
+                prove_resource(listener, item)
+            print_access(process)
+            print_urls(process["url"], additions, state)
+            return None
+        if unit and systemctl("cat", unit):
+            if args.unit:
+                raise LauncherError(f"service unit not found: {unit}")
+            del setup["unit"]  # a recorded unit that no longer exists no longer runs the service
+            unit = None
+        if moving:
+            assert process is not None
+            plan = start_plan(args, process)
+            if not plan[2]:
+                # No recorded port this bind may take: pick one while the old service still runs.
+                plan = (*plan[:2], select_port(bind_ports(plan[0]), plan[0]), plan[3])
+            if not (unit and process.get("unit") == unit):
+                stop_live(process, registry)
+
+        bind, host, recorded_port, kept = plan or start_plan(args, process)
+        if unit:
+            old_pid = (process or {}).get("pid", 0)
+            write_registry(registry, candidate, {"pid": old_pid, "port": recorded_port or 0, "bind": bind,
+                                                 "host": host, **setup, **kept})
+            return unit, old_pid, additions
+        port = select_start_port(bind, recorded_port)
+        write_registry(registry, candidate)
+        command = server_command(registry, bind, port, host)
+        with log_path.open("w", encoding="utf-8") as log:
+            child = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
+                                     start_new_session=True, text=True)
+        deadline = time.monotonic() + 8
+        pattern = re.compile(r"spec-chat review-serve on (https?://\S+)")
+        listener = None
+        while time.monotonic() < deadline:
+            if child.poll() is not None:
+                raise LauncherError("review server exited before printing its URL")
+            text = log_path.read_text(encoding="utf-8", errors="replace")
+            matches = pattern.findall(text)
+            if matches:
+                listener = matches[-1]
+                break
+            time.sleep(0.05)
+        if not listener:
+            raise LauncherError("review server did not print a URL")
+        for item in parsed:
+            prove_resource(listener, item)
+        process = {"pid": child.pid, "port": urllib.parse.urlsplit(listener).port or port, "bind": bind,
+                   "host": host, **setup, **kept, "url": setup.get("public_base") or listener}
+        write_registry(registry, candidate, process)
+        print_access(process)
+        print_urls(process["url"], additions, state)
+        return None
+    except BaseException:
+        if child is not None and child.poll() is None:
+            with contextlib.suppress(OSError):
+                os.kill(child.pid, signal.SIGTERM)
+            with contextlib.suppress(Exception):
+                child.wait(timeout=3)
+        raise
+
+
+def serve(args: argparse.Namespace) -> int:
+    """The service manager's entry: start the server in the foreground on the recorded setup, recording itself."""
+    state = state_dir(args)
+    registry, _, _ = paths(state)
+    with state_lock(state):
+        rows, process = registry_state(registry)
+        recorded = process or {}
+        bind, host, recorded_port, kept = start_plan(
+            argparse.Namespace(public=None, private=False, proof_host=None, public_base=None, unit=None), process)
+        port = select_start_port(bind, recorded_port)
+        setup = {key: recorded[key] for key in SETUP_FIELDS if recorded.get(key)}
+        listener = f"http://{host}:{port}"
+        write_registry(registry, rows, {"pid": os.getpid(), "port": port, "bind": bind, "host": host, **setup, **kept,
+                                        "url": setup.get("public_base") or listener})
+    command = server_command(registry, bind, port, host)
+    sys.stdout.flush()
+    os.execv(command[0], command)
+    return 1
 
 
 def remove(args: argparse.Namespace) -> int:
@@ -873,7 +1037,7 @@ def stop(args: argparse.Namespace) -> int:
         _, process = registry_state(registry)
         if not process:
             raise LauncherError("registry has no running process")
-        stop_process(process["pid"], registry)
+        stop_live(process, registry)
         print("review host stopped")
         return 0
 
@@ -888,6 +1052,9 @@ def build_parser() -> argparse.ArgumentParser:
     visibility.add_argument("--public", metavar="HOST", help="listen on HOST instead of loopback; the page has no login")
     visibility.add_argument("--private", action="store_true", help="listen on loopback even if a public bind is recorded")
     sub.add_argument("--proof-host", help="public proof host when --public binds a wildcard address")
+    sub.add_argument("--public-base", metavar="URL",
+                     help="box setup: the address every review link starts with, e.g. an HTTPS front; '' clears it")
+    sub.add_argument("--unit", metavar="NAME", help="box setup: the systemd user unit that runs the service; '' clears it")
     sub.add_argument("--test", action="store_true", default=False,
                      help="register as a test slug; records go to a separate test store")
     sub = commands.add_parser("remove")
@@ -898,6 +1065,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_argument("--accepted", action="store_true", help="the review was Accept spec")
     sub.add_argument("--state-dir", required=False)
     sub = commands.add_parser("stop")
+    sub.add_argument("--state-dir", required=False)
+    sub = commands.add_parser("serve", help="run the service in the foreground on its recorded setup (its unit's entry)")
     sub.add_argument("--state-dir", required=False)
     return parser
 
@@ -911,6 +1080,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return remove(args)
         if args.command == "reviewed":
             return reviewed(args)
+        if args.command == "serve":
+            return serve(args)
         return stop(args)
     except LauncherError as exc:
         print(f"review-host: error: {exc}", file=sys.stderr)

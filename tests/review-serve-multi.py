@@ -630,6 +630,13 @@ class MultiReviewServeTest(unittest.TestCase):
                 self.assertGreaterEqual(contrast(text, ground), 4.5, (scheme, text, ground))
             for _, token in stripes:
                 self.assertGreaterEqual(contrast(token, "--ui-surface"), 3, (scheme, token))
+            # Every rule that sets both a background and a text token reads at 4.5:1 in this scheme.
+            for selector, body in re.findall(r"([^{}]*)\{([^}]*)\}", rules):
+                ground = re.search(r"background(?:-color)?\s*:\s*var\((--[\w-]+)\)", body)
+                text = re.search(r"(?<![\w-])color\s*:\s*var\((--[\w-]+)\)", body)
+                if ground and text:
+                    self.assertGreaterEqual(contrast(text.group(1), ground.group(1)), 4.5,
+                                            (scheme, selector.strip(), text.group(1), ground.group(1)))
         # Count pills sit on their status soft color (#index-threads-table).
         self.assertRegex(rules, r"\.tally\.open \{ background: var\(--ui-draft-soft\); color: var\(--ui-draft\); \}")
         self.assertRegex(rules, r"\.tally\.resolved \{ background: var\(--ui-resolved-soft\); color: var\(--ui-resolved\); \}")
@@ -829,12 +836,67 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertIs(module._review_status(mount), False)
         self.assertEqual(module._index_row(mount, path, True), (False, "ann192"))
 
+    def test_stale_rows_start_serve_valid_rows_and_report_untouched(self):
+        """ANN-795 review-service #acceptance-stale-start, #service-stale."""
+        import shutil
+
+        valid = self.make_resource("ann795")
+        removed = self.make_resource("ann796")
+        shutil.rmtree(removed["root"])
+        missing = self.make_resource("ann797") | {"spec": "docs/specs/gone.spec.html", "base": "not-a-ref"}
+        # Its directory and spec are intact, but Git no longer resolves it (its main clone is gone).
+        orphan = self.make_resource("ann799")
+        shutil.rmtree(Path(orphan["root"], ".git"))
+        self.write_registry([valid, removed, missing, orphan])
+        before = self.registry.read_bytes()
+        self.start([valid, removed, missing, orphan])
+        reports = [self.server.stderr.readline() for _ in range(3)]
+        self.assertEqual(reports, [
+            f"review-serve: warning: stale row {removed['id']}: worktree is unreachable\n",
+            f"review-serve: warning: stale row {missing['id']}: spec file is missing\n",
+            f"review-serve: warning: stale row {orphan['id']}: worktree is unreachable\n",
+        ])
+        status, body = self.request(self.stable(valid))
+        self.assertEqual(status, 200)
+        self.assertIn(b"current ann795", body)
+        self.assertEqual(self.request(self.stable(removed))[0], 404)
+        self.assertEqual(self.request(self.stable(missing))[0], 404)
+        self.assertEqual(self.request(self.stable(orphan))[0], 404)
+        self.assertEqual(self.registry.read_bytes(), before)
+
+    def test_index_marks_a_stale_row_with_its_path_and_no_link(self):
+        """ANN-795 lane-hosting #acceptance-index-stale, #index-entry-stale."""
+        import html as html_lib
+        import re
+        import shutil
+
+        kept = self.make_resource("ann798") | {"project": "sc"}
+        git(kept["root"], "checkout", "--", kept["spec"])
+        gone = self.make_resource("ann798b") | {"slug": "ann798", "project": "sc", "spec": "docs/specs/gone.spec.html"}
+        gone["path"] = "ann798/sc/" + gone["spec"]
+        Path(gone["root"], gone["spec"]).write_text("<title>Gone</title>\n")
+        shutil.rmtree(gone["root"])
+        self.start([kept, gone])
+        status, raw = self.request("/")
+        self.assertEqual(status, 200)
+        body = raw.decode()
+        items = re.findall(r"<li>(.*?)</li>", body, re.S)
+        self.assertEqual(len(items), 2)
+        stale = next(item for item in items if "gone.spec.html" in item)
+        self.assertNotIn("<a ", stale)
+        text = [p.strip() for p in html_lib.unescape(re.sub(r"<[^>]+>", "\n", stale)).splitlines() if p.strip()]
+        self.assertEqual(text, ["docs/specs/gone.spec.html", "Stale"])
+        other = next(item for item in items if item is not stale)
+        self.assertIn('<a href="/ann798/docs/specs/domains/x.spec.html">ann798</a>', other)
+        # A stale row counts toward no status: the lane reads as its other row alone.
+        self.assertIn('<span class="count">Up to date</span>', body)
+        self.assertRegex(body, r"\.pill\.stale \{[^}]*var\(--ui-")
+
     def test_invalid_registries_exit_before_binding_or_printing_url(self):
         first, second = (self.make_resource(name) for name in ("first", "second"))
         invalid = [
             [first, second | {"id": first["id"]}],
             [first, first | {"id": "spec:other::" + first["spec"]}],
-            [first | {"spec": "docs/missing.spec.html"}],
             [first | {"base": "not-a-ref"}],
             [first | {"base": ""}],
             [first | {"owner": ""}],

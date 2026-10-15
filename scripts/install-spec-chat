@@ -27,6 +27,7 @@ SKILL_DIRS = (".claude/skills", ".codex/skills")
 ASSETS = {".viz": ROOT / "skill/review-spec/assets/viz", ".style": ROOT / "skill/shape-spec/assets/style"}
 DOC = (ROOT / "README.md").as_uri() + "#install-and-onboarding"
 ONBOARDING_OWNER = "install-spec-chat"
+UNIT = "spec-chat-review.service"
 
 
 class InstallError(Exception):
@@ -57,7 +58,7 @@ def read_toml(path: Path) -> dict:
         return {}
 
 
-KEYS = ("links", "copies", "resources")
+KEYS = ("links", "copies", "resources", "units")
 
 
 def recorded(state: Path) -> tuple[dict, dict[str, list[str]]]:
@@ -157,6 +158,43 @@ def git(cwd: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
+def unit_path() -> Path:
+    return Path(os.environ.get("XDG_CONFIG_HOME") or "~/.config").expanduser() / "systemd/user" / UNIT
+
+
+def quote(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def unit_text(state: Path) -> str:
+    """A box user service running this clone's review host: up at boot without login, again after it dies."""
+    command = [str(Path(sys.executable).resolve()), str(HOST), "serve", "--state-dir", str(state / "hosting/default")]
+    env = {"HOME": str(Path.home()), "PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+    env.update({k: v for k, v in os.environ.items() if k.startswith("SPEC_CHAT_") and v})
+    return ("[Unit]\nDescription=Spec Chat review service (install-spec-chat)\n\n[Service]\nType=simple\n"
+            f"WorkingDirectory={ROOT}\n"
+            f"Environment={' '.join(quote(f'{k}={v}') for k, v in env.items())}\n"
+            f"ExecStart={' '.join(quote(part) for part in command)}\n"
+            "Restart=always\nRestartSec=2\n\n[Install]\nWantedBy=default.target\n")
+
+
+def run(*command: str) -> None:
+    if subprocess.run(command, stdout=subprocess.DEVNULL).returncode:
+        raise InstallError(f"{' '.join(command)} failed")
+
+
+def install_service(state: Path, units: list[str]) -> None:
+    """Box setup: install and enable the review service's user unit; review-host starts it through the unit."""
+    path = unit_path()
+    write_if_changed(path, unit_text(state))
+    if str(path) not in units:
+        units.append(str(path))
+    run("systemctl", "--user", "daemon-reload")
+    # Linger is box-wide and shared with other user services, so undo leaves it on.
+    run("loginctl", "enable-linger", os.environ.get("USER") or Path.home().name)
+    run("systemctl", "--user", "enable", UNIT)
+
+
 def review_first_spec(spec: Path, state: Path, visibility: list[str]) -> str:
     """Register the first spec with the box's review service; return its row id."""
     spec = spec.resolve()
@@ -188,8 +226,12 @@ def install(args: argparse.Namespace, prefix: Path, state: Path) -> None:
             copy_assets(Path(args.specs).expanduser().resolve(), manifest["copies"])
         visibility = (["--public", args.public] if args.public else ["--private"] if args.private else [])
         visibility += ["--proof-host", args.proof_host] if args.proof_host else []
+        visibility += ["--public-base", args.public_base] if args.public_base is not None else []
+        visibility += ["--unit", UNIT] if args.service else []
         if visibility and not args.review:
-            raise InstallError("--public, --private, and --proof-host need --review <spec>")
+            raise InstallError("--public, --private, --proof-host, --public-base, and --service need --review <spec>")
+        if args.service:
+            install_service(state, manifest["units"])
         if args.review and (not done or visibility):
             rid = review_first_spec(Path(args.review).expanduser(), state, visibility)
             if rid not in manifest["resources"]:
@@ -256,6 +298,12 @@ def undo(state: Path) -> None:
     for rid in manifest["resources"]:
         subprocess.run([sys.executable, str(HOST), "remove", "--id", rid], stdout=subprocess.DEVNULL)
     _stop_review_server(state)
+    for item in manifest["units"]:
+        path = Path(item)
+        subprocess.run(["systemctl", "--user", "disable", "--now", path.name], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL)
+        path.unlink(missing_ok=True)
+        subprocess.run(["systemctl", "--user", "daemon-reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for path in (state / "onboarding.toml", state / "install.toml"):
         path.unlink(missing_ok=True)
     print("spec-chat install undone")
@@ -270,6 +318,10 @@ def main(argv: list[str] | None = None) -> int:
     visibility.add_argument("--public", metavar="HOST", help="box setup: serve review publicly on HOST (no login)")
     visibility.add_argument("--private", action="store_true", help="box setup: return review to loopback")
     parser.add_argument("--proof-host", help="box setup: public proof host for a wildcard bind")
+    parser.add_argument("--public-base", metavar="URL",
+                        help="box setup: address every review link starts with, e.g. https://spec.<a-b-c-d>.sslip.io")
+    parser.add_argument("--service", action="store_true",
+                        help="box setup: run the review service as a box user service (systemd --user, linger)")
     parser.add_argument("--undo", action="store_true", help="remove only what earlier runs added")
     args = parser.parse_args(argv)
     prefix, state = Path(args.prefix).expanduser().resolve(), state_root()
