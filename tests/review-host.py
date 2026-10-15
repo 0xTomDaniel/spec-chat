@@ -81,6 +81,11 @@ class ReviewHostTest(unittest.TestCase):
             ["git", "-C", str(self.repo), "rev-parse", "HEAD"], text=True
         ).strip()
         self.states = []
+        # Every test runs in the default Herdr session of its own state home; a test names any other session itself.
+        environ = mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(self.work / "xdg")})
+        environ.start()
+        self.addCleanup(environ.stop)
+        os.environ.pop("HERDR_SESSION", None)
 
     def tearDown(self):
         for state in self.states:
@@ -532,6 +537,15 @@ finish_event = ""
         with mock.patch.dict(os.environ, {"XDG_STATE_HOME": "", "HOME": str(self.work)}):
             self.assertEqual(review_host.state_dir(args), (self.work / ".local/state/spec-chat/hosting/default").resolve())
 
+    def test_session_key_is_herdr_session_else_default(self):
+        """review-service #service-session, #service-location: ${HERDR_SESSION:-default} names the service state."""
+        args = review_host.build_parser().parse_args(["stop"])
+        hosting = self.work / "xdg/spec-chat/hosting"
+        for value, key in (("", "default"), ("alpha", "alpha")):
+            with mock.patch.dict(os.environ, {"HERDR_SESSION": value}):
+                self.assertEqual(review_host.state_dir(args), (hosting / key).resolve())
+        self.assertEqual(review_host.state_dir(args), (hosting / "default").resolve())
+
     def test_running_url_never_guesses_without_log(self):
         with self.assertRaises(review_host.LauncherError):
             review_host.running_url(self.work / "missing.log")
@@ -771,6 +785,101 @@ cursor_name = ".cursor-test"
         self.assertEqual({row["slug"] for row in document["resource"]}, {"lane-one", "lane-two"})
         self.assertEqual(request(self.url(second) + "/lane-two/docs/specs/second.spec.html"),
                          (200, self.second_spec.read_bytes()))
+
+    def session_env(self, session=None):
+        """A lane's environment in a Herdr session, and that session's service state; None is the default session,
+        whose panes export no key."""
+        env, default = self.lane_env()
+        state = default.parent / (session or "default")
+        if state not in self.states:
+            self.states.append(state)
+        return ({**env, "HERDR_SESSION": session} if session else env), state
+
+    def test_named_session_registers_on_its_own_service(self):
+        """review-service #acceptance-session-own, #proof-session-first-test."""
+        default_env, default = self.session_env()
+        first = self.run_lane("--slug", "lane-one", "--owner", "p1", str(self.spec), env=default_env)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        before = self.registry(default)
+        alpha_env, alpha = self.session_env("alpha")
+        joined = self.run_lane("--slug", "lane-two", "--owner", "p1", str(self.second_spec), env=alpha_env)
+        self.assertEqual(joined.returncode, 0, joined.stderr)
+        self.assertEqual([row["slug"] for row in self.registry(alpha)["resource"]], ["lane-two"])
+        self.assertEqual(self.registry(alpha)["process"]["url"], self.url(joined))
+        self.assertNotEqual(self.url(joined), self.url(first))
+        self.assertEqual(self.registry(default), before)
+        self.assertEqual(request(self.url(first) + "/lane-one/docs/specs/review.spec.html"), (200, self.spec.read_bytes()))
+        self.assertEqual(request(self.url(joined) + "/lane-two/docs/specs/second.spec.html"),
+                         (200, self.second_spec.read_bytes()))
+
+    def test_default_session_joins_the_running_service_at_hosting_default(self):
+        """review-service #acceptance-session-default: the default key is hosting/default, even when the box links it
+        elsewhere, and an empty session key is the default session."""
+        env, default = self.session_env()
+        linked = self.work / "linked-state"
+        linked.mkdir()
+        default.parent.mkdir(parents=True)
+        default.symlink_to(linked)
+        first = self.run_lane("--slug", "lane-one", "--owner", "p1", str(self.spec), env=env)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        process = self.registry(linked)["process"]
+        second = self.run_lane("--slug", "lane-two", "--owner", "p2", str(self.second_spec),
+                               env={**env, "HERDR_SESSION": ""})
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(self.url(second), self.url(first))
+        self.assertEqual(self.registry(linked)["process"], process)
+        self.assertEqual([row["slug"] for row in self.registry(linked)["resource"]], ["lane-one", "lane-two"])
+        self.assertEqual(request(self.url(first) + "/lane-one/docs/specs/review.spec.html"), (200, self.spec.read_bytes()))
+
+    def test_named_session_reads_the_box_wake_provider(self):
+        """review-service #acceptance-session-providers: providers plug in once, in the default session's state."""
+        env, alpha = self.session_env("alpha")
+        waker = FakeWaker(self.work, alpha.parent / "default")
+        waker.agent("p1")
+        result = self.run_lane("--slug", "lane", "--owner", "p1", str(self.spec), env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.wake_lines(result), ["wake=verified owner=p1"])
+        self.assertEqual([row["owner"] for row in self.registry(alpha)["resource"]], ["p1"])
+        self.assertFalse((alpha / "providers").exists())
+
+    def test_wake_reaches_only_the_owner_pane_of_the_specs_session(self):
+        """review-service #acceptance-session-wake, #service-session-ids: each service checks and sends in its own
+        session, so equal pane ids in two sessions never cross."""
+        alpha_env, alpha = self.session_env("alpha")
+        beta_env, beta = self.session_env("beta")
+        waker = FakeWaker(self.work, alpha.parent / "default")
+        waker.agent("p1")
+        for env, spec in ((alpha_env, self.spec), (beta_env, self.second_spec)):
+            result = self.run_lane("--slug", "lane", "--owner", "p1", str(spec), env=env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(self.wake_lines(result), ["wake=verified owner=p1"])
+        # A hand-off on the spec of the session that started second: a service shared by both would wake from the first.
+        human = Path(str(self.second_spec) + ".review/human")
+        human.mkdir(parents=True)
+        (human / "100-handoff-a.json").write_text('{"event":"handoff","id":"h1"}')
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and not waker.says():
+            time.sleep(0.2)
+        time.sleep(3.5)  # past one more wake poll of both services
+        self.assertEqual([said[:2] for said in waker.says()], [["p1", str(self.second_spec)]])
+        self.assertEqual(waker.sessions(), ["beta"])
+
+    def test_teardown_in_one_session_keeps_the_other_sessions_row(self):
+        """review-service #acceptance-session-remove: remove acts on its caller's session's service alone."""
+        alpha_env, alpha = self.session_env("alpha")
+        beta_env, beta = self.session_env("beta")
+        for env in (alpha_env, beta_env):
+            result = self.run_lane("--slug", "lane", "--owner", "p1", str(self.spec), env=env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        rid = self.registry(alpha)["resource"][0]["id"]
+        kept = self.registry(beta)
+        self.assertEqual([row["id"] for row in kept["resource"]], [rid])
+        removed = self.run_cli("remove", "--id", rid, state=alpha, env=alpha_env)
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        self.assertEqual(self.registry(alpha).get("resource", []), [])
+        self.assertEqual(self.registry(beta), kept)
+        page = kept["process"]["url"] + "/lane/docs/specs/review.spec.html"
+        self.assertEqual(request(page), (200, self.spec.read_bytes()))
 
     def test_dead_service_restarts_on_its_recorded_port_else_another(self):
         """review-service acceptance-restart, acceptance-restart-port-taken."""

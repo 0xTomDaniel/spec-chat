@@ -31,6 +31,7 @@ FAKE_CHECK = """#!/bin/sh
 """
 FAKE_SEND = """#!/bin/sh
 { for arg in "$@"; do printf '%s\\037' "$arg"; done; printf '\\n'; } >> "$0.d/send.log"
+printf '%s\\n' "${HERDR_SESSION:-default}" >> "$0.d/session.log"
 [ -f "$0.d/send.sleep" ] && sleep "$(cat "$0.d/send.sleep")"
 exit "$(cat "$0.d/send.rc" 2>/dev/null || echo 0)"
 """
@@ -75,6 +76,11 @@ class FakeWaker:
 
     def send_sleep(self, seconds):
         (self.data / "send.sleep").write_text(str(seconds))
+
+    def sessions(self):
+        """The session each send ran in: a pane id names a pane of that session alone."""
+        log = self.data / "session.log"
+        return log.read_text().splitlines() if log.exists() else []
 
     def says(self):
         log = self.data / "send.log"
@@ -365,14 +371,15 @@ class WakeControllerTest(unittest.TestCase):
             self.assertNotRegex(text, r"\bmonitor\b", str(path))  # the word, not monitoring or monitored
 
     def test_no_pane_tool_is_named(self):
-        """review-service #acceptance-wake-only."""
+        """review-service #acceptance-wake-only: Herdr appears only as the session that scopes the service, by name and
+        by its HERDR_SESSION key; no pane tool command, always lowercase (herdr, herdr-...), is named."""
         roots = [ROOT / "skill", ROOT / "DESIGN.md", ROOT / "README.md"]
         roots += [path for path in (ROOT / "docs/specs").glob("*.spec.html")]
         for root in roots:
             for path in ([root] if root.is_file() else root.rglob("*")):
                 if path.is_file() and "vendor" not in path.parts:
-                    text = path.read_text(encoding="utf-8", errors="replace").lower()
-                    self.assertNotIn("herdr", text, str(path))
+                    text = path.read_text(encoding="utf-8", errors="replace")
+                    self.assertNotRegex(text, r"herdr|HERDR(?!_SESSION\b)", str(path))
 
 
 class RegistryReloadTest(unittest.TestCase):
@@ -427,7 +434,8 @@ class WakeHeaderHttpTest(unittest.TestCase):
             with socket.socket() as sock:
                 sock.bind(("127.0.0.1", 0))
                 port = sock.getsockname()[1]
-            env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+            env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", XDG_STATE_HOME=str(work / "xdg"))
+            env.pop("HERDR_SESSION", None)
             process = subprocess.Popen(
                 (sys.executable, str(SERVER_PATH), "--registry", str(registry), "--bind", "127.0.0.1", "--port", str(port)),
                 env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,

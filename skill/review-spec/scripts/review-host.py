@@ -729,10 +729,10 @@ def server_command(registry: Path, bind: str, port: int, host: str) -> list[str]
 
 
 def state_dir(args: argparse.Namespace) -> Path:
+    """--state-dir, else the caller's session's service state (review-service #service-location)."""
     if args.state_dir:
         return Path(args.state_dir).expanduser().resolve()
-    base = Path(os.environ.get("XDG_STATE_HOME") or "~/.local/state").expanduser()
-    return (base / "spec-chat" / "hosting" / "default").resolve()
+    return _serve_module.session_state()
 
 
 def paths(state: Path) -> tuple[Path, Path, Path]:
@@ -766,14 +766,10 @@ def running_url(log_path: Path) -> str:
 
 
 def wake_status(owner: str, state: Path) -> str:
-    """Report whether the registered wake provider's check resolves the owner; never prompts it
-    (review-service #providers). No valid providers/wake.toml means unavailable."""
-    try:
-        provider = tomllib.loads((state / "providers" / "wake.toml").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return "unavailable"
-    commands = [provider.get(key) for key in ("check", "send")]
-    if not all(isinstance(argv, list) and argv and all(isinstance(arg, str) for arg in argv) for argv in commands):
+    """Report whether the box's wake provider's check resolves the owner in the caller's session, which is the
+    service's; never prompts it (review-service #providers). No valid providers/wake.toml means unavailable."""
+    commands = _serve_module.wake_provider(_serve_module.providers_state(str(state)))
+    if commands is None:
         return "unavailable"
     argv = [arg.replace("{owner}", owner).replace("{artifact}", "").replace("{message}", "") for arg in commands[0]]
     try:
