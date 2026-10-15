@@ -88,7 +88,8 @@ try {
   const nameA = stored.body.author;
   assert.match(stored.name, /^\d{19}-comment-[A-Za-z0-9]+\.json$/, 'the page names the file');
   assert.ok(nameA && stored.body.browser, 'a human event carries browser and author');
-  assert.equal(stored.body.version, createHash('sha256').update(readFileSync(join(specs, 'report.spec.html'))).digest('hex'), 'version is the shown spec hash');
+  const shown = Buffer.from(await (await fetch(URL)).arrayBuffer()); // the served body (lane-hosting #index-http-caching)
+  assert.equal(stored.body.version, createHash('sha256').update(shown).digest('hex'), 'version is the shown spec hash');
   assert.deepEqual(byText(await threadsOf(b.page), 'first from A').map(t => t.messages[0].who), [nameA], "B's page shows A's fruit name");
 
   // #acceptance-name: no prompt; after reload, A's next message shows the same fruit.

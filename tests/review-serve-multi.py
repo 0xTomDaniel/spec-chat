@@ -245,8 +245,9 @@ class MultiReviewServeTest(unittest.TestCase):
 
     def test_spec_page_is_served_with_missing_share_meta_added(self):
         # sc#120, prompt-first-shaping #public-review-anywhere: some reviewers' clients read description and og:* meta
-        # and throw when absent. Only missing ones are added, and only to the response: the file, its stored
-        # version, and its ETag keep the file's bytes.
+        # and throw when absent. Only missing ones are added, and only to the response: the file keeps its bytes,
+        # and the ETag and stored version name the served body (lane-hosting #index-http-caching, review-state
+        # #model-versions).
         resource = self.make_resource("share")
         self.start([resource])
         source = Path(resource["root"]) / resource["spec"]
@@ -270,8 +271,8 @@ class MultiReviewServeTest(unittest.TestCase):
                 etag = response.headers["ETag"].strip('"')
                 body = response.read()
             self.assertEqual(body, text.replace(b"</head>", "".join(m + "\n" for m in added).encode() + b"</head>"), own)
-            self.assertEqual(etag, hashlib.sha256(text).hexdigest())
-            self.assertEqual((versions / (etag + ".html")).read_bytes(), text)
+            self.assertEqual(etag, hashlib.sha256(body).hexdigest())
+            self.assertEqual((versions / (etag + ".html")).read_bytes(), body)
             self.assertEqual(source.read_bytes(), text)
 
     def test_pages_revalidate_by_etag_and_vendor_assets_are_immutable(self):

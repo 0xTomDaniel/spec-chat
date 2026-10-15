@@ -392,8 +392,8 @@ SHARE_META = (("name", "description"), ("property", "og:type"), ("property", "og
 
 def _share_meta(body, path):
     """The served page with any missing description and Open Graph meta added: some reviewers' clients read them and
-    throw when absent (prompt-first-shaping #public-review-anywhere). Only the response gains them; the file, its
-    stored version, and its ETag keep the file's bytes."""
+    throw when absent (prompt-first-shaping #public-review-anywhere). The file is untouched; the stored version and
+    the ETag name this served body (lane-hosting #index-http-caching, review-state #model-versions)."""
     end = HEAD_END_RE.search(body)
     if not end:
         return body
@@ -843,12 +843,11 @@ class MountHandler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", cache_control)
         super().end_headers()
 
-    def _send_body(self, body, content_type, *, immutable=False, headers=None, text=None):
-        """`text`: the spec text the ETag names when the body adds to it (review-state #model-fields)."""
+    def _send_body(self, body, content_type, *, immutable=False, headers=None):
         if immutable:
             validator, cache_control = {}, "public, max-age=31536000, immutable"
         else:
-            etag = '"%s"' % hashlib.sha256(body if text is None else text).hexdigest()
+            etag = '"%s"' % hashlib.sha256(body).hexdigest()
             validator, cache_control = {"ETag": etag}, "no-cache"
             tags = [tag.strip() for tag in self.headers.get("If-None-Match", "").split(",")]
             if etag in tags or "W/" + etag in tags or "*" in tags:
@@ -1302,15 +1301,14 @@ listenHost();
         except OSError:
             self.send_error(404)
             return
-        text = None
         if relative.endswith(".spec.html"):
+            body = _share_meta(body, target)
             try:
                 _store_version(target + ".review", mount["narrow_root"], body)
             except OSError as exc:
                 print("review-serve: version not stored for %s: %s" % (relative, exc), file=sys.stderr, flush=True)
-            text, body = body, _share_meta(body, target)
         self._send_body(
-            body, mimetypes.guess_type(target)[0] or "application/octet-stream", immutable=vendor, text=text,
+            body, mimetypes.guess_type(target)[0] or "application/octet-stream", immutable=vendor,
             headers={"Last-Modified": self.date_time_string(int(os.stat(target).st_mtime))},
         )
 
