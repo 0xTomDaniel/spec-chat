@@ -125,7 +125,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("review_url", help="the review link, with its base")
     parser.add_argument("--anchor", help="print full detail for this anchor only")
     parser.add_argument("--wait", type=float, default=0, metavar="SECONDS",
-                        help="wait at most this long in all, the first read included; re-read every 2s until nothing is pending")
+                        help="re-read every 2s until nothing is pending, for at most this long, the first read included; "
+                             "a read already sent may finish up to 60s past it")
     answer = parser.add_mutually_exclusive_group()
     answer.add_argument("--resolve", nargs=2, metavar=("RECORD", "RESOLUTION"),
                         help="record an Important mark's resolution: fixed, reason, or dismissed (the server checks it)")
@@ -160,7 +161,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         url = jev_url(args.review_url)
         deadline = time.monotonic() + args.wait
-        # The first read may answer slowly (the LLM answers in the request): --wait covers it too.
+        # The first read may answer slowly, building the page's questions: --wait covers it too. A read gets at least
+        # 60s, so one sent near the end of the wait still answers.
         result = fetch(url, timeout=max(60.0, args.wait))
         while pending(result) and time.monotonic() < deadline:
             time.sleep(min(2.0, max(0.0, deadline - time.monotonic())))

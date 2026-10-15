@@ -10,6 +10,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 
@@ -143,18 +144,13 @@ class JevReadTest(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("jev_read", SCRIPT)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        opened, real = [], module.urllib.request.urlopen
-
-        def urlopen(request, timeout):
-            opened.append(timeout)
-            return real(request, timeout=timeout)
-
-        module.urllib.request.urlopen = urlopen
         pending = {"jev": "on", "items": [{"kind": "rule", "id": "acceptance", "state": "pending", "target": RULE}], "rules": []}
         server = self.serve(pending, ON)
-        with contextlib.redirect_stdout(io.StringIO()):
+        request = module.urllib.request
+        with patch.object(request, "urlopen", wraps=request.urlopen) as urlopen, contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(module.main([server.url + "/specs/b.spec.html?base=abc", "--wait", "300"]), 0)
             self.assertEqual(module.main([server.url + "/specs/b.spec.html?base=abc"]), 0)
+        opened = [call.kwargs["timeout"] for call in urlopen.call_args_list]
         self.assertEqual(opened[0], 300)
         self.assertGreater(opened[1], 290)  # a re-read keeps what is left of the wait
         self.assertEqual(opened[2:], [60.0])  # no wait: the default first-read timeout
