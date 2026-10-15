@@ -243,6 +243,38 @@ class MultiReviewServeTest(unittest.TestCase):
         events = json.loads(self.request(self.api(resource))[1])
         self.assertEqual(events, [])
 
+    def test_spec_page_is_served_with_missing_share_meta_added(self):
+        # review-service #acceptance-share-meta, #published-spec-page; prompt-first-shaping #public-review-anywhere:
+        # some reviewers' clients read description and og:* meta and throw when absent. Only missing ones are added,
+        # and only to the response: the file keeps its bytes, and the ETag and stored version name the served body
+        # (lane-hosting #index-http-caching, review-state #model-versions).
+        resource = self.make_resource("share")
+        self.start([resource])
+        source = Path(resource["root"]) / resource["spec"]
+        versions = Path(str(source) + ".review") / "versions"
+        head = '<!doctype html><html><head><meta charset="utf-8"><title>Rules &amp; "risk"</title>%s</head><body>x</body></html>'
+        cases = (
+            ("", ['<meta name="description" content="Rules &amp; &quot;risk&quot;">',
+                  '<meta property="og:type" content="article">',
+                  '<meta property="og:title" content="Rules &amp; &quot;risk&quot;">',
+                  '<meta property="og:description" content="Rules &amp; &quot;risk&quot;">']),
+            ('<meta property="og:type" content="website"><META NAME="Description" content="own">',
+             ['<meta property="og:title" content="Rules &amp; &quot;risk&quot;">',
+              '<meta property="og:description" content="Rules &amp; &quot;risk&quot;">']),
+            ('<meta name="description" content="d"><meta property="og:type" content="article">'
+             '<meta property="og:title" content="t"><meta property="og:description" content="d">', []),
+        )
+        for own, added in cases:
+            text = (head % own).encode()
+            source.write_bytes(text)
+            with urllib.request.urlopen(self.url + self.stable(resource), timeout=2) as response:
+                etag = response.headers["ETag"].strip('"')
+                body = response.read()
+            self.assertEqual(body, text.replace(b"</head>", "".join(m + "\n" for m in added).encode() + b"</head>"), own)
+            self.assertEqual(etag, hashlib.sha256(body).hexdigest())
+            self.assertEqual((versions / (etag + ".html")).read_bytes(), body)
+            self.assertEqual(source.read_bytes(), text)
+
     def test_pages_revalidate_by_etag_and_vendor_assets_are_immutable(self):
         resource = self.make_resource("cache")
         self.start([resource])

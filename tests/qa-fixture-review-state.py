@@ -197,7 +197,9 @@ class ReviewStateCollections(unittest.TestCase):
         base = self.serve()
         with urllib.request.urlopen(base + "/stale-page/docs/specs/report.spec.html") as response:
             etag = response.headers["ETag"].strip('"')
-        self.assertEqual(etag, hashlib.sha256(HEAD.encode("utf-8")).hexdigest())
+            shown = response.read()
+        self.assertIn(b'<h1 data-anchor="title">Weekly report</h1>', shown)  # the head spec text
+        self.assertEqual(etag, hashlib.sha256(shown).hexdigest())  # of the served body (lane-hosting #index-http-caching)
         body = {"id": "qa-stale", "event": "comment", "actor": "human", "createdAt": "2026-10-01T00:00:00Z",
                 "schemaVersion": 1, "browser": "qa-capture", "author": "Lychee", "version": etag,
                 "anchorId": "report-export", "target": {"type": "text", "key": spools.KEY},

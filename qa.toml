@@ -202,6 +202,8 @@ cannot_host = "capture has one browser context; the Then needs both reviewers' p
 cannot_host = "capture has one browser context; the Given needs two live browsers each holding a draft, and a seeded draft cannot carry the capture browser's own id; proven by tests/runtime-review-live.mjs"
 [entry.criteria.acceptance-handoff-own-other]
 cannot_host = "capture has one browser context; the Given needs two live browsers each holding a draft, and a seeded draft cannot carry the capture browser's own id; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-store-flow]
+cannot_host = "capture has one browser context and creates no load on the shared box (no synthetic load), so no other reviewers' pages read Jev marks and no answers are recorded while the page opens, and no store many times the server's memory is written; proven by tests/jev-record-store.py (StoreMemoryTest, StoreLockTest) and tests/review-serve-jev.py test_overlapping_reads_of_one_page_keep_the_asks_both_want"
 # Capture runs story-review-index at desktop viewport; criteria cannot set a viewport.
 [entry.criteria.acceptance-index-link-panel]
 cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone-width open panel state cannot be reached; proven by tests/runtime-mobile-contract.mjs"

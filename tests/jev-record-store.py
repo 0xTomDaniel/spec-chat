@@ -1,4 +1,5 @@
 """Record store files, held set, and lock (jev-suggestions #record-store, #record-held, #record-lock, #proof-store, #record-immutable)."""
+import gc
 import hashlib
 import importlib.util
 import json
@@ -9,6 +10,7 @@ import sys
 import tempfile
 import threading
 import time
+import tracemalloc
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -96,6 +98,72 @@ class StoreMemoryTest(unittest.TestCase):
         print("store memory: 10k records %s; %d records %s" % (small_run, large, large_run), file=sys.stderr)
         self.assertLess(large_run["rss_kb"] - small_run["rss_kb"], 16 * 1024, "peak memory grew with the store")
         self.assertLess(large_run["p99_ms"], 50, "a missed lookup read more than its key's file")
+
+
+def spec_page(words, n=12):
+    """A spec with n stories, n criteria, and n rule clauses: its coverage and corpus questions run to megabytes."""
+    return "".join(
+        f'<p data-user-story data-anchor="story-{i}">As a reader of {words} {i}, I want item {i} kept.</p>'
+        f'<p data-acceptance-criterion data-anchor="acceptance-{i}" data-story="story-{i}">Given {words} {i}, '
+        f'When it is read, Then item {i} shows.</p>'
+        f'<section data-anchor="part-{i}"><p data-anchor="rule-{i}">The service {words} rule {i} holds.</p></section>'
+        for i in range(n))
+
+
+class ReadMemoryTest(unittest.TestCase):
+    """#acceptance-store-memory (sc#157): Jev reads of specs being edited keep the service's memory under a fixed
+    ceiling. Kept builder results are bounded by bytes, not count, and an ask's per-key lock goes when it is done.
+
+    No growth with the number of reads, as a ratio, not a byte count: twice as many later reads grow memory less
+    than the first reads did. A ceiling the first reads fill passes it with room for allocator and interpreter
+    noise; growth per read fails it once each read adds a quarter of that ceiling."""
+
+    def test_memory_does_not_grow_with_reads_of_edited_specs(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)  # last: after the service stops
+        root = Path(tmp.name) / "repo"
+        specs = root / "docs" / "specs"
+        specs.mkdir(parents=True)
+        for name in ("a", "b"):
+            (specs / f"{name}.spec.html").write_text(spec_page("review events " + name))
+        run = lambda *args: subprocess.run(("git", "-C", str(root), *args), check=True, capture_output=True)
+        run("init", "-q")
+        run("add", "-A")
+        run("-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "base")
+        run("update-ref", "refs/remotes/origin/main", "HEAD")
+        rows = [{"slug": "a", "root": str(root), "spec": f"docs/specs/{name}.spec.html", "project": "p",
+                 "spec_file": str(specs / f"{name}.spec.html")} for name in ("a", "b")]
+
+        class Provider:
+            def decide(self, payload):
+                return {"answers": {next(iter(payload["questions"])): {"choice": "no", "confidence": 0.9}}}
+
+        service = jev.JevService(state_dir=Path(tmp.name) / "state", provider=Provider(), api_key="fake")
+        self.addCleanup(service.stop)
+        limit = 1 << 20
+        service.__dict__["_kept_results"] = jev._Kept(limit)
+        service.seam.store.limit = 200  # held records have their own fixed bound (#record-held)
+
+        def read(n):
+            for row in rows:
+                page = Path(row["spec_file"])
+                page.write_text(spec_page("review events %s edit %d" % (row["spec"], n)))  # every clause changed
+                service.response(row, str(page), row["spec"], "HEAD", [], "", rows)
+            deadline = time.monotonic() + 30
+            while service._asking and time.monotonic() < deadline:
+                time.sleep(0.01)
+            gc.collect()  # garbage awaiting the cycle collector is no memory the service keeps
+            return tracemalloc.get_traced_memory()[0]
+
+        tracemalloc.start()  # counts only what is allocated from here on and still held
+        self.addCleanup(tracemalloc.stop)
+        first = [read(n) for n in range(4)][-1]
+        later = [read(n) for n in range(4, 12)][-1] - first
+        print("read memory: the first 4 reads grew %d KB, the next 8 grew %d KB; %d key locks left"
+              % (first >> 10, later >> 10, len(service.seam._key_locks)), file=sys.stderr)
+        self.assertLess(later, first, "memory grew with reads")
+        self.assertLessEqual(service._kept.used, limit)
+        self.assertEqual(len(service.seam._key_locks), 0, "a lock kept per asked key")
 
 
 class StoreLockTest(unittest.TestCase):

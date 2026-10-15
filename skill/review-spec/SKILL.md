@@ -137,7 +137,7 @@ Before handing off the review, verify the served source and comparison:
 python3 scripts/verify-review.py <repository> <spec-html> '<review-url>' <exact-review-base>
 ```
 
-The read-only check compares page bytes and baseline HTML with local files and Git, and fails on a substituted baseline or wrong served page. It does not require both changed and unchanged blocks. Reuse a verified host while its collection and owner remain unchanged; rerun the byte check after source or baseline changes.
+The read-only check compares served page bytes with the local file plus the meta the service adds, and baseline HTML with local files and Git, and fails on a substituted baseline or wrong served page. It does not require both changed and unchanged blocks. Reuse a verified host while its collection and owner remain unchanged; rerun the byte check after source or baseline changes.
 
 The review server reads only local Git. It never fetches, checks out, stages, commits, or writes repository state. If no baseline is available, the browser shows a visible warning and the complete current spec without stale focus.
 

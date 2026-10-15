@@ -125,7 +125,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("review_url", help="the review link, with its base")
     parser.add_argument("--anchor", help="print full detail for this anchor only")
     parser.add_argument("--wait", type=float, default=0, metavar="SECONDS",
-                        help="re-read every 2s until nothing is pending, at most this long")
+                        help="re-read every 2s until nothing is pending, for at most this long, the first read included; "
+                             "a read already sent may finish up to 60s past it")
     answer = parser.add_mutually_exclusive_group()
     answer.add_argument("--resolve", nargs=2, metavar=("RECORD", "RESOLUTION"),
                         help="record an Important mark's resolution: fixed, reason, or dismissed (the server checks it)")
@@ -159,11 +160,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     try:
         url = jev_url(args.review_url)
-        result = fetch(url)
         deadline = time.monotonic() + args.wait
+        # The first read may answer slowly, building the page's questions: --wait covers it too. A read gets at least
+        # 60s, so one sent near the end of the wait still answers.
+        result = fetch(url, timeout=max(60.0, args.wait))
         while pending(result) and time.monotonic() < deadline:
             time.sleep(min(2.0, max(0.0, deadline - time.monotonic())))
-            result = fetch(url)
+            result = fetch(url, timeout=max(60.0, deadline - time.monotonic()))
     except (ValueError, OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
         print(f"jev-read: {exc}", file=sys.stderr)
         return 1

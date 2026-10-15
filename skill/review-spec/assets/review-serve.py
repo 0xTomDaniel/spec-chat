@@ -348,33 +348,61 @@ def _safe_relative(value):
     return "/".join(parts)
 
 
-def _page_title(path):
-    class TitleParser(HTMLParser):
-        def __init__(self):
-            super().__init__(convert_charrefs=True)
+class _HeadParser(HTMLParser):
+    """A page's title text and the meta names and properties it declares."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.in_title = False
+        self.parts = []
+        self.meta = set()
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "title":
+            self.in_title = True
+        elif tag == "meta":
+            self.meta.update(value.lower() for key, value in attrs if key in ("name", "property") and value)
+
+    def handle_endtag(self, tag):
+        if tag == "title":
             self.in_title = False
-            self.parts = []
 
-        def handle_starttag(self, tag, attrs):
-            if tag.lower() == "title":
-                self.in_title = True
+    def handle_data(self, data):
+        if self.in_title:
+            self.parts.append(data)
 
-        def handle_endtag(self, tag):
-            if tag.lower() == "title":
-                self.in_title = False
+    @property
+    def title(self):
+        return " ".join("".join(self.parts).split())
 
-        def handle_data(self, data):
-            if self.in_title:
-                self.parts.append(data)
 
-    parser = TitleParser()
+def _page_title(path):
+    parser = _HeadParser()
     try:
         with open(path, encoding="utf-8", errors="replace") as stream:
             parser.feed(stream.read())
     except OSError:
         pass
-    title = " ".join("".join(parser.parts).split())
-    return title or os.path.splitext(os.path.basename(path))[0]
+    return parser.title or os.path.splitext(os.path.basename(path))[0]
+
+
+HEAD_END_RE = re.compile(rb"</head\s*>", re.IGNORECASE)
+SHARE_META = (("name", "description"), ("property", "og:type"), ("property", "og:title"), ("property", "og:description"))
+
+
+def _share_meta(body, path):
+    """The served page with any missing description and Open Graph meta added: some reviewers' clients read them and
+    throw when absent (prompt-first-shaping #public-review-anywhere). The file is untouched; the stored version and
+    the ETag name this served body (lane-hosting #index-http-caching, review-state #model-versions)."""
+    end = HEAD_END_RE.search(body)
+    if not end:
+        return body
+    parser = _HeadParser()
+    parser.feed(body[:end.start()].decode("utf-8", errors="replace"))
+    title = html.escape(parser.title or os.path.splitext(os.path.basename(path))[0])
+    added = "".join('<meta %s="%s" content="%s">\n' % (key, name, "article" if name == "og:type" else title)
+                    for key, name in SHARE_META if name not in parser.meta)
+    return body[:end.start()] + added.encode("utf-8") + body[end.start():] if added else body
 
 
 def _review_status(mount):
@@ -1274,6 +1302,7 @@ listenHost();
             self.send_error(404)
             return
         if relative.endswith(".spec.html"):
+            body = _share_meta(body, target)
             try:
                 _store_version(target + ".review", mount["narrow_root"], body)
             except OSError as exc:

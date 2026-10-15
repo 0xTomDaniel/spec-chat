@@ -167,6 +167,28 @@ class ReviewHostTest(unittest.TestCase):
         self.assertEqual(started.returncode, 0, started.stderr)
         self.assertEqual(self.registry(state)["resource"][0]["base"], self.base)
 
+    def test_register_proves_a_spec_whose_served_page_gains_share_meta(self):
+        """review-service #acceptance-share-meta-register: a spec with a real head and no description or Open Graph
+        meta registers and reports its link; the proof compares the served page with the file plus the meta the
+        service adds (#published-spec-page, prompt-first-shaping #compatibility-http-proof). #acceptance-share-meta:
+        the page carries that meta and the file is unchanged."""
+        source = (b'<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>Project rules</title>\n'
+                  b'</head>\n<body><p data-anchor="rule">rules</p></body>\n</html>\n')
+        self.spec.write_bytes(source)
+        state = self.work / "state"
+        started = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        link = f"{self.url(started)}/ann45/docs/specs/review.spec.html"
+        self.assertIn(f"URL: {link} ", started.stdout)
+        self.assertEqual(len(self.registry(state)["resource"]), 1)
+        status, body = request(link)
+        self.assertEqual(status, 200)
+        for meta in ('<meta name="description" content="Project rules">', '<meta property="og:type" content="article">',
+                     '<meta property="og:title" content="Project rules">',
+                     '<meta property="og:description" content="Project rules">'):
+            self.assertIn(meta.encode(), body.split(b"</head>", 1)[0])
+        self.assertEqual(self.spec.read_bytes(), source)
+
     def wake_lines(self, result):
         return [line.split(" URL: ", 1)[1].split(" ", 1)[1] for line in result.stdout.splitlines()
                 if " URL: " in line and not line.startswith("review URL: ")]

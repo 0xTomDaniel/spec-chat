@@ -1,5 +1,8 @@
 """Compact agent read of a review link's Jev checks (project-rules #agent-read, acceptance-agent-read)."""
 
+import contextlib
+import importlib.util
+import io
 import json
 import subprocess
 import sys
@@ -7,6 +10,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 
@@ -134,6 +138,22 @@ class JevReadTest(unittest.TestCase):
         out = run(server.url + "/specs/b.spec.html?base=abc", "--wait", "20")
         self.assertEqual(len(server.queries), 3)
         self.assertEqual(out.stdout.splitlines()[-1], "pending     0")
+
+    def test_wait_covers_the_first_read(self):
+        """sc#143: the first /api/jev read answers slowly under load; --wait raises its timeout too."""
+        spec = importlib.util.spec_from_file_location("jev_read", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        pending = {"jev": "on", "items": [{"kind": "rule", "id": "acceptance", "state": "pending", "target": RULE}], "rules": []}
+        server = self.serve(pending, ON)
+        request = module.urllib.request
+        with patch.object(request, "urlopen", wraps=request.urlopen) as urlopen, contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(module.main([server.url + "/specs/b.spec.html?base=abc", "--wait", "300"]), 0)
+            self.assertEqual(module.main([server.url + "/specs/b.spec.html?base=abc"]), 0)
+        opened = [call.kwargs["timeout"] for call in urlopen.call_args_list]
+        self.assertEqual(opened[0], 300)
+        self.assertGreater(opened[1], 290)  # a re-read keeps what is left of the wait
+        self.assertEqual(opened[2:], [60.0])  # no wait: the default first-read timeout
 
     def test_off(self):
         server = self.serve({"jev": "off", "items": []})
