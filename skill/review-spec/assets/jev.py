@@ -2011,8 +2011,8 @@ class JevService:
         self._board_thread: threading.Thread | None = None
 
         # Background asks (#fast-marks-background): one in flight per question key, shared by every route,
-        # rule checks included (project-rules #pending). An ask waits, oldest first, until one of the pool's drains
-        # starts it, noting each reader whose latest read wants it (_supersede).
+        # rule checks included (project-rules #pending). An ask starts at once on a free worker's drain; with every
+        # worker busy it waits, oldest first, noting each reader whose latest read wants it (_supersede).
         # The pool lives as long as the service: stop() drops waiting asks and waits only for in-flight ones.
         self._ask_lock = threading.Lock()
         self._asking: dict[str, Future] = {}
@@ -2329,41 +2329,42 @@ class JevService:
             seam.answer(question)
 
     def _submit(self, keys: tuple[str, ...], ask: Callable[[], Any], read: tuple[Any, int] | None) -> Future | None:
-        """Under _ask_lock: the ask in flight for any of the keys, else a new one of them, waiting for a drain;
-        either way noted as wanted by `read`, (reader, read number), while it waits. None once stopped."""
+        """Under _ask_lock: the ask in flight for any of the keys, else a new one of them, started on a free worker
+        or waiting for one; a waiting ask is noted as wanted by `read`, (reader, read number). None once stopped."""
         if self._ask_pool is None:
             return None
         future = next((self._asking[key] for key in keys if key in self._asking), None)
         if future is None:
             future = Future()
-            self._waiting[future] = (keys, ask, {})
             for key in keys:
                 self._asking[key] = future
             if self._drains < self._ask_workers:
                 self._drains += 1
-                self._ask_pool.submit(self._drain)
+                future.set_running_or_notify_cancel()
+                self._ask_pool.submit(self._drain, future, keys, ask)
+            else:
+                self._waiting[future] = (keys, ask, {})
         if read is not None and future in self._waiting:
             self._waiting[future][2][read[0]] = read[1]
         return future
 
-    def _drain(self) -> None:
-        """One worker: start the oldest waiting ask until none waits. Its keys leave _asking only after it records."""
+    def _drain(self, future: Future, keys: tuple[str, ...], ask: Callable[[], Any]) -> None:
+        """One worker: run its ask, then the oldest waiting one, until none waits. Keys leave _asking only after
+        their ask records."""
         while True:
+            try:
+                ask()
+            except Exception:
+                pass
             with self._ask_lock:
+                for key in keys:
+                    self._asking.pop(key, None)
+                future.set_result(None)
                 if not self._waiting:
                     self._drains -= 1
                     return
                 future, (keys, ask, _) = self._waiting.popitem(last=False)
                 future.set_running_or_notify_cancel()
-            try:
-                ask()
-            except Exception:
-                pass
-            finally:
-                with self._ask_lock:
-                    for key in keys:
-                        self._asking.pop(key, None)
-                future.set_result(None)
 
     def _supersede(self, read: tuple[Any, int]) -> None:
         """At the end of a read (#acceptance-store-memory): a waiting ask its reader wanted before and not in this
