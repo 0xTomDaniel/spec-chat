@@ -828,7 +828,8 @@ class JevSeam:
         payload = {"model": MODEL, "questions": {qset.id: {"criteria": criteria,
                     "instructions": instructions, "type": "choice"}},
                    "state": _jsonable(question.get("state", {}))}
-        if (len(_canonical(payload)) + 3) // 4 > self.max_input_tokens:
+        # Size estimate: UTF-8 bytes of canonical JSON / 2, rounded up (#request-oversize).
+        if (len(_canonical(payload).encode("utf-8")) + 1) // 2 > self.max_input_tokens:
             return self._record(key, kind, qset, question.get("sources", []), question.get("revision"),
                                 {"label": None, "probabilities": {}, "confidence": None}, "oversize",
                                 inputs=inputs, pairing=pairing)

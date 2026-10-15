@@ -133,6 +133,34 @@ def run_case(jev_server, name, case):
     return ["%s: %s differs: expected %r, got %r" % (name, field, want, got) for field, want, got in found]
 
 
+def _payload(case):
+    """The request the seam builds for a case's question, captured before any size limit or send."""
+    qset = jev.QuestionSet.from_mapping(case["question_set"], case["question_set"]["id"])
+    built = []
+
+    class Capture:
+        def decide(self, payload):
+            built.append(payload)
+            raise RuntimeError("captured")
+
+    seam = jev.JevSeam({qset.id: qset}, provider=Capture(), api_key=KEY, record_store=jev.JudgmentStore(),
+                       clock=lambda: case["question"]["now"], max_input_tokens=10 ** 9)
+    asked = case["question"]
+    question = {"kind": asked["id"], "state": asked["state"], "sources": [], "revision": ""}
+    if "labels" in asked:
+        question["criteria"] = asked["labels"]
+    seam.ask(question)
+    return jev._canonical(built[0])
+
+
+def request_size(case):
+    return len(_payload(case).encode("utf-8"))
+
+
+def len_chars(case):
+    return len(_payload(case))
+
+
 def cases():
     return {path.stem: json.loads(path.read_text(encoding="utf-8")) for path in sorted(CASES.glob("*.json"))}
 
@@ -197,6 +225,22 @@ class ConformanceTest(unittest.TestCase):
         keys = [c["expect"]["key"] for c in found.values()]
         self.assertTrue(any(keys.count(k) > 1 and len({json.dumps(c["question"]["state"]) for c in found.values()
                                                         if c["expect"]["key"] == k}) > 1 for k in keys))
+
+    def test_cases_cover_the_size_estimate_edge(self):
+        """#cases-cover, #request-oversize, #acceptance-oversize-estimate: one case is just over the limit by
+        UTF-8 bytes / 2 though characters / 4 would send it, and is oversize; one is exactly at it, and is sent."""
+        limit = jev.DEFAULT_MAX_INPUT_TOKENS
+        edges = {}
+        for name, case in cases().items():
+            size = request_size(case)
+            edges.setdefault((size + 1) // 2 - limit, []).append((name, size, case))
+        over = [(n, c) for n, size, c in edges.get(1, []) if (len_chars(c) + 3) // 4 <= limit]
+        self.assertTrue(over, "no case just over the limit that characters / 4 would send")
+        self.assertTrue(all(c["expect"]["request"] is None and c["expect"]["record"]["outcome"] == "oversize"
+                            for _, c in over), over and [n for n, _ in over])
+        under = edges.get(0, [])
+        self.assertTrue(under, "no case exactly at the limit")
+        self.assertTrue(all(c["expect"]["request"] for _, _, c in under), [n for n, _, _ in under])
 
 
 class QuestionSetTest(unittest.TestCase):
