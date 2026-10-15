@@ -19,8 +19,8 @@
 
 <section data-anchor="context">
 <h2>Context</h2>
-<p data-anchor="context-shared">Several Herdr sessions on one box shared one review service: one registry, server, review index, and log, so each session's operator saw and acted on the other's specs.</p>
-<p data-anchor="context-ids">Rows hold owner panes as bare Herdr pane ids, and Herdr repeats pane ids across sessions, so a wake could reach a pane of the wrong session.</p>
+<p data-anchor="context-shared">With one review service per box, every Herdr session on the box would share one registry, server, review index, and log, and each session's operator would see and act on the other's specs.</p>
+<p data-anchor="context-ids">Rows hold owner panes as bare Herdr pane ids, and Herdr repeats pane ids across sessions, so a service shared by sessions could wake a pane of the wrong session.</p>
 <p data-anchor="context-principle">The Herdr session is the box's isolation unit; Herdr exports its name to every pane of a named session, and other tools on the box scope their state by the same key.</p>
 <p data-anchor="context-box">A box with one session must keep working with nothing moved, and providers plug in once per box, before any named session exists.</p>
 </section>
