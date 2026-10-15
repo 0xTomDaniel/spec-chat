@@ -31,7 +31,8 @@ from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
 from urllib.request import urlopen
 
 try:
-    from jev import MARK_LEVELS, OWNER_RESOLUTIONS, JevService, enumerate_served_specs, extract_anchors, mount_prefix as _mount_prefix
+    from jev import (MARK_LEVELS, OWNER_RESOLUTIONS, JevService, enumerate_served_specs, extract_anchors,
+                     mount_prefix as _mount_prefix, spec_chat_state)
 except ModuleNotFoundError:
     import importlib.util
     _jev_spec = importlib.util.spec_from_file_location("review_serve_jev", os.path.join(os.path.dirname(__file__), "jev.py"))
@@ -43,6 +44,7 @@ except ModuleNotFoundError:
     enumerate_served_specs = _jev_module.enumerate_served_specs
     extract_anchors = _jev_module.extract_anchors
     _mount_prefix = _jev_module.mount_prefix
+    spec_chat_state = _jev_module.spec_chat_state
 try:
     from place import resolve_events
 except ModuleNotFoundError:
@@ -672,6 +674,23 @@ def _wake_batch(resource):
         return spool.handoff_batch(review, spool.read_cursor(review, resource["cursor_name"]))
     except (OSError, ValueError):
         return ()
+
+
+def session_state(key=None):
+    """A Herdr session's review service state, hosting/<key> (review-service #service-location).
+
+    The key is the caller's ${HERDR_SESSION:-default}, so a box without Herdr, and the box user service, are the
+    default session."""
+    key = key or os.environ.get("HERDR_SESSION") or "default"
+    return (spec_chat_state() / "hosting" / key).resolve()
+
+
+def providers_state(state):
+    """Where a service reads providers/ (review-service #providers-rule): its session's service reads the box's, in the
+    default session's state; a service named by --state-dir reads its own."""
+    if state and Path(state).resolve() == session_state():
+        return str(session_state("default"))
+    return state
 
 
 def read_provider(state, name, *, private=False):
@@ -1391,7 +1410,7 @@ def main(argv=None):
         print("review-serve: %s" % exc, file=sys.stderr)
         return 2
     server.mount_state = state
-    server.state_dir = os.path.dirname(os.path.abspath(args.registry)) if args.registry else None
+    server.state_dir = providers_state(os.path.dirname(os.path.abspath(args.registry))) if args.registry else None
     server.jev = JevService(api_key=lambda: jev_provider(server.state_dir),
                             llm_model=lambda: jev_llm_model(server.state_dir))
     server.wake_controller = WakeController(server)
