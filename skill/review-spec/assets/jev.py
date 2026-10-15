@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
+import itertools
 import json
 import math
 import os
@@ -2009,23 +2011,27 @@ class JevService:
         self._board_thread: threading.Thread | None = None
 
         # Background asks (#fast-marks-background): one in flight per question key, shared by every route,
-        # rule checks included (project-rules #pending).
-        # The pool lives as long as the service: stop() drops queued asks and waits only for in-flight ones.
+        # rule checks included (project-rules #pending). An ask waits, oldest first, until one of the pool's drains
+        # starts it, noting each reader whose latest read wants it (_supersede).
+        # The pool lives as long as the service: stop() drops waiting asks and waits only for in-flight ones.
         self._ask_lock = threading.Lock()
         self._asking: dict[str, Future] = {}
+        self._waiting: OrderedDict[Future, tuple[tuple[str, ...], Callable[[], Any], dict[Any, int]]] = OrderedDict()
+        self._ask_workers, self._drains, self._reads = ASK_WORKERS, 0, itertools.count(1)
         self._ask_pool: ThreadPoolExecutor | None = ThreadPoolExecutor(
-            max_workers=ASK_WORKERS, thread_name_prefix="spec-chat-jev-ask")
+            max_workers=self._ask_workers, thread_name_prefix="spec-chat-jev-ask")
 
         # Fixed marks (#record-resolution): per spec and base, the head last decided and the Important marks shown on it.
         self._marks_lock = threading.Lock()
         self._marks: dict[tuple[Any, ...], tuple[Any, dict[tuple[Any, ...], tuple[str, Any]]]] = {}
 
     def stop(self) -> None:
-        """Stop asking: later reads ask nothing, queued asks are dropped, in-flight asks finish their record."""
+        """Stop asking: later reads ask nothing, waiting asks are dropped, in-flight asks finish their record."""
         with self._ask_lock:
             pool, self._ask_pool = self._ask_pool, None
-            if pool is not None:
-                pool.shutdown(wait=False, cancel_futures=True)
+            for future in self._waiting:
+                future.cancel()
+            self._waiting.clear()
             self._asking.clear()
         if pool is not None:
             pool.shutdown(wait=True)
@@ -2271,7 +2277,7 @@ class JevService:
                 answer, misses = self._board_from_records(rows)
                 self._board_answer = answer
                 if misses:
-                    wait(self._ask_misses(misses))
+                    wait(self._ask_misses(misses, read=("board", next(self._reads))))
                     self._board_answer, _ = self._board_from_records(rows)
             except Exception:
                 pass
@@ -2301,41 +2307,78 @@ class JevService:
             return None
         return record
 
-    def _ask_misses(self, misses: Mapping[str, dict[str, Any]], seam: "JevSeam | None" = None) -> list[Future]:
+    def _ask_misses(self, misses: Mapping[str, dict[str, Any]], seam: "JevSeam | None" = None,
+                    read: tuple[Any, int] | None = None) -> list[Future]:
         """Ask each miss, by key, once in the background; a question in flight or since answered is not asked again."""
         seam = seam or self.seam
         futures = []
         with self._ask_lock:
-            if self._ask_pool is None:
-                return futures
             for key, question in misses.items():
-                if key not in self._asking:
-                    # An ask records before it leaves _asking: a key absent from both is truly unasked.
-                    if self._held_record(key, seam) is not None:
-                        continue
-                    self._asking[key] = self._ask_pool.submit(self._ask_quietly, key, question, seam)
-                futures.append(self._asking[key])
+                # An ask records before it leaves _asking: a key absent from both is truly unasked.
+                if key not in self._asking and self._held_record(key, seam) is not None:
+                    continue
+                future = self._submit((key,), functools.partial(self._ask_question, question, seam), read)
+                if future is not None:
+                    futures.append(future)
         return futures
 
-    def _ask_quietly(self, key: str, question: Mapping[str, Any], seam: "JevSeam | None" = None) -> None:
-        seam = seam or self.seam
+    def _ask_question(self, question: Mapping[str, Any], seam: "JevSeam") -> None:
         if question.get("kind") == "lane" and "chain" in question:
-            self._asked_quietly((key,), lambda: self._ask_lane_steps(question["chain"], seam))
-        elif "chain" in question:
-            self._asked_quietly((key,), lambda: seam.ask_chain(question["chain"]))
+            self._ask_lane_steps(question["chain"], seam)
         else:
-            self._asked_quietly((key,), lambda: seam.ask(question))
+            seam.answer(question)
 
-    def _asked_quietly(self, keys: tuple[str, ...], ask: Callable[[], Any]) -> None:
-        """Run a background ask; the keys it holds leave _asking only after it records."""
-        try:
-            ask()
-        except Exception:
-            pass
-        finally:
+    def _submit(self, keys: tuple[str, ...], ask: Callable[[], Any], read: tuple[Any, int] | None) -> Future | None:
+        """Under _ask_lock: the ask in flight for any of the keys, else a new one of them, waiting for a drain;
+        either way noted as wanted by `read`, (reader, read number), while it waits. None once stopped."""
+        if self._ask_pool is None:
+            return None
+        future = next((self._asking[key] for key in keys if key in self._asking), None)
+        if future is None:
+            future = Future()
+            self._waiting[future] = (keys, ask, {})
+            for key in keys:
+                self._asking[key] = future
+            if self._drains < self._ask_workers:
+                self._drains += 1
+                self._ask_pool.submit(self._drain)
+        if read is not None and future in self._waiting:
+            self._waiting[future][2][read[0]] = read[1]
+        return future
+
+    def _drain(self) -> None:
+        """One worker: start the oldest waiting ask until none waits. Its keys leave _asking only after it records."""
+        while True:
             with self._ask_lock:
-                for key in keys:
-                    self._asking.pop(key, None)
+                if not self._waiting:
+                    self._drains -= 1
+                    return
+                future, (keys, ask, _) = self._waiting.popitem(last=False)
+                future.set_running_or_notify_cancel()
+            try:
+                ask()
+            except Exception:
+                pass
+            finally:
+                with self._ask_lock:
+                    for key in keys:
+                        self._asking.pop(key, None)
+                future.set_result(None)
+
+    def _supersede(self, read: tuple[Any, int]) -> None:
+        """At the end of a read (#acceptance-store-memory): a waiting ask its reader wanted before and not in this
+        read is no longer wanted by it, and one no reader wants is dropped. A read asks again every key it still
+        misses, so nothing still needed is lost, and asks for spec text since edited do not pile up with reads."""
+        reader, number = read
+        with self._ask_lock:
+            for future, (keys, _, wanted) in list(self._waiting.items()):
+                if wanted.get(reader, number) < number:
+                    del wanted[reader]
+                    if not wanted:
+                        del self._waiting[future]
+                        future.cancel()
+                        for key in keys:
+                            self._asking.pop(key, None)
 
     def _lane_questions(self, rows: Any, *, exclude_test: bool = True) -> list[dict[str, Any]]:
         """Cross-lane questions over every registry row's changed clauses (#cross-lane-clauses), kept by
@@ -2364,7 +2407,7 @@ class JevService:
                 continue
         return result
 
-    def _lane_items(self, mount: Mapping[str, Any], rows: Any) -> list[dict[str, Any]]:
+    def _lane_items(self, mount: Mapping[str, Any], rows: Any, read: tuple[Any, int] | None = None) -> list[dict[str, Any]]:
         """`lane` items on this page's own clauses from held records; misses are asked after answering.
         Test-flagged slugs are excluded (#cross-lane-test-host)."""
         if not mount.get("slug") or not mount.get("spec") or mount.get("test"):
@@ -2402,7 +2445,7 @@ class JevService:
             if pending_r is not None and pending_r.get("step"):
                 state_r, record_r = self._rule_held(pending_r["step"])
                 if state_r == "pending":
-                    self._lane_submit(chain)
+                    self._lane_submit(chain, read=read)
                 has_finding = any(_confident_label(r) in LANE_FINDINGS for r in results)
                 if state_r == "pending" and not has_finding:
                     for index, (_, path, anchor) in enumerate(chain["sides"]):
@@ -2430,18 +2473,13 @@ class JevService:
         if _confident_label(a) == "no" and _confident_label(b) == "no":
             seam.ask(steps[4])
 
-    def _lane_submit(self, chain: Mapping[str, Any], seam: "JevSeam | None" = None) -> None:
+    def _lane_submit(self, chain: Mapping[str, Any], seam: "JevSeam | None" = None,
+                     read: tuple[Any, int] | None = None) -> None:
         """Ask a lane chain in the background; deduped by its steps' keys."""
         seam = seam or self.seam
+        keys = tuple(seam.key(step) for step in chain["chain"])
         with self._ask_lock:
-            if self._ask_pool is None:
-                return
-            keys = tuple(seam.key(step) for step in chain["chain"])
-            if any(k in self._asking for k in keys):
-                return
-            future = self._ask_pool.submit(self._asked_quietly, keys, lambda: self._ask_lane_steps(chain["chain"], seam))
-            for k in keys:
-                self._asking[k] = future
+            self._submit(keys, functools.partial(self._ask_lane_steps, chain["chain"], seam), read)
 
     def _board_from_records(self, rows: Any) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
         rows = [row for row in rows or () if isinstance(row, Mapping) and row.get("slug") and row.get("spec")
@@ -2476,15 +2514,13 @@ class JevService:
         answer = {"jev": "on", "rows": answer_rows, "conflicts": [{"a": a, "b": b} for a, b in sorted(conflict_pairs)]}
         return answer, misses
 
-    def _ask_submit(self, question: Mapping[str, Any], seam: "JevSeam | None" = None) -> None:
+    def _ask_submit(self, question: Mapping[str, Any], seam: "JevSeam | None" = None,
+                    read: tuple[Any, int] | None = None) -> None:
         """Ask a single question, or a chain by its last step's key, on the shared pool; one in flight is not asked again."""
         seam = seam or self.seam
         key = seam.key(question["chain"][-1] if "chain" in question else question)
         with self._ask_lock:
-            if self._ask_pool is None or key in self._asking:
-                return
-            ask = (lambda: seam.ask_chain(question["chain"])) if "chain" in question else (lambda: seam.ask(question))
-            self._asking[key] = self._ask_pool.submit(self._asked_quietly, (key,), ask)
+            self._submit((key,), functools.partial(seam.answer, question), read)
 
     def _rule_held(self, question: Mapping[str, Any], seam: "JevSeam | None" = None) -> tuple[str, dict[str, Any] | None]:
         """final, pending (to ask or in flight), or unavailable during its pause, with the record; never asks."""
@@ -2542,8 +2578,8 @@ class JevService:
         return item
 
     def rule_items(self, current: bytes, old: bytes | None, path: str, base: str, revision: Any,
-                   served: Any, seam: "JevSeam | None" = None, project: Any = None,
-                   spec: str | None = None) -> tuple[list[dict[str, Any]], list[str], dict[str, dict[str, Any]]]:
+                   served: Any, seam: "JevSeam | None" = None, project: Any = None, spec: str | None = None,
+                   read: tuple[Any, int] | None = None) -> tuple[list[dict[str, Any]], list[str], dict[str, dict[str, Any]]]:
         """Rule and candidate items for a page, the rules checked, and the marked rules other specs' clauses are,
         by served target, for marks that cite them (#marks, #pending, #card-variants).
 
@@ -2579,7 +2615,7 @@ class JevService:
                 continue
             state, record = self._rule_held(scope, seam)
             if state == "pending":
-                self._ask_submit(scope, seam)
+                self._ask_submit(scope, seam, read)
             if state != "final":
                 items.append(self._scope_item(scope, scope["id"], state, record))
             elif _confident_label(record) == RULE_SCOPE:
@@ -2607,7 +2643,7 @@ class JevService:
             else:
                 state, record = "final", result
             if state == "pending":
-                self._ask_submit(question, seam)
+                self._ask_submit(question, seam, read)
             label = _confident_label(record) if state == "final" else None
             item = {"kind": "rule", "id": mark, **cites[rule["target"]], "word": rule["word"],
                     "state": "label" if label == RULE_MISSED else ("none" if state == "final" else state),
@@ -2623,12 +2659,12 @@ class JevService:
         return items, sorted(set(checked)), cites
 
     def _rules(self, relative: str, base: str, facts: Mapping[str, Any], seam: "JevSeam | None" = None,
-               mount: Mapping[str, Any] | None = None) -> tuple[list[dict[str, Any]], list[str], dict[str, dict[str, Any]]] | None:
+               mount: Mapping[str, Any] | None = None, read: tuple[Any, int] | None = None) -> tuple[list[dict[str, Any]], list[str], dict[str, dict[str, Any]]] | None:
         """The read's rule items, rules checked, and cited rule cards; None when they cannot be built, which shows
         no rules and decides no fix."""
         try:
             return self.rule_items(facts["current"], facts["old"], relative, base, facts["head"], facts["served"], seam,
-                                   (mount or {}).get("project"), facts["rel"])
+                                   (mount or {}).get("project"), facts["rel"], read)
         except Exception:
             return None
 
@@ -2746,11 +2782,12 @@ class JevService:
         if not self.enabled:
             return {"jev": "off", "items": [], "levels": dict(MARK_LEVELS)}
         seam = self._seam_for(mount)
+        read = ((target, base, view), next(self._reads))  # this page's reader: its next read supersedes this one
         try:
             facts = self._read_facts(mount, target, base, served_mounts, base_commit)
         except Exception:
             facts = None  # no rules; questions reads again and fails as it always has
-        ruled = self._rules(relative, base, facts, seam, mount) if facts else None
+        ruled = self._rules(relative, base, facts, seam, mount, read) if facts else None
         rule_items, rules, cites = ruled or ([], [], {})
         asked = self.questions(mount, target, relative, base, events, view, served_mounts, base_commit, facts)
         questions = [question for question in asked
@@ -2769,7 +2806,7 @@ class JevService:
             return self._held(question, misses, seam)
 
         answers = [(question, answer(question)) for question in questions]
-        self._ask_misses(misses, seam)
+        self._ask_misses(misses, seam, read)
         items = []
         for question, record in answers:
             if record is None:
@@ -2826,8 +2863,9 @@ class JevService:
             except OSError:
                 pass  # a fixed outcome unwritten is a fix missed, never a failed read
         items = [item for item in items if item["state"] != "oversize"]
-        return {"jev": "on", "items": items + self._lane_items(mount, served_mounts), "rules": rules,
-                "levels": dict(MARK_LEVELS)}
+        lanes = self._lane_items(mount, served_mounts, read)
+        self._supersede(read)
+        return {"jev": "on", "items": items + lanes, "rules": rules, "levels": dict(MARK_LEVELS)}
 
 
 __all__ = ["BUILDERS", "CHAIN_CONTINUE", "VERIFIED", "VERIFIER_REJECTED", "DRAFT_CHECK_KINDS", "DEFAULT_MAX_INPUT_TOKENS", "DEFAULT_THRESHOLD", "JevSeam", "JevService", "JudgmentStore", "WarningLedger", "eval_read", "MARK_LEVELS", "MODEL", "OWNER_RESOLUTIONS",

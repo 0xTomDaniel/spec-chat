@@ -123,6 +123,29 @@ class JevBackgroundTest(unittest.TestCase):
         self.assertEqual([item["state"] for item in second["items"]], ["label"] * 20)
         self.assertEqual(provider.calls, 20)
 
+    def test_asks_for_edited_text_do_not_pile_up_with_reads(self):
+        """#acceptance-store-memory, #fast-marks-background: while Jev is slow, a spec edited and read again and again
+        keeps in flight only what its latest read misses; an ask of text since edited is dropped before Jev sees
+        it. Another page's asks stay until that page reads again."""
+        provider = GatedProvider()
+        service = self.service(provider)
+        edited = lambda text: [{"kind": "type", "id": str(index), "state": {"after": "%s clause %d" % (text, index)},
+                                "sources": [], "revision": "head"} for index in range(20)]
+        texts = {"other": edited("other")}
+        service.questions = lambda mount, target, *rest: texts[target]
+        keys = lambda *targets: {service.seam.key(question) for target in targets for question in texts[target]}
+        try:
+            service.response({}, "other", "", "base", [])
+            for edit in range(10):
+                texts["spec"] = edited("edit %d" % edit)
+                self.assertEqual({i["state"] for i in service.response({}, "spec", "", "base", [])["items"]}, {"pending"})
+                self.assertEqual(set(service._asking), keys("spec", "other"), "edit %d" % edit)
+        finally:
+            provider.release.set()
+        self.assertEqual({i["state"] for i in settled(service, {}, "spec", "", "base", [])["items"]}, {"label"})
+        self.assertEqual({i["state"] for i in settled(service, {}, "other", "", "base", [])["items"]}, {"label"})
+        self.assertEqual(provider.calls, 40)  # each page's latest text once; no edit before the last reached Jev
+
     def test_read_while_asks_are_in_flight_starts_none(self):
         """jev-suggestions #acceptance-cache-call: once labels show, a reload at the same base and head makes no Jev call."""
         provider = GatedProvider()
