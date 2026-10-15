@@ -9,6 +9,7 @@ import os
 import posixpath
 import re
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -725,7 +726,8 @@ class JevSeam:
         self.ledger = ledger or WarningLedger()
         self.clock = clock
         self.max_input_tokens = max_input_tokens
-        self._key_locks: dict[str, threading.Lock] = {}
+        # A lock per key while an ask of it runs or waits, dropped after (#acceptance-store-memory).
+        self._key_locks: dict[str, list[Any]] = {}
         self._key_locks_lock = threading.Lock()
 
     def question_set(self, kind: str) -> QuestionSet:
@@ -791,15 +793,20 @@ class JevSeam:
         record = self.store.get(self.key(question))
         return record if record and record.get("outcome") not in REPLACEABLE_OUTCOMES else None
 
-    def _lock(self, key: str) -> threading.Lock:
-        with self._key_locks_lock:
-            return self._key_locks.setdefault(key, threading.Lock())
-
     def ask(self, question: Mapping[str, Any]) -> dict[str, Any]:
         """One answer per key at a time: a concurrent ask of the same inputs waits and reuses the record."""
         key = self.key(question)
-        with self._lock(key):
-            return self._ask(question, key)
+        with self._key_locks_lock:
+            entry = self._key_locks.setdefault(key, [threading.Lock(), 0])
+            entry[1] += 1
+        try:
+            with entry[0]:
+                return self._ask(question, key)
+        finally:
+            with self._key_locks_lock:
+                entry[1] -= 1
+                if not entry[1]:
+                    del self._key_locks[key]
 
     def _ask(self, question: Mapping[str, Any], key: str) -> dict[str, Any]:
         kind = str(question.get("kind", "type"))
@@ -1887,8 +1894,10 @@ def _commit(root: str, ref: str) -> str | None:
     return value.decode().strip() if value else None
 
 
-# Fast reads (jev-suggestions #fast-marks-section): results kept in memory by the content of their inputs.
-KEPT_LIMIT = 512
+# Fast reads (jev-suggestions #fast-marks-section): results kept in memory by the content of their inputs, up to
+# this many bytes (#acceptance-store-memory). Bounded by size, not count: one spec's question lists run to megabytes,
+# and every edit keeps a new set while the superseded one ages out.
+KEPT_BYTES = 128 << 20
 
 
 def _content_digest(value: Any) -> str:
@@ -1921,12 +1930,32 @@ def _content_digest(value: Any) -> str:
     return digest.hexdigest()
 
 
-class _Kept:
-    """Bounded in-memory results beside the held records; nothing is stored and a restart starts empty."""
+def _footprint(value: Any) -> int:
+    """Bytes a value holds in memory: each object reachable through its containers, counted once."""
+    seen: set[int] = set()
+    stack, total = [value], 0
+    while stack:
+        item = stack.pop()
+        if id(item) in seen:
+            continue
+        seen.add(id(item))
+        total += sys.getsizeof(item)
+        if isinstance(item, dict):
+            stack.extend(item.keys())
+            stack.extend(item.values())
+        elif isinstance(item, (list, tuple, set, frozenset)):
+            stack.extend(item)
+    return total
 
-    def __init__(self, limit: int = KEPT_LIMIT):
+
+class _Kept:
+    """In-memory results beside the held records, least recently used dropped first beyond `limit` bytes; nothing
+    is stored and a restart starts empty."""
+
+    def __init__(self, limit: int = KEPT_BYTES):
         self.limit = limit
-        self.values: OrderedDict[Any, Any] = OrderedDict()
+        self.used = 0
+        self.values: OrderedDict[Any, tuple[Any, int]] = OrderedDict()
         self.lock = threading.Lock()
 
     def get(self, key: Any, make: Callable[[], Any]) -> Any:
@@ -1934,12 +1963,16 @@ class _Kept:
         with self.lock:
             if key in self.values:
                 self.values.move_to_end(key)
-                return self.values[key]
+                return self.values[key][0]
         value = make()
+        size = _footprint(value)
         with self.lock:
-            self.values[key] = value
-            while len(self.values) > self.limit:
-                self.values.popitem(last=False)
+            if key in self.values:
+                self.used -= self.values.pop(key)[1]
+            self.values[key] = (value, size)
+            self.used += size
+            while self.used > self.limit and len(self.values) > 1:  # the value just made stays
+                self.used -= self.values.popitem(last=False)[1][1]
         return value
 
 
