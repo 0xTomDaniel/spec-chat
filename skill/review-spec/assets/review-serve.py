@@ -348,33 +348,61 @@ def _safe_relative(value):
     return "/".join(parts)
 
 
-def _page_title(path):
-    class TitleParser(HTMLParser):
-        def __init__(self):
-            super().__init__(convert_charrefs=True)
+class _HeadParser(HTMLParser):
+    """A page's title text and the meta names and properties it declares."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.in_title = False
+        self.parts = []
+        self.meta = set()
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "title":
+            self.in_title = True
+        elif tag == "meta":
+            self.meta.update(value.lower() for key, value in attrs if key in ("name", "property") and value)
+
+    def handle_endtag(self, tag):
+        if tag == "title":
             self.in_title = False
-            self.parts = []
 
-        def handle_starttag(self, tag, attrs):
-            if tag.lower() == "title":
-                self.in_title = True
+    def handle_data(self, data):
+        if self.in_title:
+            self.parts.append(data)
 
-        def handle_endtag(self, tag):
-            if tag.lower() == "title":
-                self.in_title = False
+    @property
+    def title(self):
+        return " ".join("".join(self.parts).split())
 
-        def handle_data(self, data):
-            if self.in_title:
-                self.parts.append(data)
 
-    parser = TitleParser()
+def _page_title(path):
+    parser = _HeadParser()
     try:
         with open(path, encoding="utf-8", errors="replace") as stream:
             parser.feed(stream.read())
     except OSError:
         pass
-    title = " ".join("".join(parser.parts).split())
-    return title or os.path.splitext(os.path.basename(path))[0]
+    return parser.title or os.path.splitext(os.path.basename(path))[0]
+
+
+HEAD_END_RE = re.compile(rb"</head\s*>", re.IGNORECASE)
+SHARE_META = (("name", "description"), ("property", "og:type"), ("property", "og:title"), ("property", "og:description"))
+
+
+def _share_meta(body, path):
+    """The served page with any missing description and Open Graph meta added: some reviewers' clients read them and
+    throw when absent (prompt-first-shaping #public-review-anywhere). Only the response gains them; the file, its
+    stored version, and its ETag keep the file's bytes."""
+    end = HEAD_END_RE.search(body)
+    if not end:
+        return body
+    parser = _HeadParser()
+    parser.feed(body[:end.start()].decode("utf-8", errors="replace"))
+    title = html.escape(parser.title or os.path.splitext(os.path.basename(path))[0])
+    added = "".join('<meta %s="%s" content="%s">\n' % (key, name, "article" if name == "og:type" else title)
+                    for key, name in SHARE_META if name not in parser.meta)
+    return body[:end.start()] + added.encode("utf-8") + body[end.start():] if added else body
 
 
 def _review_status(mount):
@@ -815,11 +843,12 @@ class MountHandler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", cache_control)
         super().end_headers()
 
-    def _send_body(self, body, content_type, *, immutable=False, headers=None):
+    def _send_body(self, body, content_type, *, immutable=False, headers=None, text=None):
+        """`text`: the spec text the ETag names when the body adds to it (review-state #model-fields)."""
         if immutable:
             validator, cache_control = {}, "public, max-age=31536000, immutable"
         else:
-            etag = '"%s"' % hashlib.sha256(body).hexdigest()
+            etag = '"%s"' % hashlib.sha256(body if text is None else text).hexdigest()
             validator, cache_control = {"ETag": etag}, "no-cache"
             tags = [tag.strip() for tag in self.headers.get("If-None-Match", "").split(",")]
             if etag in tags or "W/" + etag in tags or "*" in tags:
@@ -1273,13 +1302,15 @@ listenHost();
         except OSError:
             self.send_error(404)
             return
+        text = None
         if relative.endswith(".spec.html"):
             try:
                 _store_version(target + ".review", mount["narrow_root"], body)
             except OSError as exc:
                 print("review-serve: version not stored for %s: %s" % (relative, exc), file=sys.stderr, flush=True)
+            text, body = body, _share_meta(body, target)
         self._send_body(
-            body, mimetypes.guess_type(target)[0] or "application/octet-stream", immutable=vendor,
+            body, mimetypes.guess_type(target)[0] or "application/octet-stream", immutable=vendor, text=text,
             headers={"Last-Modified": self.date_time_string(int(os.stat(target).st_mtime))},
         )
 
