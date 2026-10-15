@@ -146,6 +146,40 @@ class JevBackgroundTest(unittest.TestCase):
         self.assertEqual({i["state"] for i in settled(service, {}, "other", "", "base", [])["items"]}, {"label"})
         self.assertEqual(provider.calls, 40)  # each page's latest text once; no edit before the last reached Jev
 
+    def test_overlapping_reads_of_one_page_keep_the_asks_both_want(self):
+        """#fast-marks-background, #acceptance-store-memory: two reads of one page overlap, as from two tabs or the
+        page and jev-read, with every worker busy. The earlier read notes its waiting asks after the later one did,
+        and the later one ends last: no ask either still wants is dropped to wait again at the back."""
+        provider = GatedProvider()
+        service = self.service(provider)
+        keys = {service.seam.key(question) for question in service.questions()}
+        entered, later_noted = threading.Event(), threading.Event()
+        ask_misses = service._ask_misses
+
+        def overlapped(misses, seam=None, read=None):
+            if not entered.is_set():  # the earlier read: notes its asks after the later read has
+                entered.set()
+                later_noted.wait(5)
+                return ask_misses(misses, seam, read)
+            futures = ask_misses(misses, seam, read)
+            later_noted.set()
+            earlier.join(5)  # the later read ends after the earlier one
+            return futures
+
+        service._ask_misses = overlapped
+        earlier = threading.Thread(target=self.read, args=(service,))
+        try:
+            earlier.start()
+            entered.wait(5)
+            self.read(service)
+            self.assertFalse(earlier.is_alive())
+            self.assertEqual(set(service._asking), keys)
+            self.assertEqual(len(service._waiting), 20 - jev.ASK_WORKERS)
+        finally:
+            provider.release.set()
+        self.assertEqual({i["state"] for i in self.settled(service)["items"]}, {"label"})
+        self.assertEqual(provider.calls, 20)
+
     def test_read_while_asks_are_in_flight_starts_none(self):
         """jev-suggestions #acceptance-cache-call: once labels show, a reload at the same base and head makes no Jev call."""
         provider = GatedProvider()

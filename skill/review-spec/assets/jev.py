@@ -2330,7 +2330,9 @@ class JevService:
 
     def _submit(self, keys: tuple[str, ...], ask: Callable[[], Any], read: tuple[Any, int] | None) -> Future | None:
         """Under _ask_lock: the ask in flight for any of the keys, else a new one of them, started on a free worker
-        or waiting for one; a waiting ask is noted as wanted by `read`, (reader, read number). None once stopped."""
+        or waiting for one; a waiting ask is noted as wanted by `read`, (reader, read number), keeping the reader's
+        latest read that wants it: reads of one reader overlap, as from two tabs, and end in any order. None once
+        stopped."""
         if self._ask_pool is None:
             return None
         future = next((self._asking[key] for key in keys if key in self._asking), None)
@@ -2345,7 +2347,8 @@ class JevService:
             else:
                 self._waiting[future] = (keys, ask, {})
         if read is not None and future in self._waiting:
-            self._waiting[future][2][read[0]] = read[1]
+            wanted = self._waiting[future][2]
+            wanted[read[0]] = max(wanted.get(read[0], 0), read[1])
         return future
 
     def _drain(self, future: Future, keys: tuple[str, ...], ask: Callable[[], Any]) -> None:
@@ -2367,8 +2370,8 @@ class JevService:
                 future.set_running_or_notify_cancel()
 
     def _supersede(self, read: tuple[Any, int]) -> None:
-        """At the end of a read (#acceptance-store-memory): a waiting ask its reader wanted before and not in this
-        read is no longer wanted by it, and one no reader wants is dropped. A read asks again every key it still
+        """At the end of a read (#acceptance-store-memory): a waiting ask its reader wanted only in reads before this
+        one is no longer wanted by it, and one no reader wants is dropped. A read asks again every key it still
         misses, so nothing still needed is lost, and asks for spec text since edited do not pile up with reads."""
         reader, number = read
         with self._ask_lock:
