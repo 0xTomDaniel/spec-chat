@@ -45,9 +45,10 @@ def service_state(state: Path) -> Path:
 
 
 def review_host(state: Path, command: str, *args: str, **run) -> subprocess.CompletedProcess:
-    """Run a review-host command on the default session's service, in the default session: without the caller's
-    HERDR_SESSION, so a server it starts wakes panes of the default session."""
-    env = {k: v for k, v in os.environ.items() if k != "HERDR_SESSION"}
+    """Run a review-host command on the default session's service as a process outside any Herdr pane, which is in
+    the default session: with none of the caller's HERDR_* variables, since any of them can route it, the server it
+    starts, and that server's wake checks and sends to the caller's session."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("HERDR_")}
     return subprocess.run([sys.executable, str(HOST), command, "--state-dir", str(service_state(state)), *args],
                           env=env, **run)
 
@@ -210,7 +211,7 @@ def install_service(state: Path, units: list[str]) -> None:
 
 
 def review_first_spec(spec: Path, state: Path, visibility: list[str]) -> str:
-    """Register the first spec with the box's review service; return its row id."""
+    """Register the first spec with the default session's review service; return its row id."""
     spec = spec.resolve()
     if not spec.is_file() or not spec.name.endswith(".spec.html"):
         raise InstallError(f"--review needs an existing *.spec.html file: {spec}")
@@ -323,7 +324,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="install-spec-chat", description=__doc__.splitlines()[0])
     parser.add_argument("--prefix", default=str(Path.home()), help="home for skill links (default: $HOME)")
     parser.add_argument("--specs", metavar="DIR", help="spec folder that gets the page runtime (.viz) and style (.style)")
-    parser.add_argument("--review", metavar="SPEC", help="first *.spec.html to review through the box's service")
+    parser.add_argument("--review", metavar="SPEC", help="first *.spec.html to review through the default session's service")
     visibility = parser.add_mutually_exclusive_group()
     visibility.add_argument("--public", metavar="HOST", help="box setup: serve review publicly on HOST (no login)")
     visibility.add_argument("--private", action="store_true", help="box setup: return review to loopback")

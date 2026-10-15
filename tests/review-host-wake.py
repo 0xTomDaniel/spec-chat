@@ -5,6 +5,7 @@ The wake provider is a fake registered in providers/wake.toml; no real pane is e
 import importlib.util
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -371,15 +372,17 @@ class WakeControllerTest(unittest.TestCase):
             self.assertNotRegex(text, r"\bmonitor\b", str(path))  # the word, not monitoring or monitored
 
     def test_no_pane_tool_is_named(self):
-        """review-service #acceptance-wake-only: Herdr appears only as the session that scopes the service, by name and
-        by its HERDR_SESSION key; no pane tool command, always lowercase (herdr, herdr-...), is named."""
+        """review-service #acceptance-wake-only: Herdr appears only as the session that scopes the service, by its name
+        Herdr and its key HERDR_SESSION; every other spelling, in any case (a command such as herdr or herdr-..., or
+        another HERDR_ variable), names the pane tool."""
         roots = [ROOT / "skill", ROOT / "DESIGN.md", ROOT / "README.md"]
         roots += [path for path in (ROOT / "docs/specs").glob("*.spec.html")]
         for root in roots:
             for path in ([root] if root.is_file() else root.rglob("*")):
                 if path.is_file() and "vendor" not in path.parts:
                     text = path.read_text(encoding="utf-8", errors="replace")
-                    self.assertNotRegex(text, r"herdr|HERDR(?!_SESSION\b)", str(path))
+                    named = {m.group() for m in re.finditer(r"herdr[\w-]*", text, re.IGNORECASE)}
+                    self.assertLessEqual(named, {"Herdr", "HERDR_SESSION"}, str(path))
 
 
 class RegistryReloadTest(unittest.TestCase):

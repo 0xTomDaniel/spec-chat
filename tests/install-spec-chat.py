@@ -210,7 +210,8 @@ class InstallSpecChatTest(unittest.TestCase):
 
     def onboard_in_named_session(self, *flags):
         """Onboard a first spec from a pane of a named Herdr session, then undo."""
-        self.env["HERDR_SESSION"] = "lane-a"
+        self.env.update({"HERDR_SESSION": "lane-a", "HERDR_PANE_ID": "w1:p1",
+                         "HERDR_SOCKET_PATH": str(Path(self.temp.name) / "herdr-lane-a.sock")})
         hosting = self.state / "spec-chat/hosting"
         self.run_install("--specs", str(self.specs), "--review", str(self.spec), *flags)
         self.assertEqual(sorted(p.name for p in hosting.iterdir()), ["default"])
@@ -237,11 +238,12 @@ class InstallSpecChatTest(unittest.TestCase):
 
     def test_onboarding_in_a_named_session_registers_and_stops_the_default_sessions_service(self):
         """review-service #onboarding-entry: whatever session it runs in, onboarding registers on, and undo stops
-        and removes from, the default session's service, which runs in the default session (#service-session-ids)."""
+        and removes from, the default session's service, which runs in the default session (#service-session-ids):
+        as a process outside any pane, no HERDR_ variable of the caller reaches it."""
         process, environ = self.onboard_in_named_session()
         self.assertNotIn("unit", process)
         self.assertIn(b"XDG_STATE_HOME=" + str(self.state).encode(), environ)
-        self.assertFalse([v for v in environ if v.startswith(b"HERDR_SESSION=")])
+        self.assertEqual([v for v in environ if v.startswith(b"HERDR_")], [])
 
     def test_service_flags_are_box_setup(self):
         for flags in (["--service"], ["--public-base", "https://spec.example.invalid"]):
