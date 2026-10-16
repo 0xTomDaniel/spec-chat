@@ -76,10 +76,7 @@ class DirectoryHandle {
 }
 
 const specFile = 'example.spec.html';
-const location = {
-  href: `file:///workspace/docs/specs/${specFile}`,
-  pathname: `/workspace/docs/specs/${specFile}`,
-};
+const location = new URL(`file:///workspace/docs/specs/${specFile}`); // the page's own address
 const navigator = {
   clipboard: { writeText: async () => {} },
   platform: 'test',
@@ -87,7 +84,7 @@ const navigator = {
 const window = { showDirectoryPicker: async () => { throw new Error('picker not configured'); } };
 const fsaTransport = Function(
   'SPEC_FILE',
-  'location',
+  'OWN_ADDRESS',
   'indexedDB',
   'navigator',
   'window',
@@ -166,7 +163,7 @@ try {
   writeFileSync(join(disk, specFile), '<!doctype html><p data-anchor="a">A</p>');
   stored.clear();
   stored.set('scope-root', new DiskDirectory(disk));
-  const diskTransport = Function('SPEC_FILE', 'REVIEW_DIRNAME', 'location', 'indexedDB', 'navigator', 'window', 'toast',
+  const diskTransport = Function('SPEC_FILE', 'REVIEW_DIRNAME', 'OWN_ADDRESS', 'indexedDB', 'navigator', 'window', 'toast',
     `${runtime.slice(start, end)}; return fsaTransport;`)(specFile, specFile + '.review', location, indexedDB, navigator, window, () => {})();
   assert.equal(await diskTransport.tryRestore(), 'granted', 'a granted folder reconnects');
   const slice = (from, to) => runtime.slice(runtime.indexOf(from), runtime.indexOf(to, runtime.indexOf(from)));

@@ -23,7 +23,7 @@ function harness(responses) {
   const renders = [];
   const env = {
     state: { readingView: false, jev: { status: 'idle', items: [], levels: {}, base: null, request: 0 } },
-    location: { protocol: 'http:', pathname: '/docs/specs/a.spec.html' },
+    OWN_ADDRESS: new URL('http://review.example/docs/specs/a.spec.html'),
     document: { hidden: false, addEventListener: (type, fn) => { (listeners[type] ||= []).push(fn); } },
     setTimeout: (fn, ms) => { timers.set(next, { at: now + ms, fn }); return next++; },
     clearTimeout: id => { timers.delete(id); },

@@ -6,18 +6,23 @@
 // and file:// is the primary transport. Specs load it with <script defer src=...>.
 // Embed mode: a host app (SPA or any live page) loads the same script with
 // data-review-dir="<repo-relative>.review" on the tag. That pins one spool for the whole
-// app (routes change location.pathname, which normally names the spool), skips the
+// app (routes change its address, which normally names the spool), skips the
 // document-presentation CSS (the host owns its look; only the hx-* overlay ships), and
 // disables spec-mtime watching (there is no spec file to go stale). HTTP transport only.
 (function () {
 'use strict';
 
-const SPEC_FILE = decodeURIComponent(location.pathname.split('/').pop());
+// review-service #served-own-address: the page's own address is its document's base address, fragment aside;
+// served directly, that is its location. Everything the page addresses comes from it, never from its location.
+// Its query follows what the page shows (#served-rewrite).
+const OWN_ADDRESS = new URL(document.baseURI);
+OWN_ADDRESS.hash = '';
+const SPEC_FILE = decodeURIComponent(OWN_ADDRESS.pathname.split('/').pop());
 // document.currentScript is only valid during the initial synchronous run — capture now.
 const EMBED_REVIEW_DIR = (document.currentScript && document.currentScript.dataset && document.currentScript.dataset.reviewDir) || null;
 const REVIEW_DIRNAME = SPEC_FILE + '.review';
 // The spool this page reviews; also keys its outbox and last-loaded events in browser storage.
-const REVIEW_DIR = EMBED_REVIEW_DIR || location.pathname.replace(/^\//, '') + '.review';
+const REVIEW_DIR = EMBED_REVIEW_DIR || OWN_ADDRESS.pathname.replace(/^\//, '') + '.review';
 const RUNTIME_URL = (document.currentScript && document.currentScript.src) || new URL('./.viz/runtime.js', document.baseURI).href;
 const VENDOR = { echarts: new URL('./vendor/echarts-5.5.1.min.js', RUNTIME_URL).href };
 
@@ -97,7 +102,7 @@ function httpTransport() {
     },
     async specModified() {
       if (EMBED_REVIEW_DIR) return null; // no spec file behind a live app; watchSpec stays quiet
-      const r = await fetch(location.pathname, { method: 'HEAD' });
+      const r = await fetch(OWN_ADDRESS.pathname, { method: 'HEAD' });
       return new Date(r.headers.get('Last-Modified') || 0).getTime();
     },
   };
@@ -158,7 +163,7 @@ function rangeBarText(baseline) {
 }
 
 function baselineParams(base) {
-  const params = new URLSearchParams({ path: location.pathname.replace(/^\//, '') });
+  const params = new URLSearchParams({ path: OWN_ADDRESS.pathname.replace(/^\//, '') });
   if (base) params.set('base', base);
   return params;
 }
@@ -170,7 +175,7 @@ const JEV_TYPE_LABELS = {
 };
 
 function jevParams(base) {
-  const params = new URLSearchParams({ path: location.pathname.replace(/^\//, ''), base: String(base || '') });
+  const params = new URLSearchParams({ path: OWN_ADDRESS.pathname.replace(/^\//, ''), base: String(base || '') });
   if (state.readingView) params.set('view', 'reading');
   return params;
 }
@@ -255,7 +260,7 @@ document.addEventListener('visibilitychange', scheduleJevPoll);
 
 // refresh: a re-read for pending items; it shows only what changed and keeps the page as is when it fails.
 async function requestJev(base, refresh = false) {
-  if (!['http:', 'https:'].includes(location.protocol) || !base) return;
+  if (!['http:', 'https:'].includes(OWN_ADDRESS.protocol) || !base) return;
   const request = ++state.jev.request;
   if (!refresh) {
     state.jev.status = 'loading';
@@ -295,7 +300,7 @@ async function requestJev(base, refresh = false) {
 // One evidence read per page, after it renders; any failure leaves the page without evidence notes.
 async function requestEvidence() {
   try {
-    const response = await fetch('/api/evidence?' + new URLSearchParams({ path: location.pathname.replace(/^\//, '') }));
+    const response = await fetch('/api/evidence?' + new URLSearchParams({ path: OWN_ADDRESS.pathname.replace(/^\//, '') }));
     const result = response.ok ? await response.json() : null;
     const criteria = result && result.criteria;
     if (!criteria || typeof criteria !== 'object' || Array.isArray(criteria)) return;
@@ -332,11 +337,11 @@ async function fetchBaseline(base, signal) {
 }
 
 async function applyIssueFocus() {
-  if (EMBED_REVIEW_DIR || location.protocol === 'file:') return;
+  if (EMBED_REVIEW_DIR || OWN_ADDRESS.protocol === 'file:') return;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
   try {
-    const requestedBase = new URLSearchParams(location.search).get('base');
+    const requestedBase = OWN_ADDRESS.searchParams.get('base');
     const baseline = await fetchBaseline(requestedBase, controller.signal);
     state.range.baseline = baseline;
     renderRangeBar(baseline);
@@ -345,7 +350,7 @@ async function applyIssueFocus() {
   } catch (error) {
     const copy = document.getElementById('hx-range-copy');
     if (copy) copy.textContent = 'Compared range unavailable.';
-    if (new URLSearchParams(location.search).get('focus') === 'changes') showFocusError();
+    if (OWN_ADDRESS.searchParams.get('focus') === 'changes') showFocusError();
   } finally {
     clearTimeout(timeout);
   }
@@ -436,6 +441,16 @@ function openRangePicker(open) {
   if (state.range.pickerOpen) setTimeout(() => document.getElementById('hx-range-input')?.focus(), 0);
 }
 
+// review-service #served-rewrite: the page rewrites its address only while its own address is its location,
+// fragment aside; served at another address it changes only what it shows, so a reload opens what the host served.
+function rewriteAddress(edit) {
+  const here = new URL(location.href);
+  here.hash = '';
+  const direct = here.href === OWN_ADDRESS.href;
+  edit(OWN_ADDRESS.searchParams);
+  if (direct) history.replaceState(null, '', OWN_ADDRESS.pathname + OWN_ADDRESS.search + location.hash);
+}
+
 async function selectRangeBase(value) {
   const requested = String(value || '').trim();
   if (!requested) return setRangeError('Enter a commit id.');
@@ -454,10 +469,7 @@ async function selectRangeBase(value) {
     markIssueFocus(state.range.loaded, baseline);
     renderRangeBar(baseline);
     requestJev(baseline.base || requested);
-    const url = new URL(location.href);
-    url.searchParams.set('focus', 'changes');
-    url.searchParams.set('base', baseline.base || requested);
-    history.replaceState(null, '', url.pathname + url.search + url.hash);
+    rewriteAddress(query => { query.set('focus', 'changes'); query.set('base', baseline.base || requested); });
     openRangePicker(false);
   } catch (error) {
     setRangeError(error.name === 'AbortError' ? 'Commit lookup timed out.' : 'That commit could not be resolved locally.');
@@ -469,7 +481,7 @@ async function selectRangeBase(value) {
 }
 
 function mountRangeBar() {
-  if (EMBED_REVIEW_DIR || !['http:', 'https:'].includes(location.protocol) || document.getElementById('hx-range-bar')) return;
+  if (EMBED_REVIEW_DIR || !['http:', 'https:'].includes(OWN_ADDRESS.protocol) || document.getElementById('hx-range-bar')) return;
   const bar = document.createElement('section');
   bar.className = 'hx-range-bar';
   bar.id = 'hx-range-bar';
@@ -540,7 +552,7 @@ function coverageFlags(items) {
 // Name the folder the user should grant: the first ancestor Chromium will accept
 // (it blocklists the home/Documents/Desktop/Downloads roots themselves).
 function suggestedGrant() {
-  const segs = decodeURIComponent(location.pathname).split('/').filter(Boolean);
+  const segs = decodeURIComponent(OWN_ADDRESS.pathname).split('/').filter(Boolean);
   segs.pop();
   let i = 0;
   if ((segs[0] === 'Users' || segs[0] === 'home') && segs.length > 2) i = 2; // past /Users/<name>
@@ -575,7 +587,7 @@ function fsaTransport() {
     async _toSpecDir(h) {
       try { await h.getFileHandle(SPEC_FILE); return h; } catch {}
       if (!h.getDirectoryHandle) return null;
-      const segs = decodeURIComponent(location.pathname).split('/').filter(Boolean);
+      const segs = decodeURIComponent(OWN_ADDRESS.pathname).split('/').filter(Boolean);
       segs.pop(); // the spec filename
       const walk = async at => {
         let d = h;
@@ -602,13 +614,13 @@ function fsaTransport() {
       root = specDir;
       pending = null;
       t.connected = true;
-      try { await store('readwrite', s => s.put(specDir, location.href)); } catch {}
+      try { await store('readwrite', s => s.put(specDir, OWN_ADDRESS.href)); } catch {}
       try { await store('readwrite', s => s.put(h, 'last-dir')); } catch {}
       if (alsoScope) try { await store('readwrite', s => s.put(h, 'scope-root')); } catch {}
     },
     async tryRestore() {
       try {
-        let h = await store('readonly', s => s.get(location.href));
+        let h = await store('readonly', s => s.get(OWN_ADDRESS.href));
         if (!h) h = await store('readonly', s => s.get('scope-root')); // broad grant covers new specs
         if (!h) return 'none';
         const p = await h.queryPermission({ mode: 'readwrite' });
@@ -652,7 +664,7 @@ function fsaTransport() {
       // clipboard for the native panel's Go-to-Folder (⌘⇧G on macOS).
       const opts = { mode: 'readwrite', id: 'spec-chat' };
       if (useLastDir) try { const last = await store('readonly', s => s.get('last-dir')); if (last) opts.startIn = last; } catch {}
-      const dir = decodeURIComponent(location.pathname).replace(/\/[^/]*$/, '');
+      const dir = decodeURIComponent(OWN_ADDRESS.pathname).replace(/\/[^/]*$/, '');
       // fire-and-forget: awaiting could burn the gesture's activation before the picker call
       try { navigator.clipboard.writeText(dir).then(() => toast(/Mac/.test(navigator.platform) ? 'Pick \u201c' + suggestedGrant() + '\u201d — or any folder above the spec. Exact path copied: \u2318\u21e7G + paste jumps there' : 'Pick \u201c' + suggestedGrant() + '\u201d or any folder above the spec (path copied)'), () => {}); } catch {}
       let picked;
@@ -1302,12 +1314,19 @@ function corpusTargetLink(target) {
 }
 
 function goToJevTarget(target) {
+  // review-service #served-move: another spec opens by following a link to its address, never by setting the
+  // location, so a host's link handling receives it as it does the reviewer's own taps.
   const value = String(target || '');
   const hash = value.indexOf('#');
   const path = hash < 0 ? '' : value.slice(0, hash);
   const anchor = hash < 0 ? value : value.slice(hash + 1);
-  if (path && path !== location.pathname.replace(/^\//, '')) {
-    location.href = (path.startsWith('/') ? path : '/' + path) + (anchor ? '#' + anchor : '');
+  if (path && path !== OWN_ADDRESS.pathname.replace(/^\//, '')) {
+    const link = document.createElement('a');
+    link.href = new URL((path.startsWith('/') ? path : '/' + path) + (anchor ? '#' + anchor : ''), OWN_ADDRESS).href;
+    link.hidden = true;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
     return;
   }
   scrollToJevAnchor(anchor || value);
@@ -1334,7 +1353,7 @@ function markLevel(source, kind) {
 }
 
 function jevGitFocus() {
-  return new URLSearchParams(location.search).get('focus') === 'changes' || document.body.classList.contains('hx-focus-active');
+  return OWN_ADDRESS.searchParams.get('focus') === 'changes' || document.body.classList.contains('hx-focus-active');
 }
 
 // Note buttons only open the existing composer with fixed text; nothing is written until the reviewer sends.
@@ -1384,7 +1403,7 @@ function jevRecordAction(label, body) {
     jevForget(body);
     renderJev();
     const reread = () => { if (base === state.jev.base) requestJev(base, true); };
-    fetch('/api/jev/offer?' + new URLSearchParams({ path: location.pathname.replace(/^\//, '') }),
+    fetch('/api/jev/offer?' + new URLSearchParams({ path: OWN_ADDRESS.pathname.replace(/^\//, '') }),
       { method: 'POST', body: JSON.stringify(body) }).then(reread, reread);
   } };
 }
@@ -1648,7 +1667,7 @@ function evidenceOpen(bundle, criterion) {
 }
 
 /* ---------------- host bridge (criterion-evidence #plugin-bridge) ----------------
- * Self-contained (window, document, location, navigator only): review-serve inlines this exact block
+ * Self-contained (window, document, navigator only): review-serve inlines this exact block
  * into the review index, so spec pages and the index run one bridge (#bridge-tab-pages). */
 // The parent frame's origin per step its hello offers; null keeps the browser's own behavior.
 const hostBridge = { evidence: null, tab: null };
@@ -1662,7 +1681,7 @@ function hostTabClick(event) {
   if (!link) return;
   let url;
   try { url = new URL(link.getAttribute('href'), document.baseURI); } catch (_) { return; }
-  if (url.origin !== location.origin) return;
+  if (url.origin !== new URL(document.baseURI).origin) return; // the page's own address (review-service #served-own-address)
   event.preventDefault();
   window.parent.postMessage({ type: 'spec-chat-open-tab', href: url.href }, hostBridge.tab);
 }
@@ -2381,10 +2400,10 @@ function mountUI() {
 
   mountRangeBar();
 
-  if (location.protocol === 'http:' || location.protocol === 'https:') {
+  if (OWN_ADDRESS.protocol === 'http:' || OWN_ADDRESS.protocol === 'https:') {
     const indexLink = document.createElement('a');
     indexLink.className = 'hx-service-index-link';
-    indexLink.href = new URL('/', location.href).href;
+    indexLink.href = new URL('/', OWN_ADDRESS).href;
     indexLink.textContent = 'Back to Spec Chat index';
     indexLink.setAttribute('aria-label', 'Back to Spec Chat index');
     indexLink.dataset.specChatNavigation = 'index';
@@ -3244,10 +3263,10 @@ function renderOffline() {
   el.hidden = !el.textContent;
 }
 
-// The ETag of the spec text this page shows, from the browser's copy of this document.
+// The ETag of the spec text this page shows, from its own address; served directly, the browser's copy of this document.
 async function shownVersion() {
   try {
-    const tag = (await fetch(location.href.split('#')[0], { cache: 'force-cache' })).headers.get('ETag');
+    const tag = (await fetch(OWN_ADDRESS.href, { cache: 'force-cache' })).headers.get('ETag');
     return tag ? tag.replace(/^W\//, '').replace(/"/g, '') : null;
   } catch (_) { return null; }
 }
@@ -3296,7 +3315,7 @@ async function watchSpec() {
  * wins, and a reader who already moved is never re-scrolled. Every storage call
  * is wrapped: no storage means no kept place, never a broken page.
  */
-const PLACE_KEY = 'hx-place:' + location.pathname;
+const PLACE_KEY = 'hx-place:' + OWN_ADDRESS.pathname;
 
 function readPlace(storage) {
   try {
@@ -3355,7 +3374,7 @@ function keepPlace() {
 /* ---------------- boot ---------------- */
 (async function boot() {
   const restorePlace = keepPlace();
-  const httpPage = !EMBED_REVIEW_DIR && ['http:', 'https:'].includes(location.protocol);
+  const httpPage = !EMBED_REVIEW_DIR && ['http:', 'https:'].includes(OWN_ADDRESS.protocol);
   // Deferred script: the DOM is the served spec until mountUI; compare it, never refetch it.
   if (httpPage) state.range.loaded = anchorSignatures(document);
   mountUI();
@@ -3373,13 +3392,13 @@ function keepPlace() {
     clearTimeout(adoptTimer);
     adoptTimer = setTimeout(adoptForeignCharts, 200);
   }).observe(document.body, { childList: true, subtree: true });
-  if (location.protocol === 'file:' && !('showDirectoryPicker' in window)) {
+  if (OWN_ADDRESS.protocol === 'file:' && !('showDirectoryPicker' in window)) {
     document.getElementById('hx-mode').disabled = true;
     status('view-only — this browser cannot annotate file:// pages; use Chrome/Edge, or serve via review-serve.py over http://');
     console.warn('[spec-chat] showDirectoryPicker unavailable; file:// annotation needs the File System Access API (Chromium). Run review-serve.py and open the http://localhost URL instead.');
     return;
   }
-  state.transport = location.protocol === 'file:' ? fsaTransport() : httpTransport();
+  state.transport = OWN_ADDRESS.protocol === 'file:' ? fsaTransport() : httpTransport();
   state.reviewer = reviewerIdentity(reviewStorage(), Math.random);
   if (httpPage) state.version = await shownVersion();
 
@@ -3455,7 +3474,7 @@ function keepPlace() {
         });
       }
       // picker-free path: drag any ancestor folder (home, Documents, repo) onto the page
-      btn.title = 'Pick or drop \u201c' + suggestedGrant() + '\u201d (or any folder above the spec) \u2014 remembered for every spec beneath it. Spec lives in: ' + decodeURIComponent(location.pathname).replace(/\/[^/]*$/, '');
+      btn.title = 'Pick or drop \u201c' + suggestedGrant() + '\u201d (or any folder above the spec) \u2014 remembered for every spec beneath it. Spec lives in: ' + decodeURIComponent(OWN_ADDRESS.pathname).replace(/\/[^/]*$/, '');
       document.addEventListener('dragover', e => { if (!state.loopsStarted) e.preventDefault(); });
       document.addEventListener('drop', async e => {
         if (state.loopsStarted) return;
@@ -3508,11 +3527,7 @@ function clearGitFocusForReading() {
     delete el.dataset.hxFocusRoot;
   });
   document.querySelectorAll('.hx-focus-error').forEach(el => el.remove());
-  const url = new URL(location.href);
-  if (url.searchParams.get('focus') === 'changes') {
-    url.searchParams.delete('focus');
-    history.replaceState(null, '', url.pathname + url.search + url.hash);
-  }
+  if (OWN_ADDRESS.searchParams.get('focus') === 'changes') rewriteAddress(query => query.delete('focus'));
 }
 
 function setReadingView(on) {
@@ -3531,7 +3546,7 @@ function setReadingView(on) {
   }
   if (!next) clearReadingAudience();
   if (next) {
-    const base = (state.range.baseline && state.range.baseline.base) || new URLSearchParams(location.search).get('base');
+    const base = (state.range.baseline && state.range.baseline.base) || OWN_ADDRESS.searchParams.get('base');
     if (base) requestJev(base);
   } else {
     renderJev();
@@ -3539,7 +3554,7 @@ function setReadingView(on) {
 }
 
 function mountReadingView() {
-  if (EMBED_REVIEW_DIR || !['http:', 'https:'].includes(location.protocol) || document.getElementById('hx-reading')) return;
+  if (EMBED_REVIEW_DIR || !['http:', 'https:'].includes(OWN_ADDRESS.protocol) || document.getElementById('hx-reading')) return;
   const toolbar = document.querySelector('.hx-toolbar');
   if (!toolbar) return;
   const style = document.createElement('style');

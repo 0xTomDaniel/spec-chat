@@ -119,13 +119,13 @@ const rule = (stateName, extra = {}) => ({ kind: 'rule', id: 'acceptance', state
   target, home, record: null, word: 'onboarding', text: ruleText, name: ruleName, escalated: false,
   level: stateName === 'label' ? levels.missed.human : null, ...extra });
 const state = { readingView: false, jev: { request: 1, status: 'on', base: 'b', items: [], levels } };
-const location = { search: '', pathname: '/ann601/docs/specs/b.spec.html', protocol: 'http:' }; // a mounted page
+const OWN_ADDRESS = new URL('http://review.example/ann601/docs/specs/b.spec.html'); // a mounted page
 const composed = [];
 const openComposer = (...args) => composed.push(args);
-const { renderJev, requestJev: loadJev } = Function('document', 'window', 'state', 'location', 'URLSearchParams', 'EMBED_REVIEW_DIR', 'NodeFilter',
+const { renderJev, requestJev: loadJev } = Function('document', 'window', 'state', 'OWN_ADDRESS', 'URLSearchParams', 'EMBED_REVIEW_DIR', 'NodeFilter',
   'requestAnimationFrame', 'cancelAnimationFrame', 'getComputedStyle', 'innerWidth', 'innerHeight', 'openComposer', 'fetch',
   'renderPanel', 'renderPins', 'setTimeout', 'clearTimeout', 'AbortController',
-  code + '; return { renderJev, requestJev };')(document, window, state, location, URLSearchParams, null, {}, () => 0, () => {},
+  code + '; return { renderJev, requestJev };')(document, window, state, OWN_ADDRESS, URLSearchParams, null, {}, () => 0, () => {},
   () => ({}), 1440, 900, openComposer, fetch, () => {}, () => {},
   (fn, ms) => { if (ms === 2000) pollTimers.push(fn); return 0; }, () => {}, AbortController);
 const holder = anchor => article.querySelectorAll('[data-anchor]').find(e => e.dataset.anchor === anchor);
@@ -251,15 +251,15 @@ show([rule('label', { level: 'warning' })]);
 assert.equal(markers()[0].dataset.attention, 'false');
 // Rule cards list after coverage in the popover.
 show([rule('label'), { kind: 'type', id: 'acceptance', state: 'unavailable', label: null, target: null, record: 'r', level: null }]);
-location.search = '?focus=changes';
+OWN_ADDRESS.search = '?focus=changes';
 renderJev();
 markers()[0].fire('focus');
 assert.deepEqual(pop().querySelectorAll('.hx-jev-pop-note').map(n => n.dataset.group), ['rule', 'neutral']);
-location.search = '';
+OWN_ADDRESS.search = '';
 
 // #card-variants: a Contradicts mark whose other clause is a marked rule is the same card, in the conflict place,
 // labelled Contradicts project rule, with Not for this spec and Ask agent to reconcile.
-location.search = '?focus=changes';
+OWN_ADDRESS.search = '?focus=changes';
 const cited = { kind: 'corpus', id: 'story', state: 'label', label: 'contradicts', target, record: 'c1', level: levels.contradicts.human,
   rule: { target, text: ruleText, name: ruleName, home } };
 await load([cited]);
@@ -278,7 +278,7 @@ assert.equal(markers().length, 0);
 assert.deepEqual(posted.pop(), [route, { dismiss: 'here', home, record: 'c1', anchor: 'story' }]);
 await settle();
 assert.equal(markers().length, 0);
-location.search = '';
+OWN_ADDRESS.search = '';
 
 // #mark-candidate, #acceptance-candidates: a candidate on its own criterion is a card labelled Possible project rule
 // above the criterion's anchor, warning level, quoting the criterion in full, with Not a project rule and Mark as rule.
@@ -351,8 +351,8 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 const replies = [];
 const pollState = { readingView: false, jev: { request: 0, status: 'idle', items: [], levels: {}, base: null } };
 const renders = [];
-const { requestJev } = Function('document', 'state', 'location', 'fetch', 'setTimeout', 'clearTimeout', 'AbortController', 'renderJev', 'renderPanel',
-  'renderPins', 'jevParams', pollCode + '; return { requestJev };')({ hidden: false, addEventListener() {} }, pollState, { protocol: 'http:' },
+const { requestJev } = Function('document', 'state', 'OWN_ADDRESS', 'fetch', 'setTimeout', 'clearTimeout', 'AbortController', 'renderJev', 'renderPanel',
+  'renderPins', 'jevParams', pollCode + '; return { requestJev };')({ hidden: false, addEventListener() {} }, pollState, new URL('http://review.example/docs/specs/b.spec.html'),
   async () => { const next = replies.shift(); if (next instanceof Error) throw next; return { ok: true, json: async () => next }; },
   (fn, ms) => { if (ms !== 120000) timers.push(fn); return timers.length; }, () => {}, AbortController, () => renders.push(pollState.jev.status), () => {}, () => {}, () => '');
 const pending = { kind: 'rule', id: 'acceptance', state: 'pending', target, word: 'onboarding', escalated: true };
