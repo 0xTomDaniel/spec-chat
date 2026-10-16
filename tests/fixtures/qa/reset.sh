@@ -30,6 +30,8 @@ set -eu
 collections="qa-fixture rule-candidate tbd-later tbd-later-handoff tbd-open-highlight tbd-open-single
   next-tbd next-tbd-step next-tbd-handoff tbd-open-jump tbd-open-wrap mobile-composer
   block-target-enter block-target-space block-target-off
+  choice-press choice-phone choice-thread choice-again choice-change choice-reload
+  choice-handoff choice-comment-mode
   anchor-moved anchor-changed anchor-gone stale-page agent-scan name-reply advice
   clear-thread qa-1 qa-2 dismiss dismiss-reload not-a-rule
   served-threads served-handoff served-index served-focus"

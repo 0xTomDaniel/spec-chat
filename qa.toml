@@ -29,7 +29,7 @@ ready = "/"
 # One Git repo of four specs, copied per collection (reset.sh): onboarding.spec.html marks the project rule "Every change
 # to what a user sees or does adds its onboarding section.", named "Every change ships its onboarding"; report.spec.html is the
 # spec under shaping, its head adding an export story with no onboarding criterion,
-# two open TBDs, and one later TBD; later-only.spec.html's only TBD is later;
+# two open TBDs, the first offering two answer buttons, and one later TBD; later-only.spec.html's only TBD is later;
 # one-open.spec.html has exactly one open TBD. No spec has a comment thread, except
 # the review-state collections' report spec (spools.py, nav hints below). Jev
 # records are written by the fake as pages load and kept across resets; dismissals
@@ -116,6 +116,28 @@ path = "{review}/block-target-enter/docs/specs/report.spec.html"
 path = "{review}/block-target-space/docs/specs/report.spec.html"
 [nav.acceptance-block-target-off]
 path = "{review}/block-target-off/docs/specs/report.spec.html"
+
+# Answer buttons (prompt-first-shaping #answer-buttons): the report spec's Behavior TBD "whether the
+# export also offers XLSX" (export-format) offers two answer buttons, "CSV only (recommended)" and
+# "CSV and XLSX". "One answer button" is "CSV only (recommended)"; "another" is "CSV and XLSX".
+# Press them as page buttons, never through Comment (C) unless the When says so; nothing is typed.
+# acceptance-choice-event is proven by tests/runtime-answer-buttons.mjs.
+[nav.acceptance-choice-press]
+path = "{review}/choice-press/docs/specs/report.spec.html"
+[nav.acceptance-choice-phone]
+path = "{review}/choice-phone/docs/specs/report.spec.html"
+[nav.acceptance-choice-thread]
+path = "{review}/choice-thread/docs/specs/report.spec.html"
+[nav.acceptance-choice-again]
+path = "{review}/choice-again/docs/specs/report.spec.html"
+[nav.acceptance-choice-change]
+path = "{review}/choice-change/docs/specs/report.spec.html"
+[nav.acceptance-choice-reload]
+path = "{review}/choice-reload/docs/specs/report.spec.html"
+[nav.acceptance-choice-handoff]
+path = "{review}/choice-handoff/docs/specs/report.spec.html"
+[nav.acceptance-choice-comment-mode]
+path = "{review}/choice-comment-mode/docs/specs/report.spec.html"
 
 # Review-state collections (tests/fixtures/qa/spools.py). Seeded reviewers are other
 # browsers than the capture browser.
