@@ -348,4 +348,4 @@ cannot_host = "repairs are run by an agent with the repair skill; no live agent 
 [entry.stories.story-catch-up]
 cannot_host = "repairs are run by an agent with the repair skill; no live agent here"
 [entry.stories.story-box-service]
-cannot_host = "needs review-host register and the box's one review service; review-host does not run here"
+cannot_host = "needs review-host register and its session's review service; review-host does not run here"

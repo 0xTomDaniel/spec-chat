@@ -698,15 +698,15 @@ Where a repo's ADRs carry no number, the line names the new ADR by a link to its
 
 <section data-anchor="public-review-access" id="public-review-access">
 <h2>Public review access</h2>
-<p data-anchor="public-review-anywhere">Prompt-first shaping hands off a review link on the <a href="./review-service.spec.html#service">box's one review service</a>; once the box owner has made that service public, the link opens from any ordinary browser without SSH, VPN, or a separate account login.</p>
+<p data-anchor="public-review-anywhere">Prompt-first shaping hands off a review link on its <a href="./review-service.spec.html#service">Herdr session's one review service</a>; once the box owner has made that service public, the link opens from any ordinary browser without SSH, VPN, or a separate account login.</p>
 <p data-anchor="public-review-capability">The link is not an authentication boundary: the page has <a href="./review-state.spec.html#trust-no-login">no login</a>.</p>
 <p data-anchor="public-review-warning">The shaping skill tells the human to treat the link as a secret and never publishes it into the issue or change request.</p>
 <p data-anchor="public-review-narrow-root">The public server exposes only the declared review collection and its event routes, never the repository root.</p>
 <p data-anchor="public-review-plain-directory">A review collection needs no Git repository: outside one, the served directory itself is the collection boundary, comments, replies, and hand-offs work over its spools, and the baseline, compared range, and issue focus report unavailable.</p>
 <p data-anchor="public-review-broad-root">Without consulting Git, the server refuses a filesystem or volume root, a top-level system or shared temporary directory, the home directory or any ancestor of it, the home Desktop, Documents, and Downloads folders, any path inside Git metadata, and a directory outside Git that contains a repository; inside a repository it also refuses the repository root.</p>
 <p data-anchor="public-review-page-spools">A single-directory collection accepts the review spool of any HTML page it serves, while a registered resource accepts only its declared spec.</p>
-<p data-anchor="public-review-local-origin">A public review service binds directly to an approved ingress port, with no relay or tunnel; the service owns its bind and port (<a href="./review-service.spec.html#service-restart">one service per box</a>).</p>
-<p data-anchor="public-review-close">Lane teardown removes the lane's registered rows, so their review links stop serving (<a href="./lane-hosting.spec.html#context">lane hosting</a>); spec acceptance leaves them registered, and the box's review service keeps serving other lanes.</p>
+<p data-anchor="public-review-local-origin">A public review service binds directly to an approved ingress port, with no relay or tunnel; the service owns its bind and port (<a href="./review-service.spec.html#service-restart">one service per session</a>).</p>
+<p data-anchor="public-review-close">Lane teardown removes the lane's registered rows, so their review links stop serving (<a href="./lane-hosting.spec.html#context">lane hosting</a>); spec acceptance leaves them registered, and the lane's session's review service keeps serving other lanes.</p>
 </section>
 
 <section data-anchor="review-surface-compatibility" id="review-surface-compatibility">

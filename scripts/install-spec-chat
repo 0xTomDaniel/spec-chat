@@ -2,7 +2,8 @@
 """Spec Chat's one install and onboarding entry point.
 
 Links the skills, installs the page runtime and style into a named spec folder,
-sets up the box's review service through review-host.py, and publishes
+sets up the default session's review service through review-host.py, whatever
+session it runs in, and publishes
 $XDG_STATE_HOME/spec-chat/onboarding.toml, which also records what it added
 under [installed]. A rerun changes nothing; --undo removes only what that file
 records, then the file.
@@ -36,6 +37,20 @@ class InstallError(Exception):
 
 def state_root() -> Path:
     return Path(os.environ.get("XDG_STATE_HOME") or "~/.local/state").expanduser() / "spec-chat"
+
+
+def service_state(state: Path) -> Path:
+    """The default session's service: the one the box user service runs, whatever session the installer runs in."""
+    return state / "hosting/default"
+
+
+def review_host(state: Path, command: str, *args: str, **run) -> subprocess.CompletedProcess:
+    """Run a review-host command on the default session's service as a process outside any Herdr pane, which is in
+    the default session: with none of the caller's HERDR_* variables, since any of them can route it, the server it
+    starts, and that server's wake checks and sends to the caller's session."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("HERDR_")}
+    return subprocess.run([sys.executable, str(HOST), command, "--state-dir", str(service_state(state)), *args],
+                          env=env, **run)
 
 
 def toml_list(values: list[str]) -> str:
@@ -168,7 +183,7 @@ def quote(value: str) -> str:
 
 def unit_text(state: Path) -> str:
     """A box user service running this clone's review host: up at boot without login, again after it dies."""
-    command = [str(Path(sys.executable).resolve()), str(HOST), "serve", "--state-dir", str(state / "hosting/default")]
+    command = [str(Path(sys.executable).resolve()), str(HOST), "serve", "--state-dir", str(service_state(state))]
     env = {"HOME": str(Path.home()), "PATH": os.environ.get("PATH", "/usr/bin:/bin")}
     env.update({k: v for k, v in os.environ.items() if k.startswith("SPEC_CHAT_") and v})
     return ("[Unit]\nDescription=Spec Chat review service (install-spec-chat)\n\n[Service]\nType=simple\n"
@@ -196,7 +211,7 @@ def install_service(state: Path, units: list[str]) -> None:
 
 
 def review_first_spec(spec: Path, state: Path, visibility: list[str]) -> str:
-    """Register the first spec with the box's review service; return its row id."""
+    """Register the first spec with the default session's review service; return its row id."""
     spec = spec.resolve()
     if not spec.is_file() or not spec.name.endswith(".spec.html"):
         raise InstallError(f"--review needs an existing *.spec.html file: {spec}")
@@ -205,10 +220,9 @@ def review_first_spec(spec: Path, state: Path, visibility: list[str]) -> str:
     origin = subprocess.run(["git", "-C", str(top), "remote", "get-url", "origin"], text=True, capture_output=True)
     name = origin.stdout.strip().rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1] if origin.returncode == 0 else top.name
     slug = re.sub(r"[^a-z0-9-]+", "-", name.removesuffix(".git").lower()).strip("-")[:63] or "spec"
-    command = [sys.executable, str(HOST), "register", "--slug", slug, "--owner", ONBOARDING_OWNER, str(spec), *visibility]
-    if subprocess.run(command).returncode:
+    if review_host(state, "register", "--slug", slug, "--owner", ONBOARDING_OWNER, str(spec), *visibility).returncode:
         raise InstallError("review-host register failed")
-    rows = read_toml(state / "hosting/default/registry.toml").get("resource", [])
+    rows = read_toml(service_state(state) / "registry.toml").get("resource", [])
     row = next((r for r in rows if r.get("root") == str(top) and r.get("spec") == rel and r.get("slug") == slug), None)
     if row is None:
         raise InstallError("registered spec not found in the review service registry")
@@ -260,7 +274,7 @@ def _is_git_tracked(path: Path) -> bool:
 
 def _stop_review_server(state: Path) -> None:
     """Stop the review server if its process is recorded and alive."""
-    registry = state / "hosting/default/registry.toml"
+    registry = service_state(state) / "registry.toml"
     if not registry.exists():
         return
     process = read_toml(registry).get("process", {})
@@ -271,10 +285,7 @@ def _stop_review_server(state: Path) -> None:
         os.kill(int(pid), 0)  # probe: is it alive?
     except (OSError, ValueError):
         return
-    subprocess.run(
-        [sys.executable, str(HOST), "stop"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
+    review_host(state, "stop", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print(f"stopped review server (pid {pid})")
 
 
@@ -296,7 +307,7 @@ def undo(state: Path) -> None:
         elif path.exists():
             print(f"left changed {path}")
     for rid in manifest["resources"]:
-        subprocess.run([sys.executable, str(HOST), "remove", "--id", rid], stdout=subprocess.DEVNULL)
+        review_host(state, "remove", "--id", rid, stdout=subprocess.DEVNULL)
     _stop_review_server(state)
     for item in manifest["units"]:
         path = Path(item)
@@ -313,7 +324,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="install-spec-chat", description=__doc__.splitlines()[0])
     parser.add_argument("--prefix", default=str(Path.home()), help="home for skill links (default: $HOME)")
     parser.add_argument("--specs", metavar="DIR", help="spec folder that gets the page runtime (.viz) and style (.style)")
-    parser.add_argument("--review", metavar="SPEC", help="first *.spec.html to review through the box's service")
+    parser.add_argument("--review", metavar="SPEC", help="first *.spec.html to review through the default session's service")
     visibility = parser.add_mutually_exclusive_group()
     visibility.add_argument("--public", metavar="HOST", help="box setup: serve review publicly on HOST (no login)")
     visibility.add_argument("--private", action="store_true", help="box setup: return review to loopback")

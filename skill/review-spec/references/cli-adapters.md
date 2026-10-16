@@ -46,10 +46,11 @@ scripts/review-host.py register --slug <lane-key> --owner <pane> <spec path>
 
 The host watches the default cursor, `.cursor-owner`.
 
-Registration prints `wake=verified owner=<pane>` only when the registered wake provider's `check` (`providers/wake.toml` in the service state) exits 0 for that pane, and `wake=unavailable owner=<pane>` otherwise; registration never fails on wake.
+Registration prints `wake=verified owner=<pane>` only when the box's wake provider's `check` (`providers/wake.toml` in the default session's service state, plugged in once for every session) exits 0 for that pane, and `wake=unavailable owner=<pane>` otherwise; registration never fails on wake.
 `wake=verified` selects `host-wake` and allows a final response.
 `wake=unavailable` selects `manual-resume`.
-The owner is the pane id, never an agent or tab name; only the wake provider knows how to reach it.
+The owner is the pane id, never an agent or tab name, registered from the owner's own Herdr session; only the wake provider knows how to reach it.
+The host runs `check` and `send` in its own session, the one its service belongs to, so a wake reaches only a pane of that session.
 
 The host polls every registered spool every 3 seconds and runs the wake provider's `send` for the row's owner pane once per unchanged completed hand-off batch.
 It defers while `send` exits 75, and retries each poll after a failed `check` or `send`, so a re-registered owner is woken.
