@@ -399,7 +399,8 @@ class RegistryReloadTest(unittest.TestCase):
                     f'owner = "{owner}"\nchecker = "checker"\ncursor_name = ".cursor-owner"\n'
                 )
             registry.write_text(body("w1:pAAAA"))
-            state = serve.MountState(serve._read_registry(str(registry), trust=True), str(registry))
+            state = serve.MountState(serve._resource_records(serve._registry_document(str(registry)), trust=True),
+                                     str(registry))
             self.assertEqual(state.snapshot()[0]["owner"], "w1:pAAAA")
             before = os.stat(registry)
             fresh = Path(temp) / "registry.toml.new"
