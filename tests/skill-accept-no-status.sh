@@ -20,7 +20,7 @@ need "$SHAPE" "record the acceptance only on the spec's registration"
 
 # committed specs: no Status line, no acceptance mark
 for f in "$ROOT"/docs/specs/*.spec.html; do
-  if grep -nE '>[[:space:]]*Status:|data-anchor="status"|data-accepted|accepted by human spec acceptance' "$f" >&2; then
+  if grep -nE '<p[^>]*>[[:space:]]*Status:|data-anchor="status"|data-accepted|accepted by human spec acceptance' "$f" >&2; then
     echo "$f carries a Status line or acceptance mark" >&2; exit 1
   fi
 done

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
-import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -21,7 +21,7 @@ assert.equal(readFileSync(resolve(root, 'docs/specs/.viz/runtime.js'), 'utf8'), 
 const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_CORE || 'playwright-core');
 
 // One copy of the report spec per scenario: each has its own spool.
-const SCENARIOS = ['press', 'change', 'phone', 'comment-mode', 'plain'];
+const SCENARIOS = ['press', 'change', 'moved', 'early', 'phone', 'comment-mode', 'plain'];
 const repo = mkdtempSync(join(tmpdir(), 'answer-buttons-'));
 const specs = join(repo, 'docs/specs');
 cpSync(resolve(root, 'tests/fixtures/qa/head/docs/specs'), specs, { recursive: true });
@@ -150,6 +150,52 @@ try {
     await b.context.close();
   }
 
+  // #choice-chosen, #choice-change through an agent edit: an answer inserted before the chosen one shifts
+  // its positional key; the chosen mark follows the service's place, where the pin sits.
+  {
+    const { context, page } = await reviewer('moved');
+    await answer(page, FIRST).click();
+    await until(() => comments('moved').length === 1, 'the answer is stored');
+    const file = join(specs, 'moved.spec.html');
+    writeFileSync(file, readFileSync(file, 'utf8').replace('<button type="button" data-spec-choice="CSV only">', '<button type="button" data-spec-choice="XLSX only">XLSX only</button> $&'));
+    await page.reload();
+    await connected(page);
+    await showsPressed(page, ['false', 'true', 'false']);
+    assert.equal(await page.getAttribute('[data-anchor="export-format"] .hx-pin', 'aria-label'), '#export-format › button[2]', 'the pin stays on CSV only');
+    await answer(page, FIRST).click();
+    await sleep(400);
+    assert.equal(comments('moved').length, 1, 'the moved chosen answer pressed again saves nothing');
+    await answer(page, 'XLSX only').click();
+    await until(() => comments('moved').length === 2, 'the inserted answer saves');
+    assert.deepEqual(comments('moved')[1].target, { type: 'element', key: 'button[1]' });
+    await showsPressed(page, ['true', 'false', 'false']);
+    await context.close();
+  }
+
+  // #choice-change: a press before the review state loads cannot know the chosen answer, so it saves nothing.
+  {
+    const a = await reviewer('early');
+    await answer(a.page, FIRST).click();
+    await until(() => comments('early').length === 1, 'the first answer is stored');
+    await a.context.close();
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await context.newPage();
+    page.on('pageerror', e => errors.push(String(e)));
+    let release;
+    const held = new Promise(r => { release = r; });
+    await page.route(u => u.pathname === '/api/events', async route => { await held; await route.continue(); });
+    const loading = page.waitForRequest(r => new URL(r.url()).pathname === '/api/events');
+    await page.goto(url('early'));
+    await loading;
+    await answer(page, FIRST).click();
+    release();
+    await connected(page);
+    await showsPressed(page, ['true', 'false']);
+    await sleep(400);
+    assert.equal(comments('early').length, 1, 'an early press saves no duplicate');
+    await context.close();
+  }
+
   // #acceptance-choice-phone
   {
     const { context, page } = await reviewer('phone', { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
@@ -178,7 +224,7 @@ try {
     await context.close();
   }
 
-  // #choice-plain: an empty value, or no enclosing anchored block, keeps the button's own behavior.
+  // #choice-plain: an empty value, or no enclosing anchored block (none, or only the button's own), keeps the button's own behavior.
   {
     const { context, page } = await reviewer('plain');
     await page.evaluate(() => {
@@ -189,15 +235,17 @@ try {
         b.addEventListener('click', () => window.own.push(text));
         return b;
       };
-      document.querySelector('[data-anchor="report-totals"]').append(' ', make('', 'Empty'), ' ', make('   ', 'Blank'));
+      const self = make('Self', 'Self');
+      self.dataset.anchor = 'self-answer';
+      document.querySelector('[data-anchor="report-totals"]').append(' ', make('', 'Empty'), ' ', make('   ', 'Blank'), ' ', self);
       document.querySelector('article').prepend(make('Outside', 'Outside'));
     });
-    for (const text of ['Empty', 'Blank', 'Outside']) await answer(page, text).click();
+    for (const text of ['Empty', 'Blank', 'Self', 'Outside']) await answer(page, text).click();
     await sleep(400);
-    assert.deepEqual(await page.evaluate(() => window.own), ['Empty', 'Blank', 'Outside'], 'their own handlers run');
+    assert.deepEqual(await page.evaluate(() => window.own), ['Empty', 'Blank', 'Self', 'Outside'], 'their own handlers run');
     assert.equal(comments('plain').length, 0, 'they save nothing');
     assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('[data-spec-choice]')].filter(b => !b.closest('[data-anchor="export-format"]')).map(b => b.getAttribute('aria-pressed'))),
-      [null, null, null], 'they get no chosen state');
+      [null, null, null, null], 'they get no chosen state');
     assert.equal((await surface(page)).toast, null, 'no saved notice');
     await context.close();
   }
