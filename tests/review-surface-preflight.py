@@ -13,7 +13,7 @@ BUNDLED_RUNTIME = ROOT / "skill" / "review-spec" / "assets" / "viz" / "runtime.j
 
 SKILL = ROOT / "skill" / "review-spec" / "SKILL.md"
 
-RUNTIME_CAPABILITIES = "// spec-chat-capabilities: changed-root-focus custom-style-focus diff-visibility-control finish-review git-focus manual-resume-status mobile-pre-wrap mobile-review next-tbd reopen-thread semantic-islands shared-style-ownership spec-acceptance tbd-later\n"
+RUNTIME_CAPABILITIES = "// spec-chat-capabilities: answer-buttons changed-root-focus custom-style-focus diff-visibility-control finish-review git-focus manual-resume-status mobile-pre-wrap mobile-review next-tbd reopen-thread semantic-islands shared-style-ownership spec-acceptance tbd-later\n"
 
 
 class ReviewSurfacePreflightTest(unittest.TestCase):
@@ -250,6 +250,15 @@ class ReviewSurfacePreflightTest(unittest.TestCase):
 
     def test_migrates_a_runtime_that_lacks_next_tbd(self):
         self.runtime.write_text(RUNTIME_CAPABILITIES.replace(" next-tbd", ""))
+
+        result = self.run_preflight()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.runtime.read_bytes(), BUNDLED_RUNTIME.read_bytes())
+        self.assertIn("runtime=migrated", result.stdout)
+
+    def test_migrates_a_runtime_that_lacks_answer_buttons(self):
+        self.runtime.write_text(RUNTIME_CAPABILITIES.replace(" answer-buttons", ""))
 
         result = self.run_preflight()
 

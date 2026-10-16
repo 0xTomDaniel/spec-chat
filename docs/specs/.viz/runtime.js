@@ -1,5 +1,5 @@
 // spec-chat runtime v0.1 — hydrates semantic islands and mounts the annotation layer.
-// spec-chat-capabilities: changed-root-focus custom-style-focus diff-visibility-control finish-review git-focus manual-resume-status mobile-pre-wrap mobile-review next-tbd reopen-thread semantic-islands shared-style-ownership spec-acceptance tbd-later
+// spec-chat-capabilities: answer-buttons changed-root-focus custom-style-focus diff-visibility-control finish-review git-focus manual-resume-status mobile-pre-wrap mobile-review next-tbd reopen-thread semantic-islands shared-style-ownership spec-acceptance tbd-later
 // Transports: FSA (file://, primary) | HTTP review-serve (http(s)://, secondary).
 // Same spools, same event schema either way. See DESIGN.md.
 // Classic script, NOT a module: browsers CORS-block module scripts on file:// pages,
@@ -962,7 +962,8 @@ function resolveSvgPath(holder, key) {
 }
 
 function onDocClick(e) {
-  if (!state.commentMode || e.target.closest('.hx-pin,.hx-jev-marker,.hx-jev-pop,.hx-panel,.hx-toolbar,.hx-range-bar,.hx-service-index-link,#hx-errors')) return;
+  if (!state.commentMode) { pressAnswer(e); return; }
+  if (e.target.closest('.hx-pin,.hx-jev-marker,.hx-jev-pop,.hx-panel,.hx-toolbar,.hx-range-bar,.hx-service-index-link,#hx-errors')) return;
   const holder = holderOf(e.target);
   if (!holder) return;
   if (e.target.tagName === 'CANVAS') return; // canvas clicks are the chart's business: marks via chart events, blanks via zrender
@@ -979,6 +980,47 @@ function onDocClick(e) {
   const desc = elementDescriptor(e.target, holder);
   if (desc) openComposer(holder.dataset.anchor, { type: 'element', key: desc.key }, desc.quote);
   else openComposer(holder.dataset.anchor, null, null);
+}
+
+/* ---------------- answer buttons (prompt-first-shaping #answer-buttons) ----------------
+ * A button with a non-empty data-spec-choice inside an anchored block. Its answer is an ordinary
+ * comment through the one comment save; the chosen mark derives from the review state.
+ */
+const ANSWER = 'button[data-spec-choice]';
+const answerButton = el => {
+  const button = el && el.closest && el.closest(ANSWER);
+  return button && button.dataset.specChoice.trim() && holderOf(button) ? button : null;
+};
+
+// A block's answer buttons and its chosen one: the one the newest comment on any of them targets.
+function blockAnswers(holder) {
+  const byKey = new Map([...holder.querySelectorAll(ANSWER)].filter(b => answerButton(b) && holderOf(b) === holder)
+    .map(b => [elementDescriptor(b, holder).key, b]));
+  let chosen = null;
+  for (const th of state.threads.values()) { // fold order: the last is the newest comment
+    const b = th.ev.body;
+    if (b.anchorId === holder.dataset.anchor && b.target && b.target.type === 'element' && byKey.has(b.target.key)) chosen = byKey.get(b.target.key);
+  }
+  return { buttons: [...byKey.values()], chosen };
+}
+
+function renderChoices() {
+  for (const holder of new Set([...document.querySelectorAll(ANSWER)].filter(answerButton).map(holderOf))) {
+    const { buttons, chosen } = blockAnswers(holder);
+    for (const b of buttons) b.setAttribute('aria-pressed', String(b === chosen));
+  }
+}
+
+// Outside comment mode a press saves the answer on that button and opens nothing; the chosen
+// answer pressed again saves nothing. A page that cannot comment (no reviewer) leaves it plain.
+function pressAnswer(e) {
+  const button = answerButton(e.target);
+  if (!button || !state.reviewer) return;
+  e.preventDefault();
+  const holder = holderOf(button);
+  if (blockAnswers(holder).chosen === button) return;
+  const desc = elementDescriptor(button, holder);
+  saveMessage({ kind: 'comment', anchorId: holder.dataset.anchor, target: { type: 'element', key: desc.key }, quote: desc.quote }, button.dataset.specChoice.trim());
 }
 
 /* ---------------- events -> threads ---------------- */
@@ -1260,6 +1302,7 @@ function ingest(events, force = false) {
   renderPanel();
   renderPins();
   renderBadges();
+  renderChoices();
 }
 
 function jevDisplayLabel(item) {
@@ -2218,6 +2261,9 @@ body.hx-comment [data-anchor] :is(button,input,select,textarea,label,a,summary){
 body.hx-comment [data-render-target]:hover{border:1.5px dashed var(--ui-draft)}
 body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-tbd-open{outline:2px solid var(--ui-draft);outline-offset:var(--ui-space-1)}
+/* chosen answer button: pressed, checked, and outlined, not color alone; the check stays out of its name */
+button[data-spec-choice][aria-pressed=true]{border:2px solid var(--ui-draft);background:var(--ui-draft-soft);color:var(--ui-ink);font-weight:600}
+button[data-spec-choice][aria-pressed=true]::before{content:"\\2713" / "";margin-right:var(--ui-space-1)}
 /* badge */
 .hx-badge{font:600 var(--ui-text-xs) var(--ui-font);text-transform:uppercase;letter-spacing:.04em;color:var(--ui-resolved);background:var(--ui-resolved-soft);border-radius:var(--ui-radius-pill);padding:0 var(--ui-space-2);line-height:1.6;margin-left:var(--ui-space-2);vertical-align:middle}
 /* jev note */
@@ -2565,19 +2611,24 @@ function addComposer(parent, c) {
     e.stopPropagation();
     const text = textarea.value.trim();
     if (!text) return;
-    const common = { anchorId: c.anchorId, target: c.target, quote: c.quote || null, text, actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 };
-    let body;
-    if (c.kind === 'reply') body = Object.assign(common, { id: humanId('u'), event: 'reply', respondsTo: c.respondsTo, threadId: c.threadId });
-    else if (c.kind === 'edit') body = Object.assign(common, { id: humanId('e'), event: 'edit', supersedes: c.supersedes, threadId: c.threadId });
-    else body = Object.assign(common, { id: humanId('u'), event: 'comment' });
     state.composer = null;
-    save(body);
-    toast((c.kind === 'edit' ? 'Edit' : c.kind === 'reply' ? 'Reply' : 'Comment') + ' saved as draft — hand off when ready');
-    refresh();
+    saveMessage(c, text);
   });
   box.querySelector('[data-act=cancel]').addEventListener('click', e => { e.stopPropagation(); state.composer = null; renderPanel(); });
   parent.appendChild(box);
   setTimeout(() => textarea.focus(), 0);
+}
+
+// The one human message save: the composer and answer buttons write the same events.
+function saveMessage(c, text) {
+  const common = { anchorId: c.anchorId, target: c.target, quote: c.quote || null, text, actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 };
+  let body;
+  if (c.kind === 'reply') body = Object.assign(common, { id: humanId('u'), event: 'reply', respondsTo: c.respondsTo, threadId: c.threadId });
+  else if (c.kind === 'edit') body = Object.assign(common, { id: humanId('e'), event: 'edit', supersedes: c.supersedes, threadId: c.threadId });
+  else body = Object.assign(common, { id: humanId('u'), event: 'comment' });
+  save(body);
+  toast((c.kind === 'edit' ? 'Edit' : c.kind === 'reply' ? 'Reply' : 'Comment') + ' saved as draft — hand off when ready');
+  refresh();
 }
 
 function startReply(th, agentMessage) {
