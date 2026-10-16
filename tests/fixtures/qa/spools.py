@@ -131,7 +131,7 @@ def every_status(spool):
 
 
 def one_open(spool):
-    """Index lane: exactly one open thread, replied by the agent, for the reviewer to resolve."""
+    """Exactly one open thread, replied by the agent: an index lane's for the reviewer to resolve, and a served page's."""
     replied(spool, "qa-open", "report-export", "Say which columns the CSV holds.")
     return None
 
@@ -147,6 +147,7 @@ COLLECTIONS = {
     "qa-1": every_status,
     "qa-2": one_open,
     "advice": later_tbds,
+    "served-threads": one_open,
 }
 # Lane-key collections, reached from the review index root (lane-hosting #index-threads); their
 # other specs have no threads.

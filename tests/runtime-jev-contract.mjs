@@ -15,8 +15,8 @@ const slice = (from, to) => {
 const paramsStart = runtime.indexOf('function jevParams(');
 const paramsEnd = runtime.indexOf('\n\nasync function fetchJev(', paramsStart);
 assert.ok(paramsStart >= 0 && paramsEnd > paramsStart, 'runtime exposes Jev request parameters');
-const jevParams = Function('location', 'URLSearchParams', 'state', runtime.slice(paramsStart, paramsEnd) + '; return jevParams;')(
-  { pathname: '/docs/specs/example.spec.html', search: '?view=reading&extra=ignored' },
+const jevParams = Function('OWN_ADDRESS', 'URLSearchParams', 'state', runtime.slice(paramsStart, paramsEnd) + '; return jevParams;')(
+  new URL('http://review.example/docs/specs/example.spec.html?view=reading&extra=ignored'),
   URLSearchParams,
   { readingView: false },
 );
@@ -42,10 +42,10 @@ const fakeFetch = async url => {
       text: 'Every feature has a.', name: 'A', home: 'docs/r.spec.html#a' },
   ], levels: { overlaps: { human: 'warning', agent: 'warning' }, contradicts: { human: 'important', agent: 'important' } } }) };
 };
-const fetchJev = Function('fetch', 'jevParams', 'location', 'URLSearchParams', runtime.slice(fetchStart, fetchEnd) + '; return fetchJev;')(
+const fetchJev = Function('fetch', 'jevParams', 'OWN_ADDRESS', 'URLSearchParams', runtime.slice(fetchStart, fetchEnd) + '; return fetchJev;')(
   fakeFetch,
   jevParams,
-  { pathname: '/docs/specs/example.spec.html', search: '' },
+  new URL('http://review.example/docs/specs/example.spec.html'),
   URLSearchParams,
 );
 const answer = await fetchJev('base-123');

@@ -22,12 +22,17 @@
 # unmarked, so it is a candidate on its home spec (qa.toml nav). Capture resets once per
 # story, so a criterion that dismisses starts on its own project too (dismiss, dismiss-reload,
 # not-a-rule): its click never hides the marker a sibling criterion of the story needs.
+#
+# The registry records a public base address, so the service, though on loopback, is public
+# and answers a page with no origin (review-service #served-private): the test host (host.py)
+# serves the served-* collections' pages at its own address, in a frame with no origin.
 set -eu
 collections="qa-fixture rule-candidate tbd-later tbd-later-handoff tbd-open-highlight tbd-open-single
   next-tbd next-tbd-step next-tbd-handoff tbd-open-jump tbd-open-wrap mobile-composer
   block-target-enter block-target-space block-target-off
   anchor-moved anchor-changed anchor-gone stale-page agent-scan name-reply advice
-  clear-thread qa-1 qa-2 dismiss dismiss-reload not-a-rule"
+  clear-thread qa-1 qa-2 dismiss dismiss-reload not-a-rule
+  served-threads served-handoff served-index served-focus"
 site="$QA_ROOT/site"
 serve="$QA_ROOT/serve"
 repo="$site/.repo"
@@ -81,6 +86,6 @@ rows = [row(slug, os.path.join(site, slug), "docs/specs/%s.spec.html" % spec)
 # QA-2's removed worktree: a spec registered from a root since gone (review-service #service-stale).
 rows.append(row("qa-2", os.path.join(site, "qa-2-removed"), "docs/specs/archive.spec.html"))
 with open(registry + ".tmp", "w", encoding="utf-8") as out:
-    out.write("\n".join(rows))
+    out.write('[process]\npublic_base = "https://review.qa.invalid"\n\n' + "\n".join(rows))
 os.replace(registry + ".tmp", registry)
 PY

@@ -36,9 +36,10 @@ function page({ storage, hash = '', embed = null, anchors = ['intro', 'place', '
   const doc = { querySelectorAll: () => els };
   const setTimeout = fn => win.timers.push(fn);
   const clearTimeout = () => {};
-  const location = { pathname: '/specs/demo.spec.html', hash };
-  const { keepPlace } = Function('window', 'document', 'location', 'EMBED_REVIEW_DIR', 'setTimeout', 'clearTimeout',
-    code + '; return { keepPlace };')(win, doc, location, embed, setTimeout, clearTimeout);
+  const location = { hash }; // the anchor is the location's fragment (review-service #served-anchor)
+  const OWN_ADDRESS = new URL('http://review.example/specs/demo.spec.html');
+  const { keepPlace } = Function('window', 'document', 'location', 'OWN_ADDRESS', 'EMBED_REVIEW_DIR', 'setTimeout', 'clearTimeout',
+    code + '; return { keepPlace };')(win, doc, location, OWN_ADDRESS, embed, setTimeout, clearTimeout);
   return { win, keepPlace };
 }
 const memory = () => { const m = new Map(); return { m, getItem: k => m.has(k) ? m.get(k) : null,
