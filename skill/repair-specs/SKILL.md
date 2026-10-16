@@ -1,17 +1,17 @@
 ---
 name: repair-specs
-description: Bring a repo's existing specs and ADRs to the current shaping contract. Removes non-target text, moves behavior to owning specs, resolves contradictions, reduces ADRs to the ADR model, and rewrites acceptance criteria to the shaping contract's criterion rules, brings spec pages to the visual quality contract, then checks each spec against its code for drift. Its catch-up runs the Jev project rule checks over every spec in batch. Runnable any time or as onboarding catch-up.
+description: Bring a repo's existing specs and ADRs to the current shaping contract. Removes non-target text, moves behavior to owning specs, resolves contradictions, reduces ADRs to the ADR model, and rewrites acceptance criteria to the shaping contract's criterion rules, brings spec pages to the visual quality contract, proposes splitting a spec that holds separate domains, then checks each spec against its code for drift. Its catch-up runs the Jev project rule checks over every spec in batch. Runnable any time or as onboarding catch-up.
 ---
 
 # Repair specs
 
 One skill that brings every spec and ADR in a repo to the current [shaping contract](../shape-spec/SKILL.md).
-Reads the repo's specs and ADRs, Jev's checks through the agent read (`spec-chat-review`'s `scripts/jev-read.py`), and for the drift check the repo's code and Git history; reads no onboarding status or peer status file and names no peer.
+Reads the repo's specs and ADRs, Jev's checks through the agent read (`spec-chat-review`'s `scripts/jev-read.py`), for the split check the repo's Git history, and for the drift check the repo's code and Git history; reads no onboarding status or peer status file and names no peer.
 
 ## Inputs
 
 The caller names the repo root and optionally catch-up.
-A repair run is all six repair types and the drift check; a catch-up run is the [catch-up](#catch-up) steps only.
+A repair run is all six repair types, the split check, and the drift check; a catch-up run is the [catch-up](#catch-up) steps only.
 
 ## Repair types
 
@@ -93,9 +93,38 @@ Applies to specs only; Markdown ADRs have no figures or page styling to repair.
 
 The review chrome is the runtime's, owned by [spec page design](../../docs/specs/spec-page-design.spec.html), and reaches a spec only through preflight.
 
+## Split check
+
+After the six repairs and before the drift check, check each spec for separate domains.
+Shaping runs the same check on the spec a change lands in ([prompt-first shaping](../../docs/specs/prompt-first-shaping.spec.html#flow-split)).
+
+| Signal in a spec | Proposal |
+| --- | --- |
+| Its stories fall into groups that no criterion joins, each group served by sections of its own | Split it, one new spec per group |
+| Its Git history shows unrelated changes repeatedly editing it at the same time, each only in sections the other never touches | Split it along those sections |
+| It is long, or holds many sections or criteria, and neither signal above holds | None: size alone never splits a spec |
+
+For the history signal, read concurrent edits from Git history: `git log --merges -- <spec>` lists the merges whose both sides changed the spec, and diffing each side against its merge base (`git merge-base <merge>^1 <merge>^2`) shows the sections each side touched.
+
+For each spec a signal holds for, present the human one proposal naming the signal, each new spec's file and title, and the stories, criteria, sections, and boundaries each new spec takes.
+Name each new spec for its domain, never for a change, fix, or lane.
+Show in the proposal every line a new spec needs that the original does not hold, such as its title, its context, or a modular boundary, so the human decides it with the split.
+Ask the human to settle each proposal: split, or leave it.
+
+On split:
+- Move each named block to its new spec with its wording and its anchor unchanged, so every moved anchor still resolves in its new home.
+- Give each new spec the shaped sections; every spec, the original included, passes the structural validator.
+- Point every link in the repo to a moved anchor at its new spec, and list each moved anchor with its old and new spec in the split commit message for links outside the repo.
+- Commit the split as one commit of its own; it changes no behavior sentence, acceptance criterion, or boundary.
+
+On leave, change no spec.
+
+Ask in the run, never in the spec: never split a spec without the human's choice, and write nothing about a split into a spec as a finding, note, or TBD.
+The split check, and so the run, is not done until the human has settled every proposal; asked whether the run is done before then, answer that the split check is waiting on the unsettled proposal and report no completion.
+
 ## Drift check
 
-After the six repairs, check each spec against the code that implements it.
+After the six repairs and the split check, check each spec against the code that implements it.
 Drift is a criterion whose behavior the code does differently, or a code behavior no criterion of the owning spec states, including code no pointer connects to any spec whose behavior the spec covers in spirit.
 Read code; never edit it.
 
@@ -130,7 +159,7 @@ Before editing any spec, load [shape-spec authoring](../shape-spec/references/au
 
 Every edit follows the authoring contract:
 - One sentence per line in prose.
-- Stable `data-anchor` on every block; never remove or rename an existing anchor.
+- Stable `data-anchor` on every block; never remove or rename an existing anchor. A split the human chose moves an anchor, unchanged, to its new spec.
 - Pretty-printed semantic-island JSON beside its render target.
 - Preserve existing visual artifacts, section order, and layout unless the repair requires a structural change.
 
@@ -142,10 +171,10 @@ Same rule as the shaping agent's [fix-raises-new-mark](../../docs/specs/project-
 
 ## Output
 
-When repairs and the drift check complete:
+When repairs, the split check, and the drift check complete:
 
-1. Commit each changed spec and ADR on the current branch, including the drift edits the human chose.
-2. Register each changed spec with the review server so the reviewer sees changes with Git focus.
+1. Commit each changed spec and ADR on the current branch: the repairs before the split check, each split the human chose as one commit of its own, and the drift edits the human chose.
+2. Register each changed or new spec with the review server so the reviewer sees changes with Git focus.
 
 Commits are local only; the skill never pushes, opens a pull request, or creates an issue.
 
