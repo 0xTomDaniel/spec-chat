@@ -17,7 +17,7 @@ const block = runtime.slice(start, end + END.length);
 const ORIGIN = 'https://specs.example';
 const HOST = 'https://bb.example';
 
-function page({ platform = 'MacIntel', framed = true, title = 'Demo spec' } = {}) {
+function page({ platform = 'MacIntel', framed = true, title = 'Demo spec', href = ORIGIN + '/docs/specs/a.spec.html' } = {}) {
   const posted = [];
   const windowListeners = {};
   const docListeners = {};
@@ -26,7 +26,7 @@ function page({ platform = 'MacIntel', framed = true, title = 'Demo spec' } = {}
   window.parent = framed ? parent : window;
   const document = { title, baseURI: ORIGIN + '/docs/specs/a.spec.html',
     addEventListener: (type, fn, capture) => (docListeners[type] ||= []).push(fn) };
-  const location = { origin: ORIGIN, href: ORIGIN + '/docs/specs/a.spec.html' };
+  const location = { origin: new URL(href).origin, href };
   const navigator = { platform };
   const api = Function('window', 'document', 'location', 'navigator', block + '; return { listenHost, hostBridge };')(
     window, document, location, navigator);
@@ -136,6 +136,19 @@ const sameAbs = ORIGIN + same;
   p.hello({ type: 'spec-chat-host', opens: ['evidence', 'tab'] });
   assert.deepEqual(p.posted, [[{ type: 'spec-chat-title', title: '42' }, HOST]], 'title is a string');
   assert.equal(p.api.hostBridge.evidence, HOST);
+}
+
+// #bridge-new-tab-click names the page's own address (review-service #served-own-address): served at another
+// address, a link to its base address origin is a new-tab link, and one to its location's origin is not.
+{
+  const p = page({ href: HOST + '/plugins/servlet/spec-chat/view?u=7' });
+  p.hello(tab);
+  p.posted.length = 0;
+  assert.equal(p.click(same, { metaKey: true }), true, 'a root path resolves against the base address');
+  assert.deepEqual(p.posted, [[{ type: 'spec-chat-open-tab', href: sameAbs }, HOST]]);
+  p.posted.length = 0;
+  assert.equal(p.click(HOST + '/plugins/servlet/other', { metaKey: true }), false, 'the location origin is another origin');
+  assert.deepEqual(p.posted, []);
 }
 
 console.log('runtime host bridge tests passed');

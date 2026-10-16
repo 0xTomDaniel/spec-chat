@@ -94,13 +94,13 @@ const code = [
   slice('function commitDate(', '\n\nfunction rangeBarText('),
 ].join('\n\n');
 const state = { readingView: false, jev: { request: 0, status: 'idle', base: null, items: [] }, evidence: { criteria: null } };
-const location = { search: '', pathname: '/specs/demo.spec.html' };
+const OWN_ADDRESS = new URL('http://review.example/specs/demo.spec.html');
 let answer = null;
 const fetches = [];
 const fetch = async url => { fetches.push(url); if (answer instanceof Error) throw answer; return answer; };
-const { renderJev, requestEvidence, evidenceAge, evidenceDiff, listenHost } = Function('document', 'window', 'state', 'location', 'URLSearchParams', 'EMBED_REVIEW_DIR', 'NodeFilter',
+const { renderJev, requestEvidence, evidenceAge, evidenceDiff, listenHost } = Function('document', 'window', 'state', 'OWN_ADDRESS', 'URLSearchParams', 'EMBED_REVIEW_DIR', 'NodeFilter',
   'requestAnimationFrame', 'cancelAnimationFrame', 'getComputedStyle', 'innerWidth', 'innerHeight', 'fetch', 'openComposer',
-  code + '; return { renderJev, requestEvidence, evidenceAge, evidenceDiff, listenHost };')(document, window, state, location, URLSearchParams, null, {}, () => 0, () => {},
+  code + '; return { renderJev, requestEvidence, evidenceAge, evidenceDiff, listenHost };')(document, window, state, OWN_ADDRESS, URLSearchParams, null, {}, () => 0, () => {},
   () => ({}), 375, 812, fetch, openComposer);
 
 const holder = anchor => article.querySelectorAll('[data-anchor]').find(e => e.dataset.anchor === anchor);

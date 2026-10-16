@@ -122,12 +122,12 @@ const suggestionItems = [
 ];
 // The real runtime state shape, as requestJev leaves it after a successful fetch.
 const state = { readingView: false, jev: { request: 1, status: 'on', base: 'b', items: suggestionItems, levels } };
-const location = { search: '?focus=changes' };
+const OWN_ADDRESS = new URL('http://review.example/docs/specs/a.spec.html?focus=changes');
 const composed = [];
 const openComposer = (...args) => composed.push(args);
-const { renderJev, jevNoteSources } = Function('document', 'window', 'state', 'location', 'URLSearchParams', 'EMBED_REVIEW_DIR', 'NodeFilter',
+const { renderJev, jevNoteSources } = Function('document', 'window', 'state', 'OWN_ADDRESS', 'URLSearchParams', 'EMBED_REVIEW_DIR', 'NodeFilter',
   'requestAnimationFrame', 'cancelAnimationFrame', 'getComputedStyle', 'innerWidth', 'innerHeight', 'openComposer',
-  code + '; return { renderJev, jevNoteSources };')(document, window, state, location, URLSearchParams, null, {}, () => 0, () => {},
+  code + '; return { renderJev, jevNoteSources };')(document, window, state, OWN_ADDRESS, URLSearchParams, null, {}, () => 0, () => {},
   () => ({}), 1440, 900, openComposer);
 renderJev();
 
@@ -391,11 +391,11 @@ withCorpus(fetchedLane, () => {
   renderJev();
   assert.deepEqual(colored(), ['rule', 'typo']);
   // Lane marks compare against target main, not the Git focus base, so they show without Git focus too.
-  location.search = '';
+  OWN_ADDRESS.search = '';
   state.jev.items = [...typeItems, ...laneItems];
   renderJev();
   assert.deepEqual(noteButtons('overstep'), [['Oversteps ann2 #d', ['Ask agent to reconcile', 'Reconcile all (1)', '+2 warnings']]]);
-  location.search = '?focus=changes';
+  OWN_ADDRESS.search = '?focus=changes';
 });
 // Draft and cross-lane reconcile notes batch together.
 withCorpus([item('corpus', 'crowded', 'label', 'contradicts', 'non-goal-text'), lane('rule', 'contradicts', Y + '#b', 'important')], () => {
@@ -429,7 +429,7 @@ state.jev.items = suggestionItems;
 renderJev();
 
 // Without Git focus, change types and draft checks do not show; coverage does.
-location.search = '';
+OWN_ADDRESS.search = '';
 renderJev();
 assert.equal(pop().hidden, true, 'rerender closes the popover');
 assert.equal(markersOf('rule').length, 0);
@@ -464,7 +464,7 @@ assert.equal(orphanHintElement({ id: 'thread-1', status: 'pending' }, null), nul
 
 // #settle-gap and #settle-conflict: once the next head has the counterpart and answers no finding, the marks are gone.
 state.jev.status = 'on';
-location.search = '?focus=changes';
+OWN_ADDRESS.search = '?focus=changes';
 state.jev.items = suggestionItems;
 renderJev();
 marker('story-gap');

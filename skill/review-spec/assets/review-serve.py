@@ -9,6 +9,7 @@ import contextlib
 import errno
 import hashlib
 import html
+import ipaddress
 import json
 import mimetypes
 import os
@@ -216,7 +217,7 @@ def _resource_records(document, *, check_refs=False, trust=False):
     return result
 
 
-def _read_registry(path, *, check_refs=False, trust=False):
+def _registry_document(path):
     try:
         with open(path, "rb") as stream:
             document = tomllib.load(stream)
@@ -224,15 +225,23 @@ def _read_registry(path, *, check_refs=False, trust=False):
         raise ValueError("cannot read registry: %s" % exc) from exc
     if not isinstance(document, dict):
         raise ValueError("registry must be a TOML table")
-    return _resource_records(document, check_refs=check_refs, trust=trust)
+    return document
+
+
+def _public_base(document):
+    """The public base address review-host records in [process] (review-service #service-visibility), else None."""
+    process = document.get("process")
+    base = process.get("public_base") if isinstance(process, dict) else None
+    return base if isinstance(base, str) and base else None
 
 
 class MountState:
-    """The one mount list used by both command-line modes."""
+    """The one mount list used by both command-line modes, and the registry's recorded public base address."""
 
-    def __init__(self, records, path=None):
+    def __init__(self, records, path=None, public_base=None):
         self.path = os.path.realpath(path) if path else None
         self.records = tuple(records)
+        self.base = public_base
         self.signature = self._signature() if self.path else None
 
     def _signature(self):
@@ -249,12 +258,19 @@ class MountState:
         if signature is None or signature == self.signature:
             return self.records
         try:
-            records = _read_registry(self.path, trust=True)
+            document = _registry_document(self.path)
+            records = _resource_records(document, trust=True)
         except (OSError, ValueError):
             return self.records
         self.records = tuple(records)
+        self.base = _public_base(document)
         self.signature = signature
         return self.records
+
+    def public_base(self):
+        """The recorded public base address as of the registry now; box setup changes it with no restart."""
+        self.snapshot()
+        return self.base
 
 
 BROAD_HOME_CHILDREN = ("Desktop", "Documents", "Downloads")
@@ -844,11 +860,13 @@ class WakeController:
 
 
 class MountHandler(SimpleHTTPRequestHandler):
-    # Keep-alive: every response carries Content-Length, is a bodiless 304, or
-    # closes (send_error); do_POST drains its body before any reply.
+    # Keep-alive: every response carries Content-Length, is a bodiless 204 or 304,
+    # or closes (send_error); do_POST drains its body before any reply.
     protocol_version = "HTTP/1.1"
     server_version = "SpecChat/1"
     timeout = 2.0
+    # Whether this request is answered as a page with no origin (review-service #served-no-origin); decided per request.
+    no_origin = False
 
     @property
     def mounts(self):
@@ -858,8 +876,27 @@ class MountHandler(SimpleHTTPRequestHandler):
         super().setup()
         self.connection.settimeout(self.timeout)
 
+    def parse_request(self):
+        self.no_origin = False
+        if not super().parse_request():
+            return False
+        self.no_origin = self.headers.get("Origin") == "null" and self._public()
+        return True
+
+    def _public(self):
+        """A public service: a listener outside loopback, or a recorded public base address. A private one answers no
+        origin as any other origin, so another site's frame with no origin reads nothing (review-service #served-private)."""
+        listener = ipaddress.ip_address(self.server.server_address[0])
+        return not listener.is_loopback or bool(self.server.mount_state.public_base())
+
     def end_headers(self, cache_control="no-cache"):
         self.send_header("Cache-Control", cache_control)
+        if self.no_origin:
+            # Every answer, errors and 304 included, so the page reads all it reads served directly; its version tag
+            # and wake state are not safelisted. No credential: the service guards nothing by origin (#served-safe).
+            self.send_header("Access-Control-Allow-Origin", "null")
+            self.send_header("Access-Control-Expose-Headers", "ETag, X-Spec-Chat-Wake")
+            self.send_header("Vary", "Origin")
         super().end_headers()
 
     def _send_body(self, body, content_type, *, immutable=False, headers=None):
@@ -1351,6 +1388,15 @@ listenHost();
     def do_HEAD(self):
         return self.do_GET()
 
+    def do_OPTIONS(self):
+        """A page with no origin's preflight; GET, HEAD, and POST are safelisted, so its JSON body type is all it needs.
+        Any other OPTIONS keeps the answer of a method the server lacks."""
+        if not self.no_origin:
+            return self.send_error(501, "Unsupported method (%r)" % self.command)
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
+
     def do_POST(self):
         try:
             body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
@@ -1391,11 +1437,12 @@ def main(argv=None):
     bind = args.bind or ("0.0.0.0" if args.public else "127.0.0.1")
     if args.registry:
         try:
-            records = _read_registry(args.registry, check_refs=True)
+            document = _registry_document(args.registry)
+            records = _resource_records(document, check_refs=True)
         except (OSError, ValueError) as exc:
             print("review-serve: %s" % exc, file=sys.stderr)
             return 2
-        state = MountState(records, args.registry)
+        state = MountState(records, args.registry, _public_base(document))
     else:
         try:
             state = MountState([_single_mount(args.root)])

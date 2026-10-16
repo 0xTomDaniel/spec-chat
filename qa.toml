@@ -17,6 +17,15 @@ command = 'mkdir -p "$QA_ROOT/home" "$QA_ROOT/state" "$QA_ROOT/config" && cd "$Q
 url = "http://127.0.0.1:{port}"
 ready = "/qa-fixture/docs/specs/report.spec.html"
 
+[services.host]
+# The fixture's test host (tests/fixtures/qa/host.py): serves the review service's pages at its own
+# address, each with a base address naming the page, in a frame sandboxed without same-origin access,
+# so the page runs with no origin (review-service #served-rule). Declared after review, so it starts
+# with QA_URL_REVIEW. {host}/<path> frames the service's page at <path>.
+command = 'cd "$QA_REPO_SPEC_CHAT" && exec python3 tests/fixtures/qa/host.py "$QA_URL_REVIEW" "$PORT"'
+url = "http://127.0.0.1:{port}"
+ready = "/"
+
 # One Git repo of four specs, copied per collection (reset.sh): onboarding.spec.html marks the project rule "Every change
 # to what a user sees or does adds its onboarding section.", named "Every change ships its onboarding"; report.spec.html is the
 # spec under shaping, its head adding an export story with no onboarding criterion,
@@ -197,6 +206,26 @@ path = "{review}/"
 [nav.acceptance-index-stale]
 path = "{review}/"
 
+# Pages served at another address (review-service #story-served): each criterion opens its served-*
+# collection's report spec in the test host, which frames it with no origin. reset.sh records a public
+# base address, so the review service answers that frame (entry.criteria below map the fixture).
+# Capture hints, per criterion:
+# - served-threads: the report spec holds one open thread, Papaya's, replied by the agent. The step
+#   left is opening that thread with its "Open thread 1" button.
+# - served-handoff: turn on Comment (C), click the "The report page shows totals per week." block,
+#   type the value, save, then click "Hand off to agent →".
+# - served-index: click "Back to Spec Chat index".
+# - served-focus: focus on changes is turned on by choosing its baseline: click "Change base", then
+#   the older listed commit (subject "base").
+[nav.acceptance-served-threads]
+path = "{host}/served-threads/docs/specs/report.spec.html"
+[nav.acceptance-served-handoff]
+path = "{host}/served-handoff/docs/specs/report.spec.html"
+[nav.acceptance-served-index]
+path = "{host}/served-index/docs/specs/report.spec.html"
+[nav.acceptance-served-focus]
+path = "{host}/served-focus/docs/specs/report.spec.html"
+
 # Typed text for the criteria that save a message (capture types only these).
 [entry.criteria.acceptance-name]
 values = ["First note from this browser.", "Reply after reload."]
@@ -204,6 +233,16 @@ values = ["First note from this browser.", "Reply after reload."]
 values = ["Name the CSV columns."]
 [entry.criteria.acceptance-clear-thread]
 values = ["Does the export need onboarding?"]
+# The served criteria's Givens ask for a fixture to be added; the served-* collections are it.
+[entry.criteria.acceptance-served-threads]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-served-handoff]
+fixture = "spec_review_site"
+values = ["Saved in the host frame."]
+[entry.criteria.acceptance-served-index]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-served-focus]
+fixture = "spec_review_site"
 # One capture browser: a When by another live browser, or a Given of two live drafts,
 # cannot be driven; the two-browser runtime test proves these.
 [entry.criteria.acceptance-live-comment]
