@@ -15,7 +15,7 @@
 <nav data-anchor="breadcrumbs">docs / specs / repair-specs.spec.html</nav>
 <p data-anchor="context">One Spec Chat skill that brings a repo's existing specs and ADRs to the current <a href="../../skill/shape-spec/SKILL.md">shaping contract</a>.
 Runnable any time and optionally as onboarding catch-up.
-The skill reads the repo's specs and ADRs, Jev's checks through the agent read, and for the drift check the repo's code and Git history.
+The skill reads the repo's specs and ADRs, Jev's checks through the agent read, for the split check the repo's Git history, and for the drift check the repo's code and Git history.
 Extends <a href="./project-rules.spec.html">project-wide rules</a>: its <a href="#catch-up">catch-up</a> is the batch entry point of the same rule checks, over every spec at once.</p>
 </header>
 
@@ -27,6 +27,7 @@ Extends <a href="./project-rules.spec.html">project-wide rules</a>: its <a href=
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-review">As a reviewer, I review the repairs on the review page with Git focus showing what changed in each spec.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-catch-up">As an operator setting up a box, onboarding catch-up finds the criteria that read as project rules but are not marked and the specs that miss a marked rule, and I settle each once; running it again, at setup or any time as a check, proposes nothing I already settled.</p>
 <p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-drift">As the human running repair, the skill checks each spec against its code, presents me one suggestion per drift saying which side to change and why, and makes only the spec edits I choose, so specs catch up with their code without anything being written behind my back.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-split">As the human running repair, when one spec holds separate domains the skill proposes splitting it, naming each new spec and what it takes, and splits it only when I choose to, with every anchor and link still resolving and no behavior changed, so each domain has its own spec and unrelated changes stop editing one file at once.</p>
 <p data-user-story data-user-facing="false" data-anchor="story-generic">As the shaping agent, the skill drives rule repairs from the rules the specs mark and Jev's checks, without hardcoding any project's rule wording or format.</p>
 </section>
 
@@ -43,7 +44,7 @@ Extends <a href="./project-rules.spec.html">project-wide rules</a>: its <a href=
 <p data-acceptance-criterion data-anchor="acceptance-retry-rule" data-story="story-repair"><span data-acceptance-scenario>Given the shaping agent that made a repair edit on a clause, When that edit raises a new rule miss on the same clause,</span> <span data-acceptance-observable>Then the committed spec shows an open TBD at that clause, written instead of editing again.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-output" data-story="story-review"><span data-acceptance-scenario>Given a reviewer on a repo the shaping agent repaired, When repairs complete and the reviewer opens a changed spec on the review page,</span> <span data-acceptance-observable>Then the page shows what changed with Git focus.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-output-committed" data-story="story-review"><span data-acceptance-scenario>Given the shaping agent on a repo with specs that need repair, When repairs complete,</span> <span data-acceptance-observable>Then each changed spec is committed on the current branch and registered with the review server.</span></p>
-<p data-acceptance-criterion data-anchor="acceptance-input" data-story="story-generic"><span data-acceptance-scenario>Given the shaping agent running the repair skill, When the skill reads its inputs,</span> <span data-acceptance-observable>Then it reads the repo's specs and ADRs, Jev's checks through the agent read, and for the drift check the repo's code and Git history, and reads no onboarding status or peer status file, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-input" data-story="story-generic"><span data-acceptance-scenario>Given the shaping agent running the repair skill, When the skill reads its inputs,</span> <span data-acceptance-observable>Then it reads the repo's specs and ADRs, Jev's checks through the agent read, for the split check the repo's Git history, and for the drift check the repo's code and Git history, and reads no onboarding status or peer status file, proven by a unit test: no screen shows it.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-catch-up" data-story="story-catch-up"><span data-acceptance-scenario>Given an operator setting up a box with a project whose specs hold an unmarked criterion that reads as project-wide and a spec that misses a marked rule, When the agent runs catch-up,</span> <span data-acceptance-observable>Then the human is asked about each candidate, mark it, <code>Not a project rule</code>, or skip, and each miss, cover it, add a reason line, or <code>Not for this spec</code>, and the committed specs carry only the edits the human chose.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-catch-up-none" data-story="story-catch-up"><span data-acceptance-scenario>Given an operator whose project's catch-up ran and every proposal was settled, When the agent runs catch-up again,</span> <span data-acceptance-observable>Then it proposes no marked rule, no criterion answered <code>Not a project rule</code>, and no dismissed or covered miss, reports nothing to settle, and no spec changes.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-catch-up-skipped" data-story="story-catch-up"><span data-acceptance-scenario>Given an operator who skipped a candidate in an earlier catch-up, When the agent runs catch-up again,</span> <span data-acceptance-observable>Then that candidate is proposed again, and every criterion the human marked or answered <code>Not a project rule</code> is not.</span></p>
@@ -89,12 +90,19 @@ Extends <a href="./project-rules.spec.html">project-wide rules</a>: its <a href=
 <p data-acceptance-criterion data-anchor="acceptance-drift-no-findings" data-story="story-drift story-review"><span data-acceptance-scenario>Given a reviewer on a spec the drift check found drift in, When the reviewer opens that spec on the review page after the drift check is settled,</span> <span data-acceptance-observable>Then the page shows no TBD, note, or finding from the drift check, and the only drift-driven changes are the edits the human chose.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-drift-pointers" data-story="story-drift"><span data-acceptance-scenario>Given the shaping agent on a repo whose spec links no code but was committed together with its code, When the agent runs repair,</span> <span data-acceptance-observable>Then the drift check reads the code from those shared commits and no spec-to-code index is written, proven by a unit test: no screen shows it.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-drift-no-code" data-story="story-drift"><span data-acceptance-scenario>Given the shaping agent on a repo whose spec has no code the drift check can find, When the agent runs repair,</span> <span data-acceptance-observable>Then the skill tells the human that spec was not checked against code, and the spec has not changed.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-split-stories" data-story="story-split"><span data-acceptance-scenario>Given the human running repair on a repo whose spec holds two groups of stories that no criterion joins, each served by sections of its own, When the run reaches the split check,</span> <span data-acceptance-observable>Then the skill presents one proposal to split that spec, naming the signal, each new spec, and the stories, criteria, sections, and boundaries each new spec takes, and asks the human to decide.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-split-history" data-story="story-split"><span data-acceptance-scenario>Given the human running repair on a repo whose spec's Git history shows unrelated changes repeatedly editing it at the same time, each only in sections the other never touches, When the run reaches the split check,</span> <span data-acceptance-observable>Then the skill presents one proposal to split that spec along those sections, naming the signal, each new spec, and what each takes, and asks the human to decide.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-split-size" data-story="story-split"><span data-acceptance-scenario>Given the human running repair on a repo whose spec is long but whose stories all share criteria and whose Git history shows no unrelated changes editing it at the same time, When the run reaches the split check,</span> <span data-acceptance-observable>Then the skill presents no split proposal for that spec.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-split-chosen" data-story="story-split"><span data-acceptance-scenario>Given the human settling a split proposal, When the human chooses to split,</span> <span data-acceptance-observable>Then the split is one commit of its own in which each named new spec holds the stories, criteria, sections, and boundaries the proposal named, with their wording and anchors unchanged, the original spec no longer holds them, and every spec passes the structural validator.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-split-links" data-story="story-split"><span data-acceptance-scenario>Given the human settling a split proposal on a repo whose other spec links an anchor the split moves, When the human chooses to split,</span> <span data-acceptance-observable>Then that committed link points to the anchor in its new spec, and the split commit message lists each moved anchor with its old and new spec for links outside the repo.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-split-leave" data-story="story-split"><span data-acceptance-scenario>Given the human settling a split proposal, When the human chooses to leave it,</span> <span data-acceptance-observable>Then no spec has changed, and no spec shows a note, finding, or TBD about the split.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-split-unsettled" data-story="story-split"><span data-acceptance-scenario>Given the human running repair with one split proposal not yet settled, When the human asks whether the run is done,</span> <span data-acceptance-observable>Then the skill answers that the split check is waiting on that proposal and reports no completion.</span></p>
 <p data-anchor="acceptance-rules-note">CI: the repair-specs test runs in CI with no other tool of the box installed and no provider file.</p>
 </section>
 
 <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
 <h2>Modular boundaries</h2>
-<p data-modular-boundary data-anchor="boundary-skill"><span data-boundary-responsibility>The repair skill reads all specs and ADRs in a repo, identifies repairs using the six types, edits specs in place, runs <a href="#catch-up">catch-up</a>'s rule checks in batch, checks each spec against its code for drift, commits, and registers for review.</span> <span data-boundary-seam>Caller-facing seam: the skill invocation; the caller names the repo and optionally <code>catch-up</code>.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; reads Jev's checks through the agent read when the review service runs Jev; uses the review page for human review.</span> <span data-boundary-scope>Observable scope: changed spec and ADR files, commits, the review page, the warning ledger outcomes catch-up records, and the suggestions the skill presents to the human; it reads code and never edits it.</span></p>
+<p data-modular-boundary data-anchor="boundary-skill"><span data-boundary-responsibility>The repair skill reads all specs and ADRs in a repo, identifies repairs using the six types, edits specs in place, runs <a href="#catch-up">catch-up</a>'s rule checks in batch, proposes a <a href="#split">split</a> for a spec holding separate domains, checks each spec against its code for drift, commits, and registers for review.</span> <span data-boundary-seam>Caller-facing seam: the skill invocation; the caller names the repo and optionally <code>catch-up</code>.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; reads Jev's checks through the agent read when the review service runs Jev; uses the review page for human review.</span> <span data-boundary-scope>Observable scope: changed spec and ADR files, commits, the review page, the warning ledger outcomes catch-up records, and the split proposals and drift suggestions the skill presents to the human; it reads code and never edits it.</span></p>
 </section>
 
 <section data-anchor="repairs">
@@ -131,9 +139,35 @@ The review chrome is the runtime's, owned by <a href="./spec-page-design.spec.ht
 <p data-anchor="repair-dialect">Every edit follows the <a href="../../skill/shape-spec/references/authoring.md">authoring contract</a>: one sentence per line, stable <code>data-anchor</code> on every block, pretty-printed semantic islands.</p>
 </section>
 
+<section data-anchor="split">
+<h2>Split check</h2>
+<p data-anchor="split-when">After the six repairs and before the drift check, the skill checks each spec for separate domains.
+Shaping runs the same check on the spec a change lands in, as <a href="./prompt-first-shaping.spec.html#flow-split">prompt-first shaping</a> states.</p>
+<div class="table-scroll" data-anchor="split-signals">
+<table data-anchor="split-signals-table">
+<thead><tr><th>Signal in a spec</th><th>The skill</th></tr></thead>
+<tbody>
+<tr data-anchor="split-signal-stories"><td>Its stories fall into groups that no criterion joins, each group served by sections of its own</td><td>Proposes a split, one new spec per group</td></tr>
+<tr data-anchor="split-signal-history"><td>Its Git history shows unrelated changes repeatedly editing it at the same time, each only in sections the other never touches</td><td>Proposes a split along those sections</td></tr>
+<tr data-anchor="split-signal-size"><td>It is long, or holds many sections or criteria, and neither signal above holds</td><td>Proposes nothing: size alone never splits a spec</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="split-proposal">For each spec a signal holds for, the skill presents the human one proposal naming the signal, each new spec's file and title, and the stories, criteria, sections, and boundaries each new spec takes.
+Each new spec is named for its domain, never for a change, fix, or lane.
+A line a new spec needs that the original does not hold, such as its title, its context, or a modular boundary, is shown in the proposal, so the human decides it with the split.
+The human settles each proposal: split, or leave it.</p>
+<p data-anchor="split-move">On split, the skill moves each named block to its new spec with its wording and its anchor unchanged, so every moved anchor still resolves in its new home.
+Each new spec carries the shaped sections and passes the structural validator.
+Every link in the repo to a moved anchor is pointed at its new spec, and the split commit message lists each moved anchor with its old and new spec for links outside the repo.
+The split is one commit of its own and changes no behavior sentence, acceptance criterion, or boundary.</p>
+<p data-anchor="split-silent">Repair asks in the run, never in the spec: it never splits a spec without the human's choice, and writes nothing about a split into a spec as a finding, note, or TBD; on leave, no spec changes.
+The split check, and so the run, is not done until the human has settled every proposal.</p>
+</section>
+
 <section data-anchor="drift">
 <h2>Drift check</h2>
-<p data-anchor="drift-when">After the six repairs, the skill checks each spec against the code that implements it.
+<p data-anchor="drift-when">After the six repairs and the split check, the skill checks each spec against the code that implements it.
 Drift is a criterion whose behavior the code does differently, or a code behavior no criterion of the owning spec states, including code no pointer connects to the spec whose behavior the spec should cover in spirit.</p>
 <figure data-anchor="drift-find-figure">
 <div class="rail-wrap" data-anchor="drift-find-scroll">
@@ -198,7 +232,7 @@ Same rule as the shaping agent's <a href="./project-rules.spec.html#agent-once-s
 
 <section data-anchor="non-goals">
 <h2>Non-goals</h2>
-<p data-anchor="non-goal-list">Reading a peer's status file or naming a peer; hardcoding project rules; creating specs; changing the scope or rule-check questions of <a href="./project-rules.spec.html">project-wide rules</a>; a rule list or onboarding status of its own; running without the repo's specs present; automated merging or promotion; turning relational prose into new figures, which changes behavior text and belongs to shaping.</p>
+<p data-anchor="non-goal-list">Reading a peer's status file or naming a peer; hardcoding project rules; creating specs other than the new specs of a split the human chose; changing the scope or rule-check questions of <a href="./project-rules.spec.html">project-wide rules</a>; a rule list or onboarding status of its own; running without the repo's specs present; automated merging or promotion; turning relational prose into new figures, which changes behavior text and belongs to shaping.</p>
 <p data-anchor="non-goal-onboarding">Onboarding: not needed, the reviewer sees repairs through the existing review page and the human's answers while it runs.</p>
 </section>
 
