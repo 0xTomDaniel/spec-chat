@@ -93,6 +93,20 @@ spec acceptance and are highlighted in review. `data-spec-tbd="later"` marks a
 TBD deliberately left for a later slice: it stays visible text but neither
 blocks spec acceptance nor is highlighted.
 
+A TBD question whose answer is one of a few options offers each option as an
+answer button: a `button` carrying `data-spec-choice`, whose value is the
+answer's text, inside the question's anchored TBD block. The recommended
+option's button text ends in `(recommended)`; the value stays the bare answer.
+The page needs no script, and an answer no button offers takes an ordinary
+comment on that block.
+
+```html
+<p data-anchor="retry-limit" data-spec-tbd>How many retries before checkout fails?
+  <button type="button" data-spec-choice="Three retries">Three retries (recommended)</button>
+  <button type="button" data-spec-choice="One retry">One retry</button>
+</p>
+```
+
 Every marked spec has one Modular boundaries section, including a self-contained
 single-module spec. Each anchored boundary names responsibility, the
 caller-facing seam, dependency direction including self-contained or an

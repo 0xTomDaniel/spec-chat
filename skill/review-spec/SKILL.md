@@ -58,6 +58,8 @@ By the box owner, once, outside any lane: `--public <host>` (listen there on an 
 
    `respondsTo-id` must be the exact newest human `comment`, `reply`, or `edit` id, not automatically the root comment id. Field exactness matters: the browser runtime renders `respondsTo`, `text`, `status`, and `change`; a missing or renamed field means the user sees nothing. End replies that made an edit with an offer to resolve ("OK to resolve?").
 
+   A decision you need from the human is never a question in a reply: write it into the spec as an open TBD block at the clause it decides, offering each option as an answer button, the recommended option's button text ending in `(recommended)` (`spec-chat-shape` Review shaping; markup in its `references/authoring.md`), commit it before the reply, and let the reply point to that TBD. The human answers with one press, or with an ordinary comment on that block for an answer no button offers.
+
 6. **Externalize agreements** after the spec changes and replies succeed: durable decisions go into the spec itself and a one-line note in `<spec>.review/context.md`. This is what lets a different session, or a different CLI, pick up the review cold.
 
 7. **Advance that spec's cursor only after the entire reported batch was successfully processed and every reply was emitted**, by APPENDING exactly the filenames the scan reported:
