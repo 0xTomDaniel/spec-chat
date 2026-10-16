@@ -95,7 +95,7 @@ The review chrome is the runtime's, owned by [spec page design](../../docs/specs
 
 ## Split check
 
-After the six repairs and before the drift check, check each spec for separate domains.
+After the six repairs and before the drift check, commit the repaired specs and ADRs, then check each spec for separate domains.
 Shaping runs the same check on the spec a change lands in ([prompt-first shaping](../../docs/specs/prompt-first-shaping.spec.html#flow-split)).
 
 | Signal in a spec | Proposal |
@@ -104,7 +104,9 @@ Shaping runs the same check on the spec a change lands in ([prompt-first shaping
 | Its Git history shows unrelated changes repeatedly editing it at the same time, each only in sections the other never touches | Split it along those sections |
 | It is long, or holds many sections or criteria, and neither signal above holds | None: size alone never splits a spec |
 
-For the history signal, read concurrent edits from Git history: `git log --merges -- <spec>` lists the merges whose both sides changed the spec, and diffing each side against its merge base (`git merge-base <merge>^1 <merge>^2`) shows the sections each side touched.
+For the history signal, judge from the spec's Git history whether unrelated changes edit it at the same time, each only in sections the other never touches.
+One way to read it: where branches merge, `git log --merges -- <spec>` lists merges in which both sides changed the spec, and diffing each side against its merge base (`git merge-base <merge>^1 <merge>^2`) shows the sections each side touched.
+Where history is squashed or linear, read the spec's commits (`git log -p -- <spec>`) for unrelated changes landing close together or interleaved, each in sections the other never touches.
 
 For each spec a signal holds for, present the human one proposal naming the signal, each new spec's file and title, and the stories, criteria, sections, and boundaries each new spec takes.
 Name each new spec for its domain, never for a change, fix, or lane.
@@ -119,8 +121,8 @@ On split:
 
 On leave, change no spec.
 
-Ask in the run, never in the spec: never split a spec without the human's choice, and write nothing about a split into a spec as a finding, note, or TBD.
-The split check, and so the run, is not done until the human has settled every proposal; asked whether the run is done before then, answer that the split check is waiting on the unsettled proposal and report no completion.
+Repair asks in the run, never in the spec: it never splits a spec without the human's choice, and writes nothing about a split into a spec as a finding, note, or TBD.
+In repair, the split check, and so the run, is not done until the human has settled every proposal; asked whether the run is done before then, answer that the split check is waiting on the unsettled proposal and report no completion.
 
 ## Drift check
 
@@ -171,10 +173,8 @@ Same rule as the shaping agent's [fix-raises-new-mark](../../docs/specs/project-
 
 ## Output
 
-When repairs, the split check, and the drift check complete:
-
-1. Commit each changed spec and ADR on the current branch: the repairs before the split check, each split the human chose as one commit of its own, and the drift edits the human chose.
-2. Register each changed or new spec with the review server so the reviewer sees changes with Git focus.
+1. Commit on the current branch at each step: the repaired specs and ADRs as the split check starts, each split the human chose as one commit of its own, and the drift edits the human chose.
+2. When the drift check completes, register each changed or new spec with the review server so the reviewer sees changes with Git focus.
 
 Commits are local only; the skill never pushes, opens a pull request, or creates an issue.
 

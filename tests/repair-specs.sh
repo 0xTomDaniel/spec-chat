@@ -72,11 +72,15 @@ need "$REPAIR" "criterion-rule, and presentation repairs still run"
 # split check (repair-specs #split, #acceptance-split-*): after the repairs, before drift,
 # human-settled, anchors moved unchanged, never written into a spec
 need "$REPAIR" "## Split check"
-need "$REPAIR" "After the six repairs and before the drift check"
+need "$REPAIR" "After the six repairs and before the drift check, commit the repaired specs and ADRs, then check each spec"
 need "$REPAIR" "for the split check the repo's Git history"
 need "$REPAIR" "all six repair types, the split check, and the drift check"
 need "$REPAIR" "groups that no criterion joins"
 need "$REPAIR" "unrelated changes repeatedly editing it at the same time"
+# history signal is judgment; merges are one way to read it, squashed or linear history another
+need "$REPAIR" "judge from the spec's Git history whether unrelated changes edit it at the same time"
+need "$REPAIR" "One way to read it: where branches merge"
+need "$REPAIR" "Where history is squashed or linear"
 need "$REPAIR" "size alone never splits a spec"
 need "$REPAIR" "naming the signal, each new spec's file and title, and the stories, criteria, sections, and boundaries each new spec takes"
 need "$REPAIR" "never for a change, fix, or lane"
@@ -86,13 +90,24 @@ need "$REPAIR" "Point every link in the repo to a moved anchor at its new spec"
 need "$REPAIR" "list each moved anchor with its old and new spec in the split commit message"
 need "$REPAIR" "one commit of its own"
 need "$REPAIR" "On leave, change no spec."
-need "$REPAIR" "write nothing about a split into a spec as a finding, note, or TBD"
-need "$REPAIR" "not done until the human has settled every proposal"
+# scoped to repair: shaping links this section and asks through an open TBD (prompt-first-shaping #flow-split)
+need "$REPAIR" "Repair asks in the run, never in the spec: it never splits a spec without the human's choice, and writes nothing about a split into a spec as a finding, note, or TBD"
+need "$REPAIR" "In repair, the split check, and so the run, is not done until the human has settled every proposal"
 need "$REPAIR" "the split check is waiting on the unsettled proposal"
 need "$REPAIR" "A split the human chose moves an anchor, unchanged, to its new spec"
-need "$REPAIR" "each split the human chose as one commit of its own"
-line_of() { grep -nF -- "$2" "$1" | head -n 1 | cut -d: -f1; }
-p=$(line_of "$REPAIR" "### 6. Presentation"); s=$(line_of "$REPAIR" "## Split check"); d=$(line_of "$REPAIR" "## Drift check")
+need "$REPAIR" "Commit on the current branch at each step: the repaired specs and ADRs as the split check starts, each split the human chose as one commit of its own"
+need "$REPAIR" "When the drift check completes, register each changed or new spec"
+if grep -qF 'When repairs, the split check, and the drift check complete' "$REPAIR"; then
+  echo "$REPAIR still commits the repairs at the end of the run" >&2; exit 1
+fi
+line_of() { # file heading: its first line number, or fail when the heading is missing
+  n=$(grep -nF -- "$2" "$1" | head -n 1 | cut -d: -f1)
+  [ -n "$n" ] || { echo "$1 missing heading: $2" >&2; return 1; }
+  echo "$n"
+}
+p=$(line_of "$REPAIR" "### 6. Presentation") || exit 1
+s=$(line_of "$REPAIR" "## Split check") || exit 1
+d=$(line_of "$REPAIR" "## Drift check") || exit 1
 if [ "$p" -ge "$s" ] || [ "$s" -ge "$d" ]; then
   echo "$REPAIR split check is not between presentation and drift" >&2; exit 1
 fi
