@@ -1288,6 +1288,84 @@ cursor_name = ".cursor-test"
         self.assertEqual((process["unit"], process["port"]), (UNIT, child["port"]))
         self.assertEqual(process["pid"], int((fake / f"{UNIT}.pid").read_text()))
 
+    def stopped_service(self, state):
+        """A stopped service whose registry holds two valid rows: ann45's review spec and lane2's second spec."""
+        for slug, spec in (("ann45", "review"), ("lane2", "second")):
+            result = self.run_cli(*self.register_args(state, slug=slug, spec=spec), state=state)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.run_cli("stop", "--state-dir", str(state), state=state).returncode, 0)
+        return review_host.registry_state(state / "registry.toml")
+
+    def service_manager_start(self, state, rows, process):
+        """Record rows in the stopped service's registry, start it as its service manager does, and return its log
+        and recorded port once it has exited; a service still running after the deadline fails the test."""
+        review_host.write_registry(state / "registry.toml", rows, process)
+        env, fake, _ = self.unit_env(state)
+        (fake / f"{UNIT}.log").unlink(missing_ok=True)
+        subprocess.run(["systemctl", "--user", "start", UNIT], env={**os.environ, **env}, check=True)
+        pid = int((fake / f"{UNIT}.pid").read_text())
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and not review_host.process_exited(pid):
+            time.sleep(0.05)
+        self.assertTrue(review_host.process_exited(pid), "the service started on an invalid registry")
+        return (fake / f"{UNIT}.log").read_text(), self.registry(state)["process"]["port"]
+
+    def assertRefusedStart(self, state, rows, process, report):
+        log, port = self.service_manager_start(state, rows, process)
+        self.assertIn(f"review-serve: {report}\n", log)
+        self.assertNotIn("spec-chat review-serve on", log)
+        self.assertFalse(self.reachable("127.0.0.1", port))
+
+    def test_service_manager_start_stops_on_a_duplicate_id(self):
+        """ANN-869 review-service #acceptance-registry-duplicate-id, #service-stale: two rows carrying one id stop the
+        service before it serves any page, and it names the id, even when one of the two rows is stale."""
+        for case in ("valid", "stale"):
+            with self.subTest(case=case):
+                state = self.work / f"state-{case}"
+                rows, process = self.stopped_service(state)
+                rows[1]["id"] = rows[0]["id"]
+                if case == "stale":
+                    self.second_spec.unlink()
+                self.assertRefusedStart(state, rows, process, f"duplicate resource identity: {rows[0]['id']}")
+
+    def test_service_manager_start_stops_on_two_rows_at_one_path(self):
+        """ANN-869 review-service #acceptance-registry-duplicate-path, #service-stale: two rows at one path stop the
+        service before it serves any page, and it names the path, even when one of the two rows is stale."""
+        for case in ("valid", "stale"):
+            with self.subTest(case=case):
+                state = self.work / f"state-{case}"
+                rows, process = self.stopped_service(state)
+                rows[1]["path"] = rows[0]["path"]
+                if case == "stale":
+                    self.second_spec.unlink()
+                self.assertRefusedStart(state, rows, process, f"duplicate stable resource path: {rows[0]['path']}")
+
+    def test_register_on_a_live_registry_with_two_rows_at_one_path_fails_and_changes_nothing(self):
+        """ANN-869 review-service #acceptance-registry-duplicate-register, #service-stale: registering a new spec, or
+        re-registering one of the two rows, fails naming the path; the registry and the running service stay as
+        they were."""
+        state = self.work / "state"
+        first = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        registry = state / "registry.toml"
+        rows, process = review_host.registry_state(registry)
+        duplicate = rows[0]["path"]
+        rows.append(rows[0] | {"id": "spec:copy::docs/specs/review.spec.html"})
+        review_host.write_registry(registry, rows, process)
+        page = process["url"].rstrip("/") + "/" + duplicate
+        served = request(page)
+        self.assertEqual(served, (200, self.spec.read_bytes()))
+        before = registry.read_bytes()
+        for args in (self.register_args(state, slug="lane2", spec="second"), self.register_args(state)):
+            with self.subTest(args=args):
+                result = self.run_cli(*args, state=state)
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertEqual(result.stderr, f"review-host: error: duplicate stable resource path: {duplicate}\n")
+                self.assertEqual(registry.read_bytes(), before)
+                self.assertTrue(review_host.process_owns_registry(process["pid"], registry))
+                self.assertEqual(request(page), served)
+                self.assertEqual(request(process["url"].rstrip("/") + "/lane2/docs/specs/second.spec.html")[0], 404)
+
     def test_a_recorded_unit_that_is_gone_is_dropped(self):
         state = self.work / "state"
         env, fake, unit = self.unit_env(state)
