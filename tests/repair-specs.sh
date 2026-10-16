@@ -39,6 +39,20 @@ need "$SHAPE" "one screen per Then"
 need "$SHAPE" "never by screen position or order"
 need "$SHAPE" "the validator does not check them"
 need "$REPAIR" "move that gesture into the When"
+# When-action and then-step (prompt-first-shaping#complete-criterion-when-action,
+# #complete-criterion-then-step; repair-specs#acceptance-criteria-when-look, #acceptance-criteria-then-step)
+need "$AUTHORING" "A When step is something the user does"
+need "$AUTHORING" "looking or reading is not a step, so what the user sees belongs in the Then"
+need "$AUTHORING" "When the learner opens the graph, Then its script control reads Zhuyin"
+need "$AUTHORING" "When a Then compares what the screen shows before and after the When"
+need "$AUTHORING" 'the When joins each step to the next with "then"'
+need "$AUTHORING" "never with a comma alone"
+need "$SHAPE" "When steps that are only things the user does, never looking or reading"
+need "$SHAPE" 'a When whose Then compares the screen before and after it joining each step to the next with "then", never a comma alone'
+need "$REPAIR" "When a When step says the user looks at or reads something, replace it with the step the user does to reach that screen"
+need "$REPAIR" "move what the user sees into the Then"
+need "$REPAIR" "how the user reaches what a When only looks at"
+need "$REPAIR" "a comma alone separates two When steps, join them with \`then\` and keep the Then's wording"
 need "$REPAIR" "one criterion per screen"
 need "$REPAIR" "what the screen shows after the dismissal"
 need "$REPAIR" "by screen position or order"
