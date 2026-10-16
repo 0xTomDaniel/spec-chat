@@ -987,38 +987,41 @@ function onDocClick(e) {
  * comment through the one comment save; the chosen mark derives from the review state.
  */
 const ANSWER = 'button[data-spec-choice]';
-const answerButton = el => {
+const answerButton = el => { // a button that is its own anchored block has no enclosing one: plain
   const button = el && el.closest && el.closest(ANSWER);
-  return button && button.dataset.specChoice.trim() && holderOf(button) ? button : null;
+  const holder = button && button.dataset.specChoice.trim() && holderOf(button);
+  return holder && holder !== button ? button : null;
 };
 
-// A block's answer buttons and its chosen one: the one the newest comment on any of them targets.
-function blockAnswers(holder) {
-  const byKey = new Map([...holder.querySelectorAll(ANSWER)].filter(b => answerButton(b) && holderOf(b) === holder)
-    .map(b => [elementDescriptor(b, holder).key, b]));
-  let chosen = null;
-  for (const th of state.threads.values()) { // fold order: the last is the newest comment
-    const b = th.ev.body;
-    if (b.anchorId === holder.dataset.anchor && b.target && b.target.type === 'element' && byKey.has(b.target.key)) chosen = byKey.get(b.target.key);
+// Each block's answer buttons by target key, and its chosen one: the one the newest comment targets
+// where the service places it (placedMark), so the chosen mark sits where that comment's pin does.
+function answerBlocks() {
+  const blocks = new Map(); // anchorId -> { buttons: Map(key -> button), chosen }
+  for (const button of [...document.querySelectorAll(ANSWER)].filter(answerButton)) {
+    const holder = holderOf(button);
+    if (!blocks.has(holder.dataset.anchor)) blocks.set(holder.dataset.anchor, { buttons: new Map(), chosen: null });
+    blocks.get(holder.dataset.anchor).buttons.set(elementDescriptor(button, holder).key, button);
   }
-  return { buttons: [...byKey.values()], chosen };
+  for (const th of state.threads.values()) { // fold order: the last is the newest comment
+    const b = placedMark(th.ev), block = blocks.get(b.anchorId);
+    if (block && b.target && b.target.type === 'element' && block.buttons.has(b.target.key)) block.chosen = block.buttons.get(b.target.key);
+  }
+  return blocks;
 }
 
 function renderChoices() {
-  for (const holder of new Set([...document.querySelectorAll(ANSWER)].filter(answerButton).map(holderOf))) {
-    const { buttons, chosen } = blockAnswers(holder);
-    for (const b of buttons) b.setAttribute('aria-pressed', String(b === chosen));
-  }
+  for (const { buttons, chosen } of answerBlocks().values()) for (const b of buttons.values()) b.setAttribute('aria-pressed', String(b === chosen));
 }
 
 // Outside comment mode a press saves the answer on that button and opens nothing; the chosen
-// answer pressed again saves nothing. A page that cannot comment (no reviewer) leaves it plain.
+// answer pressed again saves nothing. Until the review state loads the chosen answer is unknown,
+// so the press stays plain (a page that cannot comment never loads it).
 function pressAnswer(e) {
   const button = answerButton(e.target);
-  if (!button || !state.reviewer) return;
+  if (!button || !state.eventsRendered) return;
   e.preventDefault();
   const holder = holderOf(button);
-  if (blockAnswers(holder).chosen === button) return;
+  if (answerBlocks().get(holder.dataset.anchor).chosen === button) return;
   const desc = elementDescriptor(button, holder);
   saveMessage({ kind: 'comment', anchorId: holder.dataset.anchor, target: { type: 'element', key: desc.key }, quote: desc.quote }, button.dataset.specChoice.trim());
 }
@@ -2263,7 +2266,7 @@ body.hx-comment [data-render-target] canvas{cursor:copy!important}
 .hx-tbd-open{outline:2px solid var(--ui-draft);outline-offset:var(--ui-space-1)}
 /* chosen answer button: pressed, checked, and outlined, not color alone; the check stays out of its name */
 button[data-spec-choice][aria-pressed=true]{border:2px solid var(--ui-draft);background:var(--ui-draft-soft);color:var(--ui-ink);font-weight:600}
-button[data-spec-choice][aria-pressed=true]::before{content:"\\2713" / "";margin-right:var(--ui-space-1)}
+button[data-spec-choice][aria-pressed=true]::before{content:"\\2713";content:"\\2713" / "";margin-right:var(--ui-space-1)}
 /* badge */
 .hx-badge{font:600 var(--ui-text-xs) var(--ui-font);text-transform:uppercase;letter-spacing:.04em;color:var(--ui-resolved);background:var(--ui-resolved-soft);border-radius:var(--ui-radius-pill);padding:0 var(--ui-space-2);line-height:1.6;margin-left:var(--ui-space-2);vertical-align:middle}
 /* jev note */
