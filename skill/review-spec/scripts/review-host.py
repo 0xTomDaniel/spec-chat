@@ -756,25 +756,54 @@ def registry_state(path: Path) -> tuple[list[dict[str, Any]], dict[str, int] | N
     return document["resource"], document["process"]
 
 
+URL_RE = re.compile(r"spec-chat review-serve on (https?://\S+)")
+
+
 def running_url(log_path: Path) -> str:
-    """The server prints its actual URL at start; without it the bind is unknown, so never guess."""
+    """The server prints its actual URL at each start, appended to its log, so the last one is the running
+    service's; without it the bind is unknown, so never guess."""
     if log_path.exists():
-        match = re.search(r"spec-chat review-serve on (https?://\S+)", log_path.read_text(encoding="utf-8", errors="replace"))
-        if match:
-            return match.group(1).rstrip("/")
+        matches = URL_RE.findall(log_path.read_text(encoding="utf-8", errors="replace"))
+        if matches:
+            return matches[-1].rstrip("/")
     raise LauncherError("cannot read the running review URL from its log; run stop, then register again")
 
 
-def wake_status(owner: str, state: Path) -> str:
-    """Report whether the box's wake provider's check resolves the owner in the caller's session, which is the
-    service's; never prompts it (review-service #providers). No valid providers/wake.toml means unavailable."""
+def append_output(log_path: Path) -> None:
+    """Point this process's stdout and stderr at the end of the service log (review-service #service-log), so a
+    start through the unit, and the server it execs, write there too."""
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    descriptor = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    os.dup2(descriptor, 1)
+    os.dup2(descriptor, 2)
+    os.close(descriptor)
+
+
+def service_environ(pid: int) -> dict[str, str] | None:
+    """The running service's environment, the one its wake attempts run in; None when it cannot be read."""
+    try:
+        raw = Path(f"/proc/{pid}/environ").read_bytes()
+    except OSError:
+        return None
+    if not raw:
+        return None
+    entries = (entry.partition(b"=") for entry in raw.split(b"\0"))
+    return {os.fsdecode(name): os.fsdecode(value) for name, sep, value in entries if sep and name}
+
+
+def wake_status(owner: str, state: Path, environ: Mapping[str, str] | None) -> str:
+    """Report whether the box's wake provider's check resolves the owner in the running service's environment,
+    whatever started the service; never prompts it (host-wake #wake-rule-verify, review-service #providers). No
+    valid providers/wake.toml, or no readable service environment, means unavailable."""
     commands = _serve_module.wake_provider(_serve_module.providers_state(str(state)))
-    if commands is None:
+    if commands is None or environ is None:
         return "unavailable"
     argv = [arg.replace("{owner}", owner).replace("{artifact}", "").replace("{message}", "") for arg in commands[0]]
     try:
         process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                   stderr=subprocess.DEVNULL, start_new_session=True)
+                                   stderr=subprocess.DEVNULL, start_new_session=True, env=environ)
     except OSError:
         return "unavailable"
     try:
@@ -799,11 +828,14 @@ def print_access(process: Mapping[str, Any]) -> None:
               "or restart with --public <tailscale-address>")
 
 
-def print_urls(url: str, additions: list[dict[str, str]], state: Path) -> None:
+def print_urls(process: Mapping[str, Any], additions: list[dict[str, str]], state: Path) -> None:
+    url = process["url"]
+    environ = service_environ(process["pid"])
     print(f"review URL: {url}")
     for item in additions:
         owner = item["owner"]
-        print(f"{item['id']} URL: {url.rstrip('/')}{stable_path(item)} wake={wake_status(owner, state)} owner={owner}")
+        wake = wake_status(owner, state, environ)
+        print(f"{item['id']} URL: {url.rstrip('/')}{stable_path(item)} wake={wake} owner={owner}")
 
 
 def register(args: argparse.Namespace) -> int:
@@ -840,7 +872,7 @@ def register(args: argparse.Namespace) -> int:
             write_registry(registry, rows, current)
         raise
     print_access(process)
-    print_urls(process["url"], additions, state)
+    print_urls(process, additions, state)
     return 0
 
 
@@ -871,7 +903,7 @@ def await_unit(registry: Path, old_pid: int, unit: str) -> dict[str, Any]:
             with contextlib.suppress(OSError), socket.create_connection((process["host"], process["port"]), 1):
                 return process
         time.sleep(0.1)
-    raise LauncherError(f"{unit} did not start; see journalctl --user -u {unit}")
+    raise LauncherError(f"{unit} did not start; see {paths(registry.parent)[1]}")
 
 
 def register_locked(args: argparse.Namespace, registry: Path, log_path: Path,
@@ -910,7 +942,7 @@ def register_locked(args: argparse.Namespace, registry: Path, log_path: Path,
             for item in parsed:
                 prove_resource(listener, item)
             print_access(process)
-            print_urls(process["url"], additions, state)
+            print_urls(process, additions, state)
             return None
         if unit and systemctl("cat", unit):
             if args.unit:
@@ -935,17 +967,19 @@ def register_locked(args: argparse.Namespace, registry: Path, log_path: Path,
         port = select_start_port(bind, recorded_port)
         write_registry(registry, candidate)
         command = server_command(registry, bind, port, host)
-        with log_path.open("w", encoding="utf-8") as log:
-            child = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
-                                     start_new_session=True, text=True)
+        # Appended, so a failed start keeps every line the log holds; only output after this start names its URL.
+        with log_path.open("ab") as log:
+            start = log.tell()
+            child = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         deadline = time.monotonic() + 8
-        pattern = re.compile(r"spec-chat review-serve on (https?://\S+)")
         listener = None
         while time.monotonic() < deadline:
             if child.poll() is not None:
                 raise LauncherError("review server exited before printing its URL")
-            text = log_path.read_text(encoding="utf-8", errors="replace")
-            matches = pattern.findall(text)
+            with log_path.open("rb") as log:
+                log.seek(start)
+                text = log.read().decode("utf-8", errors="replace")
+            matches = URL_RE.findall(text)
             if matches:
                 listener = matches[-1]
                 break
@@ -958,7 +992,7 @@ def register_locked(args: argparse.Namespace, registry: Path, log_path: Path,
                    "host": host, **setup, **kept, "url": setup.get("public_base") or listener}
         write_registry(registry, candidate, process)
         print_access(process)
-        print_urls(process["url"], additions, state)
+        print_urls(process, additions, state)
         return None
     except BaseException:
         if child is not None and child.poll() is None:
@@ -970,9 +1004,11 @@ def register_locked(args: argparse.Namespace, registry: Path, log_path: Path,
 
 
 def serve(args: argparse.Namespace) -> int:
-    """The service manager's entry: start the server in the foreground on the recorded setup, recording itself."""
+    """The service manager's entry: start the server in the foreground on the recorded setup, recording itself;
+    everything it and the server print is appended to the service log."""
     state = state_dir(args)
-    registry, _, _ = paths(state)
+    registry, log_path, _ = paths(state)
+    append_output(log_path)
     with state_lock(state):
         rows, process = registry_state(registry)
         recorded = process or {}

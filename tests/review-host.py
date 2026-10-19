@@ -550,6 +550,29 @@ finish_event = ""
         with self.assertRaises(review_host.LauncherError):
             review_host.running_url(self.work / "missing.log")
 
+    def test_running_url_is_the_last_url_the_log_holds(self):
+        """review-service #service-log: every start appends, so the running service printed the last URL."""
+        log = self.work / "server.log"
+        log.write_text("spec-chat review-serve on http://127.0.0.1:1111\nreview-serve: bye\n"
+                       "spec-chat review-serve on http://127.0.0.1:2222/\n", encoding="utf-8")
+        self.assertEqual(review_host.running_url(log), "http://127.0.0.1:2222")
+
+    def test_start_appends_to_the_log_and_reads_only_its_own_url(self):
+        """review-service #service-log: a start keeps every line already in the log and takes the URL it printed,
+        never an earlier start's."""
+        state = self.work / "state"
+        state.mkdir()
+        earlier = "spec-chat review-serve on http://127.0.0.1:1\nreview-serve: an earlier line\n"
+        (state / "server.log").write_text(earlier, encoding="utf-8")
+        started = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        listener = f"http://127.0.0.1:{self.registry(state)['process']['port']}"
+        self.assertEqual(self.url(started), listener)
+        log = (state / "server.log").read_text(encoding="utf-8")
+        self.assertTrue(log.startswith(earlier), log)
+        self.assertIn(f"spec-chat review-serve on {listener}\n", log[len(earlier):])
+        self.assertEqual(request(listener + "/ann45/docs/specs/review.spec.html"), (200, self.spec.read_bytes()))
+
     def test_invalid_port_does_not_start_server(self):
         state = self.work / "invalid"
         result = self.run_cli(*self.register_args(state), state=state, ports="not-a-port")
@@ -1228,11 +1251,12 @@ cursor_name = ".cursor-test"
         self.assertNotIn("public_bind", after)
         self.assertTrue(self.reachable(proof, port))
 
-    def unit_env(self, state):
+    def unit_env(self, state, launcher=""):
+        """A fake user unit whose ExecStart runs serve, after any launcher words (such as a narrower environment)."""
         config = self.work / "config"
         unit = config / "systemd/user" / UNIT
         unit.parent.mkdir(parents=True, exist_ok=True)
-        unit.write_text(f'[Service]\nExecStart="python3" "{LAUNCHER_PATH}" "serve" "--state-dir" "{state}"\n')
+        unit.write_text(f'[Service]\nExecStart={launcher}"python3" "{LAUNCHER_PATH}" "serve" "--state-dir" "{state}"\n')
         fake = self.work / "fake-systemd"
         env = {"PATH": f"{FAKE_SYSTEMD}:{os.environ['PATH']}", "XDG_CONFIG_HOME": str(config),
                "FAKE_SYSTEMD_DIR": str(fake)}
@@ -1297,18 +1321,22 @@ cursor_name = ".cursor-test"
         return review_host.registry_state(state / "registry.toml")
 
     def service_manager_start(self, state, rows, process):
-        """Record rows in the stopped service's registry, start it as its service manager does, and return its log
-        and recorded port once it has exited; a service still running after the deadline fails the test."""
+        """Record rows in the stopped service's registry, start it as its service manager does, and return what this
+        start appended to the service log and the recorded port once it has exited; a service still running after
+        the deadline fails the test."""
         review_host.write_registry(state / "registry.toml", rows, process)
         env, fake, _ = self.unit_env(state)
-        (fake / f"{UNIT}.log").unlink(missing_ok=True)
+        log = state / "server.log"
+        earlier = log.read_text(encoding="utf-8")
         subprocess.run(["systemctl", "--user", "start", UNIT], env={**os.environ, **env}, check=True)
         pid = int((fake / f"{UNIT}.pid").read_text())
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline and not review_host.process_exited(pid):
             time.sleep(0.05)
         self.assertTrue(review_host.process_exited(pid), "the service started on an invalid registry")
-        return (fake / f"{UNIT}.log").read_text(), self.registry(state)["process"]["port"]
+        text = log.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith(earlier), "a start keeps every line already in the log")
+        return text[len(earlier):], self.registry(state)["process"]["port"]
 
     def assertRefusedStart(self, state, rows, process, report):
         log, port = self.service_manager_start(state, rows, process)
@@ -1365,6 +1393,77 @@ cursor_name = ".cursor-test"
                 self.assertTrue(review_host.process_owns_registry(process["pid"], registry))
                 self.assertEqual(request(page), served)
                 self.assertEqual(request(process["url"].rstrip("/") + "/lane2/docs/specs/second.spec.html")[0], 404)
+
+    def test_unit_start_appends_its_url_to_the_service_log(self):
+        """review-service #acceptance-log-unit, #service-log: a start through the unit appends what the service
+        prints, its URL included, after every line already in the log."""
+        state = self.work / "state"
+        state.mkdir()
+        env, fake, _ = self.unit_env(state)
+        earlier = "review-serve: a line the log already held\n"
+        (state / "server.log").write_text(earlier, encoding="utf-8")
+        started = self.run_cli(*self.register_args(state, unit=UNIT), state=state, env=env)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        self.assertEqual(self.calls(fake)[-1], f"systemctl --user restart {UNIT}")
+        log = (state / "server.log").read_text(encoding="utf-8")
+        self.assertTrue(log.startswith(earlier), log)
+        self.assertIn(f"spec-chat review-serve on {self.url(started)}\n", log[len(earlier):])
+        self.assertNotIn("spec-chat review-serve on", (fake / f"{UNIT}.log").read_text())
+
+    def test_failed_start_keeps_the_running_services_log(self):
+        """review-service #acceptance-log-kept, #service-log: starting the service again while it holds its port
+        fails, and the log still holds every line the running service wrote, followed by that start's error."""
+        state = self.work / "state"
+        env, fake, _ = self.unit_env(state)
+        started = self.run_cli(*self.register_args(state, unit=UNIT), state=state, env=env)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        process = self.registry(state)["process"]
+        log = state / "server.log"
+        written = log.read_text(encoding="utf-8")
+        self.assertIn(f"spec-chat review-serve on {self.url(started)}\n", written)
+        again = self.run_cli("serve", "--state-dir", str(state), state=state, ports=process["port"], env=env)
+        self.assertEqual(again.returncode, 1, again.stdout)
+        text = log.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith(written), text)
+        self.assertTrue(text.endswith("review-host: error: no approved ingress port is free\n"), text)
+        self.assertEqual(self.registry(state)["process"], process)
+        self.assertEqual(request(self.url(started) + "/ann45/docs/specs/review.spec.html"),
+                         (200, self.spec.read_bytes()))
+
+    def test_register_checks_wake_in_the_running_services_environment(self):
+        """host-wake #acceptance-register-service-env, #wake-rule-verify: a check that passes in the lane owner's
+        shell but fails in the review service's environment reports wake unavailable."""
+        state = self.work / "state"
+        waker = FakeWaker(self.work, state)
+        waker.agent("owner")
+        lane_bin = self.work / "lane-bin"
+        lane_bin.mkdir()
+        tool = lane_bin / "fake-wake-tool"
+        tool.write_text("#!/bin/sh\nexit 0\n")
+        tool.chmod(0o755)
+        # The provider's check needs a tool only the lane owner's PATH holds, as herdr-wake needs herdr.
+        waker.check.write_text('#!/bin/sh\nfake-wake-tool && [ -f "$0.d/owners/$1" ]\n')
+        env, fake, _ = self.unit_env(state, launcher='"/usr/bin/env" "PATH=/usr/bin:/bin" ')
+        env["PATH"] = f"{lane_bin}:{env['PATH']}"
+        lane = subprocess.run([str(waker.check), "owner"], env={**os.environ, **env})
+        self.assertEqual(lane.returncode, 0, "the check passes from the lane owner's shell")
+        started = self.run_cli(*self.register_args(state, unit=UNIT), state=state, env=env)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        self.assertEqual(self.wake_lines(started), ["wake=unavailable owner=owner"])
+        joined = self.run_cli(*self.register_args(state, slug="other", spec="second"), state=state, env=env)
+        self.assertEqual(joined.returncode, 0, joined.stderr)
+        self.assertEqual(self.wake_lines(joined), ["wake=unavailable owner=owner"])
+        self.assertEqual(waker.says(), [], "registration never prompts the owner")
+
+    def test_wake_is_unavailable_when_the_service_environment_cannot_be_read(self):
+        """host-wake #wake-rule-verify: no readable service environment means wake unavailable."""
+        state = self.work / "state"
+        waker = FakeWaker(self.work, state)
+        waker.agent("owner")
+        self.assertEqual(review_host.wake_status("owner", state, dict(os.environ)), "verified")
+        self.assertIsNone(review_host.service_environ(2 ** 22 + 1))
+        self.assertEqual(review_host.wake_status("owner", state, review_host.service_environ(2 ** 22 + 1)),
+                         "unavailable")
 
     def test_a_recorded_unit_that_is_gone_is_dropped(self):
         state = self.work / "state"
