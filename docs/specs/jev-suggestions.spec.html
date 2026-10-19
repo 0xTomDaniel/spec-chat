@@ -624,11 +624,6 @@ CI: the Jev seam and runtime tests run in CI with no Jev provider installed and 
 <h2>Coverage</h2>
 <p data-anchor="coverage-story">An item with no verifies is a gap; an unsure pair is settled by the LLM fallback first.</p>
 <p data-anchor="coverage-declared">The spec owns which story a criterion verifies: each criterion's <code>data-story</code> names its stories, and coverage asks each criterion once for each story it names, never for a story it does not name, so a spec's coverage questions grow with its criteria, not with its stories times its criteria. Jev checks the declaration: a story that none of the criteria naming it verifies shows <code>No criterion covers this</code>, and a criterion that verifies none of the stories it names, or names none, shows <code>No story backs this</code>. A spec that declares no <code>data-story</code> at all asks no coverage question and shows no coverage note.</p>
-<p data-anchor="coverage-pairs-tbd" data-spec-tbd>Every pair of story and criterion is a Jev call and, when unsure, a general LLM run: a spec with 31 stories and 126 criteria asks 3,906, which a busy box's queue drains for hours. Which pairs does coverage ask?
-<button type="button" data-spec-choice="Declared pairs only">Declared pairs only, as written above (recommended)</button>
-<button type="button" data-spec-choice="One question per item">One question per item: each story against its spec's criteria as one list, and each criterion against its stories</button>
-<button type="button" data-spec-choice="Every pair">Every pair: each story against each criterion</button>
-</p>
 </section>
 
 <section data-anchor="reading">
