@@ -6,6 +6,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import re
 import subprocess
 import sys
@@ -89,7 +90,7 @@ class OwnerScanTest(_hosted.HostedServiceCase):
         with open(Path(hosted, cursor), "a", encoding="utf-8") as stream:
             stream.write("".join(row[1] + "\n" for row in rows))
         self.assertEqual(scan(hosted, cursor)[0], 3)
-        status, events = self.read(SCOPE, TURN)
+        status, events = self.read_events(SCOPE, TURN)
         self.assertEqual({e["body"]["id"]: e["actor"] for e in events}, {"c1": "human", "h1": "human", r1: "agent"})
         self.assertEqual(spool.fold_threads(events)["c1"]["status"], "acknowledged")
 
@@ -166,6 +167,27 @@ class HostRowsTest(unittest.TestCase):
         names = [self.write("human", "100-comment-p1.json", comment("p1", anchorId="spec-block", quote="q")),
                  self.write("human", "110-handoff-h1.json", {"event": "handoff", "id": "h1", "events": ["p1"]})]
         self.assertEqual(spool.host_rows(str(self.review), names), [])
+
+    def test_the_owner_and_the_service_read_a_spool_with_one_reader(self):
+        """spool.read_events is the owner's read and the service's, which gives its collection root: a dot file is no
+        event, and a FIFO or a link where an event should be refuses the read, never blocking or leaking."""
+        self.write("human", "100-comment-c1.json", comment("c1", subject=TURN))
+        self.write("human", ".100-comment-c0.json", comment("c0", subject=TURN))
+        review, root = str(self.review), str(self.review.parent)
+        names = [("human", "100-comment-c1.json")]
+        self.assertEqual([(e["actor"], e["name"]) for e in spool.read_events(review)], names)
+        self.assertEqual([(e["actor"], e["name"]) for e in serve._read_spool_events(review, root)], names)
+        self.assertIsNone(serve._read_spool_events(review, review + "/human"), "a spool outside its root")
+        planted = self.review / "agent" / "200-reply-r1.json"
+        os.mkfifo(planted)
+        with self.assertRaises(spool.UnsafeSpool):
+            spool.read_events(review)
+        self.assertIsNone(serve._read_spool_events(review, root))
+        planted.unlink()
+        planted.symlink_to(self.review / "human" / "100-comment-c1.json")
+        with self.assertRaises(OSError):
+            spool.read_events(review)
+        self.assertIsNone(serve._read_spool_events(review, root))
 
     def test_the_cli_prints_host_lines_for_the_names_it_reads(self):
         name = self.write("human", "100-comment-c1.json", comment("c1", subject=TURN, kind="agent turn", label=None))

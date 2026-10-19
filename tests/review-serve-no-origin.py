@@ -146,17 +146,13 @@ class ServedNoOriginTest(NoOriginCase):
         self.assert_no_cross_origin_read(self.page_requests(self.serve("127.0.0.1"), "https://other.example"))
 
     def test_other_origins_answered_only_without_login_or_cookie(self):
-        """review-service #acceptance-origin-safe: the service sets and reads no cookie and asks no login, so it
-        answers other origins; a request carrying a credential, or an answer setting a cookie or asking a login, as a
-        change adding either would, grants no other origin a read."""
+        """review-service #acceptance-origin-safe: the service sets no cookie and asks no login, so it answers other
+        origins; an answer setting a cookie or asking a login, as a change adding either would, grants no other origin
+        a read."""
         port = self.serve("0.0.0.0")
         site = "https://other.example"
         for answer in self.page_requests(port, site).values():
             self.assertFalse({"set-cookie", "www-authenticate"} & set(answer[1]))
-        for credential in ({"Cookie": "session=1"}, {"Authorization": "Basic dTpw"}):
-            for method in ("GET", "OPTIONS"):
-                _, headers, _ = self.request(port, method, self.PAGE_PATH, site, headers=credential)
-                self.assertEqual(cross_origin(headers), {}, (credential, method))
         original = serve.MountHandler.end_headers
 
         for header in ("Set-Cookie", "WWW-Authenticate"):

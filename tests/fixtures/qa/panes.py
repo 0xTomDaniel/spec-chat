@@ -60,6 +60,24 @@ def quote_gone(spool):
     turn_comment(spool, "qa-turn", "Say which headers.", quote="named the columns after the report headers")
 
 
+# Markup in every field of a stored event a thread shows, which the layer draws as text (review 1, B1).
+MARKUP = '<img src=x onerror="window.__xss=1">'
+
+
+def markup(spool):
+    """A thread as any writer on disk could leave it: markup in its author, kind, label, quote, and texts, a script
+    address as its from, and a status no thread lifecycle has, on the agent's reply and on a human status event."""
+    root = spool._append({"id": "qa-markup", "event": "comment", "actor": "human", "browser": "qa-browser-papaya",
+                          "author": MARKUP, "subject": TURN, "kind": MARKUP, "label": MARKUP,
+                          "from": "javascript:window.__xss=2", "target": {"type": "text", "key": MARKUP[:40]},
+                          "quote": MARKUP, "text": MARKUP})
+    handed_off(spool, root)
+    spool._append({"id": "qa-markup-answer", "event": "reply", "actor": "agent", "respondsTo": root, "threadId": root,
+                   "target": None, "text": MARKUP, "status": MARKUP, "change": "no spec change"})
+    spool._append({"id": "qa-markup-status", "event": "status", "actor": "human", "browser": "qa-browser-papaya",
+                   "author": "Papaya", "respondsTo": root, "threadId": root, "status": MARKUP})
+
+
 def spec_comment(spool):
     """A reviewer's comment on the totals criterion, written on the spec page."""
     spools.comment(spool, "qa-spec-totals", "qa-browser-papaya", "Papaya", "report-totals", None,
@@ -84,6 +102,9 @@ COLLECTIONS = {
     "one-thread-host": (None, spec_comment, LAYER),
     "no-scope": (None, None, LAYER),
     "no-service": (None, None, STOPPED),
+    "layer-markup": (markup, None, LAYER),
+    "layer-stores": (None, None, LAYER),
+    "layer-focus": (None, None, LAYER),
 }
 
 

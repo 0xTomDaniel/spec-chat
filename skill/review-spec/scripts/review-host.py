@@ -378,9 +378,7 @@ def build_scope_row(slug: str | None, owner: str, checker: str, cursor_name: str
             "cursor_name": cursor_name}
 
 
-def is_scope_row(record: Mapping[str, Any]) -> bool:
-    """A scope row names no spec, so it holds none of a spec row's own fields (review-service #published-table)."""
-    return not any(key in record for key in _serve_module.SPEC_ROW_FIELDS)
+is_scope_row = _serve_module.is_scope_row  # one definition: the service's, which reads the registry
 
 
 def registry_record(resource: Mapping[str, Any], old: Mapping[str, Any] | None = None) -> dict[str, Any]:

@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import errno
 import hashlib
 import html
 import ipaddress
@@ -161,6 +160,11 @@ def stale_reason(root, narrow_root, spec):
     return None
 
 
+def is_scope_row(record):
+    """A scope row names no spec, so it holds none of a spec row's own fields (review-service #published-table)."""
+    return not any(key in record for key in SPEC_ROW_FIELDS)
+
+
 def _resource_records(document, *, check_refs=False, trust=False):
     records = document.get("resource", [])
     if not isinstance(records, list):
@@ -171,7 +175,7 @@ def _resource_records(document, *, check_refs=False, trust=False):
     for raw in records:
         if not isinstance(raw, dict):
             raise ValueError("registry resource entry must be a table")
-        scope_row = not any(key in raw for key in SPEC_ROW_FIELDS)
+        scope_row = is_scope_row(raw)
         required = SCOPE_ROW_FIELDS if scope_row else (
             "id", "slug", "root", "narrow_root", "spec", "base", "owner",
             "checker", "cursor_name",
@@ -353,32 +357,17 @@ def placed_event(event, placed):
 
 
 def subject_events(events, placed):
-    """The events of the threads on placed's subject, from its store's events: each thread whose root comment sits on
-    the subject (in a spec, its place's anchor; elsewhere its subject, compared whole), and every reply, edit, and
-    status reaching it by reference."""
-    def body(event):
-        value = event.get("body")
-        return value if isinstance(value, dict) and isinstance(value.get("id"), str) else None
-
-    def on_subject(event):
-        b = body(event)
-        if b is None or event.get("actor") != "human" or b.get("event") != "comment":
-            return False
+    """The events of the threads on placed's subject, from its store's events: each thread the spool fold roots on the
+    subject (in a spec, its place's anchor; elsewhere its subject, compared whole), with every event the fold joins to
+    it (spool.fold_threads)."""
+    def on_subject(root):
         if placed["anchor"] is None:
-            return b.get("subject") == placed["subject"]
-        return ((event.get("place") or {}).get("anchorId") or b.get("anchorId")) == placed["anchor"]
+            return root["body"].get("subject") == placed["subject"]
+        return ((root.get("place") or {}).get("anchorId") or root["body"].get("anchorId")) == placed["anchor"]
 
-    held = {body(event)["id"] for event in events if on_subject(event)}
-    rest = [event for event in events if body(event) and body(event)["id"] not in held]
-    grown = True
-    while grown:
-        grown = False
-        for event in rest:
-            b = body(event)
-            if b["id"] not in held and any(b.get(ref) in held for ref in ("threadId", "respondsTo", "supersedes")):
-                held.add(b["id"])
-                grown = True
-    return [event for event in events if body(event) and body(event)["id"] in held]
+    held = {(event["actor"], event["name"]) for thread in spool.fold_threads(events).values()
+            if on_subject(thread["ev"]) for event in thread["events"]}
+    return [event for event in events if (event.get("actor"), event.get("name")) in held]
 
 
 BROAD_HOME_CHILDREN = ("Desktop", "Documents", "Downloads")
@@ -698,60 +687,13 @@ def _own_viz_asset(path):
     return True, target
 
 
-class UnsafeSpool(OSError):
-    """A spool path that escapes its collection."""
-
-
-# A symlink or non-directory where the spool expects its own directory or file: refused, not retried.
-UNSAFE_ERRNOS = (errno.ELOOP, errno.ENOTDIR)
-
-
-@contextlib.contextmanager
-def _actor_directory(review, root, actor, create=False):
-    relative = os.path.relpath(review, root)
-    parts = relative.split(os.sep) + [actor]
-    if any(part in ("", ".", "..") for part in parts) or not _inside(review, root, strict=True):
-        raise UnsafeSpool("review path escapes collection")
-    flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(root, flags)
-    try:
-        for part in parts:
-            if create:
-                try:
-                    os.mkdir(part, dir_fd=descriptor)
-                except FileExistsError:
-                    pass
-            child = os.open(part, flags, dir_fd=descriptor)
-            os.close(descriptor)
-            descriptor = child
-        yield descriptor
-    finally:
-        os.close(descriptor)
-
-
 def _read_spool_events(review, root):
-    events = []
-    for actor in ("human", "agent"):
-        try:
-            with _actor_directory(review, root, actor) as directory:
-                for name in os.listdir(directory):
-                    if not name.endswith(".json"):
-                        continue
-                    flags = os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0)
-                    descriptor = os.open(name, flags, dir_fd=directory)
-                    with os.fdopen(descriptor, encoding="utf-8") as stream:
-                        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-                            return None
-                        try:
-                            body = json.load(stream)
-                        except ValueError:
-                            continue
-                    events.append({"actor": actor, "name": name, "body": body})
-        except FileNotFoundError:
-            continue
-        except OSError:
-            return None
-    return events
+    """A served spool's events (spool.read_events, kept inside the collection `root`), or None when its path is unsafe
+    or unreadable."""
+    try:
+        return spool.read_events(review, root)
+    except OSError:
+        return None
 
 
 def _write_once(directory, name, data):
@@ -777,14 +719,14 @@ def _write_once(directory, name, data):
 
 
 def _write_event(review, root, actor, name, event):
-    with _actor_directory(review, root, actor, create=True) as directory:
+    with spool.actor_directory(review, root, actor, create=True) as directory:
         return _write_once(directory, name, json.dumps(event).encode("utf-8"))
 
 
 def _store_version(review, root, body):
     """Keep `versions/<sha256>.html`, the spec text a page is shown (review-state #model-versions)."""
     name = hashlib.sha256(body).hexdigest() + ".html"
-    with _actor_directory(review, root, "versions", create=True) as directory:
+    with spool.actor_directory(review, root, "versions", create=True) as directory:
         try:
             os.stat(name, dir_fd=directory, follow_symlinks=False)
         except FileNotFoundError:
@@ -1097,13 +1039,11 @@ class MountHandler(SimpleHTTPRequestHandler):
     def _granted_origin(self):
         """The Origin a public service grants a read (review-service #served-no-origin): any other origin, a page with
         no origin's null included, since a host page of any site loads the comment layer; none for no Origin or the
-        service's own. It stays safe only while the service has no login and no cookie (#served-safe), so a request
-        carrying a credential is granted nothing, and an answer that sets a cookie or asks a login drops its grant
-        (send_header): adding either ends answers to other origins (#acceptance-origin-safe)."""
+        service's own. It stays safe only while the service has no login and no cookie (#served-safe): the grant never
+        allows credentials, and an answer that sets a cookie or asks a login drops it (send_header), so adding either
+        ends answers to other origins (#acceptance-origin-safe)."""
         origin = (self.headers.get("Origin") or "").lower()
         if not ORIGIN_RE.fullmatch(origin) or not self._public():
-            return None
-        if self.headers.get("Cookie") is not None or self.headers.get("Authorization") is not None:
             return None
         host = (self.headers.get("Host") or "").lower()
         own = {scheme + "://" + host for scheme in ("http", "https")} if host else set()
@@ -1425,19 +1365,22 @@ listenHost();
             return self._json({"error": "git baseline unavailable"}, 409)
 
     def _scope_events(self, query):
-        """GET /api/events?scope=<slug>&subject=<subject>...: the threads on each subject, wherever kept
-        (comment-layer #subjects), and each store's hand-offs, in file-name order. Every event names its `store`, a
-        spec row's path or hosted, and each thread event its `subject`. 404 when no row has the scope, so a host page
-        reads at each live read whether its scope is registered (#scope-rule)."""
+        """GET /api/events?scope=<slug>&subject=<subject>...: {events, stores}. `events` are the threads on each
+        subject, wherever kept (comment-layer #subjects), and each store's hand-offs, in file-name order; every event
+        names its `store`, a spec row's path or hosted, and each thread event its `subject`. `stores` names the store
+        of each subject kept anywhere, threads or none, so a page knows each store before its first comment there and
+        hands off once into each (#ui-handoff). 404 when no row has the scope, so a host page reads at each live read
+        whether its scope is registered (#scope-rule)."""
         scope = query.get("scope", [""])[0]
         rows, hosting = self.server.mount_state.rows(), self.server.mount_state.hosting()
         if not any(row.get("slug") == scope for row in rows):
             return self._json({"error": "unknown scope"}, 404)
-        stores = {}
+        stores, named = {}, {}
         for subject in dict.fromkeys(query.get("subject", [])):
             placed = place_subject(rows, hosting, scope, subject)
             if placed is not None:
                 stores.setdefault(placed["review"], []).append(placed)
+                named[subject] = placed["store"]
         result = []
         for review, placements in stores.items():
             first = placements[0]
@@ -1456,7 +1399,7 @@ listenHost();
                           if event["actor"] == "human" and isinstance(event["body"], dict)
                           and event["body"].get("event") == "handoff")
         result.sort(key=lambda event: event["name"])
-        return self._json(result)
+        return self._json({"events": result, "stores": named})
 
     def _events(self, query):
         if "scope" in query:
@@ -1593,6 +1536,10 @@ listenHost();
             return self._json({"error": "bad event name"}, 400)
         if event.get("actor", "human") != "human":
             return self._json({"error": "agent spool writes are disk-only"}, 403)
+        if event_name == "status" and event.get("status") != "resolved":
+            # Only the human resolves, and resolving is the one status a human writes (event schema): no page draws a
+            # status another page sent.
+            return self._json({"error": "a human status is resolved"}, 400)
         if placed is not None:
             if event_name == "handoff" and not isinstance(event.get("events"), list):
                 # A host page hands off its drafts only; a hand-off with no list is Accept spec (comment-layer #ui-same).
@@ -1606,7 +1553,7 @@ listenHost();
         try:
             stored = _write_event(review, root, actor, name, event)
         except OSError as exc:
-            if isinstance(exc, UnsafeSpool) or exc.errno in UNSAFE_ERRNOS:
+            if isinstance(exc, spool.UnsafeSpool) or exc.errno in spool.UNSAFE_ERRNOS:
                 return self._json({"error": "unsafe spool path"}, 400)
             # an I/O failure is not a refusal: the page keeps the event and sends it again
             return self._json({"error": "event not stored"}, 503)

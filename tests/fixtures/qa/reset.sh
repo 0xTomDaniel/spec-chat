@@ -30,7 +30,7 @@
 # and answers a page with no origin (review-service #served-private): the test host (host.py)
 # serves the served-* collections' pages at its own address, in a frame with no origin.
 #
-# Comment-layer collections (host-*, one-thread-*, no-scope, no-service) also get host pages beside their specs and
+# Comment-layer collections (host-*, one-thread-*, no-scope, no-service, layer-*) also get host pages beside their specs and
 # their seeded threads from panes.py, once the registry names this reset's project; a collection's slug is the scope
 # its pages' items name.
 set -eu
@@ -44,7 +44,7 @@ collections="qa-fixture rule-candidate tbd-later tbd-later-handoff tbd-open-high
   served-threads served-handoff served-index served-focus coverage-undeclared
   host-draft host-starters host-handoff host-handoff-two host-reply host-live host-same-subject
   host-quote host-quote-gone host-only-comments host-phone host-frame one-thread-spec one-thread-host
-  no-scope no-service"
+  no-scope no-service layer-markup layer-stores layer-focus"
 site="$QA_ROOT/site"
 serve="$QA_ROOT/serve"
 repo="$site/.repo"

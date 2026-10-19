@@ -4,7 +4,7 @@ One JSON object per file. Read this instead of reverse-engineering the schema fr
 
 ## Storing over HTTP
 
-The page posts a human event to `POST /api/events?dir=<spec>.review&actor=human&name=<file name>`, the name chosen before the first send. A resend after a lost response stores nothing new: the same name with the same bytes answers `200 {"ok":true,"name":...}`; the same name with different bytes is refused `409`. A name whose `<event>-<id>` differs from the body is `400`. `actor=agent`, or a body `actor` other than `human`, is `403`: agent events are written only on disk. A post without `name` takes the service clock (pages from before page-named events).
+The page posts a human event to `POST /api/events?dir=<spec>.review&actor=human&name=<file name>`, the name chosen before the first send. A resend after a lost response stores nothing new: the same name with the same bytes answers `200 {"ok":true,"name":...}`; the same name with different bytes is refused `409`. A name whose `<event>-<id>` differs from the body is `400`. `actor=agent`, or a body `actor` other than `human`, is `403`: agent events are written only on disk. A `status` event whose `status` is not `resolved` is `400`. A post without `name` takes the service clock (pages from before page-named events).
 
 ## Spec versions
 
@@ -144,3 +144,4 @@ Two folds apply these rules and agree: the page's `foldThreads` in the runtime a
 - Human and agent `reply` events join the thread containing `respondsTo`.
 - `edit` replaces the effective human message named by `supersedes`, while the original file remains immutable.
 - Sort by event filename, collapse edits, then derive status from the newest effective human message. An agent reply acknowledges the thread only when it responds to that message id.
+- A status an event names counts only when it is `acknowledged`, `orphaned`, or `resolved`: an agent reply naming any other value acknowledges, and a `status` event naming one changes nothing.

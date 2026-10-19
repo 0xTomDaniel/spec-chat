@@ -8,8 +8,11 @@ usage: spool.py batch REVIEW_DIR CURSOR_NAME   (prints the batch's file names, o
 """
 from __future__ import annotations
 
+import contextlib
+import errno
 import json
 import os
+import stat
 import sys
 
 
@@ -52,11 +55,16 @@ def draft_ids(events):
             and e["name"] > legacy and e["body"]["id"] not in listed}
 
 
+# The statuses an event may name (references/event-schema.md): an agent reply's, and the human's resolve. Any other
+# value is no status: an agent reply naming none acknowledges, a status event naming none changes nothing.
+NAMED_STATUSES = ("acknowledged", "orphaned", "resolved")
+
+
 def fold_threads(events):
     """The page's foldThreads over events sorted by file name: thread id -> thread with `id`,
-    `ev` (root comment), `messages`, `status` (draft, pending, acknowledged, resolved, or an
-    agent's status), `latest_human_id`, `history` (message index -> original and edits), and
-    `draft_by` (browsers holding a draft in it). An event whose referent sorts later waits for it."""
+    `ev` (root comment), `messages`, `status` (draft, pending, or a named status), `latest_human_id`,
+    `history` (message index -> original and edits), `draft_by` (browsers holding a draft in it), and
+    `events` (every event joined to it, in fold order). An event whose referent sorts later waits for it."""
     events = sorted(_well_formed(events), key=lambda e: e["name"])
     drafts = draft_ids(events)
     ids = {e["body"]["id"] for e in events}
@@ -77,7 +85,7 @@ def fold_threads(events):
         b, human = e["body"], e["actor"] == "human"
         if b["event"] == "comment" and human:
             th = {"id": b["id"], "ev": e, "messages": [e], "status": human_status(e), "latest_human_id": b["id"],
-                  "history": {}, "draft_by": {}}
+                  "history": {}, "draft_by": {}, "events": [e]}
             mark_draft(th, e)
             threads[b["id"]] = th
             message_thread[b["id"]] = b["id"]
@@ -87,6 +95,7 @@ def fold_threads(events):
             if not th:
                 return
             th["messages"].append(e)
+            th["events"].append(e)
             message_thread[b["id"]] = th["id"]
             message_slot[b["id"]] = (th, len(th["messages"]) - 1)
             if human:
@@ -94,7 +103,7 @@ def fold_threads(events):
                 th["status"] = human_status(e)
                 mark_draft(th, e)
             elif b.get("respondsTo") == th["latest_human_id"]:
-                th["status"] = b.get("status") or "acknowledged"
+                th["status"] = b["status"] if b.get("status") in NAMED_STATUSES else "acknowledged"
         elif b["event"] == "edit" and human:
             prior = message_slot.get(b.get("supersedes"))
             th = prior[0] if prior else threads.get(b.get("threadId") or message_thread.get(b.get("supersedes")))
@@ -103,6 +112,7 @@ def fold_threads(events):
             index = prior[1] if prior else len(th["messages"])
             original = th["messages"][index] if index < len(th["messages"]) else e
             th["history"].setdefault(index, {"original": original, "edits": []})["edits"].append(e)
+            th["events"].append(e)
             if index < len(th["messages"]):
                 th["messages"][index] = e  # ev stays the root comment: its version, target, and quote place the thread
             else:
@@ -115,7 +125,9 @@ def fold_threads(events):
         elif b["event"] == "status":
             th = threads.get(by_ref(b))
             if th:
-                th["status"] = b.get("status")
+                th["events"].append(e)
+                if b.get("status") in NAMED_STATUSES:
+                    th["status"] = b["status"]
 
     def visit(e):
         apply(e)
@@ -162,25 +174,78 @@ def handoff_batch(review, consumed):
 HOST_FIELDS = ("subject", "kind", "label", "from")
 
 
-def read_events(review):
-    """Every event of a spool on disk as `{actor, name, body}`; a file that is not JSON is skipped. The owner's read,
-    self-contained on disk (comment-layer #boundary-agent); the service reads what it serves through its own reader,
-    which confines a request's spool to its collection."""
+class UnsafeSpool(OSError):
+    """A spool path that escapes its collection, or a link or other non-regular file where a spool directory or an
+    event file should be."""
+
+
+# A symlink or non-directory where the spool expects its own directory or file: refused, not retried.
+UNSAFE_ERRNOS = (errno.ELOOP, errno.ENOTDIR)
+_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+
+
+def _inside(path, root):
+    path, root = os.path.realpath(path), os.path.realpath(root)
+    try:
+        return os.path.commonpath((path, root)) == root and path != root
+    except ValueError:
+        return False
+
+
+@contextlib.contextmanager
+def actor_directory(review, root, actor, create=False):
+    """A descriptor of `<review>/<actor>`, reached from `root` one directory at a time with no link followed, so the
+    spool stays inside `root`; each directory made on the way when `create`."""
+    parts = os.path.relpath(review, root).split(os.sep) + [actor]
+    if any(part in ("", ".", "..") for part in parts) or not _inside(review, root):
+        raise UnsafeSpool("review path escapes collection")
+    flags = os.O_RDONLY | os.O_DIRECTORY | _NOFOLLOW
+    descriptor = os.open(root, flags)
+    try:
+        for part in parts:
+            if create:
+                try:
+                    os.mkdir(part, dir_fd=descriptor)
+                except FileExistsError:
+                    pass
+            child = os.open(part, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
+def read_events(review, root=None):
+    """Every event of a spool as `{actor, name, body}`: the one spool read, the owner's on disk (comment-layer
+    #boundary-agent) and the service's. A name starting with a dot or not ending .json is no event; a file that is not
+    JSON is skipped. The spool is reached from `root`, the service's collection, with no link followed; the owner's
+    read starts at the spool's own folder. A link or other non-regular file in the spool raises UnsafeSpool, and is
+    never waited on."""
+    if root is None:
+        root = os.path.realpath(os.path.dirname(os.path.abspath(review)))
+        review = os.path.join(root, os.path.basename(os.path.abspath(review)))
     events = []
     for actor in ("human", "agent"):
-        directory = os.path.join(review, actor)
         try:
-            names = os.listdir(directory)
+            with actor_directory(review, root, actor) as directory:
+                for name in os.listdir(directory):
+                    if name.startswith(".") or not name.endswith(".json"):
+                        continue
+                    try:
+                        descriptor = os.open(name, os.O_RDONLY | os.O_NONBLOCK | _NOFOLLOW, dir_fd=directory)
+                    except FileNotFoundError:
+                        continue
+                    with os.fdopen(descriptor, encoding="utf-8") as stream:
+                        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                            raise UnsafeSpool("not a regular file: " + name)
+                        try:
+                            body = json.load(stream)
+                        except ValueError:
+                            continue
+                    events.append({"actor": actor, "name": name, "body": body})
         except FileNotFoundError:
             continue
-        for name in names:
-            if name.startswith(".") or not name.endswith(".json"):
-                continue
-            try:
-                with open(os.path.join(directory, name), encoding="utf-8") as stream:
-                    events.append({"actor": actor, "name": name, "body": json.load(stream)})
-            except (OSError, ValueError):
-                continue
     return events
 
 
@@ -199,8 +264,7 @@ def host_rows(review, names):
         if not any(root.get(key) for key in HOST_FIELDS):
             continue
         fields = tuple(field(root.get(key)) for key in HOST_FIELDS + ("quote",))
-        held = thread["messages"] + [e for slot in thread["history"].values() for e in [slot["original"], *slot["edits"]]]
-        for event in held:
+        for event in thread["events"]:
             thread_of[event["name"]] = fields
     return [(name, *thread_of[name]) for name in names if name in thread_of]
 
@@ -215,7 +279,12 @@ def read_cursor(review, cursor_name):
 
 def main(argv):
     if len(argv) == 2 and argv[0] == "host":
-        for row in host_rows(argv[1], sys.stdin.read().splitlines()):
+        try:
+            rows = host_rows(argv[1], sys.stdin.read().splitlines())
+        except OSError as exc:
+            print("spool.py: %s: %s" % (argv[1], exc), file=sys.stderr)
+            return 1
+        for row in rows:
             print("\t".join(("host",) + row))
         return 0
     if len(argv) != 3 or argv[0] != "batch":

@@ -45,6 +45,7 @@ await ready(`${host}/`);
 const REPORT = 'docs/specs/report.spec.html';
 const CRITERION = 'Totals per week';
 const TURN = 'Agent turn 42';
+const MARKUP = '<img src=x onerror="window.__xss=1">'; // panes.py layer-markup
 const pane = (collection, file = 'pane.html') => `${service}/${collection}/docs/${file}`;
 const files = dir => { try { return readdirSync(dir).sort().map(n => JSON.parse(readFileSync(join(dir, n), 'utf8'))); } catch { return []; } };
 const specEvents = collection => files(join(qaRoot, 'site', collection, REPORT + '.review/human'));
@@ -93,6 +94,17 @@ const comment = async (frame, name, text, starter = null) => {
   await waitCards(frame, cardsMatch(`cards => cards.some(c => c.status === 'draft')`));
 };
 const pinOf = (frame, name) => frame.locator(`.hx-pin[aria-label*=": ${name}, "]`);
+// The host adds an item for another agent turn: after the turn 42 item, or before it.
+const addTurn = (frame, n, where = 'after') => frame.evaluate(([n, where]) => {
+  const turn = document.querySelector('[data-comment-subject="agent-turn:qa:42"]');
+  const added = turn.cloneNode(true);
+  added.dataset.commentSubject = 'agent-turn:qa:' + n;
+  added.dataset.commentLabel = 'Agent turn ' + n;
+  turn[where](added);
+}, [n, where]);
+// The aria-label of what has focus inside the layer.
+const focused = frame => frame.evaluate(() =>
+  document.querySelector('[data-spec-chat="comment-layer"]').shadowRoot.activeElement?.getAttribute('aria-label') || null);
 const noLayer = async (frame, page) => {
   await page.waitForTimeout(2500); // past a live read
   assert.equal(await frame.locator('[data-spec-chat="comment-layer"]').count(), 0, 'the layer draws nothing');
@@ -193,6 +205,66 @@ try {
   assert.deepEqual([card.who, card.texts, card.status], [['Papaya', 'Agent'],
     ['Question: why name the columns after the table headers?', 'So the CSV reads like the table the manager sees.'], 'acknowledged']);
   assert.deepEqual([card.kind, card.from], ['Agent turn', 'https://review.qa.invalid/host-pages/docs/pane.html'], '#ui-from');
+  await page.close();
+
+  // No field of a stored event becomes markup on a host page: author, kind, label, quote, texts, and a status no
+  // lifecycle has are text, and a from that is no web address is no link (review 1, B1).
+  ({ page, frame } = await open(pane('layer-markup')));
+  await pinOf(frame, TURN).click();
+  await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].texts.length === 2`));
+  await page.waitForTimeout(300); // past an injected image's error
+  [card] = await cards(frame);
+  assert.deepEqual([card.status, card.who, card.texts, card.kind, card.from, card.notice],
+    ['acknowledged', [MARKUP, 'Agent'], [MARKUP, MARKUP], MARKUP, null, `Text removed“${MARKUP}”`]);
+  assert.deepEqual(await frame.evaluate(() => [window.__xss,
+    document.querySelector('[data-spec-chat="comment-layer"]').shadowRoot.querySelectorAll('img').length]), [undefined, 0]);
+  assert.equal(await pinOf(frame, TURN).getAttribute('data-s'), 'acknowledged');
+  await page.close();
+
+  // #ui-handoff, offline (review 1, D1): drafts on two subjects kept in one store, never read back before Hand off,
+  // write one hand-off there listing both; another page's waiting draft on a subject not on this page stays a draft.
+  const offline = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  ({ page, frame } = await open(pane('layer-stores'), offline));
+  await addTurn(frame, 44);
+  await control(frame, 'Agent turn 44').waitFor();
+  const other = await open(pane('layer-stores', 'pane-other.html'), offline);
+  await addTurn(other.frame, 45);
+  await control(other.frame, 'Agent turn 45').waitFor();
+  await offline.setOffline(true);
+  await comment(other.frame, 'Agent turn 45', 'Waiting on another page.');
+  await comment(frame, TURN, 'First of two in one store.');
+  await comment(frame, 'Agent turn 44', 'Second of two in one store.');
+  assert.equal(await box(frame).locator('#hx-drafts').textContent(), '2 drafts', "this page's drafts");
+  await box(frame).locator('#hx-handoff').click();
+  await other.page.close();
+  await offline.setOffline(false);
+  for (let i = 0; i < 400 && !hostedEvents('layer-stores').some(e => e.event === 'handoff'); i++) await page.waitForTimeout(100);
+  await page.waitForTimeout(1000); // any further hand-off this page holds is sent by now
+  const kept = hostedEvents('layer-stores');
+  const on = n => kept.filter(e => e.event === 'comment' && e.subject === 'agent-turn:qa:' + n).map(e => e.id);
+  const handoffs = kept.filter(e => e.event === 'handoff');
+  assert.equal(handoffs.length, 1, 'one hand-off into the store: ' + JSON.stringify(handoffs));
+  assert.deepEqual([...handoffs[0].events].sort(), [...on(42), ...on(44)].sort(), 'listing both drafts');
+  assert.equal(on(45).length, 1, "the other page's draft is kept, and stays a draft");
+  await offline.close();
+
+  // #load-scan (review 1, D2): a host adding an earlier item moves no focus: a focused pin keeps it, and a focused
+  // control's Enter opens its own item.
+  ({ page, frame } = await open(pane('layer-focus')));
+  await comment(frame, TURN, 'Keep my focus.');
+  await box(frame).locator('.hx-layer-close').click();
+  await pinOf(frame, TURN).focus();
+  assert.match(await focused(frame), /: Agent turn 42, /);
+  await addTurn(frame, 41, 'before');
+  await control(frame, 'Agent turn 41').waitFor();
+  assert.match(String(await focused(frame)), /: Agent turn 42, /, 'the pin keeps focus');
+  await control(frame, TURN).focus();
+  await addTurn(frame, 40, 'before');
+  await control(frame, 'Agent turn 40').waitFor();
+  assert.equal(await focused(frame), 'Comment on ' + TURN, "the focused control stays its item's");
+  await page.keyboard.press('Enter');
+  await box(frame).waitFor();
+  assert.equal(await box(frame).getAttribute('aria-label'), 'Comments on ' + TURN, 'Enter opens its item');
   await page.close();
 
   // #acceptance-host-live: the owner replies in the pending thread; the open page shows it within 2 seconds.

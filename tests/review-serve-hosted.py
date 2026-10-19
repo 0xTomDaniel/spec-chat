@@ -180,8 +180,13 @@ class HostedServiceCase(HostedCase):
         return status, json.loads(body) if body else None, headers
 
     def read(self, scope, *subjects):
+        """The scope read's answer: its events, and the store each subject asked is kept in."""
         status, _, body = self.request("GET", self.scoped(scope, *subjects))
         return status, json.loads(body)
+
+    def read_events(self, scope, *subjects):
+        status, answer = self.read(scope, *subjects)
+        return status, answer["events"]
 
 
 class HostedRoutesTest(HostedServiceCase):
@@ -211,10 +216,20 @@ class HostedRoutesTest(HostedServiceCase):
         agent.mkdir()
         (agent / "9000-reply-r1.json").write_text(json.dumps(
             {"event": "reply", "id": "r1", "respondsTo": "c2", "status": "acknowledged", "text": "Because."}))
-        status, events = self.read(LANE, TURN)
+        status, events = self.read_events(LANE, TURN)
         self.assertEqual(status, 200)
         self.assertEqual([(e["body"]["id"], e["actor"], e["store"], e["subject"]) for e in events],
                          [("c2", "human", serve.HOSTED, TURN), ("r1", "agent", serve.HOSTED, TURN)])
+
+    def test_reading_names_each_subjects_store_with_or_without_threads(self):
+        """comment-layer #ui-handoff: a page knows the store of every subject it shows before its first comment there,
+        so its hand-off writes one hand-off into each store; a subject kept nowhere is not named."""
+        self.save(LANE, TURN, comment("c2", subject=TURN, kind="agent turn"))
+        status, answer = self.read(LANE, TURN, "agent-turn:new", CRITERION, "")
+        self.assertEqual(status, 200)
+        self.assertEqual(answer["stores"], {TURN: serve.HOSTED, "agent-turn:new": serve.HOSTED,
+                                            CRITERION: LANE + "/docs/specs/demo.spec.html"})
+        self.assertEqual([e["body"]["id"] for e in answer["events"]], ["c2"])
 
     def test_one_thread_between_the_spec_page_and_a_host_page(self):
         """comment-layer #acceptance-one-thread-spec, #acceptance-one-thread-host (service side)."""
@@ -230,7 +245,7 @@ class HostedRoutesTest(HostedServiceCase):
         self.assertEqual(on_page["c1"]["body"]["kind"], "criterion")
         self.assertEqual(on_page["c1"]["body"]["from"], "https://h.example/")
         self.assertEqual(on_page["c1"]["place"]["anchorId"], "acceptance-a")
-        status, events = self.read(LANE, CRITERION)
+        status, events = self.read_events(LANE, CRITERION)
         self.assertEqual(sorted(e["body"]["id"] for e in events), ["c1", "p1"])
         self.assertEqual({e["store"] for e in events}, {LANE + "/docs/specs/demo.spec.html"})
 
@@ -248,14 +263,31 @@ class HostedRoutesTest(HostedServiceCase):
                          ["c1"])
         self.assertEqual(json.loads(next((self.state / "comments" / LANE / "human").glob("*-handoff-h1.json"))
                                     .read_text())["events"], ["c2"])
-        status, events = self.read(LANE, CRITERION, TURN)
+        status, events = self.read_events(LANE, CRITERION, TURN)
         self.assertEqual(sorted((e["body"]["id"], e["store"]) for e in events if e["body"]["event"] == "handoff"),
                          [("h1", LANE + "/docs/specs/demo.spec.html"), ("h1", serve.HOSTED)])
+
+    def test_a_human_status_is_resolved_or_refused(self):
+        """review-state #trust: a human writes one status, resolved; any other value is refused on every route, so no
+        page draws a status a page sent."""
+        self.save(LANE, TURN, comment("c2", subject=TURN, kind="agent turn"))
+        spool = "/api/events?dir=" + urllib.parse.quote(LANE + "/docs/specs/demo.spec.html.review")
+        for value in ('<img src=x onerror="window.__xss=1">', "acknowledged", ["resolved"], None):
+            status, answer, _ = self.save(LANE, TURN, {"event": "status", "id": "s1", "respondsTo": "c2", "status": value})
+            self.assertEqual((status, answer["error"]), (400, "a human status is resolved"), value)
+            page = self.request("POST", spool + "&name=6000-status-s2.json",
+                                {"event": "status", "id": "s2", "respondsTo": "p1", "status": value},
+                                {"Content-Type": "application/json"})
+            self.assertEqual(page[0], 400, value)
+        self.assertEqual(sorted(p.name for p in (self.state / "comments" / LANE / "human").iterdir()),
+                         [p.name for p in (self.state / "comments" / LANE / "human").glob("*-comment-c2.json")])
+        status, _, _ = self.save(LANE, TURN, {"event": "status", "id": "s3", "respondsTo": "c2", "status": "resolved"})
+        self.assertEqual(status, 200)
 
     def test_scope_rows_are_known_at_each_read(self):
         """comment-layer #scope-rule: a scope with a row answers, one without is unknown, and a removed row's scope
         turns unknown with no restart."""
-        self.assertEqual(self.read(SCOPE), (200, []))
+        self.assertEqual(self.read(SCOPE), (200, {"events": [], "stores": {}}))
         self.assertEqual(self.read("unregistered", TURN)[0], 404)
         self.assertEqual(self.save("unregistered", TURN, comment("c1", subject=TURN))[0], 404)
         self.assertFalse((self.state / "comments" / "unregistered").exists())

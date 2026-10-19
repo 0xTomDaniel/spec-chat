@@ -1051,6 +1051,9 @@ function pressAnswer(e) {
 // Events sorted by file name; meaning follows references (#model-order): an event whose
 // referent sorts later waits for it, so a skewed clock never drops or detaches a message.
 function foldThreads(events) {
+  // The statuses an event may name (event schema): an agent reply's, and the human's resolve. Any other value is no
+  // status: an agent reply naming none acknowledges, a status event naming none changes nothing.
+  const NAMED = ['acknowledged', 'orphaned', 'resolved'];
   const threads = new Map();
   const drafts = draftIds(events);
   const ids = new Set(events.map(e => e.body.id));
@@ -1082,7 +1085,7 @@ function foldThreads(events) {
         th.status = humanStatus(e);
         markDraft(th, e);
       } else if (b.respondsTo === th.latestHumanId) {
-        th.status = b.status || 'acknowledged';
+        th.status = NAMED.includes(b.status) ? b.status : 'acknowledged';
       }
       return;
     }
@@ -1105,7 +1108,7 @@ function foldThreads(events) {
     if (b.event === 'status') {
       const threadId = b.threadId || messageThread.get(b.respondsTo) || (threads.has(b.respondsTo) ? b.respondsTo : null);
       const th = threadId && threads.get(threadId);
-      if (th) th.status = b.status;
+      if (th && NAMED.includes(b.status)) th.status = b.status;
     }
   };
   const visit = e => {
@@ -2830,7 +2833,7 @@ function threadCard(th, where, place) {
   const orphanHint = openOrphanHint(th);
   const threadJevState = threadJevNotice(orphanHint, resolvedHint);
   d.innerHTML = '<div class="hx-thread-summary"><div class="hx-anchor">' + esc(where) + '</div>' +
-    '<span class="hx-pill" data-s="' + th.status + '">' + th.status + '</span>' +
+    '<span class="hx-pill" data-s="' + esc(th.status) + '">' + esc(th.status) + '</span>' +
     (looksResolved(th) ? '<span class="hx-jev-thread-label">Looks resolved</span>' : '') +
     (threadJevState ? '<span class="hx-jev-thread-label" data-state="' + threadJevState.state + '">' + esc(jevDisplayLabel(threadJevState)) + '</span>' : '') +
     (th.status === 'resolved' ? '<button class="hx-disclosure" data-act="disclosure" aria-expanded="' + String(!collapsed) + '" aria-label="' + (collapsed ? 'Show' : 'Hide') + ' resolved thread">' + (collapsed ? '▸' : '▾') + '</button>' : '') + '</div>' +
@@ -3701,18 +3704,20 @@ function startLoops() {
  * A host page loads this runtime from <url>/static/comment-layer.js (#load). Each element the host anchors with a
  * subject, a scope, and a kind (#anchor-table) gets a comment control, and the spec page's pins, thread cards,
  * composer, Hand off, fruit names, live read, and outbox above draw on that element, in an overlay of the layer's own
- * (#ui, #ui-style). Only items whose scope a row answers get a control: with the service unreachable, refusing this
- * origin, or no scope answered, nothing draws (#scope-rule, #ui-absent).
+ * (#ui, #ui-style). Only items whose store the service names get a control, so every save names the store it goes to
+ * and Hand off writes one hand-off into each (#ui-handoff): with the service unreachable, refusing this origin, or no
+ * scope answered, nothing draws (#scope-rule, #ui-absent).
  */
 const LAYER_ANCHOR = '[data-comment-subject][data-comment-scope][data-comment-kind]';
 const LAYER_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14v10H10l-5 3v-13Z"></path><path d="M8 9h8M8 12h5"></path></svg>';
 const layer = {
   host: null,        // the overlay's element, while any control shows
   root: null,        // its content, inside the overlay's shadow root
-  scopes: new Map(), // scope -> true while a row answers it, false once the service says no row has it
+  stores: new Map(), // scope -> Map(subject -> store), as the service last named them; absent once no row has the scope
   open: null,        // the item whose thread box shows
   held: null,        // {el, text}: the selection inside an item as its control was pressed
   nodes: new Map(),  // placed controls, pins, and marks by key, reused so focus stays
+  keys: new WeakMap(), count: 0, // each item element's part of its nodes' keys
   subjects: '',      // the anchored scopes and subjects as last read
   failures: 0,       // reads in a row the service did not answer
   readTimer: 0, scanTimer: 0, frame: 0,
@@ -3770,7 +3775,8 @@ function layerItem(el) {
 }
 
 const layerItems = () => [...document.querySelectorAll(LAYER_ANCHOR)].map(layerItem).filter(Boolean);
-const liveItems = () => layerItems().filter(item => layer.scopes.get(item.scope) === true);
+const storeOf = item => layer.stores.get(item.scope)?.get(item.subject);
+const liveItems = () => layerItems().filter(item => storeOf(item) !== undefined);
 const sameItem = (a, b) => Boolean(a && b) && a.scope === b.scope && a.subject === b.subject;
 
 function layerSubjects(items) {
@@ -3804,7 +3810,8 @@ function layerTransport() {
   };
 }
 
-// The threads on a scope's subjects, wherever kept (comment-layer #subjects), or null when no row has the scope.
+// The threads on a scope's subjects, wherever kept, and the store each subject is kept in (comment-layer #subjects):
+// {events, stores}, or null when no row has the scope.
 async function readScope(scope, subjects) {
   const url = new URL('api/events', LAYER_SERVICE);
   url.searchParams.set('scope', scope);
@@ -3812,8 +3819,10 @@ async function readScope(scope, subjects) {
   const r = await fetch(url.href);
   if (r.status === 404) return null;
   if (!r.ok) throw new Error('review service answered ' + r.status);
-  const events = await r.json();
-  return Array.isArray(events) ? events.filter(e => e && e.body && typeof e.body === 'object' && typeof e.name === 'string') : [];
+  const answer = await r.json() || {};
+  const events = Array.isArray(answer.events) ? answer.events : [];
+  return { events: events.filter(e => e && e.body && typeof e.body === 'object' && typeof e.name === 'string'),
+    stores: new Map(Object.entries(answer.stores || {}).filter(([, store]) => typeof store === 'string')) };
 }
 
 async function refreshLayer() {
@@ -3821,15 +3830,17 @@ async function refreshLayer() {
   const items = layerItems();
   const subjects = layerSubjects(items);
   const read = [];
-  let failed = false, scopesChanged = subjects !== layer.subjects;
+  let failed = false, storesChanged = subjects !== layer.subjects;
   layer.subjects = subjects;
   await Promise.all(JSON.parse(subjects).map(async ([scope, list]) => {
     try {
-      const events = await readScope(scope, list);
-      if (layer.scopes.get(scope) !== (events !== null)) scopesChanged = true;
-      layer.scopes.set(scope, events !== null);
-      for (const e of events || []) read.push(Object.assign(e, { scope }));
-    } catch (_) { failed = true; } // unreachable, or refusing this origin: a scope never answered stays without a control
+      const answer = await readScope(scope, list);
+      const before = JSON.stringify([...(layer.stores.get(scope) || [])]);
+      if (answer) layer.stores.set(scope, answer.stores);
+      else layer.stores.delete(scope);
+      if (JSON.stringify([...(layer.stores.get(scope) || [])]) !== before) storesChanged = true;
+      for (const e of answer ? answer.events : []) read.push(Object.assign(e, { scope }));
+    } catch (_) { failed = true; } // unreachable, or refusing this origin: a subject never answered stays without a control
   }));
   layer.failures = failed ? layer.failures + 1 : 0;
   // A save this page holds learns its store and subject from the read.
@@ -3843,14 +3854,14 @@ async function refreshLayer() {
       learned = true;
     }
   }
-  ingest(read.concat(outboxEvents()), scopesChanged || learned);
+  ingest(read.concat(outboxEvents()), storesChanged || learned);
   renderOffline();
   scheduleLayerPlace(); // a host's text may have moved under its marks since the last read
 }
 
-// Each store's own events fold apart (review-state #model-rule): a store's hand-offs cover only its drafts. A save
-// not yet read back sits with its subject's until the read names its store.
-const layerStore = e => (e.scope || '') + '\n' + (e.store || 'subject:' + (e.subject || ''));
+// Each store's own events fold apart (review-state #model-rule): a store's hand-offs cover only its drafts. Every save
+// names the store the service named for its subject before it was written, so one not yet read back folds there too.
+const layerStore = e => (e.scope || '') + '\n' + (e.store || '');
 
 function foldLayerThreads(events) {
   const stores = new Map();
@@ -3872,11 +3883,13 @@ function layerRoute(event, route) {
 }
 
 // #ui-handoff: this browser's drafts on the page, one hand-off into each store that holds them, each listing its own.
+// The outbox is shared by every host page of this service in this browser: another page's waiting drafts stay drafts.
 function handoffLayer() {
   if (state.handoffPosting) return;
+  const items = liveItems();
   const stores = new Map();
   for (const e of state.events) {
-    if (layer.scopes.get(e.scope) !== true) continue;
+    if (!items.some(item => item.scope === e.scope)) continue;
     const key = layerStore(e);
     if (!stores.has(key)) stores.set(key, []);
     stores.get(key).push(e);
@@ -3884,11 +3897,12 @@ function handoffLayer() {
   const drafts = layerDrafts();
   let sent = 0;
   for (const list of stores.values()) {
-    const ids = handoffEvents(list, state.reviewer.browser);
-    const draft = list.find(e => ids.includes(e.body.id) && e.subject);
-    if (!draft) continue;
-    save({ id: humanId('h'), event: 'handoff', anchorId: '', target: null, quote: null, text: 'batch from ' + state.transport.mode, events: ids,
-      actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 }, { scope: draft.scope, subject: draft.subject, store: draft.store });
+    const mine = new Set(handoffEvents(list, state.reviewer.browser));
+    const listed = list.filter(e => mine.has(e.body.id) && items.some(item => sameItem(item, e)));
+    if (!listed.length) continue;
+    const { scope, subject, store } = listed[0];
+    save({ id: humanId('h'), event: 'handoff', anchorId: '', target: null, quote: null, text: 'batch from ' + state.transport.mode,
+      events: listed.map(e => e.body.id), actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 }, { scope, subject, store });
     sent++;
   }
   if (!sent) return;
@@ -3897,10 +3911,11 @@ function handoffLayer() {
   refresh().finally(() => { state.handoffPosting = false; });
 }
 
-// This browser's draft threads in scopes a row answers.
+// This browser's draft threads on the page's items.
 function layerDrafts() {
   const browser = state.reviewer && state.reviewer.browser;
-  return [...state.threads.values()].filter(th => layer.scopes.get(th.ev.scope) === true
+  const items = liveItems();
+  return [...state.threads.values()].filter(th => items.some(item => sameItem(item, th.ev))
     && (th.draftBy.has(browser) || th.draftBy.has(''))).length;
 }
 
@@ -3936,7 +3951,7 @@ function openLayerComposer(item) {
   // #subjects-fields: every comment written on a host page carries its kind, label, and from address, and its subject.
   const host = { subject: item.subject, kind: item.kind, label: item.label, from: item.from };
   state.composer = { kind: 'comment', target: quote ? { type: 'text', key: quote.slice(0, 40) } : null, quote, text: '',
-    starters: item.starters, host, route: { scope: item.scope, subject: item.subject } };
+    starters: item.starters, host, route: { scope: item.scope, subject: item.subject, store: storeOf(item) } };
   state.activeThread = null;
   layer.open = item;
   renderLayer(true);
@@ -4058,6 +4073,13 @@ function visiblePart(el) {
   return bottom - top >= 1 && right - left >= 1 ? { top, left, bottom, right } : null;
 }
 
+// An item element's part of its nodes' keys: a control, pin, or mark stays with its element as the host adds, moves, or
+// removes others, so a focused one keeps its item and its focus.
+function itemKey(el) {
+  if (!layer.keys.has(el)) layer.keys.set(el, ++layer.count);
+  return layer.keys.get(el);
+}
+
 function placedNode(key, make) {
   let node = layer.nodes.get(key);
   if (!node || !node.isConnected) {
@@ -4110,23 +4132,24 @@ function placeLayer() {
   const size = window.matchMedia('(max-width: 640px)').matches ? 44 : 24;
   const numbers = new Map([...state.threads.keys()].map((id, index) => [id, index + 1]));
   let ring = null;
-  items.forEach((item, index) => {
+  items.forEach(item => {
     const part = visiblePart(item.el);
     if (!part) return;
     const name = item.label || item.subject;
-    const control = layerControl('control:' + index);
+    const at = itemKey(item.el);
+    const control = layerControl('control:' + at);
     control.item = item;
     control.setAttribute('aria-label', 'Comment on ' + name);
     control.title = 'Comment on ' + name;
     control.setAttribute('aria-expanded', String(sameItem(layer.open, item) && layer.open.el === item.el));
-    used.add('control:' + index);
+    used.add('control:' + at);
     const top = part.top + 4;
     let right = part.right - 4;
     control.style.top = top + 'px';
     control.style.left = (right - size) + 'px';
     right -= size + 4;
     for (const th of itemThreads(item)) {
-      const key = 'pin:' + index + ':' + th.id;
+      const key = 'pin:' + at + ':' + th.id;
       const pin = layerPin(key);
       pin.item = item;
       pin.thread = th;
@@ -4146,7 +4169,7 @@ function placeLayer() {
           const t = Math.max(rect.top, part.top), l = Math.max(rect.left, part.left);
           const h = Math.min(rect.bottom, part.bottom) - t, w = Math.min(rect.right, part.right) - l;
           if (h < 1 || w < 1) return;
-          const markKey = 'mark:' + index + ':' + th.id + ':' + line;
+          const markKey = 'mark:' + at + ':' + th.id + ':' + line;
           const mark = placedNode(markKey, () => Object.assign(document.createElement('div'), { className: 'hx-quote-mark' }));
           used.add(markKey);
           Object.assign(mark.style, { top: t + 'px', left: l + 'px', width: w + 'px', height: h + 'px' });
