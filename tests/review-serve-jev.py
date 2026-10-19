@@ -466,30 +466,55 @@ class JevSeamTest(unittest.TestCase):
         self.assertEqual(provider.calls, 4)
         self.assertGreater(provider.max_active, 1)
 
-    def test_coverage_builder_pairs_every_story_with_every_criterion(self):
+    def test_coverage_builder_asks_only_the_stories_each_criterion_names(self):
+        """jev-suggestions #acceptance-coverage-declared, #coverage-declared: a criterion is asked about each story its
+        data-story names, once, and never another; a story none names and a criterion naming none stand alone."""
         source = """
         <p data-user-story data-anchor="story-one">As a reviewer, I see the flag.</p>
         <p data-user-story data-anchor="story-two">As a reader, I see the text.</p>
-        <p data-acceptance-criterion data-anchor="criterion-one">The flag appears.</p>
-        <p data-acceptance-criterion data-anchor="criterion-two">The text stays readable.</p>
+        <p data-user-story data-anchor="story-three">As an author, I see the gap.</p>
+        <p data-acceptance-criterion data-anchor="criterion-one" data-story="story-one">The flag appears.</p>
+        <p data-acceptance-criterion data-anchor="criterion-two" data-story=" story-two  story-one story-two ">The text
+          stays readable.</p>
+        <p data-acceptance-criterion data-anchor="criterion-bare">No declaration.</p>
+        <p data-acceptance-criterion data-anchor="criterion-stray" data-story="story-gone">Names no story here.</p>
         """
         questions = jev.build_coverage_questions(source, "spec.html", "base", "head")
-        self.assertEqual({question["id"] for question in questions}, {
-            "story-one::criterion-one", "story-one::criterion-two",
-            "story-two::criterion-one", "story-two::criterion-two",
-        })
+        self.assertEqual(sorted(question["id"] for question in questions), sorted([
+            "story-one::criterion-one", "story-one::criterion-two", "story-two::criterion-two",
+            "story-three::", "::criterion-bare", "::criterion-stray",
+        ]))
+        self.assertNotIn("story-two::criterion-one", {question["id"] for question in questions})
         self.assertTrue(all(question["kind"] == "coverage" for question in questions))
-        self.assertEqual(questions[0]["sources"], ["spec.html#story-one", "spec.html#criterion-one"])
+        by_id = {question["id"]: question for question in questions}
+        pair = by_id["story-two::criterion-two"]
+        self.assertEqual(pair["sources"], ["spec.html#story-two", "spec.html#criterion-two"])
+        self.assertEqual((pair["story"], pair["criterion"], pair["target"]), ("story-two", "criterion-two", "story-two"))
+        self.assertEqual(pair["state"]["criterion"], {"anchor": "criterion-two", "text": "The text stays readable."})
+        self.assertEqual((by_id["story-three::"]["criterion"], by_id["story-three::"]["sources"]),
+                         (None, ["spec.html#story-three"]))
+        self.assertEqual((by_id["::criterion-bare"]["story"], by_id["::criterion-bare"]["target"]),
+                         (None, "criterion-bare"))
 
-    def test_coverage_builder_emits_missing_side_questions(self):
+    def test_coverage_questions_grow_with_criteria_not_stories_times_criteria(self):
+        """jev-suggestions #coverage-declared, story-light-load: 40 stories, 40 criteria naming one each, 40 asks."""
+        source = "".join(f'<p data-user-story data-anchor="story-{i}">Story {i}</p>'
+                         f'<p data-acceptance-criterion data-anchor="criterion-{i}" data-story="story-{i}">C {i}</p>'
+                         for i in range(40))
+        questions = jev.build_coverage_questions(source, "spec.html", "base", "head")
+        self.assertEqual(sorted(question["id"] for question in questions),
+                         sorted(f"story-{i}::criterion-{i}" for i in range(40)))
+
+    def test_coverage_builder_asks_nothing_without_a_data_story(self):
+        """jev-suggestions #coverage-declared: a spec whose criteria declare no data-story asks no coverage question."""
         stories = '<p data-user-story data-anchor="story-one">Story</p><p data-user-story data-anchor="story-two">Story</p>'
         criteria = '<p data-acceptance-criterion data-anchor="criterion-one">Criterion</p>'
-        story_questions = jev.build_coverage_questions(stories, "spec.html", "base", "head")
-        criterion_questions = jev.build_coverage_questions(criteria, "spec.html", "base", "head")
-        self.assertEqual({(item["story"], item["criterion"]) for item in story_questions},
-                         {( "story-one", None), ("story-two", None)})
-        self.assertEqual({(item["story"], item["criterion"]) for item in criterion_questions},
-                         {(None, "criterion-one")})
+        for source in (stories, criteria, stories + criteria, ""):
+            self.assertEqual(jev.build_coverage_questions(source, "spec.html", "base", "head"), [])
+        # data-story counts on a criterion only.
+        self.assertEqual(jev.build_coverage_questions(
+            stories.replace("<p data-user-story", '<p data-story="story-one" data-user-story', 1) + criteria,
+            "spec.html", "base", "head"), [])
 
     def test_type_change_in_anchored_child_changes_section(self):
         baseline = '<section data-anchor="root"><h2 data-anchor="heading">Same</h2><p data-anchor="clause">Before</p></section>'
@@ -763,7 +788,7 @@ class JevSeamTest(unittest.TestCase):
             seam = jev.JevSeam(provider=provider, api_key="fake", record_store=store)
             question = jev.build_coverage_questions(
                 '<p data-user-story data-anchor="story">Story words</p>'
-                '<p data-acceptance-criterion data-anchor="criterion">Criterion words</p>',
+                '<p data-acceptance-criterion data-anchor="criterion" data-story="story">Criterion words</p>',
                 "spec.html", "base", "head",
             )[0]
             record = seam.ask(question)
