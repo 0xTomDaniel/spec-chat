@@ -30,7 +30,9 @@ From your repo root (a plain folder works too; Git is not required):
 <spec-chat clone>/scripts/install-spec-chat --specs docs/specs
 ```
 
-This links the skills (`spec-chat-shape`, `spec-chat-review`, `repair-specs`) into `~/.claude/skills` and `~/.codex/skills`, and copies the page runtime (`.viz`) and style (`.style`) into the spec folder. No hosting, keys, or registry.
+This puts the skills (`spec-chat-shape`, `spec-chat-review`, `repair-specs`) in your repo's `.agents/skills` (each a link into the clone), links `.claude/skills/<skill>` and `.codex/skills/<skill>` to them with relative links (`../../.agents/skills/<skill>`), and copies the page runtime (`.viz`) and style (`.style`) into the spec folder. No hosting, keys, or registry.
+
+The repo is the Git top of the folder you run it from (or that folder, outside Git); `--prefix <repo>` names another. The installer never installs skills under your home folder: it refuses `$HOME` as the repo, so nothing lands in `~/.agents/skills`, `~/.claude/skills`, or `~/.codex/skills`.
 
 It prints `spec-chat onboarding pending` and a `next: ... --review ...` hint, and `$XDG_STATE_HOME/spec-chat/onboarding.toml` keeps `status = "pending"`. That is expected on the light path: `done` only means the hosted service is set up.
 
@@ -40,7 +42,7 @@ Open a spec in the browser, either way:
 - over loopback, no prompts, any browser:
 
   ```sh
-  python3 ~/.claude/skills/spec-chat-review/assets/review-serve.py docs 0
+  python3 .agents/skills/spec-chat-review/assets/review-serve.py docs 0
   ```
 
   It binds `127.0.0.1` on a free port (`0`) and prints the URL. Stop it when review ends.
@@ -48,7 +50,7 @@ Open a spec in the browser, either way:
 Press `C`, comment, and hand off. Then ask your agent to review the spec (the `spec-chat-review` skill). Its loop is plain files (here `c1` and `p1` are the comment and anchor ids from the hand-off):
 
 ```sh
-R=~/.claude/skills/spec-chat-review/scripts
+R=.agents/skills/spec-chat-review/scripts
 sh $R/watch-specs.sh docs .cursor-owner 0 3   # one immediate scan: rows <spec> <file name>
 sh $R/emit-reply.sh docs/specs/example.spec.html.review/ c1 p1 '{"type":"text","key":"downloads a CSV"}' acknowledged 'no spec change' 'Date, item, total.'
 printf '%s\n' <file names printed by the scan above> >> docs/specs/example.spec.html.review/.cursor-owner

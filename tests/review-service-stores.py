@@ -140,7 +140,7 @@ def write_every_store(work: Path) -> set[str]:
             seam.ledger.append({"project": "p", "spec": "a.spec.html", "anchor": "x", "kind": qset.id,
                                 "outcome": "dismissed", "judgment": "judgment-1", "by": "owner"})
     # The installer: its onboarding file.
-    subprocess.run([str(INSTALL)], env=env, check=True, capture_output=True, timeout=60)
+    subprocess.run([str(INSTALL)], env=env, cwd=repo, check=True, capture_output=True, timeout=60)
     return listed(xdg / "spec-chat", "") | listed(Path(review), SPOOL)
 
 
