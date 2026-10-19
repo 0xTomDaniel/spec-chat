@@ -30,7 +30,7 @@ From your repo root (a plain folder works too; Git is not required):
 <spec-chat clone>/scripts/install-spec-chat --specs docs/specs
 ```
 
-This puts the skills (`spec-chat-shape`, `spec-chat-review`, `repair-specs`) in your repo's `.agents/skills` (each a link into the clone), links `.claude/skills/<skill>` and `.codex/skills/<skill>` to them with relative links (`../../.agents/skills/<skill>`), and copies the page runtime (`.viz`) and style (`.style`) into the spec folder. No hosting, keys, or registry.
+This puts the skills (`spec-chat-shape`, `spec-chat-review`, `repair-specs`) in your repo's `.agents/skills` (each a link into the clone), links `.claude/skills/<skill>` and `.codex/skills/<skill>` to them with relative links (`../../.agents/skills/<skill>`), and copies the page runtime (`.viz`) and style (`.style`) into the spec folder. No hosting, keys, or registry. `--agents-only` skips the `.claude/skills` and `.codex/skills` links, for repos that keep skills only in `.agents/skills`.
 
 The repo is the Git top of the folder you run it from (or that folder, outside Git); `--prefix <repo>` names another. The installer never installs skills under your home folder: it refuses `$HOME` as the repo, so nothing lands in `~/.agents/skills`, `~/.claude/skills`, or `~/.codex/skills`.
 

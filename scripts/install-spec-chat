@@ -2,8 +2,8 @@
 """Spec Chat's one install and onboarding entry point.
 
 Installs the skills into the target repo's .agents/skills (links into this clone) and
-links each one from the other agents' skill folders (.claude/skills, .codex/skills) relatively, never into the
-home directory; installs the page runtime and style into a named spec folder,
+links each one from the other agents' skill folders (.claude/skills, .codex/skills) relatively (skipped with
+--agents-only), never into the home directory; installs the page runtime and style into a named spec folder,
 sets up the default session's review service through review-host.py, whatever
 session it runs in, and publishes
 $XDG_STATE_HOME/spec-chat/onboarding.toml, which also records what it added
@@ -243,7 +243,7 @@ def install(args: argparse.Namespace, prefix: Path, state: Path) -> None:
         for name, source in SKILLS.items():
             entry = prefix / AGENTS_SKILLS / name
             link(source, entry, manifest["links"])
-            for base in SKILL_DIRS:
+            for base in () if args.agents_only else SKILL_DIRS:
                 link(entry, prefix / base / name, manifest["links"], relative=True)
         if args.specs:
             copy_assets(Path(args.specs).expanduser().resolve(), manifest["copies"])
@@ -350,6 +350,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="repo that gets the skills in .agents/skills, linked from .claude/skills and "
                              ".codex/skills (default: the Git top of the working directory, else the directory; "
                              "never $HOME)")
+    parser.add_argument("--agents-only", action="store_true",
+                        help="put the skills only in .agents/skills; no .claude/skills or .codex/skills links")
     parser.add_argument("--specs", metavar="DIR", help="spec folder that gets the page runtime (.viz) and style (.style)")
     parser.add_argument("--review", metavar="SPEC", help="first *.spec.html to review through the default session's service")
     visibility = parser.add_mutually_exclusive_group()

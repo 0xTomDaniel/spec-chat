@@ -379,6 +379,22 @@ class InstallSpecChatTest(unittest.TestCase):
         self.assertEqual(list(self.home.iterdir()), [])
         self.assertFalse((self.specs / ".agents").exists())
 
+    def test_agents_only_puts_skills_only_in_the_repo_agents_folder(self):
+        """--agents-only links the skills into .agents/skills and writes no .claude or .codex folder; a rerun
+        changes nothing and --undo removes the links."""
+        self.run_install("--agents-only")
+        for name, source in zip(SKILL_NAMES, ("shape-spec", "review-spec", "repair-specs")):
+            self.assertEqual((self.repo / ".agents/skills" / name).resolve(), ROOT / "skill" / source)
+        self.assertFalse((self.repo / ".claude").exists())
+        self.assertFalse((self.repo / ".codex").exists())
+        self.assertEqual(sorted(self.status()["installed"]["links"]),
+                         sorted(str(self.repo.resolve() / ".agents/skills" / n) for n in SKILL_NAMES))
+        before = snapshot(self.home, self.state, self.repo)
+        self.run_install("--agents-only")
+        self.assertEqual(snapshot(self.home, self.state, self.repo), before)
+        self.run_install("--undo")
+        self.assertFalse(any((self.repo / ".agents/skills" / n).is_symlink() for n in SKILL_NAMES))
+
     def test_home_is_never_the_install_target(self):
         """Neither --prefix $HOME nor running from $HOME puts skills under ~/.agents/skills."""
         for args, cwd in ((("--prefix", str(self.home)), None), ((), self.home)):
