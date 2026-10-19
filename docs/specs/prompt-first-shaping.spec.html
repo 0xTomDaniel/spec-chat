@@ -562,7 +562,7 @@ Where a repo's ADRs carry no number, the line names the new ADR by a link to its
 <p data-anchor="wake-lock-namespace">The lock uses one user-owned absolute runtime namespace independent of shell environment variables so multiplexer panes and ordinary shells contend on the same identity.</p>
 <p data-anchor="wake-no-lease">The ownership lock is released automatically with its foreground process and introduces no lease, heartbeat, fencing protocol, or persistent coordinator.</p>
 <p data-anchor="wake-adapter">Host wake owns only reactivation and never reads comments, edits the spec, emits replies, advances cursors, or invokes detached agent processing.</p>
-<p data-anchor="wake-provider">Host wake uses only the registered <code>wake</code> provider (<a href="./review-service.spec.html#providers">Providers</a>); <code>review-host register</code> reports <code>wake=verified</code> only when its <code>check</code> resolves the owner pane.</p>
+<p data-anchor="wake-provider">Host wake uses only the registered <code>wake</code> provider (<a href="./review-service.spec.html#providers">Providers</a>); <code>review-host register</code> reports <code>wake=verified</code> only when its <code>check</code>, run in the review service's environment (<a href="./host-wake.spec.html#wake-rule-verify">Host wake</a>), resolves the owner pane.</p>
 <p data-anchor="wake-portable">Without a wake provider, registration reports <code>wake=unavailable</code> and the owner selects manual-resume rather than false active status.</p>
 </section>
 
