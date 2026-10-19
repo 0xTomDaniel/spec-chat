@@ -356,7 +356,7 @@ class HeldEscalationTest(unittest.TestCase):
         chain = {"kind": "lane", "pair": ("a", "b"), "chain": [step]}
         service._material_questions = lambda row: []
         service._lane_questions = lambda rows, **kwargs: [chain]
-        _, misses = service._board_from_records([{"slug": "a", "spec": "x", "id": "1"}])
+        _, misses, _ = service._board_from_records([{"slug": "a", "spec": "x", "id": "1"}])
         self.assertIn(service.seam.key(step), misses)
 
 

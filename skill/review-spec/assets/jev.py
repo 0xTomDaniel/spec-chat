@@ -897,6 +897,18 @@ def _model_reader(llm_model: str | Callable[[], str] | None) -> Callable[[], str
     return _key_reader(llm_model)
 
 
+# A kept question's key, computed once when it is built (review-service #steady-bound): a read looks keys up,
+# never recomputes them. Read by JevSeam.key only; no payload or record carries it.
+QUESTION_KEY = "_key"
+
+
+def _question_key(question: Mapping[str, Any], qset: "QuestionSet") -> str:
+    inputs = {"state": question.get("state", {}),
+              "criteria": question.get("criteria", {}),
+              "question_set": {"id": qset.id, "version": qset.version}}
+    return "sha256:" + hashlib.sha256(_canonical(inputs).encode("utf-8")).hexdigest()
+
+
 def _extract_inputs(question: Mapping[str, Any]) -> dict[str, Any] | None:
     """Extract inputs for draft-check records (#record-inputs): clause text, target text, context."""
     state = question.get("state", {})
@@ -997,11 +1009,12 @@ class JevSeam:
         return self.store.append(record)
 
     def key(self, question: Mapping[str, Any]) -> str:
+        """The question's record key: the one its build kept (question set id, version, key), else computed."""
         qset = self.question_set(str(question.get("kind", "type")))
-        inputs = {"state": question.get("state", {}),
-                  "criteria": question.get("criteria", {}),
-                  "question_set": {"id": qset.id, "version": qset.version}}
-        return "sha256:" + hashlib.sha256(_canonical(inputs).encode("utf-8")).hexdigest()
+        kept = question.get(QUESTION_KEY)
+        if kept is not None and kept[:2] == (qset.id, qset.version):
+            return kept[2]
+        return _question_key(question, qset)
 
     def cached(self, question: Mapping[str, Any]) -> dict[str, Any] | None:
         """The record already held for this question, never asking."""
@@ -1982,14 +1995,15 @@ MATERIAL_NO = "no-behavior-change"
 MATERIAL_YES = "behavior"
 
 
-def changed_leaf_clauses(current: str | bytes, baseline: str | bytes | None) -> list[tuple[str, str, str]]:
-    """(anchor, before, after) for each leaf clause whose text differs from the baseline."""
+def changed_leaf_clauses(current: str | bytes, baseline: str | bytes | None) -> list[tuple[str, str, str, dict[str, Any]]]:
+    """(anchor, before, after, context) for each leaf clause whose text differs from the baseline; context is
+    the clause's in the current text (#context), built in the same parse."""
     now, old = extract_anchors(current), extract_anchors(baseline)
     result = []
     for anchor in _corpus_leaf_anchors(now):
         before, after = str(old.get(anchor, {}).get("text", "")), str(now[anchor].get("text", ""))
         if before != after:
-            result.append((anchor, before, after))
+            result.append((anchor, before, after, anchor_context(anchor, now)))
     return result
 
 
@@ -2099,6 +2113,9 @@ def _git_answer(root: str, *args: str) -> bytes:
     return result.stdout
 
 
+_COMMIT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+
+
 def _commit(root: str, ref: str) -> str | None:
     if not ref or ref.startswith("-"):
         return None
@@ -2198,6 +2215,8 @@ def default_state_dir() -> Path:
 
 
 class JevService:
+    _unread = 0  # failed reads of a file at a commit (_at), counted so a board pass that saw one does not stand
+
     def __init__(self, *, state_dir: str | Path | None = None, provider: Any = None,
                  api_key: str | Callable[[], str] | None = None, llm_model: str | Callable[[], str] | None = None,
                  question_dirs: list[str | Path] | None = None):
@@ -2304,12 +2323,25 @@ class JevService:
         try:
             return self._kept.get(("at", self._common_dir(root), commit, relative), read)
         except (OSError, subprocess.SubprocessError):
+            self._unread += 1  # a board pass that saw a failed read does not stand (_board_pass)
             return None
 
     def _built(self, kind: str, *args: Any) -> Any:
         """A builder's value, kept by the content of its inputs; kept questions are read only. Raises as the builder does."""
         builder = BUILDERS[kind]
-        return self._kept.get(("build", kind, builder, _content_digest(args)), lambda: builder(*args))
+        return self._kept.get(("build", kind, builder, _content_digest(args)), lambda: self._keyed(builder(*args)))
+
+    def _keyed(self, value: Any) -> Any:
+        """A built value whose questions, a chain's steps for a chain, each carry their key (QUESTION_KEY)."""
+        if isinstance(value, list):
+            for item in value:
+                if not isinstance(item, dict):
+                    continue
+                for question in item.get("chain") or (item,):
+                    qset = self.question_sets.get(str(question.get("kind", "type")))
+                    if qset is not None:
+                        question[QUESTION_KEY] = (qset.id, qset.version, _question_key(question, qset))
+        return value
 
     def _build(self, kind: str, *args: Any) -> list[dict[str, Any]]:
         """A builder's questions as a list; a builder that raises gives none."""
@@ -2452,8 +2484,13 @@ class JevService:
         return result
 
     def _row_parts(self, row: Mapping[str, Any]) -> tuple[str, str, str, bytes]:
+        """A row's root, spec, served path, and spec text: the text a board pass read (`source`), else the file's."""
         root, spec = str(row["root"]), str(row["spec"])
         path = row.get("path") or str(row["slug"]) + "/" + spec
+        if "source" in row:
+            if row["source"] is None:
+                raise OSError("spec unreadable")
+            return root, spec, str(path), row["source"]
         current = Path(row.get("spec_file") or os.path.join(root, *spec.split("/"))).read_bytes()
         return root, spec, str(path), current
 
@@ -2464,7 +2501,7 @@ class JevService:
         if base is None:
             raise ValueError("row base is not a commit")
         head = _commit(root, "HEAD") or "working-tree"
-        return build_type_questions(current, _git_read(root, "show", base + ":" + spec), path, base, head)
+        return self._built("type", current, self._at(root, base, spec), path, base, head)
 
     def _changed_clauses(self, row: Mapping[str, Any], mains: dict[str, str | None] | None = None) -> list[dict[str, Any]]:
         """Changed leaf clauses against target main, the row root's origin/HEAD as last fetched, resolved once
@@ -2478,10 +2515,8 @@ class JevService:
         if base is None:
             return []
         old = self._at(root, base, spec)
-        now = extract_anchors(current)
         result = []
-        for anchor, before, after in self._built("changed", current, old):
-            ctx = anchor_context(anchor, now)
+        for anchor, before, after, ctx in self._built("changed", current, old):
             entry: dict[str, Any] = {"path": path, "anchor": anchor, "before": before, "after": after, "base": base}
             if ctx:
                 entry["context"] = ctx
@@ -2503,23 +2538,52 @@ class JevService:
             return self._board_answer
 
     def _board_loop(self) -> None:
-        """Answer the latest rows from held records, publish, ask the misses, then publish again."""
+        """Refresh the board for the latest rows, once per wake; between passes it holds only the inputs digest of
+        the answer that stands."""
+        settled = None
         while True:
             self._board_wake.wait()
             with self._board_lock:
                 self._board_wake.clear()
                 rows = self._board_rows
             try:
-                answer, misses = self._board_from_records(rows)
-                self._board_answer = answer
-                if misses:
-                    wait(self._ask_misses(misses, read=("board", next(self._reads))))
-                    self._board_answer, _ = self._board_from_records(rows)
+                settled = self._board_pass(rows, settled)
             except Exception:
-                pass
+                settled = None
             with self._board_lock:
                 if not self._board_wake.is_set():
                     self._board_idle.set()
+
+    def _board_pass(self, rows: Any, settled: str | None) -> str | None:
+        """Answer the rows from held records, publish, ask the misses, then publish again. The inputs are each
+        row with its spec text, read once here, and each repository's target main; the host records a row base as
+        the commit it resolves to (lane-hosting #index-entry-cost), and a pass over a base that is not one never
+        stands. A pass whose every answer is final and whose every read succeeded stands until its inputs change:
+        unchanged inputs skip the pass. Returns the digest of the inputs that stand, else None."""
+        rows = [row for row in rows or () if isinstance(row, Mapping) and row.get("slug") and row.get("spec")
+                and not row.get("test")]
+        read, mains = [], {}
+        for row in rows:
+            try:
+                root, _, _, source = self._row_parts(row)
+            except Exception:
+                read.append({**row, "source": None})
+                continue
+            read.append({**row, "source": source})
+            common = self._common_dir(root)
+            if common not in mains:
+                mains[common] = _commit(root, "refs/remotes/origin/HEAD")
+        inputs = _content_digest([read, sorted(mains.items())])
+        if inputs == settled:
+            return settled
+        unread = self._unread
+        answer, misses, done = self._board_from_records(read, mains)
+        self._board_answer = answer
+        if misses:
+            wait(self._ask_misses(misses, read=("board", next(self._reads))))
+            self._board_answer, _, done = self._board_from_records(read, mains)
+        commits = all(_COMMIT_ID.fullmatch(str(row.get("base", ""))) for row in rows)
+        return inputs if done and commits and unread == self._unread else None
 
     def _held(self, question: Mapping[str, Any], misses: dict[str, dict[str, Any]],
               seam: "JevSeam | None" = None) -> dict[str, Any] | None:
@@ -2654,15 +2718,17 @@ class JevService:
         with self._ask_lock:
             return len(self._waiting), self._drains
 
-    def _lane_questions(self, rows: Any, *, exclude_test: bool = True) -> list[dict[str, Any]]:
+    def _lane_questions(self, rows: Any, *, exclude_test: bool = True,
+                        mains: dict[str, str | None] | None = None) -> list[dict[str, Any]]:
         """Cross-lane questions over every registry row's changed clauses (#cross-lane-clauses), kept by
-        content (#fast-marks): a read resolves each repository's target main once and reparses nothing unchanged.
+        content (#fast-marks): a read resolves each repository's target main once, or takes mains already
+        resolved, and reparses nothing unchanged.
         Only slugs of the same project are paired (#cross-lane-pairs, #shared-own-project).
         Test-flagged slugs are excluded from cross-lane checks (#cross-lane-test-host)."""
         if not {"about", "contradicts", "oversteps", "overlaps"} <= set(self.seam.question_sets):
             return []
         projects: dict[str, dict[str, list[dict[str, str]]]] = {}
-        mains: dict[str, str | None] = {}
+        mains = {} if mains is None else dict(mains)
         for row in rows or ():
             if not isinstance(row, Mapping) or not row.get("slug") or not row.get("spec"):
                 continue
@@ -2755,12 +2821,21 @@ class JevService:
         with self._ask_lock:
             self._submit(keys, functools.partial(self._ask_lane_steps, chain["chain"], seam), read)
 
-    def _board_from_records(self, rows: Any) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    def _board_from_records(self, rows: Any, mains: dict[str, str | None] | None = None
+                            ) -> tuple[dict[str, Any], dict[str, dict[str, Any]], bool]:
+        """The board answer from held records, its misses, and whether it is final: every row built and every
+        answer it walked final, so held records cannot change it."""
         rows = [row for row in rows or () if isinstance(row, Mapping) and row.get("slug") and row.get("spec")
                 and not row.get("test")]
         sets = self.seam.question_sets
         misses: dict[str, dict[str, Any]] = {}
-        get_held = lambda step: self._held_record(self.seam.key(step))
+        final = [True]
+
+        def get_held(step: Mapping[str, Any]) -> dict[str, Any] | None:
+            record = self._held_record(self.seam.key(step))
+            if not _final(record):
+                final[0] = False
+            return record
 
         def held_chain(item: Mapping[str, Any]) -> dict[str, Any]:
             # A chain waiting on a step is asked whole, so each answer asks on from it (#chains).
@@ -2774,11 +2849,13 @@ class JevService:
             try:
                 questions = self._material_questions(row) if "type" in sets else None
             except Exception:
-                questions = None
+                questions, final[0] = None, False
+            if row.get("source", b"") is None:
+                final[0] = False
             answer_rows.append({"id": str(row.get("id", "")),
                                 "material": "unknown" if questions is None else material([held_chain(q) for q in questions])})
         conflict_pairs: set[tuple[str, str]] = set()
-        for chain in self._lane_questions(rows):
+        for chain in self._lane_questions(rows, mains=mains):
             results = lane_result(chain["chain"], get_held)
             for r in results:
                 if r.get("outcome") is None and "step" in r:
@@ -2786,7 +2863,7 @@ class JevService:
             if any(_confident_label(r) in LANE_FINDINGS for r in results):
                 conflict_pairs.add(chain["pair"])
         answer = {"jev": "on", "rows": answer_rows, "conflicts": [{"a": a, "b": b} for a, b in sorted(conflict_pairs)]}
-        return answer, misses
+        return answer, misses, final[0] and not misses
 
     def _ask_submit(self, question: Mapping[str, Any], seam: "JevSeam | None" = None,
                     read: tuple[Any, int] | None = None) -> None:
