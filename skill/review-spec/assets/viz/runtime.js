@@ -1458,12 +1458,15 @@ function jevRecordAction(label, body) {
   } };
 }
 
-// What one recorded answer removes from the page (#dismiss): Not for this spec drops the one note holding its record;
-// Not a project rule drops the candidate on its criterion.
+// What one recorded answer removes from the page: the one note its ledger line keys, which the server's next read
+// leaves out. Not for this spec drops the rule's card on this spec, by the rule's home (#dismiss-here), or, with an
+// anchor, that clause's mark citing the rule (#card-cites-reject); Not a project rule drops the candidate on its
+// criterion. The record is the judgment the line cites, not the note: many notes have none, and notes may share one.
 function jevForget(body) {
-  state.jev.items = state.jev.items.filter(item => body.dismiss === 'here'
-    ? item.record !== body.record
-    : !(item.kind === 'candidate' && item.id === body.anchor));
+  state.jev.items = state.jev.items.filter(item => !(body.dismiss === 'here'
+    ? (body.anchor ? item.kind === 'corpus' && item.id === body.anchor && item.rule && item.rule.home === body.home
+      : item.kind === 'rule' && item.home === body.home)
+    : item.kind === 'candidate' && item.id === body.anchor));
 }
 
 // A rule's source: its home file name without .spec.html, a middle dot, and the clause anchor (#card).
