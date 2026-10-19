@@ -18,6 +18,7 @@ CLI: place.py SPEC < event file names  ->  place<TAB>name<TAB>state<TAB>#anchor<
 from __future__ import annotations
 
 import bisect
+import collections
 import difflib
 import hashlib
 import html
@@ -25,6 +26,7 @@ import json
 import os
 import re
 import sys
+import threading
 from html.parser import HTMLParser
 
 VERSION_RE = re.compile(r"[0-9a-f]{64}\Z")
@@ -399,7 +401,11 @@ def read_version(review, version):
         return None
 
 
-_RESOLVERS = {}
+# One resolver per spec text, for this many specs, the least recently resolved dropped first: a service's held
+# memory does not grow with the specs it ever served (review-service #steady-bound).
+RESOLVERS_HELD = 64
+_RESOLVERS = collections.OrderedDict()
+_RESOLVERS_LOCK = threading.Lock()
 
 
 def resolve_events(spec, events):
@@ -409,11 +415,19 @@ def resolve_events(spec, events):
             current = stream.read()
     except (OSError, UnicodeDecodeError):
         current = None
-    resolver = _RESOLVERS.get(spec)
-    if current is not None and (resolver is None or resolver.text != current):
-        resolver = _RESOLVERS[spec] = Resolver(current)  # pages poll often; parse and diff once per spec text
-    if current is None:
-        resolver = None
+    resolver = None
+    if current is not None:
+        with _RESOLVERS_LOCK:
+            resolver = _RESOLVERS.get(spec)
+            if resolver is not None:
+                _RESOLVERS.move_to_end(spec)
+        if resolver is None or resolver.text != current:
+            resolver = Resolver(current)  # pages poll often; parse and diff once per spec text
+            with _RESOLVERS_LOCK:
+                _RESOLVERS[spec] = resolver
+                _RESOLVERS.move_to_end(spec)
+                while len(_RESOLVERS) > RESOLVERS_HELD:
+                    _RESOLVERS.popitem(last=False)
     review = spec + ".review"
     for event in events:
         body = event.get("body")

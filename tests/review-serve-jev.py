@@ -729,6 +729,7 @@ class JevSeamTest(unittest.TestCase):
             base = subprocess.check_output(("git", "-C", str(root), "rev-parse", "HEAD"), text=True).strip()
             spec.write_text('<section data-anchor="root">After</section>\n', encoding="utf-8")
             service = object.__new__(jev.JevService)
+            service.question_sets = {}
             original = jev.BUILDERS["orphan"]
             jev.BUILDERS["orphan"] = lambda *args: (_ for _ in ()).throw(TypeError("bad event"))
             try:
