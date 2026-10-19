@@ -250,7 +250,8 @@ class InstallSpecChatTest(unittest.TestCase):
 
     def test_service_flags_are_box_setup(self):
         for flags in (["--service"], ["--public-base", "https://spec.example.invalid"]):
-            result = subprocess.run([str(INSTALL), *flags], env=self.env, text=True, capture_output=True, timeout=40)
+            result = subprocess.run([str(INSTALL), *flags], env=self.env, cwd=self.repo, text=True,
+                                    capture_output=True, timeout=40)
             self.assertEqual(result.returncode, 1)
             self.assertIn("need --review", result.stderr)
 
