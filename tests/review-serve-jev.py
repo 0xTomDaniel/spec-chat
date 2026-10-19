@@ -124,9 +124,9 @@ class JevBackgroundTest(unittest.TestCase):
         self.assertEqual(provider.calls, 20)
 
     def test_asks_for_edited_text_do_not_pile_up_with_reads(self):
-        """#acceptance-store-memory, #fast-marks-background: while Jev is slow, a spec edited and read again and again
-        keeps in flight only what its latest read misses; an ask of text since edited is dropped before Jev sees
-        it. Another page's asks stay until that page reads again."""
+        """#acceptance-store-memory, #acceptance-ask-queue-left, #fast-marks-background: while Jev is slow, a spec
+        edited and read again and again keeps in flight only what its latest read misses; an ask of text since edited
+        is dropped before Jev sees it. Another page's asks stay until that page reads again."""
         provider = GatedProvider()
         service = self.service(provider)
         edited = lambda text: [{"kind": "type", "id": str(index), "state": {"after": "%s clause %d" % (text, index)},
@@ -145,6 +145,179 @@ class JevBackgroundTest(unittest.TestCase):
         self.assertEqual({i["state"] for i in settled(service, {}, "spec", "", "base", [])["items"]}, {"label"})
         self.assertEqual({i["state"] for i in settled(service, {}, "other", "", "base", [])["items"]}, {"label"})
         self.assertEqual(provider.calls, 40)  # each page's latest text once; no edit before the last reached Jev
+
+    def per_target(self, service, counts):
+        """Each target its own spec: `counts` questions of its own text, as from separate pages or agent reads."""
+        texts = {target: [{"kind": "type", "id": str(index), "state": {"after": "%s clause %d" % (target, index)},
+                           "sources": [], "revision": "head"} for index in range(count)]
+                 for target, count in counts.items()}
+        service.questions = lambda mount, target, *rest: texts[target]
+        return lambda *targets: {service.seam.key(question) for target in targets for question in texts[target]}
+
+    def test_asks_no_live_reader_wants_leave_the_queue_unasked(self):
+        """#ask-queue: a reader that has not read within one poll window, as a closed tab or a finished agent read,
+        no longer wants its waiting asks: they leave the queue unasked, while a live reader's stay, and its read
+        again queues what it still misses. The status counts give asks waiting and running."""
+        now = [1000.0]
+        provider = GatedProvider()
+        with patch.object(jev, "_monotonic", lambda: now[0]):
+            service = self.service(provider)
+            keys = self.per_target(service, {"closed": 20, "open": 20})
+            try:
+                service.response({}, "closed", "", "base", [])
+                self.assertEqual(service.queue_counts(), (20 - jev.ASK_WORKERS, jev.ASK_WORKERS))
+                service.response({}, "open", "", "base", [])
+                self.assertEqual(service.queue_counts(), (40 - jev.ASK_WORKERS, jev.ASK_WORKERS))
+                now[0] += jev.POLL_WINDOW - 1
+                service.response({}, "open", "", "base", [])  # the open page polls; the closed tab never reads again
+                self.assertEqual(service.queue_counts(), (40 - jev.ASK_WORKERS, jev.ASK_WORKERS))
+                now[0] += 2
+                self.assertEqual(service.queue_counts(), (20, jev.ASK_WORKERS))
+                running = set(service._asking) - keys("open")
+                self.assertEqual(len(running), jev.ASK_WORKERS)  # in flight: they finish their record
+            finally:
+                provider.release.set()
+            self.assertEqual({i["state"] for i in settled(service, {}, "open", "", "base", [])["items"]}, {"label"})
+            self.assertEqual(provider.calls, 20 + jev.ASK_WORKERS)  # the closed tab's waiting asks never reached Jev
+            again = settled(service, {}, "closed", "", "base", [])  # reopened: what it still misses is asked
+            self.assertEqual({i["state"] for i in again["items"]}, {"label"})
+            self.assertEqual(provider.calls, 40)
+            self.assertEqual(service.queue_counts(), (0, 0))
+
+    def test_asks_of_readers_gone_are_not_started_with_no_read_at_all(self):
+        """#ask-queue: every tab closed, so no read follows: a worker that frees takes no ask only gone readers wanted."""
+        now = [1000.0]
+        provider = GatedProvider()
+        with patch.object(jev, "_monotonic", lambda: now[0]):
+            service = self.service(provider)
+            try:
+                self.read(service)
+                now[0] += jev.POLL_WINDOW + 1
+            finally:
+                provider.release.set()
+            deadline = time.monotonic() + 10
+            while service._drains and time.monotonic() < deadline:
+                time.sleep(0.005)
+            self.assertEqual((len(service._waiting), service._drains), (0, 0))
+            self.assertEqual(service._asking, {})
+            self.assertEqual(provider.calls, jev.ASK_WORKERS)
+            self.assertEqual(len(self.records()), jev.ASK_WORKERS)
+
+    def test_a_read_that_runs_keeps_its_readers_asks(self):
+        """#ask-queue: a slow read, as on a loaded box, runs past the poll window: its reader still wants its waiting
+        asks while it runs, and for one poll window after it ends."""
+        now = [1000.0]
+        provider = GatedProvider()
+        with patch.object(jev, "_monotonic", lambda: now[0]):
+            service = self.service(provider)
+            questions, entered, release = service.questions, threading.Event(), threading.Event()
+
+            def slow(*args, **kwargs):
+                entered.set()
+                release.wait(10)
+                return questions(*args, **kwargs)
+
+            try:
+                self.read(service)
+                service.questions = slow
+                reading = threading.Thread(target=self.read, args=(service,))
+                reading.start()
+                entered.wait(5)
+                now[0] += jev.POLL_WINDOW * 3
+                self.assertEqual(service.queue_counts(), (20 - jev.ASK_WORKERS, jev.ASK_WORKERS))
+                release.set()
+                reading.join(5)
+                now[0] += jev.POLL_WINDOW - 1
+                self.assertEqual(service.queue_counts(), (20 - jev.ASK_WORKERS, jev.ASK_WORKERS))
+                now[0] += 2
+                self.assertEqual(service.queue_counts(), (0, jev.ASK_WORKERS))
+            finally:
+                release.set()
+                provider.release.set()
+
+    def test_many_specs_at_once_run_a_fixed_few_asks_and_fewer_llm_runs(self):
+        """#acceptance-ask-queue: reviewers open many specs whose questions have no record, all at once: no more than
+        the queue's fixed few Jev asks run at any moment, fewer general LLM runs (each Jev answer is unsure, so the
+        fallback runs), and the rest wait and are asked in turn, each once."""
+
+        class Counted:
+            def __init__(self):
+                self.lock, self.calls, self.active, self.most = threading.Lock(), {}, {}, {}
+
+            def run(self, kind):
+                with self.lock:
+                    self.calls[kind] = self.calls.get(kind, 0) + 1
+                    self.active[kind] = self.active.get(kind, 0) + 1
+                    self.most[kind] = max(self.most.get(kind, 0), self.active[kind])
+                time.sleep(0.01)
+                with self.lock:
+                    self.active[kind] -= 1
+
+            def decide(self, payload):
+                self.run("jev")
+                return {"answers": {next(iter(payload["questions"])): {"choice": "yes", "confidence": 0.1}}}
+
+            def complete(self, payload):
+                self.run("llm")
+                return {"choices": [{"message": {"content": json.dumps({"choice": "yes"})}}], "model": "fake-llm"}
+
+        provider = Counted()
+        service = self.service(provider)
+        specs = ["spec %d" % index for index in range(6)]
+        self.per_target(service, {spec: 10 for spec in specs})
+        opened = [threading.Thread(target=service.response, args=({}, spec, "", "base", [])) for spec in specs]
+        for thread in opened:
+            thread.start()
+        for thread in opened:
+            thread.join(10)
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:  # every page polls while anything it shows is pending
+            pending = [spec for spec in specs
+                       if any(i["state"] == "pending" for i in service.response({}, spec, "", "base", [])["items"])]
+            if not pending:
+                break
+            time.sleep(0.01)
+        self.assertEqual(pending, [])
+        self.assertEqual(provider.calls, {"jev": 60, "llm": 60})
+        self.assertLessEqual(provider.most["jev"], jev.ASK_WORKERS)
+        self.assertLessEqual(provider.most["llm"], jev.LLM_RUNS)
+        self.assertLess(jev.LLM_RUNS, jev.ASK_WORKERS)
+        self.assertEqual(service.queue_counts(), (0, 0))
+
+    def test_timed_out_llm_run_pauses_its_record_by_the_one_retry_rule(self):
+        """jev-contract #retry: a general LLM run that times out is one failed call: its record is unavailable until
+        the pause ends, no read asks it during the pause, and the first read after asks the LLM once again."""
+        now = [1000.0]
+
+        class SlowLlm:
+            def __init__(self):
+                self.jev, self.llm, self.fail = 0, 0, True
+
+            def decide(self, payload):
+                self.jev += 1
+                return {"answers": {next(iter(payload["questions"])): {"choice": "yes", "confidence": 0.1}}}
+
+            def complete(self, payload):
+                self.llm += 1
+                if self.fail:
+                    raise RuntimeError("claude CLI timed out")
+                return {"choices": [{"message": {"content": json.dumps({"choice": "yes"})}}], "model": "fake-llm"}
+
+        provider = SlowLlm()
+        with patch.object(jev, "_wall", lambda: now[0]):
+            service = self.service(provider, count=1)
+            self.assertEqual(self.settled(service)["items"][0]["state"], "unavailable")
+            record = json.loads(self.records()[-1])
+            self.assertEqual((record["outcome"], record["escalated"]), ("unavailable", True))
+            self.assertEqual(record["retry_at"], jev._instant(1000.0 + jev.RETRY_PAUSE))
+            now[0] += jev.RETRY_PAUSE - 1
+            self.assertEqual(self.read(service)["items"][0]["state"], "unavailable")
+            time.sleep(0.05)
+            self.assertEqual((provider.jev, provider.llm), (1, 1))
+            now[0] += 2
+            provider.fail = False
+            self.assertEqual(self.settled(service)["items"][0]["state"], "label")
+            self.assertEqual((provider.jev, provider.llm), (1, 2))  # Jev's unsure answer stands: the LLM is asked again
 
     def test_overlapping_reads_of_one_page_keep_the_asks_both_want(self):
         """#fast-marks-background, #acceptance-store-memory: two reads of one page overlap, as from two tabs or the
