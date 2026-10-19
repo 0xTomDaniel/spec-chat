@@ -2,6 +2,9 @@
 # Write one agent reply event into the spool, schema-exact (the browser
 # runtime renders respondsTo/text/status/change - field names matter).
 # usage: emit-reply.sh REVIEW_DIR RESPONDS_TO ANCHOR_ID TARGET_JSON STATUS CHANGE TEXT
+#   REVIEW_DIR: <spec>.review/, or the scope's hosted threads path the scan rows name
+#   ANCHOR_ID: the comment's anchorId, or '' in hosted threads (the reply joins
+#     its thread by RESPONDS_TO; its subject stays on the root comment)
 #   TARGET_JSON: the comment's target verbatim, or 'null'
 #   STATUS: acknowledged | orphaned
 #   CHANGE: short change summary, or 'no spec change'

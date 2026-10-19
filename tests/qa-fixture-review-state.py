@@ -32,6 +32,7 @@ def load(name, path):
 place = load("qa_place", ASSETS / "place.py")
 spool = load("qa_spool", ASSETS / "spool.py")
 spools = load("qa_spools", FIXTURE / "spools.py")
+panes = load("qa_panes", FIXTURE / "panes.py")
 ONBOARDING = load("qa_rules", ROOT / "tests" / "review-serve-jev-rules.py").ONBOARDING
 RULE_NAME = load("qa_serve", FIXTURE / "serve.py").RULE_NAME
 HEAD = (FIXTURE / "head" / "docs" / "specs" / "report.spec.html").read_text(encoding="utf-8")
@@ -83,6 +84,24 @@ class ReviewStateCollections(unittest.TestCase):
             self.assertIn('"spec:%s::docs/specs/report.spec.html"' % collection, registry)
             # An index lane is reached from the index root ("{review}/"), any other from its own path.
             self.assertIn("" if collection in spools.INDEX_LANES else collection, hinted)
+
+    def test_every_pane_collection_has_its_host_pages_and_hosted_threads(self):
+        """comment-layer collections (panes.py): host pages naming this reset's project and the collection's scope, and
+        hosted threads in the service state only where seeded; navigated, or proven by tests/runtime-comment-layer.mjs."""
+        reset = (FIXTURE / "reset.sh").read_text()
+        rows = tomllib.loads((self.site.root / "serve" / "registry.toml").read_text())["resource"]
+        hinted = {hint["path"].split("/")[1] for hint in tomllib.loads((ROOT / "qa.toml").read_text())["nav"].values()}
+        browser_test = (ROOT / "tests" / "runtime-comment-layer.mjs").read_text()
+        for collection, (hosted, _, _) in panes.COLLECTIONS.items():
+            self.assertIn(collection, reset)
+            project = next(row["project"] for row in rows if row["slug"] == collection)
+            for page in ("pane.html", "pane-other.html"):
+                text = (self.site.root / "site" / collection / "docs" / page).read_text(encoding="utf-8")
+                self.assertIn('data-comment-subject="project/%s::docs/specs/report.spec.html#report-totals"' % project, text)
+                self.assertIn('data-comment-scope="%s"' % collection, text)
+                self.assertNotIn("{{", text)
+            self.assertEqual((self.site.root / "serve" / "comments" / collection).is_dir(), hosted is not None)
+            self.assertTrue(collection in hinted or "'%s'" % collection in browser_test, collection)
 
     def test_seeded_events_name_their_version_and_file(self):
         version = hashlib.sha256(HEAD.encode("utf-8")).hexdigest()

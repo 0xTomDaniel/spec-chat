@@ -1,10 +1,10 @@
 # Event schema — reading and writing the spool
 
-One JSON object per file. Read this instead of reverse-engineering the schema from `runtime.js`. Human events land in `<spec>.review/human/`, agent events in `<spec>.review/agent/`. The writer names each file `<createdAt ns>-<event>-<id>.json` (the page for human events, `emit-reply.sh` for agent events); names sort into chronological order. Files are immutable: never renamed, rewritten, or deleted.
+One JSON object per file. Read this instead of reverse-engineering the schema from `runtime.js`. Human events land in `<spec>.review/human/`, agent events in `<spec>.review/agent/`. A scope's hosted threads (`comments/<scope>/` in the review service's state, see `## Hosted threads`) are a spool of the same shape with no spec. The writer names each file `<createdAt ns>-<event>-<id>.json` (the page for human events, `emit-reply.sh` for agent events); names sort into chronological order. Files are immutable: never renamed, rewritten, or deleted.
 
 ## Storing over HTTP
 
-The page posts a human event to `POST /api/events?dir=<spec>.review&actor=human&name=<file name>`, the name chosen before the first send. A resend after a lost response stores nothing new: the same name with the same bytes answers `200 {"ok":true,"name":...}`; the same name with different bytes is refused `409`. A name whose `<event>-<id>` differs from the body is `400`. `actor=agent`, or a body `actor` other than `human`, is `403`: agent events are written only on disk. A post without `name` takes the service clock (pages from before page-named events).
+The page posts a human event to `POST /api/events?dir=<spec>.review&actor=human&name=<file name>`, the name chosen before the first send. A resend after a lost response stores nothing new: the same name with the same bytes answers `200 {"ok":true,"name":...}`; the same name with different bytes is refused `409`. A name whose `<event>-<id>` differs from the body is `400`. `actor=agent`, or a body `actor` other than `human`, is `403`: agent events are written only on disk. A `status` event whose `status` is not `resolved` is `400`. A post without `name` takes the service clock (pages from before page-named events).
 
 ## Spec versions
 
@@ -38,6 +38,24 @@ The page posts a human event to `POST /api/events?dir=<spec>.review&actor=human&
 - `datum` targets may additionally carry `seriesIndex`/`dataIndex` (pin-positioning hints) and `chartKey` (disambiguates when one anchored block holds several charts). `key` stays the greppable value — interpret anchors from it; the extra fields are for the browser runtime.
 - `legend` (`key` is the legend/series name): a comment on a chart's legend entry — the series as a whole, not one datum. `target` also covers markPoint/markArea values, not just markLines.
 - `quote`: captured surrounding text — the fallback if the anchor later moves.
+
+A comment written on a host page through the comment layer also carries these fields from the element's anchor, and no `version` (on a spec it resolves by anchor and quote in the current spec):
+
+| field | notes |
+|---|---|
+| `kind` | the host's words for what kind of thing the subject is: its routing word, carried and shown, never compared |
+| `label` | words naming the subject as the host page shows it, or `null` |
+| `from` | the address that reopens what the human saw |
+| `subject` | only in hosted threads, in place of `anchorId`: what the thread attaches to, compared whole |
+
+On a subject naming a spec its scope serves, the comment sits in that spec's spool with that anchor as `anchorId` and no `subject`. A spec page's comment carries none of these fields. The layer's replies, edits, and hand-offs carry no host field; they join their thread by reference.
+
+```json
+{"id":"u7","event":"comment","subject":"agent-turn:w1:p3:42","kind":"agent turn","label":"Turn 42",
+ "from":"https://host.example/panes/w1:p3#turn-42","target":{"type":"text","key":"exit status 2"},
+ "quote":"exit status 2","text":"Question: why exit 2?","actor":"human","browser":"...","author":"Mango",
+ "createdAt":"...","schemaVersion":1}
+```
 
 ## `handoff` (human)
 
@@ -109,6 +127,15 @@ Only the human resolves; the agent proposes it ("OK to resolve?"). Lifecycle: `d
 
 `/api/events` returns each event as `{"actor","name","body","place"}`. `place` is derived, never stored: `null` for every event but a `comment` with an `anchorId` (a thread is placed by its root comment; replies and edits never move it), else `{"anchorId","start","end","quote","state"}` from `assets/place.py`. It locates the mark in `<spec>.review/versions/<body.version>.html` and maps it through a character diff to the current spec (an event without `version` is located in the current spec). `start`/`end` are code-point offsets into the current spec source; `quote` is that range's visible text for a text target. `state`: `kept` (every character survives), `changed` (some survive), `gone` (none; `anchorId` is the nearest surviving anchored block, range and quote null). The zero-wait scan prints the same place on stderr.
 
+## Hosted threads
+
+A scope's hosted threads hold every host page comment whose subject names no spec its scope serves: `comments/<scope>/{human,agent}/` and the owners' cursors, in `$XDG_STATE_HOME/spec-chat/hosting/${HERDR_SESSION:-default}`. The wake prompt names the path and cursor. The owner reads them on disk like a spec's spool, with no running service:
+
+- Scan: `watch-specs.sh <path> <cursor> 0 3` prints `<path> <event-filename>` rows; there is no spec, so no `place` line.
+- Host line (stderr, spec spools too): `host <event-filename> <subject> <kind> <label> <from> <quote>` for each reported event of a thread written on a host page, the thread's root comment's fields from the spool fold (`assets/spool.py`), so a follow-up reply or edit routes as its thread does. Empty for an absent field; `subject` is empty in a spec's spool, where the `place` line gives the anchor; whitespace runs read as one space. `kind` is the host's routing word; Spec Chat names no host and no routing policy.
+- Reply: `emit-reply.sh <path> <respondsTo-id> '' '<target-json>' ...`: `anchorId` is `""`; the reply joins its thread by `respondsTo`, and every host page anchoring the subject in that scope shows it.
+- Cursor: append the scan's file names to `<path>/<cursor>`.
+
 ## Thread folding rules
 
 Two folds apply these rules and agree: the page's `foldThreads` in the runtime and `fold_threads` in `assets/spool.py`, which every service and agent reader uses (review index, Jev).
@@ -117,3 +144,4 @@ Two folds apply these rules and agree: the page's `foldThreads` in the runtime a
 - Human and agent `reply` events join the thread containing `respondsTo`.
 - `edit` replaces the effective human message named by `supersedes`, while the original file remains immutable.
 - Sort by event filename, collapse edits, then derive status from the newest effective human message. An agent reply acknowledges the thread only when it responds to that message id.
+- A status an event names counts only when it is `acknowledged`, `orphaned`, or `resolved`: an agent reply naming any other value acknowledges, and a `status` event naming one changes nothing.

@@ -29,6 +29,10 @@
 # The registry records a public base address, so the service, though on loopback, is public
 # and answers a page with no origin (review-service #served-private): the test host (host.py)
 # serves the served-* collections' pages at its own address, in a frame with no origin.
+#
+# Comment-layer collections (host-*, one-thread-*, no-scope, no-service, layer-*) also get host pages beside their specs and
+# their seeded threads from panes.py, once the registry names this reset's project; a collection's slug is the scope
+# its pages' items name.
 set -eu
 collections="qa-fixture rule-candidate tbd-later tbd-later-handoff tbd-open-highlight tbd-open-single
   next-tbd next-tbd-step next-tbd-handoff tbd-open-jump tbd-open-wrap mobile-composer
@@ -37,7 +41,10 @@ collections="qa-fixture rule-candidate tbd-later tbd-later-handoff tbd-open-high
   choice-handoff choice-comment-mode
   anchor-moved anchor-changed anchor-gone stale-page agent-scan name-reply advice
   clear-thread qa-1 qa-2 dismiss dismiss-reload not-a-rule
-  served-threads served-handoff served-index served-focus coverage-undeclared"
+  served-threads served-handoff served-index served-focus coverage-undeclared
+  host-draft host-starters host-handoff host-handoff-two host-reply host-live host-same-subject
+  host-quote host-quote-gone host-only-comments host-phone host-frame one-thread-spec one-thread-host
+  no-scope no-service layer-markup layer-stores layer-focus"
 site="$QA_ROOT/site"
 serve="$QA_ROOT/serve"
 repo="$site/.repo"
@@ -95,3 +102,4 @@ with open(registry + ".tmp", "w", encoding="utf-8") as out:
     out.write('[process]\npublic_base = "https://review.qa.invalid"\n\n' + "\n".join(rows))
 os.replace(registry + ".tmp", registry)
 PY
+python3 "$QA_FIXTURE/panes.py" "$site" "$serve" "$project"

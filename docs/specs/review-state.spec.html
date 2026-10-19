@@ -69,13 +69,13 @@
 
 <section data-anchor="model">
 <h2>Document model</h2>
-<p data-anchor="model-rule">Each spec's review state is two grow-only sets in its spool, plus values every reader derives the same way from them. Merging two copies is set union; nothing stored is ever changed or deleted.</p>
+<p data-anchor="model-rule">Each spec's review state is two grow-only sets in its spool, plus values every reader derives the same way from them; a scope's <a href="./comment-layer.spec.html#scope-store">hosted threads</a> are a spool of the same shape with no spec, so the events part alone. Merging two copies is set union; nothing stored is ever changed or deleted.</p>
 <div class="table-scroll" data-anchor="model-table-scroll">
 <table data-anchor="model-table">
 <caption>What review state holds, how copies merge, and what is derived</caption>
 <thead><tr><th>Part</th><th>Held as</th><th>Merge</th><th>Writer</th></tr></thead>
 <tbody>
-<tr data-anchor="model-events"><td>Events: comment, reply, edit, status, hand-off</td><td>One immutable file per event, <code>human/</code> or <code>agent/</code>, named <code>&lt;createdAt ns&gt;-&lt;event&gt;-&lt;id&gt;.json</code> by its writer</td><td>Union by file name; a name already held is a no-op</td><td>Page for human events, agent on disk for agent events</td></tr>
+<tr data-anchor="model-events"><td>Events: comment, reply, edit, status, hand-off</td><td>One immutable file per event, <code>human/</code> or <code>agent/</code>, in the spool that keeps its <a href="./comment-layer.spec.html#subjects">subject</a>, named <code>&lt;createdAt ns&gt;-&lt;event&gt;-&lt;id&gt;.json</code> by its writer</td><td>Union by file name; a name already held is a no-op</td><td>Page for human events, agent on disk for agent events</td></tr>
 <tr data-anchor="model-versions"><td>Spec versions</td><td><code>versions/&lt;sha256&gt;.html</code>: each spec text an event was written against, by content hash</td><td>Union by hash</td><td>Service, when it serves or reads a spec text</td></tr>
 <tr data-anchor="model-threads"><td>Threads and statuses</td><td>Derived: the existing fold, sorted by file name</td><td>Not stored</td><td>Every reader</td></tr>
 <tr data-anchor="model-effective"><td>A message's shown text</td><td>Derived: the last edit by file name among those superseding it</td><td>Not stored</td><td>Every reader</td></tr>
@@ -85,7 +85,8 @@
 </table>
 </div>
 <p data-anchor="model-fold-one">Two folds exist, one per language, and give the same threads and statuses for the same events: the page's, in the runtime, and the service fold, in the review skill's spool module, which every service and agent reader uses, among them the review index and Jev. A second fold in Python is not added.</p>
-<p data-anchor="model-fields">Every human event carries <code>browser</code>, a random id the page creates once and keeps in this browser, <code>author</code>, the fruit name assigned to that browser, and <code>version</code>, the content hash of the spec text the page showed when it was written. The hash is the one the service already sends as the page's ETag.</p>
+<p data-anchor="model-fields">Every human event carries <code>browser</code>, a random id the page creates once and keeps in this browser, <code>author</code>, the fruit name assigned to that browser, and, when written on a spec page, <code>version</code>, the content hash of the spec text the page showed when it was written. The hash is the one the service already sends as the page's ETag.</p>
+<p data-anchor="model-fields-hosted">A comment written on a host page through the <a href="./comment-layer.spec.html">comment layer</a> also carries <code>kind</code>, <code>label</code>, and <code>from</code> from its anchor, and no <code>version</code>, so it resolves by anchor and quote; one on a subject that names no spec carries <code>subject</code> in place of a block anchor. A comment written on a spec page carries none of these.</p>
 <p data-anchor="model-author-assign">On first use, a browser is assigned one name at random from a fixed list and keeps it: Mango, Papaya, Lychee, Guava, Rambutan, Pineapple, Passion Fruit, Dragon Fruit, Durian, Jackfruit, Mangosteen, Starfruit, Soursop, Coconut, Banana, Tamarind, Longan, Feijoa, Cherimoya, Sapodilla, Kiwano, Pitanga, Jabuticaba, Salak. No name prompt appears. Decided by the human, 2026-10-01.</p>
 <p data-anchor="model-author-shown">Within one spec, browsers sharing a fruit name are numbered by their first event's file name: the first shows the name alone, the next adds 2, then 3. Every reader derives the same names, so authors stay distinct on every page.</p>
 <p data-anchor="model-order">File-name order breaks ties only between edits of one message; meaning follows references (<code>respondsTo</code>, <code>threadId</code>, <code>supersedes</code>), so a skewed clock changes at most which of two racing edits shows.</p>

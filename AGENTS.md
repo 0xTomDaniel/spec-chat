@@ -63,11 +63,11 @@ failure.
 
 ## QA capture
 
-`qa.toml` at the repo root declares the QA capture target: the review server on the `tests/fixtures/qa/` fixture, and that fixture's test host (`host.py`), which serves its pages at another address in a frame with no origin.
+`qa.toml` at the repo root declares the QA capture target: the review server on the `tests/fixtures/qa/` fixture, and that fixture's test host (`host.py`), which serves its pages at another address in a frame with no origin, or unframed at its own origin. The comment-layer collections hold host pages that load the layer (`panes.py`).
 
 ## Browser tests
 
-Seven tests need headless Chromium via `playwright-core`:
+Eight tests need headless Chromium via `playwright-core`:
 
 - `tests/runtime-pin-marker.mjs` (pin placement and clearance)
 - `tests/runtime-jev-popover.mjs` (Jev popover positioning)
@@ -76,6 +76,7 @@ Seven tests need headless Chromium via `playwright-core`:
 - `tests/runtime-review-place.mjs` (marks through agent edits on the QA fixture collections)
 - `tests/runtime-answer-buttons.mjs` (answer buttons save a draft comment and show the chosen mark)
 - `tests/runtime-served-host.mjs` (a page served at another address, in a frame with no origin, through the QA fixture's test host)
+- `tests/runtime-comment-layer.mjs` (the comment layer on the QA fixture's host pages: served directly, at another origin, and in a frame with no origin)
 
 They read `PLAYWRIGHT_CORE` to locate the package:
 
