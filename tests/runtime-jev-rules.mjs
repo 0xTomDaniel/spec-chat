@@ -81,7 +81,9 @@ const window = { addEventListener() {}, matchMedia: () => ({ matches: true }) };
 const posted = [];
 let reply = { status: 200, body: { ok: true } };  // the record route's answer; an Error rejects
 // A fake review server: GET /api/jev serves server.items as JSON on the wire, fresh objects each read, like the real
-// route; POST /api/jev/offer records, and an accepted dismissal drops what jev.dismiss drops. held and heldPost park
+// route; POST /api/jev/offer records as jev.dismiss does: Not for this spec without a record or home is refused (400);
+// an accepted one leaves out of the next read what its ledger line keys, the rule's card on this spec, or with an
+// anchor that clause's mark citing the rule; Not a project rule, the candidate at its anchor. held and heldPost park
 // the next GET or POST until called.
 const server = { items: [], held: null, heldPost: null };
 const fetch = async (url, init) => {
@@ -94,9 +96,12 @@ const fetch = async (url, init) => {
   posted.push([url, body]);
   if (server.heldPost) await new Promise(resolve => { server.heldPost = resolve; });
   if (reply instanceof Error) throw reply;
+  if (body.dismiss === 'here' && !(body.record && body.home)) return { ok: false, status: 400, json: async () => ({ ok: false }) };
   if (reply.status < 400 && reply.body.ok === true && body.dismiss) {
-    server.items = server.items.filter(i => body.dismiss === 'here' ? i.record !== body.record
-      : !(i.kind === 'candidate' && i.id === body.anchor));
+    server.items = server.items.filter(i => !(body.dismiss === 'here'
+      ? (body.anchor ? i.kind === 'corpus' && i.id === body.anchor && i.rule && i.rule.home === body.home
+        : i.kind === 'rule' && i.home === body.home)
+      : i.kind === 'candidate' && i.id === body.anchor));
   }
   return { ok: reply.status < 400, status: reply.status, json: async () => reply.body };
 };
@@ -181,7 +186,7 @@ assert.equal(markers()[0].getAttribute('aria-label'), 'Jev notes: This spec may 
 // what the server returns.
 const wire = (id, record, extra = {}) => ({ kind: 'rule', id, target, home, word: 'onboarding', text: ruleText, name: ruleName, state: 'label',
   label: 'missed', record, level: levels.missed.human, agent_level: levels.missed.agent, ...extra });
-const qa = wire('title', 'q1', { target: 'docs/specs/qa.spec.html#acceptance-qa', word: 'qa', text: 'Every feature has QA.', name: 'Every feature has QA' });
+const qa = wire('title', 'q1', { target: 'docs/specs/qa.spec.html#acceptance-qa', home: 'docs/specs/qa.spec.html#acceptance-qa', word: 'qa', text: 'Every feature has QA.', name: 'Every feature has QA' });
 const load = async items => { server.items = items; pollTimers.length = 0; await loadJev('b'); };
 const cardOf = (anchor, name) => {
   holder(anchor).querySelector('.hx-jev-marker').fire('focus');
@@ -201,7 +206,7 @@ assert.equal(markers().length, 1, 'the re-read shows the server, which no longer
 assert.equal(state.jev.items.length, 1);
 // #pending-poll: with a pending item polling, a same-content poll swaps in new item objects without a rerender;
 // Not for this spec on the card then shown still drops it and records it.
-const pendingItem = wire('story', null, { target: 'docs/specs/qa.spec.html#acceptance-qa', word: 'qa', text: 'Every feature has QA.',
+const pendingItem = wire('story', null, { target: qa.target, home: qa.home, word: 'qa', text: 'Every feature has QA.',
   name: 'Every feature has QA', state: 'pending', label: null, level: undefined, agent_level: undefined, escalated: true });
 await load([wire('acceptance', 'r1'), qa, pendingItem]);
 assert.equal(markers().length, 3);
@@ -246,6 +251,21 @@ for (const refused of [{ status: 400, body: { ok: false } }, { status: 200, body
   posted.pop();
 }
 reply = { status: 200, body: { ok: true } };
+// #dismiss-here: one Not for this spec drops only its own note, the one rule's card its ledger line keys by home, never
+// the notes sharing its record: a card with no record leaves the other record-less notes (a stacked card, a wheel,
+// a neutral note) in place, and the server's refusal brings it back.
+const docs = 'docs/specs/docs.spec.html#acceptance-docs';
+const others = [wire('acceptance', null, { target: qa.target, home: qa.home, word: 'qa', text: qa.text, name: qa.name }),
+  wire('acceptance', null, { target: docs, home: docs, word: 'docs', text: 'Every feature ships docs.', name: 'Every feature ships docs',
+    state: 'pending', label: null, level: undefined, agent_level: undefined, escalated: true }),
+  { kind: 'type', id: 'story', state: 'unavailable', label: null, target: null, record: null, level: null }];
+await load([wire('acceptance', null), ...others]);
+click('acceptance', ruleName, 'Not for this spec');
+assert.deepEqual(state.jev.items.map(i => i.word || i.kind), ['qa', 'docs', 'type'], 'only the dismissed card is gone');
+assert.equal(cardOf('acceptance', qa.name).querySelector('.hx-rule-card-quote').textContent, qa.text, 'the stacked card stays');
+assert.deepEqual(posted.pop(), [route, { dismiss: 'here', home, record: null }]);
+await settle();
+assert.deepEqual(state.jev.items.map(i => i.word || i.kind), ['onboarding', 'qa', 'docs', 'type'], 'refused without a record, it comes back');
 // The level comes only from the item: the runtime keeps no mapping for rules.
 show([rule('label', { level: 'warning' })]);
 assert.equal(markers()[0].dataset.attention, 'false');
@@ -278,6 +298,20 @@ assert.equal(markers().length, 0);
 assert.deepEqual(posted.pop(), [route, { dismiss: 'here', home, record: 'c1', anchor: 'story' }]);
 await settle();
 assert.equal(markers().length, 0);
+// Only that clause's mark is gone: another clause citing the rule with the same record, and the rule's own card,
+// stay, at once and on the re-read.
+await load([cited, { ...cited, id: 'title' }, wire('acceptance', 'r1')]);
+click('story', ruleName, 'Not for this spec');
+assert.deepEqual(state.jev.items.map(i => i.kind + ' ' + i.id), ['corpus title', 'rule acceptance'], 'only the flagged clause goes');
+posted.pop();
+await settle();
+assert.deepEqual(state.jev.items.map(i => i.kind + ' ' + i.id), ['corpus title', 'rule acceptance']);
+// The rule's own card dismissed leaves every clause citing it.
+click('acceptance', ruleName, 'Not for this spec');
+assert.deepEqual(state.jev.items.map(i => i.kind + ' ' + i.id), ['corpus title']);
+posted.pop();
+await settle();
+assert.deepEqual(state.jev.items.map(i => i.kind + ' ' + i.id), ['corpus title']);
 OWN_ADDRESS.search = '';
 
 // #mark-candidate, #acceptance-candidates: a candidate on its own criterion is a card labelled Possible project rule
