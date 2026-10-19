@@ -156,6 +156,13 @@ assert.equal(handoffAgentText('queued', 'sent', null), '· automatic wake did no
 assert.equal(handoffAgentText('queued', 'deferred', null), '· handed off, waiting for agent', 'a deferred wake keeps waiting for the working owner');
 assert.equal(handoffAgentText('waiting', 'failed', null), '· wake failed; send a new chat message to resume', 'a failed host wake tells the reviewer to resume by chat');
 assert.equal(handoffAgentText('queued', 'failed', null), '· wake failed; send a new chat message to resume', 'a failed host wake outranks the timeout message');
+// host-wake #acceptance-failed, #acceptance-failed-silent, #acceptance-retry-page (page text from the X-Spec-Chat-Wake value)
+assert.equal(handoffAgentText('waiting', 'failed; pane w1:pOwner not found in session', null), '· wake failed: pane w1:pOwner not found in session; send a new chat message to resume', 'a failed wake shows the reason the wake provider gave');
+assert.equal(handoffAgentText('waiting', 'failed; owner pane not found (exit 1)', null), '· wake failed: owner pane not found (exit 1); send a new chat message to resume', 'a silent failed check shows owner pane not found with its exit code');
+assert.equal(handoffAgentText('waiting', 'failed; pane %C2%ABw1%C2%BB 100%25 gone; see log', null), '· wake failed: pane «w1» 100% gone; see log; send a new chat message to resume', 'the reason decodes from its header-safe form');
+assert.equal(handoffAgentText('waiting', 'retrying', null), '· handed off, waiting for agent', 'a wake being retried keeps waiting, not wake failed');
+assert.equal(handoffAgentText('queued', 'retrying', null), '· handed off, waiting for agent', 'a wake being retried keeps waiting past the timeout');
+assert.equal(handoffAgentText(null, 'failed; owner pane not found (exit 1)', null), '· no agent events yet', 'a failed reason never shows without a waiting hand-off');
 assert.equal(handoffAgentText(null, 'failed', null), '· no agent events yet', 'wake state never shows without a waiting hand-off');
 assert.match(handoffAgentText(null, null, lastAgent), /^· agent last event /, 'no hand-off shows the last agent event');
 

@@ -1289,9 +1289,13 @@ function handoffObservation(events, nowMs) {
   return Number.isFinite(createdAt) && nowMs - createdAt >= 30000 ? 'queued' : 'waiting';
 }
 
+// wake is the X-Spec-Chat-Wake value: the host's wake state, and for failed "; " and its URI-encoded reason (host-wake #wake-states).
 function handoffAgentText(observation, wake, last) {
-  if (observation && wake === 'failed') return '· wake failed; send a new chat message to resume';
-  if (observation === 'waiting' || (observation === 'queued' && wake === 'deferred')) return '· handed off, waiting for agent';
+  const cut = wake ? wake.indexOf('; ') : -1;
+  const state = cut < 0 ? wake : wake.slice(0, cut);
+  const reason = cut < 0 ? '' : decodeURIComponent(wake.slice(cut + 2));
+  if (observation && state === 'failed') return '· wake failed' + (reason ? ': ' + reason : '') + '; send a new chat message to resume';
+  if (observation === 'waiting' || (observation === 'queued' && (state === 'deferred' || state === 'retrying'))) return '· handed off, waiting for agent';
   if (observation === 'queued') return '· automatic wake did not occur; send a new chat message to resume';
   return last ? '· agent last event ' + new Date(last.body.createdAt).toLocaleTimeString() : '· no agent events yet';
 }
