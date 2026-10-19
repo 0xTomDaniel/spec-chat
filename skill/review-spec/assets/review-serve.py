@@ -82,6 +82,15 @@ WAKE_REASON_CHARS = 200  # the reason travels percent-encoded in a header: small
 # Printable ASCII but %: the reason stays readable in the X-Spec-Chat-Wake header and decodes as a URI component.
 WAKE_REASON_SAFE = "".join(chr(code) for code in range(0x20, 0x7F) if chr(code) != "%")
 EVIDENCE_TIMEOUT_SECONDS = 30
+# A spec row's own fields: a scope row holds none of them (review-service #published-table, comment-layer #scope-row).
+SPEC_ROW_FIELDS = ("project", "path", "spec", "root", "narrow_root", "base")
+SCOPE_ROW_FIELDS = ("id", "slug", "owner", "checker", "cursor_name")
+# A criterion ID, project/<project-id>::<spec path>#<anchor> (criterion-evidence #read-spec-id).
+SPEC_SUBJECT_RE = re.compile(r"project/([^/:]+)::([^#]+\.spec\.html)#(.+)")
+HOSTED = "hosted"  # the store of a scope's hosted threads, as /api/events names it beside a spec row's path
+# A serialized origin: a page with no origin's null, or scheme://host[:port].
+ORIGIN_RE = re.compile(r"null|[a-z][a-z0-9+.-]*://[^/\s,]+")
+COMMENT_LAYER = Path(__file__).resolve().parent / "comment-layer.js"
 EVIDENCE_FIELDS = ("match", "verdict", "judgment", "pr", "capturedAt", "onMain", "artifact", "bundle", "proven", "view")
 
 
@@ -160,7 +169,8 @@ def _resource_records(document, *, check_refs=False, trust=False):
     for raw in records:
         if not isinstance(raw, dict):
             raise ValueError("registry resource entry must be a table")
-        required = (
+        scope_row = not any(key in raw for key in SPEC_ROW_FIELDS)
+        required = SCOPE_ROW_FIELDS if scope_row else (
             "id", "slug", "root", "narrow_root", "spec", "base", "owner",
             "checker", "cursor_name",
         )
@@ -176,6 +186,13 @@ def _resource_records(document, *, check_refs=False, trust=False):
             raise ValueError("duplicate resource identity: " + rid)
         if not SLUG_RE.fullmatch(slug) or slug in {"api", "static"}:
             raise ValueError("invalid or reserved resource slug: " + slug)
+        if scope_row:
+            # A scope row serves no page: it names a scope and its owner (comment-layer #scope-row).
+            if not SAFE_CURSOR_RE.fullmatch(raw["cursor_name"]):
+                raise ValueError("invalid cursor name: " + raw["cursor_name"])
+            ids.add(rid)
+            result.append({**raw, "scope_row": True})
+            continue
         root = os.path.realpath(raw["root"])
         narrow = os.path.realpath(raw["narrow_root"])
         if not os.path.isabs(raw["root"]):
@@ -214,6 +231,7 @@ def _resource_records(document, *, check_refs=False, trust=False):
                 raise ValueError("resource base is unresolved: " + raw["base"])
         resource = dict(raw)
         resource.update({
+            "scope_row": False,
             "root": root,
             "narrow_root": narrow,
             "spec": spec,
@@ -246,13 +264,19 @@ def _public_base(document):
 
 
 class MountState:
-    """The one mount list used by both command-line modes, and the registry's recorded public base address."""
+    """The one mount list used by both command-line modes, the registry's scope rows, which serve no page, and its
+    recorded public base address."""
 
     def __init__(self, records, path=None, public_base=None):
         self.path = os.path.realpath(path) if path else None
-        self.records = tuple(records)
+        self._split(records)
         self.base = public_base
         self.signature = self._signature() if self.path else None
+
+    def _split(self, records):
+        records = tuple(records)
+        self.records = tuple(record for record in records if not record.get("scope_row"))
+        self.scope_rows = tuple(record for record in records if record.get("scope_row"))
 
     def _signature(self):
         try:
@@ -272,7 +296,7 @@ class MountState:
             records = _resource_records(document, trust=True)
         except (OSError, ValueError):
             return self.records
-        self.records = tuple(records)
+        self._split(records)
         self.base = _public_base(document)
         self.signature = signature
         return self.records
@@ -281,6 +305,78 @@ class MountState:
         """The recorded public base address as of the registry now; box setup changes it with no restart."""
         self.snapshot()
         return self.base
+
+    def rows(self):
+        """Every registered row as of the registry now, spec rows then scope rows (comment-layer #scope)."""
+        return self.snapshot() + self.scope_rows
+
+    def hosting(self):
+        """The service state holding the registry, where hosted threads live (review-service #store-hosted)."""
+        return os.path.dirname(self.path) if self.path else None
+
+
+def place_subject(rows, hosting, scope, subject):
+    """Where a host page's thread on `subject` in `scope` is kept (comment-layer #subjects): a criterion ID naming a
+    spec a live row of the scope serves is that spec's spool, at its anchor; any other subject, compared whole, is the
+    scope's hosted threads, comments/<scope> in the service state. None when no row has the scope or the subject is
+    empty. Returns {store, review, root, row, anchor, subject}: the spool and the directory it stays inside."""
+    if not isinstance(subject, str) or not subject or not any(row.get("slug") == scope for row in rows):
+        return None
+    match = SPEC_SUBJECT_RE.fullmatch(subject)
+    if match:
+        project, spec, anchor = match.groups()
+        for row in rows:
+            if row.get("slug") != scope or row.get("scope_row") or row.get("stale") or row.get("spec") != spec:
+                continue
+            if (row.get("project") or os.path.basename(row["root"])) == project:
+                return {"store": row["path"], "review": row["spec_file"] + ".review", "root": row["narrow_root"],
+                        "row": row, "anchor": anchor, "subject": subject}
+    if not hosting:
+        return None
+    return {"store": HOSTED, "review": os.path.join(hosting, "comments", scope), "root": hosting,
+            "row": None, "anchor": None, "subject": subject}
+
+
+def placed_event(event, placed):
+    """A host page's event as its store keeps it (review-state #model-fields-hosted): a comment carries no version,
+    and on a spec its subject's anchor as its block anchor, elsewhere the subject itself; other events as sent."""
+    if event.get("event") != "comment":
+        return event
+    kept = {key: value for key, value in event.items() if key not in ("version", "subject", "anchorId")}
+    if placed["anchor"] is not None:
+        kept["anchorId"] = placed["anchor"]
+    else:
+        kept["subject"] = placed["subject"]
+    return kept
+
+
+def subject_events(events, placed):
+    """The events of the threads on placed's subject, from its store's events: each thread whose root comment sits on
+    the subject (in a spec, its place's anchor; elsewhere its subject, compared whole), and every reply, edit, and
+    status reaching it by reference."""
+    def body(event):
+        value = event.get("body")
+        return value if isinstance(value, dict) and isinstance(value.get("id"), str) else None
+
+    def on_subject(event):
+        b = body(event)
+        if b is None or event.get("actor") != "human" or b.get("event") != "comment":
+            return False
+        if placed["anchor"] is None:
+            return b.get("subject") == placed["subject"]
+        return ((event.get("place") or {}).get("anchorId") or b.get("anchorId")) == placed["anchor"]
+
+    held = {body(event)["id"] for event in events if on_subject(event)}
+    rest = [event for event in events if body(event) and body(event)["id"] not in held]
+    grown = True
+    while grown:
+        grown = False
+        for event in rest:
+            b = body(event)
+            if b["id"] not in held and any(b.get(ref) in held for ref in ("threadId", "respondsTo", "supersedes")):
+                held.add(b["id"])
+                grown = True
+    return [event for event in events if body(event) and body(event)["id"] in held]
 
 
 BROAD_HOME_CHILDREN = ("Desktop", "Documents", "Downloads")
@@ -693,10 +789,15 @@ def _store_version(review, root, body):
             _write_once(directory, name, body)
 
 
+def _wake_review(resource):
+    """The spool a wake target watches: a spec row's beside its spec, or a scope's hosted threads."""
+    return resource.get("review") or resource["spec_file"] + ".review"
+
+
 def _wake_batch(resource):
     """Return the zero-wait scan batch (spool.handoff_batch): each pending hand-off and the events it lists; () with
     no human/ folder; None when the spool could not be read."""
-    review = resource["spec_file"] + ".review"
+    review = _wake_review(resource)
     try:
         return spool.handoff_batch(review, spool.read_cursor(review, resource["cursor_name"]))
     except FileNotFoundError:
@@ -822,20 +923,26 @@ class WakeController:
         return f"{state}; {quote(reason, safe=WAKE_REASON_SAFE)}" if reason else state
 
     def _log(self, resource, step, code, error):
-        """host-wake #wake-rule-log: one service log line for a send or a failed check."""
-        print("review-serve: wake %s spec=%s owner=%s exit=%s error=%s" % (
-            step, resource["spec_file"], resource["owner"], code, json.dumps(error, ensure_ascii=False),
+        """host-wake #wake-rule-log: one service log line for a send or a failed check, naming the spec or scope."""
+        named = "scope=%s" % resource["scope"] if resource.get("scope") else "spec=%s" % resource["spec_file"]
+        print("review-serve: wake %s %s owner=%s exit=%s error=%s" % (
+            step, named, resource["owner"], code, json.dumps(error, ensure_ascii=False),
         ), file=sys.stderr, flush=True)
 
     def _attempt(self, resource, batch, commands):
         """One wake attempt with the wake provider's commands: (step, exit, error output) of the step it ended at."""
         check, send = commands
+        if resource.get("scope"):  # host-wake #wake-rule-message: hosted threads name the scope and their path
+            artifact = resource["review"]
+            where = f"Spec Chat human comment hand-off ready: scope {resource['scope']}, hosted threads {artifact}, "
+        else:
+            artifact = resource["spec_file"]
+            where = f"Spec Chat human spec review hand-off ready: spec {artifact}, collection {resource['narrow_root']}, "
         message = (
-            f"Spec Chat human spec review hand-off ready: spec {resource['spec_file']}, "
-            f"collection {resource['narrow_root']}, cursor {resource['cursor_name']}, {len(batch)} events. "
+            f"{where}cursor {resource['cursor_name']}, {len(batch)} events. "
             "Run the zero-wait scan, process the batch, then park."
         )
-        values = {"owner": resource["owner"], "artifact": resource["spec_file"], "message": message}
+        values = {"owner": resource["owner"], "artifact": artifact, "message": message}
         code, error = run_wake(check, values, timeout=WAKE_CHECK_TIMEOUT_SECONDS)
         if code != 0:
             return "check", code, error
@@ -844,7 +951,7 @@ class WakeController:
     def _batch(self, resource):
         """The row's waiting hand-off batch, read again only when its human/ folder or its cursor changed, so
         noticing a hand-off costs two stats per row however long the review history (review-service #steady-idle)."""
-        review = resource["spec_file"] + ".review"
+        review = _wake_review(resource)
         signature, now = [review, resource["cursor_name"]], time.time_ns()
         for path in (os.path.join(review, "human"), os.path.join(review, resource["cursor_name"])):
             try:
@@ -901,13 +1008,31 @@ class WakeController:
         row["due"] = now + WAKE_POLL_SECONDS * 2 ** min(row["failures"] - WAKE_FAILED_ATTEMPTS + 1, WAKE_BACKOFF_DOUBLINGS)
         return "failed", reason
 
+    def _targets(self):
+        """What a poll watches (host-wake #wake-rule-poll): every spec row's spool, and each scope's hosted threads,
+        whose owner is the owner of the scope's row registered last (comment-layer #scope-owner)."""
+        state = self.server.mount_state
+        records = state.snapshot()
+        hosting = state.hosting()
+        if not hosting:
+            return records
+        last = {}
+        for index, row in enumerate(records + state.scope_rows):
+            key = (row.get("registered_at") or "", index)
+            if row["slug"] not in last or key >= last[row["slug"]][0]:
+                last[row["slug"]] = (key, row)
+        return records + tuple(
+            {"id": "comments:" + scope, "scope": scope, "review": os.path.join(hosting, "comments", scope),
+             "owner": row["owner"], "cursor_name": row["cursor_name"]}
+            for scope, (_, row) in last.items())
+
     def poll(self):
         states = {}
         kept = set()
         listed = set()
         with self.lock:
             previous = dict(self.states)
-        for resource in self.server.mount_state.snapshot():
+        for resource in self._targets():
             resource_id = resource.get("id") if isinstance(resource, dict) else None
             listed.add(resource_id)
             try:
@@ -942,8 +1067,9 @@ class MountHandler(SimpleHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "SpecChat/1"
     timeout = 2.0
-    # Whether this request is answered as a page with no origin (review-service #served-no-origin); decided per request.
-    no_origin = False
+    # The other origin this answer grants a read, a page with no origin's null included (review-service
+    # #served-no-origin), or None; decided per request.
+    cross_origin = None
 
     @property
     def mounts(self):
@@ -954,10 +1080,10 @@ class MountHandler(SimpleHTTPRequestHandler):
         self.connection.settimeout(self.timeout)
 
     def parse_request(self):
-        self.no_origin = False
+        self.cross_origin = None
         if not super().parse_request():
             return False
-        self.no_origin = self.headers.get("Origin") == "null" and self._public()
+        self.cross_origin = self._granted_origin()
         return True
 
     def _public(self):
@@ -966,12 +1092,34 @@ class MountHandler(SimpleHTTPRequestHandler):
         listener = ipaddress.ip_address(self.server.server_address[0])
         return not listener.is_loopback or bool(self.server.mount_state.public_base())
 
+    def _granted_origin(self):
+        """The Origin a public service grants a read (review-service #served-no-origin): any other origin, a page with
+        no origin's null included, since a host page of any site loads the comment layer; none for no Origin or the
+        service's own. It stays safe only while the service has no login and no cookie (#served-safe), so a request
+        carrying a credential is granted nothing, and an answer that sets a cookie or asks a login drops its grant
+        (send_header): adding either ends answers to other origins (#acceptance-origin-safe)."""
+        origin = (self.headers.get("Origin") or "").lower()
+        if not ORIGIN_RE.fullmatch(origin) or not self._public():
+            return None
+        if self.headers.get("Cookie") is not None or self.headers.get("Authorization") is not None:
+            return None
+        host = (self.headers.get("Host") or "").lower()
+        own = {scheme + "://" + host for scheme in ("http", "https")} if host else set()
+        base = urlparse(self.server.mount_state.public_base() or "")
+        own.add((base.scheme + "://" + base.netloc).lower())
+        return None if origin in own else origin
+
+    def send_header(self, keyword, value):
+        if keyword.lower() in ("set-cookie", "www-authenticate"):
+            self.cross_origin = None  # a cookie or a login ends this answer's grant (#acceptance-origin-safe)
+        super().send_header(keyword, value)
+
     def end_headers(self, cache_control="no-cache"):
         self.send_header("Cache-Control", cache_control)
-        if self.no_origin:
+        if self.cross_origin:
             # Every answer, errors and 304 included, so the page reads all it reads served directly; its version tag
             # and wake state are not safelisted. No credential: the service guards nothing by origin (#served-safe).
-            self.send_header("Access-Control-Allow-Origin", "null")
+            self.send_header("Access-Control-Allow-Origin", self.cross_origin)
             self.send_header("Access-Control-Expose-Headers", "ETag, X-Spec-Chat-Wake")
             self.send_header("Vary", "Origin")
         super().end_headers()
@@ -1274,7 +1422,43 @@ listenHost();
         except (OSError, RuntimeError, UnicodeDecodeError):
             return self._json({"error": "git baseline unavailable"}, 409)
 
+    def _scope_events(self, query):
+        """GET /api/events?scope=<slug>&subject=<subject>...: the threads on each subject, wherever kept
+        (comment-layer #subjects), and each store's hand-offs, in file-name order. Every event names its `store`, a
+        spec row's path or hosted, and each thread event its `subject`. 404 when no row has the scope, so a host page
+        reads at each live read whether its scope is registered (#scope-rule)."""
+        scope = query.get("scope", [""])[0]
+        rows, hosting = self.server.mount_state.rows(), self.server.mount_state.hosting()
+        if not any(row.get("slug") == scope for row in rows):
+            return self._json({"error": "unknown scope"}, 404)
+        stores = {}
+        for subject in dict.fromkeys(query.get("subject", [])):
+            placed = place_subject(rows, hosting, scope, subject)
+            if placed is not None:
+                stores.setdefault(placed["review"], []).append(placed)
+        result = []
+        for review, placements in stores.items():
+            first = placements[0]
+            events = _read_spool_events(review, first["root"])
+            if events is None:
+                return self._json({"error": "unsafe spool path"}, 400)
+            if first["row"] is not None:
+                resolve_events(first["row"]["spec_file"], events)
+            for event in events:
+                event.setdefault("place", None)
+                event["store"] = first["store"]
+            for placed in placements:
+                for event in subject_events(events, placed):
+                    result.append({**event, "subject": placed["subject"]})
+            result.extend(event for event in events
+                          if event["actor"] == "human" and isinstance(event["body"], dict)
+                          and event["body"].get("event") == "handoff")
+        result.sort(key=lambda event: event["name"])
+        return self._json(result)
+
     def _events(self, query):
+        if "scope" in query:
+            return self._scope_events(query)
         mount, review = self._route_review(query)
         if not mount:
             return self._json({"error": "bad dir"}, 400)
@@ -1378,9 +1562,21 @@ listenHost();
         return self._json({"error": "body names dismiss or resolve"}, 400)
 
     def _post_event(self, query, body):
-        mount, review = self._route_review(query)
+        """POST /api/events?dir=<spool>, a spec page's; or ?scope=<slug>&subject=<subject>, a host page's, kept where
+        its subject places it (comment-layer #subjects)."""
+        placed = None
+        if "scope" in query:
+            mount_state = self.server.mount_state
+            placed = place_subject(mount_state.rows(), mount_state.hosting(), query["scope"][0],
+                                   query.get("subject", [""])[0])
+            if placed is None:
+                return self._json({"error": "unknown scope or subject"}, 404)
+            mount, review, root = None, placed["review"], placed["root"]
+        else:
+            mount, review = self._route_review(query)
+            root = mount["narrow_root"] if mount else None
         actor = query.get("actor", ["human"])[0]
-        if not mount or actor not in ("human", "agent"):
+        if not review or actor not in ("human", "agent"):
             return self._json({"error": "bad dir or actor"}, 400)
         if actor == "agent":
             return self._json({"error": "agent spool writes are disk-only"}, 403)
@@ -1395,13 +1591,18 @@ listenHost();
             return self._json({"error": "bad event name"}, 400)
         if event.get("actor", "human") != "human":
             return self._json({"error": "agent spool writes are disk-only"}, 403)
+        if placed is not None:
+            if event_name == "handoff" and not isinstance(event.get("events"), list):
+                # A host page hands off its drafts only; a hand-off with no list is Accept spec (comment-layer #ui-same).
+                return self._json({"error": "a host page's hand-off lists its events"}, 400)
+            event = placed_event(event, placed)
         # The page names the event (review-state #live-save); unnamed posts take the service clock.
         name = query.get("name", ["%d-%s-%s.json" % (time.time_ns(), event_name, event_id)])[0]
         stamp, _, rest = name.partition("-")
         if not stamp.isdigit() or not stamp.isascii() or rest != "%s-%s.json" % (event_name, event_id):
             return self._json({"error": "bad event file name"}, 400)
         try:
-            stored = _write_event(review, mount["narrow_root"], actor, name, event)
+            stored = _write_event(review, root, actor, name, event)
         except OSError as exc:
             if isinstance(exc, UnsafeSpool) or exc.errno in UNSAFE_ERRNOS:
                 return self._json({"error": "unsafe spool path"}, 400)
@@ -1409,7 +1610,7 @@ listenHost();
             return self._json({"error": "event not stored"}, 503)
         if not stored:
             return self._json({"error": "event file exists with different bytes"}, 409)
-        if event_name == "handoff" and "events" not in event:
+        if placed is None and event_name == "handoff" and "events" not in event:
             # Accept spec writes the hand-off without a list: open candidates are recorded ignored (project-rules
             # #dismiss-trace). A failed trace never fails the stored hand-off.
             try:
@@ -1474,15 +1675,25 @@ listenHost();
             return self._jev_board()
         if parsed.path == "/api/status":
             return self._status()
+        if parsed.path == "/static/comment-layer.js":
+            return self._comment_layer()
         return self._send_file(parsed.path)
+
+    def _comment_layer(self):
+        """The comment layer a host page loads (comment-layer #load), served while its file is present."""
+        try:
+            body = COMMENT_LAYER.read_bytes()
+        except OSError:
+            return self.send_error(404)
+        return self._send_body(body, "text/javascript; charset=utf-8")
 
     def do_HEAD(self):
         return self.do_GET()
 
     def do_OPTIONS(self):
-        """A page with no origin's preflight; GET, HEAD, and POST are safelisted, so its JSON body type is all it needs.
+        """Another origin's preflight; GET, HEAD, and POST are safelisted, so its JSON body type is all it needs.
         Any other OPTIONS keeps the answer of a method the server lacks."""
-        if not self.no_origin:
+        if not self.cross_origin:
             return self.send_error(501, "Unsupported method (%r)" % self.command)
         self.send_response(204)
         self.send_header("Access-Control-Allow-Headers", "Content-Type")

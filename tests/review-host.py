@@ -221,6 +221,64 @@ class ReviewHostTest(unittest.TestCase):
         self.assertEqual(started.returncode, 0, started.stderr)
         self.assertEqual(self.wake_lines(started), ["wake=unavailable owner=owner"])
 
+    def test_scope_row_registers_with_no_spec_and_reports_wake_verified(self):
+        """comment-layer #acceptance-scope-row; review-service #lane-command, #published-table: a scope row holds no
+        project, path, spec, root, narrow_root, or base, and serves no page."""
+        state = self.work / "state"
+        waker = FakeWaker(self.work, state)
+        waker.agent("w1:pOps")
+        started = self.run_cli("register", "--state-dir", str(state), "--slug", "operator-desk", "--owner", "w1:pOps",
+                               state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        self.assertIn("scope:operator-desk scope operator-desk wake=verified owner=w1:pOps", started.stdout)
+        rows = self.registry(state)["resource"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(set(rows[0]), {"id", "slug", "owner", "checker", "cursor_name", "registered_at", "updated_at"})
+        self.assertEqual((rows[0]["checker"], rows[0]["cursor_name"]), ("w1:pOps", ".cursor-owner"))
+        self.assertEqual(waker.says(), [], "registration never prompts the owner")
+        # A lane's spec joins beside it at its plain path; reviewed has no spec to act on for a scope row.
+        lane = self.run_cli(*self.register_args(state, slug="operator-desk"), state=state)
+        self.assertEqual(lane.returncode, 0, lane.stderr)
+        self.assertIn(f"{self.url(lane)}/operator-desk/docs/specs/review.spec.html ", lane.stdout)
+        refused = self.run_cli("reviewed", "--state-dir", str(state), "--id", "scope:operator-desk", state=state)
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn("scope row", refused.stderr)
+        status, body = request(self.url(lane) + "/")
+        self.assertEqual(status, 200)
+        self.assertEqual(body.count(b"review.spec.html"), 1)
+
+    def test_scope_row_needs_one_slug_and_owner(self):
+        state = self.work / "state"
+        for args in (("--owner", "w1:p1"), ("--slug", "a", "--slug", "b", "--owner", "w1:p1"),
+                     ("--slug", "a", "--owner", "w1:p1", "--base", "main"), ("--slug", "static", "--owner", "w1:p1")):
+            refused = self.run_cli("register", "--state-dir", str(state), *args, state=state)
+            self.assertEqual(refused.returncode, 1, args)
+        self.assertFalse((state / "registry.toml").exists())
+
+    def test_removing_a_scopes_last_row_deletes_its_hosted_threads(self):
+        """comment-layer #acceptance-teardown; review-service #store-hosted: remove deletes them with the scope's
+        last row, and only then."""
+        state = self.work / "state"
+        started = self.run_cli(*self.register_args(state), state=state)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        scope_row = self.run_cli("register", "--state-dir", str(state), "--slug", "ann45", "--owner", "w1:pOps",
+                                 state=state)
+        self.assertEqual(scope_row.returncode, 0, scope_row.stderr)
+        hosted = state / "comments" / "ann45"
+        (hosted / "human").mkdir(parents=True)
+        (hosted / "human" / "100-comment-c1.json").write_text("{}")
+        other = state / "comments" / "other"
+        (other / "human").mkdir(parents=True)
+        spec_id = next(row["id"] for row in self.registry(state)["resource"] if "spec" in row)
+        removed = self.run_cli("remove", "--state-dir", str(state), "--id", spec_id, state=state)
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        self.assertTrue((hosted / "human" / "100-comment-c1.json").exists(), "the scope row still holds the scope")
+        removed = self.run_cli("remove", "--state-dir", str(state), "--id", "scope:ann45", state=state)
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        self.assertFalse(hosted.exists())
+        self.assertTrue(other.exists(), "another scope's threads stay")
+        self.assertEqual(self.registry(state).get("resource", []), [])
+
     def test_register_adds_to_existing_server(self):
         state = self.work / "state"
         first = self.run_cli(*self.register_args(state), state=state)

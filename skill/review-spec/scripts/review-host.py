@@ -11,6 +11,7 @@ import ipaddress
 import json
 import os
 import re
+import shutil
 import signal
 import socket
 import subprocess
@@ -364,12 +365,30 @@ def build_resource(project: str, root_text: str, spec: str, base: str, owner: st
     }
 
 
+def build_scope_row(slug: str | None, owner: str, checker: str, cursor_name: str) -> dict[str, Any]:
+    """A scope row: a scope and its owner, no spec (comment-layer #scope-row)."""
+    if not owner.strip() or not checker.strip() or not cursor_name.strip():
+        raise LauncherError("--owner, --checker, and --cursor-name are required")
+    if not SAFE_CURSOR_RE.fullmatch(cursor_name) or cursor_name in {".", ".."}:
+        raise LauncherError("cursor name must be a single file name")
+    slug = (slug or "").strip()
+    if not SLUG_RE.fullmatch(slug) or slug in {"api", "static"}:
+        raise LauncherError(f"invalid or reserved resource slug: {slug}")
+    return {"id": f"scope:{slug}", "slug": slug, "owner": owner.strip(), "checker": checker.strip(),
+            "cursor_name": cursor_name}
+
+
+def is_scope_row(record: Mapping[str, Any]) -> bool:
+    """A scope row names no spec, so it holds none of a spec row's own fields (review-service #published-table)."""
+    return not any(key in record for key in _serve_module.SPEC_ROW_FIELDS)
+
+
 def registry_record(resource: Mapping[str, Any], old: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """One upsert rule: an existing row keeps every recorded field register was not given; defaults fill only a new row."""
     stamp = now()
     fields = ("id", "slug", "project", "root", "narrow_root", "spec", "path", "base", "owner", "checker", "cursor_name")
     defaulted = resource.get("defaulted", ())
-    given = {key: resource[key] for key in fields if key not in defaulted}
+    given = {key: resource[key] for key in fields if key in resource and key not in defaulted}
     defaults = {key: resource[key] for key in defaulted}
     result = {"registered_at": stamp, **defaults, **(old or {}), **given, "updated_at": stamp}
     if resource.get("test"):
@@ -398,6 +417,7 @@ def assign_path(rows: Sequence[Mapping[str, Any]], resource: dict[str, Any]) -> 
             return True
         return not row.get("project") and Path(row["root"]).resolve() == Path(resource["root"]).resolve()
 
+    rows = [row for row in rows if not is_scope_row(row)]  # a scope row serves no path
     old = next((row for row in rows if row["id"] == resource["id"]), None) or next(filter(same, rows), None)
     if old:
         resource["id"] = old["id"]
@@ -407,7 +427,8 @@ def assign_path(rows: Sequence[Mapping[str, Any]], resource: dict[str, Any]) -> 
 
 
 def require_fields(record: Mapping[str, Any]) -> None:
-    required = ("id", "slug", "root", "narrow_root", "spec", "base", "owner", "checker", "cursor_name")
+    required = _serve_module.SCOPE_ROW_FIELDS if is_scope_row(record) else (
+        "id", "slug", "root", "narrow_root", "spec", "base", "owner", "checker", "cursor_name")
     missing = [key for key in required if not isinstance(record.get(key), str) or not record[key].strip()]
     if missing:
         raise LauncherError("resource missing required field: " + ", ".join(missing))
@@ -426,6 +447,11 @@ def validate_records(records: Sequence[Mapping[str, Any]], touched: Collection[s
         slug = record["slug"]
         if not SLUG_RE.fullmatch(slug) or slug in {"api", "static"}:
             raise LauncherError(f"invalid or reserved resource slug: {slug}")
+        if not SAFE_CURSOR_RE.fullmatch(record["cursor_name"]):
+            raise LauncherError(f"invalid cursor name: {record['cursor_name']}")
+        ids.add(rid)
+        if is_scope_row(record):
+            continue  # a scope row serves no page: no root, spec, or path to check
         root = Path(record["root"])
         if not root.is_absolute():
             raise LauncherError(f"resource root must be absolute: {rid}")
@@ -446,12 +472,9 @@ def validate_records(records: Sequence[Mapping[str, Any]], touched: Collection[s
             if not path_inside(spec_file, narrow, strict=True) or not spec_file.is_file():
                 raise LauncherError(f"resource spec is missing or outside its collection: {rid}")
             run_git(root, "rev-parse", "--verify", record["base"] + "^{commit}")
-        if not SAFE_CURSOR_RE.fullmatch(record["cursor_name"]):
-            raise LauncherError(f"invalid cursor name: {record['cursor_name']}")
         key = row_path(record)
         if key in stable:
             raise LauncherError(f"duplicate stable resource path: {key}")
-        ids.add(rid)
         stable.add(key)
 
 
@@ -535,10 +558,21 @@ def select_flag(values: Sequence[str] | None, index: int, count: int, name: str,
 
 
 def parse_resources(args: argparse.Namespace) -> list[dict[str, Any]]:
-    """--resource entries, then plain spec paths; per-resource flags follow that order."""
+    """--resource entries, then plain spec paths; per-resource flags follow that order. With neither, --slug and
+    --owner register a scope row (review-service #lane-command)."""
     count = len(args.resource) + len(args.specs)
     if not count:
-        raise LauncherError("name a spec path or --resource PROJECT_ID=ROOT:SPEC_PATH@BASE")
+        if not args.slug or len(args.slug) != 1 or len(args.owner) != 1 or args.base or args.collection:
+            raise LauncherError("name a spec path, --resource PROJECT_ID=ROOT:SPEC_PATH@BASE, or one --slug and "
+                                "--owner for a scope row")
+        owner = args.owner[0]
+        checker = select_flag(args.checker, 0, 1, "--checker", owner)
+        cursor = select_flag(args.cursor_name, 0, 1, "--cursor-name", DEFAULT_CURSOR)
+        assert checker is not None and cursor is not None
+        row = build_scope_row(args.slug[0], owner, checker, cursor)
+        row["defaulted"] = tuple(key for key, flag in (("checker", args.checker), ("cursor_name", args.cursor_name))
+                                 if not flag)
+        return [row]
     if args.base and not args.specs:
         raise LauncherError("--base applies only to plain spec paths")
     result = []
@@ -835,7 +869,15 @@ def print_urls(process: Mapping[str, Any], additions: list[dict[str, str]], stat
     for item in additions:
         owner = item["owner"]
         wake = wake_status(owner, state, environ)
-        print(f"{item['id']} URL: {url.rstrip('/')}{stable_path(item)} wake={wake} owner={owner}")
+        where = f"scope {item['slug']}" if is_scope_row(item) else f"URL: {url.rstrip('/')}{stable_path(item)}"
+        print(f"{item['id']} {where} wake={wake} owner={owner}")
+
+
+def prove_resources(listener: str, parsed: Sequence[Mapping[str, Any]]) -> None:
+    """Prove each registered spec served; a scope row serves no page, so it has nothing to prove."""
+    for item in parsed:
+        if not is_scope_row(item):
+            prove_resource(listener, item)
 
 
 def register(args: argparse.Namespace) -> int:
@@ -863,8 +905,7 @@ def register(args: argparse.Namespace) -> int:
             raise LauncherError(f"systemctl --user restart {unit} failed")
         process = await_unit(registry, old_pid, unit)
         listener = listener_url(process, log_path)
-        for item in parsed:
-            prove_resource(listener, item)
+        prove_resources(listener, parsed)
     except BaseException:
         with state_lock(state):
             _, current = registry_state(registry)
@@ -914,7 +955,8 @@ def register_locked(args: argparse.Namespace, registry: Path, log_path: Path,
     existing, process = registry_state(registry)
     additions = []
     for index, item in enumerate(parsed):
-        assign_path(existing + parsed[:index], item)
+        if not is_scope_row(item):
+            assign_path(existing + parsed[:index], item)
         old = next((row for row in existing if row["id"] == item["id"]), None)
         additions.append(registry_record(item, old))
         item.update(additions[-1])
@@ -939,8 +981,7 @@ def register_locked(args: argparse.Namespace, registry: Path, log_path: Path,
             process = {key: process[key] for key in ("pid", "port", "bind", "host") if key in process}
             process.update(setup, **kept, url=setup.get("public_base") or listener)
             write_registry(registry, candidate, process)
-            for item in parsed:
-                prove_resource(listener, item)
+            prove_resources(listener, parsed)
             print_access(process)
             print_urls(process, additions, state)
             return None
@@ -986,8 +1027,7 @@ def register_locked(args: argparse.Namespace, registry: Path, log_path: Path,
             time.sleep(0.05)
         if not listener:
             raise LauncherError("review server did not print a URL")
-        for item in parsed:
-            prove_resource(listener, item)
+        prove_resources(listener, parsed)
         process = {"pid": child.pid, "port": urllib.parse.urlsplit(listener).port or port, "bind": bind,
                    "host": host, **setup, **kept, "url": setup.get("public_base") or listener}
         write_registry(registry, candidate, process)
@@ -1026,6 +1066,7 @@ def serve(args: argparse.Namespace) -> int:
 
 
 def remove(args: argparse.Namespace) -> int:
+    """Remove a row; with its scope's last row go the scope's hosted threads (review-service #store-hosted)."""
     state = state_dir(args)
     registry, _, _ = paths(state)
     with state_lock(state):
@@ -1036,6 +1077,11 @@ def remove(args: argparse.Namespace) -> int:
         validate_records(remaining)
         write_registry(registry, remaining, process)
         print(f"{args.id}: removed")
+        slug = next(record["slug"] for record in records if record["id"] == args.id)
+        hosted = state / "comments" / slug
+        if not any(record["slug"] == slug for record in remaining) and hosted.exists():
+            shutil.rmtree(hosted)
+            print(f"{slug}: hosted threads removed")
         return 0
 
 
@@ -1049,6 +1095,8 @@ def reviewed(args: argparse.Namespace) -> int:
         record = next((item for item in records if item["id"] == args.id), None)
         if record is None:
             raise LauncherError(f"unknown resource id: {args.id}")
+        if is_scope_row(record):
+            raise LauncherError(f"{args.id} is a scope row: it has no spec")
         validate_records(records, {args.id})
         root, spec = Path(record["root"]), record["spec"]
         if run_git(root, "status", "--porcelain", "--", spec):
