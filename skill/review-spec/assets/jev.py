@@ -1195,6 +1195,9 @@ class _AnchorParser(HTMLParser):
                 # A project rule's declaration (project-rules #declare): its mark's name, on a criterion only.
                 "rule": " ".join(str(attrs.get("data-project-rule") or "").split()) or None
                 if "data-acceptance-criterion" in attrs else None,
+                # A criterion's data-story (jev-suggestions #coverage-declared): the stories it names, None when absent.
+                "stories": str(attrs.get("data-story") or "").split()
+                if "data-acceptance-criterion" in attrs and "data-story" in attrs else None,
                 "parent": parent,
                 "children": [],
                 "structural": False,
@@ -1628,43 +1631,38 @@ def build_resolved_questions(events: list[Mapping[str, Any]], current: str | byt
 
 def build_coverage_questions(current: str | bytes, path: str = "spec", base: str = "",
                              revision: Any = "head") -> list[dict[str, Any]]:
+    """Coverage as the spec declares it (#coverage-declared): each criterion asked once per story its data-story
+    names, never another. A story no criterion names and a criterion that names no story of the spec stand alone,
+    a gap with nothing to ask. A spec whose criteria declare no data-story asks nothing."""
     anchors = extract_anchors(current)
-    stories = [(anchor, value) for anchor, value in anchors.items() if value.get("story")]
     criteria = [(anchor, value) for anchor, value in anchors.items() if value.get("criterion")]
-    result = []
-    if stories and not criteria:
-        for story_anchor, story in stories:
-            result.append({
-                "kind": "coverage", "id": story_anchor + "::",
-                "state": {"story": {"anchor": story_anchor, "text": story["text"]}, "criterion": None},
-                "sources": [f"{path}#{story_anchor}"], "revision": {"base": base, "head": revision},
-                "target": story_anchor, "story": story_anchor, "criterion": None,
-            })
-        return result
-    if criteria and not stories:
-        for criterion_anchor, criterion in criteria:
-            result.append({
-                "kind": "coverage", "id": "::" + criterion_anchor,
-                "state": {"story": None, "criterion": {"anchor": criterion_anchor, "text": criterion["text"]}},
-                "sources": [f"{path}#{criterion_anchor}"], "revision": {"base": base, "head": revision},
-                "target": criterion_anchor, "story": None, "criterion": criterion_anchor,
-            })
-        return result
-    for story_anchor, story in stories:
-        for criterion_anchor, criterion in criteria:
-            identifier = story_anchor + "::" + criterion_anchor
-            result.append({
-                "kind": "coverage",
-                "id": identifier,
-                "state": {"story": {"anchor": story_anchor, "text": story["text"]},
-                          "criterion": {"anchor": criterion_anchor, "text": criterion["text"]}},
-                "sources": [f"{path}#{story_anchor}", f"{path}#{criterion_anchor}"],
-                "revision": {"base": base, "head": revision},
-                "target": story_anchor,
-                "story": story_anchor,
-                "criterion": criterion_anchor,
-            })
-    return result
+    if all(value.get("stories") is None for _, value in criteria):
+        return []
+
+    def question(story_anchor: str | None, criterion_anchor: str | None) -> dict[str, Any]:
+        sides = {"story": story_anchor, "criterion": criterion_anchor}
+        return {
+            "kind": "coverage",
+            "id": (story_anchor or "") + "::" + (criterion_anchor or ""),
+            "state": {side: {"anchor": anchor, "text": anchors[anchor]["text"]} if anchor else None
+                      for side, anchor in sides.items()},
+            "sources": [f"{path}#{anchor}" for anchor in sides.values() if anchor],
+            "revision": {"base": base, "head": revision},
+            "target": story_anchor or criterion_anchor,
+            "story": story_anchor,
+            "criterion": criterion_anchor,
+        }
+
+    named: dict[str, list[str]] = {anchor: [] for anchor, value in anchors.items() if value.get("story")}
+    lone = []
+    for criterion_anchor, criterion in criteria:
+        names = [name for name in dict.fromkeys(criterion.get("stories") or ()) if name in named]
+        for name in names:
+            named[name].append(criterion_anchor)
+        if not names:
+            lone.append(question(None, criterion_anchor))
+    return [question(story_anchor, criterion_anchor)
+            for story_anchor, names in named.items() for criterion_anchor in names or [None]] + lone
 
 
 def _audience_leaf_anchors(source: str | bytes | None) -> dict[str, dict[str, Any]]:
