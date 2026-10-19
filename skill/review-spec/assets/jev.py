@@ -23,6 +23,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Callable, Mapping
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 try:
@@ -302,9 +303,14 @@ SETTLED = frozenset({NOT_A_RULE, MARKED})
 OWNER_RESOLUTIONS = ("fixed", "reason", "dismissed")
 
 
-# The record store's files (#record-store): records split by cache key across this many plain JSONL files, so a
-# lookup that misses reads about 1/4096 of the store, a few hundred records at a million, never the whole of it.
+# The record store's files (#record-store): one generation per question set version, a directory named by the
+# set's id and version, and within it records split by cache key across this many plain JSONL files, so a lookup
+# that misses reads its key's file in each loaded generation, about 1/4096 of what a read can reach, never the
+# whole store.
 STORE_SHARDS = 4096  # three hex digits of the key's sha256
+_STORE_FILE = re.compile(r"[0-9a-f]{3}\.jsonl")
+# A file written before generations, claimed by the compaction moving its records (#record-compact).
+_CLAIMED = ".compacting"
 # Records held in memory, by recency of use (#record-held): enough for every mark a few busy specs show.
 STORE_HELD = 20000
 _MISS = object()
@@ -335,30 +341,70 @@ def _parsed(line: bytes) -> dict[str, Any] | None:
         and record["cache_key"] else None
 
 
-def _append_line(path: Path, value: Mapping[str, Any]) -> None:
-    """One whole line in one O_APPEND write, so concurrent writers never interleave and no line is rewritten."""
-    data = (json.dumps(value, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
-    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+def _generation(question_set: Any) -> str:
+    """A generation's directory name: the question set's id and version, each quoted to one path part."""
+    ref = question_set if isinstance(question_set, Mapping) else {}
+    return "%s@%s" % (quote(str(ref.get("id", "")), safe=""), quote(str(ref.get("version", "")), safe=""))
+
+
+def _cited(record: Mapping[str, Any], cited: frozenset[str]) -> bool:
+    return isinstance(record.get("record_id"), str) and record["record_id"] in cited
+
+
+def _whole(line: bytes) -> bytes:
+    return line if line.endswith(b"\n") else line + b"\n"
+
+
+def _append(path: Path, data: bytes, sync: bool = False) -> None:
+    """Whole lines in one O_APPEND write, so concurrent writers never interleave and no line is rewritten. A missing
+    directory is made: compaction removes an emptied generation."""
+    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT
+    try:
+        fd = os.open(path, flags, 0o644)
+    except FileNotFoundError:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, flags, 0o644)
     try:
         view = memoryview(data)
         while view:
             view = view[os.write(fd, view):]
+        if sync:
+            os.fsync(fd)
     finally:
         os.close(fd)
+
+
+def _append_line(path: Path, value: Mapping[str, Any]) -> None:
+    _append(path, (json.dumps(value, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8"))
+
+
+def _replace(path: Path, data: bytes) -> None:
+    """The file becomes `data` at once: written beside it, synced, then renamed over it, so a reader holds the old
+    file or opens the new one, never a partial line. Another compaction removing the copy first leaves the file."""
+    copy = path.with_name("%s.%d-%s.compact" % (path.name, os.getpid(), uuid.uuid4().hex[:8]))
+    try:
+        _append(copy, data, sync=True)
+        os.replace(copy, path)
+    except FileNotFoundError:
+        copy.unlink(missing_ok=True)
 
 
 class JudgmentStore:
     """Append-only JSONL records, also used as the cache (#record-store, #record-held, #record-lock).
 
-    The path names the store: its records live in the directory beside it named by the path's stem, split by
-    cache key into STORE_SHARDS files. A record is never amended (#record-immutable): outcomes live in the
-    WarningLedger. The records are a disposable cache (#record-disposable). Memory holds the records recent
-    reads and writes used, up to `held`. No lock is held while a file is read. Construction reads nothing
-    (review-service #acceptance-restart). Without a path the store is memory only."""
+    The path names the store: its records live in the directory beside it named by the path's stem, one generation
+    directory per question set version, each split by cache key into STORE_SHARDS files. `versions`, the question
+    set versions the server loads ({id, version} each), names the generations a lookup reads and compaction keeps;
+    without them a lookup reads every generation present. A record is never amended (#record-immutable): outcomes
+    live in the WarningLedger. The records are a disposable cache (#record-disposable) that compaction keeps to what
+    a read can reach (#record-compact). Memory holds the records recent reads and writes used, up to `held`. No lock
+    is held while a file is read. Construction reads nothing (review-service #acceptance-restart). Without a path
+    the store is memory only."""
 
-    def __init__(self, path: str | Path | None = None, *, held: int = STORE_HELD):
+    def __init__(self, path: str | Path | None = None, *, held: int = STORE_HELD, versions: Any = None):
         self.path = Path(path) if path else None
         self.dir = self.path.with_name(self.path.stem) if self.path else None
+        self.versions = None if versions is None else frozenset(map(_generation, versions))
         self.limit = held
         self._held: OrderedDict[str, Any] = OrderedDict()
         self._writes: dict[str, int] = {}
@@ -369,29 +415,56 @@ class JudgmentStore:
     def _shard(self, key: str) -> str:
         return hashlib.sha256(key.encode("utf-8")).hexdigest()[:3]
 
-    def _shard_path(self, shard: str) -> Path:
-        return self.dir / (shard + ".jsonl")  # type: ignore[operator]
+    def _file(self, question_set: Any, key: str) -> Path:
+        """The key's file in the generation of the set version that asks it."""
+        return self.dir / _generation(question_set) / (self._shard(key) + ".jsonl")  # type: ignore[operator]
+
+    def _generations(self) -> list[str]:
+        """The generations a lookup reads: the loaded set versions', else every one present."""
+        if self.versions is not None:
+            return sorted(self.versions)
+        try:
+            with os.scandir(self.dir) as entries:  # type: ignore[arg-type]
+                return sorted(entry.name for entry in entries if entry.is_dir())
+        except FileNotFoundError:
+            return []
 
     def _scan(self, key: str) -> dict[str, Any] | None:
-        """The key's current record from its file, streamed with no lock held; only lines naming the key parse."""
+        """The key's current record from its file in each generation read, streamed with no lock held; only lines
+        naming the key parse. The key hashes its set version, so one generation at most holds it."""
         needle = json.dumps(key, ensure_ascii=False)[1:-1].encode("utf-8")
+        name = self._shard(key) + ".jsonl"
         current = None
-        for line in _lines(self._shard_path(self._shard(key))):
-            if needle in line:
-                record = _parsed(line)
-                if record is not None and record["cache_key"] == key and _replaces(current):
-                    current = record
+        for generation in self._generations():
+            for line in _lines(self.dir / generation / name):  # type: ignore[operator]
+                if needle in line:
+                    record = _parsed(line)
+                    if record is not None and record["cache_key"] == key and _replaces(current):
+                        current = record
+            if current is not None:
+                break
         return current
 
     def _write(self, record: Mapping[str, Any]) -> None:
-        """Called under the lock: one append to the key's file, then the record is held."""
+        """Called under the lock: one append to the key's file in its set version's generation, then the record is
+        held."""
         key = record["cache_key"]
         if self.path:
-            shard = self._shard(key)
-            self.dir.mkdir(parents=True, exist_ok=True)  # type: ignore[union-attr]
-            _append_line(self._shard_path(shard), record)
-            self._writes[shard] = self._writes.get(shard, 0) + 1
+            _append_line(self._file(record.get("question_set"), key), record)
+            self._wrote(self._shard(key))
         self._hold(key, record)
+
+    def _wrote(self, shard: str) -> None:
+        """Called under the lock: a lookup reading a file of this shard reads again (get)."""
+        self._writes[shard] = self._writes.get(shard, 0) + 1
+
+    @staticmethod
+    def _files(directory: Path):
+        """The store files directly in a directory, in name order; none when it is gone."""
+        try:
+            return sorted(path for path in directory.iterdir() if _STORE_FILE.fullmatch(path.name))
+        except (FileNotFoundError, NotADirectoryError):
+            return []
 
     # Held records
 
@@ -422,7 +495,7 @@ class JudgmentStore:
                 value = self._held_value(key)
                 if value is not None:
                     return None if value is _MISS else value
-                if self._writes.get(shard, 0) == writes:  # no write to this file raced the read
+                if self._writes.get(shard, 0) == writes:  # no write to this shard raced the read
                     self._hold(key, _MISS if record is None else record)
                     return record
 
@@ -437,19 +510,123 @@ class JudgmentStore:
             return record
 
     def records(self):
-        """Every current record, streamed one file at a time with no lock held."""
+        """Every current record, streamed one file at a time with no lock held: each generation's, and those in
+        files written before generations, as in an eval's older copy."""
         if not self.path:
             with self.lock:
                 held = [value for value in self._held.values() if value is not _MISS]
             yield from held
             return
-        for shard in range(STORE_SHARDS):
-            current: dict[str, dict[str, Any]] = {}
-            for line in _lines(self._shard_path("%03x" % shard)):
-                record = _parsed(line)
-                if record is not None and _replaces(current.get(record["cache_key"])):
-                    current[record["cache_key"]] = record
-            yield from current.values()
+        older = self._files(self.dir)  # type: ignore[arg-type]
+        try:
+            generations = sorted(path for path in self.dir.iterdir() if path.is_dir())  # type: ignore[union-attr]
+        except FileNotFoundError:
+            generations = []
+        for files in [older, *map(self._files, generations)]:
+            for path in files:
+                current: dict[str, dict[str, Any]] = {}
+                for line in _lines(path):
+                    record = _parsed(line)
+                    if record is not None and _replaces(current.get(record["cache_key"])):
+                        current[record["cache_key"]] = record
+                yield from current.values()
+
+    # Compaction
+
+    def compact(self, cited: Any, stop: threading.Event | None = None) -> None:
+        """Keep only what a read can reach (#record-compact): the generations of the loaded set versions (`versions`),
+        untouched, and each record whose id is in `cited`, the ones the warning ledger cites.
+        Every other generation goes: a file holding no cited record is deleted, one holding some is replaced whole
+        by a file of just those lines, so removing is the only change a store file sees and no reader meets a
+        partial line. Records in files written before generations move into theirs on the same terms. No lock is
+        held while a file is read, so no lookup or append waits for it; `stop` ends it between files."""
+        if not self.path or self.versions is None:  # no loaded versions named: nothing is known unreachable
+            return
+        keep = self.versions
+        cited = frozenset(item for item in cited if isinstance(item, str))
+        stopped = lambda: stop is not None and stop.is_set()
+        try:
+            flat = [path for path in self.dir.iterdir()  # type: ignore[union-attr]
+                    if path.is_file() and (_STORE_FILE.fullmatch(path.name) or path.name.endswith(_CLAIMED))]
+        except FileNotFoundError:
+            return
+        # A killed run's claims first.
+        for path in sorted(flat, key=lambda path: (not path.name.endswith(_CLAIMED), path.name)):
+            if stopped():
+                return
+            self._move(path, keep, cited)
+        for directory in sorted(self.dir.iterdir()):  # type: ignore[union-attr]
+            if directory.is_dir() and directory.name not in keep:
+                if stopped():
+                    return
+                self._prune(directory, cited, stopped)
+
+    def _move(self, path: Path, keep: frozenset[str], cited: frozenset[str]) -> None:
+        """Move the records a read can reach from a file written before generations into their generations, then
+        delete the file. It is claimed by a rename first, so two services starting together do not both move it; a
+        claim left by a killed run is moved by the next. A claim another service is still moving may be moved twice:
+        a key's first final line answers either way (jev-contract #key-reuse)."""
+        claimed = path
+        if not path.name.endswith(_CLAIMED):
+            claimed = path.with_name("%s.%d-%s%s" % (path.name, os.getpid(), uuid.uuid4().hex[:8], _CLAIMED))
+            try:
+                os.rename(path, claimed)
+            except FileNotFoundError:  # another service claimed it
+                return
+        moved: dict[Path, list[bytes]] = {}
+        synced: set[Path] = set()
+        keys: list[str] = []
+        for line in _lines(claimed):
+            record = _parsed(line)
+            if record is None:
+                continue
+            ref = record.get("question_set") or {}
+            if _cited(record, cited) or _generation(ref) in keep:
+                target = self._file(ref, record["cache_key"])
+                moved.setdefault(target, []).append(_whole(line))
+                keys.append(record["cache_key"])
+                if _cited(record, cited):
+                    synced.add(target)
+        for target, lines in moved.items():
+            _append(target, b"".join(lines), sync=target in synced)
+        with self.lock:
+            for target in moved:
+                self._wrote(target.stem)
+            for key in keys:  # a miss held while the record was still in the old file
+                if self._held.get(key) is _MISS:
+                    del self._held[key]
+        claimed.unlink(missing_ok=True)
+
+    def _prune(self, directory: Path, cited: frozenset[str], stopped: Callable[[], bool]) -> None:
+        """Remove a generation no read reaches, keeping each cited record whole in its file."""
+        try:
+            paths = sorted(directory.iterdir())
+        except FileNotFoundError:
+            return
+        for path in paths:
+            if stopped():
+                return
+            if not _STORE_FILE.fullmatch(path.name):
+                if path.is_file():  # a killed compaction's copy, or one another compaction then keeps out (_replace)
+                    path.unlink(missing_ok=True)
+                continue
+            kept: list[bytes] = []
+            dropped = False
+            if cited:
+                for line in _lines(path):
+                    record = _parsed(line)
+                    if record is not None and _cited(record, cited):
+                        kept.append(_whole(line))
+                    else:
+                        dropped = True
+            if not kept:
+                path.unlink(missing_ok=True)
+            elif dropped:
+                _replace(path, b"".join(kept))
+        try:
+            directory.rmdir()
+        except OSError:  # it still holds cited records, or a service wrote to it meanwhile
+            pass
 
 
 # Who records a warning outcome (#ledger-table).
@@ -1995,11 +2172,15 @@ class JevService:
         self.state_dir = Path(state_dir) if state_dir else default_state_dir()
         # Records and the warning ledger side by side (#ledger); test-flagged slugs use the same layout in the
         # store's test directory, never the live one (#test-host-rule).
+        loaded = [{"id": qset.id, "version": qset.version} for qset in self.question_sets.values()]
         self.seam, self.test_seam = (
             JevSeam(self.question_sets, provider=provider, api_key=api_key, llm_model=llm_model,
-                    record_store=JudgmentStore(directory / "records.jsonl"),
+                    record_store=JudgmentStore(directory / "records.jsonl", versions=loaded),
                     ledger=WarningLedger(directory / "ledger.jsonl"))
             for directory in (self.state_dir, self.state_dir / "test"))
+        # Compaction (#record-compact): one background pass after start; stop ends it between files.
+        self._compaction: threading.Thread | None = None
+        self._compaction_stop = threading.Event()
 
         # Board state (#jev-board-answer): the last answer and the rows the board thread answers next.
         self._board_lock = threading.Lock()
@@ -2025,8 +2206,26 @@ class JevService:
         self._marks_lock = threading.Lock()
         self._marks: dict[tuple[Any, ...], tuple[Any, dict[tuple[Any, ...], tuple[str, Any]]]] = {}
 
+    def start(self) -> None:
+        """After start, in the background and delaying no answer, each store keeps only what a read can reach
+        (#record-compact): the generations of the question set versions this service loads, and the records its
+        warning ledger cites. Called as the server starts answering; start itself reads no record (#record-held)."""
+        if self._compaction is not None:
+            return
+
+        def compact() -> None:
+            for seam in (self.seam, self.test_seam):
+                seam.store.compact({entry.get("judgment") for entry in seam.ledger.entries()}, self._compaction_stop)
+
+        self._compaction = threading.Thread(target=compact, name="spec-chat-jev-compact", daemon=True)
+        self._compaction.start()
+
     def stop(self) -> None:
-        """Stop asking: later reads ask nothing, waiting asks are dropped, in-flight asks finish their record."""
+        """Stop asking: later reads ask nothing, waiting asks are dropped, in-flight asks finish their record.
+        Compaction stops after the file it is on."""
+        self._compaction_stop.set()
+        if self._compaction is not None:
+            self._compaction.join()
         with self._ask_lock:
             pool, self._ask_pool = self._ask_pool, None
             for future in self._waiting:

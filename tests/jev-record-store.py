@@ -1,4 +1,5 @@
-"""Record store files, held set, and lock (jev-suggestions #record-store, #record-held, #record-lock, #proof-store, #record-immutable)."""
+"""Record store files, held set, lock, and compaction (jev-suggestions #record-store, #record-held, #record-lock,
+#record-compact, #proof-store, #record-immutable)."""
 import gc
 import hashlib
 import importlib.util
@@ -29,13 +30,19 @@ LINE = ('{"answer": {"confidence": 0.91, "label": "no", "probabilities": {"no": 
         '"threshold": 0.4, "time": "2026-10-01T00:00:00.000Z"}\n')
 
 
+# The set version asking every record here: its generation is the directory named by the set's id and version.
+SET = {"id": "contradicts", "version": 3}
+GENERATION = "contradicts@3"
+
+
 def key_of(i):
     return "sha256:" + hashlib.sha256(b"%d" % i).hexdigest()
 
 
 def write_store(path, count):
-    """A synthetic store of count records, written straight into its split files (fast: no JSON encoding)."""
-    directory = Path(path).with_name(Path(path).stem)
+    """A synthetic store of count records, written straight into its generation's split files (fast: no JSON
+    encoding)."""
+    directory = Path(path).with_name(Path(path).stem) / GENERATION
     directory.mkdir(parents=True)
     for start in range(0, count, 100000):
         shards = {}
@@ -57,7 +64,8 @@ spec = importlib.util.spec_from_file_location("jev", sys.argv[1]); jev = importl
 spec.loader.exec_module(jev)
 path, count, ops, held = sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5])
 key_of = lambda i: "sha256:" + __import__("hashlib").sha256(b"%d" % i).hexdigest()
-store = jev.JudgmentStore(path, held=held)
+version = {"id": "contradicts", "version": 3}
+store = jev.JudgmentStore(path, held=held, versions=[version])
 rng = random.Random(7)
 miss = []
 for n in range(ops):
@@ -66,7 +74,7 @@ for n in range(ops):
     assert (record is not None) == (i < count), i
     if n % 10 == 0:
         store.append({"cache_key": key_of(count * 3 + n), "record_id": "judgment-new-%d" % n, "outcome": "hidden",
-                      "answer": {"label": "no", "probabilities": {"no": 0.9}}})
+                      "question_set": version, "answer": {"label": "no", "probabilities": {"no": 0.9}}})
 assert len(store._held) <= held
 miss.sort()
 print(json.dumps({"rss_kb": PEAK,
@@ -81,7 +89,7 @@ def child_run(path, count, ops, held):
 
 
 def record(key, record_id, outcome="hidden", **fields):
-    return {"cache_key": key, "record_id": record_id, "outcome": outcome, **fields}
+    return {"cache_key": key, "record_id": record_id, "outcome": outcome, "question_set": SET, **fields}
 
 
 class StoreMemoryTest(unittest.TestCase):
@@ -177,7 +185,7 @@ class StoreLockTest(unittest.TestCase):
             lines = jev._lines
 
             def slow(path):
-                if path == store._shard_path(store._shard("sha256:missed")):
+                if path == store._file(SET, "sha256:missed"):
                     reading.set()
                     release.wait(10)
                 return lines(path)
@@ -196,7 +204,7 @@ class StoreLockTest(unittest.TestCase):
 
     def test_a_write_racing_a_missed_lookup_is_seen(self):
         with tempfile.TemporaryDirectory() as tmp:
-            store = jev.JudgmentStore(Path(tmp) / "records.jsonl", held=1)
+            store = jev.JudgmentStore(Path(tmp) / "records.jsonl", held=1, versions=[SET])
             lines = jev._lines
             raced = []
 
@@ -213,7 +221,8 @@ class StoreLockTest(unittest.TestCase):
 
 
 class StoreFilesTest(unittest.TestCase):
-    """#record-store, #acceptance-store-files: plain JSONL split by key, reused after restart."""
+    """#record-store, #acceptance-store-files: plain JSONL in the set version's generation split by key, reused
+    after restart."""
 
     def test_records_are_one_line_each_in_plain_files_split_by_key_and_reused_after_restart(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -221,13 +230,30 @@ class StoreFilesTest(unittest.TestCase):
             store = jev.JudgmentStore(path)
             for i in range(50):
                 store.append(record(key_of(i), "judgment-%d" % i, "shown"))
-            files = sorted((Path(tmp) / "records").glob("*.jsonl"))
+            self.assertEqual([p.name for p in (Path(tmp) / "records").iterdir()], [GENERATION])
+            files = sorted((Path(tmp) / "records" / GENERATION).glob("*.jsonl"))
             self.assertGreater(len(files), 30)
             lines = [json.loads(line) for f in files for line in f.read_text().splitlines()]
             self.assertEqual(sorted(r["record_id"] for r in lines), sorted("judgment-%d" % i for i in range(50)))
             again = jev.JudgmentStore(path)
             self.assertEqual(again.get(key_of(7))["record_id"], "judgment-7")
             self.assertEqual(len(list(again.records())), 50)
+
+    def test_a_lookup_reads_its_keys_file_in_the_loaded_generations_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "records.jsonl"
+            retired = {"id": "contradicts", "version": 2}
+            writer = jev.JudgmentStore(path)
+            writer.append(record("sha256:k", "judgment-k", "shown"))
+            jev._append_line(writer._file(retired, "sha256:k"), record("sha256:k", "judgment-retired", "hidden",
+                                                                      question_set=retired))
+            self.assertTrue(writer._file(retired, "sha256:k").exists())
+            reads = []
+            lines = jev._lines
+            with patch.object(jev, "_lines", lambda path: reads.append(path) or lines(path)):
+                found = jev.JudgmentStore(path, versions=[SET, {"id": "oversteps", "version": 1}]).get("sha256:k")
+            self.assertEqual(found["record_id"], "judgment-k")
+            self.assertEqual(reads, [Path(tmp) / "records" / GENERATION / (writer._shard("sha256:k") + ".jsonl")])
 
     def test_replace_rule_is_unchanged_and_a_record_is_never_amended(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -247,6 +273,162 @@ class StoreFilesTest(unittest.TestCase):
             with patch.object(jev, "_lines", side_effect=AssertionError("read at start")):
                 jev.JudgmentStore(path)
             self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()), ["records.jsonl"])
+
+
+class StoreCompactTest(unittest.TestCase):
+    """#record-compact, #acceptance-store-compact: after each start, in the background, the store keeps the
+    generations of the loaded set versions and each record the warning ledger cites, and removes the rest."""
+
+    WHERE = {"project": "p", "spec": "docs/specs/a.spec.html", "kind": "contradicts",
+             "target": "docs/specs/b.spec.html#b"}
+
+    def box(self, tmp):
+        """A box's state: answers of a retired contradicts version, one cited by an owner's dismissal, answers of the
+        version the service loads, and files written before generations holding both, one of those cited too."""
+        state = Path(tmp) / "state"
+        loaded = jev.load_question_sets()["contradicts"]
+        current = {"id": loaded.id, "version": loaded.version}
+        retired = {"id": loaded.id, "version": loaded.version - 1}
+        store = jev.JudgmentStore(state / "records.jsonl")
+        for i in range(40):
+            store.append(record(key_of(i), "judgment-retired-%d" % i, question_set=retired))
+            store.append(record(key_of(100 + i), "judgment-current-%d" % i, question_set=current))
+        older = {"judgment-older-retired": retired, "judgment-older-cited": retired, "judgment-older-current": current}
+        for n, (record_id, version) in enumerate(older.items()):
+            key = key_of(200 + n)
+            with (state / "records" / (store._shard(key) + ".jsonl")).open("a") as stream:
+                stream.write(json.dumps(record(key, record_id, question_set=version), sort_keys=True) + "\n")
+        ledger = jev.WarningLedger(state / "ledger.jsonl")
+        for anchor, cited in (("a", "judgment-retired-7"), ("c", "judgment-older-cited")):
+            ledger.append({**self.WHERE, "anchor": anchor, "outcome": "dismissed", "judgment": cited, "by": "owner",
+                           "reason": "Jev is wrong here"})
+        return state, current, retired
+
+    @staticmethod
+    def generation(state, version):
+        return state / "records" / ("%s@%s" % (version["id"], version["version"]))
+
+    @staticmethod
+    def lines(directory):
+        return [line for path in sorted(directory.iterdir()) for line in path.read_bytes().splitlines(keepends=True)]
+
+    def test_a_restart_keeps_the_loaded_versions_answers_and_the_cited_ones_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state, current, retired = self.box(tmp)
+            cited_line = next(line for line in self.lines(self.generation(state, retired))
+                              if b"judgment-retired-7" in line)
+            loaded_before = {path.name: path.read_bytes() for path in self.generation(state, current).iterdir()}
+            service = jev.JevService(state_dir=state, api_key="fake-key")
+            try:
+                service.start()
+                service._compaction.join(30)
+                self.assertFalse(service._compaction.is_alive(), "compaction did not finish")
+                store = service.seam.store
+                current_ids = ["judgment-current-%d" % i for i in range(40)] + ["judgment-older-current"]
+                self.assertEqual(sorted(r["record_id"] for r in store.records()),
+                                 sorted(current_ids + ["judgment-retired-7", "judgment-older-cited"]))
+                joined = {r["record_id"]: [(o["outcome"], o["by"]) for o in outcomes]
+                          for r, outcomes in jev.eval_read(store.records(), service.seam.ledger) if outcomes}
+                self.assertEqual(joined, {"judgment-retired-7": [("dismissed", "owner")],
+                                          "judgment-older-cited": [("dismissed", "owner")]})
+                for i in range(40):
+                    self.assertEqual(store.get(key_of(100 + i))["record_id"], "judgment-current-%d" % i)
+                self.assertEqual(store.get(key_of(202))["record_id"], "judgment-older-current")
+            finally:
+                service.stop()
+            retired_lines = self.lines(self.generation(state, retired))
+            self.assertIn(cited_line, retired_lines, "the cited record was not kept whole")
+            self.assertEqual(sorted(json.loads(line)["record_id"] for line in retired_lines),
+                             ["judgment-older-cited", "judgment-retired-7"])
+            self.assertEqual(sorted(p.name for p in (state / "records").iterdir()),
+                             sorted(p.name for p in (self.generation(state, retired), self.generation(state, current))),
+                             "a file written before generations is left")
+            for name, data in loaded_before.items():
+                self.assertTrue((self.generation(state, current) / name).read_bytes().startswith(data),
+                                "a loaded generation's record changed")
+
+    def test_compaction_runs_in_the_background_and_holds_up_no_lookup_or_append(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state, current, retired = self.box(tmp)
+            service = jev.JevService(state_dir=state, api_key="fake-key")
+            reading, release = threading.Event(), threading.Event()
+            lines = jev._lines
+
+            def slow(path):
+                if threading.current_thread().name == "spec-chat-jev-compact" and path.name != "ledger.jsonl":
+                    reading.set()
+                    release.wait(10)
+                return lines(path)
+
+            try:
+                with patch.object(jev, "_lines", slow):
+                    started = time.monotonic()
+                    service.start()
+                    self.assertTrue(reading.wait(5), "compaction read no store file")
+                    self.assertEqual(service.seam.store.get(key_of(105))["record_id"], "judgment-current-5")
+                    written = service.seam.store.append(record(key_of(300), "judgment-new", "shown",
+                                                               question_set=current))
+                    self.assertEqual(written["record_id"], "judgment-new")
+                    self.assertLess(time.monotonic() - started, 1,
+                                    "start, a lookup, or an append waited for compaction")
+                    self.assertTrue(service._compaction.is_alive())
+                    release.set()
+                    service._compaction.join(30)
+            finally:
+                release.set()
+                service.stop()
+            self.assertEqual(jev.JudgmentStore(state / "records.jsonl").get(key_of(300))["record_id"],
+                             "judgment-new")
+
+    def test_a_retired_file_becomes_its_cited_lines_whole_and_a_reader_never_meets_a_partial_line(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = jev.JudgmentStore(Path(tmp) / "records.jsonl", versions=[SET])
+            retired = Path(tmp) / "records" / "contradicts@2"
+            retired.mkdir(parents=True)
+            old = {"id": "contradicts", "version": 2}
+            line = lambda n: (json.dumps(record(key_of(n), "judgment-%d" % n, question_set=old), sort_keys=True)
+                              + "\n").encode()
+            held = line(1) + line(2) + line(3) + line(4)[:40]  # the last line a write still in progress
+            (retired / "abc.jsonl").write_bytes(held)
+            (Path(tmp) / "records" / "oversteps@1").mkdir()
+            (Path(tmp) / "records" / "oversteps@1" / "abc.jsonl").write_bytes(line(5))
+            with (retired / "abc.jsonl").open("rb") as reader:
+                store.compact({"judgment-2"})
+                self.assertEqual(reader.read(), held, "a reader holding the file lost lines")
+            self.assertEqual((retired / "abc.jsonl").read_bytes(), line(2))
+            self.assertEqual(sorted(p.name for p in (Path(tmp) / "records").iterdir()), ["contradicts@2"],
+                             "an emptied generation is left")
+
+    def test_services_sharing_the_store_compact_together_and_a_stopped_runs_claim_is_moved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "records.jsonl"
+            records = Path(tmp) / "records"
+            records.mkdir()
+            old = {"id": "contradicts", "version": 2}
+            expected = set()
+            for i in range(300):
+                version = SET if i % 3 else old
+                cited = i % 30 == 0
+                if version is SET or cited:
+                    expected.add("judgment-%d" % i)
+                with (records / (jev.JudgmentStore(path)._shard(key_of(i)) + ".jsonl")).open("a") as stream:
+                    stream.write(json.dumps(record(key_of(i), "judgment-%d" % i, question_set=version)) + "\n")
+            # A run stopped after claiming a file, before moving its records.
+            (records / "fff.jsonl.1-0000.compacting").write_text(
+                json.dumps(record(key_of(1000), "judgment-claimed", question_set=SET)) + "\n")
+            expected.add("judgment-claimed")
+            cited = {"judgment-%d" % i for i in range(0, 300, 30)}
+            stores = [jev.JudgmentStore(path, versions=[SET]) for _ in range(2)]
+            threads = [threading.Thread(target=store.compact, args=(cited,)) for store in stores]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(30)
+            self.assertEqual({r["record_id"] for r in jev.JudgmentStore(path).records()}, expected)
+            self.assertEqual(sorted(p.name for p in records.iterdir()), ["contradicts@2", GENERATION])
+            for line in (line for f in records.glob("*/*") for line in f.read_bytes().splitlines(keepends=True)):
+                self.assertTrue(line.endswith(b"\n") and json.loads(line), "a partial line")
+            self.assertEqual(stores[0].get(key_of(1000))["record_id"], "judgment-claimed")
 
 
 if __name__ == "__main__":

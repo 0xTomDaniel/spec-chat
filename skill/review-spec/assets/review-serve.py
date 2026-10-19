@@ -1502,6 +1502,7 @@ def main(argv=None):
     wake_thread.start()
     print("spec-chat review-serve on http://%s:%d" % (advertised_host(args), server.server_port), flush=True)
     print("review URL is public and is not a secret in any security sense or an authentication boundary; stop this process when review ends", flush=True)
+    server.jev.start()
     try:
         server.serve_forever()
     finally:

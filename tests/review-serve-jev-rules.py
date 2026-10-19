@@ -57,7 +57,7 @@ def general_kind(payload):
 
 def record_lines(state):
     """Every line of the store's record files (jev-suggestions #record-store); one key's lines keep their order."""
-    return [line for f in sorted((state / "records").glob("*.jsonl")) for line in f.read_text().splitlines()]
+    return [line for f in sorted((state / "records").glob("*/*.jsonl")) for line in f.read_text().splitlines()]
 
 
 def ledger_lines(state):
