@@ -2,7 +2,9 @@
 
 The wake provider is a fake registered in providers/wake.toml; no real pane is ever prompted.
 """
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import re
@@ -14,6 +16,7 @@ import time
 import types
 import unittest
 from unittest import mock
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -28,12 +31,15 @@ assert _spec.loader is not None
 _spec.loader.exec_module(serve)
 
 FAKE_CHECK = """#!/bin/sh
-[ -f "$0.d/owners/$1" ]
+[ -f "$0.d/owners/$1" ] && exit 0
+[ -f "$0.d/check.err" ] && cat "$0.d/check.err" >&2
+exit 1
 """
 FAKE_SEND = """#!/bin/sh
 { for arg in "$@"; do printf '%s\\037' "$arg"; done; printf '\\n'; } >> "$0.d/send.log"
 printf '%s\\n' "${HERDR_SESSION:-default}" >> "$0.d/session.log"
 [ -f "$0.d/send.sleep" ] && sleep "$(cat "$0.d/send.sleep")"
+[ -f "$0.d/send.err" ] && cat "$0.d/send.err" >&2
 exit "$(cat "$0.d/send.rc" 2>/dev/null || echo 0)"
 """
 
@@ -78,6 +84,13 @@ class FakeWaker:
     def send_sleep(self, seconds):
         (self.data / "send.sleep").write_text(str(seconds))
 
+    def send_error(self, text):
+        (self.data / "send.err").write_text(text)
+
+    def check_error(self, text):
+        """What a check that does not find the owner writes to its error output."""
+        (self.dir / "check.d/check.err").write_text(text)
+
     def sessions(self):
         """The session each send ran in: a pane id names a pane of that session alone."""
         log = self.data / "session.log"
@@ -94,6 +107,7 @@ class WakeControllerTest(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory(prefix="spec-chat-host-wake-")
         self.addCleanup(temp.cleanup)
+        self.enterContext(contextlib.redirect_stderr(io.StringIO()))  # the wake log lines; polled_log reads them
         self.work = Path(temp.name)
         self.state = self.work / "state"
         self.waker = FakeWaker(self.work, self.state)
@@ -274,14 +288,28 @@ class WakeControllerTest(unittest.TestCase):
         self.assertEqual(len(self.waker.says()), 3)
         self.assertEqual(self.status(), "sent")
 
+    def poll_until_failed(self):
+        """host-wake #wake-rule-retry: retrying for each failed attempt before a few in a row, then failed."""
+        for _ in range(serve.WAKE_FAILED_ATTEMPTS - 1):
+            self.controller.poll()
+            self.assertEqual(self.status(), "retrying")
+        self.controller.poll()
+
+    def polled_log(self, polls=1):
+        """The service log lines the given polls write (the service's stderr)."""
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            for _ in range(polls):
+                self.controller.poll()
+        return stderr.getvalue().splitlines()
+
     def test_failed_check_fails_and_reregistered_owner_is_woken(self):
         """host-wake #acceptance-failed-reregister."""
         self.waker.agent("w1:pOwner", False)
         self.event("100-handoff-a.json")
-        self.controller.poll()
-        self.controller.poll()
+        self.poll_until_failed()
         self.assertEqual(self.waker.says(), [])
-        self.assertEqual(self.status(), "failed")
+        self.assertEqual(self.status(), "failed; owner pane not found (exit 1)")
         self.record["owner"] = "w2:pNew"
         self.waker.agent("w2:pNew")
         self.controller.poll()
@@ -291,15 +319,133 @@ class WakeControllerTest(unittest.TestCase):
     def test_other_send_exit_fails_and_retries(self):
         self.waker.send_rc(3)
         self.event("100-handoff-a.json")
-        self.controller.poll()
-        self.controller.poll()
-        self.assertEqual(len(self.waker.says()), 2)
-        self.assertEqual(self.status(), "failed")
+        self.poll_until_failed()
+        self.assertEqual(len(self.waker.says()), serve.WAKE_FAILED_ATTEMPTS)
+        self.assertEqual(self.status(), "failed; send failed (exit 3)")
         self.waker.send_rc(0)
         self.controller.poll()
         self.assertEqual(self.status(), "sent")
         self.controller.poll()
-        self.assertEqual(len(self.waker.says()), 3)
+        self.assertEqual(len(self.waker.says()), serve.WAKE_FAILED_ATTEMPTS + 1)
+
+    def test_first_failed_attempt_retries_and_a_later_attempt_delivers(self):
+        """host-wake #acceptance-retry-delivers; #acceptance-retry-page (host half: retrying, not failed)."""
+        for fail in (lambda: self.waker.agent("w1:pOwner", False), lambda: self.waker.send_rc(3)):
+            with self.subTest(fail=fail):
+                self.waker.agent("w1:pOwner")
+                self.waker.send_rc(0)
+                self.controller = self.new_controller()
+                for path in self.human.iterdir():
+                    path.unlink()
+                (self.waker.data / "send.log").unlink(missing_ok=True)
+                self.event("100-handoff-a.json")
+                fail()
+                self.controller.poll()
+                self.assertEqual(self.status(), "retrying")
+                self.waker.agent("w1:pOwner")
+                self.waker.send_rc(0)
+                before = len(self.waker.says())
+                self.controller.poll()
+                self.controller.poll()
+                self.assertEqual(len(self.waker.says()), before + 1, "one prompt for the batch from the later attempt")
+                self.assertEqual(self.status(), "sent")
+
+    def test_failed_wake_recovers_with_one_prompt(self):
+        """host-wake #acceptance-failed-recovers: failing past the retries, then recovering, wakes once."""
+        self.waker.agent("w1:pOwner", False)
+        self.event("100-handoff-a.json")
+        self.poll_until_failed()
+        for _ in range(3):
+            self.controller.poll()
+            self.assertEqual(self.status(), "failed; owner pane not found (exit 1)", "failed keeps retrying each poll")
+        self.assertEqual(self.waker.says(), [])
+        self.waker.agent("w1:pOwner")
+        for _ in range(3):
+            self.controller.poll()
+        self.assertEqual([said[:2] for said in self.waker.says()], [["w1:pOwner", str(self.spec)]])
+        self.assertEqual(self.status(), "sent")
+
+    def test_failed_reason_is_the_last_line_of_the_providers_error_output(self):
+        """host-wake #acceptance-failed (host half), #wake-rule-reason: the check's or send's last error line."""
+        self.waker.agent("w1:pOwner", False)
+        self.waker.check_error("looking up w1:pOwner\npane w1:pOwner not found in session\n\n")
+        self.event("100-handoff-a.json")
+        self.poll_until_failed()
+        self.assertEqual(self.status(), "failed; pane w1:pOwner not found in session")
+        self.waker.agent("w1:pOwner")
+        self.waker.send_rc(4)
+        self.waker.send_error("pane closed while writing\n")
+        self.controller.poll()  # still failed: the attempts in a row keep failing, now at the send
+        self.assertEqual(self.status(), "failed; pane closed while writing")
+
+    def test_silent_check_failure_reason_is_owner_pane_not_found_with_its_exit_code(self):
+        """host-wake #acceptance-failed-silent (host half): the check exits 1 and writes nothing."""
+        self.waker.agent("w1:pOwner", False)
+        self.event("100-handoff-a.json")
+        self.poll_until_failed()
+        self.assertEqual(self.status(), "failed; owner pane not found (exit 1)")
+
+    def test_failed_reason_names_a_command_that_could_not_start_or_timed_out(self):
+        """host-wake #wake-rule-reason: no exit code, so the reason says the command could not start or timed out."""
+        self.event("100-handoff-a.json")
+        self.waker.check.unlink()
+        self.poll_until_failed()
+        self.assertRegex(self.status(), r"^failed; check could not start: \S")
+        self.waker.check.write_text("#!/bin/sh\nsleep 5\n")
+        self.waker.check.chmod(0o755)
+        saved = serve.WAKE_CHECK_TIMEOUT_SECONDS
+        serve.WAKE_CHECK_TIMEOUT_SECONDS = 0.3
+        self.addCleanup(setattr, serve, "WAKE_CHECK_TIMEOUT_SECONDS", saved)
+        self.controller.poll()
+        self.assertEqual(self.status(), "failed; check timed out")
+
+    def test_reason_is_header_safe_and_decodes_to_the_providers_words(self):
+        """The reason travels in the X-Spec-Chat-Wake header: header-safe, and the page decodes the provider's words."""
+        words = "pane «w1:pOwner» 100% gone; see log"
+        self.waker.agent("w1:pOwner", False)
+        self.waker.check_error(words + "\n")
+        self.event("100-handoff-a.json")
+        self.poll_until_failed()
+        value = self.status()
+        value.encode("ascii")
+        state, reason = value.split("; ", 1)
+        self.assertEqual((state, urllib.parse.unquote(reason)), ("failed", words))
+
+    def test_each_send_writes_one_log_line(self):
+        """host-wake #acceptance-log-send: one line for the send naming the spec, owner, step, and exit code; a check
+        that exits 0 writes nothing."""
+        self.event("100-handoff-a.json")
+        lines = self.polled_log(3)
+        self.assertEqual(lines, ['review-serve: wake send spec=%s owner=w1:pOwner exit=0 error=""' % self.spec])
+
+    def test_each_failed_send_writes_a_log_line_with_its_error_output(self):
+        """host-wake #acceptance-log-send-failed."""
+        self.waker.send_rc(3)
+        self.waker.send_error("cannot write to pane\nretry later\n")
+        self.event("100-handoff-a.json")
+        lines = self.polled_log(2)
+        self.assertEqual(lines, ['review-serve: wake send spec=%s owner=w1:pOwner exit=3 '
+                                 'error="cannot write to pane\\nretry later"' % self.spec] * 2)
+
+    def test_each_failed_check_writes_a_log_line_with_any_error_output(self):
+        """host-wake #acceptance-log-check-failed: with error output and without it."""
+        self.waker.agent("w1:pOwner", False)
+        self.event("100-handoff-a.json")
+        silent = 'review-serve: wake check spec=%s owner=w1:pOwner exit=1 error=""' % self.spec
+        self.assertEqual(self.polled_log(2), [silent] * 2)
+        self.waker.check_error("no pane w1:pOwner\n")
+        self.assertEqual(self.polled_log(), [silent[:-len('""')] + '"no pane w1:pOwner"'])
+
+    def test_a_send_deferred_again_for_the_same_batch_writes_no_second_line(self):
+        """host-wake #wake-rule-log."""
+        self.waker.send_rc(75)
+        self.event("100-handoff-a.json")
+        deferred = 'review-serve: wake send spec=%s owner=w1:pOwner exit=75 error=""' % self.spec
+        self.assertEqual(self.polled_log(3), [deferred])
+        self.event("200-handoff-b.json")
+        self.assertEqual(self.polled_log(2), [deferred], "a new batch's first deferral is logged")
+        self.waker.send_rc(0)
+        self.assertEqual(self.polled_log(2), [deferred[:-len('75 error=""')] + '0 error=""'])
 
     def test_send_timeout_counts_as_sent_and_is_never_resent(self):
         saved = serve.WAKE_SEND_TIMEOUT_SECONDS
@@ -469,7 +615,8 @@ class WakeHeaderHttpTest(unittest.TestCase):
 
             self.assertIsNone(header())
             (human / "100-handoff-a.json").write_text('{"event":"handoff","id":"h1","createdAt":"2026-09-25T00:00:00Z"}')
-            self.assertEqual(wait_for("failed"), "failed")
+            failed = "failed; owner pane not found (exit 1)"  # host-wake #acceptance-failed-silent: the reason travels
+            self.assertEqual(wait_for(failed, serve.WAKE_POLL_SECONDS * (serve.WAKE_FAILED_ATTEMPTS + 2)), failed)
             self.assertEqual(waker.says(), [])
             waker.agent("w1:pGone")
             started = time.monotonic()

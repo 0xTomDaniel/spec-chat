@@ -71,6 +71,10 @@ WAKE_POLL_SECONDS = 3
 WAKE_CHECK_TIMEOUT_SECONDS = 5
 WAKE_SEND_TIMEOUT_SECONDS = 10
 WAKE_PLACEHOLDER_RE = re.compile(r"\{(owner|artifact|message)\}")
+WAKE_FAILED_ATTEMPTS = 3  # host-wake #wake-rule-retry: failed attempts in a row before the state turns failed
+WAKE_ERROR_BYTES = 4096  # the tail of a wake command's error output kept, so a chatty provider cannot bloat a log line
+# Printable ASCII but %: the reason stays readable in the X-Spec-Chat-Wake header and decodes as a URI component.
+WAKE_REASON_SAFE = "".join(chr(code) for code in range(0x20, 0x7F) if chr(code) != "%")
 EVIDENCE_TIMEOUT_SECONDS = 30
 EVIDENCE_FIELDS = ("match", "verdict", "judgment", "pr", "capturedAt", "onMain", "artifact", "bundle", "proven", "view")
 
@@ -752,33 +756,44 @@ def wake_provider(state):
     return commands
 
 
-class WakeTimeout(Exception):
-    """The wake command outlived its timeout and its process group was killed."""
-
-
 def run_wake(argv, values, *, timeout):
-    """Run one wake provider command with its placeholders filled: exit code, None when it cannot start."""
+    """Run one wake provider command with its placeholders filled: (exit, error output).
+
+    exit is its exit code, "unstarted" when it cannot start, or "timeout" once it outlived its timeout and its process
+    group was killed. The error output is the tail of what it wrote to stderr, or why it could not start."""
     argv = [WAKE_PLACEHOLDER_RE.sub(lambda match: values[match.group(1)], arg) for arg in argv]
-    try:
-        process = subprocess.Popen(
-            argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, start_new_session=True,
-        )
-    except OSError:
-        return None
-    try:
-        return process.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
+    # A file, not a pipe: a child the command leaves holding stderr never delays the exit.
+    with tempfile.TemporaryFile() as stderr:
         try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except OSError:
-            pass
-        process.wait()
-        raise WakeTimeout(argv[0]) from None
+            process = subprocess.Popen(
+                argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=stderr, start_new_session=True,
+            )
+        except OSError as exc:
+            return "unstarted", exc.strerror or str(exc)
+        try:
+            code = process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(OSError):
+                os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+            code = "timeout"
+        stderr.seek(max(0, stderr.seek(0, os.SEEK_END) - WAKE_ERROR_BYTES))
+        return code, stderr.read().decode("utf-8", "replace").strip()
+
+
+def wake_reason(step, code, error):
+    """host-wake #wake-rule-reason: why a failed check or send failed, from its latest attempt."""
+    if code == "unstarted":
+        return f"{step} could not start: {error}"
+    if code == "timeout":
+        return f"{step} timed out"
+    if error:
+        return error.splitlines()[-1].strip()
+    return f"{'owner pane not found' if step == 'check' else 'send failed'} (exit {code})"
 
 
 class WakeController:
-    """Wake each registry row's owner pane once per unchanged hand-off batch."""
+    """Wake each registry row's owner pane once per unchanged hand-off batch, retrying while it fails."""
 
     def __init__(self, server):
         self.server = server
@@ -786,15 +801,25 @@ class WakeController:
         self.lock = threading.Lock()
         self.states = {}
         self.delivered = {}
+        self.failures = {}
+        self.deferred = {}
 
     def status(self, resource_id):
+        """The X-Spec-Chat-Wake value: the wake state, and for failed "; " and its URI-encoded reason."""
         with self.lock:
-            return self.states.get(resource_id)
+            state, reason = self.states.get(resource_id, (None, ""))
+        return f"{state}; {quote(reason, safe=WAKE_REASON_SAFE)}" if reason else state
 
-    def _deliver(self, resource, batch):
+    def _log(self, resource, step, code, error):
+        """host-wake #wake-rule-log: one service log line per send and per failed check."""
+        print("review-serve: wake %s spec=%s owner=%s exit=%s error=%s" % (
+            step, resource["spec_file"], resource["owner"], code, json.dumps(error, ensure_ascii=False),
+        ), file=sys.stderr, flush=True)
+
+    def _deliver(self, resource, batch, identity):
         commands = wake_provider(self.server.state_dir)
         if commands is None:
-            return "unavailable"
+            return "unavailable", ""
         check, send = commands
         message = (
             f"Spec Chat human spec review hand-off ready: spec {resource['spec_file']}, "
@@ -802,16 +827,19 @@ class WakeController:
             "Run the zero-wait scan, process the batch, then park."
         )
         values = {"owner": resource["owner"], "artifact": resource["spec_file"], "message": message}
-        try:
-            if run_wake(check, values, timeout=WAKE_CHECK_TIMEOUT_SECONDS) != 0:
-                return "failed"
-        except WakeTimeout:
-            return "failed"
-        try:
-            code = run_wake(send, values, timeout=WAKE_SEND_TIMEOUT_SECONDS)
-        except WakeTimeout:
-            return "sent"  # sending, delivery unconfirmed: never resend the same batch
-        return {0: "sent", 75: "deferred"}.get(code, "failed")
+        code, error = run_wake(check, values, timeout=WAKE_CHECK_TIMEOUT_SECONDS)
+        if code != 0:
+            self._log(resource, "check", code, error)
+            return "failed", wake_reason("check", code, error)
+        code, error = run_wake(send, values, timeout=WAKE_SEND_TIMEOUT_SECONDS)
+        if code != 75 or self.deferred.get(resource["id"]) != identity:  # a deferral again for this batch: no line
+            self._log(resource, "send", code, error)
+        if code == 75:
+            self.deferred[resource["id"]] = identity
+            return "deferred", ""
+        if code in (0, "timeout"):  # timeout: sending, delivery unconfirmed: never resend the same batch
+            return "sent", ""
+        return "failed", wake_reason("send", code, error)
 
     def _poll_row(self, resource):
         resource_id = resource["id"]
@@ -822,11 +850,15 @@ class WakeController:
             return None
         identity = (resource["owner"], batch)
         if self.delivered.get(resource_id) == identity:
-            return "sent"
-        state = self._deliver(resource, batch)
+            return "sent", ""
+        state, reason = self._deliver(resource, batch, identity)
         if state == "sent":
             self.delivered[resource_id] = identity
-        return state
+        if state != "failed":
+            self.failures.pop(resource_id, None)
+            return state, reason
+        self.failures[resource_id] = self.failures.get(resource_id, 0) + 1
+        return ("failed", reason) if self.failures[resource_id] >= WAKE_FAILED_ATTEMPTS else ("retrying", "")
 
     def poll(self):
         states = {}
@@ -847,8 +879,9 @@ class WakeController:
                 states[resource_id] = state
         with self.lock:
             self.states = states
-        for resource_id in set(self.delivered) - set(states) - kept:
-            del self.delivered[resource_id]
+        for memory in (self.delivered, self.failures, self.deferred):
+            for resource_id in set(memory) - set(states) - kept:
+                del memory[resource_id]
 
     def run(self):
         while not self.stop_event.is_set():

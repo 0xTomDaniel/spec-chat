@@ -69,7 +69,8 @@ Return a final response that says automatic wake is not active and a new human c
 On that message, discard any old watcher or tool session, run the zero-wait collection scan, and drain every complete batch before new work.
 
 The browser independently changes an unacknowledged handoff to: automatic wake did not occur; send a new chat message to resume.
-When the review host reports a failed wake, it shows: wake failed; send a new chat message to resume.
+The review host retries a failed wake at each poll, and the browser keeps showing handed off, waiting for agent; once a few attempts in a row fail, it shows: wake failed: the reason; send a new chat message to resume.
+A wake that lands later needs nothing from the reviewer. The review service's log holds each wake send and failed check with its exit code and error output.
 Durable spools and unchanged cursors make this lossless.
 
 ## Forbidden detached processing
