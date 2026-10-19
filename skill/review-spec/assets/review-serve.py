@@ -72,6 +72,8 @@ WAKE_CHECK_TIMEOUT_SECONDS = 5
 WAKE_SEND_TIMEOUT_SECONDS = 10
 WAKE_PLACEHOLDER_RE = re.compile(r"\{(owner|artifact|message)\}")
 WAKE_FAILED_ATTEMPTS = 3  # host-wake #wake-rule-retry: failed attempts in a row before the state turns failed
+# host-wake #wake-rule-retry: once failed, the wait between attempts doubles from one poll up to 3 s x 2^6, about 3 minutes
+WAKE_BACKOFF_DOUBLINGS = 6
 WAKE_ERROR_BYTES = 4096  # the tail of a wake command's error output kept, so a chatty provider cannot bloat a log line
 WAKE_REASON_CHARS = 200  # the reason travels percent-encoded in a header: small for proxies with small header buffers
 # Printable ASCII but %: the reason stays readable in the X-Spec-Chat-Wake header and decodes as a URI component.
@@ -804,6 +806,7 @@ class WakeController:
         self.lock = threading.Lock()
         self.states = {}  # resource id -> (state, reason), what /api/events reports
         self.rows = {}  # resource id -> its waiting batch's wake record, for one identity (owner, batch)
+        self.clock = time.monotonic  # when a failed batch's next attempt is due
 
     def status(self, resource_id):
         """The X-Spec-Chat-Wake value: the wake state, and for failed "; " and its URI-encoded reason."""
@@ -817,11 +820,8 @@ class WakeController:
             step, resource["spec_file"], resource["owner"], code, json.dumps(error, ensure_ascii=False),
         ), file=sys.stderr, flush=True)
 
-    def _attempt(self, resource, batch):
-        """One wake attempt: (step, exit, error output) of the step it ended at, or None with no wake provider."""
-        commands = wake_provider(self.server.state_dir)
-        if commands is None:
-            return None
+    def _attempt(self, resource, batch, commands):
+        """One wake attempt with the wake provider's commands: (step, exit, error output) of the step it ended at."""
         check, send = commands
         message = (
             f"Spec Chat human spec review hand-off ready: spec {resource['spec_file']}, "
@@ -842,16 +842,19 @@ class WakeController:
         if not batch:
             return None
         identity = (resource["owner"], batch)
+        now = self.clock()
         row = self.rows.get(resource_id)
         if row is None or row["identity"] != identity:  # a new batch or owner: its attempts start over
-            row = self.rows[resource_id] = {"identity": identity, "sent": False, "failures": 0, "last": None}
+            row = self.rows[resource_id] = {"identity": identity, "sent": False, "failures": 0, "last": None, "due": now}
         if row["sent"]:
             return "sent", ""
-        attempt = self._attempt(resource, batch)
-        if attempt is None:
+        commands = wake_provider(self.server.state_dir)
+        if commands is None:
             row["failures"] = 0
             return "unavailable", ""
-        step, code, error = attempt
+        if row["failures"] >= WAKE_FAILED_ATTEMPTS and now < row["due"]:  # failed, backing off: no attempt this poll
+            return "failed", row["last"][2]
+        step, code, error = self._attempt(resource, batch, commands)
         reason = wake_reason(step, code, error)
         if (step, code, reason) != row["last"]:  # host-wake #wake-rule-log: a repeat of the previous attempt, no line
             self._log(resource, step, code, error)
@@ -863,7 +866,11 @@ class WakeController:
             row["failures"] = 0
             return "deferred", ""
         row["failures"] += 1
-        return ("failed", reason) if row["failures"] >= WAKE_FAILED_ATTEMPTS else ("retrying", "")
+        if row["failures"] < WAKE_FAILED_ATTEMPTS:
+            return "retrying", ""
+        # host-wake #wake-rule-retry: failed retries less and less often, at most every few minutes, never each poll
+        row["due"] = now + WAKE_POLL_SECONDS * 2 ** min(row["failures"] - WAKE_FAILED_ATTEMPTS + 1, WAKE_BACKOFF_DOUBLINGS)
+        return "failed", reason
 
     def poll(self):
         states = {}

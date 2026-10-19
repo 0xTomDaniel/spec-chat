@@ -31,6 +31,7 @@ assert _spec.loader is not None
 _spec.loader.exec_module(serve)
 
 FAKE_CHECK = """#!/bin/sh
+printf '%s\\n' "$1" >> "$0.d/check.log"
 [ -f "$0.d/owners/$1" ] && exit 0
 [ -f "$0.d/check.err" ] && cat "$0.d/check.err" >&2
 exit 1
@@ -91,6 +92,11 @@ class FakeWaker:
         """What a check that does not find the owner writes to its error output."""
         (self.dir / "check.d/check.err").write_text(text)
 
+    def checks(self):
+        """How many checks ran: one per wake attempt."""
+        log = self.dir / "check.d/check.log"
+        return len(log.read_text().splitlines()) if log.exists() else 0
+
     def sessions(self):
         """The session each send ran in: a pane id names a pane of that session alone."""
         log = self.data / "session.log"
@@ -126,11 +132,31 @@ class WakeControllerTest(unittest.TestCase):
             "cursor_name": ".cursor-owner",
         }
         self.waker.agent("w1:pOwner")
+        self.now = 1000.0  # the controller's clock: polls in a row run at one instant unless a test moves it
         self.controller = self.new_controller()
 
     def new_controller(self):
         server = types.SimpleNamespace(mount_state=serve.MountState([self.record]), state_dir=str(self.state))
-        return serve.WakeController(server)
+        controller = serve.WakeController(server)
+        controller.clock = lambda: self.now
+        return controller
+
+    def backoff_passes(self):
+        """The longest wait between failed attempts passes (host-wake #wake-rule-retry: at most every few minutes)."""
+        self.now += serve.WAKE_POLL_SECONDS * 2 ** serve.WAKE_BACKOFF_DOUBLINGS
+
+    def polls_every_3s(self, seconds, until=lambda: False):
+        """Poll as the host does, every 3 seconds, for the given time: the poll indexes that ran a wake attempt."""
+        attempts = []
+        for index in range(int(seconds // serve.WAKE_POLL_SECONDS)):
+            self.now += serve.WAKE_POLL_SECONDS
+            before = self.waker.checks()
+            self.controller.poll()
+            if self.waker.checks() > before:
+                attempts.append(index)
+            if until():
+                break
+        return attempts
 
     def event(self, name):
         (self.human / name).write_text("{}")
@@ -339,6 +365,10 @@ class WakeControllerTest(unittest.TestCase):
         self.assertEqual(self.status(), "failed; send failed (exit 3)")
         self.waker.send_rc(0)
         self.controller.poll()
+        self.assertEqual(len(self.waker.says()), serve.WAKE_FAILED_ATTEMPTS, "failed backs off: no attempt next poll")
+        self.assertEqual(self.status(), "failed; send failed (exit 3)")
+        self.backoff_passes()
+        self.controller.poll()
         self.assertEqual(self.status(), "sent")
         self.controller.poll()
         self.assertEqual(len(self.waker.says()), serve.WAKE_FAILED_ATTEMPTS + 1)
@@ -366,19 +396,38 @@ class WakeControllerTest(unittest.TestCase):
                 self.assertEqual(self.status(), "sent")
 
     def test_failed_wake_recovers_with_one_prompt(self):
-        """host-wake #acceptance-failed-recovers: failing past the retries, then recovering, wakes once."""
+        """host-wake #acceptance-failed-recovers: failing past the retries, then recovering, wakes once within a few
+        minutes of the recovery."""
         self.waker.agent("w1:pOwner", False)
         self.event("100-handoff-a.json")
         self.poll_until_failed()
-        for _ in range(3):
-            self.controller.poll()
-            self.assertEqual(self.status(), "failed; owner pane not found (exit 1)", "failed keeps retrying each poll")
+        self.polls_every_3s(20 * 60)
+        self.assertEqual(self.status(), "failed; owner pane not found (exit 1)")
         self.assertEqual(self.waker.says(), [])
         self.waker.agent("w1:pOwner")
-        for _ in range(3):
-            self.controller.poll()
+        recovered = self.now
+        self.polls_every_3s(10 * 60, until=lambda: self.waker.says())
+        self.assertLessEqual(self.now - recovered, 4 * 60, "woken within a few minutes")
+        self.polls_every_3s(10 * 60)
         self.assertEqual([said[:2] for said in self.waker.says()], [["w1:pOwner", str(self.spec)]])
         self.assertEqual(self.status(), "sent")
+
+    def test_failed_wake_backs_off_to_every_few_minutes(self):
+        """host-wake #acceptance-failed-backoff: an hour's wait with the owner pane gone runs that batch's attempts at
+        each poll until failed, then less and less often, at most every few minutes, never once per poll."""
+        self.waker.agent("w1:pOwner", False)
+        self.event("100-handoff-a.json")
+        attempts = self.polls_every_3s(60 * 60)
+        self.assertEqual(self.status(), "failed; owner pane not found (exit 1)")
+        self.assertEqual(attempts[:serve.WAKE_FAILED_ATTEMPTS], list(range(serve.WAKE_FAILED_ATTEMPTS)), "each poll")
+        gaps = [(later - earlier) * serve.WAKE_POLL_SECONDS
+                for earlier, later in zip(attempts[serve.WAKE_FAILED_ATTEMPTS - 1:], attempts[serve.WAKE_FAILED_ATTEMPTS:])]
+        self.assertGreater(gaps[0], serve.WAKE_POLL_SECONDS, "never once per poll after failed")
+        self.assertEqual(gaps, sorted(gaps), "less and less often")
+        self.assertGreaterEqual(gaps[-1], 2 * 60, "every few minutes")
+        self.assertLessEqual(max(gaps), 4 * 60, "at most every few minutes")
+        self.assertLess(len(attempts), 40, "a gone owner costs a few attempts an hour, not one per poll (1200)")
+        self.assertEqual(self.waker.says(), [])
 
     def test_failed_reason_is_the_last_line_of_the_providers_error_output(self):
         """host-wake #acceptance-failed (host half), #wake-rule-reason: the check's or send's last error line."""
@@ -390,6 +439,7 @@ class WakeControllerTest(unittest.TestCase):
         self.waker.agent("w1:pOwner")
         self.waker.send_rc(4)
         self.waker.send_error("pane closed while writing\n")
+        self.backoff_passes()
         self.controller.poll()  # still failed: the attempts in a row keep failing, now at the send
         self.assertEqual(self.status(), "failed; pane closed while writing")
 
@@ -412,6 +462,7 @@ class WakeControllerTest(unittest.TestCase):
         saved = serve.WAKE_CHECK_TIMEOUT_SECONDS
         serve.WAKE_CHECK_TIMEOUT_SECONDS = 0.3
         self.addCleanup(setattr, serve, "WAKE_CHECK_TIMEOUT_SECONDS", saved)
+        self.backoff_passes()
         self.controller.poll()
         self.assertEqual(self.status(), "failed; check timed out")
 
@@ -466,6 +517,7 @@ class WakeControllerTest(unittest.TestCase):
         silent = 'review-serve: wake check spec=%s owner=w1:pOwner exit=1 error=""' % self.spec
         self.assertEqual(self.polled_log(serve.WAKE_FAILED_ATTEMPTS + 2), [silent], "a stuck failing check logs once")
         self.waker.check_error("no pane w1:pOwner\n")
+        self.backoff_passes()
         self.assertEqual(self.polled_log(2), [silent[:-len('""')] + '"no pane w1:pOwner"'], "a new reason logs once")
 
     def test_a_send_deferred_again_for_the_same_batch_writes_no_second_line(self):
@@ -665,8 +717,9 @@ class WakeHeaderHttpTest(unittest.TestCase):
             self.assertEqual(waker.says(), [])
             waker.agent("w1:pGone")
             started = time.monotonic()
-            self.assertEqual(wait_for("sent"), "sent")
-            self.assertLess(time.monotonic() - started, 8)
+            recover = serve.WAKE_POLL_SECONDS * 3 + 2  # failed's first wait, two polls, then the poll that sends
+            self.assertEqual(wait_for("sent", recover), "sent")
+            self.assertLess(time.monotonic() - started, recover)
             time.sleep(3.5)
             self.assertEqual(len(waker.says()), 1)
 
