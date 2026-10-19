@@ -60,15 +60,15 @@ CI: the <a href="./review-service.spec.html#acceptance-ci-alone">CI rule</a> cov
 
 <section data-anchor="wake-rule">
 <h2>Wake rule</h2>
-<p data-anchor="wake-rule-poll">The host polls every registered resource's spool every 3 seconds, in one background thread of the running review server.</p>
+<p data-anchor="wake-rule-poll">The host polls every registered resource's spool, and every scope's <a href="./comment-layer.spec.html#scope-store">hosted threads</a>, every 3 seconds, in one background thread of the running review server.</p>
 <p data-anchor="wake-rule-batch">A batch is the resource's handed-off events not in its cursor: each hand-off not in the cursor and the events it lists (<a href="./review-state.spec.html#live-handoff">Shared review state</a>), exactly as the zero-wait scan reports it. Its identity is that list of file names.</p>
 <p data-anchor="wake-rule-memory">Delivered batch identities live only in memory. After a host restart, a still-unprocessed batch is woken once more; a duplicate wake is harmless because the owner starts with a zero-wait scan.</p>
-<p data-anchor="wake-rule-message">The prompt names the spec path, collection root, cursor name, and event count, and tells the owner to run the zero-wait scan, process the batch, and park.</p>
+<p data-anchor="wake-rule-message">The prompt names the spec path, collection root, cursor name, and event count, or for hosted threads the scope and their path in place of the spec path and root, and tells the owner to run the zero-wait scan, process the batch, and park.</p>
 <p data-anchor="wake-rule-retry" id="wake-rule-retry">A failed attempt is retried while its batch waits: at each poll until the state turns failed, then less and less often, at most every few minutes, so a gone owner costs the box one attempt every few minutes, never one per poll. A new batch or a new owner starts its attempts over at the next poll.
 The state turns failed only after a few attempts in a row have failed; until then it is retrying.
 A later attempt that sends returns it to sent, so a wake that lands after the page showed wake failed needs nothing from the reviewer.</p>
 <p data-anchor="wake-rule-reason" id="wake-rule-reason">A failed state carries the reason from its latest attempt: the last line of the wake provider's error output; with none, <q>owner pane not found</q> for a <code>check</code> or <q>send failed</q> for a <code>send</code>, with its exit code; or that the command could not start or timed out.</p>
-<p data-anchor="wake-rule-log" id="wake-rule-log">Every <code>send</code>, and every <code>check</code> that does not exit 0, writes one line to the <a href="./review-service.spec.html#service-log">service log</a> naming the spec, owner, step, exit code, and the wake provider's error output.
+<p data-anchor="wake-rule-log" id="wake-rule-log">Every <code>send</code>, and every <code>check</code> that does not exit 0, writes one line to the <a href="./review-service.spec.html#service-log">service log</a> naming the spec or scope, owner, step, exit code, and the wake provider's error output.
 An attempt whose step, exit code, and reason repeat the previous attempt's for the same batch writes no second line.</p>
 <p data-anchor="wake-rule-verify" id="wake-rule-verify"><code>register</code> runs the wake provider's <code>check</code> in the running service's environment, the one its wake attempts run in, whatever started the service, so <code>wake=verified</code> means the service itself reaches the pane.</p>
 <div class="table-scroll" data-anchor="wake-states-scroll">

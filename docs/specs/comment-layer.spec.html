@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Comment layer - spec</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./.style/spec.css">
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Comment layer</h1>
+<nav data-anchor="breadcrumbs">docs / specs / comment-layer.spec.html</nav>
+<p data-anchor="context">Spec Chat's comments, threads, hand-off, and owner wake serve any page, not only spec pages. A host page loads Spec Chat's comment layer from the review service and marks each thing it shows with an anchor; the layer draws pins, threads, and the composer in place on that thing, and Spec Chat keeps every thread. Spec Chat names no host. Review state stays in <a href="./review-state.spec.html">Shared review state</a>, the service and its stores in <a href="./review-service.spec.html">Box review service and providers</a>, and wake in <a href="./host-wake.spec.html">Review host wakes the owner pane</a>.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-host-comment">As a human looking at something a host page shows, such as a criterion's evidence or an agent's turn, I comment on it in place, starting from the host's starter words, hand off, and read the owner's answer in that thread on the same thing, in a plain browser, in a frame, or on a phone.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-one-thread">As a human reviewer, a comment I write on a criterion from a host page is the spec page's thread at that criterion, so I read one thread wherever I open it.</p>
+<p data-user-story data-user-facing="false" data-anchor="story-owner">As the owner of a scope, a hand-off from a host page wakes me like a review hand-off, and my scan gives each comment's subject, kind, label, the address it was written from, and its quote, so I route it, reply, and the human reads my reply where they wrote.</p>
+<p data-user-story data-user-facing="false" data-anchor="story-host">As a host author, I load one script from the review service and mark each thing my page shows with its anchor; I write no comment code and keep no thread, and with no service or no registered scope my page shows no comment control and reads as it does without the layer.</p>
+<p data-user-story data-user-facing="false" data-anchor="story-scope-row">As an operator outside any lane, I register a scope row naming only a scope and my pane, so comments on things in no lane reach me.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="comment-layer" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-host-draft" data-story="story-host-comment"><span data-acceptance-scenario>Given a human on a host page with an item anchored to a registered scope with starters, a fixture that must be added to provide it, When the human opens the item's comment control, then presses the Question starter, then types the rest of a comment and saves it,</span> <span data-acceptance-observable>Then the item shows a pin, and its thread shows the comment, beginning with Question, as a draft.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-host-starters" data-story="story-host-comment"><span data-acceptance-scenario>Given a human on a host page with an item anchored with three starters, a fixture that must be added to provide it, When the human opens the item's comment control,</span> <span data-acceptance-observable>Then the composer offers the three starters as buttons above an empty comment box.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-host-handoff" data-story="story-host-comment"><span data-acceptance-scenario>Given a human on a host page with a draft comment on an anchored item, a fixture that must be added to provide it, When the human presses Hand off,</span> <span data-acceptance-observable>Then the item's thread shows the comment pending.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-host-handoff-two" data-story="story-host-comment story-one-thread"><span data-acceptance-scenario>Given a human on a host page with one draft comment on an item anchored to a criterion of the scope's spec and one on an item whose subject names no spec, a fixture that must be added to provide it, When the human presses Hand off,</span> <span data-acceptance-observable>Then both items' threads show their comments pending.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-host-reply" data-story="story-host-comment"><span data-acceptance-scenario>Given a human on a host page with an anchored item whose handed-off comment the owner has answered, a fixture that must be added to provide it, When the human opens the item's thread,</span> <span data-acceptance-observable>Then the thread shows the owner's reply under the comment.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-host-live" data-story="story-host-comment"><span data-acceptance-scenario>Given a human with a host page open on an anchored item whose comment is pending, a fixture that must be added to provide it, When the owner replies in that thread,</span> <span data-acceptance-observable>Then within 2 seconds, without reloading, the item's thread shows the reply.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-host-same-subject" data-story="story-host-comment"><span data-acceptance-scenario>Given a human with a thread on an item of one host page and another host page anchoring the same subject in the same scope, a fixture that must be added to provide it, When the human opens the other host page,</span> <span data-acceptance-observable>Then its item shows the same thread.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-host-quote" data-story="story-host-comment"><span data-acceptance-scenario>Given a human on a host page with an anchored item, a fixture that must be added to provide it, When the human selects text inside the item, then saves a comment on the selection,</span> <span data-acceptance-observable>Then the item shows the selected text marked, and its thread shows that quote.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-host-quote-gone" data-story="story-host-comment"><span data-acceptance-scenario>Given a human on a host page whose anchored item no longer holds the text a comment on it quoted, a fixture that must be added to provide it, When the human opens that item's thread,</span> <span data-acceptance-observable>Then the thread shows <q>Text removed</q> with the original quote, and its pin sits on the item.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-host-only-comments" data-story="story-host-comment story-host"><span data-acceptance-scenario>Given a human on a host page with an anchored item, a fixture that must be added to provide it, When the human opens the item's comment control,</span> <span data-acceptance-observable>Then the page shows the composer and Hand off, and no Accept spec, Jev, evidence, or focus on changes control.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-host-phone" data-story="story-host-comment"><span data-acceptance-scenario>Given a human on a phone on a host page with an anchored item with starters, a fixture that must be added to provide it, When the human taps the item's comment control, then taps a starter, then types and saves,</span> <span data-acceptance-observable>Then the item shows a pin, and its thread shows the comment as a draft within the screen's width.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-host-frame" data-story="story-host-comment"><span data-acceptance-scenario>Given a human on a host page that a host serves in a frame with no origin, on a public review service, a fixture that must be added to provide it, When the human saves a comment on an anchored item, then presses Hand off,</span> <span data-acceptance-observable>Then the item's thread shows the comment pending.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-one-thread-spec" data-story="story-one-thread"><span data-acceptance-scenario>Given a human reviewer with a lane's spec under review and a host page anchoring a criterion of that spec in the lane's scope, a fixture that must be added to provide it, When the reviewer saves a comment on that item on the host page, then opens the spec page at that criterion,</span> <span data-acceptance-observable>Then the spec page shows the comment in that criterion's thread, with its kind and a link to the address it was written from.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-one-thread-host" data-story="story-one-thread"><span data-acceptance-scenario>Given a human reviewer with a comment saved on a criterion on the spec page and a host page anchoring that criterion in the lane's scope, a fixture that must be added to provide it, When the reviewer opens the host page,</span> <span data-acceptance-observable>Then that item's thread shows the spec page's comment.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-no-scope" data-story="story-host"><span data-acceptance-scenario>Given a human on a host page whose item names a scope no registered row has, a fixture that must be added to provide it, When the human opens the page,</span> <span data-acceptance-observable>Then the page shows the item with no comment control and no error.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-no-service" data-story="story-host"><span data-acceptance-scenario>Given a human on a host page whose review service is stopped, a fixture that must be added to provide it, When the human opens the page,</span> <span data-acceptance-observable>Then the page shows its items with no comment control and no error.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-private-other-origin" data-story="story-host"><span data-acceptance-scenario>Given a human on a host page at another site's address whose review service is private, a fixture that must be added to provide it, When the human opens the page,</span> <span data-acceptance-observable>Then the page shows its items with no comment control and no error.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-other-origin" data-story="story-host"><span data-acceptance-scenario>Given a host page at another site's address that loads the comment layer from a public review service, When the layer sends its requests,</span> <span data-acceptance-observable>Then the service answers each, its preflight included, so the layer reads the answer, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-host-wake" data-story="story-owner"><span data-acceptance-scenario>Given a lane owner whose pane the wake provider finds, with a spec registered under the lane's scope, and a human on a host page anchoring an item whose subject names no spec to that scope, a fixture that must be added to provide it, When the human saves a comment on the item and hands off,</span> <span data-acceptance-observable>Then the owner's pane receives a wake prompt for that hand-off naming the scope, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-host-scan" data-story="story-owner"><span data-acceptance-scenario>Given the owner of a scope with a handed-off comment written on a host page about a subject that names no spec, a fixture that must be added to provide it, When the owner scans the scope's hosted threads for ready hand-offs,</span> <span data-acceptance-observable>Then the scan reports the comment with its subject, kind, label, from address, and quote, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-host-scan-spec" data-story="story-owner story-one-thread"><span data-acceptance-scenario>Given the owner of a lane with a handed-off comment written on a host page about a criterion of the lane's spec, a fixture that must be added to provide it, When the owner scans that spec for ready hand-offs,</span> <span data-acceptance-observable>Then the scan reports the comment at that criterion with the host's kind, label, and from address, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-scope-row" data-story="story-scope-row"><span data-acceptance-scenario>Given an operator outside any lane whose pane the wake provider finds, When the operator registers a scope row naming only a scope and their pane,</span> <span data-acceptance-observable>Then registration succeeds and reports wake as verified for that pane, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-scope-row-wake" data-story="story-scope-row"><span data-acceptance-scenario>Given an operator with a scope row whose pane the wake provider finds, and a human on a host page anchoring an item to that scope, a fixture that must be added to provide it, When the human saves a comment on the item and hands off,</span> <span data-acceptance-observable>Then the operator's pane receives a wake prompt for that hand-off, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-scope-row-index" data-story="story-scope-row"><span data-acceptance-scenario>Given a human reviewer on a box with a registered scope row and a lane's registered spec, a fixture that must be added to provide it, When the reviewer opens the review index,</span> <span data-acceptance-observable>Then the review index shows the lane's spec and no row for the scope row.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-teardown" data-story="story-owner story-host"><span data-acceptance-scenario>Given a lane owner whose scope holds hosted threads, When the owner removes the scope's last row at teardown,</span> <span data-acceptance-observable>Then the scope's hosted threads are gone from the box, proven by a unit test: no screen shows it.</span></p>
+<p data-anchor="acceptance-rules-note">Onboarding: not needed, the layer adds no Spec Chat page; each host's own spec owns its onboarding.</p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-layer"><span data-boundary-responsibility>The comment layer owns every comment control on a host page: pins, quote marks, threads, the composer and its starters, Hand off, the live read, and the offline outbox.</span> <span data-boundary-seam>Caller-facing seam: the <a href="#load">layer's script address</a> and the <a href="#anchor-table">anchor attributes</a> a host puts on its elements.</span> <span data-boundary-dependency>Dependency direction: external-provider; a host depends on the layer, the layer depends on the review service's routes, and it names no host.</span> <span data-boundary-scope>Observable scope: what the layer draws on a host page, and nothing when the service or the scope is absent.</span></p>
+<p data-modular-boundary data-anchor="boundary-service"><span data-boundary-responsibility>The review service owns where each comment is kept, scope rows, the hosted threads store, and waking a scope's owner.</span> <span data-boundary-seam>Caller-facing seam: <code>review-host register</code> and <code>remove</code>, and the routes the layer calls.</span> <span data-boundary-dependency>Dependency direction: self-contained; it reads its registry and spools and reaches owners only through the wake provider.</span> <span data-boundary-scope>Observable scope: registry rows, spool and hosted threads files, and wake prompts.</span></p>
+<p data-modular-boundary data-anchor="boundary-host"><span data-boundary-responsibility>A host owns its page: which things it shows, the anchor of each, and the review service it loads the layer from.</span> <span data-boundary-seam>Caller-facing seam: the anchor attributes on its elements.</span> <span data-boundary-dependency>Dependency direction: external-provider; a host depends on Spec Chat, and Spec Chat never on a host.</span> <span data-boundary-scope>Observable scope: anchors only; a host keeps no copy of a thread and draws no comment control.</span></p>
+<p data-modular-boundary data-anchor="boundary-agent"><span data-boundary-responsibility>The review skill owns the owner's side of hosted threads: the zero-wait scan, replies, and the cursor, as for a spec.</span> <span data-boundary-seam>Caller-facing seam: the scan's rows, with each hosted comment's subject, kind, label, from address, and quote.</span> <span data-boundary-dependency>Dependency direction: self-contained on disk; it shares the spool module's fold and needs no running service.</span> <span data-boundary-scope>Observable scope: scan output, agent events, and the cursor.</span></p>
+</section>
+
+<section data-anchor="hosts" id="hosts">
+<h2>Hosts and anchors</h2>
+<figure data-anchor="hosts-figure">
+<h3 data-anchor="hosts-figure-heading">A host gives anchors; Spec Chat keeps threads and wakes the owner</h3>
+<svg data-anchor="hosts-diagram" viewBox="0 0 720 230" role="img" aria-labelledby="hosts-diagram-title" style="width: 100%; max-width: 720px; height: auto; display: block; margin: 12px auto; color: inherit; font: 13px/1.2 system-ui, sans-serif;">
+<title id="hosts-diagram-title">A host page loads the comment layer and marks elements with anchors; the layer writes comments through the review service into a spec's spool or the scope's hosted threads, and the service wakes the scope's owner through the wake provider</title>
+<defs><marker id="hosts-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+<g fill="none" stroke="currentColor" stroke-width="1.5">
+<rect x="10" y="20" width="170" height="190" rx="8"/>
+<rect x="30" y="120" width="130" height="70" rx="6" stroke-dasharray="5 4"/>
+<rect x="240" y="70" width="140" height="90" rx="8"/>
+<rect x="440" y="20" width="150" height="70" rx="8"/>
+<rect x="440" y="140" width="150" height="70" rx="8"/>
+<rect x="620" y="80" width="90" height="70" rx="8"/>
+</g>
+<g fill="none" stroke="currentColor" stroke-width="1.5" marker-end="url(#hosts-arrow)">
+<path d="M160 150 L238 125"/>
+<path d="M380 100 L438 60"/>
+<path d="M380 130 L438 170"/>
+<path d="M590 60 L640 82"/>
+<path d="M590 175 L640 148"/>
+</g>
+<g fill="currentColor">
+<text x="95" y="44" text-anchor="middle" font-weight="600">Host page</text>
+<text x="95" y="66" text-anchor="middle">loads the layer</text>
+<text x="95" y="84" text-anchor="middle">from the service</text>
+<text x="95" y="146" text-anchor="middle">element +</text>
+<text x="95" y="164" text-anchor="middle">anchor attributes</text>
+<text x="310" y="100" text-anchor="middle" font-weight="600">Comment layer</text>
+<text x="310" y="122" text-anchor="middle">pins, threads,</text>
+<text x="310" y="140" text-anchor="middle">composer, Hand off</text>
+<text x="515" y="46" text-anchor="middle" font-weight="600">Spec's spool</text>
+<text x="515" y="68" text-anchor="middle">subject names a spec</text>
+<text x="515" y="166" text-anchor="middle" font-weight="600">Hosted threads</text>
+<text x="515" y="188" text-anchor="middle">any other subject</text>
+<text x="665" y="110" text-anchor="middle" font-weight="600">Wake</text>
+<text x="665" y="130" text-anchor="middle">scope's owner</text>
+</g>
+</svg>
+<figcaption data-anchor="hosts-figure-caption">The dashed box is the only thing a host adds: anchor attributes on its own elements. Everything else is Spec Chat's, and the scope picks the owner, never the host.</figcaption>
+</figure>
+<p data-anchor="load" id="load">A host page loads the layer with one script, <code>&lt;url&gt;/static/comment-layer.js</code>, where <code>&lt;url&gt;</code> is the review service's <a href="./review-service.spec.html#published-process">published <code>url</code></a>.
+The layer sends every request to the address it was loaded from, never the host page's own address.</p>
+<p data-anchor="load-scan">The layer gives a comment control to every element of the page carrying a subject, a scope, and a kind, and follows the elements the host adds, changes, or removes, so a host that re-renders keeps its threads.</p>
+<div class="table-scroll" data-anchor="anchor-table-scroll">
+<table data-anchor="anchor-table" id="anchor-table">
+<caption>The anchor a host puts on an element</caption>
+<thead><tr><th>Attribute</th><th>Holds</th><th>Spec Chat's use</th></tr></thead>
+<tbody>
+<tr data-anchor="anchor-subject"><td><code>data-comment-subject</code></td><td>What the thread attaches to, the same string for the same thing on every render, reload, page, and device.</td><td>Picks the thread and <a href="#subjects">where it is kept</a>; any subject that names no spec its scope serves is compared whole.</td></tr>
+<tr data-anchor="anchor-scope"><td><code>data-comment-scope</code></td><td>The slug of a registered row.</td><td>Picks the store and the owner woken (<a href="#scope">scopes</a>); an unregistered scope gets no control.</td></tr>
+<tr data-anchor="anchor-kind"><td><code>data-comment-kind</code></td><td>A few words naming what kind of thing the subject is, in the host's words.</td><td>Carried on each comment, shown beside it, and given in the owner's scan so the owner routes it; never compared.</td></tr>
+<tr data-anchor="anchor-label"><td><code>data-comment-label</code></td><td>Words naming the subject as the page shows it, optional.</td><td>Carried on each comment and shown at the head of its thread; without it, the subject heads the thread.</td></tr>
+<tr data-anchor="anchor-from"><td><code>data-comment-from</code></td><td>The address that reopens what the human sees, optional.</td><td>Carried on each comment as a link the owner and human follow; without it, the page's own address.</td></tr>
+<tr data-anchor="anchor-starters"><td><code>data-comment-starters</code></td><td>Starter words, separated by commas, optional.</td><td>Offered by the composer (<a href="#ui-starters">starters</a>); never stored as anything but comment text.</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="anchor-quote">A comment's quote is the text the human selected inside the element, placed in the element's text by the same resolver as a text mark on a spec page.</p>
+<p data-anchor="anchor-quote-drawn" data-spec-tbd="later">How a host whose element draws its text rather than holding it as page text, such as a terminal, gives the layer a selected line as the quote: the Terminal host's lane settles it.</p>
+<p data-anchor="anchor-no-pane">An anchor names a scope, never a pane: no page can make Spec Chat wake an agent the page picks.</p>
+</section>
+
+<section data-anchor="subjects" id="subjects">
+<h2>Where a thread is kept</h2>
+<div class="table-scroll" data-anchor="subjects-table-scroll">
+<table data-anchor="subjects-table">
+<caption>A comment's subject decides its store, and so every page showing its thread</caption>
+<thead><tr><th>Subject</th><th>Kept in</th><th>Placed by</th><th>Thread shows on</th></tr></thead>
+<tbody>
+<tr data-anchor="subjects-spec"><td>A criterion ID, <code>project/&lt;project-id&gt;::&lt;spec path&gt;#&lt;anchor&gt;</code> (<a href="./criterion-evidence.spec.html#read-spec-id">criterion ID</a>), naming a spec a row of the scope serves</td><td>That spec's spool, as a mark on that anchor's block, or on its text when quoted</td><td>Anchor and quote in the current spec, as a <a href="./review-state.spec.html#anchoring-legacy">mark with no version</a></td><td>The spec page at that anchor, and every host page anchoring that subject in that scope</td></tr>
+<tr data-anchor="subjects-other"><td>Any other subject, a criterion ID of a spec no row of the scope serves included</td><td>The scope's hosted threads</td><td>The subject, compared whole; a quote in the element's current text</td><td>Every host page anchoring that subject in that scope</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="subjects-quote-gone">A quote the element's text no longer holds shows <q>Text removed</q> with the original quote, its pin on the element.</p>
+<p data-anchor="subjects-fields">Every comment written on a host page carries its kind, label, and from address; one on a subject that names no spec also carries the subject itself (<a href="./review-state.spec.html#model-fields">review state</a>).</p>
+</section>
+
+<section data-anchor="scope" id="scope">
+<h2>Scopes and wake</h2>
+<p data-anchor="scope-rule">A scope is the slug of a row registered on the review service the layer loads from. The layer shows a control only on elements whose scope has a row, and reads the scope's rows at each live read, so controls appear and vanish as rows are registered and removed.</p>
+<p data-anchor="scope-row" id="scope-row">A scope row is a row with no spec: <code>review-host register --slug &lt;scope&gt; --owner &lt;pane&gt;</code> with no spec path, as an operator outside any lane registers one for things in no lane. It serves no page and the review index lists no row for it; a lane's spec rows are its scope already.</p>
+<p data-anchor="scope-owner">A scope's owner is the owner its rows name. A comment on a spec wakes that spec's row's owner by the <a href="./host-wake.spec.html#wake-rule">wake rule</a>; a scope's hosted threads wake the owner of the scope's row registered last, by the same rule.</p>
+<p data-anchor="scope-store">A scope's hosted threads are a spool of the review service, in the same event format and folded by the same folds as a spec's (<a href="./review-state.spec.html#model">review state</a>); they live in the <a href="./review-service.spec.html#store-hosted">hosted threads store</a> and end when the scope's last row is removed.</p>
+</section>
+
+<section data-anchor="ui" id="ui">
+<h2>The layer on a host page</h2>
+<p data-anchor="ui-same">The layer draws the spec page's comment controls, the same pins, threads, composer, replies, edits, resolve, and Hand off, with the same fruit names, live read, and offline outbox (<a href="./review-state.spec.html">review state</a>), on the element itself; a host page shows no Accept spec, Jev, evidence, or focus on changes control.</p>
+<p data-anchor="ui-starters" id="ui-starters">The composer offers the element's starters as buttons; pressing one begins the draft with that word, and the comment stays ordinary text.</p>
+<p data-anchor="ui-handoff">Hand off hands off this browser's drafts on the page, writing one hand-off into each store that holds them, each listing its drafts (<a href="./review-state.spec.html#live-handoff">hand-off</a>).</p>
+<p data-anchor="ui-from">A comment written on a host page shows its kind and a link to its from address on every page that shows its thread, the spec page included.</p>
+<p data-anchor="ui-style">The layer's controls keep their own look on any host page, and the host page's look is unchanged by them.</p>
+<p data-anchor="ui-absent">With the service unreachable, a private service answering another origin, or no element whose scope has a row, the layer draws nothing and shows no error, and the host page reads as it does without the layer.</p>
+<p data-anchor="ui-frame">In a frame with no origin, the layer's fruit name, outbox, and drafts last until the page reloads, as for a <a href="./review-service.spec.html#served-storage">spec page served at another address</a>.</p>
+</section>
+
+<section data-anchor="proof" id="proof">
+<h2>Proof</h2>
+<p data-anchor="proof-seam">Seam: the service's placement of a comment by subject and scope, and the hosted threads spool, tested as pure functions over fixture registries and spools; the layer through a fixture host page in a browser test, served directly, at another origin, and in a frame with no origin.</p>
+<p data-anchor="proof-first-test">First failing test: a comment whose subject is a criterion ID of a spec its scope's row serves is stored in that spec's spool at that anchor, and one whose subject names no spec is stored in the scope's hosted threads.</p>
+</section>
+
+</article>
+</body>
+</html>
