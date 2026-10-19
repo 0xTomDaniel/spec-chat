@@ -53,7 +53,8 @@
 <p data-acceptance-criterion data-anchor="acceptance-scope-row-wake" data-story="story-scope-row"><span data-acceptance-scenario>Given an operator with a scope row whose pane the wake provider finds, and a human on a host page anchoring an item to that scope, a fixture that must be added to provide it, When the human saves a comment on the item and hands off,</span> <span data-acceptance-observable>Then the operator's pane receives a wake prompt for that hand-off, proven by a unit test: no screen shows it.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-scope-row-index" data-story="story-scope-row"><span data-acceptance-scenario>Given a human reviewer on a box with a registered scope row and a lane's registered spec, a fixture that must be added to provide it, When the reviewer opens the review index,</span> <span data-acceptance-observable>Then the review index shows the lane's spec and no row for the scope row.</span></p>
 <p data-acceptance-criterion data-anchor="acceptance-teardown" data-story="story-owner story-host"><span data-acceptance-scenario>Given a lane owner whose scope holds hosted threads, When the owner removes the scope's last row at teardown,</span> <span data-acceptance-observable>Then the scope's hosted threads are gone from the box, proven by a unit test: no screen shows it.</span></p>
-<p data-anchor="acceptance-rules-note">Onboarding: not needed, the layer adds no Spec Chat page; each host's own spec owns its onboarding.</p>
+<p data-anchor="acceptance-rules-note">Onboarding: not needed, the layer adds no Spec Chat page; each host's own spec owns its onboarding.
+Any origin only without login or cookie: kept, the layer adds no login and no cookie, and relies on the public service's answers to other origins (<a href="./review-service.spec.html#acceptance-origin-safe">rule</a>).</p>
 </section>
 
 <section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
