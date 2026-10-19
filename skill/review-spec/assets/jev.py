@@ -10,8 +10,10 @@ import math
 import os
 import posixpath
 import re
+import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -43,6 +45,15 @@ DEFAULT_MAX_INPUT_TOKENS = 32000
 RETRYABLE_OUTCOMES = frozenset({"off", "unavailable"})
 # Draft-check question kinds that carry provenance fields (#record-inputs, #record-pairing).
 DRAFT_CHECK_KINDS = frozenset({"contradicts", "contradicts-nongoal", "oversteps", "overlaps"})
+# The one ask queue (jev-suggestions #ask-queue): Jev asks at once per review service, and general LLM runs at once,
+# fewer, as each starts a claude process on the box.
+ASK_WORKERS = 8
+LLM_RUNS = 2
+# A reader wants its waiting asks while a read of it runs and for this long after one ends (#ask-queue): the page
+# and jev-read read again 2 s after a read while anything is pending, so a reader silent longer has gone (a closed
+# or hidden tab, a finished agent read) and the asks only it wanted leave the queue unasked.
+POLL_WINDOW = 10.0
+_monotonic = time.monotonic
 # The one retry rule (jev-contract #retry): a failed ask is asked again after a pause, the provider's
 # given wait, else this many seconds; the pause is written on its record, so no worker waits it out.
 RETRY_PAUSE = 60.0
@@ -636,14 +647,8 @@ class ClaudeCliProvider:
         if schema:
             cmd.extend(["--json-schema", json.dumps(schema, ensure_ascii=False)])
         try:
-            result = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
-                                    timeout=self.timeout, cwd="/tmp")
-            if result.returncode != 0:
-                raise RuntimeError("claude CLI exited %d" % result.returncode)
-            envelope = json.loads(result.stdout)
+            envelope = json.loads(self._run(cmd, prompt))
             text = str(envelope.get("result", ""))
-        except subprocess.TimeoutExpired as exc:
-            raise RuntimeError("claude CLI timed out") from exc
         except (OSError, ValueError) as exc:
             raise RuntimeError("claude CLI failed") from exc
         # Extract the actual model from the CLI envelope (modelUsage key, #ac-record).
@@ -652,6 +657,29 @@ class ClaudeCliProvider:
         if isinstance(usage, dict) and usage:
             actual = str(next(iter(usage))) or model
         return {"choices": [{"message": {"content": text}}], "model": actual}
+
+    def _run(self, cmd: list[str], prompt: str) -> str:
+        """One claude run in its own process group, its output: the whole group is ended once it outlives the
+        timeout, so nothing it started runs on. Files, not pipes: a child left holding one never delays the exit.
+        A timeout or a nonzero exit is a failed call, paused by the one retry rule (jev-contract #retry)."""
+        with tempfile.TemporaryFile() as stdin, tempfile.TemporaryFile() as stdout:
+            stdin.write(prompt.encode("utf-8"))
+            stdin.seek(0)
+            process = subprocess.Popen(cmd, stdin=stdin, stdout=stdout, stderr=subprocess.DEVNULL, cwd="/tmp",
+                                       start_new_session=True)
+            try:
+                code = process.wait(timeout=self.timeout)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except OSError:
+                    pass
+                process.wait()
+                raise RuntimeError("claude CLI timed out") from None
+            if code != 0:
+                raise RuntimeError("claude CLI exited %d" % code)
+            stdout.seek(0)
+            return stdout.read().decode("utf-8")
 
 
 def _parse_provider_answer(value: Mapping[str, Any], question_name: str) -> tuple[str, float | None, dict[str, float], str]:
@@ -719,7 +747,8 @@ class JevSeam:
     def __init__(self, question_sets: Mapping[str, QuestionSet] | None = None, *, provider: Any = None,
                  api_key: str | Callable[[], str] | None = None, llm_model: str | Callable[[], str] | None = None,
                  record_store: JudgmentStore | None = None, ledger: WarningLedger | None = None,
-                 clock: Callable[[], str] = _now, max_input_tokens: int = DEFAULT_MAX_INPUT_TOKENS):
+                 clock: Callable[[], str] = _now, max_input_tokens: int = DEFAULT_MAX_INPUT_TOKENS,
+                 llm_turns: threading.Semaphore | None = None):
         self.question_sets = dict(question_sets or load_question_sets())
         self.api_key = _key_reader(api_key)
         self.llm_model = _model_reader(llm_model)
@@ -731,6 +760,8 @@ class JevSeam:
         # A lock per key while an ask of it runs or waits, dropped after (#acceptance-store-memory).
         self._key_locks: dict[str, list[Any]] = {}
         self._key_locks_lock = threading.Lock()
+        # General LLM runs at once (jev-suggestions #ask-queue): a run waits its turn, then makes its one call.
+        self.llm_turns = threading.BoundedSemaphore(LLM_RUNS) if llm_turns is None else llm_turns
 
     def question_set(self, kind: str) -> QuestionSet:
         return self.question_sets[kind]
@@ -747,6 +778,11 @@ class JevSeam:
         if self._provider is not None:
             return primary
         return ClaudeCliProvider()
+
+    def _complete(self, fallback: Any, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """One general LLM call, the fallback's or the verifier's, on its turn (#ask-queue)."""
+        with self.llm_turns:
+            return fallback.complete(payload)
 
     def _record(self, key: str, kind: str, qset: QuestionSet, sources: Any, revision: Any,
                 answer: Mapping[str, Any], outcome: str, model: str = MODEL, escalated: bool = False,
@@ -910,7 +946,7 @@ class JevSeam:
         label = None
         failure = None
         try:
-            response = fallback.complete(payload)
+            response = self._complete(fallback, payload)
             model = str(response.get("model", "")) or model
             label = json.loads(response["choices"][0]["message"]["content"])["choice"]
         except Exception as exc:
@@ -961,7 +997,7 @@ class JevSeam:
         label = None
         failure = None
         try:
-            response = fallback.complete(payload)
+            response = self._complete(fallback, payload)
             result = json.loads(response["choices"][0]["message"]["content"])
             said = result.get("answer")
             clause_span = (result.get("clause_span") or "").strip()
@@ -1767,7 +1803,6 @@ BUILDERS = {"type": build_type_questions, "orphan": build_orphan_questions, "res
 # Board route (worklane-provider #jev-board): change type answers that quiet the review highlight.
 MATERIAL_NO = "no-behavior-change"
 MATERIAL_YES = "behavior"
-ASK_WORKERS = 8
 
 
 def changed_leaf_clauses(current: str | bytes, baseline: str | bytes | None) -> list[tuple[str, str, str]]:
@@ -1992,11 +2027,12 @@ class JevService:
         self.question_sets = load_question_sets(*(question_dirs or []))
         self.state_dir = Path(state_dir) if state_dir else default_state_dir()
         # Records and the warning ledger side by side (#ledger); test-flagged slugs use the same layout in the
-        # store's test directory, never the live one (#test-host-rule).
+        # store's test directory, never the live one (#test-host-rule). Both take general LLM turns from one count.
+        llm_turns = threading.BoundedSemaphore(LLM_RUNS)
         self.seam, self.test_seam = (
             JevSeam(self.question_sets, provider=provider, api_key=api_key, llm_model=llm_model,
                     record_store=JudgmentStore(directory / "records.jsonl"),
-                    ledger=WarningLedger(directory / "ledger.jsonl"))
+                    ledger=WarningLedger(directory / "ledger.jsonl"), llm_turns=llm_turns)
             for directory in (self.state_dir, self.state_dir / "test"))
 
         # Board state (#jev-board-answer): the last answer and the rows the board thread answers next.
@@ -2008,13 +2044,15 @@ class JevService:
         self._board_idle.set()
         self._board_thread: threading.Thread | None = None
 
-        # Background asks (#fast-marks-background): one in flight per question key, shared by every route,
+        # Background asks (#fast-marks-background, #ask-queue): one in flight per question key, shared by every route,
         # rule checks included (project-rules #pending). An ask starts at once on a free worker's drain; with every
-        # worker busy it waits, oldest first, noting each reader whose latest read wants it (_supersede).
+        # worker busy it waits, oldest first, noting each reader whose latest read wants it (_supersede), and leaves
+        # unasked once none does. _readers holds, per reader, its reads running and when its last read ended.
         # The pool lives as long as the service: stop() drops waiting asks and waits only for in-flight ones.
         self._ask_lock = threading.Lock()
         self._asking: dict[str, Future] = {}
         self._waiting: OrderedDict[Future, tuple[tuple[str, ...], Callable[[], Any], dict[Any, int]]] = OrderedDict()
+        self._readers: dict[Any, list[float]] = {}
         self._ask_workers, self._drains, self._reads = ASK_WORKERS, 0, itertools.count(1)
         self._ask_pool: ThreadPoolExecutor | None = ThreadPoolExecutor(
             max_workers=self._ask_workers, thread_name_prefix="spec-chat-jev-ask")
@@ -2255,6 +2293,7 @@ class JevService:
         """GET /api/jev/board (#jev-board-answer): the last answer at once; the board thread refreshes it."""
         if not self.enabled:
             return {"jev": "off", "rows": [], "conflicts": []}
+        self._reading("board", 0)  # its asks stay wanted while the board is read (#ask-queue)
         with self._board_lock:
             self._board_rows = list(rows or ())
             self._board_idle.clear()
@@ -2361,26 +2400,60 @@ class JevService:
                 for key in keys:
                     self._asking.pop(key, None)
                 future.set_result(None)
-                if not self._waiting:
+                now = _monotonic()
+                while self._waiting:  # the oldest waiting ask a reader still wants; those before it leave unasked
+                    future, (keys, ask, wanted) = self._waiting.popitem(last=False)
+                    if not wanted or any(not self._gone(reader, now) for reader in wanted):
+                        break
+                    self._drop(future, keys)
+                else:
                     self._drains -= 1
                     return
-                future, (keys, ask, _) = self._waiting.popitem(last=False)
                 future.set_running_or_notify_cancel()
 
-    def _supersede(self, read: tuple[Any, int]) -> None:
-        """At the end of a read (#acceptance-store-memory): a waiting ask its reader wanted only in reads before this
-        one is no longer wanted by it, and one no reader wants is dropped. A read asks again every key it still
-        misses, so nothing still needed is lost, and asks for spec text since edited do not pile up with reads."""
-        reader, number = read
+    def _drop(self, future: Future, keys: tuple[str, ...]) -> None:
+        """Under _ask_lock: a waiting ask leaves the queue unasked; a read that still misses its key asks it again."""
+        future.cancel()
+        for key in keys:
+            self._asking.pop(key, None)
+
+    def _reading(self, reader: Any, running: int) -> None:
+        """A read of `reader` starts (1) or ends (-1); a board read (0) does both at once (#ask-queue)."""
         with self._ask_lock:
+            entry = self._readers.setdefault(reader, [0, 0.0])
+            entry[0] += running
+            entry[1] = _monotonic()
+
+    def _gone(self, reader: Any, now: float) -> bool:
+        """Under _ask_lock: no read of `reader` runs and none ended within the poll window (#ask-queue)."""
+        entry = self._readers.get(reader)
+        return entry is None or (entry[0] <= 0 and now - entry[1] > POLL_WINDOW)
+
+    def _supersede(self, read: tuple[Any, int] | None = None) -> None:
+        """At the end of a read (#acceptance-store-memory, #ask-queue): a waiting ask its reader wanted only in reads
+        before this one is no longer wanted by it, nor by any reader gone, and one no reader wants is dropped. A read
+        asks again every key it still misses, so nothing still needed is lost, and asks for spec text since edited
+        or for readers gone do not pile up. With no read, only gone readers stop wanting."""
+        reader, number = read or (None, 0)
+        with self._ask_lock:
+            now = _monotonic()
             for future, (keys, _, wanted) in list(self._waiting.items()):
-                if wanted.get(reader, number) < number:
-                    del wanted[reader]
-                    if not wanted:
-                        del self._waiting[future]
-                        future.cancel()
-                        for key in keys:
-                            self._asking.pop(key, None)
+                left = [who for who, latest in wanted.items()
+                        if (who == reader and latest < number) or self._gone(who, now)]
+                for who in left:
+                    del wanted[who]
+                if left and not wanted:
+                    del self._waiting[future]
+                    self._drop(future, keys)
+            for who in [who for who in self._readers if self._gone(who, now)]:
+                del self._readers[who]
+
+    def queue_counts(self) -> tuple[int, int]:
+        """The ask queue for the status route (review-service #steady-status): (asks waiting, asks running). Asks
+        no live reader wants leave first, so every waiting ask counted is one a reader still wants."""
+        self._supersede()
+        with self._ask_lock:
+            return len(self._waiting), self._drains
 
     def _lane_questions(self, rows: Any, *, exclude_test: bool = True) -> list[dict[str, Any]]:
         """Cross-lane questions over every registry row's changed clauses (#cross-lane-clauses), kept by
@@ -2783,8 +2856,17 @@ class JevService:
                  base_commit: str | None = None) -> dict[str, Any]:
         if not self.enabled:
             return {"jev": "off", "items": [], "levels": dict(MARK_LEVELS)}
-        seam = self._seam_for(mount)
         read = ((target, base, view), next(self._reads))  # this page's reader: its next read supersedes this one
+        self._reading(read[0], 1)  # while it runs, its reader still wants its waiting asks (#ask-queue)
+        try:
+            return self._response(read, mount, target, relative, base, events, view, served_mounts, base_commit)
+        finally:
+            self._reading(read[0], -1)
+
+    def _response(self, read: tuple[Any, int], mount: Mapping[str, Any], target: str, relative: str, base: str,
+                  events: list[Mapping[str, Any]], view: str, served_mounts: Any,
+                  base_commit: str | None) -> dict[str, Any]:
+        seam = self._seam_for(mount)
         try:
             facts = self._read_facts(mount, target, base, served_mounts, base_commit)
         except Exception:
