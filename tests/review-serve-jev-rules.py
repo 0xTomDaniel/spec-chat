@@ -69,11 +69,13 @@ class FakeProvider:
     """Jev answers from scope and rule maps; the general LLM from its own map; every payload is kept.
     A rule map value is the rule check's outcome, missed, covered, or not triggered, answered per chain question.
     coverage holds the (story anchor, criterion anchor) pairs that verify; every other pair is unrelated.
-    draft maps a target clause's text to the draft-check label every changed clause gets against it."""
+    draft maps a target clause's text to the draft-check label every changed clause gets against it.
+    change maps a changed root section's current text to its change-type answer, yes or no; any other answers unrelated."""
 
-    def __init__(self, scope=None, rule=None, general=None, confidence=0.95, gate=None, coverage=(), draft=None):
+    def __init__(self, scope=None, rule=None, general=None, confidence=0.95, gate=None, coverage=(), draft=None,
+                 change=None):
         self.scope, self.rule, self.general = dict(scope or {}), dict(rule or {}), dict(general or {})
-        self.draft = dict(draft or {})
+        self.draft, self.change = dict(draft or {}), dict(change or {})
         self.coverage = set(coverage)
         self.confidence = confidence
         self.gate = gate
@@ -95,6 +97,8 @@ class FakeProvider:
         elif kind == "coverage":
             pair = tuple((state.get(side) or {}).get("anchor") for side in ("story", "criterion"))
             label, confidence = ("verifies" if pair in self.coverage else "unrelated"), self.confidence
+        elif kind == "type":
+            label, confidence = self.change.get(state.get("after"), "unrelated"), self.confidence
         elif kind in ("about", "contradicts", "oversteps", "overlaps"):
             target = state.get("target", (state.get("second") or {}).get("text"))
             wanted = self.draft.get(target)

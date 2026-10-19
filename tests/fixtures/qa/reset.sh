@@ -23,6 +23,9 @@
 # story, so a criterion that dismisses starts on its own project too (dismiss, dismiss-reload,
 # not-a-rule): its click never hides the marker a sibling criterion of the story needs.
 #
+# print.spec.html's criteria name no story (jev-suggestions #coverage-declared) and its head only rewords its base;
+# it is registered only in coverage-undeclared, so every other collection serves the same four specs.
+#
 # The registry records a public base address, so the service, though on loopback, is public
 # and answers a page with no origin (review-service #served-private): the test host (host.py)
 # serves the served-* collections' pages at its own address, in a frame with no origin.
@@ -34,7 +37,7 @@ collections="qa-fixture rule-candidate tbd-later tbd-later-handoff tbd-open-high
   choice-handoff choice-comment-mode
   anchor-moved anchor-changed anchor-gone stale-page agent-scan name-reply advice
   clear-thread qa-1 qa-2 dismiss dismiss-reload not-a-rule
-  served-threads served-handoff served-index served-focus"
+  served-threads served-handoff served-index served-focus coverage-undeclared"
 site="$QA_ROOT/site"
 serve="$QA_ROOT/serve"
 repo="$site/.repo"
@@ -85,6 +88,7 @@ def row(slug, root, spec):
 
 rows = [row(slug, os.path.join(site, slug), "docs/specs/%s.spec.html" % spec)
         for slug in collections for spec in ("onboarding", "report", "later-only", "one-open")]
+rows.append(row("coverage-undeclared", os.path.join(site, "coverage-undeclared"), "docs/specs/print.spec.html"))
 # QA-2's removed worktree: a spec registered from a root since gone (review-service #service-stale).
 rows.append(row("qa-2", os.path.join(site, "qa-2-removed"), "docs/specs/archive.spec.html"))
 with open(registry + ".tmp", "w", encoding="utf-8") as out:

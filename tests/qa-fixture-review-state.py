@@ -233,6 +233,39 @@ class ReviewStateCollections(unittest.TestCase):
         self.assertEqual(len(agent), 1)
 
 
+    def test_coverage_undeclared_shows_change_types_and_no_coverage(self):
+        """jev-suggestions #acceptance-coverage-undeclared Given: coverage-undeclared's print spec, registered there only,
+        has stories and criteria and no data-story; read at its base, Jev labels each changed section's change type and
+        asks no coverage. Every other spec's change type answers unrelated, so shows no label."""
+        import re
+
+        print_spec = "docs/specs/print.spec.html"
+        text = (self.site.root / "site" / "coverage-undeclared" / print_spec).read_text()
+        self.assertIn("data-user-story", text)
+        self.assertIn("data-acceptance-criterion", text)
+        self.assertIsNone(re.search(r"\bdata-story=", text))
+        rows = tomllib.loads((self.site.root / "serve" / "registry.toml").read_text())["resource"]
+        self.assertEqual([r["slug"] for r in rows if r["spec"] == print_spec], ["coverage-undeclared"])
+        base = self.serve()
+
+        def items(path):
+            query = urllib.parse.urlencode({"path": path, "base": rows[0]["base"]})
+            until = time.monotonic() + 20
+            while True:
+                with urllib.request.urlopen(base + "/api/jev?" + query) as response:
+                    found = json.load(response)["items"]
+                if all(i["state"] != "pending" for i in found) or time.monotonic() > until:
+                    return found
+                time.sleep(0.1)
+
+        found = items("coverage-undeclared/" + print_spec)
+        self.assertEqual({i["id"]: i["label"] for i in found if i["kind"] == "type"},
+                         {"user-stories": "no-behavior-change", "acceptance": "no-behavior-change"})
+        self.assertEqual([i for i in found if i["kind"] == "coverage"], [])
+        report = [i for i in items("coverage-undeclared/docs/specs/report.spec.html") if i["kind"] == "type"]
+        self.assertTrue(report)
+        self.assertEqual({i["state"] for i in report}, {"none"})
+
     def test_rule_state_follows_the_marks_and_a_reset_forgets_clicks(self):
         """project-rules #declare: every collection's report spec shows the marked onboarding rule's card under its
         mark's name; rule-candidate's unmarked onboarding criterion is a candidate on its home spec, checked nowhere;

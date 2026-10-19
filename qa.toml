@@ -30,7 +30,8 @@ ready = "/"
 # to what a user sees or does adds its onboarding section.", named "Every change ships its onboarding"; report.spec.html is the
 # spec under shaping, its head adding an export story with no onboarding criterion,
 # two open TBDs, the first offering two answer buttons, and one later TBD; later-only.spec.html's only TBD is later;
-# one-open.spec.html has exactly one open TBD. No spec has a comment thread, except
+# one-open.spec.html has exactly one open TBD; print.spec.html, registered only in coverage-undeclared, has stories
+# and criteria that name no story (no data-story), its head rewording two sections. No spec has a comment thread, except
 # the review-state collections' report spec (spools.py, nav hints below). Jev
 # records are written by the fake as pages load and kept across resets; dismissals
 # are not, since each reset registers fresh projects. In rule-candidate the onboarding
@@ -226,6 +227,21 @@ path = "{host}/served-index/docs/specs/report.spec.html"
 [nav.acceptance-served-focus]
 path = "{host}/served-focus/docs/specs/report.spec.html"
 
+# Undeclared coverage (jev-suggestions #acceptance-coverage-undeclared): the spec is coverage-undeclared's
+# print.spec.html, "Report printing", changed since its base. Its start compares it with its own head (base=HEAD), so
+# the page is not in Git focus. Git focus is turned on by choosing its baseline: click "Change base", then the older
+# listed commit (subject "base").
+[nav.acceptance-coverage-undeclared]
+path = "{review}/coverage-undeclared/docs/specs/print.spec.html?base=HEAD"
+
+# Status route (review-service #steady-status): {review}/api/status (values). No page links to it, so it is opened at
+# that address.
+# - steady-closed: starts on the report spec, so the service serves this browser a spec page; the start point then
+#   closes it by clicking its "Back to Spec Chat index" link.
+[nav.acceptance-steady-closed]
+path = "{review}/qa-fixture/docs/specs/report.spec.html"
+selectors = ['a[data-spec-chat-navigation="index"]']
+
 # Typed text for the criteria that save a message (capture types only these).
 [entry.criteria.acceptance-name]
 values = ["First note from this browser.", "Reply after reload."]
@@ -243,6 +259,13 @@ values = ["Saved in the host frame."]
 fixture = "spec_review_site"
 [entry.criteria.acceptance-served-focus]
 fixture = "spec_review_site"
+[entry.criteria.acceptance-coverage-undeclared]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-steady-closed]
+fixture = "spec_review_site"
+values = ["{review}/api/status"]
+[entry.criteria.acceptance-status]
+values = ["{review}/api/status"]
 # One capture browser: a When by another live browser, or a Given of two live drafts,
 # cannot be driven; the two-browser runtime test proves these.
 [entry.criteria.acceptance-live-comment]
@@ -285,7 +308,8 @@ cannot_host = "capture cannot take the browser offline (device capability unsupp
 # Stories this environment cannot host. services.review runs with HOME and XDG under
 # $QA_ROOT: no evidence or wake provider, no Herdr, no live agent, no review-host
 # (the fixture writes the registry), no lane-key slug and one project. The fake Jev
-# answers scope, rule, and coverage (each criterion verifies its data-story story);
+# answers scope, rule, coverage (each criterion verifies its data-story story), and
+# change type on print.spec.html, whose reworded sections answer no (No behavior change);
 # every other question answers unrelated. Each reset registers fresh projects.
 [entry.criteria.acceptance-reviewed-kept]
 cannot_host = "the reviewed base is written by review-host when a hand-off is processed; review-host does not run here (the fixture writes the registry)"
@@ -312,33 +336,47 @@ cannot_host = "no wake provider and no Herdr, so no owner pane to lose"
 [entry.stories.story-no-provider]
 cannot_host = "register output (wake=unavailable) comes from review-host, which does not run here (the fixture writes the registry)"
 [entry.stories.story-change-type]
-cannot_host = "fake Jev answers only scope, rule, and coverage questions; change-type answers unrelated"
+cannot_host = "fake Jev answers change type only on print.spec.html, whose head only rewords (No behavior change), so no spec change mixes a typo fix, a reword, and a rule change or shows Behavior, and no clause is marked Contradicts, Oversteps, or Overlaps"
 [entry.stories.story-orphan]
-cannot_host = "fake Jev answers only scope, rule, and coverage questions; orphan placement answers unrelated, and the fixture has no threads"
+cannot_host = "fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions; orphan placement answers unrelated, and the fixture has no threads"
 [entry.stories.story-resolved]
-cannot_host = "fake Jev answers only scope, rule, and coverage questions; resolves answers unrelated, and the fixture has no threads"
+cannot_host = "fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions; resolves answers unrelated, and the fixture has no threads"
 [entry.stories.story-corpus]
-cannot_host = "fake Jev answers only scope, rule, and coverage questions; contradicts and oversteps answer unrelated"
+cannot_host = "fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions; contradicts and oversteps answer unrelated"
 [entry.stories.story-cross-lane]
-cannot_host = "one lane slug only, and fake Jev answers only scope, rule, and coverage questions"
-[entry.stories.story-coverage]
-cannot_host = "every fixture story has its verifying criterion and every criterion its story, so no coverage gap to show or clear"
+cannot_host = "one lane slug only, and fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions"
+# story-coverage: undeclared coverage runs on its collection (nav above); acceptance-coverage-declared and
+# acceptance-gaps-all-unsent are proven by tests. The fixture has no coverage gap for the rest.
+[entry.criteria.acceptance-coverage]
+cannot_host = "every fixture story a criterion names has its verifying criterion and every criterion its story, and print.spec.html names none, so no coverage gap to show or clear"
+[entry.criteria.acceptance-coverage-criterion]
+cannot_host = "every fixture story a criterion names has its verifying criterion and every criterion its story, and print.spec.html names none, so no coverage gap to show or clear"
+[entry.criteria.acceptance-coverage-clear]
+cannot_host = "every fixture story a criterion names has its verifying criterion and every criterion its story, and print.spec.html names none, so no coverage gap to show or clear"
+[entry.criteria.acceptance-coverage-clear-story]
+cannot_host = "every fixture story a criterion names has its verifying criterion and every criterion its story, and print.spec.html names none, so no coverage gap to show or clear"
+[entry.criteria.acceptance-gaps-all]
+cannot_host = "every fixture story a criterion names has its verifying criterion and every criterion its story, and print.spec.html names none, so no coverage gap to show or clear"
+[entry.criteria.acceptance-gaps-all-single]
+cannot_host = "every fixture story a criterion names has its verifying criterion and every criterion its story, and print.spec.html names none, so no coverage gap to show or clear"
+[entry.criteria.acceptance-settled-gap]
+cannot_host = "every fixture story a criterion names has its verifying criterion and every criterion its story, and print.spec.html names none, so no coverage gap to show or clear"
 [entry.stories.story-neutral]
 cannot_host = "Jev is on through the fake provider, which never fails, so Jev off or unavailable cannot occur"
 [entry.stories.story-fast-marks]
 cannot_host = "Givens need box load above CPU count; QA creates no synthetic load"
 [entry.stories.story-note-action]
-cannot_host = "fake Jev answers only scope, rule, and coverage questions, so no Contradicts, gap, or change note carries its button"
+cannot_host = "fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions, so no Contradicts, gap, or change note carries its button"
 [entry.stories.story-settled]
-cannot_host = "fake Jev answers only scope, rule, and coverage questions, so no orphan, gap, or conflict mark to settle"
+cannot_host = "fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions, so no orphan, gap, or conflict mark to settle"
 [entry.stories.story-no-walls]
 cannot_host = "fake Jev answers every question at 0.95, so no below-threshold or verify-band answer and no general LLM"
 [entry.stories.story-right-pairs]
-cannot_host = "fake Jev answers only scope, rule, and coverage questions; no Contradicts or Oversteps flag"
+cannot_host = "fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions; no Contradicts or Oversteps flag"
 [entry.stories.story-no-noise]
-cannot_host = "fake Jev answers only scope, rule, and coverage questions; no flag to withhold"
+cannot_host = "fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions; no flag to withhold"
 [entry.stories.story-context]
-cannot_host = "fake Jev answers only scope, rule, and coverage questions; no flag popover to quote"
+cannot_host = "fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions; no flag popover to quote"
 # Rule criteria the fixture cannot drive: one rule, one home, answered only by the fake.
 [entry.criteria.acceptance-pending]
 cannot_host = "fake Jev answers every rule check at 0.95, so no check escalates to the general LLM and no checking wheel shows"
@@ -347,7 +385,7 @@ cannot_host = "fake Jev answers every rule check instantly at 0.95, so no check 
 [entry.criteria.acceptance-pending-motion]
 cannot_host = "fake Jev answers every rule check instantly at 0.95, so no check escalates and no checking wheel shows; proven by tests/runtime-jev-rules.mjs (reduced motion stops the wheel)"
 [entry.criteria.acceptance-card-cites]
-cannot_host = "fake Jev answers only scope, rule, and coverage questions, so no clause is marked Contradicts against a rule; proven by tests/review-serve-jev-rules.py test_mark_citing_a_marked_rule_carries_the_rule_card and tests/runtime-jev-rules.mjs"
+cannot_host = "fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions, so no clause is marked Contradicts against a rule; proven by tests/review-serve-jev-rules.py test_mark_citing_a_marked_rule_carries_the_rule_card and tests/runtime-jev-rules.mjs"
 [entry.criteria.acceptance-own-project]
 cannot_host = "the fixture's projects are copies of one repo with the same marked rule, and fake Jev answers no Contradicts, Oversteps, Overlaps, or cross-lane question, so no mark can show which project it cites; proven by tests/review-serve-jev-rules.py test_rules_come_only_from_the_page_project"
 [entry.criteria.acceptance-own-project-lane]
