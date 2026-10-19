@@ -90,7 +90,9 @@ SPEC_SUBJECT_RE = re.compile(r"project/([^/:]+)::([^#]+\.spec\.html)#(.+)")
 HOSTED = "hosted"  # the store of a scope's hosted threads, as /api/events names it beside a spec row's path
 # A serialized origin: a page with no origin's null, or scheme://host[:port].
 ORIGIN_RE = re.compile(r"null|[a-z][a-z0-9+.-]*://[^/\s,]+")
-COMMENT_LAYER = Path(__file__).resolve().parent / "comment-layer.js"
+# The comment layer is the spec page runtime itself: served at /static/comment-layer.js, it takes layer mode from that
+# address (comment-layer #load), so a host page runs the spec page's comment code, not a copy of it.
+COMMENT_LAYER = Path(__file__).resolve().parent / "viz" / "runtime.js"
 EVIDENCE_FIELDS = ("match", "verdict", "judgment", "pr", "capturedAt", "onMain", "artifact", "bundle", "proven", "view")
 
 
@@ -1680,7 +1682,7 @@ listenHost();
         return self._send_file(parsed.path)
 
     def _comment_layer(self):
-        """The comment layer a host page loads (comment-layer #load), served while its file is present."""
+        """The comment layer a host page loads (comment-layer #load): the runtime, served while its file is present."""
         try:
             body = COMMENT_LAYER.read_bytes()
         except OSError:

@@ -281,6 +281,11 @@ class HostedRoutesTest(HostedServiceCase):
         self.assertEqual((status, body), (200, b"/* layer */\n"))
         self.assertTrue(headers["content-type"].startswith("text/javascript"))
 
+    def test_comment_layer_is_the_spec_page_runtime(self):
+        """comment-layer #load, #ui-same: the layer runs the spec page's comment code, not a copy of it."""
+        status, _, body = self.request("GET", "/static/comment-layer.js")
+        self.assertEqual((status, body), (200, (ASSETS / "viz" / "runtime.js").read_bytes()))
+
 
 class HostedOtherOriginTest(HostedServiceCase):
     """comment-layer #acceptance-other-origin: a host page of another site loads the layer from a public service."""

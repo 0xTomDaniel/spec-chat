@@ -7,6 +7,8 @@ usage: host.py <service-url> <port>
 
   /frame?page=<address>  the service's page at that address, its base address and the link script first in its head,
                          answered under the same sandbox, so it has no origin even opened alone
+  /page?page=<address>   the same page unframed and unsandboxed: another site's page at this host's own origin, as a
+                         host page that loads the comment layer from the service is (comment-layer #load)
   /<path>[?<query>]      the host page: one sandboxed frame showing the service's page at that path and query
 
 The frame's location never names the page (/frame), so the page reads only its base address. The link script loads a
@@ -66,13 +68,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urllib.parse.urlsplit(self.path)
-        if parsed.path == "/frame":
-            return self._frame(urllib.parse.parse_qs(parsed.query).get("page", [""])[0])
+        if parsed.path in ("/frame", "/page"):
+            return self._frame(urllib.parse.parse_qs(parsed.query).get("page", [""])[0], sandbox=parsed.path == "/frame")
         page = self.service + parsed.path + ("?" + parsed.query if parsed.query else "")
         src = "/frame?" + urllib.parse.urlencode({"page": page})
         return self._send(200, "text/html; charset=utf-8", (PAGE % (SANDBOX, html.escape(src, quote=True))).encode("utf-8"))
 
-    def _frame(self, page):
+    def _frame(self, page, sandbox=True):
         address = urllib.parse.urlsplit(page)
         if "%s://%s" % (address.scheme, address.netloc) != self.service or not address.path.startswith("/"):
             return self._send(404, "text/plain; charset=utf-8", b"not a page of the service\n")
@@ -85,7 +87,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(502, "text/plain; charset=utf-8", ("service unreachable: %s\n" % error).encode("utf-8"))
         if kind.startswith("text/html"):
             body = served(body, page)
-        return self._send(status, kind or "application/octet-stream", body, sandbox=True)
+        return self._send(status, kind or "application/octet-stream", body, sandbox=sandbox)
 
     def _send(self, status, kind, body, sandbox=False):
         self.send_response(status)

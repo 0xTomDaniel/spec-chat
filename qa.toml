@@ -227,6 +227,57 @@ path = "{host}/served-index/docs/specs/report.spec.html"
 [nav.acceptance-served-focus]
 path = "{host}/served-focus/docs/specs/report.spec.html"
 
+# Comment layer on host pages (comment-layer #acceptance-host-*, -one-thread-*, -no-scope, -no-service): each criterion
+# opens its collection's host page, docs/pane.html (tests/fixtures/qa/panes.py), a workbench pane of three items.
+# "Totals per week" anchors the report spec's totals criterion in the collection's scope, "Agent turn 42" a subject that
+# names no spec, both with the starters Question, Change, and Approve; "Agent turn 43" names a scope no row has. An item's
+# comment control is the button at its top right, named "Comment on <item>"; its threads' pins sit left of it, named
+# "Open thread <n>: <item>, <status>"; the thread box opens beside the item. Seeded comments are other browsers'.
+# Capture hints, per criterion:
+# - host-draft: click "Comment on Totals per week", then the Question starter, type the value, click Comment.
+# - host-starters, host-only-comments: click "Comment on Totals per week".
+# - host-handoff: click "Comment on Agent turn 42", type the value, click Comment, then "Hand off to agent →".
+# - host-handoff-two: click "Comment on Totals per week", type the first value, click Comment; click "Comment on Agent
+#   turn 42", type the second value, click Comment; then "Hand off to agent →". Open each item's thread with its pin.
+# - host-reply, host-quote-gone: open Agent turn 42's thread with its pin.
+# - host-same-subject: the page is pane-other.html; Agent turn 42's thread was written on pane.html. Open it with its pin.
+# - host-quote: select the words "named the columns after the table headers" in Agent turn 42, then click "Comment on
+#   Agent turn 42", type the value, click Comment.
+# - host-frame: the test host serves pane.html in a frame with no origin. Click "Comment on Agent turn 42", type the
+#   value, click Comment, then "Hand off to agent →".
+# - one-thread-spec: click "Comment on Totals per week", type the first value, click Comment; then open the spec page at
+#   the second value and its thread "Open thread 1".
+# - one-thread-host: open Totals per week's thread with its pin; the comment was written on the spec page.
+# - no-scope: Agent turn 43 shows no control. no-service: the page loads its layer from a stopped review service.
+[nav.acceptance-host-draft]
+path = "{review}/host-draft/docs/pane.html"
+[nav.acceptance-host-starters]
+path = "{review}/host-starters/docs/pane.html"
+[nav.acceptance-host-handoff]
+path = "{review}/host-handoff/docs/pane.html"
+[nav.acceptance-host-handoff-two]
+path = "{review}/host-handoff-two/docs/pane.html"
+[nav.acceptance-host-reply]
+path = "{review}/host-reply/docs/pane.html"
+[nav.acceptance-host-same-subject]
+path = "{review}/host-same-subject/docs/pane-other.html"
+[nav.acceptance-host-quote]
+path = "{review}/host-quote/docs/pane.html"
+[nav.acceptance-host-quote-gone]
+path = "{review}/host-quote-gone/docs/pane.html"
+[nav.acceptance-host-only-comments]
+path = "{review}/host-only-comments/docs/pane.html"
+[nav.acceptance-host-frame]
+path = "{host}/host-frame/docs/pane.html"
+[nav.acceptance-one-thread-spec]
+path = "{review}/one-thread-spec/docs/pane.html"
+[nav.acceptance-one-thread-host]
+path = "{review}/one-thread-host/docs/pane.html"
+[nav.acceptance-no-scope]
+path = "{review}/no-scope/docs/pane.html"
+[nav.acceptance-no-service]
+path = "{review}/no-service/docs/pane.html"
+
 # Undeclared coverage (jev-suggestions #acceptance-coverage-undeclared): the spec is coverage-undeclared's
 # print.spec.html, "Report printing", changed since its base. Its start compares it with its own head (base=HEAD), so
 # the page is not in Git focus. Git focus is turned on by choosing its baseline: click "Change base", then the older
@@ -266,6 +317,47 @@ fixture = "spec_review_site"
 values = ["{review}/api/status"]
 [entry.criteria.acceptance-status]
 values = ["{review}/api/status"]
+# The comment-layer criteria's Givens ask for a fixture to be added; the host-* and one-thread-* collections are it.
+[entry.criteria.acceptance-host-draft]
+fixture = "spec_review_site"
+values = ["why per week and not per day?"]
+[entry.criteria.acceptance-host-starters]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-host-handoff]
+fixture = "spec_review_site"
+values = ["Saved on the host page."]
+[entry.criteria.acceptance-host-handoff-two]
+fixture = "spec_review_site"
+values = ["Round to whole units.", "Why the table headers?"]
+[entry.criteria.acceptance-host-reply]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-host-same-subject]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-host-quote]
+fixture = "spec_review_site"
+values = ["Which headers?"]
+[entry.criteria.acceptance-host-quote-gone]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-host-only-comments]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-host-frame]
+fixture = "spec_review_site"
+values = ["Saved in a frame with no origin."]
+[entry.criteria.acceptance-one-thread-spec]
+fixture = "spec_review_site"
+values = ["Totals per week, or per day too?", "{review}/one-thread-spec/docs/specs/report.spec.html#report-totals"]
+[entry.criteria.acceptance-one-thread-host]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-no-scope]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-no-service]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-host-live]
+cannot_host = "capture has one browser and no owner agent to reply while the page is open; proven by tests/runtime-comment-layer.mjs"
+[entry.criteria.acceptance-host-phone]
+cannot_host = "story-host-comment captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone screen cannot be reached; proven by tests/runtime-comment-layer.mjs"
+[entry.criteria.acceptance-private-other-origin]
+cannot_host = "the QA review service is public (reset.sh records a public base address), so no private service answers here; proven by tests/runtime-comment-layer.mjs"
 # One capture browser: a When by another live browser, or a Given of two live drafts,
 # cannot be driven; the two-browser runtime test proves these.
 [entry.criteria.acceptance-live-comment]

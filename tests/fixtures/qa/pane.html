@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workbench pane</title>
+<!-- QA fixture host page (comment-layer #hosts): a workbench pane with its own look, its things anchored for comments.
+     panes.py fills {{project}}, {{scope}}, {{layer}}, and {{pane}} per collection. -->
+<style>
+body{margin:0;padding:24px 16px;background:#f4f1ea;color:#2b2b2b;font:15px/1.5 Georgia,serif}
+h1{font:600 20px/1.3 system-ui,sans-serif;margin:0 0 16px}
+.item{max-width:640px;margin:0 0 16px;padding:12px 16px;border:1px solid #c9c2b4;border-radius:4px;background:#fff}
+.item h2{font:600 13px/1.4 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.04em;color:#6b6457;margin:0 0 4px}
+.item p{margin:0}
+button,textarea{background:#7a1f1f;color:#fff;border:3px solid #000;font:20px serif}
+</style>
+<script src="{{layer}}"></script>
+</head><body>
+<h1>Workbench pane: {{pane}}</h1>
+<section class="item" data-comment-subject="project/{{project}}::docs/specs/report.spec.html#report-totals" data-comment-scope="{{scope}}" data-comment-kind="Criterion evidence" data-comment-label="Totals per week" data-comment-starters="Question, Change, Approve">
+<h2>Criterion</h2>
+<p>The report page shows totals per week. Evidence: QA passed, captured 2026-01-01.</p>
+</section>
+<section class="item" data-comment-subject="agent-turn:qa:42" data-comment-scope="{{scope}}" data-comment-kind="Agent turn" data-comment-label="Agent turn 42" data-comment-starters="Question, Change, Approve">
+<h2>Agent turn</h2>
+<p>I added the CSV export and named the columns after the table headers.</p>
+</section>
+<section class="item" data-comment-subject="agent-turn:qa:43" data-comment-scope="no-such-scope" data-comment-kind="Agent turn" data-comment-label="Agent turn 43">
+<h2>Agent turn, another lane</h2>
+<p>An item whose scope no registered row has.</p>
+</section>
+</body></html>
