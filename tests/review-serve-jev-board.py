@@ -475,7 +475,7 @@ class BoardTest(unittest.TestCase):
             server.server_close()
         self.assertEqual(first["rows"], [])
         self.assertEqual(second["rows"], [{"id": rows[0]["id"], "material": "no"}])
-        records = "".join(f.read_text(encoding="utf-8") for f in (self.dir / "state" / "records").glob("*.jsonl"))
+        records = "".join(f.read_text(encoding="utf-8") for f in (self.dir / "state" / "records").glob("*/*.jsonl"))
         self.assertIn("cache_key", records)
         self.assertNotIn("New words", records)
 

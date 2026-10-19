@@ -105,7 +105,7 @@ class JevBackgroundTest(unittest.TestCase):
 
     def records(self):
         """Every record line (#record-store), in file order: one key's lines keep their order."""
-        return [line for f in sorted((Path(self.tmp.name) / "records").glob("*.jsonl")) for line in f.read_text().splitlines()]
+        return [line for f in sorted((Path(self.tmp.name) / "records").glob("*/*.jsonl")) for line in f.read_text().splitlines()]
 
     def test_first_read_is_pending_and_never_waits_for_jev(self):
         provider = GatedProvider()
@@ -567,8 +567,8 @@ class JevSeamTest(unittest.TestCase):
     def test_judgment_store_skips_corrupt_and_truncated_records(self):
         with tempfile.TemporaryDirectory() as directory:
             store = jev.JudgmentStore(Path(directory) / "records.jsonl")
-            shard = store._shard_path("000")
-            shard.parent.mkdir()
+            shard = store.dir / "type@1" / "000.jsonl"
+            shard.parent.mkdir(parents=True)
             shard.write_bytes(
                 b"not json\n"
                 b'{"cache_key":"valid","outcome":"shown"}\n'
@@ -815,7 +815,7 @@ class JevSeamTest(unittest.TestCase):
             service = jev.JevService(state_dir=directory, provider=provider, api_key="fake")
             service.questions = lambda *args: [question]
             result = settled(service, {}, "", "", "", [], "")
-            stored = "".join(f.read_text() for f in (Path(directory) / "records").glob("*.jsonl"))
+            stored = "".join(f.read_text() for f in (Path(directory) / "records").glob("*/*.jsonl"))
         record = json.loads(stored.strip().splitlines()[-1])
         self.assertEqual(record["answer"]["label"], "new-section")
         self.assertEqual(record["answer"]["probabilities"], {"new-section": 0.8, "other-section": 0.15, "none": 0.05})

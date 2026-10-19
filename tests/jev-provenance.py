@@ -225,10 +225,10 @@ class TestResolution(unittest.TestCase):
             ledger = jev.WarningLedger(Path(tmp) / "ledger.jsonl")
             store.append({"record_id": "judgment-test-001", "cache_key": "sha256:aaa", "kind": "contradicts",
                           "outcome": "shown", "answer": {"label": "yes"}})
-            before = {f.name: f.read_bytes() for f in (Path(tmp) / "records").iterdir()}
+            before = {f.name: f.read_bytes() for f in (Path(tmp) / "records").glob("*/*.jsonl")}
             ledger.append({**self.WHERE, "outcome": "dismissed", "judgment": "judgment-test-001", "by": "owner",
                            "reason": "Jev is wrong here"})
-            self.assertEqual({f.name: f.read_bytes() for f in (Path(tmp) / "records").iterdir()}, before)
+            self.assertEqual({f.name: f.read_bytes() for f in (Path(tmp) / "records").glob("*/*.jsonl")}, before)
             lines = [json.loads(line) for line in (Path(tmp) / "ledger.jsonl").read_text().splitlines()]
             self.assertEqual([(e["spec"], e["anchor"], e["outcome"], e["judgment"], e["reason"], e["confirmed"])
                               for e in lines],
