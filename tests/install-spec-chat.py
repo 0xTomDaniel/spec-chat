@@ -13,6 +13,8 @@ INSTALL = ROOT / "scripts/install-spec-chat"
 HOST = ROOT / "skill/review-spec/scripts/review-host.py"
 FAKE_SYSTEMD = ROOT / "tests/fixtures/fake-systemd"
 UNIT = "spec-chat-review.service"
+SKILL_NAMES = ("spec-chat-shape", "spec-chat-review", "repair-specs")
+BASES = (".agents/skills", ".claude/skills", ".codex/skills")
 
 
 def snapshot(*roots):
@@ -50,24 +52,25 @@ class InstallSpecChatTest(unittest.TestCase):
                        env=self.env, capture_output=True)
         self.temp.cleanup()
 
-    def run_install(self, *args):
-        result = subprocess.run([str(INSTALL), *args], env=self.env, text=True, capture_output=True, timeout=40)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+    def run_install(self, *args, cwd=None, code=0):
+        result = subprocess.run([str(INSTALL), *args], env=self.env, cwd=cwd or self.repo, text=True,
+                                capture_output=True, timeout=40)
+        self.assertEqual(result.returncode, code, result.stdout + result.stderr)
         return result
 
     def status(self):
         return tomllib.loads(self.onboarding.read_text())
 
     def test_fresh_install_onboards_end_to_end_idempotently_and_undoes_only_its_own(self):
-        foreign = self.home / ".claude/skills/other"
+        foreign = self.repo / ".claude/skills/other"
         foreign.parent.mkdir(parents=True)
         foreign.symlink_to(self.repo)
 
         self.run_install()
-        for base in (".claude/skills", ".codex/skills"):
-            self.assertEqual((self.home / base / "spec-chat-review").resolve(), ROOT / "skill/review-spec")
-            self.assertEqual((self.home / base / "spec-chat-shape").resolve(), ROOT / "skill/shape-spec")
-            self.assertEqual((self.home / base / "repair-specs").resolve(), ROOT / "skill/repair-specs")
+        for base in BASES:
+            self.assertEqual((self.repo / base / "spec-chat-review").resolve(), ROOT / "skill/review-spec")
+            self.assertEqual((self.repo / base / "spec-chat-shape").resolve(), ROOT / "skill/shape-spec")
+            self.assertEqual((self.repo / base / "repair-specs").resolve(), ROOT / "skill/repair-specs")
         self.assertEqual(self.status()["status"], "pending")
         self.assertTrue(self.status()["doc"].endswith("README.md#install-and-onboarding"))
 
@@ -86,9 +89,9 @@ class InstallSpecChatTest(unittest.TestCase):
 
         self.run_install("--undo")
         self.assertFalse(self.onboarding.exists())
-        for base in (".claude/skills", ".codex/skills"):
-            self.assertFalse((self.home / base / "spec-chat-review").is_symlink())
-            self.assertFalse((self.home / base / "repair-specs").is_symlink())
+        for base in BASES:
+            self.assertFalse((self.repo / base / "spec-chat-review").is_symlink())
+            self.assertFalse((self.repo / base / "repair-specs").is_symlink())
         self.assertFalse((self.specs / ".viz").exists())
         self.assertTrue(foreign.is_symlink())
         self.assertTrue(self.spec.is_file())
@@ -111,7 +114,7 @@ class InstallSpecChatTest(unittest.TestCase):
         self.run_install("--specs", str(self.specs), "--review", str(self.spec))
         self.assertEqual(self.state_files(), ["onboarding.toml"])
         installed = self.status()["installed"]
-        self.assertEqual(len(installed["links"]), 6)
+        self.assertEqual(len(installed["links"]), 9)
         self.assertEqual(sorted(Path(c).name for c in installed["copies"]), [".style", ".viz"])
         self.assertEqual(len(installed["resources"]), 1)
 
@@ -308,18 +311,18 @@ class InstallSpecChatTest(unittest.TestCase):
             "spec-chat-review": other / "skill/review-spec",
             "repair-specs": other / "skill/repair-specs",
         }
-        for base in (".claude/skills", ".codex/skills"):
+        for base in BASES:
             for name, tgt in skill_map.items():
-                p = self.home / base / name
+                p = self.repo / base / name
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.symlink_to(tgt)
 
         result = self.run_install()
         self.assertIn("adopted:", result.stdout)
         # Symlinks still point to the other clone, not replaced
-        for base in (".claude/skills", ".codex/skills"):
+        for base in BASES:
             for name, tgt in skill_map.items():
-                p = self.home / base / name
+                p = self.repo / base / name
                 self.assertTrue(p.is_symlink())
                 self.assertEqual(p.resolve(), tgt.resolve())
         # The install record has no links (all adopted, none created)
@@ -327,14 +330,14 @@ class InstallSpecChatTest(unittest.TestCase):
 
     def test_skip_occupied_path_and_continue(self):
         """link() skips occupied non-clone paths and the installer continues."""
-        for base in (".claude/skills", ".codex/skills"):
-            for name in ("spec-chat-shape", "spec-chat-review", "repair-specs"):
-                p = self.home / base / name
+        for base in BASES:
+            for name in SKILL_NAMES:
+                p = self.repo / base / name
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.mkdir()  # a directory, not a symlink
 
         result = self.run_install()
-        self.assertEqual(result.stdout.count("skipped:"), 6)
+        self.assertEqual(result.stdout.count("skipped:"), 9)
         self.assertIn("(occupied by directory)", result.stdout)
         # Onboarding still wrote its status (installer continued)
         self.assertEqual(self.status()["status"], "pending")
@@ -347,19 +350,50 @@ class InstallSpecChatTest(unittest.TestCase):
         subprocess.run(["git", "-C", str(unrelated), "remote", "add", "origin",
                          "https://example.invalid/other.git"], check=True)
 
-        for base in (".claude/skills", ".codex/skills"):
-            p = self.home / base / "spec-chat-shape"
+        for base in BASES:
+            p = self.repo / base / "spec-chat-shape"
             p.parent.mkdir(parents=True, exist_ok=True)
             p.symlink_to(unrelated)
 
         result = self.run_install()
         self.assertIn("skipped:", result.stdout)
         # The other skills should still be linked normally
-        for base in (".claude/skills", ".codex/skills"):
+        for base in BASES:
             self.assertEqual(
-                (self.home / base / "spec-chat-review").resolve(),
+                (self.repo / base / "spec-chat-review").resolve(),
                 ROOT / "skill/review-spec",
             )
+
+    def test_skills_live_in_the_repo_agents_folder_and_never_under_home(self):
+        """Skills live in the target repo's .agents/skills; .claude/skills and .codex/skills hold relative links to
+        them; nothing is written under $HOME, from the repo root or a folder below it."""
+        below = self.specs
+        self.run_install(cwd=below)
+        for name, source in zip(SKILL_NAMES, ("shape-spec", "review-spec", "repair-specs")):
+            entry = self.repo / ".agents/skills" / name
+            self.assertTrue(entry.is_symlink())
+            self.assertEqual(entry.resolve(), ROOT / "skill" / source)
+            for base in (".claude/skills", ".codex/skills"):
+                self.assertEqual(os.readlink(self.repo / base / name), "../../.agents/skills/" + name)
+        self.assertEqual(list(self.home.iterdir()), [])
+        self.assertFalse((self.specs / ".agents").exists())
+
+    def test_home_is_never_the_install_target(self):
+        """Neither --prefix $HOME nor running from $HOME puts skills under ~/.agents/skills."""
+        for args, cwd in ((("--prefix", str(self.home)), None), ((), self.home)):
+            with self.subTest(args=args, cwd=cwd):
+                result = self.run_install(*args, cwd=cwd, code=1)
+                self.assertIn("never the home directory", result.stderr)
+                self.assertEqual(list(self.home.iterdir()), [])
+                self.assertFalse(self.onboarding.exists())
+
+    def test_an_earlier_absolute_link_of_ours_becomes_relative(self):
+        self.run_install()
+        link = self.repo / ".claude/skills/spec-chat-review"
+        link.unlink()
+        link.symlink_to(self.repo / ".agents/skills/spec-chat-review")  # as an earlier run might have written it
+        self.run_install()
+        self.assertEqual(os.readlink(link), "../../.agents/skills/spec-chat-review")
 
     def test_onboarding_doc_says_how_to_write_a_project_rule(self):
         """project-rules #acceptance-onboarding-doc: one onboarding section says how to declare a project rule: mark

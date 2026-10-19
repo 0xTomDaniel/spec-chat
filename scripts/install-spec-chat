@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Spec Chat's one install and onboarding entry point.
 
-Links the skills, installs the page runtime and style into a named spec folder,
+Installs the skills into the target repo's .agents/skills (links into this clone) and
+links each one from the other agents' skill folders (.claude/skills, .codex/skills) relatively, never into the
+home directory; installs the page runtime and style into a named spec folder,
 sets up the default session's review service through review-host.py, whatever
 session it runs in, and publishes
 $XDG_STATE_HOME/spec-chat/onboarding.toml, which also records what it added
@@ -24,7 +26,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 HOST = ROOT / "skill/review-spec/scripts/review-host.py"
 SKILLS = {"spec-chat-shape": ROOT / "skill/shape-spec", "spec-chat-review": ROOT / "skill/review-spec", "repair-specs": ROOT / "skill/repair-specs"}
-SKILL_DIRS = (".claude/skills", ".codex/skills")
+AGENTS_SKILLS = ".agents/skills"  # where the skills live, inside the target repo, never under $HOME
+SKILL_DIRS = (".claude/skills", ".codex/skills")  # each entry: a relative link to AGENTS_SKILLS/<name>
 ASSETS = {".viz": ROOT / "skill/review-spec/assets/viz", ".style": ROOT / "skill/shape-spec/assets/style"}
 DOC = (ROOT / "README.md").as_uri() + "#install-and-onboarding"
 ONBOARDING_OWNER = "install-spec-chat"
@@ -121,11 +124,15 @@ def same_tree(a: Path, b: Path) -> bool:
     return all(same_tree(a / d, b / d) for d in cmp.common_dirs)
 
 
-def link(source: Path, target: Path, added: list[str]) -> None:
+def link(source: Path, target: Path, added: list[str], relative: bool = False) -> None:
+    """Link target to source; relative=True writes the link as a path relative to target's folder."""
+    want = os.path.relpath(source, target.parent) if relative else str(source)
     if target.is_symlink() and not target.exists():
         target.unlink()  # a dangling link belongs to nobody
     if target.is_symlink() and target.resolve() == source.resolve():
-        return
+        if os.readlink(target) == want or str(target) not in added:
+            return
+        target.unlink()  # ours, written another way by an earlier run: rewrite it as wanted
     if target.exists() or target.is_symlink():
         if target.is_symlink():
             resolved = target.resolve()
@@ -148,7 +155,7 @@ def link(source: Path, target: Path, added: list[str]) -> None:
         print(f"skipped: {target} (occupied by {what})")
         return
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.symlink_to(source)
+    target.symlink_to(want)
     if str(target) not in added:
         added.append(str(target))
 
@@ -234,8 +241,10 @@ def install(args: argparse.Namespace, prefix: Path, state: Path) -> None:
     done = onboarding.get("status") == "done"
     try:
         for name, source in SKILLS.items():
+            entry = prefix / AGENTS_SKILLS / name
+            link(source, entry, manifest["links"])
             for base in SKILL_DIRS:
-                link(source, prefix / base / name, manifest["links"])
+                link(entry, prefix / base / name, manifest["links"], relative=True)
         if args.specs:
             copy_assets(Path(args.specs).expanduser().resolve(), manifest["copies"])
         visibility = (["--public", args.public] if args.public else ["--private"] if args.private else [])
@@ -320,9 +329,27 @@ def undo(state: Path) -> None:
     print("spec-chat install undone")
 
 
+def target_repo(prefix: str | None) -> Path:
+    """The repo the skills install into: --prefix, else the Git top of the working directory, else the directory.
+    Never the home directory: skills live in a repo's .agents/skills, not in ~/.agents/skills."""
+    if prefix:
+        path = Path(prefix).expanduser().resolve()
+    else:
+        cwd = Path.cwd().resolve()
+        top = subprocess.run(["git", "-C", str(cwd), "rev-parse", "--show-toplevel"], text=True, capture_output=True)
+        path = Path(top.stdout.strip()).resolve() if top.returncode == 0 else cwd
+    if path == Path.home().resolve():
+        raise InstallError(f"skills install into a repo's {AGENTS_SKILLS}, never the home directory ({path}); "
+                           "run from the repo root or pass --prefix <repo>")
+    return path
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="install-spec-chat", description=__doc__.splitlines()[0])
-    parser.add_argument("--prefix", default=str(Path.home()), help="home for skill links (default: $HOME)")
+    parser.add_argument("--prefix", metavar="REPO",
+                        help="repo that gets the skills in .agents/skills, linked from .claude/skills and "
+                             ".codex/skills (default: the Git top of the working directory, else the directory; "
+                             "never $HOME)")
     parser.add_argument("--specs", metavar="DIR", help="spec folder that gets the page runtime (.viz) and style (.style)")
     parser.add_argument("--review", metavar="SPEC", help="first *.spec.html to review through the default session's service")
     visibility = parser.add_mutually_exclusive_group()
@@ -335,9 +362,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="box setup: run the review service as a box user service (systemd --user, linger)")
     parser.add_argument("--undo", action="store_true", help="remove only what earlier runs added")
     args = parser.parse_args(argv)
-    prefix, state = Path(args.prefix).expanduser().resolve(), state_root()
+    state = state_root()
     try:
-        undo(state) if args.undo else install(args, prefix, state)
+        undo(state) if args.undo else install(args, target_repo(args.prefix), state)
     except InstallError as exc:
         print(f"install-spec-chat: error: {exc}", file=sys.stderr)
         return 1
