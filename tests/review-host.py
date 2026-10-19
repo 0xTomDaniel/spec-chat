@@ -744,27 +744,34 @@ cursor_name = ".cursor-test"
         self.assertEqual(clean.returncode, 0, clean.stderr)
         self.assertEqual(self.registry(state)["resource"][0]["base"], self.git("rev-parse", "HEAD"))
 
-    def test_reviewed_accepted_records_spec_acceptance_on_the_row(self):
-        """ANN-239 compared-range #acceptance-reviewed-accepted."""
+    def test_reviewed_records_no_acceptance_and_drops_an_old_mark(self):
+        """compared-range #acceptance-reviewed-accepted, review-state #live-accept: Accept spec moves the row
+        like a comment batch and leaves no acceptance mark; a row rewrite drops an old one."""
         state = self.work / "state"
         started = self.run_cli(*self.register_args(state), state=state)
         self.assertEqual(started.returncode, 0, started.stderr)
         before = self.registry(state)["resource"][0]
         rid = before["id"]
         self.assertNotIn("accepted", before)
+        flagged = self.run_cli("reviewed", "--state-dir", str(state), "--id", rid, "--accepted", state=state)
+        self.assertNotEqual(flagged.returncode, 0)
+        self.assertIn("--accepted", flagged.stderr)
+        self.assertEqual(self.registry(state)["resource"][0], before)
+        registry = state / "registry.toml"
+        text = registry.read_text(encoding="utf-8")
+        planted = re.sub(r'^(base = "[^"]*")$', r"\1\naccepted = true", text, count=1, flags=re.M)
+        self.assertNotEqual(planted, text)
+        registry.write_text(planted, encoding="utf-8")
+        self.assertIs(self.registry(state)["resource"][0]["accepted"], True)
         self.spec.write_text("<!doctype html><title>review</title><p>accepted</p>\n", encoding="utf-8")
-        done = self.run_cli("reviewed", "--state-dir", str(state), "--id", rid, "--accepted", state=state)
+        done = self.run_cli("reviewed", "--state-dir", str(state), "--id", rid, state=state)
         self.assertEqual(done.returncode, 0, done.stderr)
         row = self.registry(state)["resource"][0]
-        self.assertEqual((row["accepted"], row["base"]), (True, self.git("rev-parse", "HEAD")))
+        self.assertNotIn("accepted", row)
+        self.assertEqual(row["base"], self.git("rev-parse", "HEAD"))
         untouched = {key: value for key, value in before.items() if key not in {"base", "updated_at"}}
         self.assertEqual({key: row[key] for key in untouched}, untouched)
-        self.spec.write_text("<!doctype html><title>review</title><p>batch</p>\n", encoding="utf-8")
-        plain = self.run_cli("reviewed", "--state-dir", str(state), "--id", rid, state=state)
-        self.assertEqual(plain.returncode, 0, plain.stderr)
-        row = self.registry(state)["resource"][0]
-        self.assertEqual((row["accepted"], row["base"]), (False, self.git("rev-parse", "HEAD")))
-        self.assertEqual({key: row[key] for key in untouched}, untouched)
+        self.assertEqual(set(row), set(before))
 
     def test_process_url_is_the_printed_url_on_start_and_join(self):
         """review-service #published: [process] url equals the printed review URL."""
@@ -1001,23 +1008,23 @@ cursor_name = ".cursor-test"
         registry = default / "registry.toml"
         registry.write_text(registry.read_text(encoding="utf-8").replace(
             'cursor_name = ".cursor-owner"', 'cursor_name = ".cursor-claude"'), encoding="utf-8")
-        self.spec.write_text("<!doctype html><title>review</title><p>accepted</p>\n", encoding="utf-8")
-        done = self.run_cli("reviewed", "--state-dir", str(default), "--id", rid, "--accepted", state=default)
+        self.spec.write_text("<!doctype html><title>review</title><p>reviewed</p>\n", encoding="utf-8")
+        done = self.run_cli("reviewed", "--state-dir", str(default), "--id", rid, state=default)
         self.assertEqual(done.returncode, 0, done.stderr)
         head = self.git("rev-parse", "HEAD")
         kept_before = self.registry(default)["resource"][0]
         again = self.run_lane("--slug", "lane", "--owner", "p2", str(self.spec), env=env)
         self.assertEqual(again.returncode, 0, again.stderr)
         row = self.registry(default)["resource"][0]
-        self.assertEqual((row["accepted"], row["cursor_name"], row["checker"], row["base"], row["owner"]),
-                         (True, ".cursor-claude", "p1", head, "p2"))
+        self.assertEqual((row["cursor_name"], row["checker"], row["base"], row["owner"]),
+                         (".cursor-claude", "p1", head, "p2"))
         self.assertEqual((row["path"], row["registered_at"]), (kept_before["path"], kept_before["registered_at"]))
         given = self.run_lane("--slug", "lane", "--owner", "p3", "--checker", "c3", "--cursor-name", ".cursor-p3",
                               "--base", self.base, str(self.spec), env=env)
         self.assertEqual(given.returncode, 0, given.stderr)
         row = self.registry(default)["resource"][0]
-        self.assertEqual((row["accepted"], row["cursor_name"], row["checker"], row["base"], row["owner"]),
-                         (True, ".cursor-p3", "c3", self.base, "p3"))
+        self.assertEqual((row["cursor_name"], row["checker"], row["base"], row["owner"]),
+                         (".cursor-p3", "c3", self.base, "p3"))
 
     def test_spec_outside_any_docs_folder_fails_naming_the_missing_collection(self):
         """review-service #acceptance-plain-path-docs."""

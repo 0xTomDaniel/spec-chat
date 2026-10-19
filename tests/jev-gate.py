@@ -2,7 +2,10 @@
 
 import importlib.util
 import json
+import os
+import tempfile
 import threading
+import time
 import unittest
 import unittest.mock
 from pathlib import Path
@@ -272,6 +275,59 @@ class ClaudeCliOnlyTest(unittest.TestCase):
         provider = jev.ClaudeCliProvider()
         self.assertTrue(hasattr(provider, "complete"))
         self.assertEqual(provider.timeout, jev.GENERAL_LLM_TIMEOUT)
+
+    def cli(self, directory, body):
+        """A stand-in claude command: a shell script that starts a child, writes its pid, then runs `body`."""
+        script = Path(directory) / "claude"
+        script.write_text("#!/bin/sh\nsleep 30 &\necho $! > %s/child\n%s\n" % (directory, body))
+        script.chmod(0o755)
+        return str(script)
+
+    def gone(self, pid, timeout=5):
+        """The process ended (or is only a zombie its parent has not yet reaped)."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                with open("/proc/%d/stat" % pid) as stat:
+                    if stat.read().rsplit(")", 1)[1].split()[0] == "Z":
+                        return True
+            except OSError:
+                return True
+            time.sleep(0.02)
+        return False
+
+    def test_timed_out_cli_run_ends_its_whole_process_group(self):
+        """#ask-queue, jev-contract #retry: a run that outlives its timeout fails once, at its timeout, and nothing it
+        started keeps running on the box."""
+        with tempfile.TemporaryDirectory() as directory:
+            provider = jev.ClaudeCliProvider(command=self.cli(directory, "wait"), timeout=2)
+            started = time.monotonic()
+            with self.assertRaisesRegex(RuntimeError, "timed out"):
+                provider.complete({"messages": [{"role": "user", "content": "q"}]})
+            self.assertLess(time.monotonic() - started, 8)
+            child = int((Path(directory) / "child").read_text())
+            self.assertTrue(self.gone(child))
+
+    def test_cli_answer_returns_at_exit_while_a_child_holds_its_output(self):
+        """A run that exits answers at once, even with a child it started still holding its output."""
+        envelope = json.dumps({"result": json.dumps({"choice": "yes"}), "modelUsage": {"fake-llm": {}}})
+        with tempfile.TemporaryDirectory() as directory:
+            provider = jev.ClaudeCliProvider(command=self.cli(directory, "printf '%%s\\n' '%s'" % envelope), timeout=10)
+            started = time.monotonic()
+            try:
+                response = provider.complete({"messages": [{"role": "user", "content": "q"}]})
+            finally:
+                child = int((Path(directory) / "child").read_text())
+                os.kill(child, 9)
+            self.assertLess(time.monotonic() - started, 5)
+            self.assertEqual(json.loads(response["choices"][0]["message"]["content"]), {"choice": "yes"})
+            self.assertEqual(response["model"], "fake-llm")
+
+    def test_cli_exit_failure_is_one_failed_call(self):
+        with tempfile.TemporaryDirectory() as directory:
+            provider = jev.ClaudeCliProvider(command=self.cli(directory, "kill $!; exit 3"), timeout=10)
+            with self.assertRaisesRegex(RuntimeError, "exited 3"):
+                provider.complete({"messages": [{"role": "user", "content": "q"}]})
 
     def test_openrouter_provider_has_no_complete(self):
         """OpenRouterProvider has decide() only; no complete() method (#rule-cli-only)."""

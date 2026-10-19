@@ -57,7 +57,7 @@ def general_kind(payload):
 
 def record_lines(state):
     """Every line of the store's record files (jev-suggestions #record-store); one key's lines keep their order."""
-    return [line for f in sorted((state / "records").glob("*.jsonl")) for line in f.read_text().splitlines()]
+    return [line for f in sorted((state / "records").glob("*/*.jsonl")) for line in f.read_text().splitlines()]
 
 
 def ledger_lines(state):
@@ -69,11 +69,13 @@ class FakeProvider:
     """Jev answers from scope and rule maps; the general LLM from its own map; every payload is kept.
     A rule map value is the rule check's outcome, missed, covered, or not triggered, answered per chain question.
     coverage holds the (story anchor, criterion anchor) pairs that verify; every other pair is unrelated.
-    draft maps a target clause's text to the draft-check label every changed clause gets against it."""
+    draft maps a target clause's text to the draft-check label every changed clause gets against it.
+    change maps a changed root section's current text to its change-type answer, yes or no; any other answers unrelated."""
 
-    def __init__(self, scope=None, rule=None, general=None, confidence=0.95, gate=None, coverage=(), draft=None):
+    def __init__(self, scope=None, rule=None, general=None, confidence=0.95, gate=None, coverage=(), draft=None,
+                 change=None):
         self.scope, self.rule, self.general = dict(scope or {}), dict(rule or {}), dict(general or {})
-        self.draft = dict(draft or {})
+        self.draft, self.change = dict(draft or {}), dict(change or {})
         self.coverage = set(coverage)
         self.confidence = confidence
         self.gate = gate
@@ -95,6 +97,8 @@ class FakeProvider:
         elif kind == "coverage":
             pair = tuple((state.get(side) or {}).get("anchor") for side in ("story", "criterion"))
             label, confidence = ("verifies" if pair in self.coverage else "unrelated"), self.confidence
+        elif kind == "type":
+            label, confidence = self.change.get(state.get("after"), "unrelated"), self.confidence
         elif kind in ("about", "contradicts", "oversteps", "overlaps"):
             target = state.get("target", (state.get("second") or {}).get("text"))
             wanted = self.draft.get(target)
@@ -507,17 +511,44 @@ class RulesTest(unittest.TestCase):
                           ("specs/onboarding.spec.html#accessibility", "Screens ship accessibility checks")])
 
     def test_fake_coverage_verifies_only_declared_pairs(self):
-        # The one fake serves the QA fixture too: its declared story/criterion pairs verify, others stay unrelated.
+        # The one fake serves the QA fixture too: its verifying pairs verify, others stay unrelated. Jev asks only the
+        # pairs each criterion's data-story names (jev-suggestions #coverage-declared): story-a with crit-b never.
         stories = ('<section data-spec-section="user-stories" data-anchor="user-stories">'
                    '<p data-user-story data-anchor="story-a">As a manager, I read totals.</p>'
                    '<p data-user-story data-anchor="story-b">As a manager, I export.</p></section>')
-        self.write("b.spec.html", stories + spec(("crit-a", LOCAL), ("crit-b", FEATURE)))
+        self.write("b.spec.html", stories + spec(("crit-a", LOCAL), ("crit-b", FEATURE))
+                   .replace('data-anchor="crit-a"', 'data-anchor="crit-a" data-story="story-a story-b"')
+                   .replace('data-anchor="crit-b"', 'data-anchor="crit-b" data-story="story-b"'))
         self.base = self.commit()
         provider = FakeProvider(coverage={("story-a", "crit-a"), ("story-b", "crit-b")})
         items = [item for item in self.read(self.service(provider))["items"] if item["kind"] == "coverage"]
         labels = {tuple(item["id"].split("::")): item.get("label") for item in items}
-        self.assertEqual(labels, {("story-a", "crit-a"): "verifies", ("story-a", "crit-b"): "unrelated",
-                                  ("story-b", "crit-a"): "unrelated", ("story-b", "crit-b"): "verifies"})
+        self.assertEqual(labels, {("story-a", "crit-a"): "verifies", ("story-b", "crit-a"): "unrelated",
+                                  ("story-b", "crit-b"): "verifies"})
+        self.assertEqual(len(provider.asked("coverage")), 3)
+
+    def test_undeclared_spec_shows_change_types_and_no_coverage(self):
+        """jev-suggestions #acceptance-coverage-undeclared: a changed spec with stories and criteria and no data-story
+        reads its change types and asks and shows no coverage, so the page shows no coverage note."""
+        stories = ('<section data-spec-section="user-stories" data-anchor="user-stories">'
+                   '<p data-user-story data-anchor="story-a">As a manager, I read totals.</p></section>')
+        self.write("b.spec.html", stories + spec(("crit-a", "Old criterion."), body="Old body."))
+        self.base = self.commit()
+        self.write("b.spec.html", stories + spec(("crit-a", FEATURE), body="The report page gains an export button."))
+
+        class ChangesBehavior(FakeProvider):
+            def decide(self, payload):
+                if "type" in payload["questions"]:
+                    with self.lock:
+                        self.calls.append(payload)
+                    return {"answers": {"type": {"choice": "yes", "confidence": 0.95}}}
+                return super().decide(payload)
+
+        provider = ChangesBehavior()
+        items = self.read(self.service(provider))["items"]
+        self.assertTrue([item for item in items if item["kind"] == "type" and item["label"] == "behavior"])
+        self.assertEqual([item for item in items if item["kind"] == "coverage"], [])
+        self.assertEqual(provider.asked("coverage"), [])
 
     def test_rules_come_only_from_the_page_project(self):
         """project-rules #proof own-project, #acceptance-own-project, #acceptance-own-project-read: mounts of two projects, each marking a rule;

@@ -9,7 +9,8 @@ fake says a spec misses it unless the spec mentions onboarding, so the served sp
 the rule card and Jev writes real records, and that the criterion's text applies to every
 feature, so where it is unmarked (reset.sh, rule-candidate) it is a candidate. Each
 criterion verifies the story its data-story names and no other, so no false coverage gap
-shows. A fixture agent edit pending beside a spec
+shows. print.spec.html's head only rewords its base, so each root section it changes changes no
+behavior; every other change-type question answers unrelated. A fixture agent edit pending beside a spec
 (spools.py, stale-page) lands when a page next posts an event to that spec, so the page
 saving it was loaded before the edit. In an answering collection (spools.py, name-reply) the
 agent answers each comment the page saves, so the page offers a reply. Everything else runs
@@ -25,6 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE = Path(__file__).resolve().parent
 RULE_NAME = "Every change ships its onboarding"  # the name the onboarding rule's mark gives
+PRINT = "docs/specs/print.spec.html"  # criteria naming no story (reset.sh, coverage-undeclared)
 CRITERION = re.compile(r"<[^>]*\bdata-acceptance-criterion\b[^>]*>")
 ATTR = re.compile(r'\b(data-anchor|data-story)="([^"]*)"')
 
@@ -39,6 +41,12 @@ def coverage():
     if not pairs:
         raise SystemExit("qa fixture: no data-story criteria found under " + str(FIXTURE))
     return pairs
+
+
+def rewordings(jev):
+    """Change-type answers (jev-suggestions #change-type): no for each root section print.spec.html's head rewords."""
+    base, head = ((FIXTURE / side / PRINT).read_bytes() for side in ("base", "head"))
+    return {chain["chain"][0]["state"]["after"]: "no" for chain in jev.build_type_questions(head, base)}
 
 
 def load(name, path):
@@ -57,6 +65,7 @@ def main(argv):
         scope={rules.ONBOARDING: ("every feature", 0.95)},
         rule={rules.ONBOARDING: (lambda spec: "covered" if "onboarding" in spec.lower() else "missed", 0.95)},
         coverage=coverage(),
+        change=rewordings(rules.jev),
     )
     real = serve.JevService
     serve.JevService = lambda **kw: real(**{**kw, "provider": fake, "api_key": "fake"})

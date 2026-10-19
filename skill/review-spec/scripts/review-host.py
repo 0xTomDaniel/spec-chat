@@ -45,7 +45,7 @@ SETUP_FIELDS = ("public_base", "unit")
 KEPT_FIELDS = ("public_bind", "public_host")
 DEFAULT_CURSOR = ".cursor-owner"
 RESOURCE_FIELDS = (
-    "id", "slug", "project", "root", "narrow_root", "spec", "path", "base", "accepted", "owner", "checker",
+    "id", "slug", "project", "root", "narrow_root", "spec", "path", "base", "owner", "checker",
     "cursor_name", "test", "registered_at", "updated_at",
 )
 
@@ -1040,7 +1040,8 @@ def remove(args: argparse.Namespace) -> int:
 
 
 def reviewed(args: argparse.Namespace) -> int:
-    """Human spec review: commit the spec if dirty, then set the row base to HEAD and accepted."""
+    """Human spec review: commit the spec if dirty, then set the row base to HEAD. Records no acceptance:
+    the spool's Accept spec hand-off is Spec Chat's only view of it."""
     state = state_dir(args)
     registry, _, _ = paths(state)
     with state_lock(state):
@@ -1054,7 +1055,6 @@ def reviewed(args: argparse.Namespace) -> int:
             run_git(root, "add", "--", spec)
             run_git(root, "commit", "-q", "-m", f"docs: human spec review of {spec}", "--", spec)
         record["base"] = run_git(root, "rev-parse", "HEAD")
-        record["accepted"] = args.accepted
         record["updated_at"] = now()
         write_registry(registry, records, process)
         print(f"{args.id}: base {record['base']}")
@@ -1094,7 +1094,6 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_argument("--state-dir", required=False)
     sub = commands.add_parser("reviewed")
     sub.add_argument("--id", required=True)
-    sub.add_argument("--accepted", action="store_true", help="the review was Accept spec")
     sub.add_argument("--state-dir", required=False)
     sub = commands.add_parser("stop")
     sub.add_argument("--state-dir", required=False)

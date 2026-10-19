@@ -74,7 +74,7 @@ Finish shaping only when:
 
 The processed spec acceptance hand-off is human acceptance of the reviewed canonical spec and permits implementation dispatch under that spec. It is not implementation PR acceptance, merge approval, preproduction promotion, or live traffic approval. Those gates remain explicit.
 
-Spec acceptance leaves the spec as reviewed: add no Status line or acceptance mark to it; record the acceptance only on the spec's registration, as `spec-chat-review` states.
+Spec acceptance leaves the spec as reviewed: add no Status line or acceptance mark to it; record it in no Spec Chat file, since the spool's Accept spec hand-off is Spec Chat's only view of it; a caller that keeps acceptances quotes that hand-off in its own record, as `spec-chat-review` states.
 
 ## Burden
 

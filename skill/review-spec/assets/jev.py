@@ -10,8 +10,10 @@ import math
 import os
 import posixpath
 import re
+import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -23,6 +25,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Callable, Mapping
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 try:
@@ -43,6 +46,15 @@ DEFAULT_MAX_INPUT_TOKENS = 32000
 RETRYABLE_OUTCOMES = frozenset({"off", "unavailable"})
 # Draft-check question kinds that carry provenance fields (#record-inputs, #record-pairing).
 DRAFT_CHECK_KINDS = frozenset({"contradicts", "contradicts-nongoal", "oversteps", "overlaps"})
+# The one ask queue (jev-suggestions #ask-queue): Jev asks at once per review service, and general LLM runs at once,
+# fewer, as each starts a claude process on the box.
+ASK_WORKERS = 8
+LLM_RUNS = 2
+# A reader wants its waiting asks while a read of it runs and for this long after one ends (#ask-queue): the page
+# and jev-read read again 2 s after a read while anything is pending, so a reader silent longer has gone (a closed
+# or hidden tab, a finished agent read) and the asks only it wanted leave the queue unasked.
+POLL_WINDOW = 10.0
+_monotonic = time.monotonic
 # The one retry rule (jev-contract #retry): a failed ask is asked again after a pause, the provider's
 # given wait, else this many seconds; the pause is written on its record, so no worker waits it out.
 RETRY_PAUSE = 60.0
@@ -302,9 +314,14 @@ SETTLED = frozenset({NOT_A_RULE, MARKED})
 OWNER_RESOLUTIONS = ("fixed", "reason", "dismissed")
 
 
-# The record store's files (#record-store): records split by cache key across this many plain JSONL files, so a
-# lookup that misses reads about 1/4096 of the store, a few hundred records at a million, never the whole of it.
+# The record store's files (#record-store): one generation per question set version, a directory named by the
+# set's id and version, and within it records split by cache key across this many plain JSONL files, so a lookup
+# that misses reads its key's file in each loaded generation, about 1/4096 of what a read can reach, never the
+# whole store.
 STORE_SHARDS = 4096  # three hex digits of the key's sha256
+_STORE_FILE = re.compile(r"[0-9a-f]{3}\.jsonl")
+# A file written before generations, claimed by the compaction moving its records (#record-compact).
+_CLAIMED = ".compacting"
 # Records held in memory, by recency of use (#record-held): enough for every mark a few busy specs show.
 STORE_HELD = 20000
 _MISS = object()
@@ -335,30 +352,70 @@ def _parsed(line: bytes) -> dict[str, Any] | None:
         and record["cache_key"] else None
 
 
-def _append_line(path: Path, value: Mapping[str, Any]) -> None:
-    """One whole line in one O_APPEND write, so concurrent writers never interleave and no line is rewritten."""
-    data = (json.dumps(value, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
-    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+def _generation(question_set: Any) -> str:
+    """A generation's directory name: the question set's id and version, each quoted to one path part."""
+    ref = question_set if isinstance(question_set, Mapping) else {}
+    return "%s@%s" % (quote(str(ref.get("id", "")), safe=""), quote(str(ref.get("version", "")), safe=""))
+
+
+def _cited(record: Mapping[str, Any], cited: frozenset[str]) -> bool:
+    return isinstance(record.get("record_id"), str) and record["record_id"] in cited
+
+
+def _whole(line: bytes) -> bytes:
+    return line if line.endswith(b"\n") else line + b"\n"
+
+
+def _append(path: Path, data: bytes, sync: bool = False) -> None:
+    """Whole lines in one O_APPEND write, so concurrent writers never interleave and no line is rewritten. A missing
+    directory is made: compaction removes an emptied generation."""
+    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT
+    try:
+        fd = os.open(path, flags, 0o644)
+    except FileNotFoundError:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, flags, 0o644)
     try:
         view = memoryview(data)
         while view:
             view = view[os.write(fd, view):]
+        if sync:
+            os.fsync(fd)
     finally:
         os.close(fd)
+
+
+def _append_line(path: Path, value: Mapping[str, Any]) -> None:
+    _append(path, (json.dumps(value, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8"))
+
+
+def _replace(path: Path, data: bytes) -> None:
+    """The file becomes `data` at once: written beside it, synced, then renamed over it, so a reader holds the old
+    file or opens the new one, never a partial line. Another compaction removing the copy first leaves the file."""
+    copy = path.with_name("%s.%d-%s.compact" % (path.name, os.getpid(), uuid.uuid4().hex[:8]))
+    try:
+        _append(copy, data, sync=True)
+        os.replace(copy, path)
+    except FileNotFoundError:
+        copy.unlink(missing_ok=True)
 
 
 class JudgmentStore:
     """Append-only JSONL records, also used as the cache (#record-store, #record-held, #record-lock).
 
-    The path names the store: its records live in the directory beside it named by the path's stem, split by
-    cache key into STORE_SHARDS files. A record is never amended (#record-immutable): outcomes live in the
-    WarningLedger. The records are a disposable cache (#record-disposable). Memory holds the records recent
-    reads and writes used, up to `held`. No lock is held while a file is read. Construction reads nothing
-    (review-service #acceptance-restart). Without a path the store is memory only."""
+    The path names the store: its records live in the directory beside it named by the path's stem, one generation
+    directory per question set version, each split by cache key into STORE_SHARDS files. `versions`, the question
+    set versions the server loads ({id, version} each), names the generations a lookup reads and compaction keeps;
+    without them a lookup reads every generation present. A record is never amended (#record-immutable): outcomes
+    live in the WarningLedger. The records are a disposable cache (#record-disposable) that compaction keeps to what
+    a read can reach (#record-compact). Memory holds the records recent reads and writes used, up to `held`. No lock
+    is held while a file is read. Construction reads nothing (review-service #acceptance-restart). Without a path
+    the store is memory only."""
 
-    def __init__(self, path: str | Path | None = None, *, held: int = STORE_HELD):
+    def __init__(self, path: str | Path | None = None, *, held: int = STORE_HELD, versions: Any = None):
         self.path = Path(path) if path else None
         self.dir = self.path.with_name(self.path.stem) if self.path else None
+        self.versions = None if versions is None else frozenset(map(_generation, versions))
         self.limit = held
         self._held: OrderedDict[str, Any] = OrderedDict()
         self._writes: dict[str, int] = {}
@@ -369,29 +426,56 @@ class JudgmentStore:
     def _shard(self, key: str) -> str:
         return hashlib.sha256(key.encode("utf-8")).hexdigest()[:3]
 
-    def _shard_path(self, shard: str) -> Path:
-        return self.dir / (shard + ".jsonl")  # type: ignore[operator]
+    def _file(self, question_set: Any, key: str) -> Path:
+        """The key's file in the generation of the set version that asks it."""
+        return self.dir / _generation(question_set) / (self._shard(key) + ".jsonl")  # type: ignore[operator]
+
+    def _generations(self) -> list[str]:
+        """The generations a lookup reads: the loaded set versions', else every one present."""
+        if self.versions is not None:
+            return sorted(self.versions)
+        try:
+            with os.scandir(self.dir) as entries:  # type: ignore[arg-type]
+                return sorted(entry.name for entry in entries if entry.is_dir())
+        except FileNotFoundError:
+            return []
 
     def _scan(self, key: str) -> dict[str, Any] | None:
-        """The key's current record from its file, streamed with no lock held; only lines naming the key parse."""
+        """The key's current record from its file in each generation read, streamed with no lock held; only lines
+        naming the key parse. The key hashes its set version, so one generation at most holds it."""
         needle = json.dumps(key, ensure_ascii=False)[1:-1].encode("utf-8")
+        name = self._shard(key) + ".jsonl"
         current = None
-        for line in _lines(self._shard_path(self._shard(key))):
-            if needle in line:
-                record = _parsed(line)
-                if record is not None and record["cache_key"] == key and _replaces(current):
-                    current = record
+        for generation in self._generations():
+            for line in _lines(self.dir / generation / name):  # type: ignore[operator]
+                if needle in line:
+                    record = _parsed(line)
+                    if record is not None and record["cache_key"] == key and _replaces(current):
+                        current = record
+            if current is not None:
+                break
         return current
 
     def _write(self, record: Mapping[str, Any]) -> None:
-        """Called under the lock: one append to the key's file, then the record is held."""
+        """Called under the lock: one append to the key's file in its set version's generation, then the record is
+        held."""
         key = record["cache_key"]
         if self.path:
-            shard = self._shard(key)
-            self.dir.mkdir(parents=True, exist_ok=True)  # type: ignore[union-attr]
-            _append_line(self._shard_path(shard), record)
-            self._writes[shard] = self._writes.get(shard, 0) + 1
+            _append_line(self._file(record.get("question_set"), key), record)
+            self._wrote(self._shard(key))
         self._hold(key, record)
+
+    def _wrote(self, shard: str) -> None:
+        """Called under the lock: a lookup reading a file of this shard reads again (get)."""
+        self._writes[shard] = self._writes.get(shard, 0) + 1
+
+    @staticmethod
+    def _files(directory: Path):
+        """The store files directly in a directory, in name order; none when it is gone."""
+        try:
+            return sorted(path for path in directory.iterdir() if _STORE_FILE.fullmatch(path.name))
+        except (FileNotFoundError, NotADirectoryError):
+            return []
 
     # Held records
 
@@ -422,7 +506,7 @@ class JudgmentStore:
                 value = self._held_value(key)
                 if value is not None:
                     return None if value is _MISS else value
-                if self._writes.get(shard, 0) == writes:  # no write to this file raced the read
+                if self._writes.get(shard, 0) == writes:  # no write to this shard raced the read
                     self._hold(key, _MISS if record is None else record)
                     return record
 
@@ -437,19 +521,123 @@ class JudgmentStore:
             return record
 
     def records(self):
-        """Every current record, streamed one file at a time with no lock held."""
+        """Every current record, streamed one file at a time with no lock held: each generation's, and those in
+        files written before generations, as in an eval's older copy."""
         if not self.path:
             with self.lock:
                 held = [value for value in self._held.values() if value is not _MISS]
             yield from held
             return
-        for shard in range(STORE_SHARDS):
-            current: dict[str, dict[str, Any]] = {}
-            for line in _lines(self._shard_path("%03x" % shard)):
-                record = _parsed(line)
-                if record is not None and _replaces(current.get(record["cache_key"])):
-                    current[record["cache_key"]] = record
-            yield from current.values()
+        older = self._files(self.dir)  # type: ignore[arg-type]
+        try:
+            generations = sorted(path for path in self.dir.iterdir() if path.is_dir())  # type: ignore[union-attr]
+        except FileNotFoundError:
+            generations = []
+        for files in [older, *map(self._files, generations)]:
+            for path in files:
+                current: dict[str, dict[str, Any]] = {}
+                for line in _lines(path):
+                    record = _parsed(line)
+                    if record is not None and _replaces(current.get(record["cache_key"])):
+                        current[record["cache_key"]] = record
+                yield from current.values()
+
+    # Compaction
+
+    def compact(self, cited: Any, stop: threading.Event | None = None) -> None:
+        """Keep only what a read can reach (#record-compact): the generations of the loaded set versions (`versions`),
+        untouched, and each record whose id is in `cited`, the ones the warning ledger cites.
+        Every other generation goes: a file holding no cited record is deleted, one holding some is replaced whole
+        by a file of just those lines, so removing is the only change a store file sees and no reader meets a
+        partial line. Records in files written before generations move into theirs on the same terms. No lock is
+        held while a file is read, so no lookup or append waits for it; `stop` ends it between files."""
+        if not self.path or self.versions is None:  # no loaded versions named: nothing is known unreachable
+            return
+        keep = self.versions
+        cited = frozenset(item for item in cited if isinstance(item, str))
+        stopped = lambda: stop is not None and stop.is_set()
+        try:
+            flat = [path for path in self.dir.iterdir()  # type: ignore[union-attr]
+                    if path.is_file() and (_STORE_FILE.fullmatch(path.name) or path.name.endswith(_CLAIMED))]
+        except FileNotFoundError:
+            return
+        # A killed run's claims first.
+        for path in sorted(flat, key=lambda path: (not path.name.endswith(_CLAIMED), path.name)):
+            if stopped():
+                return
+            self._move(path, keep, cited)
+        for directory in sorted(self.dir.iterdir()):  # type: ignore[union-attr]
+            if directory.is_dir() and directory.name not in keep:
+                if stopped():
+                    return
+                self._prune(directory, cited, stopped)
+
+    def _move(self, path: Path, keep: frozenset[str], cited: frozenset[str]) -> None:
+        """Move the records a read can reach from a file written before generations into their generations, then
+        delete the file. It is claimed by a rename first, so two services starting together do not both move it; a
+        claim left by a killed run is moved by the next. A claim another service is still moving may be moved twice:
+        a key's first final line answers either way (jev-contract #key-reuse)."""
+        claimed = path
+        if not path.name.endswith(_CLAIMED):
+            claimed = path.with_name("%s.%d-%s%s" % (path.name, os.getpid(), uuid.uuid4().hex[:8], _CLAIMED))
+            try:
+                os.rename(path, claimed)
+            except FileNotFoundError:  # another service claimed it
+                return
+        moved: dict[Path, list[bytes]] = {}
+        synced: set[Path] = set()
+        keys: list[str] = []
+        for line in _lines(claimed):
+            record = _parsed(line)
+            if record is None:
+                continue
+            ref = record.get("question_set") or {}
+            if _cited(record, cited) or _generation(ref) in keep:
+                target = self._file(ref, record["cache_key"])
+                moved.setdefault(target, []).append(_whole(line))
+                keys.append(record["cache_key"])
+                if _cited(record, cited):
+                    synced.add(target)
+        for target, lines in moved.items():
+            _append(target, b"".join(lines), sync=target in synced)
+        with self.lock:
+            for target in moved:
+                self._wrote(target.stem)
+            for key in keys:  # a miss held while the record was still in the old file
+                if self._held.get(key) is _MISS:
+                    del self._held[key]
+        claimed.unlink(missing_ok=True)
+
+    def _prune(self, directory: Path, cited: frozenset[str], stopped: Callable[[], bool]) -> None:
+        """Remove a generation no read reaches, keeping each cited record whole in its file."""
+        try:
+            paths = sorted(directory.iterdir())
+        except FileNotFoundError:
+            return
+        for path in paths:
+            if stopped():
+                return
+            if not _STORE_FILE.fullmatch(path.name):
+                if path.is_file():  # a killed compaction's copy, or one another compaction then keeps out (_replace)
+                    path.unlink(missing_ok=True)
+                continue
+            kept: list[bytes] = []
+            dropped = False
+            if cited:
+                for line in _lines(path):
+                    record = _parsed(line)
+                    if record is not None and _cited(record, cited):
+                        kept.append(_whole(line))
+                    else:
+                        dropped = True
+            if not kept:
+                path.unlink(missing_ok=True)
+            elif dropped:
+                _replace(path, b"".join(kept))
+        try:
+            directory.rmdir()
+        except OSError:  # it still holds cited records, or a service wrote to it meanwhile
+            pass
 
 
 # Who records a warning outcome (#ledger-table).
@@ -636,14 +824,8 @@ class ClaudeCliProvider:
         if schema:
             cmd.extend(["--json-schema", json.dumps(schema, ensure_ascii=False)])
         try:
-            result = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
-                                    timeout=self.timeout, cwd="/tmp")
-            if result.returncode != 0:
-                raise RuntimeError("claude CLI exited %d" % result.returncode)
-            envelope = json.loads(result.stdout)
+            envelope = json.loads(self._run(cmd, prompt))
             text = str(envelope.get("result", ""))
-        except subprocess.TimeoutExpired as exc:
-            raise RuntimeError("claude CLI timed out") from exc
         except (OSError, ValueError) as exc:
             raise RuntimeError("claude CLI failed") from exc
         # Extract the actual model from the CLI envelope (modelUsage key, #ac-record).
@@ -652,6 +834,29 @@ class ClaudeCliProvider:
         if isinstance(usage, dict) and usage:
             actual = str(next(iter(usage))) or model
         return {"choices": [{"message": {"content": text}}], "model": actual}
+
+    def _run(self, cmd: list[str], prompt: str) -> str:
+        """One claude run in its own process group, its output: the whole group is ended once it outlives the
+        timeout, so nothing it started runs on. Files, not pipes: a child left holding one never delays the exit.
+        A timeout or a nonzero exit is a failed call, paused by the one retry rule (jev-contract #retry)."""
+        with tempfile.TemporaryFile() as stdin, tempfile.TemporaryFile() as stdout:
+            stdin.write(prompt.encode("utf-8"))
+            stdin.seek(0)
+            process = subprocess.Popen(cmd, stdin=stdin, stdout=stdout, stderr=subprocess.DEVNULL, cwd="/tmp",
+                                       start_new_session=True)
+            try:
+                code = process.wait(timeout=self.timeout)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except OSError:
+                    pass
+                process.wait()
+                raise RuntimeError("claude CLI timed out") from None
+            if code != 0:
+                raise RuntimeError("claude CLI exited %d" % code)
+            stdout.seek(0)
+            return stdout.read().decode("utf-8")
 
 
 def _parse_provider_answer(value: Mapping[str, Any], question_name: str) -> tuple[str, float | None, dict[str, float], str]:
@@ -692,6 +897,18 @@ def _model_reader(llm_model: str | Callable[[], str] | None) -> Callable[[], str
     return _key_reader(llm_model)
 
 
+# A kept question's key, computed once when it is built (review-service #steady-bound): a read looks keys up,
+# never recomputes them. Read by JevSeam.key only; no payload or record carries it.
+QUESTION_KEY = "_key"
+
+
+def _question_key(question: Mapping[str, Any], qset: "QuestionSet") -> str:
+    inputs = {"state": question.get("state", {}),
+              "criteria": question.get("criteria", {}),
+              "question_set": {"id": qset.id, "version": qset.version}}
+    return "sha256:" + hashlib.sha256(_canonical(inputs).encode("utf-8")).hexdigest()
+
+
 def _extract_inputs(question: Mapping[str, Any]) -> dict[str, Any] | None:
     """Extract inputs for draft-check records (#record-inputs): clause text, target text, context."""
     state = question.get("state", {})
@@ -719,7 +936,8 @@ class JevSeam:
     def __init__(self, question_sets: Mapping[str, QuestionSet] | None = None, *, provider: Any = None,
                  api_key: str | Callable[[], str] | None = None, llm_model: str | Callable[[], str] | None = None,
                  record_store: JudgmentStore | None = None, ledger: WarningLedger | None = None,
-                 clock: Callable[[], str] = _now, max_input_tokens: int = DEFAULT_MAX_INPUT_TOKENS):
+                 clock: Callable[[], str] = _now, max_input_tokens: int = DEFAULT_MAX_INPUT_TOKENS,
+                 llm_turns: threading.Semaphore | None = None):
         self.question_sets = dict(question_sets or load_question_sets())
         self.api_key = _key_reader(api_key)
         self.llm_model = _model_reader(llm_model)
@@ -731,6 +949,8 @@ class JevSeam:
         # A lock per key while an ask of it runs or waits, dropped after (#acceptance-store-memory).
         self._key_locks: dict[str, list[Any]] = {}
         self._key_locks_lock = threading.Lock()
+        # General LLM runs at once (jev-suggestions #ask-queue): a run waits its turn, then makes its one call.
+        self.llm_turns = threading.BoundedSemaphore(LLM_RUNS) if llm_turns is None else llm_turns
 
     def question_set(self, kind: str) -> QuestionSet:
         return self.question_sets[kind]
@@ -747,6 +967,11 @@ class JevSeam:
         if self._provider is not None:
             return primary
         return ClaudeCliProvider()
+
+    def _complete(self, fallback: Any, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """One general LLM call, the fallback's or the verifier's, on its turn (#ask-queue)."""
+        with self.llm_turns:
+            return fallback.complete(payload)
 
     def _record(self, key: str, kind: str, qset: QuestionSet, sources: Any, revision: Any,
                 answer: Mapping[str, Any], outcome: str, model: str = MODEL, escalated: bool = False,
@@ -784,11 +1009,12 @@ class JevSeam:
         return self.store.append(record)
 
     def key(self, question: Mapping[str, Any]) -> str:
+        """The question's record key: the one its build kept (question set id, version, key), else computed."""
         qset = self.question_set(str(question.get("kind", "type")))
-        inputs = {"state": question.get("state", {}),
-                  "criteria": question.get("criteria", {}),
-                  "question_set": {"id": qset.id, "version": qset.version}}
-        return "sha256:" + hashlib.sha256(_canonical(inputs).encode("utf-8")).hexdigest()
+        kept = question.get(QUESTION_KEY)
+        if kept is not None and kept[:2] == (qset.id, qset.version):
+            return kept[2]
+        return _question_key(question, qset)
 
     def cached(self, question: Mapping[str, Any]) -> dict[str, Any] | None:
         """The record already held for this question, never asking."""
@@ -910,7 +1136,7 @@ class JevSeam:
         label = None
         failure = None
         try:
-            response = fallback.complete(payload)
+            response = self._complete(fallback, payload)
             model = str(response.get("model", "")) or model
             label = json.loads(response["choices"][0]["message"]["content"])["choice"]
         except Exception as exc:
@@ -961,7 +1187,7 @@ class JevSeam:
         label = None
         failure = None
         try:
-            response = fallback.complete(payload)
+            response = self._complete(fallback, payload)
             result = json.loads(response["choices"][0]["message"]["content"])
             said = result.get("answer")
             clause_span = (result.get("clause_span") or "").strip()
@@ -1195,6 +1421,9 @@ class _AnchorParser(HTMLParser):
                 # A project rule's declaration (project-rules #declare): its mark's name, on a criterion only.
                 "rule": " ".join(str(attrs.get("data-project-rule") or "").split()) or None
                 if "data-acceptance-criterion" in attrs else None,
+                # A criterion's data-story (jev-suggestions #coverage-declared): the stories it names, None when absent.
+                "stories": str(attrs.get("data-story") or "").split()
+                if "data-acceptance-criterion" in attrs and "data-story" in attrs else None,
                 "parent": parent,
                 "children": [],
                 "structural": False,
@@ -1628,43 +1857,38 @@ def build_resolved_questions(events: list[Mapping[str, Any]], current: str | byt
 
 def build_coverage_questions(current: str | bytes, path: str = "spec", base: str = "",
                              revision: Any = "head") -> list[dict[str, Any]]:
+    """Coverage as the spec declares it (#coverage-declared): each criterion asked once per story its data-story
+    names, never another. A story no criterion names and a criterion that names no story of the spec stand alone,
+    a gap with nothing to ask. A spec whose criteria declare no data-story asks nothing."""
     anchors = extract_anchors(current)
-    stories = [(anchor, value) for anchor, value in anchors.items() if value.get("story")]
     criteria = [(anchor, value) for anchor, value in anchors.items() if value.get("criterion")]
-    result = []
-    if stories and not criteria:
-        for story_anchor, story in stories:
-            result.append({
-                "kind": "coverage", "id": story_anchor + "::",
-                "state": {"story": {"anchor": story_anchor, "text": story["text"]}, "criterion": None},
-                "sources": [f"{path}#{story_anchor}"], "revision": {"base": base, "head": revision},
-                "target": story_anchor, "story": story_anchor, "criterion": None,
-            })
-        return result
-    if criteria and not stories:
-        for criterion_anchor, criterion in criteria:
-            result.append({
-                "kind": "coverage", "id": "::" + criterion_anchor,
-                "state": {"story": None, "criterion": {"anchor": criterion_anchor, "text": criterion["text"]}},
-                "sources": [f"{path}#{criterion_anchor}"], "revision": {"base": base, "head": revision},
-                "target": criterion_anchor, "story": None, "criterion": criterion_anchor,
-            })
-        return result
-    for story_anchor, story in stories:
-        for criterion_anchor, criterion in criteria:
-            identifier = story_anchor + "::" + criterion_anchor
-            result.append({
-                "kind": "coverage",
-                "id": identifier,
-                "state": {"story": {"anchor": story_anchor, "text": story["text"]},
-                          "criterion": {"anchor": criterion_anchor, "text": criterion["text"]}},
-                "sources": [f"{path}#{story_anchor}", f"{path}#{criterion_anchor}"],
-                "revision": {"base": base, "head": revision},
-                "target": story_anchor,
-                "story": story_anchor,
-                "criterion": criterion_anchor,
-            })
-    return result
+    if all(value.get("stories") is None for _, value in criteria):
+        return []
+
+    def question(story_anchor: str | None, criterion_anchor: str | None) -> dict[str, Any]:
+        sides = {"story": story_anchor, "criterion": criterion_anchor}
+        return {
+            "kind": "coverage",
+            "id": (story_anchor or "") + "::" + (criterion_anchor or ""),
+            "state": {side: {"anchor": anchor, "text": anchors[anchor]["text"]} if anchor else None
+                      for side, anchor in sides.items()},
+            "sources": [f"{path}#{anchor}" for anchor in sides.values() if anchor],
+            "revision": {"base": base, "head": revision},
+            "target": story_anchor or criterion_anchor,
+            "story": story_anchor,
+            "criterion": criterion_anchor,
+        }
+
+    named: dict[str, list[str]] = {anchor: [] for anchor, value in anchors.items() if value.get("story")}
+    lone = []
+    for criterion_anchor, criterion in criteria:
+        names = [name for name in dict.fromkeys(criterion.get("stories") or ()) if name in named]
+        for name in names:
+            named[name].append(criterion_anchor)
+        if not names:
+            lone.append(question(None, criterion_anchor))
+    return [question(story_anchor, criterion_anchor)
+            for story_anchor, names in named.items() for criterion_anchor in names or [None]] + lone
 
 
 def _audience_leaf_anchors(source: str | bytes | None) -> dict[str, dict[str, Any]]:
@@ -1769,17 +1993,17 @@ BUILDERS = {"type": build_type_questions, "orphan": build_orphan_questions, "res
 # Board route (worklane-provider #jev-board): change type answers that quiet the review highlight.
 MATERIAL_NO = "no-behavior-change"
 MATERIAL_YES = "behavior"
-ASK_WORKERS = 8
 
 
-def changed_leaf_clauses(current: str | bytes, baseline: str | bytes | None) -> list[tuple[str, str, str]]:
-    """(anchor, before, after) for each leaf clause whose text differs from the baseline."""
+def changed_leaf_clauses(current: str | bytes, baseline: str | bytes | None) -> list[tuple[str, str, str, dict[str, Any]]]:
+    """(anchor, before, after, context) for each leaf clause whose text differs from the baseline; context is
+    the clause's in the current text (#context), built in the same parse."""
     now, old = extract_anchors(current), extract_anchors(baseline)
     result = []
     for anchor in _corpus_leaf_anchors(now):
         before, after = str(old.get(anchor, {}).get("text", "")), str(now[anchor].get("text", ""))
         if before != after:
-            result.append((anchor, before, after))
+            result.append((anchor, before, after, anchor_context(anchor, now)))
     return result
 
 
@@ -1889,6 +2113,9 @@ def _git_answer(root: str, *args: str) -> bytes:
     return result.stdout
 
 
+_COMMIT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+
+
 def _commit(root: str, ref: str) -> str | None:
     if not ref or ref.startswith("-"):
         return None
@@ -1988,18 +2215,25 @@ def default_state_dir() -> Path:
 
 
 class JevService:
+    _unread = 0  # failed reads of a file at a commit (_at), counted so a board pass that saw one does not stand
+
     def __init__(self, *, state_dir: str | Path | None = None, provider: Any = None,
                  api_key: str | Callable[[], str] | None = None, llm_model: str | Callable[[], str] | None = None,
                  question_dirs: list[str | Path] | None = None):
         self.question_sets = load_question_sets(*(question_dirs or []))
         self.state_dir = Path(state_dir) if state_dir else default_state_dir()
         # Records and the warning ledger side by side (#ledger); test-flagged slugs use the same layout in the
-        # store's test directory, never the live one (#test-host-rule).
+        # store's test directory, never the live one (#test-host-rule). Both take general LLM turns from one count.
+        llm_turns = threading.BoundedSemaphore(LLM_RUNS)
+        loaded = [{"id": qset.id, "version": qset.version} for qset in self.question_sets.values()]
         self.seam, self.test_seam = (
             JevSeam(self.question_sets, provider=provider, api_key=api_key, llm_model=llm_model,
-                    record_store=JudgmentStore(directory / "records.jsonl"),
-                    ledger=WarningLedger(directory / "ledger.jsonl"))
+                    record_store=JudgmentStore(directory / "records.jsonl", versions=loaded),
+                    ledger=WarningLedger(directory / "ledger.jsonl"), llm_turns=llm_turns)
             for directory in (self.state_dir, self.state_dir / "test"))
+        # Compaction (#record-compact): one background pass after start; stop ends it between files.
+        self._compaction: threading.Thread | None = None
+        self._compaction_stop = threading.Event()
 
         # Board state (#jev-board-answer): the last answer and the rows the board thread answers next.
         self._board_lock = threading.Lock()
@@ -2010,13 +2244,15 @@ class JevService:
         self._board_idle.set()
         self._board_thread: threading.Thread | None = None
 
-        # Background asks (#fast-marks-background): one in flight per question key, shared by every route,
+        # Background asks (#fast-marks-background, #ask-queue): one in flight per question key, shared by every route,
         # rule checks included (project-rules #pending). An ask starts at once on a free worker's drain; with every
-        # worker busy it waits, oldest first, noting each reader whose latest read wants it (_supersede).
+        # worker busy it waits, oldest first, noting each reader whose latest read wants it (_supersede), and leaves
+        # unasked once none does. _readers holds, per reader, its reads running and when its last read ended.
         # The pool lives as long as the service: stop() drops waiting asks and waits only for in-flight ones.
         self._ask_lock = threading.Lock()
         self._asking: dict[str, Future] = {}
         self._waiting: OrderedDict[Future, tuple[tuple[str, ...], Callable[[], Any], dict[Any, int]]] = OrderedDict()
+        self._readers: dict[Any, list[float]] = {}
         self._ask_workers, self._drains, self._reads = ASK_WORKERS, 0, itertools.count(1)
         self._ask_pool: ThreadPoolExecutor | None = ThreadPoolExecutor(
             max_workers=self._ask_workers, thread_name_prefix="spec-chat-jev-ask")
@@ -2025,8 +2261,26 @@ class JevService:
         self._marks_lock = threading.Lock()
         self._marks: dict[tuple[Any, ...], tuple[Any, dict[tuple[Any, ...], tuple[str, Any]]]] = {}
 
+    def start(self) -> None:
+        """After start, in the background and delaying no answer, each store keeps only what a read can reach
+        (#record-compact): the generations of the question set versions this service loads, and the records its
+        warning ledger cites. Called as the server starts answering; start itself reads no record (#record-held)."""
+        if self._compaction is not None:
+            return
+
+        def compact() -> None:
+            for seam in (self.seam, self.test_seam):
+                seam.store.compact({entry.get("judgment") for entry in seam.ledger.entries()}, self._compaction_stop)
+
+        self._compaction = threading.Thread(target=compact, name="spec-chat-jev-compact", daemon=True)
+        self._compaction.start()
+
     def stop(self) -> None:
-        """Stop asking: later reads ask nothing, waiting asks are dropped, in-flight asks finish their record."""
+        """Stop asking: later reads ask nothing, waiting asks are dropped, in-flight asks finish their record.
+        Compaction stops after the file it is on."""
+        self._compaction_stop.set()
+        if self._compaction is not None:
+            self._compaction.join()
         with self._ask_lock:
             pool, self._ask_pool = self._ask_pool, None
             for future in self._waiting:
@@ -2069,12 +2323,25 @@ class JevService:
         try:
             return self._kept.get(("at", self._common_dir(root), commit, relative), read)
         except (OSError, subprocess.SubprocessError):
+            self._unread += 1  # a board pass that saw a failed read does not stand (_board_pass)
             return None
 
     def _built(self, kind: str, *args: Any) -> Any:
         """A builder's value, kept by the content of its inputs; kept questions are read only. Raises as the builder does."""
         builder = BUILDERS[kind]
-        return self._kept.get(("build", kind, builder, _content_digest(args)), lambda: builder(*args))
+        return self._kept.get(("build", kind, builder, _content_digest(args)), lambda: self._keyed(builder(*args)))
+
+    def _keyed(self, value: Any) -> Any:
+        """A built value whose questions, a chain's steps for a chain, each carry their key (QUESTION_KEY)."""
+        if isinstance(value, list):
+            for item in value:
+                if not isinstance(item, dict):
+                    continue
+                for question in item.get("chain") or (item,):
+                    qset = self.question_sets.get(str(question.get("kind", "type")))
+                    if qset is not None:
+                        question[QUESTION_KEY] = (qset.id, qset.version, _question_key(question, qset))
+        return value
 
     def _build(self, kind: str, *args: Any) -> list[dict[str, Any]]:
         """A builder's questions as a list; a builder that raises gives none."""
@@ -2217,8 +2484,13 @@ class JevService:
         return result
 
     def _row_parts(self, row: Mapping[str, Any]) -> tuple[str, str, str, bytes]:
+        """A row's root, spec, served path, and spec text: the text a board pass read (`source`), else the file's."""
         root, spec = str(row["root"]), str(row["spec"])
         path = row.get("path") or str(row["slug"]) + "/" + spec
+        if "source" in row:
+            if row["source"] is None:
+                raise OSError("spec unreadable")
+            return root, spec, str(path), row["source"]
         current = Path(row.get("spec_file") or os.path.join(root, *spec.split("/"))).read_bytes()
         return root, spec, str(path), current
 
@@ -2229,7 +2501,7 @@ class JevService:
         if base is None:
             raise ValueError("row base is not a commit")
         head = _commit(root, "HEAD") or "working-tree"
-        return build_type_questions(current, _git_read(root, "show", base + ":" + spec), path, base, head)
+        return self._built("type", current, self._at(root, base, spec), path, base, head)
 
     def _changed_clauses(self, row: Mapping[str, Any], mains: dict[str, str | None] | None = None) -> list[dict[str, Any]]:
         """Changed leaf clauses against target main, the row root's origin/HEAD as last fetched, resolved once
@@ -2243,10 +2515,8 @@ class JevService:
         if base is None:
             return []
         old = self._at(root, base, spec)
-        now = extract_anchors(current)
         result = []
-        for anchor, before, after in self._built("changed", current, old):
-            ctx = anchor_context(anchor, now)
+        for anchor, before, after, ctx in self._built("changed", current, old):
             entry: dict[str, Any] = {"path": path, "anchor": anchor, "before": before, "after": after, "base": base}
             if ctx:
                 entry["context"] = ctx
@@ -2257,6 +2527,7 @@ class JevService:
         """GET /api/jev/board (#jev-board-answer): the last answer at once; the board thread refreshes it."""
         if not self.enabled:
             return {"jev": "off", "rows": [], "conflicts": []}
+        self._reading("board", 0)  # its asks stay wanted while the board is read (#ask-queue)
         with self._board_lock:
             self._board_rows = list(rows or ())
             self._board_idle.clear()
@@ -2267,23 +2538,52 @@ class JevService:
             return self._board_answer
 
     def _board_loop(self) -> None:
-        """Answer the latest rows from held records, publish, ask the misses, then publish again."""
+        """Refresh the board for the latest rows, once per wake; between passes it holds only the inputs digest of
+        the answer that stands."""
+        settled = None
         while True:
             self._board_wake.wait()
             with self._board_lock:
                 self._board_wake.clear()
                 rows = self._board_rows
             try:
-                answer, misses = self._board_from_records(rows)
-                self._board_answer = answer
-                if misses:
-                    wait(self._ask_misses(misses, read=("board", next(self._reads))))
-                    self._board_answer, _ = self._board_from_records(rows)
+                settled = self._board_pass(rows, settled)
             except Exception:
-                pass
+                settled = None
             with self._board_lock:
                 if not self._board_wake.is_set():
                     self._board_idle.set()
+
+    def _board_pass(self, rows: Any, settled: str | None) -> str | None:
+        """Answer the rows from held records, publish, ask the misses, then publish again. The inputs are each
+        row with its spec text, read once here, and each repository's target main; the host records a row base as
+        the commit it resolves to (lane-hosting #index-entry-cost), and a pass over a base that is not one never
+        stands. A pass whose every answer is final and whose every read succeeded stands until its inputs change:
+        unchanged inputs skip the pass. Returns the digest of the inputs that stand, else None."""
+        rows = [row for row in rows or () if isinstance(row, Mapping) and row.get("slug") and row.get("spec")
+                and not row.get("test")]
+        read, mains = [], {}
+        for row in rows:
+            try:
+                root, _, _, source = self._row_parts(row)
+            except Exception:
+                read.append({**row, "source": None})
+                continue
+            read.append({**row, "source": source})
+            common = self._common_dir(root)
+            if common not in mains:
+                mains[common] = _commit(root, "refs/remotes/origin/HEAD")
+        inputs = _content_digest([read, sorted(mains.items())])
+        if inputs == settled:
+            return settled
+        unread = self._unread
+        answer, misses, done = self._board_from_records(read, mains)
+        self._board_answer = answer
+        if misses:
+            wait(self._ask_misses(misses, read=("board", next(self._reads))))
+            self._board_answer, _, done = self._board_from_records(read, mains)
+        commits = all(_COMMIT_ID.fullmatch(str(row.get("base", ""))) for row in rows)
+        return inputs if done and commits and unread == self._unread else None
 
     def _held(self, question: Mapping[str, Any], misses: dict[str, dict[str, Any]],
               seam: "JevSeam | None" = None) -> dict[str, Any] | None:
@@ -2363,36 +2663,72 @@ class JevService:
                 for key in keys:
                     self._asking.pop(key, None)
                 future.set_result(None)
-                if not self._waiting:
+                now = _monotonic()
+                while self._waiting:  # the oldest waiting ask a reader still wants; those before it leave unasked
+                    future, (keys, ask, wanted) = self._waiting.popitem(last=False)
+                    if not wanted or any(not self._gone(reader, now) for reader in wanted):
+                        break
+                    self._drop(future, keys)
+                else:
                     self._drains -= 1
                     return
-                future, (keys, ask, _) = self._waiting.popitem(last=False)
                 future.set_running_or_notify_cancel()
 
-    def _supersede(self, read: tuple[Any, int]) -> None:
-        """At the end of a read (#acceptance-store-memory): a waiting ask its reader wanted only in reads before this
-        one is no longer wanted by it, and one no reader wants is dropped. A read asks again every key it still
-        misses, so nothing still needed is lost, and asks for spec text since edited do not pile up with reads."""
-        reader, number = read
-        with self._ask_lock:
-            for future, (keys, _, wanted) in list(self._waiting.items()):
-                if wanted.get(reader, number) < number:
-                    del wanted[reader]
-                    if not wanted:
-                        del self._waiting[future]
-                        future.cancel()
-                        for key in keys:
-                            self._asking.pop(key, None)
+    def _drop(self, future: Future, keys: tuple[str, ...]) -> None:
+        """Under _ask_lock: a waiting ask leaves the queue unasked; a read that still misses its key asks it again."""
+        future.cancel()
+        for key in keys:
+            self._asking.pop(key, None)
 
-    def _lane_questions(self, rows: Any, *, exclude_test: bool = True) -> list[dict[str, Any]]:
+    def _reading(self, reader: Any, running: int) -> None:
+        """A read of `reader` starts (1) or ends (-1); a board read (0) does both at once (#ask-queue)."""
+        with self._ask_lock:
+            entry = self._readers.setdefault(reader, [0, 0.0])
+            entry[0] += running
+            entry[1] = _monotonic()
+
+    def _gone(self, reader: Any, now: float) -> bool:
+        """Under _ask_lock: no read of `reader` runs and none ended within the poll window (#ask-queue)."""
+        entry = self._readers.get(reader)
+        return entry is None or (entry[0] <= 0 and now - entry[1] > POLL_WINDOW)
+
+    def _supersede(self, read: tuple[Any, int] | None = None) -> None:
+        """At the end of a read (#acceptance-store-memory, #ask-queue): a waiting ask its reader wanted only in reads
+        before this one is no longer wanted by it, nor by any reader gone, and one no reader wants is dropped. A read
+        asks again every key it still misses, so nothing still needed is lost, and asks for spec text since edited
+        or for readers gone do not pile up. With no read, only gone readers stop wanting."""
+        reader, number = read or (None, 0)
+        with self._ask_lock:
+            now = _monotonic()
+            for future, (keys, _, wanted) in list(self._waiting.items()):
+                left = [who for who, latest in wanted.items()
+                        if (who == reader and latest < number) or self._gone(who, now)]
+                for who in left:
+                    del wanted[who]
+                if left and not wanted:
+                    del self._waiting[future]
+                    self._drop(future, keys)
+            for who in [who for who in self._readers if self._gone(who, now)]:
+                del self._readers[who]
+
+    def queue_counts(self) -> tuple[int, int]:
+        """The ask queue for the status route (review-service #steady-status): (asks waiting, asks running). Asks
+        no live reader wants leave first, so every waiting ask counted is one a reader still wants."""
+        self._supersede()
+        with self._ask_lock:
+            return len(self._waiting), self._drains
+
+    def _lane_questions(self, rows: Any, *, exclude_test: bool = True,
+                        mains: dict[str, str | None] | None = None) -> list[dict[str, Any]]:
         """Cross-lane questions over every registry row's changed clauses (#cross-lane-clauses), kept by
-        content (#fast-marks): a read resolves each repository's target main once and reparses nothing unchanged.
+        content (#fast-marks): a read resolves each repository's target main once, or takes mains already
+        resolved, and reparses nothing unchanged.
         Only slugs of the same project are paired (#cross-lane-pairs, #shared-own-project).
         Test-flagged slugs are excluded from cross-lane checks (#cross-lane-test-host)."""
         if not {"about", "contradicts", "oversteps", "overlaps"} <= set(self.seam.question_sets):
             return []
         projects: dict[str, dict[str, list[dict[str, str]]]] = {}
-        mains: dict[str, str | None] = {}
+        mains = {} if mains is None else dict(mains)
         for row in rows or ():
             if not isinstance(row, Mapping) or not row.get("slug") or not row.get("spec"):
                 continue
@@ -2485,12 +2821,21 @@ class JevService:
         with self._ask_lock:
             self._submit(keys, functools.partial(self._ask_lane_steps, chain["chain"], seam), read)
 
-    def _board_from_records(self, rows: Any) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    def _board_from_records(self, rows: Any, mains: dict[str, str | None] | None = None
+                            ) -> tuple[dict[str, Any], dict[str, dict[str, Any]], bool]:
+        """The board answer from held records, its misses, and whether it is final: every row built and every
+        answer it walked final, so held records cannot change it."""
         rows = [row for row in rows or () if isinstance(row, Mapping) and row.get("slug") and row.get("spec")
                 and not row.get("test")]
         sets = self.seam.question_sets
         misses: dict[str, dict[str, Any]] = {}
-        get_held = lambda step: self._held_record(self.seam.key(step))
+        final = [True]
+
+        def get_held(step: Mapping[str, Any]) -> dict[str, Any] | None:
+            record = self._held_record(self.seam.key(step))
+            if not _final(record):
+                final[0] = False
+            return record
 
         def held_chain(item: Mapping[str, Any]) -> dict[str, Any]:
             # A chain waiting on a step is asked whole, so each answer asks on from it (#chains).
@@ -2504,11 +2849,13 @@ class JevService:
             try:
                 questions = self._material_questions(row) if "type" in sets else None
             except Exception:
-                questions = None
+                questions, final[0] = None, False
+            if row.get("source", b"") is None:
+                final[0] = False
             answer_rows.append({"id": str(row.get("id", "")),
                                 "material": "unknown" if questions is None else material([held_chain(q) for q in questions])})
         conflict_pairs: set[tuple[str, str]] = set()
-        for chain in self._lane_questions(rows):
+        for chain in self._lane_questions(rows, mains=mains):
             results = lane_result(chain["chain"], get_held)
             for r in results:
                 if r.get("outcome") is None and "step" in r:
@@ -2516,7 +2863,7 @@ class JevService:
             if any(_confident_label(r) in LANE_FINDINGS for r in results):
                 conflict_pairs.add(chain["pair"])
         answer = {"jev": "on", "rows": answer_rows, "conflicts": [{"a": a, "b": b} for a, b in sorted(conflict_pairs)]}
-        return answer, misses
+        return answer, misses, final[0] and not misses
 
     def _ask_submit(self, question: Mapping[str, Any], seam: "JevSeam | None" = None,
                     read: tuple[Any, int] | None = None) -> None:
@@ -2785,8 +3132,17 @@ class JevService:
                  base_commit: str | None = None) -> dict[str, Any]:
         if not self.enabled:
             return {"jev": "off", "items": [], "levels": dict(MARK_LEVELS)}
-        seam = self._seam_for(mount)
         read = ((target, base, view), next(self._reads))  # this page's reader: its next read supersedes this one
+        self._reading(read[0], 1)  # while it runs, its reader still wants its waiting asks (#ask-queue)
+        try:
+            return self._response(read, mount, target, relative, base, events, view, served_mounts, base_commit)
+        finally:
+            self._reading(read[0], -1)
+
+    def _response(self, read: tuple[Any, int], mount: Mapping[str, Any], target: str, relative: str, base: str,
+                  events: list[Mapping[str, Any]], view: str, served_mounts: Any,
+                  base_commit: str | None) -> dict[str, Any]:
+        seam = self._seam_for(mount)
         try:
             facts = self._read_facts(mount, target, base, served_mounts, base_commit)
         except Exception:

@@ -68,10 +68,15 @@ SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
 SAFE_CURSOR_RE = re.compile(r"[^/\\]+\Z")
 EVENT_RE = re.compile(r"[A-Za-z0-9._-]{1,128}\Z")
 WAKE_POLL_SECONDS = 3
+# A file time this recent may be shared by a change made just after it was read (file times tick coarsely), so a
+# row's hand-off batch read under it is read again on the next poll (#steady-idle).
+WAKE_RACY_NS = 1_000_000_000
 WAKE_CHECK_TIMEOUT_SECONDS = 5
 WAKE_SEND_TIMEOUT_SECONDS = 10
 WAKE_PLACEHOLDER_RE = re.compile(r"\{(owner|artifact|message)\}")
 WAKE_FAILED_ATTEMPTS = 3  # host-wake #wake-rule-retry: failed attempts in a row before the state turns failed
+# host-wake #wake-rule-retry: once failed, the wait between attempts doubles from one poll up to 3 s x 2^6, about 3 minutes
+WAKE_BACKOFF_DOUBLINGS = 6
 WAKE_ERROR_BYTES = 4096  # the tail of a wake command's error output kept, so a chatty provider cannot bloat a log line
 WAKE_REASON_CHARS = 200  # the reason travels percent-encoded in a header: small for proxies with small header buffers
 # Printable ASCII but %: the reason stays readable in the X-Spec-Chat-Wake header and decodes as a URI component.
@@ -689,12 +694,15 @@ def _store_version(review, root, body):
 
 
 def _wake_batch(resource):
-    """Return the zero-wait scan batch (spool.handoff_batch): each pending hand-off and the events it lists."""
+    """Return the zero-wait scan batch (spool.handoff_batch): each pending hand-off and the events it lists; () with
+    no human/ folder; None when the spool could not be read."""
     review = resource["spec_file"] + ".review"
     try:
         return spool.handoff_batch(review, spool.read_cursor(review, resource["cursor_name"]))
-    except (OSError, ValueError):
+    except FileNotFoundError:
         return ()
+    except (OSError, ValueError):
+        return None
 
 
 def session_state(key=None):
@@ -804,6 +812,8 @@ class WakeController:
         self.lock = threading.Lock()
         self.states = {}  # resource id -> (state, reason), what /api/events reports
         self.rows = {}  # resource id -> its waiting batch's wake record, for one identity (owner, batch)
+        self.clock = time.monotonic  # when a failed batch's next attempt is due
+        self.batches = {}  # resource id -> (its human/ folder and cursor as last read, the batch read then)
 
     def status(self, resource_id):
         """The X-Spec-Chat-Wake value: the wake state, and for failed "; " and its URI-encoded reason."""
@@ -817,11 +827,8 @@ class WakeController:
             step, resource["spec_file"], resource["owner"], code, json.dumps(error, ensure_ascii=False),
         ), file=sys.stderr, flush=True)
 
-    def _attempt(self, resource, batch):
-        """One wake attempt: (step, exit, error output) of the step it ended at, or None with no wake provider."""
-        commands = wake_provider(self.server.state_dir)
-        if commands is None:
-            return None
+    def _attempt(self, resource, batch, commands):
+        """One wake attempt with the wake provider's commands: (step, exit, error output) of the step it ended at."""
         check, send = commands
         message = (
             f"Spec Chat human spec review hand-off ready: spec {resource['spec_file']}, "
@@ -834,24 +841,49 @@ class WakeController:
             return "check", code, error
         return ("send", *run_wake(send, values, timeout=WAKE_SEND_TIMEOUT_SECONDS))
 
+    def _batch(self, resource):
+        """The row's waiting hand-off batch, read again only when its human/ folder or its cursor changed, so
+        noticing a hand-off costs two stats per row however long the review history (review-service #steady-idle)."""
+        review = resource["spec_file"] + ".review"
+        signature, now = [review, resource["cursor_name"]], time.time_ns()
+        for path in (os.path.join(review, "human"), os.path.join(review, resource["cursor_name"])):
+            try:
+                info = os.stat(path)
+            except OSError:
+                signature.append(None)
+                continue
+            if now - info.st_mtime_ns < WAKE_RACY_NS:
+                signature = None
+                break
+            signature.append((info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns))
+        held = self.batches.get(resource["id"])
+        if signature is not None and held and held[0] == signature:
+            return held[1]
+        batch = _wake_batch(resource)
+        self.batches[resource["id"]] = (signature if batch is not None else None, batch or ())  # a failed read: again
+        return batch or ()
+
     def _poll_row(self, resource):
         resource_id = resource["id"]
         if not resource.get("owner") or not resource.get("cursor_name"):
             return None
-        batch = _wake_batch(resource)
+        batch = self._batch(resource)
         if not batch:
             return None
         identity = (resource["owner"], batch)
+        now = self.clock()
         row = self.rows.get(resource_id)
         if row is None or row["identity"] != identity:  # a new batch or owner: its attempts start over
-            row = self.rows[resource_id] = {"identity": identity, "sent": False, "failures": 0, "last": None}
+            row = self.rows[resource_id] = {"identity": identity, "sent": False, "failures": 0, "last": None, "due": now}
         if row["sent"]:
             return "sent", ""
-        attempt = self._attempt(resource, batch)
-        if attempt is None:
+        commands = wake_provider(self.server.state_dir)
+        if commands is None:
             row["failures"] = 0
             return "unavailable", ""
-        step, code, error = attempt
+        if row["failures"] >= WAKE_FAILED_ATTEMPTS and now < row["due"]:  # failed, backing off: no attempt this poll
+            return "failed", row["last"][2]
+        step, code, error = self._attempt(resource, batch, commands)
         reason = wake_reason(step, code, error)
         if (step, code, reason) != row["last"]:  # host-wake #wake-rule-log: a repeat of the previous attempt, no line
             self._log(resource, step, code, error)
@@ -863,15 +895,21 @@ class WakeController:
             row["failures"] = 0
             return "deferred", ""
         row["failures"] += 1
-        return ("failed", reason) if row["failures"] >= WAKE_FAILED_ATTEMPTS else ("retrying", "")
+        if row["failures"] < WAKE_FAILED_ATTEMPTS:
+            return "retrying", ""
+        # host-wake #wake-rule-retry: failed retries less and less often, at most every few minutes, never each poll
+        row["due"] = now + WAKE_POLL_SECONDS * 2 ** min(row["failures"] - WAKE_FAILED_ATTEMPTS + 1, WAKE_BACKOFF_DOUBLINGS)
+        return "failed", reason
 
     def poll(self):
         states = {}
         kept = set()
+        listed = set()
         with self.lock:
             previous = dict(self.states)
         for resource in self.server.mount_state.snapshot():
             resource_id = resource.get("id") if isinstance(resource, dict) else None
+            listed.add(resource_id)
             try:
                 state = self._poll_row(resource)
             except Exception as exc:  # one bad row never stops wake for the others
@@ -886,6 +924,8 @@ class WakeController:
             self.states = states
         for resource_id in set(self.rows) - set(states) - kept:
             del self.rows[resource_id]
+        for resource_id in set(self.batches) - listed:
+            del self.batches[resource_id]
 
     def run(self):
         while not self.stop_event.is_set():
@@ -974,6 +1014,7 @@ class MountHandler(SimpleHTTPRequestHandler):
     def _index(self):
         lanes = {}
         seen = set()
+        listed = set()
         query = urlparse(self.path).query
         for mount in self.mounts:
             specs = enumerate_served_specs(mount)
@@ -994,6 +1035,11 @@ class MountHandler(SimpleHTTPRequestHandler):
                 status, title = _index_row(mount, path, row)
                 lanes.setdefault(lane, {}).setdefault(project, []).append(
                     (status, title, href, _thread_counts(mount, path)))
+                listed.update((path, os.path.realpath(path) + ".review"))
+        # Each cache holds the specs served now, not every spec ever served (review-service #steady-bound).
+        for cache in (_ROW_CACHE, _THREAD_CACHE):
+            for key in set(cache) - listed:
+                cache.pop(key, None)
 
         settled = lanes.pop(None, {})
 
@@ -1287,6 +1333,12 @@ listenHost();
         criteria = read_evidence(base, project, spec, head, served, committed) if project else None
         return self._json({"criteria": criteria, "levels": MARK_LEVELS})
 
+    def _status(self):
+        """GET /api/status (review-service #steady-status): answered at once from the process itself, no store read."""
+        waiting, running = self.server.jev.queue_counts()
+        return self._json({"rss_bytes": _rss_bytes(), "connections": self.server.connections,
+                           "jev": {"waiting": waiting, "running": running}})
+
     def _jev_board(self):
         """Worklane board facts from this host's own registry rows; takes no parameter."""
         try:
@@ -1420,6 +1472,8 @@ listenHost();
             return self._evidence(query)
         if parsed.path == "/api/jev/board":
             return self._jev_board()
+        if parsed.path == "/api/status":
+            return self._status()
         return self._send_file(parsed.path)
 
     def do_HEAD(self):
@@ -1450,6 +1504,30 @@ listenHost();
 class ReviewThreadingHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
+
+    def __init__(self, *args, **kwargs):
+        self.connections = 0  # open connections, each one request thread (review-service #steady-connections)
+        self._connections_lock = threading.Lock()
+        super().__init__(*args, **kwargs)
+
+    def process_request_thread(self, request, client_address):
+        """One connection, counted while open; the handler closes it after MountHandler.timeout without a request."""
+        with self._connections_lock:
+            self.connections += 1
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            with self._connections_lock:
+                self.connections -= 1
+
+
+def _rss_bytes():
+    """This process's resident memory in bytes (/proc/self/statm), None where the system has no such file."""
+    try:
+        with open("/proc/self/statm", "rb") as stream:
+            return int(stream.read().split()[1]) * os.sysconf("SC_PAGE_SIZE")
+    except (OSError, ValueError, IndexError):
+        return None
 
 
 def advertised_host(args):
@@ -1502,6 +1580,7 @@ def main(argv=None):
     wake_thread.start()
     print("spec-chat review-serve on http://%s:%d" % (advertised_host(args), server.server_port), flush=True)
     print("review URL is public and is not a secret in any security sense or an authentication boundary; stop this process when review ends", flush=True)
+    server.jev.start()
     try:
         server.serve_forever()
     finally:
