@@ -64,7 +64,7 @@ class InstallSpecChatTest(unittest.TestCase):
         foreign.symlink_to(self.repo)
 
         self.run_install()
-        for base in (".claude/skills", ".codex/skills"):
+        for base in (".agents/skills", ".claude/skills", ".codex/skills"):
             self.assertEqual((self.home / base / "spec-chat-review").resolve(), ROOT / "skill/review-spec")
             self.assertEqual((self.home / base / "spec-chat-shape").resolve(), ROOT / "skill/shape-spec")
             self.assertEqual((self.home / base / "repair-specs").resolve(), ROOT / "skill/repair-specs")
@@ -86,7 +86,7 @@ class InstallSpecChatTest(unittest.TestCase):
 
         self.run_install("--undo")
         self.assertFalse(self.onboarding.exists())
-        for base in (".claude/skills", ".codex/skills"):
+        for base in (".agents/skills", ".claude/skills", ".codex/skills"):
             self.assertFalse((self.home / base / "spec-chat-review").is_symlink())
             self.assertFalse((self.home / base / "repair-specs").is_symlink())
         self.assertFalse((self.specs / ".viz").exists())
@@ -111,7 +111,7 @@ class InstallSpecChatTest(unittest.TestCase):
         self.run_install("--specs", str(self.specs), "--review", str(self.spec))
         self.assertEqual(self.state_files(), ["onboarding.toml"])
         installed = self.status()["installed"]
-        self.assertEqual(len(installed["links"]), 6)
+        self.assertEqual(len(installed["links"]), 9)
         self.assertEqual(sorted(Path(c).name for c in installed["copies"]), [".style", ".viz"])
         self.assertEqual(len(installed["resources"]), 1)
 
@@ -308,7 +308,7 @@ class InstallSpecChatTest(unittest.TestCase):
             "spec-chat-review": other / "skill/review-spec",
             "repair-specs": other / "skill/repair-specs",
         }
-        for base in (".claude/skills", ".codex/skills"):
+        for base in (".agents/skills", ".claude/skills", ".codex/skills"):
             for name, tgt in skill_map.items():
                 p = self.home / base / name
                 p.parent.mkdir(parents=True, exist_ok=True)
@@ -317,7 +317,7 @@ class InstallSpecChatTest(unittest.TestCase):
         result = self.run_install()
         self.assertIn("adopted:", result.stdout)
         # Symlinks still point to the other clone, not replaced
-        for base in (".claude/skills", ".codex/skills"):
+        for base in (".agents/skills", ".claude/skills", ".codex/skills"):
             for name, tgt in skill_map.items():
                 p = self.home / base / name
                 self.assertTrue(p.is_symlink())
@@ -327,14 +327,14 @@ class InstallSpecChatTest(unittest.TestCase):
 
     def test_skip_occupied_path_and_continue(self):
         """link() skips occupied non-clone paths and the installer continues."""
-        for base in (".claude/skills", ".codex/skills"):
+        for base in (".agents/skills", ".claude/skills", ".codex/skills"):
             for name in ("spec-chat-shape", "spec-chat-review", "repair-specs"):
                 p = self.home / base / name
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.mkdir()  # a directory, not a symlink
 
         result = self.run_install()
-        self.assertEqual(result.stdout.count("skipped:"), 6)
+        self.assertEqual(result.stdout.count("skipped:"), 9)
         self.assertIn("(occupied by directory)", result.stdout)
         # Onboarding still wrote its status (installer continued)
         self.assertEqual(self.status()["status"], "pending")
@@ -347,7 +347,7 @@ class InstallSpecChatTest(unittest.TestCase):
         subprocess.run(["git", "-C", str(unrelated), "remote", "add", "origin",
                          "https://example.invalid/other.git"], check=True)
 
-        for base in (".claude/skills", ".codex/skills"):
+        for base in (".agents/skills", ".claude/skills", ".codex/skills"):
             p = self.home / base / "spec-chat-shape"
             p.parent.mkdir(parents=True, exist_ok=True)
             p.symlink_to(unrelated)
@@ -355,7 +355,7 @@ class InstallSpecChatTest(unittest.TestCase):
         result = self.run_install()
         self.assertIn("skipped:", result.stdout)
         # The other skills should still be linked normally
-        for base in (".claude/skills", ".codex/skills"):
+        for base in (".agents/skills", ".claude/skills", ".codex/skills"):
             self.assertEqual(
                 (self.home / base / "spec-chat-review").resolve(),
                 ROOT / "skill/review-spec",

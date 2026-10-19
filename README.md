@@ -30,7 +30,7 @@ From your repo root (a plain folder works too; Git is not required):
 <spec-chat clone>/scripts/install-spec-chat --specs docs/specs
 ```
 
-This links the skills (`spec-chat-shape`, `spec-chat-review`, `repair-specs`) into `~/.claude/skills` and `~/.codex/skills`, and copies the page runtime (`.viz`) and style (`.style`) into the spec folder. No hosting, keys, or registry.
+This links the skills (`spec-chat-shape`, `spec-chat-review`, `repair-specs`) into `~/.agents/skills`, `~/.claude/skills` and `~/.codex/skills`, and copies the page runtime (`.viz`) and style (`.style`) into the spec folder. No hosting, keys, or registry.
 
 It prints `spec-chat onboarding pending` and a `next: ... --review ...` hint, and `$XDG_STATE_HOME/spec-chat/onboarding.toml` keeps `status = "pending"`. That is expected on the light path: `done` only means the hosted service is set up.
 
