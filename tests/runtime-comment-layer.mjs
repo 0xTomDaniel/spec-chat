@@ -73,6 +73,7 @@ const cards = frame => frame.evaluate(() => {
     status: t.querySelector('.hx-pill')?.textContent || null,
     who: [...t.querySelectorAll('.hx-msg .hx-who')].map(m => m.textContent),
     texts: [...t.querySelectorAll('.hx-msg .hx-text')].map(m => m.textContent),
+    read: [...t.querySelectorAll('.hx-msg')].map(m => m.innerText), // as drawn: author, then the text
     quotes: [...t.querySelectorAll('.hx-msg .hx-quote')].map(m => m.textContent),
     notice: t.querySelector('.hx-place-notice')?.textContent || null,
     kind: t.querySelector('.hx-host-kind')?.textContent || null,
@@ -93,6 +94,8 @@ const comment = async (frame, name, text, starter = null) => {
   await box(frame).locator('.hx-composer [data-act=save]').click();
   await waitCards(frame, cardsMatch(`cards => cards.some(c => c.status === 'draft')`));
 };
+// A message as drawn reads its author name, a space or a line, then its text, never the two run together.
+const apart = (who, text) => new RegExp('^' + who + '\\s+' + text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
 const pinOf = (frame, name) => frame.locator(`.hx-pin[aria-label*=": ${name}, "]`);
 // The host adds an item for another agent turn: after the turn 42 item, or before it.
 const addTurn = (frame, n, where = 'after') => frame.evaluate(([n, where]) => {
@@ -143,6 +146,8 @@ try {
   await box(frame).locator('.hx-composer [data-act=save]').click();
   await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].status === 'draft'`));
   assert.deepEqual((await cards(frame)).map(c => c.texts), [['Question why per week and not per day?']], 'the comment, beginning with Question');
+  const [drawn] = await cards(frame);
+  assert.match(drawn.read[0], apart(drawn.who[0], 'Question why per week and not per day?'), 'its author name stands apart from its text');
   await pinOf(frame, CRITERION).waitFor();
   assert.equal(await pinOf(frame, CRITERION).getAttribute('data-s'), 'draft', 'the item shows a pin');
   assert.deepEqual(await frame.evaluate(() => [...document.querySelectorAll('.item')].map(item => item.outerHTML)), before, "the host's items are unchanged");
@@ -350,6 +355,8 @@ try {
     text: t.querySelector('.hx-msg .hx-text')?.textContent, kind: t.querySelector('.hx-host-kind')?.textContent,
     from: t.querySelector('.hx-host-from a')?.href })));
   assert.deepEqual(specCard, [{ text: 'Totals per week, or per day too?', kind: 'Criterion evidence', from: pane('one-thread-spec') }]);
+  const [who, read] = await page.locator('#hx-threads .hx-msg').evaluate(m => [m.querySelector('.hx-who').textContent, m.innerText]);
+  assert.match(read, apart(who, 'Totals per week, or per day too?'), "the spec page's card sets its author name apart from its text");
   assert.equal(await page.locator('[data-anchor="report-totals"] .hx-pin').count(), 1, "the criterion's pin");
   await page.close();
 

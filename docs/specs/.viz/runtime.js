@@ -2856,7 +2856,8 @@ function threadCard(th, where, place) {
       const item = document.createElement('div');
       item.className = 'hx-msg';
       item.dataset.messageId = m.id;
-      item.innerHTML = '<span class="hx-who">' + esc(messageAuthor(state.authors, history ? history.original : message)) + '</span>' +
+      // A space after the author name, as an edit's entry has: the name never runs into the text.
+      item.innerHTML = '<span class="hx-who">' + esc(messageAuthor(state.authors, history ? history.original : message)) + '</span> ' +
         (m.quote ? '<span class="hx-quote">“' + esc(m.quote) + '”</span>' : '') + '<span class="hx-text">' + esc(m.text || '') + '</span>';
       // #model-edit-history: more than one edit lists every edit with its author.
       if (history && history.edits.length > 1) {

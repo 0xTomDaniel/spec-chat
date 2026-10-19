@@ -238,7 +238,7 @@ path = "{host}/served-focus/docs/specs/report.spec.html"
 # - host-starters, host-only-comments: click "Comment on Totals per week".
 # - host-handoff: click "Comment on Agent turn 42", type the value, click Comment, then "Hand off to agent →".
 # - host-handoff-two: click "Comment on Totals per week", type the first value, click Comment; click "Comment on Agent
-#   turn 42", type the second value, click Comment; then "Hand off to agent →". Open each item's thread with its pin.
+#   turn 42", type the second value, click Comment; then "Hand off to agent →", then open Agent turn 42's thread with its pin.
 # - host-reply, host-quote-gone: open Agent turn 42's thread with its pin.
 # - host-same-subject: the page is pane-other.html; Agent turn 42's thread was written on pane.html. Open it with its pin.
 # - host-quote: select the words "named the columns after the table headers" in Agent turn 42, then click "Comment on
@@ -343,9 +343,11 @@ fixture = "spec_review_site"
 [entry.criteria.acceptance-host-frame]
 fixture = "spec_review_site"
 values = ["Saved in a frame with no origin."]
+# values: the comment it types, the spec page at that criterion, and the address it was written from: the host page.
 [entry.criteria.acceptance-one-thread-spec]
 fixture = "spec_review_site"
-values = ["Totals per week, or per day too?", "{review}/one-thread-spec/docs/specs/report.spec.html#report-totals"]
+values = ["Totals per week, or per day too?", "{review}/one-thread-spec/docs/specs/report.spec.html#report-totals",
+  "{review}/one-thread-spec/docs/pane.html"]
 [entry.criteria.acceptance-one-thread-host]
 fixture = "spec_review_site"
 [entry.criteria.acceptance-no-scope]
