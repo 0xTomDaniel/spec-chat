@@ -1,8 +1,10 @@
-"""One spec's spool read the page's way: the service fold and the hand-off batch.
+"""One spool read the page's way: the service fold, the hand-off batch, and host rows.
 
-review-state #model-fold-one, #model-order, #live-handoff, host-wake #wake-rule-batch.
-Standard library only.
+A spool is a spec's <spec>.review/ or a scope's hosted threads, the same shape with no spec.
+review-state #model-fold-one, #model-order, #live-handoff, #model-fields-hosted; host-wake #wake-rule-batch;
+comment-layer #boundary-agent. Standard library only.
 usage: spool.py batch REVIEW_DIR CURSOR_NAME   (prints the batch's file names, one per line)
+       spool.py host REVIEW_DIR < file names   (prints host<TAB>name<TAB>subject<TAB>kind<TAB>label<TAB>from<TAB>quote)
 """
 from __future__ import annotations
 
@@ -157,6 +159,52 @@ def handoff_batch(review, consumed):
     return tuple(sorted(batch))
 
 
+HOST_FIELDS = ("subject", "kind", "label", "from")
+
+
+def read_events(review):
+    """Every event of a spool on disk as `{actor, name, body}`; a file that is not JSON is skipped. The owner's read,
+    self-contained on disk (comment-layer #boundary-agent); the service reads what it serves through its own reader,
+    which confines a request's spool to its collection."""
+    events = []
+    for actor in ("human", "agent"):
+        directory = os.path.join(review, actor)
+        try:
+            names = os.listdir(directory)
+        except FileNotFoundError:
+            continue
+        for name in names:
+            if name.startswith(".") or not name.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(directory, name), encoding="utf-8") as stream:
+                    events.append({"actor": actor, "name": name, "body": json.load(stream)})
+            except (OSError, ValueError):
+                continue
+    return events
+
+
+def host_rows(review, names):
+    """`(name, subject, kind, label, from, quote)` for each named event of a thread written on a host page
+    (comment-layer #boundary-agent): the thread's root comment's fields, so a reply or edit routes as its thread does.
+    A spec page's comment carries none of them (review-state #model-fields-hosted), so its thread has no row; on a
+    spec a host comment keeps its anchor in place of its subject, and the subject is empty. Whitespace runs read as
+    one space, so a row stays one line."""
+    def field(value):
+        return " ".join(value.split()) if isinstance(value, str) else ""
+
+    thread_of = {}
+    for thread in fold_threads(read_events(review)).values():
+        root = thread["ev"]["body"]
+        if not any(root.get(key) for key in HOST_FIELDS):
+            continue
+        fields = tuple(field(root.get(key)) for key in HOST_FIELDS + ("quote",))
+        held = thread["messages"] + [e for slot in thread["history"].values() for e in [slot["original"], *slot["edits"]]]
+        for event in held:
+            thread_of[event["name"]] = fields
+    return [(name, *thread_of[name]) for name in names if name in thread_of]
+
+
 def read_cursor(review, cursor_name):
     try:
         with open(os.path.join(review, cursor_name), encoding="utf-8") as stream:
@@ -166,8 +214,12 @@ def read_cursor(review, cursor_name):
 
 
 def main(argv):
+    if len(argv) == 2 and argv[0] == "host":
+        for row in host_rows(argv[1], sys.stdin.read().splitlines()):
+            print("\t".join(("host",) + row))
+        return 0
     if len(argv) != 3 or argv[0] != "batch":
-        print("usage: spool.py batch REVIEW_DIR CURSOR_NAME", file=sys.stderr)
+        print("usage: spool.py batch REVIEW_DIR CURSOR_NAME | spool.py host REVIEW_DIR < file names", file=sys.stderr)
         return 2
     review, cursor_name = argv[1], argv[2]
     for name in handoff_batch(review, read_cursor(review, cursor_name)):
