@@ -316,6 +316,21 @@ class WakeControllerTest(unittest.TestCase):
         self.assertEqual([argv[0] for argv in self.waker.says()], ["w2:pNew"])
         self.assertEqual(self.status(), "sent")
 
+    def test_a_new_batch_or_owner_restarts_the_attempts_in_a_row(self):
+        """host-wake #wake-rule-retry: failed needs a few failed attempts in a row for one batch and owner."""
+        self.waker.agent("w1:pOwner", False)
+        self.event("100-handoff-a.json")
+        for change, apply in (("new batch", lambda: self.event("200-handoff-b.json")),
+                              ("re-registered owner", lambda: self.record.update(owner="w2:pGone"))):
+            with self.subTest(change):
+                self.controller = self.new_controller()
+                for _ in range(serve.WAKE_FAILED_ATTEMPTS - 1):
+                    self.controller.poll()
+                self.assertEqual(self.status(), "retrying")
+                apply()
+                self.poll_until_failed()
+                self.assertTrue(self.status().startswith("failed; "), self.status())
+
     def test_other_send_exit_fails_and_retries(self):
         self.waker.send_rc(3)
         self.event("100-handoff-a.json")
@@ -391,6 +406,7 @@ class WakeControllerTest(unittest.TestCase):
         self.waker.check.unlink()
         self.poll_until_failed()
         self.assertRegex(self.status(), r"^failed; check could not start: \S")
+        self.assertIn(str(self.waker.check), urllib.parse.unquote(self.status()), "the reason names the command")
         self.waker.check.write_text("#!/bin/sh\nsleep 5\n")
         self.waker.check.chmod(0o755)
         saved = serve.WAKE_CHECK_TIMEOUT_SECONDS
@@ -411,6 +427,21 @@ class WakeControllerTest(unittest.TestCase):
         state, reason = value.split("; ", 1)
         self.assertEqual((state, urllib.parse.unquote(reason)), ("failed", words))
 
+    def test_a_long_reason_is_cut_short_for_the_header_and_page(self):
+        """host-wake #wake-rule-reason travels in the X-Spec-Chat-Wake header: a provider's long line is cut short so
+        the percent-encoded header stays small for proxies with small header buffers."""
+        words = "pane gone: " + "«é»" * 500  # within the error output tail kept, past the reason's length
+        self.waker.agent("w1:pOwner", False)
+        self.waker.check_error(words + "\n")
+        self.event("100-handoff-a.json")
+        self.poll_until_failed()
+        state, reason = self.status().split("; ", 1)
+        reason = urllib.parse.unquote(reason)
+        self.assertEqual(state, "failed")
+        self.assertLessEqual(len(reason), 200)
+        self.assertTrue(reason.startswith("pane gone: «é»"), reason)
+        self.assertLess(len(self.status()), 2048)
+
     def test_each_send_writes_one_log_line(self):
         """host-wake #acceptance-log-send: one line for the send naming the spec, owner, step, and exit code; a check
         that exits 0 writes nothing."""
@@ -423,18 +454,19 @@ class WakeControllerTest(unittest.TestCase):
         self.waker.send_rc(3)
         self.waker.send_error("cannot write to pane\nretry later\n")
         self.event("100-handoff-a.json")
-        lines = self.polled_log(2)
+        lines = self.polled_log(serve.WAKE_FAILED_ATTEMPTS + 2)
         self.assertEqual(lines, ['review-serve: wake send spec=%s owner=w1:pOwner exit=3 '
-                                 'error="cannot write to pane\\nretry later"' % self.spec] * 2)
+                                 'error="cannot write to pane\\nretry later"' % self.spec],
+                         "host-wake #wake-rule-log: a stuck failing send logs once")
 
     def test_each_failed_check_writes_a_log_line_with_any_error_output(self):
         """host-wake #acceptance-log-check-failed: with error output and without it."""
         self.waker.agent("w1:pOwner", False)
         self.event("100-handoff-a.json")
         silent = 'review-serve: wake check spec=%s owner=w1:pOwner exit=1 error=""' % self.spec
-        self.assertEqual(self.polled_log(2), [silent] * 2)
+        self.assertEqual(self.polled_log(serve.WAKE_FAILED_ATTEMPTS + 2), [silent], "a stuck failing check logs once")
         self.waker.check_error("no pane w1:pOwner\n")
-        self.assertEqual(self.polled_log(), [silent[:-len('""')] + '"no pane w1:pOwner"'])
+        self.assertEqual(self.polled_log(2), [silent[:-len('""')] + '"no pane w1:pOwner"'], "a new reason logs once")
 
     def test_a_send_deferred_again_for_the_same_batch_writes_no_second_line(self):
         """host-wake #wake-rule-log."""
@@ -446,6 +478,19 @@ class WakeControllerTest(unittest.TestCase):
         self.assertEqual(self.polled_log(2), [deferred], "a new batch's first deferral is logged")
         self.waker.send_rc(0)
         self.assertEqual(self.polled_log(2), [deferred[:-len('75 error=""')] + '0 error=""'])
+
+    def test_only_an_attempt_repeating_the_previous_one_writes_no_line(self):
+        """host-wake #wake-rule-log: step, exit code, and reason against the previous attempt for the batch, so send exits
+        75, 3, 75 log three lines; a new batch logs its first attempt again."""
+        self.event("100-handoff-a.json")
+        line = 'review-serve: wake send spec=%s owner=w1:pOwner exit=%s error=""'
+        logged = []
+        for code in (75, 3, 3, 75, 75):
+            self.waker.send_rc(code)
+            logged += self.polled_log()
+        self.assertEqual(logged, [line % (self.spec, code) for code in (75, 3, 75)])
+        self.event("200-handoff-b.json")
+        self.assertEqual(self.polled_log(2), [line % (self.spec, 75)])
 
     def test_send_timeout_counts_as_sent_and_is_never_resent(self):
         saved = serve.WAKE_SEND_TIMEOUT_SECONDS
