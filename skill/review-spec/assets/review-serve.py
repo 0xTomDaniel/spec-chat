@@ -6,8 +6,11 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import functools
 import hashlib
 import html
+import http.client
+import io
 import ipaddress
 import json
 import mimetypes
@@ -26,9 +29,8 @@ import tomllib
 from html.parser import HTMLParser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.error import URLError
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
-from urllib.request import urlopen
+from urllib.request import HTTPHandler, HTTPSHandler, build_opener
 
 try:
     from jev import (MARK_LEVELS, OWNER_RESOLUTIONS, JevService, enumerate_served_specs, extract_anchors,
@@ -81,8 +83,9 @@ WAKE_REASON_CHARS = 200  # the reason travels percent-encoded in a header: small
 # Printable ASCII but %: the reason stays readable in the X-Spec-Chat-Wake header and decodes as a URI component.
 WAKE_REASON_SAFE = "".join(chr(code) for code in range(0x20, 0x7F) if chr(code) != "%")
 EVIDENCE_TIMEOUT_SECONDS = 30
-# lane-hosting #index-gates-provider: the review facts an index load waits for before it renders without them.
-REVIEW_FACTS_SECONDS = 0.5
+# lane-hosting #index-gates-provider: how long from its ask an index load waits for the review facts, the whole answer,
+# before it renders without them; half the warm index budget (#index-entry-cost, under 200 ms), so the rest is the load's.
+REVIEW_FACTS_SECONDS = 0.1
 # A spec row's own fields: a scope row holds none of them (review-service #published-table, comment-layer #scope-row).
 SPEC_ROW_FIELDS = ("project", "path", "spec", "root", "narrow_root", "base")
 SCOPE_ROW_FIELDS = ("id", "slug", "owner", "checker", "cursor_name")
@@ -576,14 +579,69 @@ def _evidence_link(base, path):
     return base.rstrip("/") + path
 
 
+class _DeadlineReader(io.RawIOBase):
+    """A socket's reads, each given only the time left before one deadline, so the reads together end by it."""
+
+    def __init__(self, sock, deadline):
+        super().__init__()
+        self._sock, self._raw, self._deadline = sock, sock.makefile("rb", buffering=0), deadline
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        left = self._deadline - time.monotonic()
+        if left <= 0:
+            raise TimeoutError("the answer outlasted its deadline")
+        self._sock.settimeout(left)
+        return self._raw.readinto(buffer)
+
+    def close(self):
+        self._raw.close()
+        super().close()
+
+
+class _WholeAnswerHandler(HTTPHandler, HTTPSHandler):
+    """urllib's http and https handlers, except a request's timeout bounds each connection's whole answer, status,
+    headers, and body, from when the connection is made, not each socket read: a provider sending its answer a byte at
+    a time cannot hold an ask, or its thread and socket, past it."""
+
+    def do_open(self, http_class, req, **http_conn_args):
+        def connection(host, timeout, **options):
+            opened = http_class(host, timeout=timeout, **options)
+            deadline = time.monotonic() + timeout
+
+            def answer(sock, *args, **kwargs):
+                response = http.client.HTTPResponse(sock, *args, **kwargs)
+                response.fp.close()  # the response has read nothing yet; it reads through the deadline instead
+                response.fp = io.BufferedReader(_DeadlineReader(sock, deadline))
+                return response
+            opened.response_class = answer
+            return opened
+        return super().do_open(connection, req, **http_conn_args)
+
+
+@functools.cache
+def _provider_opener():
+    """Built once, as urlopen keeps its own: building one loads the TLS trust store."""
+    return build_opener(_WholeAnswerHandler())
+
+
+def _provider_get(base, path, query, deadline):
+    """The evidence provider's one fetch, GET <base>/<path>?<query>: its JSON answer, or None when the answer fails,
+    is not JSON, or is not all in by `deadline` (time.monotonic())."""
+    try:
+        with _provider_opener().open(base.rstrip("/") + "/" + path + "?" + urlencode(query),
+                                     timeout=max(deadline - time.monotonic(), 0.001)) as response:
+            return json.loads(response.read())
+    except (OSError, ValueError, RecursionError, http.client.HTTPException):
+        return None
+
+
 def read_evidence(base, project, spec, commit, served, committed):
     """One evidence read for one spec at one commit; None when unavailable."""
-    query = urlencode({"spec": "project/%s::%s" % (project, spec), "commit": commit})
-    try:
-        with urlopen(base.rstrip("/") + "/criteria?" + query, timeout=EVIDENCE_TIMEOUT_SECONDS) as response:
-            body = json.loads(response.read())
-    except (OSError, URLError, ValueError):
-        return None
+    body = _provider_get(base, "criteria", {"spec": "project/%s::%s" % (project, spec), "commit": commit},
+                         time.monotonic() + EVIDENCE_TIMEOUT_SECONDS)
     criteria = body.get("criteria") if isinstance(body, dict) else None
     if not isinstance(criteria, dict):
         return None
@@ -695,16 +753,12 @@ def _web_address(value):
     return isinstance(value, str) and urlparse(value).scheme in ("http", "https") and bool(urlparse(value).netloc)
 
 
-def read_review_facts(base, paths):
+def read_review_facts(base, paths, deadline):
     """lane-hosting #index-gates-provider: one GET <base>/review-facts naming each lane spec's served path; per asked
     path its well-formed `accepted` commit and `proof` {bundle, url}, a key absent when the provider has none. {} when
-    the answer fails, so the index shows neither fact. Asked once per index load and never kept."""
-    try:
-        query = urlencode([("path", path) for path in paths])
-        with urlopen(base.rstrip("/") + "/review-facts?" + query, timeout=REVIEW_FACTS_SECONDS) as response:
-            body = json.loads(response.read())
-    except (OSError, URLError, ValueError):
-        return {}
+    the answer fails or is not all in by `deadline`, so the index shows neither fact. Asked once per index load and
+    never kept."""
+    body = _provider_get(base, "review-facts", [("path", path) for path in paths], deadline)
     specs = body.get("specs") if isinstance(body, dict) else None
     result = {}
     for path in paths if isinstance(specs, dict) else ():
@@ -724,13 +778,14 @@ def read_review_facts(base, paths):
 
 def _ask_review_facts(base, paths):
     """Start an index load's one review facts ask beside its row reads; the returned wait answers the facts, or {}
-    without a provider or once REVIEW_FACTS_SECONDS from the ask have passed, so a slow provider never holds the page."""
+    without a provider or once REVIEW_FACTS_SECONDS from the ask have passed, so a slow provider never holds the page.
+    The ask ends by that same deadline, so asks cannot outlive their loads and pile up."""
     if not base or not paths:
         return dict
-    answer = []
-    asking = threading.Thread(target=lambda: answer.append(read_review_facts(base, paths)), daemon=True)
-    asking.start()
     deadline = time.monotonic() + REVIEW_FACTS_SECONDS
+    answer = []
+    asking = threading.Thread(target=lambda: answer.append(read_review_facts(base, paths, deadline)), daemon=True)
+    asking.start()
 
     def wait():
         asking.join(max(0.0, deadline - time.monotonic()))
@@ -1236,9 +1291,10 @@ class MountHandler(SimpleHTTPRequestHandler):
                 not spec["needs"], not spec["status"], spec["title"].casefold(), spec["href"] or "")))
                 for project in sorted(projects)]
 
-        def project_rows(projects):
+        def project_rows(rows):
+            """The listing of ordered(projects)."""
             parts = []
-            for project, specs in ordered(projects):
+            for project, specs in rows:
                 parts.append('<p class="label">%s</p><ul>' % html.escape(project))
                 for spec in specs:
                     if spec["href"] is None:
@@ -1259,16 +1315,17 @@ class MountHandler(SimpleHTTPRequestHandler):
             return "".join(parts)
 
         def card(lane, projects):
-            needs = sum(spec["needs"] for specs in projects.values() for spec in specs)
+            rows = ordered(projects)
+            needs = sum(spec["needs"] for _, specs in rows for spec in specs)
             # The lane's Proof link: the first proof review facts name for its specs, in index order (#index-entry-lane).
-            proof = next((spec["fact"]["proof"] for _, specs in ordered(projects) for spec in specs
+            proof = next((spec["fact"]["proof"] for _, specs in rows for spec in specs
                           if spec.get("fact", {}).get("proof")), None)
             link = '<a class="proof" href="%s" target="_blank" rel="noopener" data-evidence-bundle="%s">Proof</a>' % (
                 html.escape(proof["url"], quote=True), html.escape(proof["bundle"], quote=True)) if proof else ""
             key = html.escape(_lane_label(lane)[0])
             return '<section class="lane%s" aria-label="%s"><p class="lane-head"><span class="key">%s</span><span class="count">%s</span>%s</p>%s</section>' % (
                 " needs" if needs else "", key, key, "%d need you" % needs if needs else "Nothing needs you", link,
-                project_rows(projects))
+                project_rows(rows))
 
         # Needs you, then In progress, each lanes by issue number, each only when it holds a card (#index-sections).
         parts = {True: [], False: []}
@@ -1279,7 +1336,7 @@ class MountHandler(SimpleHTTPRequestHandler):
             for needs, label in ((True, "Needs you"), (False, "In progress")) if parts[needs])
         if settled:
             listing += '<details class="settled"><summary>Settled (%d)</summary><div class="card">%s</div></details>' % (
-                sum(len(specs) for specs in settled.values()), project_rows(settled))
+                sum(len(specs) for specs in settled.values()), project_rows(ordered(settled)))
         listing = listing or '<p class="empty">No Spec Chat spec pages are available.</p>'
         body = ('''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">

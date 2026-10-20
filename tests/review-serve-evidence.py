@@ -54,10 +54,13 @@ def repo(root, html, origin="https://github.com/acme/spec-chat.git"):
 
 
 class FakeEvidence:
-    """Answers every GET (/criteria, /review-facts) with a fixed body, after `delay` seconds; records every request."""
+    """Answers every GET (/criteria, /review-facts) with a fixed body, after `delay` seconds; records every request.
+    With `wire`, sends those bytes as the whole answer, status line and headers too; with `drip`, sends the whole
+    answer a byte every `drip` seconds and sets `dropped` once the asker hangs up."""
 
-    def __init__(self, body=None, status=200, raw=None, delay=0):
+    def __init__(self, body=None, status=200, raw=None, delay=0, wire=None, drip=None):
         self.requests = []
+        self.dropped = threading.Event()
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -68,6 +71,15 @@ class FakeEvidence:
                 owner.requests.append(self.path)
                 time.sleep(delay)
                 data = raw if raw is not None else json.dumps(body).encode()
+                if wire or drip:
+                    answer = wire or b"HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n%s" % (len(data), data)
+                    try:
+                        for piece in [answer[at:at + 1] for at in range(len(answer))] if drip else [answer]:
+                            self.wfile.write(piece)
+                            time.sleep(drip or 0)
+                    except (BrokenPipeError, ConnectionResetError):
+                        owner.dropped.set()
+                    return
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(data)))
@@ -204,8 +216,11 @@ class EvidenceRouteTest(ProviderHarness):
     def test_unset_down_error_and_non_json_answer_none(self):
         url, _, _ = self.single(page(ok="Shows ok."))
         self.assertEqual(self.evidence(url), {"criteria": None, "levels": serve.MARK_LEVELS})
+        # Nesting past the JSON reader's recursion limit, a status line that is no status, a body cut short.
         for service in (self.fake(status=500, body={"criteria": {"ok": entry()}}),
-                        self.fake(raw=b"<html>"), self.fake(body=["list"])):
+                        self.fake(raw=b"<html>"), self.fake(body=["list"]), self.fake(raw=b"[" * 100000),
+                        self.fake(wire=b"NOPE\r\n\r\n"),
+                        self.fake(wire=b"HTTP/1.1 200 OK\r\nContent-Length: 99\r\n\r\n{}")):
             with self.plugged(service.url):
                 self.assertEqual(self.evidence(url), {"criteria": None, "levels": serve.MARK_LEVELS})
             self.assertEqual(len(service.requests), 1)
@@ -468,8 +483,8 @@ class IndexGatesTest(ProviderHarness):
         self.assertEqual(len(service.requests), 1)
 
     def test_failing_slow_or_malformed_answers_render_at_once_without_facts(self):
-        """#index-gates-provider: an error, a non-JSON or malformed answer, a down or slow provider: the index renders
-        with neither fact, and a slow one never holds it past REVIEW_FACTS_SECONDS."""
+        """#index-gates-provider: an error, a non-JSON or malformed answer, a down, slow, unroutable, or dripping
+        provider: the index renders with neither fact, and none holds a warm load past its budget (#index-entry-cost)."""
         import time as clock
 
         good = {"accepted": "0123456789abcdef0123456789abcdef01234567",
@@ -488,10 +503,15 @@ class IndexGatesTest(ProviderHarness):
         with self.plugged("http://127.0.0.1:9/"):
             self.assertEqual(self.index(url)[0], absent)
         slow = self.fake(body={"specs": {path: good}}, delay=3)
-        with self.plugged(slow.url):
-            started = clock.monotonic()
-            self.assertEqual(self.index(url)[0], absent)
-            self.assertLess(clock.monotonic() - started, serve.REVIEW_FACTS_SECONDS + 1)
+        drip = self.fake(body={"specs": {path: good}}, drip=0.01)
+        # A slow provider, one whose address no host answers (TEST-NET-1), and one sending a byte at a time.
+        for provider in (slow.url, "http://192.0.2.1/", drip.url):
+            with self.subTest(provider=provider), self.plugged(provider):
+                started = clock.monotonic()
+                self.assertEqual(self.index(url)[0], absent)
+                self.assertLess(clock.monotonic() - started, 0.2)  # warm index under 200 ms
+        # The dripping ask hung up by its deadline, not one read timeout after each byte: asks cannot pile up.
+        self.assertTrue(drip.dropped.wait(1))
 
     def test_settled_and_stale_specs_show_no_gate_and_are_not_asked(self):
         """#index-gates-rule: Settled specs show no gate word; #index-entry-stale: a stale row counts toward nothing."""
