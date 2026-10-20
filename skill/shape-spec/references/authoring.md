@@ -78,14 +78,15 @@ When a Then compares what the screen shows before and after the When, as in "sta
 A Then reads from one screen; an outcome that needs two screens splits into one criterion per screen, each with its own When reaching that screen.
 A criterion names each thing by what it is, as in "the lane with a QA bundle", never by screen position or order, as in "the first card".
 Shaping, review, and repair judge these criterion rules; the structural validator does not, because each is a judgment on meaning a markup check cannot make.
-When no screen shows the outcome, as for an analytics event or a stored record, or the outcome lies outside the page, as for a sound, the browser tab title or icon, an operating system dialog, or a live third-party page, the Then states the outcome in product terms and the criterion reads "proven by a unit test: no screen shows it", as in "Then the funnel step is recorded once, proven by a unit test: no screen shows it".
-This is the whole recipe for such a criterion: shaping does not add a capture file, readback command, or stub to make it drivable, and the proving test, not the spec, names any artifact.
+When no screen shows the outcome, as for an analytics event or a stored record, or the outcome lies outside the page, as for a sound, the browser tab title or icon, an operating system dialog, or a live third-party page, the Then states the outcome in product terms, as in "Then the funnel step is recorded once".
+This is the whole recipe for such a criterion: shaping does not add a capture file, readback command, or stub to make it drivable, and the target, not the spec, names any artifact.
+A criterion names no test level, proof method, or proving test, as in "proven by a unit test"; how a criterion is tested belongs to the target repository, never to the spec. An existing criterion that carries such a clause loses it when a change next touches its spec; no spec is edited only to remove it.
 QA harness setup is not product behavior: stubs, capture files, readback tooling, and fixture extensions never appear in a product spec; they belong to the target's qa.toml or QA docs.
 No hidden steps: when reaching the Then needs something the user must do, such as finishing a re-run setup after a handle change, the When says so in user terms; no step the Then depends on is left implied.
 Concrete values, selectors, and paths stay out of the spec: the When says what the user types or picks in user terms, as in "types a folder name", and the target's qa.toml hint file carries the exact value.
 A gesture or timing is its own explicit step with its target or duration, such as "press and hold 500ms" or "drag to the Ideas tile", and the criterion says in plain words that it needs that gesture or timing, so a QA program without it can report the criterion unsupported instead of failed.
 Spec Chat keeps no list of QA capabilities; the plain words are the whole contract.
-A state that cannot occur live is marked "needs an induced failure: <what fails>", as in "needs an induced failure: provider timeout", so the target proves the criterion with a unit test instead of driving it.
+A state that cannot occur live is marked "needs an induced failure: <what fails>", as in "needs an induced failure: provider timeout"; the spec does not say how the target induces it.
 Given, When, and Then open their clauses capitalized as written here, the same way throughout a spec, with no label before them such as a number or "Scenario:"; a criterion in a table cell keeps each Given, When, and Then a readable clause of its own.
 
 A `data-spec-tbd` marker is open unless its value is `later`. Open TBDs block

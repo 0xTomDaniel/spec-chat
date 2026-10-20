@@ -12,15 +12,20 @@ REPAIR="$ROOT/skill/repair-specs/SKILL.md"
 need() { # file phrase
   grep -qF -- "$2" "$1" || { echo "$1 missing: $2" >&2; exit 1; }
 }
-NO_SCREEN='proven by a unit test: no screen shows it'
+NO_TEST_LEVEL='no test level'
 for f in "$SHAPE" "$AUTHORING" "$REPAIR"; do
-  need "$f" "$NO_SCREEN"
+  need "$f" "$NO_TEST_LEVEL"
   need "$f" "fixture user"
   if grep -qi 'annotateanything' "$f"; then
     echo "$f names a peer project" >&2; exit 1
   fi
 done
 need "$SHAPE" "product terms"
+for f in "$SHAPE" "$AUTHORING"; do
+  if grep -qiE 'proven by a [a-z ]*test:|first failing test|narrow waiver' "$f"; then
+    echo "$f prescribes a test level or test workflow" >&2; exit 1
+  fi
+done
 need "$SHAPE" "no QA harness"
 need "$AUTHORING" "QA harness setup is not product behavior"
 need "$AUTHORING" "product terms"
