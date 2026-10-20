@@ -37,6 +37,8 @@ const ready = async url => {
   }
 };
 const servers = [start([join(fixture, 'serve.py'), join(qaRoot, 'serve/registry.toml'), String(port)])];
+// Stop the servers on any exit, also when a step throws before the finally below.
+process.on('exit', () => { for (const server of servers) try { process.kill(-server.pid); } catch {} });
 await ready(`${service}/qa-fixture/docs/specs/report.spec.html`);
 servers.push(start([join(fixture, 'host.py'), service, String(hostPort)]));
 await ready(`${host}/`);

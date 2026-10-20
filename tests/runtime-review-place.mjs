@@ -25,6 +25,8 @@ const server = spawn('python3', [join(fixture, 'serve.py'), join(qaRoot, 'serve/
   stdio: 'ignore', detached: true,
   env: { ...env, HOME: join(qaRoot, 'home'), XDG_STATE_HOME: join(qaRoot, 'state'), XDG_CONFIG_HOME: join(qaRoot, 'config'), HERDR_SOCKET_PATH: '' },
 });
+// Stop the server on any exit, also when a step throws before the finally below.
+process.on('exit', () => { try { process.kill(-server.pid); } catch {} });
 const url = collection => `http://127.0.0.1:${port}/${collection}/docs/specs/report.spec.html`;
 for (let i = 0; ; i++) {
   try { if ((await fetch(url('anchor-moved'))).ok) break; } catch {}

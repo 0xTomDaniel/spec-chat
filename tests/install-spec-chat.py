@@ -438,6 +438,28 @@ class CiTest(unittest.TestCase):
                            ("review-host-wake.py", "def test_without_provider_nothing_is_sent_and_plugging_needs_no_restart(")):
             self.assertIn(name, (ROOT / "tests" / test).read_text(encoding="utf-8"), test)
 
+    def test_a_test_file_that_leaves_a_process_running_fails_the_run(self):
+        """review-service #acceptance-ci-alone: the suite runs in one temp directory, and a test file that leaves a
+        process naming it running fails, and the process is stopped."""
+        workflow = (ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
+        self.assertIn('export TMPDIR="$SPEC_CHAT_TEST_TMP"', workflow)
+        self.assertIn("sh tests/leftover-processes || ", workflow)
+        check = ROOT / "tests/leftover-processes"
+        with tempfile.TemporaryDirectory(prefix="spec-chat-leftover-") as temp:
+            env = {**os.environ, "SPEC_CHAT_TEST_TMP": str(Path(temp).resolve())}
+            clean = subprocess.run(["sh", str(check)], env=env, capture_output=True, text=True)
+            self.assertEqual(clean.returncode, 0, clean.stderr)
+            # A detached stand-in server that names the run directory and outlives its starter.
+            server = subprocess.Popen(["python3", "-c", "import sys, time; time.sleep(60)", env["SPEC_CHAT_TEST_TMP"]],
+                                      start_new_session=True)
+            self.addCleanup(server.wait, 5)
+            self.addCleanup(server.kill)
+            left = subprocess.run(["sh", str(check)], env=env, capture_output=True, text=True)
+            self.assertEqual(left.returncode, 1)
+            self.assertIn(str(server.pid), left.stderr)
+            self.assertIsNotNone(server.wait(timeout=5), "the check stops what it finds")
+            self.assertEqual(subprocess.run(["sh", str(check)], env=env).returncode, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

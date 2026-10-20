@@ -1,0 +1,19 @@
+#!/bin/sh
+# Usage: SPEC_CHAT_TEST_TMP=<run-dir> sh tests/leftover-processes
+# The suite runs with TMPDIR=<run-dir>, so every server a test starts names that directory on its command line.
+# Lists any such process still running, stops it, and exits 1; exits 0 when none is left. The directory comes in
+# through the environment, so no command line of this check names it.
+set -eu
+: "${SPEC_CHAT_TEST_TMP:?}"
+list() {
+  ps -ax -ww -o pid=,command= | awk 'index($0, ENVIRON["SPEC_CHAT_TEST_TMP"]) { print }'
+}
+left=$(list)
+[ -n "$left" ] || exit 0
+printf 'left running by the test run:\n%s\n' "$left" >&2
+pids=$(printf '%s\n' "$left" | awk '{ print $1 }')
+kill $pids 2>/dev/null || true
+sleep 1
+still=$(list | awk '{ print $1 }')
+[ -z "$still" ] || kill -9 $still 2>/dev/null || true
+exit 1
