@@ -1,10 +1,16 @@
 """GET /api/evidence, and the review index's gate words and review facts, behind a fake evidence provider
 (criterion-evidence spec, lane-hosting #index-gates, review-service #providers)."""
 
+import atexit
 import contextlib
+import functools
 import importlib.util
 import json
 import os
+import re
+import shutil
+import socket
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -53,23 +59,59 @@ def repo(root, html, origin="https://github.com/acme/spec-chat.git"):
     return git(root, "rev-parse", "HEAD")
 
 
+@functools.cache
+def self_signed():
+    """(certificate, key) files for 127.0.0.1, trusted only by the client context a test injects."""
+    directory = tempfile.mkdtemp()
+    atexit.register(shutil.rmtree, directory, True)
+    cert, key = os.path.join(directory, "cert.pem"), os.path.join(directory, "key.pem")
+    subprocess.run(["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes",
+                    "-days", "1", "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1",
+                    "-keyout", key, "-out", cert], check=True, capture_output=True)
+    return cert, key
+
+
 class FakeEvidence:
     """Answers every GET (/criteria, /review-facts) with a fixed body, after `delay` seconds; records every request.
     With `wire`, sends those bytes as the whole answer, status line and headers too; with `drip`, sends the whole
-    answer a byte every `drip` seconds and sets `dropped` once the asker hangs up."""
+    answer a byte every `drip` seconds and sets `dropped` once the asker hangs up. With `redirects`, the first that
+    many asks of a chain answer a redirect to the next. With `keep`, answers HTTP/1.1 and keeps each connection open;
+    with `tls`, serves HTTPS on the self-signed certificate, each handshake `handshake` seconds late. `connections`
+    counts the connections made; hang_up() closes each."""
 
-    def __init__(self, body=None, status=200, raw=None, delay=0, wire=None, drip=None):
+    def __init__(self, body=None, status=200, raw=None, delay=0, wire=None, drip=None, redirects=0, keep=False,
+                 tls=False, handshake=0):
         self.requests = []
         self.dropped = threading.Event()
+        self.connections = 0
+        self.sockets = []
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1" if keep else "HTTP/1.0"
+
             def log_message(self, *args):
                 return
+
+            def setup(self):
+                owner.connections += 1
+                owner.sockets.append(self.request)
+                if tls:
+                    time.sleep(handshake)
+                    self.request.do_handshake()
+                super().setup()
 
             def do_GET(self):
                 owner.requests.append(self.path)
                 time.sleep(delay)
+                hop = int(parse_qs(urlparse(self.path).query).get("hop", ["0"])[0])
+                if hop < redirects:
+                    self.send_response(302)
+                    self.send_header("Location", re.sub(r"&hop=\d+\Z", "", self.path) + "&hop=%d" % (hop + 1))
+                    self.send_header("Content-Length", "0")
+                    with contextlib.suppress(BrokenPipeError, ConnectionResetError):  # a reader that stopped waiting
+                        self.end_headers()
+                    return
                 data = raw if raw is not None else json.dumps(body).encode()
                 if wire or drip:
                     answer = wire or b"HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n%s" % (len(data), data)
@@ -83,17 +125,34 @@ class FakeEvidence:
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(data)))
-                self.end_headers()
                 with contextlib.suppress(BrokenPipeError, ConnectionResetError):  # a reader that stopped waiting
+                    self.end_headers()
                     self.wfile.write(data)
 
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        self.url = "http://127.0.0.1:%d/ev/" % self.server.server_port
+        context = None
+        if tls:
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(*self_signed())
+
+        class Server(ThreadingHTTPServer):
+            def get_request(self):
+                sock, address = super().get_request()
+                return (context.wrap_socket(sock, server_side=True, do_handshake_on_connect=False)
+                        if context else sock), address
+
+        self.server = Server(("127.0.0.1", 0), Handler)
+        self.url = "%s://127.0.0.1:%d/ev/" % ("https" if tls else "http", self.server.server_port)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def hang_up(self):
+        for sock in self.sockets:
+            with contextlib.suppress(OSError):
+                sock.shutdown(socket.SHUT_RDWR)
 
     def close(self):
         self.server.shutdown()
         self.server.server_close()
+        self.hang_up()
 
 
 def entry(**values):
@@ -512,6 +571,73 @@ class IndexGatesTest(ProviderHarness):
                 self.assertLess(clock.monotonic() - started, 0.2)  # warm index under 200 ms
         # The dripping ask hung up by its deadline, not one read timeout after each byte: asks cannot pile up.
         self.assertTrue(drip.dropped.wait(1))
+
+    def test_a_kept_connection_carries_each_warm_load(self):
+        """#index-gates-provider, #index-entry-cost: an HTTPS provider whose connection opens slower than the facts
+        deadline, as TCP and TLS to a real provider do: that warm load renders at once without facts, and the
+        connection, kept, carries each later load's ask as one request, facts in, each load under 200 ms."""
+        import time as clock
+
+        path = "abc5/docs/specs/ready.spec.html"
+        service = self.fake(body={"specs": {path: {"accepted": "0123456789abcdef0123456789abcdef01234567"}}},
+                            keep=True, tls=True, handshake=0.3)
+        url, _ = self.lanes([("abc5", "ready", spec_page("Ready"))])
+        self.index(url)  # warm, before any provider
+        trusted = ssl.create_default_context(cafile=self_signed()[0])
+        with patch.object(serve, "_provider_tls", lambda: trusted), self.plugged(service.url):
+            started = clock.monotonic()
+            self.assertEqual(self.index(url)[0]["ABC-5"][3], {"Ready": ["Ready to accept"]})
+            self.assertLess(clock.monotonic() - started, 0.2)
+            clock.sleep(1)  # the open outlasts its load
+            for load in range(5):
+                started = clock.monotonic()
+                self.assertEqual(self.index(url)[0]["ABC-5"][3], {"Ready": ["Accepted 0123456"]}, load)
+                self.assertLess(clock.monotonic() - started, 0.2)
+        self.assertEqual((service.connections, len(service.requests)), (1, 5))
+
+    def test_a_kept_connection_the_provider_closed_is_reopened(self):
+        """#index-gates-provider: a kept connection the provider has since closed is dropped; the ask opens a new
+        one, and asks again, inside the same deadline."""
+        path = "abc5/docs/specs/ready.spec.html"
+        service = self.fake(body={"specs": {path: {"accepted": "0123456789abcdef0123456789abcdef01234567"}}}, keep=True)
+        url, _ = self.lanes([("abc5", "ready", spec_page("Ready"))])
+        accepted = {"Ready": ["Accepted 0123456"]}
+        with self.plugged(service.url):
+            self.assertEqual(self.index(url)[0]["ABC-5"][3], accepted)
+            self.assertEqual(self.index(url)[0]["ABC-5"][3], accepted)
+            self.assertEqual(service.connections, 1)
+            service.hang_up()
+            time.sleep(0.1)
+            self.assertEqual(self.index(url)[0]["ABC-5"][3], accepted)
+            self.assertEqual(self.index(url)[0]["ABC-5"][3], accepted)
+        self.assertEqual((service.connections, len(service.requests)), (2, 4))
+
+    def test_redirects_are_followed_inside_one_deadline(self):
+        """#index-gates-provider: a redirect to an http or https address is followed; a redirect chain shares the
+        ask's one deadline, each hop no new timeout of its own, so the chain cannot outlive its load; a loop ends."""
+        import time as clock
+
+        path = "abc5/docs/specs/ready.spec.html"
+        facts = {"specs": {path: {"accepted": "0123456789abcdef0123456789abcdef01234567"}}}
+        url, _ = self.lanes([("abc5", "ready", spec_page("Ready"))])
+        once = self.fake(body=facts, redirects=1)
+        with self.plugged(once.url):
+            self.assertEqual(self.index(url)[0]["ABC-5"][3], {"Ready": ["Accepted 0123456"]})
+        self.assertEqual(len(once.requests), 2)
+        # Each hop 60 ms: the second ends past the 100 ms deadline, and the chain stops there.
+        chain = self.fake(body=facts, redirects=5, delay=0.06)
+        with self.plugged(chain.url):
+            started = clock.monotonic()
+            self.assertEqual(self.index(url)[0]["ABC-5"][3], {"Ready": ["Ready to accept"]})
+            self.assertLess(clock.monotonic() - started, 0.2)
+        clock.sleep(0.5)
+        self.assertLessEqual(len(chain.requests), 2)
+        loop = self.fake(body=facts, redirects=1000)
+        self.assertIsNone(serve._provider_get(loop.url, "criteria", {}, clock.monotonic() + 5))
+        self.assertEqual(len(loop.requests), serve.PROVIDER_REDIRECTS + 1)
+        # Only to another http or https address.
+        away = self.fake(wire=b"HTTP/1.1 302 Found\r\nLocation: file:///etc/hostname\r\nContent-Length: 0\r\n\r\n")
+        self.assertIsNone(serve._provider_get(away.url, "criteria", {}, clock.monotonic() + 5))
 
     def test_settled_and_stale_specs_show_no_gate_and_are_not_asked(self):
         """#index-gates-rule: Settled specs show no gate word; #index-entry-stale: a stale row counts toward nothing."""

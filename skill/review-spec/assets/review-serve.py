@@ -19,6 +19,7 @@ import pwd
 import re
 import signal
 import socket
+import ssl
 import stat
 import subprocess
 import sys
@@ -29,8 +30,7 @@ import tomllib
 from html.parser import HTMLParser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
-from urllib.request import HTTPHandler, HTTPSHandler, build_opener
+from urllib.parse import parse_qs, quote, unquote, urlencode, urljoin, urlparse, urlsplit
 
 try:
     from jev import (MARK_LEVELS, OWNER_RESOLUTIONS, JevService, enumerate_served_specs, extract_anchors,
@@ -86,6 +86,11 @@ EVIDENCE_TIMEOUT_SECONDS = 30
 # lane-hosting #index-gates-provider: how long from its ask an index load waits for the review facts, the whole answer,
 # before it renders without them; half the warm index budget (#index-entry-cost, under 200 ms), so the rest is the load's.
 REVIEW_FACTS_SECONDS = 0.1
+# Opening a provider connection, TCP and TLS: it may outlast the ask that opened it, which keeps it for the next ask.
+PROVIDER_CONNECT_SECONDS = 10
+# Provider connections per origin, opening, asking, or kept between asks; also the most kept in all.
+PROVIDER_CONNECTIONS = 4
+PROVIDER_REDIRECTS = 5  # redirects one provider fetch follows, all inside its one deadline
 # A spec row's own fields: a scope row holds none of them (review-service #published-table, comment-layer #scope-row).
 SPEC_ROW_FIELDS = ("project", "path", "spec", "root", "narrow_root", "base")
 SCOPE_ROW_FIELDS = ("id", "slug", "owner", "checker", "cursor_name")
@@ -601,41 +606,142 @@ class _DeadlineReader(io.RawIOBase):
         super().close()
 
 
-class _WholeAnswerHandler(HTTPHandler, HTTPSHandler):
-    """urllib's http and https handlers, except a request's timeout bounds each connection's whole answer, status,
-    headers, and body, from when the connection is made, not each socket read: a provider sending its answer a byte at
-    a time cannot hold an ask, or its thread and socket, past it."""
+class _DeadlineResponse(http.client.HTTPResponse):
+    """An answer whose reads, status, headers, and body, together end by one deadline, not each by a socket timeout:
+    a provider sending its answer a byte at a time cannot hold an ask, or its thread and socket, past it."""
 
-    def do_open(self, http_class, req, **http_conn_args):
-        def connection(host, timeout, **options):
-            opened = http_class(host, timeout=timeout, **options)
-            deadline = time.monotonic() + timeout
-
-            def answer(sock, *args, **kwargs):
-                response = http.client.HTTPResponse(sock, *args, **kwargs)
-                response.fp.close()  # the response has read nothing yet; it reads through the deadline instead
-                response.fp = io.BufferedReader(_DeadlineReader(sock, deadline))
-                return response
-            opened.response_class = answer
-            return opened
-        return super().do_open(connection, req, **http_conn_args)
+    def __init__(self, sock, *args, deadline, **kwargs):
+        super().__init__(sock, *args, **kwargs)
+        self.fp.close()  # the answer has read nothing yet; it reads through the deadline instead
+        self.fp = io.BufferedReader(_DeadlineReader(sock, deadline))
 
 
 @functools.cache
-def _provider_opener():
-    """Built once, as urlopen keeps its own: building one loads the TLS trust store."""
-    return build_opener(_WholeAnswerHandler())
+def _provider_tls():
+    """Built once: building one loads the TLS trust store."""
+    return ssl.create_default_context()
+
+
+class _ProviderConnections:
+    """The evidence provider's connections, kept open between asks, so a warm index load's review facts ask is one
+    request on an open connection, not a new DNS, TCP, and TLS setup inside its deadline (lane-hosting
+    #index-gates-provider, #index-entry-cost). A connection keeps no answer: each ask is asked anew."""
+
+    def __init__(self):
+        self._ready = threading.Condition()
+        self._kept = []  # (origin, connection), oldest first
+        self._count = {}  # origin: its connections opening, asking, or kept
+
+    def take(self, origin, deadline):
+        """(connection, kept) to origin (scheme, host, port), the newest kept one, else a new one while origin has
+        fewer than PROVIDER_CONNECTIONS, else the first one kept before deadline; None when none comes or opening
+        fails. Opening may outlast deadline."""
+        with self._ready:
+            while True:
+                for at in range(len(self._kept) - 1, -1, -1):
+                    if self._kept[at][0] == origin:
+                        return self._kept.pop(at)[1], True
+                if self._count.get(origin, 0) < PROVIDER_CONNECTIONS:
+                    self._count[origin] = self._count.get(origin, 0) + 1
+                    break
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    return None
+                self._ready.wait(left)
+        scheme, host, port = origin
+        try:
+            connection = (http.client.HTTPSConnection(host, port, timeout=PROVIDER_CONNECT_SECONDS,
+                                                      context=_provider_tls()) if scheme == "https"
+                          else http.client.HTTPConnection(host, port, timeout=PROVIDER_CONNECT_SECONDS))
+        except (ValueError, http.client.HTTPException):
+            self.drop(origin, None)
+            return None
+        try:
+            connection.connect()
+        except (OSError, ValueError):
+            self.drop(origin, connection)
+            return None
+        return connection, False
+
+    def keep(self, origin, connection):
+        """Keep an open connection for the next ask to origin; past PROVIDER_CONNECTIONS kept, the oldest closes."""
+        with self._ready:
+            self._kept.append((origin, connection))
+            closing, self._kept = self._kept[:-PROVIDER_CONNECTIONS], self._kept[-PROVIDER_CONNECTIONS:]
+            self._ready.notify_all()
+        for old in closing:
+            self.drop(*old)
+
+    def drop(self, origin, connection):
+        """Close a taken connection, or one that failed to open."""
+        if connection is not None:
+            connection.close()
+        with self._ready:
+            self._count[origin] -= 1
+            if not self._count[origin]:
+                del self._count[origin]
+            self._ready.notify_all()
+
+
+_PROVIDER_CONNECTIONS = _ProviderConnections()
+
+
+def _provider_answer(origin, target, deadline):
+    """One GET of target on origin through a kept provider connection: (status, Location, body) once the whole answer
+    is in by deadline (time.monotonic()), else None. A kept connection that fails short of the deadline, as one the
+    provider closed while it was kept does, is dropped and the ask taken again."""
+    taken = _PROVIDER_CONNECTIONS.take(origin, deadline)
+    while taken:
+        connection, kept = taken
+        left = deadline - time.monotonic()
+        if left <= 0:  # opened too late for this ask: kept, the next ask finds it open
+            _PROVIDER_CONNECTIONS.keep(origin, connection)
+            return None
+        try:
+            connection.sock.settimeout(left)
+            connection.response_class = functools.partial(_DeadlineResponse, deadline=deadline)
+            connection.request("GET", target)
+            response = connection.getresponse()
+            answer = response.status, response.getheader("Location"), response.read()
+        except (OSError, ValueError, http.client.HTTPException) as error:
+            _PROVIDER_CONNECTIONS.drop(origin, connection)
+            taken = kept and not isinstance(error, TimeoutError) and _PROVIDER_CONNECTIONS.take(origin, deadline)
+            continue
+        if response.will_close or connection.sock is None:
+            _PROVIDER_CONNECTIONS.drop(origin, connection)
+        else:
+            _PROVIDER_CONNECTIONS.keep(origin, connection)
+        return answer
+    return None
 
 
 def _provider_get(base, path, query, deadline):
-    """The evidence provider's one fetch, GET <base>/<path>?<query>: its JSON answer, or None when the answer fails,
-    is not JSON, or is not all in by `deadline` (time.monotonic())."""
-    try:
-        with _provider_opener().open(base.rstrip("/") + "/" + path + "?" + urlencode(query),
-                                     timeout=max(deadline - time.monotonic(), 0.001)) as response:
-            return json.loads(response.read())
-    except (OSError, ValueError, RecursionError, http.client.HTTPException):
-        return None
+    """The evidence provider's one fetch, GET <base>/<path>?<query>, following redirects: its JSON answer, or None
+    when the answer fails, is not JSON, or is not all in by `deadline` (time.monotonic()), redirects included."""
+    url = base.rstrip("/") + "/" + path + "?" + urlencode(query)
+    for _ in range(PROVIDER_REDIRECTS + 1):
+        parts = urlsplit(url)
+        if parts.scheme not in ("http", "https") or not parts.hostname:
+            return None
+        try:
+            port = parts.port or (443 if parts.scheme == "https" else 80)
+        except ValueError:
+            return None
+        answer = _provider_answer((parts.scheme, parts.hostname, port),
+                                  (parts.path or "/") + ("?" + parts.query if parts.query else ""), deadline)
+        if answer is None:
+            return None
+        status, location, body = answer
+        if status in (301, 302, 303, 307, 308) and location:
+            url = urljoin(url, location)
+            continue
+        if not 200 <= status < 300:
+            return None
+        try:
+            return json.loads(body)
+        except (ValueError, RecursionError):
+            return None
+    return None
 
 
 def read_evidence(base, project, spec, commit, served, committed):
@@ -779,7 +885,8 @@ def read_review_facts(base, paths, deadline):
 def _ask_review_facts(base, paths):
     """Start an index load's one review facts ask beside its row reads; the returned wait answers the facts, or {}
     without a provider or once REVIEW_FACTS_SECONDS from the ask have passed, so a slow provider never holds the page.
-    The ask ends by that same deadline, so asks cannot outlive their loads and pile up."""
+    The ask's request ends by that same deadline; only opening a connection outlasts it, at most PROVIDER_CONNECTIONS
+    per origin, so asks cannot pile up."""
     if not base or not paths:
         return dict
     deadline = time.monotonic() + REVIEW_FACTS_SECONDS
