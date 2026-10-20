@@ -26,13 +26,30 @@ command = 'cd "$QA_REPO_SPEC_CHAT" && exec python3 tests/fixtures/qa/host.py "$Q
 url = "http://127.0.0.1:{port}"
 ready = "/"
 
+[services.evidence]
+# The evidence provider's answers (lane-hosting #index-gates-provider). The provider is a peer outside
+# this repository, so its answers are fixture data (annotateanything jev-capture #qa-rules-real-data):
+# reset.sh declares its review facts answer and a bundle page under $QA_ROOT/evidence, served here as
+# files, so GET /review-facts reads the declared answer and /bundles/qa-proof/ the bundle page.
+command = 'exec python3 -I -m http.server "$PORT" --bind 127.0.0.1 --directory "$QA_ROOT/evidence"'
+url = "http://127.0.0.1:{port}"
+ready = "/"
+
+[services.review-plugged]
+# The review service with the evidence provider plugged (review-service #providers-evidence): the
+# same command on reset.sh's second registry, whose folder holds the provider file reset.sh writes,
+# naming the evidence service. Its own state, so its Jev records stay apart from review's.
+command = 'mkdir -p "$QA_ROOT/home" "$QA_ROOT/state-plugged" "$QA_ROOT/config" && cd "$QA_REPO_SPEC_CHAT" && exec env -u HERDR_SOCKET_PATH HOME="$QA_ROOT/home" XDG_STATE_HOME="$QA_ROOT/state-plugged" XDG_CONFIG_HOME="$QA_ROOT/config" python3 tests/fixtures/qa/serve.py "$QA_ROOT/serve-plugged/registry.toml" "$PORT"'
+url = "http://127.0.0.1:{port}"
+ready = "/qa-8/docs/specs/later-only.spec.html"
+
 # One Git repo of four specs, copied per collection (reset.sh): onboarding.spec.html marks the project rule "Every change
 # to what a user sees or does adds its onboarding section.", named "Every change ships its onboarding"; report.spec.html is the
 # spec under shaping, its head adding an export story with no onboarding criterion,
 # two open TBDs, the first offering two answer buttons, and one later TBD; later-only.spec.html's only TBD is later;
 # one-open.spec.html has exactly one open TBD; print.spec.html, registered only in coverage-undeclared, has stories
 # and criteria that name no story (no data-story), its head rewording two sections. No spec has a comment thread, except
-# the review-state collections' report spec (spools.py, nav hints below). Jev
+# the review-state collections' report spec and the index gate lanes' later-only spec (spools.py, nav hints below). Jev
 # records are written by the fake as pages load and kept across resets; dismissals
 # are not, since each reset registers fresh projects. In rule-candidate the onboarding
 # criterion is unmarked, so it is a candidate on its home spec (story-approve).
@@ -175,21 +192,40 @@ path = "{review}/agent-scan/docs/specs/report.spec.html"
 [nav.acceptance-name]
 path = "{review}/name-reply/docs/specs/report.spec.html"
 
-# Review index (lane-hosting #index-threads, #index-gates), at the server root. Lane-key collections
-# (tests/fixtures/qa/spools.py INDEX_LANES) are the Needs you cards: QA-1 and QA-2, each
-# holding the four fixture specs (Weekly report changed since base, Onboarding unchanged,
-# Report filters and Report sorting absent at base), Weekly report and Report sorting reading
-# Decision open (open TBDs), the other two Ready to accept, each card "4 need you"; QA-2 also holds
-# docs/specs/archive.spec.html, registered from a worktree since removed (reset.sh), a stale
-# row. Every other collection settles.
+# Review index (lane-hosting #index-threads, #index-gates), at the server root. The review service
+# ({review}) has no evidence provider; review-plugged ({review-plugged}) has one, answering from the
+# evidence service's declared review facts (reset.sh). Lane-key collections (tests/fixtures/qa/spools.py
+# INDEX_LANES) are lane cards; every other collection settles under Settled (n).
+# - QA-1 and QA-2 hold the four fixture specs (Weekly report changed since base, Onboarding
+#   unchanged, Report filters and Report sorting absent at base); Weekly report and Report sorting
+#   hold open TBDs. QA-1's Weekly report holds a draft, a handed-off, a replied, and a resolved
+#   thread (3 Open, 1 Resolved); QA-2's one open thread, replied by the agent; QA-2 also holds
+#   docs/specs/archive.spec.html, registered from a worktree since removed (reset.sh), a stale row.
+# - QA-3 to QA-7 each hold Report filters alone (no open TBD) with one thread: QA-3 handed off,
+#   not answered; QA-4 and QA-5 resolved; QA-6 replied by the agent, not resolved; QA-7 a comment
+#   saved, not handed off.
+# - On review-plugged, QA-8 and QA-9 each hold Report filters alone, no thread: the evidence
+#   provider names QA-8's accepted at the fixture's head commit, and a proof bundle for QA-9.
 # Capture hints, per criterion:
 # - review-index, index-threads, index-threads-none: read the QA-1 card. Its Weekly report
 #   row holds a draft, a handed-off, a replied, and a resolved thread (3 Open, 1 Resolved);
 #   its other rows have no threads.
-# - index-design: read the Needs you cards and the settled specs below them: each lane spec row shows
-#   its gate word once, each card how many of its specs need you, "Up to date" shows nowhere, and the
-#   page has no sideways scroll. QA-2's stale row has no gate or status; its Stale pill is its only
-#   word (lane-hosting #index-entry-status).
+# - index-sections: read the part headings and the QA-1 and QA-3 cards, then open Settled at the
+#   bottom. The review service serves registry rows only, so no spec there is served without a row;
+#   that case is proven by tests/review-serve-multi.py
+#   test_index_settles_specs_served_without_a_row_in_a_closed_disclosure.
+# - index-gate-decision: read QA-1's Weekly report row (open TBDs and a handed-off thread).
+# - index-gate-reply: read the QA-6 card. index-gate-draft: read the QA-7 card.
+# - index-gate-agent: read the QA-3 card. index-gate-ready, index-no-provider: read the QA-4 card.
+# - index-gate-sent: click the QA-5 card's "Report filters" title; on the spec page open the review
+#   sidebar with its "Open review sidebar" button (top right), click "Accept spec", then click
+#   "Back to Spec Chat index"; read the QA-5 card.
+# - index-gate-accepted: read the QA-8 card on review-plugged.
+# - index-proof: click the QA-9 card's "Proof" link on review-plugged; it opens in a new tab.
+# - index-design: read the Needs you and In progress cards and the settled specs below them: no
+#   spec row reads "Up to date", each lane spec row shows its gate word once, each card how many of
+#   its specs need you, and the page has no sideways scroll. QA-2's stale row has no gate or status;
+#   its Stale pill is its only word (lane-hosting #index-entry-status).
 # - index-threads-refresh: QA-2's Weekly report has one open thread, replied by the agent.
 #   Steps: click that row's "Weekly report" title in the QA-2 card; open the thread with its
 #   "Open thread 1" button; click its "✓ Resolve" button; click "Back to Spec Chat index" (the
@@ -197,6 +233,26 @@ path = "{review}/name-reply/docs/specs/report.spec.html"
 # - index-stale: read the QA-2 card. Its four specs are title links; docs/specs/archive.spec.html
 #   shows as plain text with a Stale pill on the right and no link.
 [nav.acceptance-review-index]
+path = "{review}/"
+[nav.acceptance-index-sections]
+path = "{review}/"
+[nav.acceptance-index-gate-decision]
+path = "{review}/"
+[nav.acceptance-index-gate-reply]
+path = "{review}/"
+[nav.acceptance-index-gate-draft]
+path = "{review}/"
+[nav.acceptance-index-gate-agent]
+path = "{review}/"
+[nav.acceptance-index-gate-ready]
+path = "{review}/"
+[nav.acceptance-index-gate-sent]
+path = "{review}/"
+[nav.acceptance-index-gate-accepted]
+path = "{review-plugged}/"
+[nav.acceptance-index-proof]
+path = "{review-plugged}/"
+[nav.acceptance-index-no-provider]
 path = "{review}/"
 [nav.acceptance-index-threads]
 path = "{review}/"
@@ -262,6 +318,39 @@ fixture = "spec_review_site"
 [entry.criteria.acceptance-served-focus]
 fixture = "spec_review_site"
 [entry.criteria.acceptance-coverage-undeclared]
+fixture = "spec_review_site"
+# The review index criteria's Givens ask for a fixture to be added; the qa-1 to qa-9 lanes are it (reset.sh).
+[entry.criteria.acceptance-review-index]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-index-sections]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-index-gate-decision]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-index-gate-reply]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-index-gate-draft]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-index-gate-agent]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-index-gate-ready]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-index-gate-sent]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-index-gate-accepted]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-index-proof]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-index-no-provider]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-index-threads]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-index-threads-none]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-index-threads-refresh]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-index-design]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-index-stale]
 fixture = "spec_review_site"
 [entry.criteria.acceptance-steady-closed]
 fixture = "spec_review_site"
@@ -422,8 +511,6 @@ cannot_host = "needs a live shaping agent asking a human; no live agent here"
 cannot_host = "the When is an author edit to the spec file while the reviewer views the card; capture edits no file and the fixture lands no edit on a plain reload; proven by tests/review-serve-jev-rules.py test_cover_or_reason_line_clears_a_thread_alone_does_not_and_untriggered_never_shows"
 [entry.criteria.acceptance-onboarding-doc]
 cannot_host = "the onboarding documentation is the repo README, which the review service does not serve; proven by tests/install-spec-chat.py test_onboarding_doc_says_how_to_write_a_project_rule"
-[entry.criteria.acceptance-index-sections]
-cannot_host = "every fixture spec is served with a registry row, so the Given's specs served without a row are absent; proven by tests/review-serve-multi.py"
 [entry.criteria.acceptance-index-design-phone]
 cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone screen cannot be reached; proven by tests/review-serve-multi.py"
 # Setting the system appearance is not a browser capability (jev-capture #jc-capabilities).

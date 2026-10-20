@@ -3,7 +3,8 @@
 
 usage: spools.py <site>   (after reset.sh copies the head repo to <site>/<collection>)
 
-Each collection below gets seeded spool events on its report spec, as the page and the
+Each collection below gets seeded spool events on its report spec (an index gate lane's on its
+Report filters spec, SPEC_OF), as the page and the
 agent would have left them (human/ and agent/) (skill/review-spec/references/event-schema.md), and, where a
 criterion needs it, the agent's edit to the spec or its answer to a saved comment. Seeded
 human events name the head spec text as their `version` and the version file holds it, as
@@ -19,6 +20,7 @@ import subprocess
 import sys
 
 SPEC = os.path.join("docs", "specs", "report.spec.html")
+LATER = os.path.join("docs", "specs", "later-only.spec.html")  # Report filters: its only TBD is later, no open decision
 SENTENCE = "The export button downloads a CSV of the current table."
 KEY = SENTENCE[:40]  # the page's text target key: the selection's first 40 characters
 EXPORT_LINE = '<p data-acceptance-criterion data-anchor="report-export" data-story="story-export">%s</p>\n' % SENTENCE
@@ -136,6 +138,34 @@ def one_open(spool):
     return None
 
 
+# Index gate lanes (lane-hosting #index-gates): one thread on Report filters, in the state its gate reads.
+def with_agent(spool):
+    """A handed-off comment the agent has not answered."""
+    root = comment(spool, "qa-handed", "qa-browser-papaya", "Papaya", "filter-team", None, "Which teams are listed?")
+    spool.add("handoff", "qa-handed-handoff", "qa-browser-papaya", "Papaya", events=[root])
+    return None
+
+
+def agent_replied(spool):
+    """A handed-off comment the agent answered, not yet resolved."""
+    replied(spool, "qa-replied", "filter-team", "Which teams are listed?")
+    return None
+
+
+def all_resolved(spool):
+    """Every thread resolved: one, handed off, answered, then resolved."""
+    done = replied(spool, "qa-resolved", "filter-team", "Which teams are listed?")
+    spool.add("status", "qa-resolved-status", "qa-browser-papaya", "Papaya", respondsTo=done, threadId=done,
+              status="resolved")
+    return None
+
+
+def unsent(spool):
+    """A saved comment never handed off: a draft."""
+    comment(spool, "qa-draft", "qa-browser-mango", "Mango", "filter-team", None, "Filter by region too?")
+    return None
+
+
 # collection -> seeds the spool, returns the agent edit applied now (or None)
 COLLECTIONS = {
     "anchor-moved": on_sentence(insert_above),
@@ -148,10 +178,18 @@ COLLECTIONS = {
     "qa-2": one_open,
     "advice": later_tbds,
     "served-threads": one_open,
+    "qa-3": with_agent,
+    "qa-4": all_resolved,
+    "qa-5": all_resolved,
+    "qa-6": agent_replied,
+    "qa-7": unsent,
 }
-# Lane-key collections, reached from the review index root (lane-hosting #index-threads); their
+# collection -> the spec its seed writes on, when not the report spec: the index gate lanes, which
+# register Report filters alone (reset.sh)
+SPEC_OF = {lane: LATER for lane in ("qa-3", "qa-4", "qa-5", "qa-6", "qa-7")}
+# Lane-key collections, reached from the review index root (lane-hosting #index-threads, #index-gates); their
 # other specs have no threads.
-INDEX_LANES = ("qa-1", "qa-2")
+INDEX_LANES = ("qa-1", "qa-2", "qa-3", "qa-4", "qa-5", "qa-6", "qa-7")
 # collection -> agent edit that lands when the page next saves (land_pending_edit)
 PENDING = {"stale-page": insert_above}
 # collections whose agent answers each saved comment (answer_comment), so the page offers a reply
@@ -160,7 +198,7 @@ ANSWERING = {"name-reply"}
 
 def build(site):
     for collection, seed in COLLECTIONS.items():
-        spec = os.path.join(site, collection, SPEC)
+        spec = os.path.join(site, collection, SPEC_OF.get(collection, SPEC))
         with open(spec, "rb") as stream:
             raw = stream.read()
         version = hashlib.sha256(raw).hexdigest()

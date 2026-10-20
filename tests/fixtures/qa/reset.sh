@@ -14,6 +14,19 @@
 # you, their specs holding open TBDs or awaiting acceptance; every other collection
 # settles. QA-2 also holds a spec registered from a worktree since removed (its root
 # is never created), so its card shows that row Stale (lane-hosting #acceptance-index-stale).
+# qa-3 to qa-7 are index gate lanes (lane-hosting #index-gates), each registering Report filters
+# alone (no open decision), its one thread seeded by spools.py: with the agent, resolved twice
+# (qa-5 is pressed Accept spec), replied, and a draft.
+#
+# The evidence provider is a peer outside this repository, so its answers are fixture data
+# (annotateanything jev-capture #qa-rules-real-data): $QA_ROOT/evidence holds its declared
+# bundle page and review facts answer, the evidence service (qa.toml) serves them as files, and
+# the review-plugged service's registry folder holds the provider file pointing at it
+# (review-service #providers-evidence). Its lanes qa-8 (named accepted at the head commit) and
+# qa-9 (named a proof bundle) register Report filters alone. The answer and the provider file
+# name the evidence service's address, so they are written once it runs (QA_URL_EVIDENCE, every
+# reset capture runs before a criterion); the reset before services start leaves both out. The
+# review service has no provider file: it is the box with no evidence provider.
 #
 # A rule is its criterion's mark in its home spec (project-rules #declare): onboarding.spec.html
 # marks its onboarding criterion. Dismissals live in the warning ledger by project and spec
@@ -36,13 +49,16 @@ collections="qa-fixture rule-candidate tbd-later tbd-later-handoff tbd-open-high
   choice-press choice-phone choice-thread choice-again choice-change choice-reload
   choice-handoff choice-comment-mode
   anchor-moved anchor-changed anchor-gone stale-page agent-scan name-reply advice
-  clear-thread qa-1 qa-2 dismiss dismiss-reload not-a-rule
+  clear-thread qa-1 qa-2 qa-3 qa-4 qa-5 qa-6 qa-7 dismiss dismiss-reload not-a-rule
   served-threads served-handoff served-index served-focus coverage-undeclared"
+plugged="qa-8 qa-9"
 site="$QA_ROOT/site"
 serve="$QA_ROOT/serve"
+serve_plugged="$QA_ROOT/serve-plugged"
+evidence="$QA_ROOT/evidence"
 repo="$site/.repo"
-rm -rf "$site"
-mkdir -p "$site" "$serve"
+rm -rf "$site" "$evidence" "$serve_plugged/providers"
+mkdir -p "$site" "$serve" "$serve_plugged/providers"
 # Fixed identity and dates: every reset yields the same commits.
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
   GIT_AUTHOR_NAME=qa GIT_AUTHOR_EMAIL=qa@example.invalid GIT_AUTHOR_DATE=2026-01-01T00:00:00Z \
@@ -56,7 +72,8 @@ base="$(git -C "$repo" rev-parse HEAD)"
 cp -R "$QA_FIXTURE/head/." "$repo/"
 git -C "$repo" add -A
 git -C "$repo" commit -qm head
-for collection in $collections; do
+head="$(git -C "$repo" rev-parse HEAD)"
+for collection in $collections $plugged; do
   cp -R "$repo" "$site/$collection"
 done
 rm -rf "$repo"
@@ -70,10 +87,13 @@ python3 "$QA_FIXTURE/spools.py" "$site"
 # Registry: every spec of every collection, in this reset's projects. Python writes it
 # so paths are escaped as TOML strings.
 project="qa-$(date +%s%N)"
-python3 - "$serve/registry.toml" "$site" "$base" "$project" $collections <<'PY'
+python3 - "$serve/registry.toml" "$serve_plugged/registry.toml" "$site" "$base" "$project" "$plugged" $collections <<'PY'
 import json, os, sys
-registry, site, base, entry, *collections = sys.argv[1:]
+registry, registry_plugged, site, base, entry, plugged, *collections = sys.argv[1:]
+plugged = plugged.split()
 own = {slug: entry + "-" + slug for slug in ("rule-candidate", "not-a-rule", "dismiss", "dismiss-reload")}
+# Index gate lanes register Report filters alone.
+alone = {"qa-3", "qa-4", "qa-5", "qa-6", "qa-7", *plugged}
 
 
 def row(slug, root, spec):
@@ -86,12 +106,36 @@ def row(slug, root, spec):
     return "[[resource]]\n" + "".join("%s = %s\n" % (k, json.dumps(v)) for k, v in fields.items())
 
 
-rows = [row(slug, os.path.join(site, slug), "docs/specs/%s.spec.html" % spec)
-        for slug in collections for spec in ("onboarding", "report", "later-only", "one-open")]
+def rows_of(slugs):
+    return [row(slug, os.path.join(site, slug), "docs/specs/%s.spec.html" % spec) for slug in slugs
+            for spec in (("later-only",) if slug in alone else ("onboarding", "report", "later-only", "one-open"))]
+
+
+rows = rows_of(collections)
 rows.append(row("coverage-undeclared", os.path.join(site, "coverage-undeclared"), "docs/specs/print.spec.html"))
 # QA-2's removed worktree: a spec registered from a root since gone (review-service #service-stale).
 rows.append(row("qa-2", os.path.join(site, "qa-2-removed"), "docs/specs/archive.spec.html"))
 with open(registry + ".tmp", "w", encoding="utf-8") as out:
     out.write('[process]\npublic_base = "https://review.qa.invalid"\n\n' + "\n".join(rows))
 os.replace(registry + ".tmp", registry)
+with open(registry_plugged + ".tmp", "w", encoding="utf-8") as out:
+    out.write("\n".join(rows_of(plugged)))
+os.replace(registry_plugged + ".tmp", registry_plugged)
 PY
+# The evidence provider's declared answers (lane-hosting #index-gates-provider), once its service runs.
+cp -R "$QA_FIXTURE/evidence" "$evidence"
+if [ -n "${QA_URL_EVIDENCE:-}" ]; then
+  python3 - "$evidence/review-facts" "$serve_plugged/providers/evidence.toml" "$QA_URL_EVIDENCE" "$head" <<'PY'
+import json, os, sys
+answer, provider, url, head = sys.argv[1:]
+spec = "docs/specs/later-only.spec.html"
+facts = {"specs": {
+    "qa-8/" + spec: {"accepted": head},
+    "qa-9/" + spec: {"proof": {"bundle": "qa-proof", "url": url.rstrip("/") + "/bundles/qa-proof/"}},
+}}
+for path, text in ((answer, json.dumps(facts)), (provider, "url = %s\n" % json.dumps(url))):
+    with open(path + ".tmp", "w", encoding="utf-8") as out:
+        out.write(text)
+    os.replace(path + ".tmp", path)
+PY
+fi
