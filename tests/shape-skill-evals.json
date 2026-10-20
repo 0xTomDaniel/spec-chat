@@ -73,24 +73,24 @@
     },
     {
       "id": 7,
-      "eval_name": "acceptance-and-tdd-readiness",
+      "eval_name": "acceptance-readiness",
       "prompt": "Finish shaping a behavior change whose draft criteria include one clear observable, one unresolved gap, and one unnecessary criterion.",
       "expectations": [
         "Classifies each candidate criterion as clear, gap, or not needed",
         "Backs retained clear criteria with identified spec rules and marks the gap data-spec-tbd",
         "Removes the unnecessary criterion",
-        "Names a deep-module seam, the smallest first failing test, and observable acceptance evidence",
+        "Names no seam, failing test, test level, waiver, or proof plan in the spec",
         "Refuses spec acceptance while the gap or any applicable source misalignment remains"
       ]
     },
     {
       "id": 8,
-      "eval_name": "docs-only-and-test-waiver",
-      "prompt": "Shape one docs-only correction, then a separate behavior change where the smallest failing test is genuinely unsuitable.",
+      "eval_name": "no-test-workflow",
+      "prompt": "Shape a behavior change in a repo whose AGENTS.md asks for unit tests, with one outcome no screen shows and one state that needs an induced failure.",
       "expectations": [
-        "Skips the TDD contract for the docs-only correction",
-        "Records a narrow waiver and alternative proof in the spec for the unsuitable behavior test",
-        "Does not treat either exception as blanket permission to skip behavioral proof"
+        "Every criterion states observable behavior only, with no test level, proof method, or proving test",
+        "The induced-failure criterion keeps its needs an induced failure marker and says nothing about how the target induces it",
+        "The spec records no seam, failing test, waiver, or proof plan"
       ]
     },
     {
@@ -163,7 +163,7 @@
       "expectations": [
         "Each Given names the role, never the fixture user",
         "The cost-page Then states the outcome in product terms and names no file, path, command, or test output",
-        "The analytics Then states the event is recorded once and reads \"proven by a test through a public entry point: no screen shows it\"",
+        "The analytics Then states the event is recorded once and names no test level or proof clause",
         "The spec names neither the provider stub nor the capture file"
       ]
     },
@@ -176,7 +176,7 @@
         "The Escape criterion's Then names what the list shows after Escape, not only that the menu closed",
         "The accept outcome is two criteria: one Then reads from the inbox, a separate one's When opens the board and its Then reads from it",
         "The card is named as the lane with a QA bundle, never by screen position or order",
-        "The sound Then states it in product terms and reads \"proven by a test through a public entry point: no screen shows it\"",
+        "The sound Then states it in product terms and names no test level or proof clause",
         "Changes no validator to check these rules"
       ]
     }
