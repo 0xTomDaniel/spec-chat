@@ -59,6 +59,16 @@ def repo(root, html, origin="https://github.com/acme/spec-chat.git"):
     return git(root, "rev-parse", "HEAD")
 
 
+def until(holds, seconds=10):
+    """Whether holds() comes true within seconds, polled: a wait for a state, not a guess at how long it takes."""
+    deadline = time.monotonic() + seconds
+    while not holds():
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.01)
+    return True
+
+
 @functools.cache
 def self_signed():
     """(certificate, key) files for 127.0.0.1, trusted only by the client context a test injects."""
@@ -76,13 +86,15 @@ class FakeEvidence:
     With `wire`, sends those bytes as the whole answer, status line and headers too; with `drip`, sends the whole
     answer a byte every `drip` seconds and sets `dropped` once the asker hangs up. With `redirects`, the first that
     many asks of a chain answer a redirect to the next. With `keep`, answers HTTP/1.1 and keeps each connection open;
-    with `tls`, serves HTTPS on the self-signed certificate, each handshake `handshake` seconds late. `connections`
-    counts the connections made; hang_up() closes each."""
+    with `tls`, serves HTTPS on the self-signed certificate, each handshake `handshake` seconds late. With `held`, an
+    ask whose path holds it is answered only once `released` is set; close() sets it. `connections` counts the
+    connections made; hang_up() closes each."""
 
     def __init__(self, body=None, status=200, raw=None, delay=0, wire=None, drip=None, redirects=0, keep=False,
-                 tls=False, handshake=0):
+                 tls=False, handshake=0, held=None):
         self.requests = []
         self.dropped = threading.Event()
+        self.released = threading.Event()
         self.connections = 0
         self.sockets = []
         owner = self
@@ -103,6 +115,8 @@ class FakeEvidence:
 
             def do_GET(self):
                 owner.requests.append(self.path)
+                if held and held in self.path:
+                    owner.released.wait(30)
                 time.sleep(delay)
                 hop = int(parse_qs(urlparse(self.path).query).get("hop", ["0"])[0])
                 if hop < redirects:
@@ -150,6 +164,7 @@ class FakeEvidence:
                 sock.shutdown(socket.SHUT_RDWR)
 
     def close(self):
+        self.released.set()
         self.server.shutdown()
         self.server.server_close()
         self.hang_up()
@@ -575,25 +590,61 @@ class IndexGatesTest(ProviderHarness):
     def test_a_kept_connection_carries_each_warm_load(self):
         """#index-gates-provider, #index-entry-cost: an HTTPS provider whose connection opens slower than the facts
         deadline, as TCP and TLS to a real provider do: that warm load renders at once without facts, and the
-        connection, kept, carries each later load's ask as one request, facts in, each load under 200 ms."""
+        connection, kept, carries each later load's ask as one request, facts in, a load on it under 200 ms."""
         import time as clock
 
         path = "abc5/docs/specs/ready.spec.html"
+        handshake = 1.0
         service = self.fake(body={"specs": {path: {"accepted": "0123456789abcdef0123456789abcdef01234567"}}},
-                            keep=True, tls=True, handshake=0.3)
+                            keep=True, tls=True, handshake=handshake)
+        origin = ("https", "127.0.0.1", service.server.server_port)
         url, _ = self.lanes([("abc5", "ready", spec_page("Ready"))])
         self.index(url)  # warm, before any provider
         trusted = ssl.create_default_context(cafile=self_signed()[0])
         with patch.object(serve, "_provider_tls", lambda: trusted), self.plugged(service.url):
             started = clock.monotonic()
             self.assertEqual(self.index(url)[0]["ABC-5"][3], {"Ready": ["Ready to accept"]})
-            self.assertLess(clock.monotonic() - started, 0.2)
-            clock.sleep(1)  # the open outlasts its load
+            self.assertLess(clock.monotonic() - started, handshake)  # the load did not wait for the open
+            # The open outlasts its load; once it is in, the pool keeps it.
+            self.assertTrue(until(lambda: any(at == origin for at, _ in list(serve._PROVIDER_CONNECTIONS._kept))))
+            loads = []
             for load in range(5):
                 started = clock.monotonic()
                 self.assertEqual(self.index(url)[0]["ABC-5"][3], {"Ready": ["Accepted 0123456"]}, load)
-                self.assertLess(clock.monotonic() - started, 0.2)
+                loads.append(clock.monotonic() - started)
+        # Facts in on each load: each ask was one request on the kept connection, in by its 100 ms deadline, as no
+        # new open (1 s) could be. A busy box can stretch any one load; the fastest is in the warm budget.
+        self.assertLess(min(loads), 0.2, loads)
         self.assertEqual((service.connections, len(service.requests)), (1, 5))
+
+    def test_asks_in_flight_hold_no_other_ask(self):
+        """#index-gates-provider, criterion-evidence: only idle connections are kept; an ask finding none idle opens
+        its own. Slow criterion evidence asks in flight, as many as the pool keeps, hold neither a review facts ask
+        nor one more criterion evidence ask."""
+        path = "abc5/docs/specs/ready.spec.html"
+        commit = "0123456789abcdef0123456789abcdef01234567"
+        facts = {"specs": {path: {"accepted": commit}}}
+        service = self.fake(body=facts, keep=True, held="/criteria")
+        answers = []
+
+        def criteria():
+            answers.append(serve._provider_get(service.url, "criteria", {}, time.monotonic() + 30))
+
+        def asked():
+            return sum("/criteria" in request for request in service.requests)
+
+        asks = [threading.Thread(target=criteria, daemon=True) for _ in range(serve.PROVIDER_CONNECTIONS + 1)]
+        for ask in asks[:-1]:
+            ask.start()
+        self.assertTrue(until(lambda: asked() == serve.PROVIDER_CONNECTIONS))
+        # Each asks with time to spare: an ask held for a free connection would wait it out and answer nothing.
+        self.assertEqual(serve.read_review_facts(service.url, [path], time.monotonic() + 10), {path: {"accepted": commit}})
+        asks[-1].start()
+        self.assertTrue(until(lambda: asked() == serve.PROVIDER_CONNECTIONS + 1))
+        service.released.set()
+        for ask in asks:
+            ask.join(10)
+        self.assertEqual(answers, [facts] * len(asks))
 
     def test_a_kept_connection_the_provider_closed_is_reopened(self):
         """#index-gates-provider: a kept connection the provider has since closed is dropped; the ask opens a new

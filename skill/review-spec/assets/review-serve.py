@@ -88,7 +88,7 @@ EVIDENCE_TIMEOUT_SECONDS = 30
 REVIEW_FACTS_SECONDS = 0.1
 # Opening a provider connection, TCP and TLS: it may outlast the ask that opened it, which keeps it for the next ask.
 PROVIDER_CONNECT_SECONDS = 10
-# Provider connections per origin, opening, asking, or kept between asks; also the most kept in all.
+# Idle provider connections kept between asks, all origins together; an ask finding none idle opens its own.
 PROVIDER_CONNECTIONS = 4
 PROVIDER_REDIRECTS = 5  # redirects one provider fetch follows, all inside its one deadline
 # A spec row's own fields: a scope row holds none of them (review-service #published-table, comment-layer #scope-row).
@@ -623,64 +623,43 @@ def _provider_tls():
 
 
 class _ProviderConnections:
-    """The evidence provider's connections, kept open between asks, so a warm index load's review facts ask is one
+    """The evidence provider's idle connections, kept open between asks, so a warm index load's review facts ask is one
     request on an open connection, not a new DNS, TCP, and TLS setup inside its deadline (lane-hosting
-    #index-gates-provider, #index-entry-cost). A connection keeps no answer: each ask is asked anew."""
+    #index-gates-provider, #index-entry-cost). Only idle connections are kept and counted: an ask finding none idle
+    opens its own, so no ask waits on another's. A connection keeps no answer: each ask is asked anew."""
 
     def __init__(self):
-        self._ready = threading.Condition()
+        self._lock = threading.Lock()
         self._kept = []  # (origin, connection), oldest first
-        self._count = {}  # origin: its connections opening, asking, or kept
 
-    def take(self, origin, deadline):
-        """(connection, kept) to origin (scheme, host, port), the newest kept one, else a new one while origin has
-        fewer than PROVIDER_CONNECTIONS, else the first one kept before deadline; None when none comes or opening
-        fails. Opening may outlast deadline."""
-        with self._ready:
-            while True:
-                for at in range(len(self._kept) - 1, -1, -1):
-                    if self._kept[at][0] == origin:
-                        return self._kept.pop(at)[1], True
-                if self._count.get(origin, 0) < PROVIDER_CONNECTIONS:
-                    self._count[origin] = self._count.get(origin, 0) + 1
-                    break
-                left = deadline - time.monotonic()
-                if left <= 0:
-                    return None
-                self._ready.wait(left)
+    def take(self, origin):
+        """(connection, kept) to origin (scheme, host, port), the newest kept one, else a new one; None when opening
+        fails. Opening may outlast the ask's deadline, by at most PROVIDER_CONNECT_SECONDS."""
+        with self._lock:
+            for at in range(len(self._kept) - 1, -1, -1):
+                if self._kept[at][0] == origin:
+                    return self._kept.pop(at)[1], True
         scheme, host, port = origin
         try:
             connection = (http.client.HTTPSConnection(host, port, timeout=PROVIDER_CONNECT_SECONDS,
                                                       context=_provider_tls()) if scheme == "https"
                           else http.client.HTTPConnection(host, port, timeout=PROVIDER_CONNECT_SECONDS))
         except (ValueError, http.client.HTTPException):
-            self.drop(origin, None)
             return None
         try:
             connection.connect()
         except (OSError, ValueError):
-            self.drop(origin, connection)
+            connection.close()
             return None
         return connection, False
 
     def keep(self, origin, connection):
         """Keep an open connection for the next ask to origin; past PROVIDER_CONNECTIONS kept, the oldest closes."""
-        with self._ready:
+        with self._lock:
             self._kept.append((origin, connection))
             closing, self._kept = self._kept[:-PROVIDER_CONNECTIONS], self._kept[-PROVIDER_CONNECTIONS:]
-            self._ready.notify_all()
-        for old in closing:
-            self.drop(*old)
-
-    def drop(self, origin, connection):
-        """Close a taken connection, or one that failed to open."""
-        if connection is not None:
-            connection.close()
-        with self._ready:
-            self._count[origin] -= 1
-            if not self._count[origin]:
-                del self._count[origin]
-            self._ready.notify_all()
+        for _, old in closing:
+            old.close()
 
 
 _PROVIDER_CONNECTIONS = _ProviderConnections()
@@ -690,7 +669,7 @@ def _provider_answer(origin, target, deadline):
     """One GET of target on origin through a kept provider connection: (status, Location, body) once the whole answer
     is in by deadline (time.monotonic()), else None. A kept connection that fails short of the deadline, as one the
     provider closed while it was kept does, is dropped and the ask taken again."""
-    taken = _PROVIDER_CONNECTIONS.take(origin, deadline)
+    taken = _PROVIDER_CONNECTIONS.take(origin)
     while taken:
         connection, kept = taken
         left = deadline - time.monotonic()
@@ -704,11 +683,11 @@ def _provider_answer(origin, target, deadline):
             response = connection.getresponse()
             answer = response.status, response.getheader("Location"), response.read()
         except (OSError, ValueError, http.client.HTTPException) as error:
-            _PROVIDER_CONNECTIONS.drop(origin, connection)
-            taken = kept and not isinstance(error, TimeoutError) and _PROVIDER_CONNECTIONS.take(origin, deadline)
+            connection.close()
+            taken = kept and not isinstance(error, TimeoutError) and _PROVIDER_CONNECTIONS.take(origin)
             continue
         if response.will_close or connection.sock is None:
-            _PROVIDER_CONNECTIONS.drop(origin, connection)
+            connection.close()
         else:
             _PROVIDER_CONNECTIONS.keep(origin, connection)
         return answer
@@ -885,8 +864,8 @@ def read_review_facts(base, paths, deadline):
 def _ask_review_facts(base, paths):
     """Start an index load's one review facts ask beside its row reads; the returned wait answers the facts, or {}
     without a provider or once REVIEW_FACTS_SECONDS from the ask have passed, so a slow provider never holds the page.
-    The ask's request ends by that same deadline; only opening a connection outlasts it, at most PROVIDER_CONNECTIONS
-    per origin, so asks cannot pile up."""
+    The ask's request ends by that same deadline; only opening a connection outlasts it, by at most
+    PROVIDER_CONNECT_SECONDS, and the next ask finds that connection kept."""
     if not base or not paths:
         return dict
     deadline = time.monotonic() + REVIEW_FACTS_SECONDS
