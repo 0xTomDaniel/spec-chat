@@ -33,6 +33,8 @@ The spec document's own content styling is outside this design.</p>
 <p data-user-story data-anchor="story-consistent-chrome" data-user-facing="true" data-guided-journey="no">As a spec reviewer, I see one coherent visual system across every button, pill, pin, panel, popover, toolbar, and bar on a spec page, so I never wonder whether two differently styled controls do the same thing.</p>
 
 <p data-user-story data-anchor="story-token-reuse" data-user-facing="false" data-guided-journey="no">As a contributor editing runtime.js, every chrome color, font size, weight, radius, and spacing value is a named token from one block, so I never invent an ad hoc value or guess which grey to use.</p>
+<p data-user-story data-anchor="story-one-surface" data-user-facing="true" data-guided-journey="no">As a spec reviewer, the spec page is one calm surface, as a Notion page is: the document, its compared range, the toolbar, and the review panel share one page color and ink, light or dark as my system or host sets it, and the document opens on its own title at reading size, not a poster in a box.</p>
+<p data-user-story data-anchor="story-quiet-controls" data-user-facing="true" data-guided-journey="no">As a spec reviewer, every icon on the page is from one line set, the one Proof shows, status words read in sentence case, and no button label carries a key: I find each key in its tooltip, and on a phone none shows.</p>
 
 </section>
 
@@ -45,7 +47,7 @@ The spec document's own content styling is outside this design.</p>
 
 <p data-acceptance-criterion data-anchor="acceptance-token-block" data-story="story-token-reuse">
 <span data-acceptance-scenario>Given a contributor editing the review runtime, When they look up a chrome color, font size, weight, radius, or spacing value,</span>
-<span data-acceptance-observable>Then they find it as a named token in the one token block, which holds the index tokens plus <a href="#token-additions">the token additions</a>, and every chrome style uses those tokens, with literal values only for the pin teardrop radius, stacking order, transitions, animations, and positions, proven by a unit test: no screen shows it.</span>
+<span data-acceptance-observable>Then they find it as a named token in the one token block, which holds the <a href="#design-set">shared design set</a>&rsquo;s tokens at the version Spec Chat pins plus <a href="#token-additions">the token additions</a>, and every chrome style uses those tokens, with literal values only for the pin teardrop radius, stacking order, transitions, animations, and positions, proven by a unit test: no screen shows it.</span>
 </p>
 
 <p data-acceptance-criterion data-anchor="acceptance-button-system" data-story="story-consistent-chrome">
@@ -93,6 +95,34 @@ The spec document's own content styling is outside this design.</p>
 <span data-acceptance-observable>Then all chrome surfaces, text, and borders show the dark token values, and no light-mode chrome color shows.</span>
 </p>
 
+<p data-acceptance-criterion data-anchor="acceptance-one-surface" data-story="story-one-surface">
+<span data-acceptance-scenario>Given a spec reviewer on a desktop screen with a spec served with a compared range, When they open the spec page,</span>
+<span data-acceptance-observable>Then the page&rsquo;s <a href="#top-line">top line</a> reads the back link, the compared range, and Change base on the page color with a hairline under it and no tinted box, the document header shows the spec&rsquo;s title with no box or rule around it, and the document, top line, and toolbar share one background.</span>
+</p>
+<p data-acceptance-criterion data-anchor="acceptance-one-surface-phone" data-story="story-one-surface">
+<span data-acceptance-scenario>Given a spec reviewer on a phone with a spec served with a compared range, When they open the spec page,</span>
+<span data-acceptance-observable>Then the first screen shows the top line, the spec&rsquo;s title, and the start of its first section, on one background, without horizontal scrolling.</span>
+</p>
+<p data-acceptance-criterion data-anchor="acceptance-dark-document" data-story="story-one-surface">
+<span data-acceptance-scenario>Given a spec reviewer whose system is set to dark appearance, with a spec that uses the shared stylesheet holding a table and a figure, When they open the spec page,</span>
+<span data-acceptance-observable>Then the document and its chrome both show light text on one dark page, and the table and figure read clearly on it.</span>
+</p>
+<p data-acceptance-criterion data-anchor="acceptance-key-tooltip" data-story="story-quiet-controls">
+<span data-acceptance-scenario>Given a spec reviewer on a desktop screen on a spec page, When they point at the toolbar&rsquo;s Comment button and wait for its tooltip,</span>
+<span data-acceptance-observable>Then the tooltip names the C key, and the button itself reads only Comment.</span>
+</p>
+<p data-acceptance-criterion data-anchor="acceptance-key-phone" data-story="story-quiet-controls">
+<span data-acceptance-scenario>Given a spec reviewer on a phone on a spec page, When they open it,</span>
+<span data-acceptance-observable>Then the toolbar&rsquo;s buttons read Comment, Reading view, and Hand off or Accept spec, with no key in any of them.</span>
+</p>
+<p data-acceptance-criterion data-anchor="acceptance-icons" data-story="story-quiet-controls">
+<span data-acceptance-scenario>Given a spec reviewer on a desktop screen on a spec page with threads, a fixture that must be added to provide it, When they open the review panel,</span>
+<span data-acceptance-observable>Then the panel toggle, gear, dock, and disclosure icons are line icons of one size and stroke weight, and every status pill reads in sentence case.</span>
+</p>
+<p data-acceptance-criterion data-anchor="acceptance-focus-set" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>Given a spec reviewer at a keyboard on a spec page whose threads are all resolved, a fixture that must be added to provide it, When they press Tab until Accept spec has focus,</span>
+<span data-acceptance-observable>Then Accept spec shows the design set&rsquo;s focus ring, the same ring the review index shows.</span>
+</p>
 <p data-anchor="acceptance-rules-note">Onboarding: not needed, the design pass restyles existing chrome with no new user surface.
 CI: the <a href="./review-service.spec.html#acceptance-ci-alone">CI rule</a> covers the runtime style tests; they use no provider.</p>
 
@@ -108,9 +138,9 @@ CI: the <a href="./review-service.spec.html#acceptance-ci-alone">CI rule</a> cov
 
 <p data-modular-boundary data-anchor="boundary-css-const">
 <span data-boundary-responsibility>The CSS const strings in runtime.js own all spec page chrome styling: layout, color, typography, and responsive rules for the annotation overlay (toolbar, panel, dock, pins, pills, popovers, toasts, banners, badges, error overlay, range bar, index link, Jev notes, orphan hints, composer, settings).</span>
-<span data-boundary-seam>The caller-facing seam is the set of CSS class names and data attributes already used in mountUI() and render functions. No class name changes; the same selectors get new property values from tokens.</span>
-<span data-boundary-dependency>Self-contained: no new external dependency. The token block is a CSS custom property declaration within the same file.</span>
-<span data-boundary-scope>Observable scope: every chrome element on a spec page uses the unified token set. The spec document's own content styling is outside this boundary.</span>
+<span data-boundary-seam>The caller-facing seam is the set of CSS class names and data attributes already used in mountUI() and render functions; the top line is the range bar and index link moved into one line.</span>
+<span data-boundary-dependency>External package, pinned: the <a href="#design-set">shared design set</a> at the version Spec Chat pins, built into runtime.js, the review index, and the shared spec stylesheet; nothing is fetched at run time and no peer is named.</span>
+<span data-boundary-scope>Observable scope: every chrome element on a spec page uses the unified token set, and the shared spec stylesheet sets the document's look from the same set (<a href="#document">the document</a>).</span>
 </p>
 
 </section>
@@ -125,20 +155,20 @@ CI: the <a href="./review-service.spec.html#acceptance-ci-alone">CI rule</a> cov
 
 <div data-anchor="token-block">
 <h3 data-anchor="token-block-heading">Token block</h3>
-<p data-anchor="token-block-rule">The spec page chrome CSS const (the <code>CSS</code> string in runtime.js) opens with one <code>:root</code> block headed <code>/* ui tokens */</code>, holding exactly the <a href="./lane-hosting.spec.html#index-tokens">index tokens</a> plus the additions in the table below.
+<p data-anchor="token-block-rule">The spec page chrome CSS const (the <code>CSS</code> string in runtime.js) opens with the <a href="#design-set">shared design set</a>&rsquo;s stylesheet at the version Spec Chat pins, then one <code>:root</code> block headed <code>/* ui tokens */</code> holding only the additions in the table below.
 Every chrome rule uses only these variables.
 No literal color, font size, weight, spacing, or radius value appears in a chrome rule.
-The spec document's own content styling (DOC_CSS <code>article.spec</code> rules and spec.css) keeps its own <code>--spec-*</code> tokens and is outside this design.</p>
+The spec document's own content styling (DOC_CSS <code>article.spec</code> rules and spec.css) keeps its own <code>--spec-*</code> names, each set from the design set as <a href="#document">the document</a> states.</p>
 
 <div class="table-scroll">
 <table data-anchor="token-additions">
 <caption>Additions to the index token set for spec page chrome</caption>
 <thead><tr><th>Token</th><th>Value</th><th>Why</th></tr></thead>
 <tbody>
-<tr data-anchor="token-draft"><td><code>--ui-draft</code>, <code>--ui-draft-soft</code></td><td><code>#b0540e</code>, <code>#faf4ef</code></td><td>Draft/pending status. Reuses <code>--ui-attention</code> pair: drafts are unfinished work that needs attention.</td></tr>
-<tr data-anchor="token-ack"><td><code>--ui-ack</code>, <code>--ui-ack-soft</code></td><td><code>#1d4ed8</code>, <code>#eff3ff</code></td><td>Acknowledged status. One blue, 4.5:1 on white.</td></tr>
-<tr data-anchor="token-resolved"><td><code>--ui-resolved</code>, <code>--ui-resolved-soft</code></td><td><code>#005c32</code>, <code>#e6efea</code></td><td>Resolved status. Reuses <code>--ui-pass</code> pair.</td></tr>
-<tr data-anchor="token-error"><td><code>--ui-error</code></td><td><code>#a5000f</code></td><td>Error overlay background. Reuses <code>--ui-fail</code>.</td></tr>
+<tr data-anchor="token-draft"><td><code>--ui-draft</code>, <code>--ui-draft-soft</code></td><td><code>var(--ui-attention)</code>, <code>var(--ui-attention-soft)</code></td><td>Draft/pending status. Reuses <code>--ui-attention</code> pair: drafts are unfinished work that needs attention.</td></tr>
+<tr data-anchor="token-ack"><td><code>--ui-ack</code>, <code>--ui-ack-soft</code></td><td><code>var(--ui-action)</code>, <code>var(--ui-action-soft)</code></td><td>Acknowledged status: the set&rsquo;s one accent.</td></tr>
+<tr data-anchor="token-resolved"><td><code>--ui-resolved</code>, <code>--ui-resolved-soft</code></td><td><code>var(--ui-pass)</code>, <code>var(--ui-pass-soft)</code></td><td>Resolved status. Reuses <code>--ui-pass</code> pair.</td></tr>
+<tr data-anchor="token-error"><td><code>--ui-error</code></td><td><code>var(--ui-fail)</code></td><td>Error overlay background. Reuses <code>--ui-fail</code>.</td></tr>
 <tr data-anchor="token-marker"><td><code>--ui-marker</code>, <code>--ui-marker-important</code>, <code>--ui-marker-pass</code></td><td><code>#767b85</code>, <code>#d1242f</code>, <code>#1a7f37</code></td><td>Jev markers. Agreed mark level colors.</td></tr>
 <tr data-anchor="token-on-marker"><td><code>--ui-on-marker</code></td><td><code>#ffffff</code></td><td>Glyph on a Jev marker (<code>!</code>, check). Not overridden in dark mode: markers keep their fill in both themes.</td></tr>
 <tr data-anchor="token-marker-warning"><td><code>--ui-marker-warning</code></td><td><code>#e5534b</code></td><td>Warning-level Jev marker. Not overridden in dark mode.</td></tr>
@@ -147,7 +177,7 @@ The spec document's own content styling (DOC_CSS <code>article.spec</code> rules
 </tbody>
 </table>
 </div>
-<p data-anchor="token-dark-mode">Dark mode: the chrome's <code>@media(prefers-color-scheme:dark)</code> block overrides these tokens with dark equivalents.
+<p data-anchor="token-dark-mode">Dark mode: the design set&rsquo;s dark values apply under <code>@media(prefers-color-scheme:dark)</code>, which follows the system, or a host&rsquo;s appearance when the host passes it to the frame as the preferred color scheme.
 The chrome and the review index share the same <a href="./lane-hosting.spec.html#index-token-dark">dark values</a>: dark surfaces, light text.</p>
 </div>
 
@@ -175,30 +205,30 @@ Icon buttons are always square (<code>var(--ui-space-6)</code> desktop, 44px mob
 
 <div data-anchor="color-map">
 <h3 data-anchor="color-map-heading">Color map</h3>
-<p data-anchor="color-map-rule">Every chrome color value maps to exactly one token.
+<p data-anchor="color-map-rule">Every chrome color value maps to exactly one token, its light and dark values the design set&rsquo;s.
 The table below is the complete mapping; no chrome rule uses a value outside it.</p>
 
 <div class="table-scroll">
 <table data-anchor="color-map-table">
 <thead><tr><th>Meaning</th><th>Token</th></tr></thead>
 <tbody>
-<tr data-anchor="map-page"><td>Page background</td><td><code>--ui-page</code> #ffffff</td></tr>
-<tr data-anchor="map-surface"><td>Cards, panels, inputs, popovers</td><td><code>--ui-surface</code> #ffffff</td></tr>
-<tr data-anchor="map-ink"><td>Primary text, headings</td><td><code>--ui-ink</code> #333333</td></tr>
-<tr data-anchor="map-muted"><td>Secondary text, captions, status line</td><td><code>--ui-muted</code> #525252</td></tr>
-<tr data-anchor="map-border"><td>Borders, separators, hairlines</td><td><code>--ui-border</code> #dfdfdf</td></tr>
-<tr data-anchor="map-draft"><td>Draft/pending status foreground</td><td><code>--ui-draft</code> #b0540e</td></tr>
-<tr data-anchor="map-draft-soft"><td>Draft/pending status background</td><td><code>--ui-draft-soft</code> #faf4ef</td></tr>
-<tr data-anchor="map-ack"><td>Acknowledged status foreground</td><td><code>--ui-ack</code> #1d4ed8</td></tr>
-<tr data-anchor="map-ack-soft"><td>Acknowledged status background</td><td><code>--ui-ack-soft</code> #eff3ff</td></tr>
-<tr data-anchor="map-resolved"><td>Resolved status foreground</td><td><code>--ui-resolved</code> #005c32</td></tr>
-<tr data-anchor="map-resolved-soft"><td>Resolved status background</td><td><code>--ui-resolved-soft</code> #e6efea</td></tr>
-<tr data-anchor="map-error"><td>Error overlay, error text</td><td><code>--ui-error</code> = <code>--ui-fail</code> #a5000f</td></tr>
-<tr data-anchor="map-banner"><td>Banner (spec updated)</td><td><code>--ui-pass</code> #005c32</td></tr>
-<tr data-anchor="map-marker"><td>Neutral marker</td><td><code>--ui-marker</code> #767b85</td></tr>
-<tr data-anchor="map-marker-imp"><td>Important marker</td><td><code>--ui-marker-important</code> #d1242f</td></tr>
-<tr data-anchor="map-marker-pass"><td>Passed marker</td><td><code>--ui-marker-pass</code> #1a7f37</td></tr>
-<tr data-anchor="map-focus-ring"><td>Focus ring</td><td><code>--ui-focus</code> #262626</td></tr>
+<tr data-anchor="map-page"><td>Page background</td><td><code>--ui-page</code></td></tr>
+<tr data-anchor="map-surface"><td>Cards, panels, inputs, popovers</td><td><code>--ui-surface</code></td></tr>
+<tr data-anchor="map-ink"><td>Primary text, headings</td><td><code>--ui-ink</code></td></tr>
+<tr data-anchor="map-muted"><td>Secondary text, captions, status line</td><td><code>--ui-muted</code></td></tr>
+<tr data-anchor="map-border"><td>Borders, separators, hairlines</td><td><code>--ui-border</code></td></tr>
+<tr data-anchor="map-draft"><td>Draft/pending status foreground</td><td><code>--ui-draft</code></td></tr>
+<tr data-anchor="map-draft-soft"><td>Draft/pending status background</td><td><code>--ui-draft-soft</code></td></tr>
+<tr data-anchor="map-ack"><td>Acknowledged status foreground</td><td><code>--ui-ack</code></td></tr>
+<tr data-anchor="map-ack-soft"><td>Acknowledged status background</td><td><code>--ui-ack-soft</code></td></tr>
+<tr data-anchor="map-resolved"><td>Resolved status foreground</td><td><code>--ui-resolved</code></td></tr>
+<tr data-anchor="map-resolved-soft"><td>Resolved status background</td><td><code>--ui-resolved-soft</code></td></tr>
+<tr data-anchor="map-error"><td>Error overlay, error text</td><td><code>--ui-error</code></td></tr>
+<tr data-anchor="map-banner"><td>Banner (spec updated)</td><td><code>--ui-pass</code></td></tr>
+<tr data-anchor="map-marker"><td>Neutral marker</td><td><code>--ui-marker</code></td></tr>
+<tr data-anchor="map-marker-imp"><td>Important marker</td><td><code>--ui-marker-important</code></td></tr>
+<tr data-anchor="map-marker-pass"><td>Passed marker</td><td><code>--ui-marker-pass</code></td></tr>
+<tr data-anchor="map-focus-ring"><td>Focus ring</td><td><code>--ui-focus</code></td></tr>
 </tbody>
 </table>
 </div>
@@ -206,19 +236,62 @@ The table below is the complete mapping; no chrome rule uses a value outside it.
 
 <div data-anchor="type-system">
 <h3 data-anchor="type-system-heading">Typography</h3>
-<p data-anchor="type-system-rule">Chrome text uses only the index type scale.
+<p data-anchor="type-system-rule">Chrome text uses only the design set&rsquo;s type steps.
 <code>var(--ui-text-xs)</code> 12px: pills, badges, captions, toolbar status, note meta, popover text, dock threads.
 <code>var(--ui-text-sm)</code> 14px: panel body, thread messages, composer textarea, range bar text, Jev note.
 <code>var(--ui-text-md)</code> 16px: mobile composer textarea (iOS zoom prevention).
 <code>var(--ui-text-lg)</code> 20px: panel toggle glyph.
-Weights: 400 body, 600 emphasis and buttons, never 700 or 750.</p>
+Weights: the set&rsquo;s three, 400 body, 500 row titles, 600 emphasis and buttons, never 700 or 750.
+Status pills and badges read in sentence case, never capitals.</p>
 </div>
 
 <div data-anchor="spacing-system">
 <h3 data-anchor="spacing-system-heading">Spacing and geometry</h3>
-<p data-anchor="spacing-system-rule">Chrome spacing uses only the index spacing scale: 4, 8, 12, 16, 24, 32px.
+<p data-anchor="spacing-system-rule">Chrome spacing uses only the design set&rsquo;s spacing scale: 4, 8, 12, 16, 24, 32px.
 Border radii: <code>var(--ui-radius)</code> 8px for containers (panel, toolbar, dock, popover, toast), <code>var(--ui-radius-sm)</code> 6px for buttons and inputs, <code>var(--ui-radius-pill)</code> 999px for pills and badges.
 Pin border-radius keeps its teardrop shape.</p>
+</div>
+
+<div data-anchor="design-set" id="design-set">
+<h3 data-anchor="design-set-heading">Shared design set</h3>
+<p data-anchor="design-set-rule">Every value the chrome, the <a href="./lane-hosting.spec.html#index-tokens">review index</a>, and the document use comes from one shared design set: a small package Spec Chat builds in at the version it pins, never fetched from a peer at run time, so a page served without any other tool looks complete.
+It carries the <code>--ui-*</code> colors in light and dark, one accent for action, focus, links, and acknowledged, the type steps from 12px to a 30px display step, three weights, spaces, radii, motion, the five status marks, and the line icons.
+A new value reaches Spec Chat only with a new pin.</p>
+</div>
+
+<div data-anchor="one-surface" id="one-surface">
+<h3 data-anchor="one-surface-heading">One surface</h3>
+<p data-anchor="top-line" id="top-line">Top line: one fixed line across the top of the page, on the page color with a hairline under it: at its start the <a href="./lane-hosting.spec.html#index-link">back link</a>, a chevron and &ldquo;Review index&rdquo;; then the compared range as muted meta, &ldquo;Changes since&rdquo; and its base; at its end Change base as a text button.
+It replaces the floating index button and the tinted range box.</p>
+<p data-anchor="one-surface-rule">The document, the top line, the toolbar, and the review panel share the page color and ink; the toolbar and an open popover alone lift on the set&rsquo;s shadow.
+The panel is the same page color, separated by a hairline.</p>
+<figure data-anchor="one-surface-figure">
+<h3 data-anchor="one-surface-figure-heading">The top of a spec page, desktop</h3>
+<div data-anchor="one-surface-figure-page" style="border:1px solid var(--spec-hairline);max-width:620px;margin:0 auto;font-size:13px">
+<div data-anchor="one-surface-figure-line" style="display:flex;gap:10px;align-items:center;padding:7px 14px;border-bottom:1px solid var(--spec-hairline)"><span>&#8249; Review index</span><span style="color:var(--spec-muted)">Changes since <code>965efc4</code></span><span style="flex:1"></span><span>Change base</span></div>
+<div data-anchor="one-surface-figure-doc" style="padding:28px 40px 18px">
+<p style="margin:0;font-size:12px;color:var(--spec-muted)">docs / specs / evidence-site.spec.html</p>
+<p style="margin:6px 0 0;font-size:30px;font-weight:600;line-height:1.2">Evidence review site</p>
+<p style="margin:10px 0 0;font-size:16px;line-height:1.55">One page for reviewing an immutable evidence packet and following its traced joins.</p>
+<p style="margin:26px 0 0;padding-top:14px;border-top:1px solid var(--spec-hairline);font-size:22px;font-weight:600">User stories</p>
+<p style="margin:8px 0 0;font-size:15px;line-height:1.6;color:var(--spec-muted)">As a human doing QA, I open a bundle and see what was tested&hellip;</p>
+</div>
+<div data-anchor="one-surface-figure-toolbar" style="display:flex;justify-content:center;padding:0 0 14px"><span style="display:inline-flex;gap:16px;align-items:center;border:1px solid var(--spec-hairline);padding:6px 14px;font-weight:600">Comment<span>Reading view</span><span style="font-weight:400;color:var(--spec-muted)">0 threads</span></span></div>
+</div>
+<figcaption data-anchor="one-surface-figure-caption">Spatial contract at desktop width: the top line, then the document on the same page color, the header unboxed with the spec&rsquo;s own title at the display step, sections opened by a hairline and a heading; the toolbar floats at the bottom center. On a phone the top line keeps the back link and Change base, the range moves under it, and the title drops to the heading step.</figcaption>
+</figure>
+</div>
+
+<div data-anchor="document" id="document">
+<h3 data-anchor="document-heading">The document</h3>
+<p data-anchor="document-rule">The shared spec stylesheet, the one Spec Chat bundles for spec content, sets every <code>--spec-*</code> value from the design set, in light and dark: the page paper is the set&rsquo;s page color; the header is unboxed, its title at the display step, its breadcrumb meta, its lede one step over body; section headings sit at the heading step under a hairline; body text reads at 15px with a reading line length; tables and figures use hairlines and the soft surface, never heavy rules.
+A repository takes a new stylesheet by replacing its copy, as it took the first.</p>
+</div>
+
+<div data-anchor="keys-icons" id="keys-icons">
+<h3 data-anchor="keys-icons-heading">Keys and icons</h3>
+<p data-anchor="keys-rule">No button label carries a key: Comment reads Comment, and its tooltip and any menu item name C beside it; on a phone neither tooltip nor label shows a key.</p>
+<p data-anchor="icons-rule">Every chrome icon, the panel toggle, gear, dock, thread, and disclosure, is the design set&rsquo;s line icon at one size and stroke weight, the same icons Proof shows.</p>
 </div>
 
 </section>
@@ -269,16 +342,16 @@ Pin border-radius keeps its teardrop shape.</p>
 <!-- Status -->
 <div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Status</div>
 <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;align-items:end">
-<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-draft);background:var(--ui-draft-soft)">Draft</span>
-<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-ack);background:var(--ui-ack-soft)">Ack</span>
-<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-resolved);background:var(--ui-resolved-soft)">Resolved</span>
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-draft);background:var(--ui-draft-soft)">Draft</span>
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-ack);background:var(--ui-ack-soft)">Ack</span>
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-resolved);background:var(--ui-resolved-soft)">Resolved</span>
 <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:#fff;background:var(--ui-draft)">1</span>
 <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:#fff;background:var(--ui-ack)">2</span>
 <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:var(--ui-resolved);background:var(--ui-surface);border:2px solid var(--ui-resolved)">3</span>
 <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;color:#fff;background:var(--ui-marker)">!</span>
 <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;color:#fff;background:var(--ui-marker-important)">!</span>
 <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;color:#fff;background:var(--ui-marker-pass)">&#10003;</span>
-<span style="display:inline-block;background:var(--ui-resolved-soft);color:var(--ui-resolved);border-radius:var(--ui-radius-pill);padding:2px 8px;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase">Agent</span>
+<span style="display:inline-block;background:var(--ui-resolved-soft);color:var(--ui-resolved);border-radius:var(--ui-radius-pill);padding:2px 8px;font-size:var(--ui-text-xs);font-weight:600">Agent</span>
 </div>
 
 <!-- Toolbar -->
@@ -292,7 +365,7 @@ Pin border-radius keeps its teardrop shape.</p>
 <!-- Thread card -->
 <div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Thread card</div>
 <div style="background:var(--ui-surface);border:1px solid var(--ui-draft);border-radius:var(--ui-radius);padding:12px;margin-bottom:20px;font-size:var(--ui-text-sm)">
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-draft);background:var(--ui-draft-soft)">Draft</span><span style="font-size:var(--ui-text-xs);color:var(--ui-muted)">2 min ago</span></div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:var(--ui-text-xs);font-weight:600;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-draft);background:var(--ui-draft-soft)">Draft</span><span style="font-size:var(--ui-text-xs);color:var(--ui-muted)">2 min ago</span></div>
 <div>Button radius should be consistent across all surfaces.</div>
 <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end">
 <button style="font-family:var(--ui-font);font-size:11px;font-weight:600;border-radius:var(--ui-radius-sm);min-height:26px;padding:2px 8px;background:var(--ui-surface);color:var(--ui-ink);border:1px solid var(--ui-border);cursor:pointer">Reply</button>
@@ -361,9 +434,9 @@ Button sizes conflict with the range bar spec.
 <!-- Dark status -->
 <div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Status</div>
 <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;align-items:end">
-<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-draft);background:var(--ui-draft-soft)">Draft</span>
-<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-ack);background:var(--ui-ack-soft)">Ack</span>
-<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-resolved);background:var(--ui-resolved-soft)">Resolved</span>
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-draft);background:var(--ui-draft-soft)">Draft</span>
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-ack);background:var(--ui-ack-soft)">Ack</span>
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-resolved);background:var(--ui-resolved-soft)">Resolved</span>
 <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:#fff;background:var(--ui-draft)">1</span>
 <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:#fff;background:var(--ui-ack)">2</span>
 <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:var(--ui-resolved);background:var(--ui-surface);border:2px solid var(--ui-resolved)">3</span>
@@ -372,7 +445,7 @@ Button sizes conflict with the range bar spec.
 <!-- Dark thread card -->
 <div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Thread card</div>
 <div style="background:var(--ui-surface);border:1px solid var(--ui-draft);border-radius:var(--ui-radius);padding:12px;margin-bottom:20px;font-size:var(--ui-text-sm)">
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:var(--ui-text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-draft);background:var(--ui-draft-soft)">Draft</span><span style="font-size:var(--ui-text-xs);color:var(--ui-muted)">2 min ago</span></div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:var(--ui-text-xs);font-weight:600;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-draft);background:var(--ui-draft-soft)">Draft</span><span style="font-size:var(--ui-text-xs);color:var(--ui-muted)">2 min ago</span></div>
 <div>Button radius should be consistent across all surfaces.</div>
 </div>
 
@@ -426,17 +499,17 @@ Button sizes conflict with the range bar spec.
 <tr data-anchor="surface-toolbar"><td>Toolbar</td><td><code>--ui-surface</code></td><td><code>--ui-border</code></td><td><code>--ui-muted</code> (status)</td><td><code>--ui-radius</code></td><td>Text-link variant. Active: <code>--ui-draft-soft</code> bg, <code>--ui-draft</code> text. Shadow <code>--ui-shadow</code>.</td></tr>
 <tr data-anchor="surface-panel"><td>Thread panel</td><td><code>--ui-page</code></td><td>left <code>--ui-border</code></td><td><code>--ui-ink</code></td><td>none</td><td>Thread cards: <code>--ui-surface</code> bg, <code>--ui-border</code> border, <code>--ui-radius</code>. Active card: <code>--ui-draft</code> border. Hand-off bar: primary rightmost.</td></tr>
 <tr data-anchor="surface-dock"><td>Thread dock</td><td><code>--ui-surface</code> + backdrop-filter</td><td><code>--ui-border</code></td><td><code>--ui-muted</code></td><td>11px (distinctive rounded shape)</td><td>Icon variant. Status tint on thread buttons: draft/ack/resolved token pairs. Unread badge: <code>--ui-ack</code> bg, <code>--ui-page</code> text.</td></tr>
-<tr data-anchor="surface-range-bar"><td>Range bar</td><td><code>--ui-ack-soft</code></td><td><code>--ui-ack</code> at 0.3 opacity</td><td><code>--ui-ink</code></td><td><code>--ui-radius</code></td><td>Change base: secondary. Apply: primary. Selected commit: <code>--ui-resolved</code> border, <code>--ui-resolved-soft</code> bg. Input: <code>--ui-border</code>, <code>--ui-radius-sm</code>.</td></tr>
+<tr data-anchor="surface-range-bar"><td>Range bar, in the <a href="#top-line">top line</a></td><td><code>--ui-page</code></td><td>bottom hairline <code>--ui-border</code></td><td><code>--ui-muted</code> range, <code>--ui-ink</code> base</td><td>none</td><td>Change base: text link. Apply: primary. Selected commit: <code>--ui-resolved</code> border, <code>--ui-resolved-soft</code> bg. Input: <code>--ui-border</code>, <code>--ui-radius-sm</code>.</td></tr>
 <tr data-anchor="surface-pins"><td>Pins</td><td>draft <code>--ui-draft</code>, ack <code>--ui-ack</code>, resolved <code>--ui-surface</code></td><td>resolved: 2px <code>--ui-resolved</code></td><td>resolved: <code>--ui-resolved</code></td><td>teardrop</td><td>Active ring: <code>--ui-pin-ring</code>.</td></tr>
-<tr data-anchor="surface-pills"><td>Pills</td><td>draft <code>--ui-draft-soft</code>, ack <code>--ui-ack-soft</code>, resolved <code>--ui-resolved-soft</code></td><td>none</td><td>draft <code>--ui-draft</code>, ack <code>--ui-ack</code>, resolved <code>--ui-resolved</code></td><td><code>--ui-radius-pill</code></td><td><code>--ui-text-xs</code> 600, uppercase, 0.05em tracking.</td></tr>
+<tr data-anchor="surface-pills"><td>Pills</td><td>draft <code>--ui-draft-soft</code>, ack <code>--ui-ack-soft</code>, resolved <code>--ui-resolved-soft</code></td><td>none</td><td>draft <code>--ui-draft</code>, ack <code>--ui-ack</code>, resolved <code>--ui-resolved</code></td><td><code>--ui-radius-pill</code></td><td><code>--ui-text-xs</code> 600, sentence case.</td></tr>
 <tr data-anchor="surface-popover"><td>Jev popover</td><td><code>--ui-surface</code></td><td><code>--ui-ink</code></td><td><code>--ui-ink</code>; attention <code>--ui-fail</code>; meta <code>--ui-muted</code></td><td><code>--ui-radius</code></td><td>Shadow <code>--ui-shadow</code>. Links: <code>--ui-ack</code> underlined. Action buttons: secondary with <code>--ui-ack</code> border/text.</td></tr>
 <tr data-anchor="surface-jev-note"><td>Jev note</td><td><code>--ui-draft-soft</code></td><td><code>--ui-draft</code> at 0.4 opacity</td><td><code>--ui-draft</code></td><td><code>--ui-radius</code></td><td>Reconcile/offer: secondary variant.</td></tr>
 <tr data-anchor="surface-toast"><td>Toast (transient notification)</td><td><code>--ui-ink</code> (dark inverted)</td><td>none</td><td><code>--ui-page</code></td><td><code>--ui-radius</code></td><td><code>--ui-text-xs</code> 600.</td></tr>
 <tr data-anchor="surface-banner"><td>Banner (spec-updated alert)</td><td><code>--ui-pass</code> (green inverted)</td><td>none</td><td><code>--ui-page</code></td><td>none</td><td>Button: secondary with <code>--ui-page</code> border/text (inverted for contrast on green).</td></tr>
 <tr data-anchor="surface-error"><td>Error overlay (blocking error)</td><td><code>--ui-error</code> (red inverted)</td><td>none</td><td><code>--ui-page</code></td><td>none</td><td><code>--ui-text-xs</code> monospace.</td></tr>
-<tr data-anchor="surface-index-link"><td>Index link</td><td><code>--ui-surface</code></td><td><code>--ui-border</code></td><td><code>--ui-resolved</code> 600</td><td><code>--ui-radius</code></td><td>Hover: <code>--ui-page</code> bg. <code>--ui-text-xs</code>.</td></tr>
+<tr data-anchor="surface-index-link"><td>Index link, in the top line</td><td><code>--ui-page</code></td><td>none</td><td><code>--ui-ink</code> 500</td><td>none</td><td>Chevron icon, then Review index. Hover: underline. <code>--ui-text-xs</code>.</td></tr>
 <tr data-anchor="surface-orphan"><td>Orphan hint</td><td><code>--ui-draft-soft</code></td><td>left 3px <code>--ui-draft</code></td><td><code>--ui-draft</code></td><td>none</td><td>Buttons: secondary variant.</td></tr>
-<tr data-anchor="surface-badge"><td>Agent badge</td><td><code>--ui-resolved-soft</code></td><td>none</td><td><code>--ui-resolved</code></td><td><code>--ui-radius-pill</code></td><td><code>--ui-text-xs</code> 600 uppercase.</td></tr>
+<tr data-anchor="surface-badge"><td>Agent badge</td><td><code>--ui-resolved-soft</code></td><td>none</td><td><code>--ui-resolved</code></td><td><code>--ui-radius-pill</code></td><td><code>--ui-text-xs</code> 600, sentence case.</td></tr>
 <tr data-anchor="surface-composer"><td>Composer</td><td><code>--ui-surface</code></td><td><code>--ui-border</code></td><td><code>--ui-ink</code></td><td><code>--ui-radius-sm</code></td><td><code>--ui-text-sm</code> desktop, <code>--ui-text-md</code> mobile (iOS zoom). Primary (send) rightmost, secondary (cancel) left.</td></tr>
 </tbody>
 </table>
