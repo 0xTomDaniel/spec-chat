@@ -12,7 +12,7 @@ REPAIR="$ROOT/skill/repair-specs/SKILL.md"
 need() { # file phrase
   grep -qF -- "$2" "$1" || { echo "$1 missing: $2" >&2; exit 1; }
 }
-NO_SCREEN='proven by a unit test: no screen shows it'
+NO_SCREEN='proven by a test through a public entry point: no screen shows it'
 for f in "$SHAPE" "$AUTHORING" "$REPAIR"; do
   need "$f" "$NO_SCREEN"
   need "$f" "fixture user"

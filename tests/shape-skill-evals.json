@@ -163,7 +163,7 @@
       "expectations": [
         "Each Given names the role, never the fixture user",
         "The cost-page Then states the outcome in product terms and names no file, path, command, or test output",
-        "The analytics Then states the event is recorded once and reads \"proven by a unit test: no screen shows it\"",
+        "The analytics Then states the event is recorded once and reads \"proven by a test through a public entry point: no screen shows it\"",
         "The spec names neither the provider stub nor the capture file"
       ]
     },
@@ -176,7 +176,7 @@
         "The Escape criterion's Then names what the list shows after Escape, not only that the menu closed",
         "The accept outcome is two criteria: one Then reads from the inbox, a separate one's When opens the board and its Then reads from it",
         "The card is named as the lane with a QA bundle, never by screen position or order",
-        "The sound Then states it in product terms and reads \"proven by a unit test: no screen shows it\"",
+        "The sound Then states it in product terms and reads \"proven by a test through a public entry point: no screen shows it\"",
         "Changes no validator to check these rules"
       ]
     }
