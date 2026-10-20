@@ -10,10 +10,10 @@
 # served at /<collection>/docs/specs/<spec>: qa-fixture is the story entry, and each
 # other collection is one criterion's start, named by its qa.toml nav hint. Review-state
 # collections also get their seeded spool and agent edit from spools.py. qa-1 and qa-2
-# are lane keys, so the review index shows them as lane cards (QA-1, QA-2) under In
-# progress; every other collection settles. QA-2 also holds a spec registered from a
-# worktree since removed (its root is never created), so its card shows that row Stale
-# (lane-hosting #acceptance-index-stale).
+# are lane keys, so the review index shows them as lane cards (QA-1, QA-2) under Needs
+# you, their specs holding open TBDs or awaiting acceptance; every other collection
+# settles. QA-2 also holds a spec registered from a worktree since removed (its root
+# is never created), so its card shows that row Stale (lane-hosting #acceptance-index-stale).
 #
 # A rule is its criterion's mark in its home spec (project-rules #declare): onboarding.spec.html
 # marks its onboarding criterion. Dismissals live in the warning ledger by project and spec

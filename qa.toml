@@ -175,19 +175,21 @@ path = "{review}/agent-scan/docs/specs/report.spec.html"
 [nav.acceptance-name]
 path = "{review}/name-reply/docs/specs/report.spec.html"
 
-# Review index (lane-hosting #index-threads), at the server root. Lane-key collections
-# (tests/fixtures/qa/spools.py INDEX_LANES) are the In progress cards: QA-1 and QA-2, each
+# Review index (lane-hosting #index-threads, #index-gates), at the server root. Lane-key collections
+# (tests/fixtures/qa/spools.py INDEX_LANES) are the Needs you cards: QA-1 and QA-2, each
 # holding the four fixture specs (Weekly report changed since base, Onboarding unchanged,
-# Report filters and Report sorting absent at base); QA-2 also holds
+# Report filters and Report sorting absent at base), Weekly report and Report sorting reading
+# Decision open (open TBDs), the other two Ready to accept, each card "4 need you"; QA-2 also holds
 # docs/specs/archive.spec.html, registered from a worktree since removed (reset.sh), a stale
 # row. Every other collection settles.
 # Capture hints, per criterion:
 # - review-index, index-threads, index-threads-none: read the QA-1 card. Its Weekly report
 #   row holds a draft, a handed-off, a replied, and a resolved thread (3 Open, 1 Resolved);
 #   its other rows have no threads.
-# - index-design: read the In progress cards and the settled specs below them: no spec row reads
-#   "Up to date", each status shows once, and the page has no sideways scroll. QA-2's stale
-#   row has no status; its Stale pill is its only word (lane-hosting #index-entry-status).
+# - index-design: read the Needs you cards and the settled specs below them: each lane spec row shows
+#   its gate word once, each card how many of its specs need you, "Up to date" shows nowhere, and the
+#   page has no sideways scroll. QA-2's stale row has no gate or status; its Stale pill is its only
+#   word (lane-hosting #index-entry-status).
 # - index-threads-refresh: QA-2's Weekly report has one open thread, replied by the agent.
 #   Steps: click that row's "Weekly report" title in the QA-2 card; open the thread with its
 #   "Open thread 1" button; click its "✓ Resolve" button; click "Back to Spec Chat index" (the

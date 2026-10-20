@@ -1,4 +1,5 @@
-"""GET /api/evidence behind a fake evidence provider (criterion-evidence spec, review-service #providers)."""
+"""GET /api/evidence, and the review index's gate words and review facts, behind a fake evidence provider
+(criterion-evidence spec, lane-hosting #index-gates, review-service #providers)."""
 
 import contextlib
 import importlib.util
@@ -8,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -52,9 +54,9 @@ def repo(root, html, origin="https://github.com/acme/spec-chat.git"):
 
 
 class FakeEvidence:
-    """Answers GET /criteria with a fixed body; records every request."""
+    """Answers every GET (/criteria, /review-facts) with a fixed body, after `delay` seconds; records every request."""
 
-    def __init__(self, body=None, status=200, raw=None):
+    def __init__(self, body=None, status=200, raw=None, delay=0):
         self.requests = []
         owner = self
 
@@ -64,12 +66,14 @@ class FakeEvidence:
 
             def do_GET(self):
                 owner.requests.append(self.path)
+                time.sleep(delay)
                 data = raw if raw is not None else json.dumps(body).encode()
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
-                self.wfile.write(data)
+                with contextlib.suppress(BrokenPipeError, ConnectionResetError):  # a reader that stopped waiting
+                    self.wfile.write(data)
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.url = "http://127.0.0.1:%d/ev/" % self.server.server_port
@@ -89,7 +93,9 @@ def entry(**values):
     return value
 
 
-class EvidenceRouteTest(unittest.TestCase):
+class ProviderHarness(unittest.TestCase):
+    """A review server in-process and a fake evidence provider plugged by its file; holds no test."""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
@@ -127,6 +133,8 @@ class EvidenceRouteTest(unittest.TestCase):
         threading.Thread(target=server.serve_forever, daemon=True).start()
         return "http://127.0.0.1:%d" % server.server_port
 
+
+class EvidenceRouteTest(ProviderHarness):
     def single(self, html):
         root = self.dir / "repo"
         head = repo(root, html)
@@ -282,6 +290,231 @@ class EvidenceRouteTest(unittest.TestCase):
                 self.evidence(url, path="specs/missing.spec.html")
         self.assertEqual(caught.exception.code, 400)
         self.assertEqual(service.requests, [])
+
+
+
+def spec_page(title, body=""):
+    return "<!doctype html><html><head><title>%s</title></head><body>%s</body></html>\n" % (title, body)
+
+
+class IndexGatesTest(ProviderHarness):
+    """lane-hosting #index-gates, #index-gates-provider, #index-sections: each lane spec's gate word, read from the
+    spec file, the spool fold, and the evidence provider's review facts (#boundary-index-gates)."""
+
+    def lanes(self, specs):
+        """One repository; each (slug, name, html) a registry row serving docs/specs/<name>.spec.html under a lane."""
+        root = self.dir / "repo"
+        root.mkdir()
+        git(root, "init", "-q")
+        rows = []
+        for slug, name, text in specs:
+            spec = "docs/specs/%s.spec.html" % name
+            (root / spec).parent.mkdir(parents=True, exist_ok=True)
+            (root / spec).write_text(text, encoding="utf-8")
+            rows.append({"id": slug + ":" + name, "slug": slug, "root": str(root), "narrow_root": str(root / "docs"),
+                         "spec": spec, "spec_file": str(root / spec), "path": slug + "/" + spec, "base": "HEAD",
+                         "project": "demo"})
+        git(root, "add", ".")
+        git(root, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "specs")
+        return self.review_server(rows), root
+
+    def event(self, root, name, actor, stamp, **body):
+        directory = root / ("docs/specs/%s.spec.html.review" % name) / actor
+        directory.mkdir(parents=True, exist_ok=True)
+        body = {"actor": actor, "schemaVersion": 1, "createdAt": "2026-10-01T00:00:00Z", **body}
+        (directory / ("%d-%s-%s.json" % (stamp, body["event"], body["id"]))).write_text(json.dumps(body))
+
+    def thread(self, root, name, *steps):
+        """A comment, then each step: handoff, reply (the agent's), resolve."""
+        self.event(root, name, "human", 100, id="c", event="comment", anchorId="x", text="c", browser="b")
+        for stamp, step in enumerate(steps, 101):
+            if step == "handoff":
+                self.event(root, name, "human", stamp, id="h%d" % stamp, event="handoff", events=["c"], browser="b")
+            elif step == "reply":
+                self.event(root, name, "agent", stamp, id="r", event="reply", respondsTo="c", status="acknowledged")
+            elif step == "resolve":
+                self.event(root, name, "human", stamp, id="s", event="status", respondsTo="c", threadId="c",
+                           status="resolved")
+
+    def index(self, url):
+        """{lane key: (part, count, proof link or None, {title: pills})} and the raw body."""
+        import html as html_lib
+        import re
+
+        with urllib.request.urlopen(url + "/", timeout=10) as response:
+            body = response.read().decode()
+        result = {}
+        for part, cards in re.findall(r'<p class="label">([^<]*)</p><nav class="lanes"[^>]*>(.*?)</nav>', body, re.S):
+            for key, card in re.findall(r'<section class="lane[^"]*" aria-label="([^"]+)">(.*?)</section>', cards, re.S):
+                count = re.search(r'<span class="count">([^<]*)</span>', card).group(1)
+                proof = re.search(r'<a class="proof"[^>]*>Proof</a>', card)
+                rows = {}
+                for item in re.findall(r"<li>(.*?)</li>", card, re.S):
+                    texts = [t.strip() for t in html_lib.unescape(re.sub(r"<[^>]+>", "\n", item)).splitlines() if t.strip()]
+                    rows[texts[0]] = texts[1:]
+                result[key] = (part, count, proof and proof.group(0), rows)
+        return result, body
+
+    def test_each_gate_word_and_its_part(self):
+        """#acceptance-index-gate-decision, -reply, -draft, -agent, -ready, -accepted, #acceptance-index-sections."""
+        commit = "0123456789abcdef0123456789abcdef01234567"
+        service = self.fake(body={"specs": {"abc7/docs/specs/accepted.spec.html": {"accepted": commit}}})
+        url, root = self.lanes([
+            ("abc1", "decision", spec_page("Decision", '<p data-spec-tbd>Which one?</p>')),
+            ("abc2", "reply", spec_page("Reply")),
+            ("abc3", "draft", spec_page("Draft")),
+            ("abc4", "agent", spec_page("Agent", '<p data-spec-tbd="later">Later work.</p>')),
+            ("abc5", "ready", spec_page("Ready")),
+            ("abc7", "accepted", spec_page("Accepted")),
+        ])
+        self.thread(root, "decision", "handoff")
+        self.thread(root, "reply", "handoff", "reply")
+        self.thread(root, "draft")
+        self.thread(root, "agent", "handoff")
+        self.thread(root, "ready", "handoff", "reply", "resolve")
+        with self.plugged(service.url):
+            lanes, _ = self.index(url)
+        self.assertEqual(lanes, {
+            "ABC-1": ("Needs you", "1 need you", None, {"Decision": ["Decision open", "1", "Open"]}),
+            "ABC-2": ("Needs you", "1 need you", None, {"Reply": ["Reply waiting", "1", "Open"]}),
+            "ABC-3": ("Needs you", "1 need you", None, {"Draft": ["Draft not sent", "1", "Open"]}),
+            "ABC-5": ("Needs you", "1 need you", None, {"Ready": ["Ready to accept", "1", "Resolved"]}),
+            "ABC-4": ("In progress", "Nothing needs you", None, {"Agent": ["With the agent", "1", "Open"]}),
+            "ABC-7": ("In progress", "Nothing needs you", None, {"Accepted": ["Accepted 0123456"]}),
+        })
+        # One ask per load, one path parameter per lane spec's served path (#index-gates-provider).
+        self.assertEqual(len(service.requests), 1)
+        asked = urlparse(service.requests[0])
+        self.assertEqual(asked.path, "/ev/review-facts")
+        self.assertEqual(sorted(parse_qs(asked.query)["path"]), sorted(
+            "%s/docs/specs/%s.spec.html" % pair for pair in (("abc1", "decision"), ("abc2", "reply"),
+                                                             ("abc3", "draft"), ("abc4", "agent"),
+                                                             ("abc5", "ready"), ("abc7", "accepted"))))
+
+    def test_first_row_that_holds_wins(self):
+        """#index-gates: an open decision outranks every thread; a waiting reply outranks a draft; a thread outranks
+        Accepted; one card counts each spec that needs you."""
+        commit = "0123456789abcdef0123456789abcdef01234567"
+        service = self.fake(body={"specs": {"abc1/docs/specs/%s.spec.html" % name: {"accepted": commit}
+                                            for name in ("one", "two", "three")}})
+        url, root = self.lanes([
+            ("abc1", "one", spec_page("One", '<p data-spec-tbd="">Open?</p>')),
+            ("abc1", "two", spec_page("Two")),
+            ("abc1", "three", spec_page("Three")),
+        ])
+        self.thread(root, "one", "handoff", "reply")
+        self.thread(root, "two", "handoff", "reply")
+        self.event(root, "two", "human", 200, id="d", event="comment", anchorId="x", text="d", browser="b")
+        self.thread(root, "three", "handoff")
+        with self.plugged(service.url):
+            lanes, _ = self.index(url)
+        self.assertEqual(lanes["ABC-1"], ("Needs you", "2 need you", None, {
+            "One": ["Decision open", "1", "Open"], "Two": ["Reply waiting", "2", "Open"],
+            "Three": ["With the agent", "1", "Open"]}))
+
+    def test_accept_spec_sent_holds_until_the_spec_changes(self):
+        """#acceptance-index-gate-sent: no provider; the newest hand-off is Accept spec (no `events` list) at the
+        version the page showed; a later edit to the spec makes it Ready to accept again."""
+        url, root = self.lanes([("abc6", "sent", spec_page("Sent"))])
+        self.thread(root, "sent", "handoff", "reply", "resolve")
+        with urllib.request.urlopen(url + "/abc6/docs/specs/sent.spec.html", timeout=10) as response:
+            version = response.headers["ETag"].strip('"')
+        self.event(root, "sent", "human", 300, id="acc", event="handoff", browser="b", version=version)
+        lanes, body = self.index(url)
+        self.assertEqual(lanes["ABC-6"], ("In progress", "Nothing needs you", None, {"Sent": ["Accept spec sent", "1", "Resolved"]}))
+        self.assertNotIn("error", body.lower())
+        # A hand-off that lists its drafts is not Accept spec.
+        self.event(root, "sent", "human", 400, id="h4", event="handoff", events=[], browser="b", version=version)
+        self.assertEqual(self.index(url)[0]["ABC-6"][3]["Sent"][0], "Ready to accept")
+        self.event(root, "sent", "human", 500, id="acc2", event="handoff", browser="b", version=version)
+        self.assertEqual(self.index(url)[0]["ABC-6"][3]["Sent"][0], "Accept spec sent")
+        (root / "docs/specs/sent.spec.html").write_text(spec_page("Sent", "<p>Edited.</p>"), encoding="utf-8")
+        self.assertEqual(self.index(url)[0]["ABC-6"], ("Needs you", "1 need you", None, {
+            "Sent": ["Ready to accept", "Changed", "1", "Resolved"]}))
+
+    def test_proof_link_opens_the_bundle_page_and_carries_its_bundle(self):
+        """#acceptance-index-proof, #index-entry-lane: the card links the proof review facts name, a plain link to
+        `url` that the host bridge turns into step 2 with `bundle` (criterion-evidence #bridge-tab-pages)."""
+        proof = {"bundle": "b-1", "url": "https://evidence.example/bundles/b-1"}
+        service = self.fake(body={"specs": {"abc8/docs/specs/one.spec.html": {"proof": proof}}})
+        url, _ = self.lanes([("abc8", "one", spec_page("One")), ("abc8", "two", spec_page("Two")),
+                             ("abc9", "other", spec_page("Other"))])
+        with self.plugged(service.url):
+            lanes, body = self.index(url)
+        self.assertEqual(lanes["ABC-8"][2], '<a class="proof" href="https://evidence.example/bundles/b-1" '
+                                            'target="_blank" rel="noopener" data-evidence-bundle="b-1">Proof</a>')
+        self.assertIsNone(lanes["ABC-9"][2])
+        # A proof alone is no acceptance.
+        self.assertEqual(lanes["ABC-8"][3], {"One": ["Ready to accept"], "Two": ["Ready to accept"]})
+
+    def test_no_provider_shows_every_gate_it_reads_itself(self):
+        """#acceptance-index-no-provider, review-service #acceptance-ci-alone: file absent, no ask, no Accepted, no
+        Proof link, no error; file present, both appear, with no restart."""
+        commit = "fedcba9876543210fedcba9876543210fedcba98"
+        service = self.fake(body={"specs": {"abc5/docs/specs/ready.spec.html": {
+            "accepted": commit, "proof": {"bundle": "b-2", "url": "http://127.0.0.1:1/bundles/b-2"}}}})
+        url, root = self.lanes([("abc5", "ready", spec_page("Ready"))])
+        self.thread(root, "ready", "handoff", "reply", "resolve")
+        absent = ("Needs you", "1 need you", None, {"Ready": ["Ready to accept", "1", "Resolved"]})
+        lanes, body = self.index(url)
+        self.assertEqual(lanes, {"ABC-5": absent})
+        self.assertNotIn("Accepted", body)
+        with self.plugged(service.url):
+            lanes, _ = self.index(url)
+        self.assertEqual(lanes["ABC-5"][:2], ("In progress", "Nothing needs you"))
+        self.assertEqual(lanes["ABC-5"][3], {"Ready": ["Accepted fedcba9", "1", "Resolved"]})
+        self.assertIn('data-evidence-bundle="b-2"', lanes["ABC-5"][2])
+        self.assertEqual(self.index(url)[0], {"ABC-5": absent})
+        self.assertEqual(len(service.requests), 1)
+
+    def test_failing_slow_or_malformed_answers_render_at_once_without_facts(self):
+        """#index-gates-provider: an error, a non-JSON or malformed answer, a down or slow provider: the index renders
+        with neither fact, and a slow one never holds it past REVIEW_FACTS_SECONDS."""
+        import time as clock
+
+        good = {"accepted": "0123456789abcdef0123456789abcdef01234567",
+                "proof": {"bundle": "b", "url": "https://evidence.example/bundles/b"}}
+        url, _ = self.lanes([("abc5", "ready", spec_page("Ready"))])
+        path = "abc5/docs/specs/ready.spec.html"
+        absent = {"ABC-5": ("Needs you", "1 need you", None, {"Ready": ["Ready to accept"]})}
+        services = [self.fake(status=500, body={"specs": {path: good}}), self.fake(raw=b"<html>"),
+                    self.fake(body=["list"]), self.fake(body={"specs": []}),
+                    self.fake(body={"specs": {path: {"accepted": "HEAD~1", "proof": {"bundle": "b", "url": "javascript:alert(1)"}}}}),
+                    self.fake(body={"specs": {path: {"accepted": 7, "proof": {"bundle": "", "url": "https://e.example/b"}}}}),
+                    self.fake(body={"specs": {"other/" + path: good}})]
+        for service in services:
+            with self.subTest(requests=service.url), self.plugged(service.url):
+                self.assertEqual(self.index(url)[0], absent)
+        with self.plugged("http://127.0.0.1:9/"):
+            self.assertEqual(self.index(url)[0], absent)
+        slow = self.fake(body={"specs": {path: good}}, delay=3)
+        with self.plugged(slow.url):
+            started = clock.monotonic()
+            self.assertEqual(self.index(url)[0], absent)
+            self.assertLess(clock.monotonic() - started, serve.REVIEW_FACTS_SECONDS + 1)
+
+    def test_settled_and_stale_specs_show_no_gate_and_are_not_asked(self):
+        """#index-gates-rule: Settled specs show no gate word; #index-entry-stale: a stale row counts toward nothing."""
+        service = self.fake(body={"specs": {}})
+        root = self.dir / "repo"
+        root.mkdir()
+        git(root, "init", "-q")
+        (root / "docs/specs").mkdir(parents=True)
+        (root / "docs/specs/main.spec.html").write_text(spec_page("Main", "<p data-spec-tbd>Open?</p>"))
+        (root / "docs/specs/lane.spec.html").write_text(spec_page("Lane"))
+        git(root, "add", ".")
+        git(root, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "specs")
+        def row(slug, name, **extra):
+            spec = "docs/specs/%s.spec.html" % name
+            return {"id": slug + name, "slug": slug, "root": str(root), "narrow_root": str(root / "docs"), "spec": spec,
+                    "spec_file": str(root / spec), "path": slug + "/" + spec, "base": "HEAD", "project": "demo", **extra}
+        url = self.review_server([row("aa", "main"), row("abc1", "lane"), row("abc1", "gone", stale="spec file is missing")])
+        with self.plugged(service.url):
+            lanes, body = self.index(url)
+        self.assertEqual(lanes, {"ABC-1": ("Needs you", "1 need you", None, {
+            "Lane": ["Ready to accept"], "docs/specs/gone.spec.html": ["Stale"]})})
+        self.assertNotIn("Decision open", body)
+        self.assertEqual(parse_qs(urlparse(service.requests[0]).query)["path"], ["abc1/docs/specs/lane.spec.html"])
 
 
 if __name__ == "__main__":

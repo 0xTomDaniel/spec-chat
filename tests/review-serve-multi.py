@@ -516,7 +516,7 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertIsNone(self.server.poll())
 
     def test_index_groups_lanes_projects_and_status_in_order(self):
-        """ANN-136 lane-hosting #acceptance-review-index."""
+        """ANN-136 lane-hosting #acceptance-review-index, #acceptance-index-sections, #index-entry-order."""
         import html as html_lib
         import re
 
@@ -541,6 +541,10 @@ class MultiReviewServeTest(unittest.TestCase):
         other = self.make_resource("trunk") | {"slug": "aa", "project": "sc"}
         other["path"] = "aa/sc/" + other["spec"]
         git(other["root"], "checkout", "--", other["spec"])
+        # Handed-off threads: Alpha fresh and ANN-119's one spec are with the agent; ANN-119 needs you nowhere.
+        for resource in (fresh, steady):
+            self.spool_event(resource, "human", 100, id="c", event="comment", anchorId="x", text="c", browser="b")
+            self.spool_event(resource, "human", 101, id="h", event="handoff", events=["c"], browser="b")
         self.start([steady, broken, main, board, other, fresh, tool, lost])
         git(broken["root"], "branch", "-D", "gone")
         git(lost["root"], "branch", "-D", "gone")
@@ -549,29 +553,34 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertEqual(status, 200)
         body = raw.decode()
         self.assertIn('"GIT_OPTIONAL_LOCKS": "0"', SERVER.read_text())
-        # #index-entry-title: the Changed pill sits on the right of its row.
-        self.assertRegex(body, r"\.pill \{[^}]*margin-left: auto;")
+        # #index-entry-title: the gate word and Changed pills sit on the right of their row.
+        self.assertRegex(body, r"\.pills \{[^}]*margin-left: auto;")
         text = html_lib.unescape(re.sub(r"<(style|script)>.*?</\1>|<[^>]+>", "\n", body, flags=re.S))
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         self.assertEqual(lines[:2], ["Spec Chat index", "Review index"])
-        # #acceptance-index-sections: lane cards sit under In progress; aa rows in one closed Settled.
+        # #acceptance-index-sections: lanes with a spec that needs you under Needs you, the rest under In progress,
+        # each by issue number; aa rows in one closed Settled, with no gate word.
         self.assertEqual(len(re.findall(r"<details\b", body)), 1)
         self.assertRegex(body, r"<details(?![^>]*\bopen\b)[^>]*>\s*<summary>Settled \(2\)</summary>")
         self.assertEqual(lines[2:], [
+            "Needs you",
+            "ANN-7", "1 need you", "aa", "ann7", "Ready to accept",
+            "ANN-134", "3 need you",
+            "aa", "Zeta board", "Ready to accept", "Changed", "Alpha fresh", "With the agent", "Changed", "1", "Open",
+            "sc", "Zeta board", "Ready to accept", "Changed",
+            "zz", "ann134b", "Ready to accept",
             "In progress",
-            "ANN-134", "3 of 3 changed",
-            "aa", "Alpha fresh", "Changed", "Zeta board", "Changed",
-            "sc", "Zeta board", "Changed",
-            "zz", "ann134b",
-            "ANN-7", "No status", "aa", "ann7",
-            "ANN-119", "Up to date", "sc", "ann119",
+            "ANN-119", "Nothing needs you", "sc", "ann119", "With the agent", "1", "Open",
             "Settled (2)",
             "aa", "aa", "Changed",
             "sc", "trunk",
         ])
-        # #index-entry-lane: the stripe is attention when any spec changed, else border.
-        cards = re.findall(r'<section class="lane( changed)?"', body)
-        self.assertEqual(cards, [" changed", "", ""])
+        # #index-entry-lane: the stripe is attention when any spec needs you, else border.
+        cards = re.findall(r'<section class="lane( needs)?"', body)
+        self.assertEqual(cards, [" needs", " needs", ""])
+        # #index-design: a gate word that needs you is an attention pill, any other a muted one.
+        self.assertIn('<span class="pill">Ready to accept</span>', body)
+        self.assertIn('<span class="pill muted">With the agent</span>', body)
         for leaked in ("docs/specs", "spec:", "main", "gone", "ann134/"):
             self.assertNotIn(leaked, "\n".join(lines))
         self.assertIn('href="/ann134/sc/docs/specs/domains/x.spec.html?focus=changes"', body)
@@ -649,7 +658,7 @@ class MultiReviewServeTest(unittest.TestCase):
 
         # Text at 4.5:1 and stripes at 3:1, in light and in dark appearance.
         stripes = re.findall(r"([^{}]*)\{[^}]*border-left(?:-color)?\s*:[^;}]*var\((--[\w-]+)\)", rules)
-        self.assertEqual([(sel.strip(), token) for sel, token in stripes], [(".lane.changed", "--ui-attention")])
+        self.assertEqual([(sel.strip(), token) for sel, token in stripes], [(".lane.needs", "--ui-attention")])
         for scheme, tokens in (("light", self.INDEX_TOKENS), ("dark", {**self.INDEX_TOKENS, **self.INDEX_DARK})):
             def contrast(one, two):
                 high, low = sorted((luminance(tokens[one]), luminance(tokens[two])), reverse=True)
@@ -723,20 +732,20 @@ class MultiReviewServeTest(unittest.TestCase):
             return body, response.headers["ETag"], text
 
         body, etag, text = rows()
-        self.assertEqual(text["ann610"], ["Changed", "3", "Open", "1", "Resolved"])
-        self.assertEqual(text["Quiet"], ["Changed"])
-        self.assertEqual(text["ann611"], ["Changed", "1", "Open"])
+        self.assertEqual(text["ann610"], ["Reply waiting", "Changed", "3", "Open", "1", "Resolved"])
+        self.assertEqual(text["Quiet"], ["Ready to accept", "Changed"])
+        self.assertEqual(text["ann611"], ["Draft not sent", "Changed", "1", "Open"])
         self.assertIn('<div class="tallies"><span class="tally open"><b>3</b> Open</span>'
                       '<span class="tally resolved"><b>1</b> Resolved</span></div>', body)
         self.assertNotRegex(body, r"<b>0</b>")
         # Resolve the one open thread, then reload: one Resolved, no Open, a new ETag.
         self.spool_event(one, "human", 200, id="so", event="status", respondsTo="o", threadId="o", status="resolved")
         _, fresh, text = rows()
-        self.assertEqual(text["ann611"], ["Changed", "1", "Resolved"])
+        self.assertEqual(text["ann611"], ["Ready to accept", "Changed", "1", "Resolved"])
         self.assertNotEqual(fresh, etag)
 
     def test_thread_counts_refold_only_when_a_spool_directory_changes(self):
-        """ANN-610 lane-hosting #index-entry-cost: counts kept per spool, keyed by human/ and agent/ mtimes."""
+        """ANN-610 lane-hosting #index-entry-cost: the spool reading kept per spool, keyed by human/ and agent/ mtimes."""
         import importlib.util
         import os
         from unittest import mock
@@ -749,22 +758,22 @@ class MultiReviewServeTest(unittest.TestCase):
         folds = []
         fold = module.spool.fold_threads
         with mock.patch.object(module.spool, "fold_threads", lambda events: folds.append(1) or fold(events)):
-            self.assertEqual(module._thread_counts(mount, path), (0, 0))
+            self.assertEqual(module._spool_reading(mount, path)["counts"], (0, 0))
             self.seed_every_status(mount)
-            self.assertEqual(module._thread_counts(mount, path), (3, 1))
-            self.assertEqual(module._thread_counts(mount, path), (3, 1))
+            self.assertEqual(module._spool_reading(mount, path)["counts"], (3, 1))
+            self.assertEqual(module._spool_reading(mount, path)["counts"], (3, 1))
             self.assertEqual(len(folds), 2)
             agent = Path(path + ".review", "agent")
             info = os.stat(agent)
             os.utime(agent, ns=(info.st_atime_ns, info.st_mtime_ns + 1))
-            self.assertEqual(module._thread_counts(mount, path), (3, 1))
+            self.assertEqual(module._spool_reading(mount, path)["counts"], (3, 1))
             self.assertEqual(len(folds), 3)
         # No spool at all: nothing to read, no threads.
         bare = self.make_resource("ann613")
         bare_path = str(Path(bare["root"]) / bare["spec"])
         for actor in ("human", "agent"):
             os.rmdir(bare_path + ".review/" + actor)
-        self.assertEqual(module._thread_counts(bare, bare_path), (0, 0))
+        self.assertEqual(module._spool_reading(bare, bare_path), {"counts": (0, 0), "waiting": frozenset(), "accepted": None})
 
     def test_index_settles_specs_served_without_a_row_in_a_closed_disclosure(self):
         """ANN-230 lane-hosting #acceptance-index-sections: row-less specs go in one closed Settled (n)."""
@@ -835,18 +844,19 @@ class MultiReviewServeTest(unittest.TestCase):
         mount["base"] = git(mount["root"], "rev-parse", "HEAD")
         path = str(Path(mount["root"]) / mount["spec"])
         calls = []
-        status, title = module._review_status, module._page_title
+        status, page = module._review_status, module._spec_page
         with mock.patch.object(module, "_review_status", lambda m: calls.append("git") or status(m)), \
-                mock.patch.object(module, "_page_title", lambda p: calls.append("title") or title(p)):
+                mock.patch.object(module, "_spec_page", lambda p: calls.append("title") or page(p)):
             row = module._index_row(mount, path, True)
-            self.assertEqual(row, (True, "ann181"))
+            self.assertEqual(row[:3], (True, "ann181", 0))
             self.assertEqual(module._index_row(mount, path, True), row)
             self.assertEqual(calls, ["git", "title"])
-            Path(path).write_text("<title>Renamed</title>x\n")
-            self.assertEqual(module._index_row(mount, path, True), (True, "Renamed"))
+            # The title and the open decisions are reread together (#index-entry-cost).
+            Path(path).write_text('<title>Renamed</title><p data-spec-tbd>x</p><p data-spec-tbd="later">y</p>\n')
+            self.assertEqual(module._index_row(mount, path, True)[:3], (True, "Renamed", 1))
             self.assertEqual(len(calls), 4)
             head = git(mount["root"], "commit", "-qam", "reviewed") or git(mount["root"], "rev-parse", "HEAD")
-            self.assertEqual(module._index_row(mount | {"base": head}, path, True), (False, "Renamed"))
+            self.assertEqual(module._index_row(mount | {"base": head}, path, True)[:2], (False, "Renamed"))
             self.assertEqual(len(calls), 6)
             info = os.stat(path)
             os.utime(path, ns=(info.st_atime_ns, info.st_mtime_ns + 1))
@@ -863,10 +873,10 @@ class MultiReviewServeTest(unittest.TestCase):
         mount = self.make_resource("ann192")
         self.assertEqual(mount["base"], "main")
         path = str(Path(mount["root"]) / mount["spec"])
-        self.assertEqual(module._index_row(mount, path, True), (True, "ann192"))
+        self.assertEqual(module._index_row(mount, path, True)[:2], (True, "ann192"))
         git(mount["root"], "commit", "-qam", "reviewed on main")
         self.assertIs(module._review_status(mount), False)
-        self.assertEqual(module._index_row(mount, path, True), (False, "ann192"))
+        self.assertEqual(module._index_row(mount, path, True)[:2], (False, "ann192"))
 
     def test_stale_rows_start_serve_valid_rows_and_report_untouched(self):
         """ANN-795 review-service #acceptance-stale-start, #service-stale."""
@@ -920,9 +930,10 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertEqual(text, ["docs/specs/gone.spec.html", "Stale"])
         other = next(item for item in items if item is not stale)
         self.assertIn('<a href="/ann798/docs/specs/domains/x.spec.html">ann798</a>', other)
-        # A stale row counts toward no status: the lane reads as its other row alone.
-        self.assertIn('<span class="count">Up to date</span>', body)
-        self.assertRegex(body, r"\.pill\.stale \{[^}]*var\(--ui-")
+        # A stale row has no gate and counts toward nothing: the lane reads as its other row alone.
+        self.assertIn('<span class="count">1 need you</span>', body)
+        self.assertIn('<span class="pill muted">Stale</span>', body)
+        self.assertRegex(body, r"\.pill\.muted \{[^}]*var\(--ui-")
 
     def test_invalid_registries_exit_before_binding_or_printing_url(self):
         first, second = (self.make_resource(name) for name in ("first", "second"))

@@ -148,7 +148,7 @@ class FoldParity(unittest.TestCase):
                 with open(spec, "w", encoding="utf-8") as stream:
                     stream.write("<title>x</title>")
                 resolved = sum(1 for th in expected["threads"] if th["status"] == "resolved")
-                counts = serve._thread_counts({"narrow_root": os.path.join(root, "docs")}, spec)
+                counts = serve._spool_reading({"narrow_root": os.path.join(root, "docs")}, spec)["counts"]
                 self.assertEqual(counts, (len(expected["threads"]) - resolved, resolved))
 
     def test_statuses(self):

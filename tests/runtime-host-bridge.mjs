@@ -1,5 +1,6 @@
-// Host bridge tab steps (criterion-evidence #bridge-title, #bridge-open-tab, #bridge-new-tab-click, #bridge-tab-proof):
-// the page's message and click handling given a parent window, a hello, and a click.
+// Host bridge tab steps (criterion-evidence #bridge-title, #bridge-open-tab, #bridge-new-tab-click, #bridge-tab-proof)
+// and the index's lane Proof link (#bridge-tab-pages): the page's message and click handling given a parent window,
+// a hello, and a click.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -34,9 +35,9 @@ function page({ platform = 'MacIntel', framed = true, title = 'Demo spec', href 
   return {
     posted, parent, api,
     hello(data, source = parent, origin = HOST) { (windowListeners.message || []).forEach(fn => fn({ data, source, origin })); },
-    click(href, extra = {}) {
-      const anchor = { getAttribute: k => (k === 'href' ? href : null) };
-      anchor.closest = sel => (sel === 'a[href]' ? anchor : null);
+    click(href, extra = {}, bundle = null) {
+      const anchor = { getAttribute: k => (k === 'href' ? href : k === 'data-evidence-bundle' ? bundle : null) };
+      anchor.closest = sel => (sel === 'a[href]' || (sel === 'a[data-evidence-bundle]' && bundle !== null) ? anchor : null);
       const target = { closest: sel => anchor.closest(sel) };
       let prevented = false;
       const event = { type: 'click', button: 0, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, target,
@@ -149,6 +150,29 @@ const sameAbs = ORIGIN + same;
   p.posted.length = 0;
   assert.equal(p.click(HOST + '/plugins/servlet/other', { metaKey: true }), false, 'the location origin is another origin');
   assert.deepEqual(p.posted, []);
+}
+
+// #bridge-tab-pages, lane-hosting #index-gates-provider: the index's lane Proof link speaks step 2 with its bundle
+// alone after an evidence hello; before it, unframed, or after a tab-only hello, the link keeps the browser's behavior.
+{
+  const proof = 'https://evidence.example/bundles/b-1';
+  const p = page();
+  assert.equal(p.click(proof, {}, 'b-1'), false, 'before the hello: the link opens the bundle page');
+  assert.deepEqual(p.posted, []);
+  p.hello({ type: 'spec-chat-host', opens: ['tab'] });
+  p.posted.length = 0;
+  assert.equal(p.click(proof, {}, 'b-1'), false, 'a tab hello does not turn on evidence opens');
+  assert.deepEqual(p.posted, []);
+  p.hello({ type: 'spec-chat-host', opens: ['evidence'] });
+  assert.equal(p.click(proof, {}, 'b-1'), true);
+  assert.deepEqual(p.posted, [[{ type: 'spec-chat-open-evidence', bundle: 'b-1' }, HOST]]);
+  p.posted.length = 0;
+  assert.equal(p.click(proof), false, 'a link without a bundle keeps its own behavior');
+  assert.equal(p.click(proof, { defaultPrevented: true }, 'b-1'), false, 'a click another handler took stays theirs');
+  assert.deepEqual(p.posted, []);
+  const unframed = page({ framed: false });
+  assert.equal(unframed.click(proof, {}, 'b-1'), false);
+  assert.deepEqual(unframed.posted, []);
 }
 
 console.log('runtime host bridge tests passed');

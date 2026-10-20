@@ -178,13 +178,14 @@ class ReviewStateCollections(unittest.TestCase):
                 result[parts[0]] = [p for p in parts[1:] if p != "Changed"]
             return result
 
-        quiet = {"Onboarding": [], "Report filters": [], "Report sorting": []}
-        self.assertEqual(rows(cards["QA-1"]), {**quiet, "Weekly report": ["3", "Open", "1", "Resolved"]})
+        # Gate words (lane-hosting #index-gates): the report specs hold open TBDs, the others none and no thread.
+        quiet = {"Onboarding": ["Ready to accept"], "Report filters": ["Ready to accept"], "Report sorting": ["Decision open"]}
+        self.assertEqual(rows(cards["QA-1"]), {**quiet, "Weekly report": ["Decision open", "3", "Open", "1", "Resolved"]})
         stale = "docs/specs/archive.spec.html"
-        self.assertEqual(rows(cards["QA-2"]), {**quiet, "Weekly report": ["1", "Open"], stale: ["Stale"]})
+        self.assertEqual(rows(cards["QA-2"]), {**quiet, "Weekly report": ["Decision open", "1", "Open"], stale: ["Stale"]})
         links = re.findall(r"<a [^>]*>([^<]*)</a>", cards["QA-2"])
         self.assertEqual(sorted(links), ["Onboarding", "Report filters", "Report sorting", "Weekly report"])
-        self.assertIn(">3 of 4 changed<", cards["QA-2"])  # a stale row counts toward no status
+        self.assertIn(">4 need you<", cards["QA-2"])  # a stale row has no gate and counts toward nothing
         statuses = {th["id"]: th["status"] for th in spool.fold_threads(self.site.events("qa-1") + [
             {"name": name, "actor": "agent", "body": json.loads((Path(self.site.spec("qa-1") + ".review") / "agent" / name).read_text())}
             for name in os.listdir(self.site.spec("qa-1") + ".review/agent")]).values()}

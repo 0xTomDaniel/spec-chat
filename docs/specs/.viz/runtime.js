@@ -1710,6 +1710,13 @@ function evidenceCriterionKey(url) {
   } catch (_) { return null; }
 }
 
+/* ---------------- host bridge (criterion-evidence #plugin-bridge) ----------------
+ * Self-contained (window, document, navigator only): review-serve inlines this exact block
+ * into the review index, so spec pages and the index run one bridge (#bridge-tab-pages). */
+// The parent frame's origin per step its hello offers; null keeps the browser's own behavior.
+const hostBridge = { evidence: null, tab: null };
+
+// Step 2 (#bridge-open, #bridge-intercept): true when sent, so the caller cancels the link; false keeps the link.
 function evidenceOpen(bundle, criterion) {
   if (!bundle) return null;
   return () => {
@@ -1719,11 +1726,13 @@ function evidenceOpen(bundle, criterion) {
   };
 }
 
-/* ---------------- host bridge (criterion-evidence #plugin-bridge) ----------------
- * Self-contained (window, document, navigator only): review-serve inlines this exact block
- * into the review index, so spec pages and the index run one bridge (#bridge-tab-pages). */
-// The parent frame's origin per step its hello offers; null keeps the browser's own behavior.
-const hostBridge = { evidence: null, tab: null };
+// The index's lane Proof link (#bridge-tab-pages): a link carrying data-evidence-bundle speaks step 2 with that bundle alone.
+function hostEvidenceClick(event) {
+  if (event.defaultPrevented) return;
+  const link = event.target && event.target.closest && event.target.closest('a[data-evidence-bundle]');
+  const open = link && evidenceOpen(link.getAttribute('data-evidence-bundle'));
+  if (open && open()) event.preventDefault();
+}
 
 // #bridge-new-tab-click: Cmd+click on macOS, Ctrl+click elsewhere, or middle-click (auxclick button 1), same-origin link.
 function hostTabClick(event) {
@@ -1752,6 +1761,7 @@ function listenHost() {
     event.source.postMessage({ type: 'spec-chat-title', title: String(document.title) }, event.origin);
   });
   for (const type of ['click', 'auxclick']) document.addEventListener(type, hostTabClick, true);
+  document.addEventListener('click', hostEvidenceClick);
 }
 /* ---------------- end host bridge ---------------- */
 
