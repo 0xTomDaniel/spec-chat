@@ -22,6 +22,10 @@ DESIGN.md            consensus design document
 ### Run all tests (serial, CI-identical)
 
 ```sh
+export SPEC_CHAT_TEST_TMP="$(cd "$(mktemp -d /tmp/spec-chat-tests.XXXXXX)" && pwd -P)"
+export TMPDIR="$SPEC_CHAT_TEST_TMP"
+trap 'sh tests/leftover-processes; rm -rf "$SPEC_CHAT_TEST_TMP"' EXIT
+trap 'exit 130' INT TERM
 fail=0
 for f in tests/*.py tests/*.sh tests/*.mjs; do
   case "$f" in
@@ -30,13 +34,18 @@ for f in tests/*.py tests/*.sh tests/*.mjs; do
     *.mjs) run="node $f" ;;
   esac
   if $run; then echo "ok $f"; else echo "FAIL $f"; fail=1; fi
+  sh tests/leftover-processes || { echo "FAIL $f left processes running"; fail=1; }
 done
 exit $fail
 ```
 
 Tests run serially, one process at a time. No parallel runner; order is
 lexicographic within each glob. CI uses exactly this loop
-(`.github/workflows/test.yml`).
+(`.github/workflows/test.yml`). Every temp file of the run lives in one run
+directory, so a server a test starts names it on its command line;
+`tests/leftover-processes` fails the test file that leaves one running, stops
+it, and runs again on exit or interrupt. A test stops what it starts, also
+when it fails.
 
 ### Run a single test
 

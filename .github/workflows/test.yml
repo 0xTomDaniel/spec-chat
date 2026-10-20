@@ -24,6 +24,11 @@ jobs:
           export HOME="$RUNNER_TEMP/home"
           unset XDG_STATE_HOME XDG_CONFIG_HOME
           mkdir -p "$HOME"
+          # Every test temp file lives in one run directory; a process still naming it after a file fails that file.
+          export SPEC_CHAT_TEST_TMP="$(cd "$(mktemp -d /tmp/spec-chat-tests.XXXXXX)" && pwd -P)"
+          export TMPDIR="$SPEC_CHAT_TEST_TMP"
+          trap 'sh tests/leftover-processes; rm -rf "$SPEC_CHAT_TEST_TMP"' EXIT
+          trap 'exit 130' INT TERM
           fail=0
           for f in tests/*.py tests/*.sh tests/*.mjs; do
             case "$f" in
@@ -33,6 +38,7 @@ jobs:
             esac
             echo "::group::$f"
             if $run; then echo "ok $f"; else echo "::error::$f failed"; fail=1; fi
+            sh tests/leftover-processes || { echo "::error::$f left processes running"; fail=1; }
             echo "::endgroup::"
           done
           exit $fail

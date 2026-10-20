@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import tempfile
@@ -50,6 +51,33 @@ def outbound_address():
     return address
 
 
+def stop_processes_naming(directory):
+    """End every process whose command line names this test's directory: the servers register detached into their
+    own session, so a test owns them only through the paths it gave them. Reads `ps`, not /proc, so the sweep also
+    works where the launcher cannot recognise its own server (no /proc), and on failure or interrupt."""
+    names = {str(directory), str(Path(directory).resolve())}
+    listing = subprocess.run(["ps", "-ax", "-ww", "-o", "pid=,command="], stdout=subprocess.PIPE,
+                             stderr=subprocess.DEVNULL, text=True, check=False).stdout
+    pids = [int(pid) for pid, _, command in (line.strip().partition(" ") for line in listing.splitlines())
+            if pid.isdigit() and int(pid) != os.getpid() and any(name in command for name in names)]
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        for pid in pids:
+            with contextlib.suppress(OSError):
+                os.kill(pid, sig)
+        deadline = time.monotonic() + 3
+        while pids and time.monotonic() < deadline:
+            pids = [pid for pid in pids if alive(pid)]
+            time.sleep(0.05)
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
 def request(url, *, method="GET", body=None):
     try:
         with urllib.request.urlopen(urllib.request.Request(url, data=body, method=method), timeout=4) as response:
@@ -62,6 +90,8 @@ class ReviewHostTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="spec-chat-review-host-")
         self.work = Path(self.temp.name)
+        # Registered first, so it runs last: after the test's own cleanups, even when the test fails.
+        self.addCleanup(stop_processes_naming, self.work)
         self.repo = self.work / "repo"
         self.repo.mkdir()
         subprocess.run(["git", "init", "-q", "-b", "main", str(self.repo)], check=True)

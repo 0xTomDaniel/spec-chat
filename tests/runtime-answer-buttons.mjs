@@ -47,6 +47,8 @@ const port = await new Promise(res => { const s = createServer(); s.listen(0, '1
 const server = spawn('python3', [resolve(root, 'skill/review-spec/assets/review-serve.py'), join(repo, 'docs'), String(port)], {
   stdio: 'ignore', env: { ...process.env, HOME: join(repo, '.home'), XDG_STATE_HOME: join(repo, '.state'), XDG_CONFIG_HOME: join(repo, '.config'), HERDR_SOCKET_PATH: '' },
 });
+// Stop the server on any exit, also when a step throws before the finally below.
+process.on('exit', () => server.kill());
 const url = name => `http://127.0.0.1:${port}/specs/${name}.spec.html`;
 for (let i = 0; ; i++) {
   try { if ((await fetch(url('press'))).ok) break; } catch {}
