@@ -42,6 +42,10 @@
 # The registry records a public base address, so the service, though on loopback, is public
 # and answers a page with no origin (review-service #served-private): the test host (host.py)
 # serves the served-* collections' pages at its own address, in a frame with no origin.
+#
+# Comment-layer collections (host-*, one-thread-*, no-scope, no-service, layer-*) also get host pages beside their specs and
+# their seeded threads from panes.py, once the registry names this reset's project; a collection's slug is the scope
+# its pages' items name.
 set -eu
 collections="qa-fixture rule-candidate tbd-later tbd-later-handoff tbd-open-highlight tbd-open-single
   next-tbd next-tbd-step next-tbd-handoff tbd-open-jump tbd-open-wrap mobile-composer
@@ -50,7 +54,10 @@ collections="qa-fixture rule-candidate tbd-later tbd-later-handoff tbd-open-high
   choice-handoff choice-comment-mode
   anchor-moved anchor-changed anchor-gone stale-page agent-scan name-reply advice
   clear-thread qa-1 qa-2 qa-3 qa-4 qa-5 qa-6 qa-7 dismiss dismiss-reload not-a-rule
-  served-threads served-handoff served-index served-focus coverage-undeclared"
+  served-threads served-handoff served-index served-focus coverage-undeclared
+  host-draft host-starters host-handoff host-handoff-two host-reply host-live host-same-subject
+  host-quote host-quote-gone host-only-comments host-phone host-frame one-thread-spec one-thread-host
+  no-scope no-service layer-markup layer-stores layer-focus"
 plugged="qa-8 qa-9"
 site="$QA_ROOT/site"
 serve="$QA_ROOT/serve"
@@ -122,6 +129,7 @@ with open(registry_plugged + ".tmp", "w", encoding="utf-8") as out:
     out.write("\n".join(rows_of(plugged)))
 os.replace(registry_plugged + ".tmp", registry_plugged)
 PY
+python3 "$QA_FIXTURE/panes.py" "$site" "$serve" "$project"
 # The evidence provider's declared answers (lane-hosting #index-gates-provider), once its service runs.
 cp -R "$QA_FIXTURE/evidence" "$evidence"
 if [ -n "${QA_URL_EVIDENCE:-}" ]; then

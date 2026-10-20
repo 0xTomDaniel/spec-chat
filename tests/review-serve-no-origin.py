@@ -1,5 +1,6 @@
-"""A public review service answers a page with no origin; every other request gets no cross-origin permission
-(review-service #served-no-origin, #served-private)."""
+"""A public review service answers any other origin, a page with no origin included, while it has no login and no
+cookie; a private one, no Origin, and the service's own get no cross-origin permission (review-service
+#served-no-origin, #served-safe, #served-private; comment-layer #acceptance-other-origin)."""
 
 import contextlib
 import http.client
@@ -93,14 +94,14 @@ class NoOriginCase(unittest.TestCase):
                                             headers={"If-None-Match": answers["spec"][1]["etag"]})
         return answers
 
-    def assert_no_origin_answered(self, answers):
+    def assert_no_origin_answered(self, answers, origin="null"):
         status, headers, _ = answers["preflight"]
         self.assertEqual(status, 204)
-        self.assertEqual(headers["access-control-allow-origin"], "null")
+        self.assertEqual(headers["access-control-allow-origin"], origin)
         self.assertIn("content-type", headers["access-control-allow-headers"].lower())
         for name in ("spec", "head", "save", "events", "missing", "unchanged"):
             status, headers, _ = answers[name]
-            self.assertEqual(headers.get("access-control-allow-origin"), "null", name)
+            self.assertEqual(headers.get("access-control-allow-origin"), origin, name)
             self.assertNotIn("access-control-allow-credentials", headers, name)
             self.assertEqual(headers.get("vary"), "Origin", name)
             exposed = {value.strip().lower() for value in headers["access-control-expose-headers"].split(",")}
@@ -127,15 +128,44 @@ class ServedNoOriginTest(NoOriginCase):
         self.assert_no_cross_origin_read(self.page_requests(port, None))
         self.assert_no_cross_origin_read(self.page_requests(port, "http://127.0.0.1:%d" % port))
 
-    def test_other_site_gets_no_cross_origin_read(self):
-        """acceptance-service-other-origin: only no origin is answered, never another site's."""
+    def test_public_service_answers_another_site_and_its_preflight(self):
+        """comment-layer #acceptance-other-origin: a host page of another site reads every answer, preflight
+        included; a value that is no single origin is granted nothing."""
         port = self.serve("0.0.0.0")
-        for origin in ("https://other.example", "null, https://other.example", "NULL"):
+        self.assert_no_origin_answered(self.page_requests(port, "https://other.example"), "https://other.example")
+        for origin in ("null, https://other.example", "https://other.example/page", ""):
             self.assert_no_cross_origin_read(self.page_requests(port, origin))
 
     def test_private_service_answers_no_origin_as_any_other_origin(self):
         """acceptance-service-private-no-origin: a loopback service with no public base grants no origin no read."""
         self.assert_no_cross_origin_read(self.page_requests(self.serve("127.0.0.1"), "null"))
+
+    def test_private_service_grants_another_site_no_read(self):
+        """review-service #acceptance-service-other-origin; comment-layer #acceptance-private-other-origin (service
+        side): another site the reviewer has open reads nothing from a private service."""
+        self.assert_no_cross_origin_read(self.page_requests(self.serve("127.0.0.1"), "https://other.example"))
+
+    def test_other_origins_answered_only_without_login_or_cookie(self):
+        """review-service #acceptance-origin-safe: the service sets no cookie and asks no login, so it answers other
+        origins; an answer setting a cookie or asking a login, as a change adding either would, grants no other origin
+        a read."""
+        port = self.serve("0.0.0.0")
+        site = "https://other.example"
+        for answer in self.page_requests(port, site).values():
+            self.assertFalse({"set-cookie", "www-authenticate"} & set(answer[1]))
+        original = serve.MountHandler.end_headers
+
+        for header in ("Set-Cookie", "WWW-Authenticate"):
+            def credentialed(handler, *args, header=header):
+                handler.send_header(header, "session=1" if header == "Set-Cookie" else "Basic")
+                original(handler, *args)
+
+            with patch.object(serve.MountHandler, "end_headers", credentialed):
+                answers = {"spec": self.request(port, "GET", self.PAGE_PATH, site),
+                           "events": self.request(port, "GET", "/api/events?dir=%s.review" % self.PAGE_PATH, site)}
+            for name, (_, headers, _) in answers.items():
+                self.assertIn(header.lower(), headers, name)
+                self.assertEqual(cross_origin(headers), {}, (header, name))
 
 
 class PublicBaseNoOriginTest(NoOriginCase):
@@ -201,8 +231,9 @@ class PublicBaseNoOriginTest(NoOriginCase):
                                "public_base": BASE, "url": BASE})
         with self.running() as port:
             self.assert_no_origin_answered(self.page_requests(port, "null"))
-            self.assert_no_cross_origin_read(self.page_requests(port, "https://other.example"))
+            self.assert_no_origin_answered(self.page_requests(port, "https://other.example"), "https://other.example")
             self.assert_no_cross_origin_read(self.page_requests(port, None))
+            self.assert_no_cross_origin_read(self.page_requests(port, BASE))
 
     def test_public_base_given_and_cleared_while_running(self):
         """Box setup changes the address with no restart (review-service #service-visibility)."""

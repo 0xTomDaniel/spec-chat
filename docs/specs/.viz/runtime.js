@@ -20,21 +20,30 @@ OWN_ADDRESS.hash = '';
 const SPEC_FILE = decodeURIComponent(OWN_ADDRESS.pathname.split('/').pop());
 // document.currentScript is only valid during the initial synchronous run — capture now.
 const EMBED_REVIEW_DIR = (document.currentScript && document.currentScript.dataset && document.currentScript.dataset.reviewDir) || null;
+// comment-layer #load: served at <url>/static/comment-layer.js, this runtime is the comment layer on a host page, and
+// <url>/ is the review service every request goes to, never the host page's own address.
+const LAYER_SERVICE = (() => {
+  const src = document.currentScript && document.currentScript.src;
+  const at = src ? new URL(src) : null;
+  return at && /\/static\/comment-layer\.js$/.test(at.pathname) ? new URL('../', at) : null;
+})();
 const REVIEW_DIRNAME = SPEC_FILE + '.review';
-// The spool this page reviews; also keys its outbox and last-loaded events in browser storage.
-const REVIEW_DIR = EMBED_REVIEW_DIR || OWN_ADDRESS.pathname.replace(/^\//, '') + '.review';
+// The spool this page reviews; also keys its outbox and last-loaded events in browser storage. The layer's outbox
+// holds every scope's events, each naming its own, so it is keyed by the service.
+const REVIEW_DIR = EMBED_REVIEW_DIR || (LAYER_SERVICE ? 'layer:' + LAYER_SERVICE.href : OWN_ADDRESS.pathname.replace(/^\//, '') + '.review');
 const RUNTIME_URL = (document.currentScript && document.currentScript.src) || new URL('./.viz/runtime.js', document.baseURI).href;
 const VENDOR = { echarts: new URL('./vendor/echarts-5.5.1.min.js', RUNTIME_URL).href };
 
 /* ---------------- error overlay (headless-debuggable) ---------------- */
-window.addEventListener('error', e => {
+// A host page's own errors are the host's: the layer shows no error (comment-layer #ui-absent).
+if (!LAYER_SERVICE) window.addEventListener('error', e => {
   // Browsers intentionally redact some foreign/extension failures to this
   // detail-free signature. It cannot identify a spec-chat fault and must not
   // cover a still-working review surface with a fatal-looking overlay.
   if (e.message === 'Script error.' && !e.filename && !e.lineno && !e.colno && !e.error) return;
   overlay('error', e.message + ' @ ' + (e.filename || '').split('/').pop() + ':' + e.lineno);
 });
-window.addEventListener('unhandledrejection', e => overlay('rejection', String(e.reason)));
+if (!LAYER_SERVICE) window.addEventListener('unhandledrejection', e => overlay('rejection', String(e.reason)));
 function overlay(kind, msg) {
   let el = document.getElementById('hx-errors');
   if (!el) {
@@ -1042,6 +1051,9 @@ function pressAnswer(e) {
 // Events sorted by file name; meaning follows references (#model-order): an event whose
 // referent sorts later waits for it, so a skewed clock never drops or detaches a message.
 function foldThreads(events) {
+  // The statuses an event may name (event schema): an agent reply's, and the human's resolve. Any other value is no
+  // status: an agent reply naming none acknowledges, a status event naming none changes nothing.
+  const NAMED = ['acknowledged', 'orphaned', 'resolved'];
   const threads = new Map();
   const drafts = draftIds(events);
   const ids = new Set(events.map(e => e.body.id));
@@ -1073,7 +1085,7 @@ function foldThreads(events) {
         th.status = humanStatus(e);
         markDraft(th, e);
       } else if (b.respondsTo === th.latestHumanId) {
-        th.status = b.status || 'acknowledged';
+        th.status = NAMED.includes(b.status) ? b.status : 'acknowledged';
       }
       return;
     }
@@ -1096,7 +1108,7 @@ function foldThreads(events) {
     if (b.event === 'status') {
       const threadId = b.threadId || messageThread.get(b.respondsTo) || (threads.has(b.respondsTo) ? b.respondsTo : null);
       const th = threadId && threads.get(threadId);
-      if (th) th.status = b.status;
+      if (th && NAMED.includes(b.status)) th.status = b.status;
     }
   };
   const visit = e => {
@@ -1312,12 +1324,13 @@ function ingest(events, force = false) {
   state.eventsRendered = true;
   if (changed) {
     state.events.sort((a, b) => a.name < b.name ? -1 : 1);
-    state.threads = foldThreads(state.events);
+    state.threads = LAYER_SERVICE ? foldLayerThreads(state.events) : foldThreads(state.events);
     state.authors = authorNames(state.events);
     for (const id of state.expandedResolved) {
       if (state.threads.get(id)?.status !== 'resolved') state.expandedResolved.delete(id);
     }
   }
+  if (LAYER_SERVICE) return renderLayer(changed);
   renderPanel();
   renderPins();
   renderBadges();
@@ -2378,6 +2391,32 @@ a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
 .hx-toast{position:fixed;bottom:76px;left:50%;transform:translateX(-50%);background:var(--ui-ink);color:var(--ui-page);font:600 var(--ui-text-xs) var(--ui-font);border-radius:var(--ui-radius);padding:var(--ui-space-2) var(--ui-space-4);box-shadow:0 8px 28px var(--ui-shadow);z-index:960;opacity:0;transition:opacity .25s;pointer-events:none}
 .hx-toast.show{opacity:1}
 .hx-banner button{font:600 var(--ui-text-xs) var(--ui-font);border:1px solid var(--ui-page);background:transparent;color:var(--ui-page);border-radius:var(--ui-radius-sm);min-height:var(--ui-space-6);padding:var(--ui-space-2) var(--ui-space-3);cursor:pointer}
+/* host source (comment-layer #ui-from) */
+.hx-host-from{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 var(--ui-space-1);margin-top:var(--ui-space-1);font-size:var(--ui-text-xs);color:var(--ui-muted);min-width:0}
+.hx-host-kind{font-weight:600;color:var(--ui-ink)}
+.hx-host-from a{color:var(--ui-ack);text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere;min-width:0}
+/* starters (comment-layer #ui-starters) */
+.hx-starters{display:flex;flex-wrap:wrap}
+/* comment layer (comment-layer #ui-style): its own overlay on a host page, the host's look untouched */
+:host{all:initial;font:var(--ui-text-sm)/1.4 var(--ui-font);color:var(--ui-ink)}
+.hx-layer-control,.hx-layer .hx-pin,.hx-quote-mark,.hx-layer-box{position:fixed}
+.hx-layer-control{z-index:700;box-sizing:border-box;width:24px;height:24px;margin:0;padding:0;display:grid;place-items:center;border:1px solid var(--ui-border);border-radius:var(--ui-radius-sm);background:var(--ui-surface);color:var(--ui-muted);cursor:pointer;box-shadow:0 2px 8px var(--ui-shadow)}
+.hx-layer-control:hover,.hx-layer-control[aria-expanded=true]{color:var(--ui-ink);border-color:var(--ui-muted)}
+.hx-layer-control svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.hx-layer-control:focus-visible,.hx-layer .hx-pin:focus-visible,.hx-layer-close:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px}
+.hx-layer .hx-pin{margin:0;padding:0}
+.hx-quote-mark{z-index:640;pointer-events:none;background:var(--ui-pin-ring);border-bottom:2px solid var(--ui-draft)}
+.hx-layer-box{z-index:800;box-sizing:border-box;display:flex;flex-direction:column;width:380px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:hidden;background:var(--ui-page);color:var(--ui-ink);border:1px solid var(--ui-border);border-radius:var(--ui-radius);box-shadow:0 8px 28px var(--ui-shadow);font:var(--ui-text-sm) var(--ui-font)}
+.hx-layer-head{display:flex;align-items:center;gap:var(--ui-space-2);padding:var(--ui-space-2) var(--ui-space-2) var(--ui-space-2) var(--ui-space-3);border-bottom:1px solid var(--ui-border)}
+.hx-layer-title{flex:1 1 auto;min-width:0;font-weight:600;overflow-wrap:anywhere}
+.hx-layer-kind{flex:0 1 auto;min-width:0;font-size:var(--ui-text-xs);color:var(--ui-muted);overflow-wrap:anywhere}
+.hx-layer-close{flex:0 0 auto;width:var(--ui-space-6);height:var(--ui-space-6);margin:0;padding:0;display:grid;place-items:center;border:1px solid var(--ui-border);border-radius:var(--ui-radius-sm);background:var(--ui-surface);color:var(--ui-muted);cursor:pointer;font:var(--ui-text-lg)/1 var(--ui-font)}
+.hx-layer-close:hover{background:var(--ui-page);color:var(--ui-ink)}
+.hx-layer-box .hx-threads{flex:1 1 auto;min-height:0}
+.hx-layer-box .hx-thread{cursor:default}
+.hx-layer-box .hx-handoff{flex-wrap:wrap;gap:var(--ui-space-1) var(--ui-space-2)}
+.hx-layer-box .hx-offline{font-size:var(--ui-text-xs);font-weight:600;color:var(--ui-draft)}
+.hx-layer .hx-toast{bottom:18px}
 /* mobile */
 @media(max-width:640px){
 .hx-toolbar{left:var(--ui-space-3);right:var(--ui-space-3);bottom:calc(10px + env(safe-area-inset-bottom));transform:none;max-width:none;display:flex;flex-wrap:wrap;justify-content:stretch;gap:var(--ui-space-1);padding:var(--ui-space-1)}
@@ -2415,6 +2454,10 @@ tr[data-anchor]:has(> .hx-pin[data-column]) > :has(> .hx-jev-marker){padding-rig
 .hx-banner{align-items:flex-start;flex-wrap:wrap;padding:calc(var(--ui-space-2) + env(safe-area-inset-top)) var(--ui-space-3) var(--ui-space-2);text-align:center}
 .hx-banner button{min-height:44px;padding:var(--ui-space-2) var(--ui-space-3);touch-action:manipulation}
 .hx-toast{bottom:calc(112px + env(safe-area-inset-bottom));max-width:calc(100vw - 24px);box-sizing:border-box;text-align:center}
+.hx-layer-control{width:44px;height:44px;touch-action:manipulation}
+.hx-layer-close{width:44px;height:44px;touch-action:manipulation}
+.hx-layer-box{width:auto;max-width:none;max-height:75dvh}
+.hx-layer .hx-toast{bottom:calc(18px + env(safe-area-inset-bottom))}
 }
 @media(prefers-reduced-motion:reduce){
 .hx-thread-dock,.hx-thread-ring,.hx-toast{transition:none}
@@ -2641,6 +2684,26 @@ function addComposer(parent, c) {
     '<button class="hx-btn pri" data-act="save">' + verb + '</button><button class="hx-btn" data-act="cancel">Cancel</button>';
   const textarea = box.querySelector('textarea');
   textarea.value = c.text || '';
+  // comment-layer #ui-starters: the item's starters as buttons above the comment box; one begins the draft with its
+  // word, and the comment stays ordinary text.
+  if (c.kind === 'comment' && c.starters && c.starters.length) {
+    const row = document.createElement('div');
+    row.className = 'hx-starters';
+    for (const word of c.starters) {
+      const starter = row.appendChild(document.createElement('button'));
+      starter.type = 'button';
+      starter.className = 'hx-btn';
+      starter.dataset.starter = word;
+      starter.textContent = word;
+      starter.addEventListener('click', e => {
+        e.stopPropagation();
+        textarea.value = c.text = startedWith(word, textarea.value, c.starters);
+        textarea.focus();
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      });
+    }
+    box.insertBefore(row, textarea);
+  }
   // Live events re-render the panel; the composer keeps what was typed.
   textarea.addEventListener('input', () => { c.text = textarea.value; });
   textarea.addEventListener('keydown', e => {
@@ -2658,14 +2721,22 @@ function addComposer(parent, c) {
   setTimeout(() => textarea.focus(), 0);
 }
 
-// The one human message save: the composer and answer buttons write the same events.
+// A draft begun with a starter word: any starter it already begins with gives way to this one.
+function startedWith(word, text, starters) {
+  const rest = String(text || '').replace(/^\s+/, '');
+  const prior = starters.find(other => rest === other || rest.startsWith(other + ' '));
+  return word + ' ' + (prior ? rest.slice(prior.length).replace(/^ /, '') : rest);
+}
+
+// The one human message save: the composer and answer buttons write the same events. A comment written through the
+// comment layer also carries its item's subject, kind, label, and from address (c.host), and goes to its scope (c.route).
 function saveMessage(c, text) {
   const common = { anchorId: c.anchorId, target: c.target, quote: c.quote || null, text, actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 };
   let body;
   if (c.kind === 'reply') body = Object.assign(common, { id: humanId('u'), event: 'reply', respondsTo: c.respondsTo, threadId: c.threadId });
   else if (c.kind === 'edit') body = Object.assign(common, { id: humanId('e'), event: 'edit', supersedes: c.supersedes, threadId: c.threadId });
-  else body = Object.assign(common, { id: humanId('u'), event: 'comment' });
-  save(body);
+  else body = Object.assign(common, { id: humanId('u'), event: 'comment' }, c.host || {});
+  save(body, c.route);
   toast((c.kind === 'edit' ? 'Edit' : c.kind === 'reply' ? 'Reply' : 'Comment') + ' saved as draft — hand off when ready');
   refresh();
 }
@@ -2712,105 +2783,16 @@ function renderThreadDock() {
 }
 
 function renderPanel() {
+  if (LAYER_SERVICE) return renderLayer(true);
   const wrap = document.getElementById('hx-threads');
   if (!wrap) return;
   wrap.innerHTML = '';
   if (state.composer && state.composer.kind === 'comment') {
     const c = state.composer;
-    const d = document.createElement('div');
-    d.className = 'hx-thread active';
-    d.innerHTML = '<div class="hx-anchor">' + esc(label({ anchorId: c.anchorId, target: c.target })) + '</div>' +
-      (c.quote ? '<span class="hx-quote">“' + esc(c.quote) + '”</span>' : '');
-    addComposer(d, c);
-    wrap.appendChild(d);
+    wrap.appendChild(composerCard(c, label({ anchorId: c.anchorId, target: c.target })));
   }
   const threads = [...state.threads.values()].reverse();
-  for (const th of threads) {
-    const b = th.ev.body;
-    const collapsed = resolvedThreadCollapsed(th, state.expandedResolved);
-    const d = document.createElement('div');
-    d.className = 'hx-thread' + (state.activeThread === th.id ? ' active' : '') + (collapsed ? ' resolved-collapsed' : '');
-    // A resolved thread shows its own resolved indicator, never a resolved-in-spirit Jev label.
-    const resolvedHint = th.status === 'resolved' ? null : jevItem('resolved', th.id);
-    const orphanHint = openOrphanHint(th);
-    const threadJevState = threadJevNotice(orphanHint, resolvedHint);
-    d.innerHTML = '<div class="hx-thread-summary"><div class="hx-anchor">' + esc(label(b)) + '</div>' +
-      '<span class="hx-pill" data-s="' + th.status + '">' + th.status + '</span>' +
-      (looksResolved(th) ? '<span class="hx-jev-thread-label">Looks resolved</span>' : '') +
-      (threadJevState ? '<span class="hx-jev-thread-label" data-state="' + threadJevState.state + '">' + esc(jevDisplayLabel(threadJevState)) + '</span>' : '') +
-      (th.status === 'resolved' ? '<button class="hx-disclosure" data-act="disclosure" aria-expanded="' + String(!collapsed) + '" aria-label="' + (collapsed ? 'Show' : 'Hide') + ' resolved thread">' + (collapsed ? '▸' : '▾') + '</button>' : '') + '</div>' +
-      (collapsed ? '<div class="hx-thread-preview">' + esc(th.messages[0].body.text || 'Resolved comment') + '</div>' : '');
-    const notice = th.ev.place && PLACE_NOTICES[th.ev.place.state];
-    if (notice) {
-      const n = document.createElement('div');
-      n.className = 'hx-place-notice';
-      n.dataset.state = th.ev.place.state;
-      n.innerHTML = esc(notice) + (b.quote ? '<span class="hx-quote">“' + esc(b.quote) + '”</span>' : '');
-      d.appendChild(n);
-    }
-    const hint = orphanHintElement(th, orphanHint);
-    if (hint) d.appendChild(hint);
-    if (!collapsed) {
-      th.messages.forEach((message, index) => {
-        const m = message.body;
-        const history = th.history && th.history.get(index);
-        const item = document.createElement('div');
-        item.className = 'hx-msg';
-        item.dataset.messageId = m.id;
-        item.innerHTML = '<span class="hx-who">' + esc(messageAuthor(state.authors, history ? history.original : message)) + '</span>' +
-          (m.quote ? '<span class="hx-quote">“' + esc(m.quote) + '”</span>' : '') + '<span class="hx-text">' + esc(m.text || '') + '</span>';
-        // #model-edit-history: more than one edit lists every edit with its author.
-        if (history && history.edits.length > 1) {
-          const list = document.createElement('ol');
-          list.className = 'hx-history';
-          list.setAttribute('aria-label', 'Edit history');
-          for (const edit of history.edits) {
-            const entry = document.createElement('li');
-            entry.innerHTML = '<span class="hx-who">' + esc(messageAuthor(state.authors, edit)) + '</span> ' + esc(edit.body.text || '');
-            list.appendChild(entry);
-          }
-          item.appendChild(list);
-        }
-        if (message.actor === 'human' && m.id === th.latestHumanId && ['draft', 'pending'].includes(th.status)) {
-          const actions = document.createElement('div');
-          actions.className = 'hx-msg-actions';
-          actions.innerHTML = '<button class="hx-btn" data-act="edit">Edit</button>';
-          actions.querySelector('button').addEventListener('click', e => { e.stopPropagation(); startEdit(th, message); });
-          item.appendChild(actions);
-        }
-        d.appendChild(item);
-      });
-      const replyAction = threadReplyAction(th);
-      if (replyAction) {
-        const reply = document.createElement('button');
-        reply.className = 'hx-btn';
-        reply.dataset.act = 'reply';
-        reply.textContent = replyAction.label;
-        reply.addEventListener('click', e => { e.stopPropagation(); startReply(th, replyAction.message); });
-        d.appendChild(reply);
-      }
-      if (th.status === 'acknowledged') {
-        const resolve = document.createElement('button');
-        resolve.className = 'hx-btn';
-        resolve.dataset.act = 'resolve';
-        resolve.textContent = '✓ Resolve';
-        resolve.addEventListener('click', e => { e.stopPropagation(); resolveThread(th); });
-        d.appendChild(resolve);
-      }
-      if (state.composer && state.composer.threadId === th.id) addComposer(d, state.composer);
-    }
-    d.addEventListener('click', () => selectThread(th, true));
-    d.querySelector('[data-act=disclosure]')?.addEventListener('click', e => {
-      e.stopPropagation();
-      if (collapsed) selectThread(th, true);
-      else {
-        state.expandedResolved.delete(th.id);
-        renderPanel();
-        renderPins();
-      }
-    });
-    wrap.appendChild(d);
-  }
+  for (const th of threads) wrap.appendChild(threadCard(th, label(th.ev.body), th.ev.place));
   const movable = threads.map(th => ({ th, hint: openOrphanHint(th) }))
     .filter(m => m.hint && m.hint.state === 'label' && m.hint.target)
     .map(m => ({ th: m.th, target: m.hint.target }));
@@ -2849,6 +2831,139 @@ function renderPanel() {
   renderThreadHighlight();
 }
 
+// One thread's card, on the spec page's panel and in the comment layer's thread box: `where` heads it, and `place` is
+// where its mark sits now (#anchoring-states).
+function threadCard(th, where, place) {
+  const b = th.ev.body;
+  const collapsed = resolvedThreadCollapsed(th, state.expandedResolved);
+  const d = document.createElement('div');
+  d.className = 'hx-thread' + (state.activeThread === th.id ? ' active' : '') + (collapsed ? ' resolved-collapsed' : '');
+  // A resolved thread shows its own resolved indicator, never a resolved-in-spirit Jev label.
+  const resolvedHint = th.status === 'resolved' ? null : jevItem('resolved', th.id);
+  const orphanHint = openOrphanHint(th);
+  const threadJevState = threadJevNotice(orphanHint, resolvedHint);
+  d.innerHTML = '<div class="hx-thread-summary"><div class="hx-anchor">' + esc(where) + '</div>' +
+    '<span class="hx-pill" data-s="' + esc(th.status) + '">' + esc(th.status) + '</span>' +
+    (looksResolved(th) ? '<span class="hx-jev-thread-label">Looks resolved</span>' : '') +
+    (threadJevState ? '<span class="hx-jev-thread-label" data-state="' + threadJevState.state + '">' + esc(jevDisplayLabel(threadJevState)) + '</span>' : '') +
+    (th.status === 'resolved' ? '<button class="hx-disclosure" data-act="disclosure" aria-expanded="' + String(!collapsed) + '" aria-label="' + (collapsed ? 'Show' : 'Hide') + ' resolved thread">' + (collapsed ? '▸' : '▾') + '</button>' : '') + '</div>' +
+    (collapsed ? '<div class="hx-thread-preview">' + esc(th.messages[0].body.text || 'Resolved comment') + '</div>' : '');
+  if (b.kind || b.from) d.appendChild(hostSource(b));
+  const notice = place && PLACE_NOTICES[place.state];
+  if (notice) {
+    const n = document.createElement('div');
+    n.className = 'hx-place-notice';
+    n.dataset.state = place.state;
+    n.innerHTML = esc(notice) + (b.quote ? '<span class="hx-quote">“' + esc(b.quote) + '”</span>' : '');
+    d.appendChild(n);
+  }
+  const hint = orphanHintElement(th, orphanHint);
+  if (hint) d.appendChild(hint);
+  if (!collapsed) {
+    th.messages.forEach((message, index) => {
+      const m = message.body;
+      const history = th.history && th.history.get(index);
+      const item = document.createElement('div');
+      item.className = 'hx-msg';
+      item.dataset.messageId = m.id;
+      // A space after the author name, as an edit's entry has: the name never runs into the text.
+      item.innerHTML = '<span class="hx-who">' + esc(messageAuthor(state.authors, history ? history.original : message)) + '</span> ' +
+        (m.quote ? '<span class="hx-quote">“' + esc(m.quote) + '”</span>' : '') + '<span class="hx-text">' + esc(m.text || '') + '</span>';
+      // #model-edit-history: more than one edit lists every edit with its author.
+      if (history && history.edits.length > 1) {
+        const list = document.createElement('ol');
+        list.className = 'hx-history';
+        list.setAttribute('aria-label', 'Edit history');
+        for (const edit of history.edits) {
+          const entry = document.createElement('li');
+          entry.innerHTML = '<span class="hx-who">' + esc(messageAuthor(state.authors, edit)) + '</span> ' + esc(edit.body.text || '');
+          list.appendChild(entry);
+        }
+        item.appendChild(list);
+      }
+      if (message.actor === 'human' && m.id === th.latestHumanId && ['draft', 'pending'].includes(th.status)) {
+        const actions = document.createElement('div');
+        actions.className = 'hx-msg-actions';
+        actions.innerHTML = '<button class="hx-btn" data-act="edit">Edit</button>';
+        actions.querySelector('button').addEventListener('click', e => { e.stopPropagation(); startEdit(th, message); });
+        item.appendChild(actions);
+      }
+      d.appendChild(item);
+    });
+    const replyAction = threadReplyAction(th);
+    if (replyAction) {
+      const reply = document.createElement('button');
+      reply.className = 'hx-btn';
+      reply.dataset.act = 'reply';
+      reply.textContent = replyAction.label;
+      reply.addEventListener('click', e => { e.stopPropagation(); startReply(th, replyAction.message); });
+      d.appendChild(reply);
+    }
+    if (th.status === 'acknowledged') {
+      const resolve = document.createElement('button');
+      resolve.className = 'hx-btn';
+      resolve.dataset.act = 'resolve';
+      resolve.textContent = '✓ Resolve';
+      resolve.addEventListener('click', e => { e.stopPropagation(); resolveThread(th); });
+      d.appendChild(resolve);
+    }
+    if (state.composer && state.composer.threadId === th.id) addComposer(d, state.composer);
+  }
+  d.addEventListener('click', () => selectThread(th, true));
+  d.querySelector('[data-act=disclosure]')?.addEventListener('click', e => {
+    e.stopPropagation();
+    if (collapsed) selectThread(th, true);
+    else {
+      state.expandedResolved.delete(th.id);
+      renderPanel(); // the layer places its pins as it draws its box
+      if (!LAYER_SERVICE) renderPins();
+    }
+  });
+  return d;
+}
+
+// A new comment's card: where it goes, the quote it holds, and the composer.
+function composerCard(c, where) {
+  const d = document.createElement('div');
+  d.className = 'hx-thread active';
+  d.innerHTML = '<div class="hx-anchor">' + esc(where) + '</div>' +
+    (c.quote ? '<span class="hx-quote">“' + esc(c.quote) + '”</span>' : '');
+  addComposer(d, c);
+  return d;
+}
+
+// comment-layer #ui-from: a comment written on a host page shows its kind and a link to the address it was written
+// from, on every page that shows its thread.
+function hostSource(b) {
+  const line = document.createElement('div');
+  line.className = 'hx-host-from';
+  if (b.kind) {
+    const kind = line.appendChild(document.createElement('span'));
+    kind.className = 'hx-host-kind';
+    kind.textContent = String(b.kind);
+  }
+  const href = webAddress(b.from);
+  if (href) {
+    line.appendChild(document.createElement('span')).textContent = 'from';
+    const link = line.appendChild(document.createElement('a'));
+    link.href = href;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.title = href;
+    link.textContent = href.replace(/^https?:\/\//, '');
+    link.addEventListener('click', e => e.stopPropagation());
+  }
+  return line;
+}
+
+// An http(s) address, or null: a host's from address is shown as a link only when it is one.
+function webAddress(value) {
+  try {
+    const url = new URL(String(value || ''), document.baseURI);
+    return value && /^https?:$/.test(url.protocol) ? url.href : null;
+  } catch (_) { return null; }
+}
+
 // A card's own resolve control and Resolve all post the same resolve event.
 async function resolveThreads(threads) {
   for (const th of threads) {
@@ -2864,6 +2979,7 @@ function resolveThread(th) {
 }
 
 function selectThread(th, scroll) {
+  if (LAYER_SERVICE) return selectLayerThread(th);
   state.activeThread = th.id;
   if (th.status === 'resolved') state.expandedResolved.add(th.id);
   openPanel(true);
@@ -2962,6 +3078,13 @@ const chartInfoFor = b => {
 };
 
 function textTargetRect(holder, needle) {
+  const range = textRange(holder, needle);
+  const rect = range && range.getBoundingClientRect();
+  return rect && (rect.width || rect.height) ? rect : null;
+}
+
+// Where a quote sits in a block's or a host item's text (comment-layer #anchor-quote): the range of its first match.
+function textRange(holder, needle) {
   needle = String(needle || '');
   if (!needle) return null;
   const walker = document.createTreeWalker(holder, NodeFilter.SHOW_TEXT);
@@ -2977,8 +3100,7 @@ function textTargetRect(holder, needle) {
   const range = document.createRange();
   range.setStart(a.node, start - a.start);
   range.setEnd(z.node, end - z.start);
-  const rect = range.getBoundingClientRect();
-  return rect.width || rect.height ? rect : null;
+  return range;
 }
 
 function chartDatum(info, t) {
@@ -3244,12 +3366,14 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 
 let toastTimer;
 function toast(msg) {
-  let el = document.getElementById('hx-toast');
+  const holder = LAYER_SERVICE ? layer.root : document.body; // the layer's own look stays in its overlay
+  if (!holder) return;
+  let el = holder.querySelector('#hx-toast');
   if (!el) {
     el = document.createElement('div');
     el.id = 'hx-toast';
     el.className = 'hx-toast';
-    document.body.appendChild(el);
+    holder.appendChild(el);
   }
   el.textContent = msg;
   el.classList.add('show');
@@ -3283,14 +3407,17 @@ function setOutbox(entries) {
   pageOutbox = entries;
 }
 
-const outboxEvents = () => outboxEntries().map(entry => ({ actor: 'human', name: entry.name, body: entry.body }));
+// A layer entry also names the scope and subject it is sent with, and the store it is known to go to.
+const outboxEvent = entry => Object.assign({ actor: 'human', name: entry.name, body: entry.body },
+  entry.scope ? { scope: entry.scope, subject: entry.subject, store: entry.store } : {});
+const outboxEvents = () => outboxEntries().map(outboxEvent);
 
-function save(body) {
+function save(body, route) {
   const event = Object.assign({}, body, { browser: state.reviewer.browser, author: state.reviewer.author }, state.version ? { version: state.version } : {});
   state.lastStamp = nextStamp(state.lastStamp, Date.now(), Math.random);
-  const entry = { name: eventName(event, state.lastStamp), body: event };
+  const entry = Object.assign({ name: eventName(event, state.lastStamp), body: event }, LAYER_SERVICE ? layerRoute(event, route) : {});
   setOutbox(outboxEntries().concat([entry]));
-  ingest([{ actor: 'human', name: entry.name, body: event }]);
+  ingest([outboxEvent(entry)]);
   flushOutbox();
 }
 
@@ -3328,7 +3455,7 @@ function loadedEvents() {
 }
 
 function renderOffline() {
-  const el = document.getElementById('hx-offline');
+  const el = LAYER_SERVICE ? layer.root && layer.root.querySelector('#hx-offline') : document.getElementById('hx-offline');
   if (!el) return;
   el.textContent = state.outboxBlocked ? offlineNotice(outboxEntries().length) : '';
   el.hidden = !el.textContent;
@@ -3344,6 +3471,7 @@ async function shownVersion() {
 
 /* ---------------- loops ---------------- */
 async function refresh() {
+  if (LAYER_SERVICE) return refreshLayer();
   flushOutbox(); // #offline-reopen: waiting events are sent first; the read never waits on a pending save
   try {
     const listed = await state.transport.listEvents();
@@ -3444,6 +3572,7 @@ function keepPlace() {
 
 /* ---------------- boot ---------------- */
 (async function boot() {
+  if (LAYER_SERVICE) return bootLayer();
   const restorePlace = keepPlace();
   const httpPage = !EMBED_REVIEW_DIR && ['http:', 'https:'].includes(OWN_ADDRESS.protocol);
   // Deferred script: the DOM is the served spec until mountUI; compare it, never refetch it.
@@ -3582,6 +3711,518 @@ function startLoops() {
   window.addEventListener('resize', () => { document.querySelectorAll('.hx-jev-marker').forEach(placeJevMarker); renderPins(); renderThreadHighlight(); });
 }
 
+/* ---------------- comment layer (comment-layer.spec.html) ----------------
+ * A host page loads this runtime from <url>/static/comment-layer.js (#load). Each element the host anchors with a
+ * subject, a scope, and a kind (#anchor-table) gets a comment control, and the spec page's pins, thread cards,
+ * composer, Hand off, fruit names, live read, and outbox above draw on that element, in an overlay of the layer's own
+ * (#ui, #ui-style). Only items whose store the service names get a control, so every save names the store it goes to
+ * and Hand off writes one hand-off into each (#ui-handoff): with the service unreachable, refusing this origin, or no
+ * scope answered, nothing draws (#scope-rule, #ui-absent).
+ */
+const LAYER_ANCHOR = '[data-comment-subject][data-comment-scope][data-comment-kind]';
+const LAYER_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14v10H10l-5 3v-13Z"></path><path d="M8 9h8M8 12h5"></path></svg>';
+const layer = {
+  host: null,        // the overlay's element, while any control shows
+  root: null,        // its content, inside the overlay's shadow root
+  stores: new Map(), // scope -> Map(subject -> store), as the service last named them; absent once no row has the scope
+  open: null,        // the item whose thread box shows
+  held: null,        // {el, text}: the selection inside an item as its control was pressed
+  nodes: new Map(),  // placed controls, pins, and marks by key, reused so focus stays
+  keys: new WeakMap(), count: 0, // each item element's part of its nodes' keys
+  subjects: '',      // the anchored scopes and subjects as last read
+  failures: 0,       // reads in a row the service did not answer
+  readTimer: 0, scanTimer: 0, frame: 0,
+};
+
+async function bootLayer() {
+  await Promise.resolve(); // after the whole runtime has run
+  const once = Symbol.for('spec-chat:comment-layer');
+  if (window[once]) return; // a second copy of the layer on one page draws nothing more
+  window[once] = true;
+  if (document.readyState === 'loading') await new Promise(done => document.addEventListener('DOMContentLoaded', done, { once: true }));
+  state.transport = layerTransport();
+  state.reviewer = reviewerIdentity(reviewStorage(), Math.random);
+  // #load-scan: the layer follows the elements the host adds, changes, or removes.
+  new MutationObserver(scanLayer).observe(document.documentElement, { childList: true, subtree: true, attributes: true,
+    attributeFilter: ['data-comment-subject', 'data-comment-scope', 'data-comment-kind', 'data-comment-label', 'data-comment-from', 'data-comment-starters'] });
+  document.addEventListener('scroll', scheduleLayerPlace, true);
+  window.addEventListener('resize', scheduleLayerPlace);
+  window.addEventListener('online', readLayer);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && layer.open) closeLayerBox(); });
+  readLayer();
+}
+
+// One live read, then the next in 2 s; a service that does not answer is asked less often, up to every 32 s.
+function readLayer() {
+  clearTimeout(layer.readTimer);
+  refreshLayer().finally(() => {
+    clearTimeout(layer.readTimer);
+    layer.readTimer = setTimeout(readLayer, 2000 * 2 ** Math.min(layer.failures, 4));
+  });
+}
+
+function scanLayer() {
+  clearTimeout(layer.scanTimer);
+  layer.scanTimer = setTimeout(() => {
+    if (layerSubjects(layerItems()) !== layer.subjects) readLayer();
+    else placeLayer();
+  }, 100);
+}
+
+function scheduleLayerPlace() {
+  cancelAnimationFrame(layer.frame);
+  layer.frame = requestAnimationFrame(placeLayer);
+}
+
+// #anchor-table: an anchored element as the layer reads it. A from address that is no web address gives way to the
+// page's own.
+function layerItem(el) {
+  const d = el.dataset;
+  const kind = (d.commentKind || '').trim();
+  if (!d.commentSubject || !d.commentScope || !kind) return null;
+  return { el, subject: d.commentSubject, scope: d.commentScope, kind, label: (d.commentLabel || '').trim() || null,
+    from: webAddress(d.commentFrom) || location.href,
+    starters: (d.commentStarters || '').split(',').map(word => word.trim()).filter(Boolean) };
+}
+
+const layerItems = () => [...document.querySelectorAll(LAYER_ANCHOR)].map(layerItem).filter(Boolean);
+const storeOf = item => layer.stores.get(item.scope)?.get(item.subject);
+const liveItems = () => layerItems().filter(item => storeOf(item) !== undefined);
+const sameItem = (a, b) => Boolean(a && b) && a.scope === b.scope && a.subject === b.subject;
+
+function layerSubjects(items) {
+  const byScope = new Map();
+  for (const item of items) {
+    if (!byScope.has(item.scope)) byScope.set(item.scope, new Set());
+    byScope.get(item.scope).add(item.subject);
+  }
+  return JSON.stringify([...byScope].map(([scope, subjects]) => [scope, [...subjects].sort()]).sort());
+}
+
+function layerTransport() {
+  const POST_TIMEOUT_MS = 10000;
+  return {
+    mode: 'layer', label: 'comment layer',
+    // 'stored', or 'refused' (400, 403, 404, 409: no row has the scope now, or validation no resend fixes); throws
+    // otherwise, so the outbox keeps the event and sends it again (review-state #offline-outbox).
+    async postEvent(entry) {
+      const url = new URL('api/events', LAYER_SERVICE);
+      url.search = new URLSearchParams({ scope: entry.scope, subject: entry.subject, actor: 'human', name: entry.name });
+      const abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(), POST_TIMEOUT_MS);
+      let r;
+      try {
+        r = await fetch(url.href, { method: 'POST', body: JSON.stringify(entry.body), signal: abort.signal });
+      } finally { clearTimeout(timer); }
+      if (r.ok) return 'stored';
+      if ([400, 403, 404, 409].includes(r.status)) return 'refused';
+      throw new Error('review service answered ' + r.status);
+    },
+  };
+}
+
+// The threads on a scope's subjects, wherever kept, and the store each subject is kept in (comment-layer #subjects):
+// {events, stores}, or null when no row has the scope.
+async function readScope(scope, subjects) {
+  const url = new URL('api/events', LAYER_SERVICE);
+  url.searchParams.set('scope', scope);
+  for (const subject of subjects) url.searchParams.append('subject', subject);
+  const r = await fetch(url.href);
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error('review service answered ' + r.status);
+  const answer = await r.json() || {};
+  const events = Array.isArray(answer.events) ? answer.events : [];
+  return { events: events.filter(e => e && e.body && typeof e.body === 'object' && typeof e.name === 'string'),
+    stores: new Map(Object.entries(answer.stores || {}).filter(([, store]) => typeof store === 'string')) };
+}
+
+async function refreshLayer() {
+  flushOutbox(); // waiting events are sent first; the read never waits on a pending save
+  const items = layerItems();
+  const subjects = layerSubjects(items);
+  const read = [];
+  let failed = false, storesChanged = subjects !== layer.subjects;
+  layer.subjects = subjects;
+  await Promise.all(JSON.parse(subjects).map(async ([scope, list]) => {
+    try {
+      const answer = await readScope(scope, list);
+      const before = JSON.stringify([...(layer.stores.get(scope) || [])]);
+      if (answer) layer.stores.set(scope, answer.stores);
+      else layer.stores.delete(scope);
+      if (JSON.stringify([...(layer.stores.get(scope) || [])]) !== before) storesChanged = true;
+      for (const e of answer ? answer.events : []) read.push(Object.assign(e, { scope }));
+    } catch (_) { failed = true; } // unreachable, or refusing this origin: a subject never answered stays without a control
+  }));
+  layer.failures = failed ? layer.failures + 1 : 0;
+  // A save this page holds learns its store and subject from the read.
+  const held = new Map(state.events.map(e => [e.actor + '/' + e.name, e]));
+  let learned = false;
+  for (const e of read) {
+    const mine = held.get(e.actor + '/' + e.name);
+    if (!mine || mine === e) continue;
+    if (mine.store !== e.store || mine.scope !== e.scope || (e.subject !== undefined && mine.subject !== e.subject)) {
+      Object.assign(mine, { store: e.store, scope: e.scope }, e.subject !== undefined ? { subject: e.subject } : {});
+      learned = true;
+    }
+  }
+  ingest(read.concat(outboxEvents()), storesChanged || learned);
+  renderOffline();
+  scheduleLayerPlace(); // a host's text may have moved under its marks since the last read
+}
+
+// Each store's own events fold apart (review-state #model-rule): a store's hand-offs cover only its drafts. Every save
+// names the store the service named for its subject before it was written, so one not yet read back folds there too.
+const layerStore = e => (e.scope || '') + '\n' + (e.store || '');
+
+function foldLayerThreads(events) {
+  const stores = new Map();
+  for (const e of events) {
+    const key = layerStore(e);
+    if (!stores.has(key)) stores.set(key, []);
+    stores.get(key).push(e);
+  }
+  const threads = [...stores.values()].flatMap(list => [...foldThreads(list).values()]);
+  threads.sort((a, b) => a.ev.name < b.ev.name ? -1 : 1);
+  return new Map(threads.map(th => [th.id, th]));
+}
+
+// Where a layer save is sent: a comment with its item's scope and subject, anything else with its thread's.
+function layerRoute(event, route) {
+  if (route) return { scope: route.scope, subject: route.subject, store: route.store };
+  const th = state.threads.get(event.threadId) || state.threads.get(event.respondsTo);
+  return th ? { scope: th.ev.scope, subject: th.ev.subject, store: th.ev.store } : {};
+}
+
+// #ui-handoff: this browser's drafts on the page, one hand-off into each store that holds them, each listing its own.
+// The outbox is shared by every host page of this service in this browser: another page's waiting drafts stay drafts.
+function handoffLayer() {
+  if (state.handoffPosting) return;
+  const items = liveItems();
+  const stores = new Map();
+  for (const e of state.events) {
+    if (!items.some(item => item.scope === e.scope)) continue;
+    const key = layerStore(e);
+    if (!stores.has(key)) stores.set(key, []);
+    stores.get(key).push(e);
+  }
+  const drafts = layerDrafts();
+  let sent = 0;
+  for (const list of stores.values()) {
+    const mine = new Set(handoffEvents(list, state.reviewer.browser));
+    const listed = list.filter(e => mine.has(e.body.id) && items.some(item => sameItem(item, e)));
+    if (!listed.length) continue;
+    const { scope, subject, store } = listed[0];
+    save({ id: humanId('h'), event: 'handoff', anchorId: '', target: null, quote: null, text: 'batch from ' + state.transport.mode,
+      events: listed.map(e => e.body.id), actor: 'human', createdAt: new Date().toISOString(), schemaVersion: 1 }, { scope, subject, store });
+    sent++;
+  }
+  if (!sent) return;
+  state.handoffPosting = true; // until this hand-off's send settles: a double tap writes one
+  toast('Handed off ' + drafts + ' comment' + (drafts === 1 ? '' : 's') + ', agent notified');
+  refresh().finally(() => { state.handoffPosting = false; });
+}
+
+// This browser's draft threads on the page's items.
+function layerDrafts() {
+  const browser = state.reviewer && state.reviewer.browser;
+  const items = liveItems();
+  return [...state.threads.values()].filter(th => items.some(item => sameItem(item, th.ev))
+    && (th.draftBy.has(browser) || th.draftBy.has(''))).length;
+}
+
+const itemThreads = item => [...state.threads.values()].filter(th => th.ev.scope === item.scope && th.ev.subject === item.subject);
+
+// #subjects-quote-gone: a quote its item's text no longer holds is Text removed; one it holds is placed there.
+function layerPlace(th, el) {
+  const b = th.ev.body;
+  if (!b.quote || !b.target || b.target.type !== 'text') return null;
+  return el && textRange(el, b.quote) ? null : { state: 'gone' };
+}
+
+// The text inside an item the human selected, as its text nodes hold it, so the quote is found there again.
+function heldQuote(el) {
+  const selection = window.getSelection && window.getSelection();
+  if (!selection || !selection.rangeCount || selection.isCollapsed) return null;
+  const range = selection.getRangeAt(0);
+  if (!el.contains(range.startContainer) || !el.contains(range.endContainer)) return null;
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let text = '';
+  for (let node; (node = walker.nextNode());) {
+    if (!range.intersectsNode(node)) continue;
+    const start = node === range.startContainer ? range.startOffset : 0;
+    const end = node === range.endContainer ? range.endOffset : node.data.length;
+    text += node.data.slice(start, end);
+  }
+  return text.trim() || null;
+}
+
+function openLayerComposer(item) {
+  const quote = layer.held && layer.held.el === item.el ? layer.held.text : heldQuote(item.el);
+  layer.held = null;
+  // #subjects-fields: every comment written on a host page carries its kind, label, and from address, and its subject.
+  const host = { subject: item.subject, kind: item.kind, label: item.label, from: item.from };
+  state.composer = { kind: 'comment', target: quote ? { type: 'text', key: quote.slice(0, 40) } : null, quote, text: '',
+    starters: item.starters, host, route: { scope: item.scope, subject: item.subject, store: storeOf(item) } };
+  state.activeThread = null;
+  layer.open = item;
+  renderLayer(true);
+}
+
+function selectLayerThread(th) {
+  state.activeThread = th.id;
+  if (th.status === 'resolved') state.expandedResolved.add(th.id);
+  if (!sameItem(layer.open, th.ev)) layer.open = liveItems().find(item => sameItem(item, th.ev)) || layer.open;
+  renderLayer(true);
+}
+
+function closeLayerBox() {
+  layer.open = null;
+  state.composer = null;
+  state.activeThread = null;
+  renderLayer(true);
+}
+
+function layerOverlay() {
+  if (layer.root) return layer.root;
+  const host = document.createElement('div');
+  host.setAttribute('data-spec-chat', 'comment-layer');
+  host.style.cssText = 'all:initial;position:fixed;top:0;left:0;width:0;height:0;z-index:2147483000';
+  const shadow = host.attachShadow({ mode: 'open' });
+  const style = document.createElement('style');
+  style.textContent = CSS.replace(/:root\{/g, ':host{'); // the chrome's tokens and rules, on the overlay alone
+  layer.root = document.createElement('div');
+  layer.root.className = 'hx-layer';
+  shadow.append(style, layer.root);
+  layer.host = host;
+  document.body.appendChild(host);
+  return layer.root;
+}
+
+// The data changed (or the box opened, closed, or moved on): the box is drawn again; everything else is placed.
+function renderLayer(changed) {
+  if (changed && layer.root) renderLayerBox();
+  placeLayer();
+}
+
+function renderLayerBox() {
+  const root = layer.root;
+  let box = root.querySelector('.hx-layer-box');
+  if (layer.open && !liveItems().some(item => sameItem(item, layer.open))) { layer.open = null; state.composer = null; }
+  if (!layer.open) { if (box) box.remove(); return; }
+  const item = layer.open;
+  if (!box) {
+    box = root.appendChild(document.createElement('section'));
+    box.className = 'hx-layer-box';
+    box.setAttribute('role', 'dialog');
+  }
+  box.setAttribute('aria-label', 'Comments on ' + (item.label || item.subject));
+  const head = document.createElement('div');
+  head.className = 'hx-layer-head';
+  const title = head.appendChild(document.createElement('span'));
+  title.className = 'hx-layer-title';
+  title.textContent = item.label || item.subject;
+  const kind = head.appendChild(document.createElement('span'));
+  kind.className = 'hx-layer-kind';
+  kind.textContent = item.kind;
+  const close = head.appendChild(document.createElement('button'));
+  close.type = 'button';
+  close.className = 'hx-layer-close';
+  close.setAttribute('aria-label', 'Close comments');
+  close.textContent = '×';
+  close.addEventListener('click', closeLayerBox);
+  const list = document.createElement('div');
+  list.className = 'hx-threads';
+  const numbers = new Map([...state.threads.keys()].map((id, index) => [id, index + 1]));
+  const c = state.composer;
+  if (c && c.kind === 'comment' && c.route && sameItem(c.route, item)) list.appendChild(composerCard(c, 'New comment'));
+  for (const th of itemThreads(item).reverse()) list.appendChild(threadCard(th, 'Thread ' + numbers.get(th.id), layerPlace(th, item.el)));
+  if (!c || c.kind !== 'comment' || !sameItem(c.route, item)) {
+    const start = list.appendChild(document.createElement('button'));
+    start.type = 'button';
+    start.className = 'hx-btn';
+    start.dataset.act = 'comment';
+    start.textContent = '✛ Comment';
+    start.addEventListener('click', () => openLayerComposer(layer.open));
+  }
+  // Hand off, and no Accept spec: a host page hands off drafts only (comment-layer #ui-same).
+  const bar = document.createElement('div');
+  bar.className = 'hx-handoff';
+  const drafts = layerDrafts();
+  const note = bar.appendChild(document.createElement('span'));
+  note.className = 'hx-note';
+  note.id = 'hx-drafts';
+  note.textContent = drafts + ' draft' + (drafts === 1 ? '' : 's');
+  const offline = bar.appendChild(document.createElement('span'));
+  offline.className = 'hx-offline';
+  offline.id = 'hx-offline';
+  offline.setAttribute('role', 'status');
+  offline.hidden = true;
+  const send = bar.appendChild(document.createElement('button'));
+  send.type = 'button';
+  send.className = 'hx-btn pri';
+  send.id = 'hx-handoff';
+  send.textContent = 'Hand off to agent →';
+  send.disabled = !drafts;
+  send.addEventListener('click', handoffLayer);
+  box.replaceChildren(head, list, bar);
+  renderOffline();
+}
+
+// A visible part of an element, inside the viewport and every box that clips it; null when none shows.
+function visiblePart(el) {
+  const r = el.getBoundingClientRect();
+  if (!r.width && !r.height) return null;
+  let top = Math.max(r.top, 0), left = Math.max(r.left, 0);
+  let bottom = Math.min(r.bottom, innerHeight), right = Math.min(r.right, innerWidth);
+  for (let p = el.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+    const style = getComputedStyle(p);
+    if (style.overflowX === 'visible' && style.overflowY === 'visible') continue;
+    const c = p.getBoundingClientRect();
+    top = Math.max(top, c.top); left = Math.max(left, c.left);
+    bottom = Math.min(bottom, c.bottom); right = Math.min(right, c.right);
+  }
+  return bottom - top >= 1 && right - left >= 1 ? { top, left, bottom, right } : null;
+}
+
+// An item element's part of its nodes' keys: a control, pin, or mark stays with its element as the host adds, moves, or
+// removes others, so a focused one keeps its item and its focus.
+function itemKey(el) {
+  if (!layer.keys.has(el)) layer.keys.set(el, ++layer.count);
+  return layer.keys.get(el);
+}
+
+function placedNode(key, make) {
+  let node = layer.nodes.get(key);
+  if (!node || !node.isConnected) {
+    node = make();
+    layer.nodes.set(key, node);
+    layer.root.appendChild(node);
+  }
+  return node;
+}
+
+function layerControl(key) {
+  return placedNode(key, () => {
+    const control = document.createElement('button');
+    control.type = 'button';
+    control.className = 'hx-layer-control';
+    control.innerHTML = LAYER_ICON;
+    // The selection the human made inside the item is the quote; the press itself would clear it.
+    control.addEventListener('pointerdown', () => { layer.held = { el: control.item.el, text: heldQuote(control.item.el) }; });
+    control.addEventListener('mousedown', e => e.preventDefault());
+    control.addEventListener('click', () => openLayerComposer(control.item));
+    return control;
+  });
+}
+
+function layerPin(key) {
+  return placedNode(key, () => {
+    const pin = document.createElement('button');
+    pin.type = 'button';
+    pin.className = 'hx-pin';
+    pin.appendChild(document.createElement('span')).className = 'hx-pin-number';
+    pin.addEventListener('click', () => { layer.open = pin.item; selectLayerThread(pin.thread); });
+    return pin;
+  });
+}
+
+// Controls and pins in a row at each item's top right, inside what shows of it; quote marks on the text they quote;
+// the open thread's ring; the box beside its item.
+function placeLayer() {
+  const items = liveItems();
+  if (!items.length) {
+    if (layer.host) layer.host.remove();
+    layer.host = layer.root = layer.open = null;
+    layer.nodes.clear();
+    return;
+  }
+  const fresh = !layer.root;
+  layerOverlay();
+  if (fresh && layer.open) renderLayerBox();
+  const used = new Set();
+  const size = window.matchMedia('(max-width: 640px)').matches ? 44 : 24;
+  const numbers = new Map([...state.threads.keys()].map((id, index) => [id, index + 1]));
+  let ring = null;
+  items.forEach(item => {
+    const part = visiblePart(item.el);
+    if (!part) return;
+    const name = item.label || item.subject;
+    const at = itemKey(item.el);
+    const control = layerControl('control:' + at);
+    control.item = item;
+    control.setAttribute('aria-label', 'Comment on ' + name);
+    control.title = 'Comment on ' + name;
+    control.setAttribute('aria-expanded', String(sameItem(layer.open, item) && layer.open.el === item.el));
+    used.add('control:' + at);
+    const top = part.top + 4;
+    let right = part.right - 4;
+    control.style.top = top + 'px';
+    control.style.left = (right - size) + 'px';
+    right -= size + 4;
+    for (const th of itemThreads(item)) {
+      const key = 'pin:' + at + ':' + th.id;
+      const pin = layerPin(key);
+      pin.item = item;
+      pin.thread = th;
+      used.add(key);
+      pin.dataset.s = th.status;
+      pin.classList.toggle('active', state.activeThread === th.id);
+      pin.firstChild.textContent = numbers.get(th.id);
+      pin.title = 'Thread ' + numbers.get(th.id) + ' on ' + name + ' · ' + th.status;
+      pin.setAttribute('aria-label', 'Open thread ' + numbers.get(th.id) + ': ' + name + ', ' + th.status);
+      pin.style.top = top + 'px';
+      pin.style.left = (right - size) + 'px';
+      right -= size + 4;
+      const b = th.ev.body;
+      const range = b.quote && b.target && b.target.type === 'text' ? textRange(item.el, b.quote) : null;
+      if (range) {
+        [...range.getClientRects()].forEach((rect, line) => {
+          const t = Math.max(rect.top, part.top), l = Math.max(rect.left, part.left);
+          const h = Math.min(rect.bottom, part.bottom) - t, w = Math.min(rect.right, part.right) - l;
+          if (h < 1 || w < 1) return;
+          const markKey = 'mark:' + at + ':' + th.id + ':' + line;
+          const mark = placedNode(markKey, () => Object.assign(document.createElement('div'), { className: 'hx-quote-mark' }));
+          used.add(markKey);
+          Object.assign(mark.style, { top: t + 'px', left: l + 'px', width: w + 'px', height: h + 'px' });
+        });
+      }
+      if (state.activeThread === th.id && sameItem(layer.open, item) && (!ring || layer.open.el === item.el)) {
+        ring = range ? range.getBoundingClientRect() : item.el.getBoundingClientRect();
+      }
+    }
+  });
+  if (ring) {
+    used.add('ring');
+    const node = placedNode('ring', () => Object.assign(document.createElement('div'), { className: 'hx-thread-ring' }));
+    Object.assign(node.style, { left: (ring.left - 4) + 'px', top: (ring.top - 4) + 'px',
+      width: (Math.max(ring.width, 8) + 8) + 'px', height: (Math.max(ring.height, 8) + 8) + 'px' });
+  }
+  for (const [key, node] of layer.nodes) if (!used.has(key)) { node.remove(); layer.nodes.delete(key); }
+  placeLayerBox(items);
+}
+
+// Beside its item, below it or above it, on the screen; a sheet across a phone's width.
+function placeLayerBox(items) {
+  const box = layer.root && layer.root.querySelector('.hx-layer-box');
+  if (!box || !layer.open) return;
+  if (!layer.open.el.isConnected) { // the host drew the item again: the box follows the new element
+    const again = items.find(item => sameItem(item, layer.open));
+    if (again) layer.open = again;
+  }
+  const style = box.style;
+  if (window.matchMedia('(max-width: 640px)').matches) {
+    Object.assign(style, { left: '8px', right: '8px', bottom: '8px', top: 'auto' });
+    return;
+  }
+  Object.assign(style, { right: 'auto', bottom: 'auto' });
+  const r = layer.open.el.getBoundingClientRect();
+  const { width, height } = box.getBoundingClientRect();
+  const below = r.bottom + 8, above = r.top - 8 - height;
+  const top = below + height <= innerHeight - 8 ? below : above >= 8 ? above : Math.max(8, innerHeight - 8 - height);
+  style.top = Math.round(top) + 'px';
+  style.left = Math.round(Math.max(8, Math.min(r.left, innerWidth - 8 - width))) + 'px';
+}
+
 /* ---------------- ANN-108 reading view ----------------
  * This block owns the audience toggle and its HTTP-only Jev request. It never
  * changes document order or removes clauses. Git focus and reading view are
@@ -3648,7 +4289,9 @@ const readingClassObserver = new MutationObserver(() => {
   if (state.readingView && document.body.classList.contains('hx-focus-active')) setReadingView(false);
   else document.body.classList.toggle('hx-reading-active', state.readingView);
 });
-readingClassObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
-setTimeout(mountReadingView, 0);
+if (!LAYER_SERVICE) {
+  readingClassObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  setTimeout(mountReadingView, 0);
+}
 
 })();

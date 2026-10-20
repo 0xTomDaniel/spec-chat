@@ -65,6 +65,7 @@ def ev(name, actor, **body):
 
 MANGO = {"browser": "b-mango", "author": "Mango"}
 PAPAYA = {"browser": "b-papaya", "author": "Papaya"}
+MARKUP = '<img src=x onerror="window.__xss=1">'
 
 CASES = {
     "handoff lists": [
@@ -105,6 +106,16 @@ CASES = {
         ev("120-handoff-h.json", "human", id="h", event="handoff", events=["m", "e1", "e2", "n"], **MANGO),
         ev("130-edit-p1.json", "human", id="p1", event="edit", supersedes="n", threadId="n", anchorId="x", text="P", **PAPAYA),
         ev("131-edit-p2.json", "human", id="p2", event="edit", supersedes="n", threadId="n", anchorId="x", text="M", **MANGO),
+    ],
+    # A status an event names counts only when the thread lifecycle has it: markup or any other word is no status.
+    "unknown statuses": [
+        ev("100-comment-a.json", "human", id="a", event="comment", anchorId="x", text="A", **MANGO),
+        ev("101-comment-b.json", "human", id="b", event="comment", anchorId="x", text="B", **MANGO),
+        ev("110-handoff-h.json", "human", id="h", event="handoff", events=["a", "b"], **MANGO),
+        ev("120-reply-r1.json", "agent", id="r1", event="reply", respondsTo="a", status=MARKUP, text="ok"),
+        ev("121-reply-r2.json", "agent", id="r2", event="reply", respondsTo="b", status="orphaned", text="gone"),
+        ev("130-status-s1.json", "human", id="s1", event="status", respondsTo="a", status=MARKUP, **MANGO),
+        ev("131-status-s2.json", "human", id="s2", event="status", respondsTo="b", status=["resolved"], **MANGO),
     ],
 }
 
@@ -157,6 +168,11 @@ class FoldParity(unittest.TestCase):
                          {"a": "draft", "b": "resolved", "c": "resolved"})
         threads = spool.fold_threads(CASES["handoff lists"])
         self.assertEqual({key: th["status"] for key, th in threads.items()}, {"a": "pending", "b": "draft"})
+
+    def test_unknown_statuses_are_ignored(self):
+        """An agent reply with no lifecycle status acknowledges; a status event with none changes nothing."""
+        threads = spool.fold_threads(CASES["unknown statuses"])
+        self.assertEqual({key: th["status"] for key, th in threads.items()}, {"a": "acknowledged", "b": "orphaned"})
 
     def test_bare_bodies_and_malformed_events(self):
         events = [
