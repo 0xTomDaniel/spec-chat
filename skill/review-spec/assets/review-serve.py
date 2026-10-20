@@ -6,8 +6,11 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import functools
 import hashlib
 import html
+import http.client
+import io
 import ipaddress
 import json
 import mimetypes
@@ -16,6 +19,7 @@ import pwd
 import re
 import signal
 import socket
+import ssl
 import stat
 import subprocess
 import sys
@@ -26,9 +30,7 @@ import tomllib
 from html.parser import HTMLParser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.error import URLError
-from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
-from urllib.request import urlopen
+from urllib.parse import parse_qs, quote, unquote, urlencode, urljoin, urlparse, urlsplit
 
 try:
     from jev import (MARK_LEVELS, OWNER_RESOLUTIONS, JevService, enumerate_served_specs, extract_anchors,
@@ -81,6 +83,14 @@ WAKE_REASON_CHARS = 200  # the reason travels percent-encoded in a header: small
 # Printable ASCII but %: the reason stays readable in the X-Spec-Chat-Wake header and decodes as a URI component.
 WAKE_REASON_SAFE = "".join(chr(code) for code in range(0x20, 0x7F) if chr(code) != "%")
 EVIDENCE_TIMEOUT_SECONDS = 30
+# lane-hosting #index-gates-provider: how long from its ask an index load waits for the review facts, the whole answer,
+# before it renders without them; half the warm index budget (#index-entry-cost, under 200 ms), so the rest is the load's.
+REVIEW_FACTS_SECONDS = 0.1
+# Opening a provider connection, TCP and TLS: it may outlast the ask that opened it, which keeps it for the next ask.
+PROVIDER_CONNECT_SECONDS = 10
+# Idle provider connections kept between asks, all origins together; an ask finding none idle opens its own.
+PROVIDER_CONNECTIONS = 4
+PROVIDER_REDIRECTS = 5  # redirects one provider fetch follows, all inside its one deadline
 # A spec row's own fields: a scope row holds none of them (review-service #published-table, comment-layer #scope-row).
 SPEC_ROW_FIELDS = ("project", "path", "spec", "root", "narrow_root", "base")
 SCOPE_ROW_FIELDS = ("id", "slug", "owner", "checker", "cursor_name")
@@ -464,15 +474,19 @@ def _safe_relative(value):
 
 
 class _HeadParser(HTMLParser):
-    """A page's title text and the meta names and properties it declares."""
+    """A page's title text, the meta names and properties it declares, and its open TBDs: each `data-spec-tbd`
+    marker whose value is not `later` (prompt-first-shaping #finish-tbd-later), the open decisions that block
+    Accept spec (review-state #live-accept)."""
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.in_title = False
         self.parts = []
         self.meta = set()
+        self.open_tbds = 0
 
     def handle_starttag(self, tag, attrs):
+        self.open_tbds += any(key == "data-spec-tbd" and value != "later" for key, value in attrs)
         if tag == "title":
             self.in_title = True
         elif tag == "meta":
@@ -489,16 +503,6 @@ class _HeadParser(HTMLParser):
     @property
     def title(self):
         return " ".join("".join(self.parts).split())
-
-
-def _page_title(path):
-    parser = _HeadParser()
-    try:
-        with open(path, encoding="utf-8", errors="replace") as stream:
-            parser.feed(stream.read())
-    except OSError:
-        pass
-    return parser.title or os.path.splitext(os.path.basename(path))[0]
 
 
 HEAD_END_RE = re.compile(rb"</head\s*>", re.IGNORECASE)
@@ -518,6 +522,19 @@ def _share_meta(body, path):
     added = "".join('<meta %s="%s" content="%s">\n' % (key, name, "article" if name == "og:type" else title)
                     for key, name in SHARE_META if name not in parser.meta)
     return body[:end.start()] + added.encode("utf-8") + body[end.start():] if added else body
+
+
+def _spec_page(path):
+    """(title, open TBDs, version) of one spec file, read once; the version is the SHA-256 of the body a page is
+    served, the one its events record (review-state #model-versions), None when unreadable."""
+    try:
+        body = Path(path).read_bytes()
+    except OSError:
+        body = None
+    parser = _HeadParser()
+    parser.feed((body or b"").decode("utf-8", errors="replace"))
+    title = parser.title or os.path.splitext(os.path.basename(path))[0]
+    return title, parser.open_tbds, None if body is None else hashlib.sha256(_share_meta(body, path)).hexdigest()
 
 
 def _review_status(mount):
@@ -567,14 +584,149 @@ def _evidence_link(base, path):
     return base.rstrip("/") + path
 
 
+class _DeadlineReader(io.RawIOBase):
+    """A socket's reads, each given only the time left before one deadline, so the reads together end by it."""
+
+    def __init__(self, sock, deadline):
+        super().__init__()
+        self._sock, self._raw, self._deadline = sock, sock.makefile("rb", buffering=0), deadline
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        left = self._deadline - time.monotonic()
+        if left <= 0:
+            raise TimeoutError("the answer outlasted its deadline")
+        self._sock.settimeout(left)
+        return self._raw.readinto(buffer)
+
+    def close(self):
+        self._raw.close()
+        super().close()
+
+
+class _DeadlineResponse(http.client.HTTPResponse):
+    """An answer whose reads, status, headers, and body, together end by one deadline, not each by a socket timeout:
+    a provider sending its answer a byte at a time cannot hold an ask, or its thread and socket, past it."""
+
+    def __init__(self, sock, *args, deadline, **kwargs):
+        super().__init__(sock, *args, **kwargs)
+        self.fp.close()  # the answer has read nothing yet; it reads through the deadline instead
+        self.fp = io.BufferedReader(_DeadlineReader(sock, deadline))
+
+
+@functools.cache
+def _provider_tls():
+    """Built once: building one loads the TLS trust store."""
+    return ssl.create_default_context()
+
+
+class _ProviderConnections:
+    """The evidence provider's idle connections, kept open between asks, so a warm index load's review facts ask is one
+    request on an open connection, not a new DNS, TCP, and TLS setup inside its deadline (lane-hosting
+    #index-gates-provider, #index-entry-cost). Only idle connections are kept and counted: an ask finding none idle
+    opens its own, so no ask waits on another's. A connection keeps no answer: each ask is asked anew."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._kept = []  # (origin, connection), oldest first
+
+    def take(self, origin):
+        """(connection, kept) to origin (scheme, host, port), the newest kept one, else a new one; None when opening
+        fails. Opening may outlast the ask's deadline, by at most PROVIDER_CONNECT_SECONDS."""
+        with self._lock:
+            for at in range(len(self._kept) - 1, -1, -1):
+                if self._kept[at][0] == origin:
+                    return self._kept.pop(at)[1], True
+        scheme, host, port = origin
+        try:
+            connection = (http.client.HTTPSConnection(host, port, timeout=PROVIDER_CONNECT_SECONDS,
+                                                      context=_provider_tls()) if scheme == "https"
+                          else http.client.HTTPConnection(host, port, timeout=PROVIDER_CONNECT_SECONDS))
+        except (ValueError, http.client.HTTPException):
+            return None
+        try:
+            connection.connect()
+        except (OSError, ValueError):
+            connection.close()
+            return None
+        return connection, False
+
+    def keep(self, origin, connection):
+        """Keep an open connection for the next ask to origin; past PROVIDER_CONNECTIONS kept, the oldest closes."""
+        with self._lock:
+            self._kept.append((origin, connection))
+            closing, self._kept = self._kept[:-PROVIDER_CONNECTIONS], self._kept[-PROVIDER_CONNECTIONS:]
+        for _, old in closing:
+            old.close()
+
+
+_PROVIDER_CONNECTIONS = _ProviderConnections()
+
+
+def _provider_answer(origin, target, deadline):
+    """One GET of target on origin through a kept provider connection: (status, Location, body) once the whole answer
+    is in by deadline (time.monotonic()), else None. A kept connection that fails short of the deadline, as one the
+    provider closed while it was kept does, is dropped and the ask taken again."""
+    taken = _PROVIDER_CONNECTIONS.take(origin)
+    while taken:
+        connection, kept = taken
+        left = deadline - time.monotonic()
+        if left <= 0:  # opened too late for this ask: kept, the next ask finds it open
+            _PROVIDER_CONNECTIONS.keep(origin, connection)
+            return None
+        try:
+            connection.sock.settimeout(left)
+            connection.response_class = functools.partial(_DeadlineResponse, deadline=deadline)
+            connection.request("GET", target)
+            response = connection.getresponse()
+            answer = response.status, response.getheader("Location"), response.read()
+        except (OSError, ValueError, http.client.HTTPException) as error:
+            connection.close()
+            taken = kept and not isinstance(error, TimeoutError) and _PROVIDER_CONNECTIONS.take(origin)
+            continue
+        if response.will_close or connection.sock is None:
+            connection.close()
+        else:
+            _PROVIDER_CONNECTIONS.keep(origin, connection)
+        return answer
+    return None
+
+
+def _provider_get(base, path, query, deadline):
+    """The evidence provider's one fetch, GET <base>/<path>?<query>, following redirects: its JSON answer, or None
+    when the answer fails, is not JSON, or is not all in by `deadline` (time.monotonic()), redirects included."""
+    url = base.rstrip("/") + "/" + path + "?" + urlencode(query)
+    for _ in range(PROVIDER_REDIRECTS + 1):
+        parts = urlsplit(url)
+        if parts.scheme not in ("http", "https") or not parts.hostname:
+            return None
+        try:
+            port = parts.port or (443 if parts.scheme == "https" else 80)
+        except ValueError:
+            return None
+        answer = _provider_answer((parts.scheme, parts.hostname, port),
+                                  (parts.path or "/") + ("?" + parts.query if parts.query else ""), deadline)
+        if answer is None:
+            return None
+        status, location, body = answer
+        if status in (301, 302, 303, 307, 308) and location:
+            url = urljoin(url, location)
+            continue
+        if not 200 <= status < 300:
+            return None
+        try:
+            return json.loads(body)
+        except (ValueError, RecursionError):
+            return None
+    return None
+
+
 def read_evidence(base, project, spec, commit, served, committed):
     """One evidence read for one spec at one commit; None when unavailable."""
-    query = urlencode({"spec": "project/%s::%s" % (project, spec), "commit": commit})
-    try:
-        with urlopen(base.rstrip("/") + "/criteria?" + query, timeout=EVIDENCE_TIMEOUT_SECONDS) as response:
-            body = json.loads(response.read())
-    except (OSError, URLError, ValueError):
-        return None
+    body = _provider_get(base, "criteria", {"spec": "project/%s::%s" % (project, spec), "commit": commit},
+                         time.monotonic() + EVIDENCE_TIMEOUT_SECONDS)
     criteria = body.get("criteria") if isinstance(body, dict) else None
     if not isinstance(criteria, dict):
         return None
@@ -610,28 +762,31 @@ def _host_bridge():
 
 
 def _index_row(mount, path, row):
-    """(status, title) for one served spec, recomputed only when its file identity or row base changes."""
+    """(status, title, open TBDs, version) for one served spec, recomputed only when its file identity or row base
+    changes (lane-hosting #index-entry-cost)."""
     try:
         info = os.stat(path)
     except OSError:
-        return (_review_status(mount) if row else None), _page_title(path)
+        return ((_review_status(mount) if row else None),) + _spec_page(path)
     base = mount.get("base") if row else None
     key = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, base)
     cached = _ROW_CACHE.get(path)
     if cached and cached[0] == key:
         return cached[1]
-    value = (_review_status(mount) if row else None), _page_title(path)
+    value = ((_review_status(mount) if row else None),) + _spec_page(path)
     if base is None or _COMMIT_ID.fullmatch(base):
         _ROW_CACHE[path] = (key, value)
     return value
 
 
-_THREAD_CACHE = {}
+_SPOOL_CACHE = {}
 
 
-def _thread_counts(mount, path):
-    """(open, resolved) thread counts of one served spec's spool (lane-hosting #index-threads), refolded only
-    when its human/ or agent/ directory modification time changes (#index-entry-cost); None when unreadable."""
+def _spool_reading(mount, path):
+    """One served spec's spool as the index reads it, refolded only when its human/ or agent/ directory modification
+    time changes (lane-hosting #index-entry-cost); None when unreadable. `counts` is (open, resolved)
+    (#index-threads); `waiting` the statuses of its open threads; `accepted` the version its newest hand-off
+    accepted when that hand-off is Accept spec, the one with no `events` list (review-state #live-accept), else None."""
     review = os.path.realpath(path) + ".review"
     key = []
     for actor in ("human", "agent"):
@@ -640,18 +795,88 @@ def _thread_counts(mount, path):
         except OSError:
             key.append(None)
     key = tuple(key)
-    cached = _THREAD_CACHE.get(review)
+    cached = _SPOOL_CACHE.get(review)
     if cached and cached[0] == key:
         return cached[1]
     events = _read_spool_events(review, mount["narrow_root"]) if key != (None, None) else []
     if events is None:
-        counts = None
+        reading = None
     else:
         statuses = [thread["status"] for thread in spool.fold_threads(events).values()]
         resolved = statuses.count("resolved")
-        counts = len(statuses) - resolved, resolved
-    _THREAD_CACHE[review] = (key, counts)
-    return counts
+        newest = max((event for event in events if event["actor"] == "human" and isinstance(event["body"], dict)
+                      and event["body"].get("event") == "handoff"), key=lambda event: event["name"], default=None)
+        accepted = newest["body"].get("version") if newest and not isinstance(newest["body"].get("events"), list) else None
+        reading = {
+            "counts": (len(statuses) - resolved, resolved),
+            "waiting": frozenset(status for status in statuses if status != "resolved"),
+            "accepted": accepted if isinstance(accepted, str) else None,
+        }
+    _SPOOL_CACHE[review] = (key, reading)
+    return reading
+
+
+def _gate(open_tbds, reading, version, fact):
+    """A lane spec's gate word and whether it needs you: the first row of lane-hosting #index-gates that holds."""
+    waiting = reading["waiting"] if reading else frozenset()
+    if open_tbds:
+        return "Decision open", True
+    if waiting - {"draft", "pending"}:
+        return "Reply waiting", True  # an agent reply answers the thread's newest human message
+    if "draft" in waiting:
+        return "Draft not sent", True
+    if "pending" in waiting:
+        return "With the agent", False
+    if fact.get("accepted"):
+        return "Accepted " + fact["accepted"][:7], False
+    if reading and reading["accepted"] and reading["accepted"] == version:
+        return "Accept spec sent", False
+    return "Ready to accept", True
+
+
+def _web_address(value):
+    return isinstance(value, str) and urlparse(value).scheme in ("http", "https") and bool(urlparse(value).netloc)
+
+
+def read_review_facts(base, paths, deadline):
+    """lane-hosting #index-gates-provider: one GET <base>/review-facts naming each lane spec's served path; per asked
+    path its well-formed `accepted` commit and `proof` {bundle, url}, a key absent when the provider has none. {} when
+    the answer fails or is not all in by `deadline`, so the index shows neither fact. Asked once per index load and
+    never kept."""
+    body = _provider_get(base, "review-facts", [("path", path) for path in paths], deadline)
+    specs = body.get("specs") if isinstance(body, dict) else None
+    result = {}
+    for path in paths if isinstance(specs, dict) else ():
+        raw = specs.get(path)
+        if not isinstance(raw, dict):
+            continue
+        fact = {}
+        accepted = raw.get("accepted")
+        if isinstance(accepted, str) and re.fullmatch(r"[0-9a-f]{7,64}", accepted):
+            fact["accepted"] = accepted
+        proof = raw.get("proof")
+        if isinstance(proof, dict) and isinstance(proof.get("bundle"), str) and proof["bundle"] and _web_address(proof.get("url")):
+            fact["proof"] = {"bundle": proof["bundle"], "url": proof["url"]}
+        result[path] = fact
+    return result
+
+
+def _ask_review_facts(base, paths):
+    """Start an index load's one review facts ask beside its row reads; the returned wait answers the facts, or {}
+    without a provider or once REVIEW_FACTS_SECONDS from the ask have passed, so a slow provider never holds the page.
+    The ask's request ends by that same deadline; only opening a connection outlasts it, by at most
+    PROVIDER_CONNECT_SECONDS, and the next ask finds that connection kept."""
+    if not base or not paths:
+        return dict
+    deadline = time.monotonic() + REVIEW_FACTS_SECONDS
+    answer = []
+    asking = threading.Thread(target=lambda: answer.append(read_review_facts(base, paths, deadline)), daemon=True)
+    asking.start()
+
+    def wait():
+        asking.join(max(0.0, deadline - time.monotonic()))
+        return answer[0] if answer else {}
+    return wait
 
 
 def _lane_label(slug):
@@ -1102,79 +1327,102 @@ class MountHandler(SimpleHTTPRequestHandler):
             self.wfile.write(body)
 
     def _index(self):
-        lanes = {}
-        seen = set()
-        listed = set()
         query = urlparse(self.path).query
+        entries = []
+        seen = set()
         for mount in self.mounts:
-            specs = enumerate_served_specs(mount)
             row = bool(mount.get("slug") and mount.get("spec"))
             # Only a lane-key slug (ann230) is an open lane; any other slug settles.
             lane = mount["slug"] if row and _lane_label(mount["slug"])[1][0] == 0 else None
             project = mount.get("project") or os.path.basename(mount["root"])
-            for spec, path in specs:
+            for spec, path in enumerate_served_specs(mount):
                 stable = _mount_prefix(mount) + spec
-                if stable in seen:
-                    continue
-                seen.add(stable)
-                href = ("/" if mount["slug"] else "") + quote(stable, safe="/") + (("?" + query) if query else "")
-                if mount.get("stale"):
-                    # A stale row: its spec path as plain text, no link, no status (#index-entry-stale).
-                    lanes.setdefault(lane, {}).setdefault(project, []).append((None, spec, None, None))
-                    continue
-                status, title = _index_row(mount, path, row)
-                lanes.setdefault(lane, {}).setdefault(project, []).append(
-                    (status, title, href, _thread_counts(mount, path)))
-                listed.update((path, os.path.realpath(path) + ".review"))
+                if stable not in seen:
+                    seen.add(stable)
+                    entries.append((lane, project, mount, row, spec, path, stable))
+        # Review facts are asked once per load, beside the row reads, for each lane spec it shows a gate for.
+        wait_facts = _ask_review_facts(evidence_provider(self.server.state_dir), [
+            stable for lane, _, mount, _, _, _, stable in entries if lane and not mount.get("stale")])
+        lanes = {}
+        listed = set()
+        for lane, project, mount, row, spec, path, stable in entries:
+            specs = lanes.setdefault(lane, {}).setdefault(project, [])
+            if mount.get("stale"):
+                # A stale row: its spec path as plain text, no link, no status, no gate (#index-entry-stale).
+                specs.append({"title": spec, "href": None, "status": None, "gate": None, "needs": False})
+                continue
+            status, title, open_tbds, version = _index_row(mount, path, row)
+            reading = _spool_reading(mount, path)
+            specs.append({"title": title, "status": status, "counts": reading and reading["counts"], "stable": stable,
+                          "href": ("/" if mount["slug"] else "") + quote(stable, safe="/") + (("?" + query) if query else ""),
+                          # Settled specs show no gate word (#index-gates-rule).
+                          "inputs": (open_tbds, reading, version) if lane else None, "gate": None, "needs": False})
+            listed.update((path, os.path.realpath(path) + ".review"))
         # Each cache holds the specs served now, not every spec ever served (review-service #steady-bound).
-        for cache in (_ROW_CACHE, _THREAD_CACHE):
+        for cache in (_ROW_CACHE, _SPOOL_CACHE):
             for key in set(cache) - listed:
                 cache.pop(key, None)
-
         settled = lanes.pop(None, {})
+        facts = wait_facts()
+        for projects in lanes.values():
+            for specs in projects.values():
+                for spec in specs:
+                    if spec.get("inputs"):
+                        spec["fact"] = facts.get(spec["stable"], {})
+                        spec["gate"], spec["needs"] = _gate(*spec["inputs"], spec["fact"])
 
-        def lane_order(item):
-            lane, projects = item
-            changed = any(spec[0] for specs in projects.values() for spec in specs)
-            return (0 if changed else 1, _lane_label(lane)[1])
+        def ordered(projects):
+            """(project, specs) by name; specs that need you first, then changed specs, then by title (#index-entry-order)."""
+            return [(project, sorted(projects[project], key=lambda spec: (
+                not spec["needs"], not spec["status"], spec["title"].casefold(), spec["href"] or "")))
+                for project in sorted(projects)]
 
-        def project_rows(projects):
+        def project_rows(rows):
+            """The listing of ordered(projects)."""
             parts = []
-            for project in sorted(projects):
+            for project, specs in rows:
                 parts.append('<p class="label">%s</p><ul>' % html.escape(project))
-                for status, title, href, counts in sorted(projects[project], key=lambda spec: (not spec[0], spec[1].casefold(), spec[2] or "")):
-                    if href is None:
-                        parts.append('<li><div class="row"><span class="stale-path">%s</span><span class="pill stale">Stale</span></div></li>' % html.escape(title))
+                for spec in specs:
+                    if spec["href"] is None:
+                        parts.append('<li><div class="row"><span class="stale-path">%s</span><span class="pills"><span class="pill muted">Stale</span></span></div></li>' % html.escape(spec["title"]))
                         continue
-                    # The lane count says up to date; a row's only status word is its Changed pill.
-                    pill = '<span class="pill">Changed</span>' if status else ""
+                    # The gate word, muted unless it needs you, then Changed: no word says up to date (#index-entry-title).
+                    pills = '<span class="pill%s">%s</span>' % ("" if spec["needs"] else " muted", html.escape(spec["gate"])) if spec["gate"] else ""
+                    pills += '<span class="pill">Changed</span>' if spec["status"] else ""
+                    pills = '<span class="pills">%s</span>' % pills if pills else ""
                     # Count pills, Open then Resolved; a status with no threads has no pill (#index-threads).
                     tallies = "".join(
                         '<span class="tally %s"><b>%d</b> %s</span>' % (word.lower(), count, word)
-                        for word, count in zip(("Open", "Resolved"), counts or (0, 0)) if count)
+                        for word, count in zip(("Open", "Resolved"), spec["counts"] or (0, 0)) if count)
                     parts.append('<li><div class="row"><a href="%s">%s</a>%s</div>%s</li>' % (
-                        html.escape(href, quote=True), html.escape(title), pill,
+                        html.escape(spec["href"], quote=True), html.escape(spec["title"]), pills,
                         '<div class="tallies">%s</div>' % tallies if tallies else ""))
                 parts.append('</ul>')
             return "".join(parts)
 
-        cards = []
-        for lane, projects in sorted(lanes.items(), key=lane_order):
-            statuses = [spec[0] for specs in projects.values() for spec in specs if spec[0] is not None]
-            changed = sum(1 for status in statuses if status)
-            count = (
-                "%d of %d changed" % (changed, len(statuses)) if changed
-                else "Up to date" if statuses else "No status"
-            )
+        def card(lane, projects):
+            rows = ordered(projects)
+            needs = sum(spec["needs"] for _, specs in rows for spec in specs)
+            # The lane's Proof link: the first proof review facts name for its specs, in index order (#index-entry-lane).
+            proof = next((spec["fact"]["proof"] for _, specs in rows for spec in specs
+                          if spec.get("fact", {}).get("proof")), None)
+            link = '<a class="proof" href="%s" target="_blank" rel="noopener" data-evidence-bundle="%s">Proof</a>' % (
+                html.escape(proof["url"], quote=True), html.escape(proof["bundle"], quote=True)) if proof else ""
             key = html.escape(_lane_label(lane)[0])
-            cards.append('<section class="lane%s" aria-label="%s"><p class="lane-head"><span class="key">%s</span><span class="count">%s</span></p>%s</section>' % (
-                " changed" if changed else "", key, key, count, project_rows(projects)))
-        listing = ""
-        if cards:
-            listing += '<p class="label">In progress</p><nav class="lanes" aria-label="Spec Chat detail pages">%s</nav>' % "\n".join(cards)
+            return '<section class="lane%s" aria-label="%s"><p class="lane-head"><span class="key">%s</span><span class="count">%s</span>%s</p>%s</section>' % (
+                " needs" if needs else "", key, key, "%d need you" % needs if needs else "Nothing needs you", link,
+                project_rows(rows))
+
+        # Needs you, then In progress, each lanes by issue number, each only when it holds a card (#index-sections).
+        parts = {True: [], False: []}
+        for lane, projects in sorted(lanes.items(), key=lambda item: _lane_label(item[0])[1]):
+            parts[any(spec["needs"] for specs in projects.values() for spec in specs)].append(card(lane, projects))
+        listing = "".join(
+            '<p class="label">%s</p><nav class="lanes" aria-label="%s">%s</nav>' % (label, label, "\n".join(parts[needs]))
+            for needs, label in ((True, "Needs you"), (False, "In progress")) if parts[needs])
         if settled:
             listing += '<details class="settled"><summary>Settled (%d)</summary><div class="card">%s</div></details>' % (
-                sum(len(specs) for specs in settled.values()), project_rows(settled))
+                sum(len(specs) for specs in settled.values()), project_rows(ordered(settled)))
         listing = listing or '<p class="empty">No Spec Chat spec pages are available.</p>'
         body = ('''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1211,10 +1459,12 @@ h1 { margin: 0 0 var(--ui-space-5); font-size: var(--ui-text-lg); font-weight: 6
 .label { margin: 0 0 var(--ui-space-2); color: var(--ui-muted); font-size: var(--ui-text-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; overflow-wrap: anywhere; }
 .lanes { display: grid; gap: var(--ui-space-2); grid-template-columns: repeat(auto-fill, minmax(min(100%%, calc(72rem / 4 - var(--ui-space-6))), 1fr)); align-items: start; margin: 0 0 var(--ui-space-5); }
 .lane, .card { box-sizing: border-box; min-width: 0; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); padding: var(--ui-space-3) var(--ui-space-4); }
-.lane.changed { border-left: var(--ui-space-1) solid var(--ui-attention); }
-.lane-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--ui-space-2); margin: 0; }
-.key { font-weight: 600; }
-.count { flex: none; color: var(--ui-muted); font-size: var(--ui-text-xs); }
+.lane.needs { border-left: var(--ui-space-1) solid var(--ui-attention); }
+.lane-head { display: flex; align-items: baseline; gap: var(--ui-space-2); margin: 0; }
+.key { flex: none; font-weight: 600; white-space: nowrap; }
+.count { flex: 1 1 auto; min-width: 0; text-align: right; color: var(--ui-muted); font-size: var(--ui-text-xs); }
+.proof { flex: none; color: var(--ui-link); font-size: var(--ui-text-xs); font-weight: 600; text-decoration: none; }
+.proof:hover, .proof:focus-visible { text-decoration: underline; }
 .lane .label, .card ul + .label { margin: var(--ui-space-3) 0 var(--ui-space-1); }
 ul { list-style: none; margin: 0; padding: 0; }
 li { padding: var(--ui-space-2) 0; border-top: 1px solid var(--ui-border); }
@@ -1222,8 +1472,9 @@ li { padding: var(--ui-space-2) 0; border-top: 1px solid var(--ui-border); }
 li a { flex: 1 1 auto; min-width: 0; color: var(--ui-link); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
 li a:hover, li a:focus-visible { text-decoration: underline; }
 a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; border-radius: var(--ui-radius-sm); }
-.pill { flex: none; margin-left: auto; padding: 0 var(--ui-space-2); line-height: 1.6; border-radius: var(--ui-radius-pill); background: var(--ui-attention-soft); color: var(--ui-attention); font-size: var(--ui-text-xs); font-weight: 600; }
-.pill.stale { background: var(--ui-surface); color: var(--ui-muted); border: 1px solid var(--ui-border); }
+.pills { flex: 0 1 auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--ui-space-1); margin-left: auto; }
+.pill { flex: none; padding: 0 var(--ui-space-2); line-height: 1.6; border-radius: var(--ui-radius-pill); background: var(--ui-attention-soft); color: var(--ui-attention); font-size: var(--ui-text-xs); font-weight: 600; }
+.pill.muted { background: var(--ui-surface); color: var(--ui-muted); border: 1px solid var(--ui-border); }
 li .stale-path { flex: 1 1 auto; min-width: 0; color: var(--ui-muted); overflow-wrap: anywhere; }
 .tallies { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); margin-top: var(--ui-space-1); }
 .tally { display: inline-flex; gap: var(--ui-space-1); padding: 0 var(--ui-space-2); line-height: 1.6; border-radius: var(--ui-radius-pill); font-size: var(--ui-text-xs); font-weight: 400; }

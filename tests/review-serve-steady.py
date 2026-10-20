@@ -417,7 +417,7 @@ class MemoryTest(Steady):
 
         def held():
             return (len(service._kept.values), service._kept.used, len(place._RESOLVERS), len(serve._ROW_CACHE),
-                    len(serve._THREAD_CACHE), service.queue_counts(), len(service._marks))
+                    len(serve._SPOOL_CACHE), service.queue_counts(), len(service._marks))
 
         round_()
         round_()

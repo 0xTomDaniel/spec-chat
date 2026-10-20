@@ -51,11 +51,11 @@ class Site:
         env = {**os.environ, "QA_ROOT": str(self.root), "QA_FIXTURE": str(FIXTURE), "QA_REPO_SPEC_CHAT": str(ROOT), **extra}
         subprocess.run(["sh", str(FIXTURE / "reset.sh")], check=True, env=env)
 
-    def spec(self, collection):
-        return str(self.root / "site" / collection / spools.SPEC)
+    def spec(self, collection, spec=spools.SPEC):
+        return str(self.root / "site" / collection / spec)
 
-    def events(self, collection):
-        human = Path(self.spec(collection) + ".review") / "human"
+    def events(self, collection, spec=spools.SPEC):
+        human = Path(self.spec(collection, spec) + ".review") / "human"
         return [{"name": name, "body": json.loads((human / name).read_text())} for name in sorted(os.listdir(human))]
 
     def places(self, collection):
@@ -81,7 +81,8 @@ class ReviewStateCollections(unittest.TestCase):
         hinted = {hint["path"].split("/")[1] for hint in nav.values()}
         for collection in spools.COLLECTIONS:
             self.assertIn(collection, reset)
-            self.assertIn('"spec:%s::docs/specs/report.spec.html"' % collection, registry)
+            spec = spools.SPEC_OF.get(collection, spools.SPEC).replace(os.sep, "/")
+            self.assertIn('"spec:%s::%s"' % (collection, spec), registry)
             # An index lane is reached from the index root ("{review}/"), any other from its own path.
             self.assertIn("" if collection in spools.INDEX_LANES else collection, hinted)
 
@@ -104,14 +105,16 @@ class ReviewStateCollections(unittest.TestCase):
             self.assertTrue(collection in hinted or "'%s'" % collection in browser_test, collection)
 
     def test_seeded_events_name_their_version_and_file(self):
-        version = hashlib.sha256(HEAD.encode("utf-8")).hexdigest()
         for collection in spools.COLLECTIONS:
-            review = self.site.spec(collection) + ".review"
-            for event in self.site.events(collection) if os.path.isdir(review) else ():
+            spec = spools.SPEC_OF.get(collection, spools.SPEC)
+            text = (FIXTURE / "head" / spec).read_text(encoding="utf-8")
+            version = hashlib.sha256(text.encode("utf-8")).hexdigest()
+            review = self.site.spec(collection, spec) + ".review"
+            for event in self.site.events(collection, spec) if os.path.isdir(review) else ():
                 body = event["body"]
                 self.assertEqual(event["name"].split("-", 1)[1], "%s-%s.json" % (body["event"], body["id"]))
                 self.assertEqual(body["version"], version)
-                self.assertEqual(place.read_version(review, version), HEAD)
+                self.assertEqual(place.read_version(review, version), text)
                 self.assertEqual(body["actor"], "human")
                 self.assertTrue(body["browser"] and body["author"])
 
@@ -144,22 +147,23 @@ class ReviewStateCollections(unittest.TestCase):
         self.assertEqual([name.split("-", 2)[1] for name in batch], ["comment", "handoff"])
         self.assertEqual(self.site.places("agent-scan")["qa-sentence"]["state"], "changed")
 
-    def serve(self, site=None):
-        """The fixture service (serve.py) on a site, this class's by default; returns its base url."""
+    def serve(self, site=None, registry="serve", ready="/qa-fixture/docs/specs/report.spec.html", state="state"):
+        """The fixture service (serve.py) on a site, this class's by default, on its review registry, or review-plugged's
+        ("serve-plugged", state "state-plugged"), as qa.toml declares them; returns its base url."""
         site = site or self.site
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
             port = probe.getsockname()[1]
-        env = {**os.environ, "HOME": str(site.root / "home"), "XDG_STATE_HOME": str(site.root / "state"),
+        env = {**os.environ, "HOME": str(site.root / "home"), "XDG_STATE_HOME": str(site.root / state),
                "XDG_CONFIG_HOME": str(site.root / "config")}
         env.pop("HERDR_SOCKET_PATH", None)
-        server = subprocess.Popen([sys.executable, str(FIXTURE / "serve.py"), str(site.root / "serve" / "registry.toml"), str(port)],
+        server = subprocess.Popen([sys.executable, str(FIXTURE / "serve.py"), str(site.root / registry / "registry.toml"), str(port)],
                                   cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.addCleanup(lambda: (server.terminate(), server.wait(timeout=10)))
         base = "http://127.0.0.1:%d" % port
         for _ in range(100):
             try:
-                urllib.request.urlopen(base + "/qa-fixture/docs/specs/report.spec.html").close()
+                urllib.request.urlopen(base + ready).close()
                 return base
             except OSError:
                 time.sleep(0.1)
@@ -188,7 +192,7 @@ class ReviewStateCollections(unittest.TestCase):
         with urllib.request.urlopen(base + "/") as response:
             body = response.read().decode()
         cards = dict(re.findall(r'<section class="lane[^"]*" aria-label="([^"]+)">(.*?)</section>', body, re.S))
-        self.assertEqual(list(cards), ["QA-1", "QA-2"])
+        self.assertEqual(list(cards), ["QA-1", "QA-2", "QA-4", "QA-5", "QA-6", "QA-7", "QA-3"])
 
         def rows(card):
             result = {}
@@ -197,18 +201,95 @@ class ReviewStateCollections(unittest.TestCase):
                 result[parts[0]] = [p for p in parts[1:] if p != "Changed"]
             return result
 
-        quiet = {"Onboarding": [], "Report filters": [], "Report sorting": []}
-        self.assertEqual(rows(cards["QA-1"]), {**quiet, "Weekly report": ["3", "Open", "1", "Resolved"]})
+        # Gate words (lane-hosting #index-gates): the report specs hold open TBDs, the others none and no thread.
+        quiet = {"Onboarding": ["Ready to accept"], "Report filters": ["Ready to accept"], "Report sorting": ["Decision open"]}
+        self.assertEqual(rows(cards["QA-1"]), {**quiet, "Weekly report": ["Decision open", "3", "Open", "1", "Resolved"]})
         stale = "docs/specs/archive.spec.html"
-        self.assertEqual(rows(cards["QA-2"]), {**quiet, "Weekly report": ["1", "Open"], stale: ["Stale"]})
+        self.assertEqual(rows(cards["QA-2"]), {**quiet, "Weekly report": ["Decision open", "1", "Open"], stale: ["Stale"]})
         links = re.findall(r"<a [^>]*>([^<]*)</a>", cards["QA-2"])
         self.assertEqual(sorted(links), ["Onboarding", "Report filters", "Report sorting", "Weekly report"])
-        self.assertIn(">3 of 4 changed<", cards["QA-2"])  # a stale row counts toward no status
+        self.assertIn(">4 need you<", cards["QA-2"])  # a stale row has no gate and counts toward nothing
         statuses = {th["id"]: th["status"] for th in spool.fold_threads(self.site.events("qa-1") + [
             {"name": name, "actor": "agent", "body": json.loads((Path(self.site.spec("qa-1") + ".review") / "agent" / name).read_text())}
             for name in os.listdir(self.site.spec("qa-1") + ".review/agent")]).values()}
         self.assertEqual(statuses, {"qa-draft": "draft", "qa-handed": "pending", "qa-replied": "acknowledged",
                                     "qa-resolved": "resolved"})
+
+    @staticmethod
+    def lanes(base):
+        """{lane key: (part, count, proof link address or None, {title: gate word})} of the index at base."""
+        import html
+        import re
+
+        with urllib.request.urlopen(base + "/") as response:
+            body = response.read().decode()
+        result = {}
+        for part, cards in re.findall(r'<p class="label">([^<]*)</p><nav class="lanes"[^>]*>(.*?)</nav>', body, re.S):
+            for key, card in re.findall(r'<section class="lane[^"]*" aria-label="([^"]+)">(.*?)</section>', cards, re.S):
+                rows = {html.unescape(title): html.unescape(gate) for title, gate in re.findall(
+                    r'<a href="[^"]*">([^<]*)</a><span class="pills"><span class="pill[^"]*">([^<]*)</span>', card)}
+                proof = re.search(r'<a class="proof" href="([^"]*)"', card)
+                result[key] = (part, re.search(r'<span class="count">([^<]*)</span>', card).group(1),
+                               proof and html.unescape(proof.group(1)), rows)
+        return result
+
+    def test_index_gate_lanes_read_as_their_criteria_say(self):
+        """lane-hosting #acceptance-index-sections, -gate-decision, -gate-reply, -gate-draft, -gate-agent, -gate-ready,
+        -gate-sent, -no-provider Givens, on the review service, which has no evidence provider: qa-3 to qa-7 hold
+        Report filters alone with one thread each; Accept spec, as the page writes it, turns QA-5 to Accept spec sent."""
+        site = Site()  # its own site: the Accept spec save leaves the shared seeded spools untouched
+        self.addCleanup(site.tmp.cleanup)
+        self.assertFalse(os.path.exists(site.root / "serve" / "providers" / "evidence.toml"))
+        base = self.serve(site)
+        lanes = self.lanes(base)
+        self.assertEqual(lanes["QA-1"][0], "Needs you")
+        self.assertEqual(lanes["QA-1"][3]["Weekly report"], "Decision open")  # open TBDs and a handed-off thread
+        expected = {"QA-3": ("In progress", "Nothing needs you", None, {"Report filters": "With the agent"}),
+                    "QA-4": ("Needs you", "1 need you", None, {"Report filters": "Ready to accept"}),
+                    "QA-5": ("Needs you", "1 need you", None, {"Report filters": "Ready to accept"}),
+                    "QA-6": ("Needs you", "1 need you", None, {"Report filters": "Reply waiting"}),
+                    "QA-7": ("Needs you", "1 need you", None, {"Report filters": "Draft not sent"})}
+        self.assertEqual({key: lanes[key] for key in expected}, expected)
+        # Accept spec: the page's empty hand-off, naming the version it was served (review-state #live-accept).
+        path = "/qa-5/" + spools.LATER.replace(os.sep, "/")
+        with urllib.request.urlopen(base + path) as response:
+            version = response.headers["ETag"].strip('"')
+        name = "%d-handoff-qa-accept.json" % time.time_ns()
+        request = urllib.request.Request(base + "/api/events?" + urllib.parse.urlencode(
+            {"dir": path + ".review", "actor": "human", "name": name}), method="POST", data=json.dumps({
+                "id": "qa-accept", "event": "handoff", "anchorId": "", "target": None, "quote": None,
+                "text": "batch from http", "actor": "human", "createdAt": "2026-10-01T00:00:00Z", "schemaVersion": 1,
+                "browser": "qa-capture", "author": "Lychee", "version": version}).encode())
+        urllib.request.urlopen(request).close()
+        self.assertEqual(self.lanes(base)["QA-5"],
+                         ("In progress", "Nothing needs you", None, {"Report filters": "Accept spec sent"}))
+
+    def test_plugged_index_reads_the_declared_review_facts(self):
+        """lane-hosting #acceptance-index-gate-accepted, #acceptance-index-proof Givens, on review-plugged: once the
+        evidence service runs, reset.sh declares its review facts answer and the provider file naming it; the provider
+        names QA-8's Report filters accepted at the head commit, and a proof bundle for QA-9, whose page it serves."""
+        site = Site()
+        self.addCleanup(site.tmp.cleanup)
+        self.assertEqual(sorted(os.listdir(site.root / "serve-plugged" / "providers")), [])
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        evidence = subprocess.Popen([sys.executable, "-I", "-m", "http.server", str(port), "--bind", "127.0.0.1",
+                                     "--directory", str(site.root / "evidence")],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(lambda: (evidence.terminate(), evidence.wait(timeout=10)))
+        url = "http://127.0.0.1:%d" % port
+        base = self.serve(site, "serve-plugged", "/qa-8/docs/specs/later-only.spec.html", "state-plugged")
+        self.assertEqual(self.lanes(base)["QA-8"][3], {"Report filters": "Ready to accept"})  # no provider file yet
+        site.reset(QA_STORY="story-review-index", QA_URL_EVIDENCE=url)
+        head = subprocess.check_output(["git", "-C", str(site.root / "site" / "qa-8"), "rev-parse", "HEAD"], text=True).strip()
+        bundle = url + "/bundles/qa-proof/"
+        self.assertEqual(self.lanes(base), {
+            "QA-8": ("In progress", "Nothing needs you", None, {"Report filters": "Accepted " + head[:7]}),
+            "QA-9": ("Needs you", "1 need you", bundle, {"Report filters": "Ready to accept"}),
+        })
+        with urllib.request.urlopen(bundle) as response:
+            self.assertIn(b"<title>Evidence bundle qa-proof</title>", response.read())
 
     def test_stale_page_edit_lands_on_save_and_the_mark_follows(self):
         self.assertEqual(self.current("stale-page"), HEAD)
