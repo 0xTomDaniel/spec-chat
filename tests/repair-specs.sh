@@ -12,9 +12,7 @@ REPAIR="$ROOT/skill/repair-specs/SKILL.md"
 need() { # file phrase
   grep -qF -- "$2" "$1" || { echo "$1 missing: $2" >&2; exit 1; }
 }
-NO_TEST_LEVEL='no test level'
 for f in "$SHAPE" "$AUTHORING" "$REPAIR"; do
-  need "$f" "$NO_TEST_LEVEL"
   need "$f" "fixture user"
   if grep -qi 'annotateanything' "$f"; then
     echo "$f names a peer project" >&2; exit 1
@@ -22,10 +20,31 @@ for f in "$SHAPE" "$AUTHORING" "$REPAIR"; do
 done
 need "$SHAPE" "product terms"
 for f in "$SHAPE" "$AUTHORING"; do
-  if grep -qiE 'proven by a [a-z ]*test:|first failing test|narrow waiver' "$f"; then
-    echo "$f prescribes a test level or test workflow" >&2; exit 1
+  if grep -qiE 'first failing test|narrow waiver' "$f"; then
+    echo "$f prescribes a test workflow" >&2; exit 1
   fi
 done
+# proof clauses belong to the target, and unedited criteria stay as they are
+# (prompt-first-shaping #complete-criterion-capturable, #complete-criterion-proof-clause,
+# #acceptance-criterion-untouched, #acceptance-criterion-proof-kept, #acceptance-criterion-proof-rule,
+# #acceptance-proof-clause-rule; repair-specs #acceptance-criteria-artifact-then, #acceptance-criteria-proof-kept)
+for f in "$SHAPE" "$AUTHORING" "$REPAIR"; do
+  need "$f" "word for word"
+  if grep -qiE 'loses it|remove that clause|no test level or proof clause|convert when a change touches|no test level, proof method, or proving test in any criterion' "$f"; then
+    echo "$f strips a proof clause or rewrites an unedited criterion" >&2; exit 1
+  fi
+done
+need "$AUTHORING" "these rules apply at shaping to each criterion the change adds or edits, and at repair to every criterion"
+need "$AUTHORING" "Shaping never edits a criterion only to bring it to these rules: a criterion the change does not otherwise edit keeps its text word for word"
+need "$AUTHORING" "Spec Chat's criterion rules neither add nor remove a test level, proof method, or proving test"
+need "$AUTHORING" "Shaping writes such a clause where a target project rule"
+need "$AUTHORING" "a criterion shaping adds under no such rule names no test level or proof"
+need "$AUTHORING" "Shaping and repair keep every such clause a criterion carries, word for word, also when they rewrite the rest of that criterion or split it into several"
+need "$AUTHORING" "This is Spec Chat's whole recipe for such a criterion"
+need "$SHAPE" "Apply these rules to each criterion the change adds or edits; a criterion the change does not otherwise edit keeps its text word for word, so never edit one only to bring it to these rules"
+need "$SHAPE" "a test level, proof method, or proving test only where a target project rule calls for one and every such clause a criterion carries kept word for word"
+need "$REPAIR" "keep that clause word for word through every rewrite above, in the rewritten criterion and in each criterion split from it"
+need "$REPAIR" "criterion repair neither adds nor removes one"
 need "$SHAPE" "no QA harness"
 need "$AUTHORING" "QA harness setup is not product behavior"
 need "$AUTHORING" "product terms"
