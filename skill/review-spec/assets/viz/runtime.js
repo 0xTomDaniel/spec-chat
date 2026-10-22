@@ -3398,17 +3398,36 @@ function reviewStorage() {
 
 // review-service #served-storage: a page with no origin has no browser storage, so it keeps its fruit name and outbox in
 // its frame's name, which lasts as long as the host's frame: across reloads and moves to the service's other pages in it.
-// A name the host gave its frame stays the host's (its links and forms may target it), so then the page keeps nothing.
+// The name holds each review service's items apart (the layer's service, or the page's at its own address), so a frame
+// moved to another service never sends it the first one's outbox. It is read at each use: a name the host gives its
+// frame, at any time, stays the host's (its links and forms may target it), so then the page keeps nothing there.
 const FRAME_NAME = 'spec-chat:';
-let frameItems = null;
+const FRAME_SERVICE = (LAYER_SERVICE || OWN_ADDRESS).origin;
+const plainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+// Every service's items in the frame name, or null when the name is the host's.
+function frameServices() {
+  if (!window.name) return {};
+  if (!window.name.startsWith(FRAME_NAME)) return null;
+  try {
+    const services = JSON.parse(window.name.slice(FRAME_NAME.length));
+    return plainObject(services) ? services : {};
+  } catch (_) { return {}; }
+}
+const serviceItems = services => (services && Object.hasOwn(services, FRAME_SERVICE) && plainObject(services[FRAME_SERVICE]) ? services[FRAME_SERVICE] : {});
 function frameStorage() {
-  if (!frameItems) {
-    if (window.name && !window.name.startsWith(FRAME_NAME)) return null;
-    try { frameItems = JSON.parse(window.name.slice(FRAME_NAME.length) || '{}'); } catch (_) { frameItems = {}; }
-  }
   return {
-    getItem: key => (Object.hasOwn(frameItems, key) ? frameItems[key] : null),
-    setItem: (key, value) => { frameItems[key] = String(value); window.name = FRAME_NAME + JSON.stringify(frameItems); },
+    getItem: key => {
+      const items = serviceItems(frameServices());
+      return Object.hasOwn(items, key) && typeof items[key] === 'string' ? items[key] : null;
+    },
+    setItem: (key, value) => {
+      const services = frameServices();
+      if (!services) throw new Error('the frame name is the host\'s');
+      const items = serviceItems(services);
+      items[key] = String(value);
+      services[FRAME_SERVICE] = items;
+      window.name = FRAME_NAME + JSON.stringify(services);
+    },
   };
 }
 
