@@ -42,27 +42,33 @@ const DARK = '@media(prefers-color-scheme:dark)';
 const docRules = parse(literal('DOC_CSS'));
 const sharedRules = parse(literal('FOCUS_CSS') + literal('CSS') + readingCssFor(true));
 const overlayRules = parse(literal('FOCUS_CSS') + literal('CSS') + readingCssFor(false));
-// Resolve CSS custom properties from :root declarations
-const rootVars = { light: {}, dark: {} };
-for (const r of parse(literal('CSS'))) {
-  if (r.sel !== ':root') continue;
-  const target = r.media === DARK ? rootVars.dark : rootVars.light;
-  for (const [k, v] of Object.entries(r.decls)) if (k.startsWith('--')) target[k] = v;
+// Custom properties per mode: the chrome's :root (the design set and the additions), and the document's own --spec-*
+// (spec.css on shared pages, the runtime document CSS otherwise), each set from the design set.
+function vars(rules, sel) {
+  const out = { light: {}, dark: {} };
+  for (const r of rules) {
+    const target = r.sel !== sel ? null : r.media === null ? out.light : r.media === DARK ? out.dark : null;
+    if (target) for (const [k, v] of Object.entries(r.decls)) if (k.startsWith('--')) target[k] = v;
+  }
+  return out;
 }
-function resolveVar(value, dark) {
+const chromeVars = vars(parse(literal('CSS')), ':root');
+const docVars = vars(docRules, ':where(:root)');
+const sharedVars = vars(parse(sharedCss), ':root');
+function resolveVar(value, dark, doc) {
   if (value == null) return value;
-  return value.replace(/var\(([^,)]+)\)/g, (_, name) => {
-    const n = name.trim();
-    return (dark && rootVars.dark[n]) || rootVars.light[n] || _;
-  });
+  const lookup = name => [doc, chromeVars].map(scope => (dark && scope.dark[name]) || scope.light[name]).find(Boolean);
+  for (let depth = 0; depth < 8 && /var\(/.test(value); depth++)
+    value = value.replace(/var\(([^,()]+)\)/g, (whole, name) => lookup(name.trim()) || whole);
+  return value;
 }
-function decl(rules, sel, prop, dark) {
+function decl(rules, sel, prop, dark, doc) {
   let value = null;
   for (const r of rules) {
     if (r.sel !== sel || !(prop in r.decls)) continue;
     if (r.media === null || (dark && r.media === DARK)) value = r.decls[prop];
   }
-  return resolveVar(value, dark);
+  return resolveVar(value, dark, doc);
 }
 
 const hex = v => { const m = String(v).match(/#([0-9a-f]{6})\b/i); return m ? [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16)) : null; };
@@ -71,27 +77,26 @@ const lum = rgb => { const c = rgb.map(v => { v /= 255; return v <= 0.03928 ? v 
   return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
 const ratio = (a, b) => { const [lo, hi] = [lum(a), lum(b)].sort((x, y) => x - y); return (hi + 0.05) / (lo + 0.05); };
 
-// Page backgrounds the runtime renders on: the shared spec stylesheet (light only)
-// and the runtime document CSS in light and dark.
-const paper = hex(sharedCss.match(/--spec-paper:\s*(#[0-9a-f]{6})/i)[1]);
-// Lightest clause text the shared stylesheet uses.
-const sharedBody = hex(sharedCss.match(/--spec-muted:\s*(#[0-9a-f]{6})/i)[1]);
-// Spec content dims with the content token: spec.css on shared pages, the runtime document CSS otherwise.
-const docMuted = literal('DOC_CSS').match(/--spec-muted:(#[0-9a-f]{6})/i)[1];
+// Pages the runtime renders on, in light and dark: the shared spec stylesheet, and the runtime document CSS otherwise.
+// Spec content dims with the document's muted token.
+const sharedPage = dark => ({ bg: hex(resolveVar('var(--spec-paper)', dark, sharedVars)), muted: hex(resolveVar('var(--spec-muted)', dark, sharedVars)) });
+const runtimePage = dark => ({ bg: hex(decl(docRules, ':where(body)', 'background', dark, docVars)), muted: hex(resolveVar('var(--spec-muted)', dark, docVars)) });
 const pages = [
-  { name: 'shared light', rules: sharedRules, dark: false, bg: paper, text: sharedBody, muted: sharedBody },
-  { name: 'shared, dark OS', rules: sharedRules, dark: true, bg: paper, text: sharedBody, muted: sharedBody },
-  { name: 'runtime light', rules: docRules.concat(overlayRules), dark: false, bg: hex(decl(docRules, ':where(body)', 'background', false)), text: hex(decl(docRules, ':where(body)', 'color', false)), muted: hex(docMuted) },
-  { name: 'runtime dark', rules: docRules.concat(overlayRules), dark: true, bg: hex(decl(docRules, ':where(body)', 'background', true)), text: hex(decl(docRules, ':where(body)', 'color', true)), muted: hex(docMuted) },
+  { name: 'shared light', rules: sharedRules, dark: false, doc: sharedVars, ...sharedPage(false) },
+  { name: 'shared dark', rules: sharedRules, dark: true, doc: sharedVars, ...sharedPage(true) },
+  { name: 'runtime light', rules: docRules.concat(overlayRules), dark: false, doc: docVars, ...runtimePage(false) },
+  { name: 'runtime dark', rules: docRules.concat(overlayRules), dark: true, doc: docVars, ...runtimePage(true) },
 ];
+for (const page of pages) assert.ok(page.bg && page.muted, page.name + ' resolves its page and muted colors');
+assert.notDeepEqual(pages[1].bg, pages[0].bg, 'the shared stylesheet has its own dark page');
 const DIMMED = '[data-hx-jev-type=no-behavior-change]';
-const opacityOf = (rules, sel, dark) => {
-  const values = [sel, 'body.hx-focus-active ' + sel].map(s => decl(rules, s, 'opacity', dark)).filter(v => v !== null);
+const opacityOf = (page, sel) => {
+  const values = [sel, 'body.hx-focus-active ' + sel].map(s => decl(page.rules, s, 'opacity', page.dark, page.doc)).filter(v => v !== null);
   return values.length ? Math.min(...values.map(Number)) : 1;
 };
 const colorOf = (page, sels, prop) => {
   let value = null;
-  for (const s of sels) value = decl(page.rules, s, prop, page.dark) ?? value;
+  for (const s of sels) value = decl(page.rules, s, prop, page.dark, page.doc) ?? value;
   return value;
 };
 
@@ -123,9 +128,9 @@ const check = (name, fg, bg) => {
   if (r < 4.5) failures.push(name + ' ' + r.toFixed(2));
 };
 for (const page of pages) {
-  const a = opacityOf(page.rules, DIMMED, page.dark);
+  const a = opacityOf(page, DIMMED);
   const dimColor = colorOf(page, ['body ' + DIMMED, DIMMED].reverse(), 'color');
-  const dimmed = dimColor === 'var(--spec-muted)' ? page.muted : hex(dimColor);
+  const dimmed = hex(dimColor);
   assert.ok(dimmed, 'No behavior change dim owns its color');
   // Dimmed No behavior change text, composited through any opacity on the clause.
   check(page.name + ': no-behavior-change text', mix(dimmed, page.bg, a), page.bg);
@@ -153,16 +158,16 @@ for (const page of pages) {
   }
   // Reading view internals, where the dark rule applies only on runtime-owned pages.
   const reading = '.hx-reading-active [data-hx-audience="internals"]';
-  const internals = hex(decl(page.rules, reading, 'color', page.dark));
+  const internals = hex(decl(page.rules, reading, 'color', page.dark, page.doc));
   check(page.name + ': reading internals', internals, page.bg);
   // Git focus veil over unchanged blocks; chips must be lifted above it like .hx-pin and .hx-badge.
   const veilSel = 'body.hx-focus-active [data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])):not([data-hx-focus=unchanged]:not(:has([data-hx-focus=changed])) *):not(tr):not(td):not(th):not(script):not(style)::after';
-  const veil = Number(String(decl(page.rules, veilSel, 'background', page.dark)).match(/calc\(([\d.]+)\*/)[1]);
+  const veil = Number(String(decl(page.rules, veilSel, 'background', page.dark, page.doc)).match(/calc\(([\d.]+)\*/)[1]);
   assert.ok(veil > 0, 'focus veil alpha');
   // The marker glyph is lifted above the veil like .hx-pin and .hx-badge.
   const lift = 'body.hx-focus-active [data-hx-focus=unchanged] .hx-jev-marker';
-  assert.ok(decl(page.rules, lift, 'z-index', page.dark) === '700' && decl(page.rules, lift, 'opacity', page.dark) === '1' &&
-    decl(page.rules, lift, 'filter', page.dark) === 'none', 'Jev markers sit above the focus veil');
+  assert.ok(decl(page.rules, lift, 'z-index', page.dark, page.doc) === '700' && decl(page.rules, lift, 'opacity', page.dark, page.doc) === '1' &&
+    decl(page.rules, lift, 'filter', page.dark, page.doc) === 'none', 'Jev markers sit above the focus veil');
 }
 assert.deepEqual(failures, [], 'Jev text below 4.5:1');
 assert.doesNotMatch(runtime, /\[data-hx-jev-type=no-behavior-change\]\{[^}]*opacity/, 'No behavior change dimming never fades markers');

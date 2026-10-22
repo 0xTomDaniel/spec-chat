@@ -10,8 +10,10 @@ assert.match(runtime, /id = 'hx-reading'/, 'HTTP pages expose a reading view tog
 assert.match(runtime, /params\.set\('view', 'reading'\)/, 'reading view requests the explicit route view');
 assert.match(runtime, /item\.kind !== 'audience'/, 'runtime consumes only audience items for reading view');
 assert.match(runtime, /item\.state === 'label' && item\.label === 'internals'/, 'internals are the only confident clauses dimmed');
-assert.match(runtime, /hx-reading-active \[data-hx-audience="internals"\].*color:#586069!important/s, 'internals use a readable light-theme color');
-assert.match(runtime, /color:#b9c0ca!important/, 'internals use a readable dark-theme color');
+// The document's muted color, set in light and dark by the shared stylesheet and the runtime's document CSS
+// (spec-page-design #document); runtime-jev-contrast.mjs proves it readable on each page.
+assert.match(runtime, /hx-reading-active \[data-hx-audience="internals"\]\{color:var\(--spec-muted\)!important\}/, 'internals take the document muted color');
+assert.doesNotMatch(runtime, /hx-reading-active[^`]*#[0-9a-f]{3,6}\b/i, 'internals carry no literal color of their own');
 assert.match(runtime, /clearGitFocusForReading/, 'reading view clears Git focus');
 assert.match(runtime, /delete el\.dataset\.hxAudience/, 'turning reading view off clears labels');
 assert.match(runtime, /item\.state !== 'label'|Jev unavailable/, 'reading view renders unsure and unavailable states');

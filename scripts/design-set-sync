@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""Build the pinned design set into Spec Chat (spec-page-design.spec.html#design-set, lane-hosting.spec.html#index-tokens).
+
+    scripts/design-set-sync [--check] [CLONE]
+
+Takes tokens.css from exactly the commit design-set.toml pins, from CLONE (a design-set clone holding that commit) or
+else a fresh clone of the pinned repository, and rewrites each copy's region between its design-set markers; --check
+writes nothing and exits 1 naming each copy that differs. The one place a copy of the set is made: a new copy is added
+to COPIES. Nothing serves or fetches the set at run time.
+
+Copies:
+  skill/review-spec/assets/viz/runtime.js   the chrome CSS opens with tokens.css as the set writes it; the review index
+                                            takes that same block from the runtime (review-serve.py), never a copy
+  skill/shape-spec/assets/style/spec.css    the document's --spec-* values, each resolved from tokens.css, light and
+                                            dark (spec-page-design.spec.html#document)
+
+The repo's own spec pages take the bundled runtime and stylesheet byte for byte (docs/specs/.viz, docs/specs/.style).
+"""
+
+import re
+import subprocess
+import sys
+import tempfile
+import tomllib
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+PIN = ROOT / "design-set.toml"
+BEGIN = re.compile(r"/\* design-set ([0-9a-f]{40}) begin\b[^\n]*\*/\n")
+END = "/* design-set end */\n"
+
+# The document's names (spec-page-design.spec.html#document), each the set token it takes its value from.
+DOCUMENT = (
+    ("--spec-paper", "--ui-page"),
+    ("--spec-surface", "--ui-surface"),
+    ("--spec-soft", "--ui-surface-soft"),
+    ("--spec-code", "--ui-surface-soft"),
+    ("--spec-ink", "--ui-ink"),
+    ("--spec-body", "--ui-ink"),
+    ("--spec-muted", "--ui-muted"),
+    ("--spec-focus-context", "--ui-muted"),
+    ("--spec-rule", "--ui-border"),
+    ("--spec-hairline", "--ui-border"),
+    ("--spec-blue", "--ui-link"),
+    ("--spec-teal", "--ui-pass"),
+    ("--spec-amber", "--ui-attention"),
+    ("--spec-red", "--ui-fail"),
+    ("--spec-font", "--ui-font"),
+    ("--spec-mono", "--ui-mono"),
+    ("--spec-text-meta", "--ui-text-xs"),
+    ("--spec-text-small", "--ui-text-sm"),
+    ("--spec-text-lede", "--ui-text-md"),
+    ("--spec-text-heading", "--ui-text-xl"),
+    ("--spec-text-display", "--ui-text-2xl"),
+    ("--spec-weight-regular", "--ui-weight-regular"),
+    ("--spec-weight-medium", "--ui-weight-medium"),
+    ("--spec-weight-semibold", "--ui-weight-semibold"),
+    ("--spec-radius-sm", "--ui-radius-sm"),
+    ("--spec-radius", "--ui-radius"),
+)
+
+
+def pin() -> dict[str, str]:
+    """The one pin: repository and commit."""
+    return tomllib.loads(PIN.read_text())
+
+
+def read(clone: Path, commit: str, path: str) -> str:
+    return subprocess.run(["git", "-C", str(clone), "show", f"{commit}:{path}"], capture_output=True, text=True,
+                          check=True).stdout
+
+
+def region(text: str, path: str) -> tuple[int, int, str]:
+    """(start, end, commit) of the one design-set region in a copy's text."""
+    begin = list(BEGIN.finditer(text))
+    if len(begin) != 1 or text.count(END) != 1 or text.index(END) < begin[0].end():
+        raise SystemExit(f"design-set-sync: {path} needs exactly one design-set begin and end marker")
+    return begin[0].start(), text.index(END) + len(END), begin[0].group(1)
+
+
+def tokens(css: str) -> tuple[dict[str, str], dict[str, str]]:
+    """The set's (light, dark) custom properties from its tokens.css, each value resolved in its mode."""
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    light = re.search(r"^:root\s*\{([^}]*)\}", css, re.M)
+    dark = re.search(r"@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)\s*\{\s*:root\s*\{([^}]*)\}", css)
+    if not light or not dark:
+        raise SystemExit("design-set-sync: tokens.css holds no light :root or no dark override")
+
+    def declared(body):
+        return {name: value.strip() for name, value in re.findall(r"(--[\w-]+)\s*:\s*([^;]+);", body)}
+
+    def resolved(values):
+        def value(name, seen=()):
+            if name in seen or name not in values:
+                raise SystemExit(f"design-set-sync: tokens.css cannot resolve {name}")
+            return re.sub(r"var\((--[\w-]+)\)", lambda m: value(m.group(1), seen + (name,)), values[name])
+        return {name: value(name) for name in values}
+
+    base = declared(light.group(1))
+    return resolved(base), resolved({**base, **declared(dark.group(1))})
+
+
+def runtime_block(commit: str, css: str) -> str:
+    """The chrome's opening block: tokens.css as the set writes it, inside the runtime's CSS template literal."""
+    if any(mark in css for mark in ("`", "${", "\\")):
+        raise SystemExit("design-set-sync: tokens.css holds a character the runtime's CSS template literal would change")
+    return (f"/* design-set {commit} begin: the pinned set's tokens.css, built in by scripts/design-set-sync;"
+            " never edit by hand */\n" + css.strip() + "\n" + END)
+
+
+def document_block(commit: str, css: str) -> str:
+    """The shared spec stylesheet's opening block: every --spec-* value from the set, light, then dark where it differs."""
+    light, dark = tokens(css)
+    missing = sorted({token for _, token in DOCUMENT} - set(light))
+    if missing:
+        raise SystemExit(f"design-set-sync: tokens.css has no {', '.join(missing)}")
+    lines = [f"  {name}: {light[token]};" for name, token in DOCUMENT]
+    darker = [f"    {name}: {dark[token]};" for name, token in DOCUMENT if dark[token] != light[token]]
+    return (f"/* design-set {commit} begin: the document's values from the pinned set's tokens.css, built in by"
+            " scripts/design-set-sync; never edit by hand */\n"
+            ":root {\n" + "\n".join(lines) + "\n}\n\n"
+            "@media (prefers-color-scheme: dark) {\n  :root {\n" + "\n".join(darker) + "\n  }\n}\n" + END)
+
+
+COPIES = {
+    "skill/review-spec/assets/viz/runtime.js": runtime_block,
+    "skill/shape-spec/assets/style/spec.css": document_block,
+}
+
+
+def rebuild(path: str, commit: str, css: str) -> str:
+    """A copy's text with its design-set region built from tokens.css at the commit."""
+    text = (ROOT / path).read_text()
+    start, end, _ = region(text, path)
+    return text[:start] + COPIES[path](commit, css) + text[end:]
+
+
+def build(clone: Path) -> dict[str, str]:
+    """Each copy's text from the pinned commit in ``clone``; the commit must be there, whole."""
+    commit = pin()["commit"]
+    found = subprocess.run(["git", "-C", str(clone), "rev-parse", "--verify", "--quiet", f"{commit}^{{commit}}"],
+                           capture_output=True, text=True).stdout.strip()
+    if found != commit:
+        raise SystemExit(f"design-set-sync: {clone} holds no commit {commit}, the pin")
+    css = read(clone, commit, "tokens.css")
+    return {path: rebuild(path, commit, css) for path in COPIES}
+
+
+def main(argv: list[str]) -> int:
+    check = "--check" in argv
+    rest = [a for a in argv if a != "--check"]
+    if len(rest) > 1:
+        raise SystemExit(__doc__)
+    with tempfile.TemporaryDirectory() as tmp:
+        clone = Path(rest[0]) if rest else Path(tmp) / "design-set"
+        if not rest:
+            subprocess.run(["git", "clone", "--quiet", "--filter=blob:none", "--no-checkout", pin()["repository"],
+                            str(clone)], check=True)
+        built = build(clone)
+    stale = [path for path, text in built.items() if (ROOT / path).read_text() != text]
+    if check:
+        for path in stale:
+            print(f"design-set-sync: {path} differs from the pinned design set", file=sys.stderr)
+        return 1 if stale else 0
+    for path in stale:
+        (ROOT / path).write_text(built[path])
+        print(f"wrote {path}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
