@@ -132,9 +132,8 @@ assert.match(runtime, /renderTbdHighlight\(document, tbdHighlightBlocks\(openTbd
 assert.equal((runtime.match(/const openTbds = openTbdMarkers\(document\.querySelectorAll\('\[data-spec-tbd\]'\)\);\n\s+const \w+ = reviewHandoffState\(state\.threads, openTbds\.length, state\.reviewer\??\.browser\);/g) || []).length, 2, 'render and activation gate eligibility on open TBD markers only');
 // Next TBD: one position shared with TBD open, beside Hand off on desktop and mobile.
 assert.match(runtime, /<button class="hx-btn hx-next-tbd" id="hx-next-tbd" type="button" hidden>Next TBD<\/button><button class="hx-btn pri" id="hx-handoff">/, 'desktop Next TBD sits left of Hand off');
-assert.match(runtime, /<button class="hx-mobile-next-tbd" id="hx-mobile-next-tbd" type="button" hidden>Next TBD<\/button><button class="hx-mobile-handoff" id="hx-mobile-handoff"/, 'mobile Next TBD sits beside Hand off');
 assert.match(runtime, /document\.getElementById\('hx-next-tbd'\)\.addEventListener\('click', nextTbd\);/, 'desktop Next TBD steps the TBD sequence');
-assert.match(runtime, /document\.getElementById\('hx-mobile-next-tbd'\)\.addEventListener\('click', nextTbd\);/, 'mobile Next TBD steps the TBD sequence');
+assert.doesNotMatch(runtime, /hx-mobile-next-tbd/, 'one Next TBD, the panel bar\'s, on desktop and mobile');
 assert.match(runtime, /function nextTbd\(\) \{\n\s+const open = openTbdMarkers\(document\.querySelectorAll\('\[data-spec-tbd\]'\)\);\n\s+if \(open\.length\) jumpToTbd\(advanceTbd\(state, open\)\);\n\}/, 'Next TBD reuses advanceTbd and state.lastTbd');
 assert.equal((runtime.match(/advanceTbd\(state, /g) || []).length, 1, 'one next-TBD step, shared by TBD open and Next TBD');
 assert.match(runtime, /if \(action\.tbd\) return nextTbd\(\);/, 'TBD open takes the same step as Next TBD before posting any event');

@@ -20,10 +20,11 @@ assert.match(runtime, /@media\(max-width:640px\)\{[^]*\.hx-jev-pop\{left:var\(--
 assert.match(runtime, /\.hx-composer textarea\{min-height:120px;font-size:var\(--ui-text-md\)/, 'mobile composer avoids browser input zoom');
 assert.match(runtime, /\.hx-dock-open,\.hx-dock-thread\{width:44px;height:44px/, 'mobile conversation controls meet the touch target floor');
 assert.match(runtime, /openPanel\(!window\.matchMedia\('\(max-width: 640px\)'\)\.matches\)/, 'mobile comment mode exposes the document before target selection');
-assert.match(runtime, /class="hx-mobile-handoff" id="hx-mobile-handoff"/, 'mobile toolbar exposes handoff beside comment mode');
-assert.match(runtime, /mobileHandoff\.textContent = handoffState\.finish \? 'Accept spec' : handoffState\.tbd \? tbdCountLabel\('TBD open', handoffState\.openTbds\) : drafts \? 'Hand off \(' \+ drafts \+ '\)' : 'Hand off'/, 'mobile handoff renders the current draft count or Accept spec');
-assert.match(runtime, /\.hx-mobile-handoff,\.hx-mobile-next-tbd\{display:none\}/, 'desktop hides both mobile toolbar actions');
-assert.match(runtime, /@media\(max-width:640px\)\{[^]*\.hx-mobile-handoff,\.hx-mobile-next-tbd:not\(\[hidden\]\)\{display:block\}/, 'mobile shows Next TBD beside Hand off only while it is offered');
+// prompt-first-shaping #mobile-handoff: the panel's one hand-off bar, in the bottom toolbar on a narrow screen.
+assert.doesNotMatch(runtime, /hx-mobile-handoff|hx-mobile-next-tbd/, 'the toolbar holds no Hand off or Next TBD of its own');
+assert.equal((runtime.match(/id="hx-handoff"|id="hx-next-tbd"|id="hx-drafts"/g) || []).length, 3, 'one drafts note, Next TBD, and Hand off on the spec page');
+assert.match(runtime, /const dockHandoff = \(\) => narrow\.matches \? bar\.insertBefore\(handoffBar, document\.getElementById\('hx-mode'\)\.nextSibling\) : document\.getElementById\('hx-panel-content'\)\.appendChild\(handoffBar\);\n\s+dockHandoff\(\);\n\s+narrow\.addEventListener\('change', dockHandoff\);/, 'narrow, the bar sits in the toolbar, outside the inert panel content; wide, it ends the panel');
+assert.match(runtime, /@media\(max-width:640px\)\{[^]*\.hx-toolbar \.hx-handoff\{display:contents\}/, 'in the toolbar its note and buttons are toolbar items');
 assert.match(runtime, /@media\(max-width:640px\)\{[^]*\.hx-toolbar button\{min-height:44px/, 'mobile toolbar actions, Next TBD included, keep 44 pixel targets');
 assert.match(runtime, /e\.message === 'Script error\.' && !e\.filename && !e\.lineno && !e\.colno && !e\.error/, 'fully opaque browser errors do not raise a fatal review overlay');
 assert.match(runtime, /overlay\('error', e\.message/, 'attributable script errors remain visible');
