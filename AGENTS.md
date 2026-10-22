@@ -77,7 +77,7 @@ failure.
 
 ## Browser tests
 
-Nine tests need headless Chromium via `playwright-core`:
+Ten tests need headless Chromium via `playwright-core`:
 
 - `tests/runtime-pin-marker.mjs` (pin placement and clearance)
 - `tests/runtime-jev-popover.mjs` (Jev popover positioning)
@@ -88,6 +88,7 @@ Nine tests need headless Chromium via `playwright-core`:
 - `tests/runtime-served-host.mjs` (a page served at another address, in a frame with no origin, through the QA fixture's test host; at phone width, the review panel's one hand-off bar in the bottom toolbar, served directly and in that frame across a reload)
 - `tests/runtime-comment-layer.mjs` (the comment layer on the QA fixture's host pages: served directly, at another origin, and in a frame with no origin)
 - `tests/runtime-spec-surface.mjs` (the spec page as one surface on the QA fixture's collections: top line, unboxed header, keys in tooltips, line icons, sentence-case pills)
+- `tests/runtime-review-index.mjs` (the review index as quiet rows on the QA fixture's review services: status marks, title column, gate word under the title on a phone, dark, focus ring)
 
 They read `PLAYWRIGHT_CORE` to locate the package:
 

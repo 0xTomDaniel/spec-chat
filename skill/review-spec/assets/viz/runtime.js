@@ -2150,6 +2150,15 @@ const ICONS = {
   "threads": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" focusable=\"false\" stroke=\"currentColor\"><path d=\"M3.5 6h5A1.5 1.5 0 0 1 10 7.5v3A1.5 1.5 0 0 1 8.5 12H6.5L4 14v-2h-.5A1.5 1.5 0 0 1 2 10.5v-3A1.5 1.5 0 0 1 3.5 6z\"/><path d=\"M6 6V3.5A1.5 1.5 0 0 1 7.5 2h5A1.5 1.5 0 0 1 14 3.5v3A1.5 1.5 0 0 1 12.5 8H12v2l-2-1.5\"/></svg>",
 };
 /* design-set icons end */
+/* design-set marks c5834e773e3a0e88da6343b1540fb0931ca7b2ad begin: the pinned set's marks/, built in by scripts/design-set-sync; never edit by hand */
+const MARKS = {
+  "attention": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" focusable=\"false\"><circle cx=\"8\" cy=\"8\" r=\"6.5\" stroke=\"var(--ui-attention, currentColor)\"/><path d=\"M8 4.8v3.6\" stroke=\"var(--ui-attention, currentColor)\"/><circle cx=\"8\" cy=\"11\" r=\"1\" fill=\"var(--ui-attention, currentColor)\"/></svg>",
+  "fail": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" focusable=\"false\"><circle cx=\"8\" cy=\"8\" r=\"6.5\" stroke=\"var(--ui-fail, currentColor)\"/><path d=\"M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4\" stroke=\"var(--ui-fail, currentColor)\"/></svg>",
+  "neutral": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" focusable=\"false\"><circle cx=\"8\" cy=\"8\" r=\"6.5\" stroke=\"var(--ui-muted, currentColor)\"/></svg>",
+  "pass": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" focusable=\"false\"><circle cx=\"8\" cy=\"8\" r=\"7\" fill=\"var(--ui-pass, currentColor)\"/><path d=\"M5 8.3l2 2 4-4.6\" stroke=\"var(--ui-page, Canvas)\"/></svg>",
+  "running": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" focusable=\"false\"><circle cx=\"8\" cy=\"8\" r=\"6.5\" stroke=\"var(--ui-action, currentColor)\"/><path d=\"M8 3.5a4.5 4.5 0 0 1 0 9z\" fill=\"var(--ui-action, currentColor)\"/></svg>",
+};
+/* design-set marks end */
 const DOC_CSS = `
 /* document presentation: the spec file stays lean; the dialect's look lives here, every value from the design set the
    chrome CSS opens with (spec-page-design #document) */

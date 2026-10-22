@@ -553,34 +553,41 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertEqual(status, 200)
         body = raw.decode()
         self.assertIn('"GIT_OPTIONAL_LOCKS": "0"', SERVER.read_text())
-        # #index-entry-title: the gate word and Changed pills sit on the right of their row.
-        self.assertRegex(body, r"\.pills \{[^}]*margin-left: auto;")
         text = html_lib.unescape(re.sub(r"<(style|script)>.*?</\1>|<[^>]+>", "\n", body, flags=re.S))
         lines = [line.strip() for line in text.splitlines() if line.strip()]
-        self.assertEqual(lines[:2], ["Spec Chat index", "Review index"])
+        # #index-design: one title, a muted count line beside it.
+        self.assertEqual(lines[:3], ["Spec Chat index", "Review index", "2 lanes need you · 1 in progress · 2 settled"])
         # #acceptance-index-sections: lanes with a spec that needs you under Needs you, the rest under In progress,
-        # each by issue number; aa rows in one closed Settled, with no gate word.
+        # each by issue number, each heading with its count; aa rows in one closed Settled, with no gate word.
         self.assertEqual(len(re.findall(r"<details\b", body)), 1)
-        self.assertRegex(body, r"<details(?![^>]*\bopen\b)[^>]*>\s*<summary>Settled \(2\)</summary>")
-        self.assertEqual(lines[2:], [
-            "Needs you",
-            "ANN-7", "1 need you", "aa", "ann7", "Ready to accept",
+        self.assertRegex(body, r"<details(?![^>]*\bopen\b)[^>]*>\s*<summary><svg[^>]*>.*?</svg><span>Settled \(2\)</span></summary>")
+        # #acceptance-review-index: each row its title, its gate word, then one meta line, thread counts then Changed.
+        self.assertEqual(lines[3:], [
+            "Needs you", "2",
+            "ANN-7", "1 needs you", "aa", "ann7", "Ready to accept",
             "ANN-134", "3 need you",
-            "aa", "Zeta board", "Ready to accept", "Changed", "Alpha fresh", "With the agent", "Changed", "1", "Open",
+            "aa", "Zeta board", "Ready to accept", "Changed", "Alpha fresh", "With the agent", "1 open · Changed",
             "sc", "Zeta board", "Ready to accept", "Changed",
             "zz", "ann134b", "Ready to accept",
-            "In progress",
-            "ANN-119", "Nothing needs you", "sc", "ann119", "With the agent", "1", "Open",
+            "In progress", "1",
+            "ANN-119", "Nothing needs you", "sc", "ann119", "With the agent", "1 open",
             "Settled (2)",
             "aa", "aa", "Changed",
             "sc", "trunk",
         ])
-        # #index-entry-lane: the stripe is attention when any spec needs you, else border.
-        cards = re.findall(r'<section class="lane( needs)?"', body)
-        self.assertEqual(cards, [" needs", " needs", ""])
-        # #index-design: a gate word that needs you is an attention pill, any other a muted one.
-        self.assertIn('<span class="pill">Ready to accept</span>', body)
-        self.assertIn('<span class="pill muted">With the agent</span>', body)
+        # #index-entry-purpose: a lane is a group of rows under its header, never a card; #index-design: a gate word
+        # that needs you is in attention color, any other muted.
+        self.assertEqual(re.findall(r'<section class="([^"]*)"', body), ["lane"] * 3)
+        self.assertIn('<span class="gate needs">Ready to accept</span>', body)
+        self.assertIn('<span class="gate">With the agent</span>', body)
+        # #index-marks: each lane spec led by its gate's mark, each settled spec by the neutral mark.
+        marks = self.marks()
+        rows = re.findall(r'<li class="spec"><span class="mark">(<svg.*?</svg>)</span><a class="title" href="[^"]*">([^<]*)</a>', body)
+        self.assertEqual([(title, next(name for name, svg in marks.items() if svg == mark)) for mark, title in rows], [
+            ("ann7", "attention"), ("Zeta board", "attention"), ("Alpha fresh", "running"), ("Zeta board", "attention"),
+            ("ann134b", "attention"), ("ann119", "running"), ("aa", "neutral"), ("trunk", "neutral")])
+        # #acceptance-index-marks: the attention, running, and pass marks differ in shape, not only in color.
+        self.assertEqual(len({re.sub(r'(?:stroke|fill)="[^"]*"', "", marks[name]) for name in ("attention", "running", "pass")}), 3)
         for leaked in ("docs/specs", "spec:", "main", "gone", "ann134/"):
             self.assertNotIn(leaked, "\n".join(lines))
         self.assertIn('href="/ann134/sc/docs/specs/domains/x.spec.html?focus=changes"', body)
@@ -614,9 +621,9 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertNotRegex(rules, r"font-size\s*:(?!\s*var\()")
         for prop, value in re.findall(r"((?:padding|margin|gap|border-radius)[\w-]*)\s*:([^;}]*)", rules):
             self.assertNotRegex(re.sub(r"var\(--[\w-]+\)", "", value), r"\b(?!0\b)\d", prop)
-        # Only the hairline width, the set's phone width, and the 72rem width are literal lengths.
+        # Only the hairline width, the set's phone width, and the 48rem width are literal lengths.
         self.assertLessEqual(set(re.findall(r"\b\d+(?:\.\d+)?(?:px|rem)\b", rules)),
-                             {"1px", light["--ui-phone-width"], "72rem"})
+                             {"1px", light["--ui-phone-width"], "48rem"})
         self.assertIn("@media (max-width: %s)" % light["--ui-phone-width"], rules)
         self.assertLessEqual(set(re.findall(r"var\((--[\w-]+)\)", rules)), set(light))
         for prop, value in re.findall(r"(font-weight|font-size|outline(?:-offset)?)\s*:([^;}]*)", rules):
@@ -624,29 +631,43 @@ class MultiReviewServeTest(unittest.TestCase):
         # #acceptance-index-focus: the set's ring, the one the spec page's buttons show (runtime-chrome-tokens.mjs).
         self.assertIn("a:focus-visible, summary:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); "
                       "outline-offset: var(--ui-focus-offset);", rules)
-        # One heading; the rest are section labels.
-        self.assertEqual(re.findall(r"<h\d\b[^>]*>(.*?)</h\d>", body), ["Review index"])
-        self.assertIn("max-width: 72rem", rules)
+        # #index-design: one title, then group headings; one column up to 48rem.
+        self.assertEqual(re.findall(r"<h1\b[^>]*>(.*?)</h1>", body), ["Review index"])
+        self.assertIn("max-width: 48rem", rules)
+        # No card, border box, stripe, or pill: the only borders are the hairlines under group headings and rows.
+        self.assertEqual(re.findall(r"([^{}]*)\{[^}]*\bborder(?!-radius)(?:-[\w-]+)?\s*:\s*(?!0)", rules),
+                         ["\nh2 ", "\n.spec "])
+        self.assertIn("border-bottom: 1px solid var(--ui-border)", rules)
+        self.assertNotRegex(rules, r"radius-pill|border-left|\.card|\.pill|text-transform")
+        # Spec titles are row titles in ink at medium weight, underlined on hover and focus.
+        self.assertRegex(rules, r"\n\.title \{[^}]*color: var\(--ui-ink\); font-weight: var\(--ui-weight-medium\); text-decoration: none;")
+        self.assertIn("a.title:hover, a.title:focus-visible { text-decoration: underline; }", rules)
 
         def luminance(color):
             channels = [int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
             linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
             return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
 
-        # Text at 4.5:1 and stripes at 3:1, in light and in dark appearance.
-        stripes = re.findall(r"([^{}]*)\{[^}]*border-left(?:-color)?\s*:[^;}]*var\((--[\w-]+)\)", rules)
-        self.assertEqual([(sel.strip(), token) for sel, token in stripes], [(".lane.needs", "--ui-attention")])
+        # #acceptance-index-design, #acceptance-index-dark: text at 4.5:1 and marks at 3:1 on the page and on a hovered
+        # row, in light and in dark appearance; every text color a rule sets, and every color a mark draws in.
+        texts = set(re.findall(r"(?<![\w-])color\s*:\s*var\((--[\w-]+)\)", rules)) | {"--ui-ink"}
+        self.assertEqual(texts, {"--ui-ink", "--ui-muted", "--ui-link", "--ui-attention"})
+        # The four marks the index shows (#index-marks).
+        shown = "".join(self.marks()[name] for name in ("attention", "running", "pass", "neutral"))
+        drawn = set(re.findall(r"var\((--ui-[\w-]+), (?:currentColor|Canvas)\)", shown))
+        self.assertEqual(drawn, {"--ui-attention", "--ui-action", "--ui-pass", "--ui-muted", "--ui-page"})
         for scheme, tokens in (("light", light), ("dark", dark)):
             def contrast(one, two):
                 high, low = sorted((luminance(tokens[one]), luminance(tokens[two])), reverse=True)
                 return (high + 0.05) / (low + 0.05)
 
-            for text, ground in (("--ui-ink", "--ui-page"), ("--ui-ink", "--ui-surface"),
-                                 ("--ui-muted", "--ui-surface"), ("--ui-link", "--ui-surface"),
-                                 ("--ui-attention", "--ui-attention-soft"), ("--ui-pass", "--ui-pass-soft")):
-                self.assertGreaterEqual(contrast(text, ground), 4.5, (scheme, text, ground))
-            for _, token in stripes:
-                self.assertGreaterEqual(contrast(token, "--ui-surface"), 3, (scheme, token))
+            for ground in ("--ui-page", "--ui-surface-soft"):
+                for text in texts:
+                    self.assertGreaterEqual(contrast(text, ground), 4.5, (scheme, text, ground))
+                for mark in drawn - {"--ui-page"}:
+                    self.assertGreaterEqual(contrast(mark, ground), 3, (scheme, mark, ground))
+            # The pass mark's check is drawn in the page color on its pass fill.
+            self.assertGreaterEqual(contrast("--ui-page", "--ui-pass"), 3, scheme)
             # Every rule that sets both a background and a text token reads at 4.5:1 in this scheme.
             for selector, body in re.findall(r"([^{}]*)\{([^}]*)\}", rules):
                 ground = re.search(r"background(?:-color)?\s*:\s*var\((--[\w-]+)\)", body)
@@ -654,9 +675,24 @@ class MultiReviewServeTest(unittest.TestCase):
                 if ground and text:
                     self.assertGreaterEqual(contrast(text.group(1), ground.group(1)), 4.5,
                                             (scheme, selector.strip(), text.group(1), ground.group(1)))
-        # Count pills sit on their status soft color (#index-threads-table).
-        self.assertRegex(rules, r"\.tally\.open \{ background: var\(--ui-attention-soft\); color: var\(--ui-attention\); \}")
-        self.assertRegex(rules, r"\.tally\.resolved \{ background: var\(--ui-pass-soft\); color: var\(--ui-pass\); \}")
+        # #index-threads: the counts are one muted meta line under the title, the gate word under it on a phone, and
+        # every row a full-size touch target there (#index-design).
+        self.assertRegex(rules, r"\.tally, \.count, h2 \.n, \.project, \.meta \{ color: var\(--ui-muted\);")
+        phone = rules[rules.index("@media (max-width: %s)" % light["--ui-phone-width"]):]
+        self.assertIn('grid-template-areas: "mark title" ". gate" ". meta";', phone)
+        self.assertIn("min-height: calc(var(--ui-space-6) + var(--ui-space-3));", phone)  # 44px
+
+    @staticmethod
+    def marks():
+        """The set's status marks as the runtime holds them (scripts/design-set-sync), {name: svg}."""
+        import importlib.machinery
+        import importlib.util
+
+        loader = importlib.machinery.SourceFileLoader("design_set_sync", str(ROOT / "scripts/design-set-sync"))
+        sync = importlib.util.module_from_spec(importlib.util.spec_from_loader("design_set_sync", loader))
+        loader.exec_module(sync)
+        held = sync.held((VIZ / "runtime.js").read_text(), "runtime.js", sync.MARKS)
+        return {path[len("marks/"):-len(".svg")]: svg for path, svg in held.items()}
 
     @staticmethod
     def spool_event(resource, actor, stamp, **body):
@@ -700,7 +736,7 @@ class MultiReviewServeTest(unittest.TestCase):
             self.assertEqual(body.count(bridge), 1)
             body = body.replace(bridge, "")
             self.assertNotIn("<script", body)
-            items = re.findall(r"<li>(.*?)</li>", body, re.S)
+            items = re.findall(r'<li class="spec">(.*?)</li>', body, re.S)
             text = {}
             for item in items:
                 parts = [p.strip() for p in html_lib.unescape(re.sub(r"<[^>]+>", "\n", item)).splitlines() if p.strip()]
@@ -708,16 +744,16 @@ class MultiReviewServeTest(unittest.TestCase):
             return body, response.headers["ETag"], text
 
         body, etag, text = rows()
-        self.assertEqual(text["ann610"], ["Reply waiting", "Changed", "3", "Open", "1", "Resolved"])
+        # One muted meta line under the title: open then resolved, each its number then its word, then Changed.
+        self.assertEqual(text["ann610"], ["Reply waiting", "3 open · 1 resolved · Changed"])
         self.assertEqual(text["Quiet"], ["Ready to accept", "Changed"])
-        self.assertEqual(text["ann611"], ["Draft not sent", "Changed", "1", "Open"])
-        self.assertIn('<div class="tallies"><span class="tally open"><b>3</b> Open</span>'
-                      '<span class="tally resolved"><b>1</b> Resolved</span></div>', body)
-        self.assertNotRegex(body, r"<b>0</b>")
-        # Resolve the one open thread, then reload: one Resolved, no Open, a new ETag.
+        self.assertEqual(text["ann611"], ["Draft not sent", "1 open · Changed"])
+        self.assertIn('<span class="meta">3 open · 1 resolved · Changed</span>', body)
+        self.assertNotRegex(body, r"\b0 (open|resolved)\b")
+        # Resolve the one open thread, then reload: one resolved, no open count, a new ETag.
         self.spool_event(one, "human", 200, id="so", event="status", respondsTo="o", threadId="o", status="resolved")
         _, fresh, text = rows()
-        self.assertEqual(text["ann611"], ["Ready to accept", "Changed", "1", "Resolved"])
+        self.assertEqual(text["ann611"], ["Ready to accept", "1 resolved · Changed"])
         self.assertNotEqual(fresh, etag)
 
     def test_thread_counts_refold_only_when_a_spool_directory_changes(self):
@@ -775,11 +811,11 @@ class MultiReviewServeTest(unittest.TestCase):
         else:
             self.fail("review server did not start")
         self.assertEqual(len(re.findall(r"<details\b", body)), 1)
-        self.assertRegex(body, r"<details(?![^>]*\bopen\b)[^>]*>\s*<summary>Settled \(2\)</summary>")
+        self.assertRegex(body, r"<details(?![^>]*\bopen\b)[^>]*>\s*<summary><svg[^>]*>.*?</svg><span>Settled \(2\)</span></summary>")
         self.assertIn("</details></main><script>", body)
         text = html_lib.unescape(re.sub(r"<(style|script)>.*?</\1>|<[^>]+>", "\n", body, flags=re.S))
         lines = [line.strip() for line in text.splitlines() if line.strip()]
-        self.assertEqual(lines, ["Spec Chat index", "Review index", "Settled (2)", "settled", "Alpha", "Beta"])
+        self.assertEqual(lines, ["Spec Chat index", "Review index", "2 settled", "Settled (2)", "settled", "Alpha", "Beta"])
         for gone in ("In progress", "Other specs", "No status", "Up to date"):
             self.assertNotIn(gone, body)
 
@@ -898,18 +934,20 @@ class MultiReviewServeTest(unittest.TestCase):
         status, raw = self.request("/")
         self.assertEqual(status, 200)
         body = raw.decode()
-        items = re.findall(r"<li>(.*?)</li>", body, re.S)
+        items = re.findall(r'<li class="spec[^"]*">(.*?)</li>', body, re.S)
         self.assertEqual(len(items), 2)
         stale = next(item for item in items if "gone.spec.html" in item)
         self.assertNotIn("<a ", stale)
         text = [p.strip() for p in html_lib.unescape(re.sub(r"<[^>]+>", "\n", stale)).splitlines() if p.strip()]
         self.assertEqual(text, ["docs/specs/gone.spec.html", "Stale"])
         other = next(item for item in items if item is not stale)
-        self.assertIn('<a href="/ann798/docs/specs/domains/x.spec.html">ann798</a>', other)
+        self.assertIn('<a class="title" href="/ann798/docs/specs/domains/x.spec.html">ann798</a>', other)
         # A stale row has no gate and counts toward nothing: the lane reads as its other row alone.
-        self.assertIn('<span class="count">1 need you</span>', body)
-        self.assertIn('<span class="pill muted">Stale</span>', body)
-        self.assertRegex(body, r"\.pill\.muted \{[^}]*var\(--ui-")
+        self.assertIn('<span class="count">1 needs you</span>', body)
+        # Its path as plain muted text, the word Stale on the right, in muted meta like any gate word that waits on no one.
+        self.assertRegex(body, r'<li class="spec stale"><span class="mark"><svg[^>]*>.*?</svg></span><span class="title">'
+                               r'docs/specs/gone\.spec\.html</span><span class="gate">Stale</span></li>')
+        self.assertRegex(body, r"\.stale \.title \{ color: var\(--ui-muted\);")
 
     def test_invalid_registries_exit_before_binding_or_printing_url(self):
         first, second = (self.make_resource(name) for name in ("first", "second"))

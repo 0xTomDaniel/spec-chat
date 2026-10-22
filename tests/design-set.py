@@ -4,6 +4,7 @@ built from exactly the pinned commit by scripts/design-set-sync, never by hand."
 import importlib.machinery
 import importlib.util
 import os
+import re
 import unittest
 from pathlib import Path
 
@@ -31,15 +32,15 @@ class DesignSetPin(unittest.TestCase):
                     self.assertEqual(SYNC.region((ROOT / path).read_text(), path, name)[2], SYNC.pin()["commit"])
 
     def test_every_copy_follows_the_set_the_runtime_holds(self):
-        """Offline: each copy is exactly what the sync builds from the tokens.css and icons the runtime holds, so the
-        document and the chrome never drift apart; the index serves the runtime's own block (review-serve-multi.py)."""
+        """Offline: each copy is exactly what the sync builds from the tokens.css, icons, and marks the runtime holds, so
+        the document and the chrome never drift apart; the index serves the runtime's own blocks (review-serve-multi.py)."""
         runtime = (ROOT / RUNTIME).read_text()
         start, end, commit = SYNC.region(runtime, RUNTIME)
         block = runtime[start:end]
         css = block[block.index("*/\n") + 3:-len(SYNC.END)]
         light, dark = SYNC.tokens(css)
         self.assertTrue(light and dark)
-        files = {"tokens.css": css, **SYNC.held_icons(runtime, RUNTIME)}
+        files = {"tokens.css": css, **SYNC.held(runtime, RUNTIME, SYNC.ICONS), **SYNC.held(runtime, RUNTIME, SYNC.MARKS)}
         for path in SYNC.COPIES:
             with self.subTest(path=path):
                 self.assertEqual((ROOT / path).read_text(), SYNC.rebuild(path, commit, files), f"{path}: run scripts/design-set-sync")
@@ -48,7 +49,7 @@ class DesignSetPin(unittest.TestCase):
         """spec-page-design #icons-rule: every chrome icon is one of the set's line icons, one size and stroke weight; the
         chrome draws the panel toggle, gear, dock, disclosure, and back link from them, never a glyph of its own."""
         runtime = (ROOT / RUNTIME).read_text()
-        icons = SYNC.held_icons(runtime, RUNTIME)
+        icons = SYNC.held(runtime, RUNTIME, SYNC.ICONS)
         self.assertTrue({"icons/panel.svg", "icons/gear.svg", "icons/threads.svg", "icons/chevron-left.svg",
                          "icons/chevron-right.svg", "icons/chevron-down.svg", "icons/external.svg"} <= set(icons))
         for path, svg in icons.items():
@@ -60,6 +61,20 @@ class DesignSetPin(unittest.TestCase):
         for used in ("ICONS.panel", "ICONS.gear", "ICONS.threads", "ICONS['chevron-left']", "ICONS['chevron-right']",
                      "ICONS['chevron-down']", "ICONS.external"):
             self.assertIn(used, runtime)
+
+    def test_the_runtime_holds_the_set_status_marks(self):
+        """lane-hosting #index-marks: the set's five status marks, each one size and stroke weight, drawn only in the set's
+        colors; the review index reads them from the runtime (review-serve-multi.py)."""
+        marks = SYNC.held((ROOT / RUNTIME).read_text(), RUNTIME, SYNC.MARKS)
+        self.assertEqual(set(marks), {"marks/%s.svg" % name for name in ("attention", "running", "pass", "neutral", "fail")})
+        for path, svg in marks.items():
+            with self.subTest(mark=path):
+                self.assertRegex(svg, r'^<svg [^>]*width="16" height="16" viewBox="0 0 16 16"')
+                self.assertIn('stroke-width="1.75"', svg)
+                self.assertIn('aria-hidden="true"', svg)
+                self.assertEqual(set(re.findall(r'(?:stroke|fill)="(var\([^"]*\))"', svg)) - {
+                    "var(--ui-%s, currentColor)" % token for token in ("attention", "action", "pass", "muted", "fail")
+                } - {"var(--ui-page, Canvas)"}, set())
 
     def test_the_repo_spec_pages_take_the_bundled_stylesheet(self):
         """docs/specs/.style/spec.css is this repo's copy of the bundled stylesheet (review-spec-scripts.sh holds the runtime's)."""
