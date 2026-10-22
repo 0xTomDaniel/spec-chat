@@ -87,7 +87,7 @@ Ten tests need headless Chromium via `playwright-core`:
 - `tests/runtime-answer-buttons.mjs` (answer buttons save a draft comment and show the chosen mark)
 - `tests/runtime-served-host.mjs` (a page served at another address, in a frame with no origin, through the QA fixture's test host; at phone width, the review panel's one hand-off bar in the bottom toolbar, served directly and in that frame across a reload)
 - `tests/runtime-comment-layer.mjs` (the comment layer on the QA fixture's host pages: served directly, at another origin, and in a frame with no origin)
-- `tests/runtime-spec-surface.mjs` (the spec page as one surface on the QA fixture's collections: top line, unboxed header, keys in tooltips, line icons, sentence-case pills)
+- `tests/runtime-spec-surface.mjs` (the spec page as one surface on the QA fixture's collections: top line, unboxed header, keys in tooltips, line icons, sentence-case pills; the reader's place across reloads and an address anchor under the top line; the error overlay before the chrome mounts; an embed host without the top line)
 - `tests/runtime-review-index.mjs` (the review index as quiet rows on the QA fixture's review services: status marks, title column, gate word under the title on a phone, dark, focus ring)
 
 They read `PLAYWRIGHT_CORE` to locate the package:
@@ -112,7 +112,8 @@ All other `runtime-*.mjs` tests run in Node without a browser.
 
 `design-set.toml` pins the shared design set (tokens, status marks, line icons) at one commit. `scripts/design-set-sync
 [CLONE]` builds it into the marked design-set regions of `skill/review-spec/assets/viz/runtime.js` (the chrome CSS,
-which the review index serves as the same block, and the `ICONS` map of the set's line icons the chrome draws) and of
+which the review index serves as the same block, the `ICONS` map of the set's line icons the chrome draws, and the
+`MARKS` map of the set's status marks the review index draws; the index reads each region with the sync's own reader) and of
 `skill/shape-spec/assets/style/spec.css` (the document's `--spec-*` values); `--check` only reports. Never edit a
 region by hand. Move the set only by changing the pin, then sync and copy both files to `docs/specs/.viz/` and
 `docs/specs/.style/`. `tests/design-set.py` checks the copies offline, and against

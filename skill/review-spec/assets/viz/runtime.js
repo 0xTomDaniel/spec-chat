@@ -1208,7 +1208,7 @@ function resolvedThreadCollapsed(thread, expandedResolved) {
 function threadReplyAction(thread) {
   const message = thread.messages[thread.messages.length - 1];
   if (!message || message.actor !== 'agent') return null;
-  return { label: thread.status === 'resolved' ? 'Reply and reopen' : '↩ Reply', message };
+  return { label: thread.status === 'resolved' ? 'Reply and reopen' : 'Reply', message };
 }
 
 function commentModeShortcut(e) {
@@ -2393,6 +2393,8 @@ body.hx-panel-open .hx-thread-dock{opacity:0;transform:translateX(10px);pointer-
 /* buttons */
 .hx-btn{font:var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font);border:1px solid var(--ui-border);background:var(--ui-surface);border-radius:var(--ui-radius-sm);padding:var(--ui-space-2) var(--ui-space-3);cursor:pointer;margin:var(--ui-space-1) var(--ui-space-1) 0 0;color:var(--ui-ink);min-height:var(--ui-space-6)}
 .hx-btn.pri{background:var(--ui-ink);color:var(--ui-page);border-color:var(--ui-ink)}
+.hx-btn:has(>svg){display:inline-flex;align-items:center;gap:var(--ui-space-1)}
+.hx-btn>svg{flex:none}
 /* handoff bar */
 .hx-handoff{border-top:1px solid var(--ui-border);padding:var(--ui-space-3) var(--ui-space-4);display:flex;justify-content:space-between;align-items:center}
 .hx-handoff .hx-note{font-size:var(--ui-text-xs);color:var(--ui-muted)}
@@ -2569,9 +2571,10 @@ tr[data-anchor]:has(> .hx-pin[data-column]) > :has(> .hx-jev-marker){padding-rig
 }`;
 
 // spec-page-design #top-line, lane-hosting #index-link: one fixed line at the top of an HTTP page holding the back link
-// and the range bar; the body and the dock start under it, at the height it measures (--hx-top-space).
+// and the range bar; the body and the dock start under it, at the height it measures (--hx-top-space). An embed host
+// keeps its own look, so it gets no line.
 function mountTopLine() {
-  if (!['http:', 'https:'].includes(OWN_ADDRESS.protocol) || document.getElementById('hx-top-line')) return;
+  if (EMBED_REVIEW_DIR || !['http:', 'https:'].includes(OWN_ADDRESS.protocol) || document.getElementById('hx-top-line')) return;
   const line = document.createElement('div');
   line.className = 'hx-top-line';
   line.id = 'hx-top-line';
@@ -2582,10 +2585,13 @@ function mountTopLine() {
   indexLink.dataset.specChatNavigation = 'index';
   document.body.insertBefore(line, document.body.firstChild);
   mountRangeBar(line);
-  // hidden while the phone panel covers the page: keep the last height, so the page does not move under the panel
-  new ResizeObserver(() => {
+  // Measured as the line goes in, so the page is already under it when a place is restored; the observer keeps it
+  // current. Hidden while the phone panel covers the page: keep the last height, so the page does not move under it.
+  const space = () => {
     if (line.offsetHeight) document.documentElement.style.setProperty('--hx-top-space', line.offsetHeight + 'px');
-  }).observe(line);
+  };
+  space();
+  new ResizeObserver(space).observe(line);
 }
 
 // spec-page-design #keys-rule: no label carries its key; the tooltip names it beside the label, and on a phone,
@@ -2603,6 +2609,14 @@ function keyTip(control, key) {
 
 // spec-page-design #type-system-rule: status words read in sentence case.
 const sentenceCase = text => String(text).charAt(0).toUpperCase() + String(text).slice(1);
+
+// The page's chrome CSS, first at boot: whatever shows before the chrome mounts, the error overlay included, has its look.
+function mountStyle() {
+  const style = document.createElement('style');
+  const sharedDocumentStyle = document.querySelector('link[rel~="stylesheet"][href*=".style/spec.css"]');
+  style.textContent = (EMBED_REVIEW_DIR || sharedDocumentStyle ? '' : DOC_CSS) + FOCUS_CSS + CSS;
+  document.head.appendChild(style);
+}
 
 function mountUI() {
   function setupDiffVisibility() {
@@ -2641,11 +2655,6 @@ function mountUI() {
       gear.setAttribute('aria-expanded', show ? 'true' : 'false');
     });
   }
-
-  const style = document.createElement('style');
-  const sharedDocumentStyle = document.querySelector('link[rel~="stylesheet"][href*=".style/spec.css"]');
-  style.textContent = (EMBED_REVIEW_DIR || sharedDocumentStyle ? '' : DOC_CSS) + FOCUS_CSS + CSS;
-  document.head.appendChild(style);
 
   mountTopLine();
 
@@ -3027,7 +3036,7 @@ function threadCard(th, where, place) {
       const reply = document.createElement('button');
       reply.className = 'hx-btn';
       reply.dataset.act = 'reply';
-      reply.textContent = replyAction.label;
+      reply.innerHTML = ICONS.comment + '<span>' + esc(replyAction.label) + '</span>';
       reply.addEventListener('click', e => { e.stopPropagation(); startReply(th, replyAction.message); });
       d.appendChild(reply);
     }
@@ -3035,7 +3044,7 @@ function threadCard(th, where, place) {
       const resolve = document.createElement('button');
       resolve.className = 'hx-btn';
       resolve.dataset.act = 'resolve';
-      resolve.textContent = '✓ Resolve';
+      resolve.textContent = 'Resolve';
       resolve.addEventListener('click', e => { e.stopPropagation(); resolveThread(th); });
       d.appendChild(resolve);
     }
@@ -3703,10 +3712,10 @@ function writePlace(storage, place) {
   } catch (_) { /* full, sandboxed, or disabled: the place is simply not kept */ }
 }
 
-// spec-page-design #top-line: the page shows from under the fixed top line, so a place is measured from its bottom.
+// spec-page-design #top-line: the page shows from under the fixed top line, so a place is measured from there: the space
+// the body starts under (--hx-top-space), which holds while the phone panel hides the line.
 function pageTop() {
-  const line = document.getElementById('hx-top-line');
-  return line ? line.getBoundingClientRect().bottom : 0;
+  return parseFloat(document.documentElement.style.getPropertyValue('--hx-top-space')) || 0;
 }
 
 function currentPlace() {
@@ -3753,6 +3762,7 @@ function keepPlace() {
 /* ---------------- boot ---------------- */
 (async function boot() {
   if (LAYER_SERVICE) return bootLayer();
+  mountStyle();
   const restorePlace = keepPlace();
   const httpPage = !EMBED_REVIEW_DIR && ['http:', 'https:'].includes(OWN_ADDRESS.protocol);
   // Deferred script: the DOM is the served spec until mountUI; compare it, never refetch it.

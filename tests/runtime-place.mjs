@@ -33,9 +33,10 @@ function page({ storage, hash = '', embed = null, anchors = ['intro', 'place', '
   Object.defineProperty(win, 'localStorage', { get() { if (storage instanceof Error) throw storage; return storage; } });
   const els = anchors.map(a => ({ dataset: { anchor: a },
     getBoundingClientRect: () => ({ top: tops[a] - win.scrollY, height: a === 'hidden' ? 0 : 150 }) }));
-  // the fixed top line (spec-page-design #top-line), when the page has one: its bottom edge in the viewport
+  // the fixed top line (spec-page-design #top-line), when the page has one: the space the body starts under, which the
+  // line sets as it goes in (--hx-top-space); a real reload under it is runtime-spec-surface.mjs
   const doc = { querySelectorAll: () => els,
-    getElementById: id => (id === 'hx-top-line' && topLine ? { getBoundingClientRect: () => ({ bottom: topLine }) } : null) };
+    documentElement: { style: { getPropertyValue: name => (name === '--hx-top-space' && topLine ? topLine + 'px' : '') } } };
   const setTimeout = fn => win.timers.push(fn);
   const clearTimeout = () => {};
   const location = { hash }; // the anchor is the location's fragment (review-service #served-anchor)

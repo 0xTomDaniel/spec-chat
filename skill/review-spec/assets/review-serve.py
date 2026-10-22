@@ -9,6 +9,8 @@ import contextlib
 import functools
 import hashlib
 import html
+import importlib.machinery
+import importlib.util
 import http.client
 import io
 import ipaddress
@@ -753,28 +755,38 @@ _COMMIT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 _HOST_BRIDGE_END = "/* ---------------- end host bridge ---------------- */"
 
 
-_DESIGN_SET = re.compile(r"/\* design-set [0-9a-f]{40} begin\b.*?/\* design-set end \*/\n", re.S)
+# scripts/design-set-sync, the one reader of a copy's design-set regions (region(), held()); the index reads the
+# runtime's regions through it, never a second parser.
+_SYNC_LOADER = importlib.machinery.SourceFileLoader(
+    "review_serve_design_set_sync", str(Path(__file__).resolve().parents[3] / "scripts" / "design-set-sync"))
+_SYNC = importlib.util.module_from_spec(importlib.util.spec_from_loader(_SYNC_LOADER.name, _SYNC_LOADER))
+_SYNC_LOADER.exec_module(_SYNC)
+_RUNTIME_PATH = "skill/review-spec/assets/viz/runtime.js"
 
 
-def _design_set():
-    """The pinned design set's tokens as the runtime's chrome CSS opens with them, verbatim: the index draws on the same
-    set at the same pin, never a copy of a value (lane-hosting #index-tokens)."""
-    runtime = Path(__file__).resolve().parent.joinpath("viz", "runtime.js").read_text(encoding="utf-8")
-    return _DESIGN_SET.search(runtime).group(0)
+def _design_set(runtime):
+    """(tokens, marks, icons): the pinned design set as the runtime holds it, verbatim, so the index draws on the same
+    set at the same pin, never a copy of a value (lane-hosting #index-tokens, #index-marks). tokens is the block the
+    chrome CSS opens with; marks and icons are {name: svg}. A malformed region, which the sync names by exiting, leaves
+    its part empty: the index still lists every spec."""
+    def read(part, empty):
+        try:
+            return part()
+        except (SystemExit, ValueError):
+            return empty
+
+    def tokens():
+        start, end, _ = _SYNC.region(runtime, _RUNTIME_PATH)
+        return runtime[start:end]
+
+    def svgs(name):
+        return {Path(path).stem: svg for path, svg in _SYNC.held(runtime, _RUNTIME_PATH, name).items()}
+
+    return read(tokens, ""), read(lambda: svgs(_SYNC.MARKS), {}), read(lambda: svgs(_SYNC.ICONS), {})
 
 
-def _design_set_svgs(name):
-    """The pinned design set's marks or icons, {name: svg}, as the runtime's region of that name holds them, verbatim:
-    the index draws its status marks and icons from the same set at the same pin (lane-hosting #index-marks)."""
-    runtime = Path(__file__).resolve().parent.joinpath("viz", "runtime.js").read_text(encoding="utf-8")
-    body = re.search(r"/\* design-set %s [0-9a-f]{40} begin\b[^\n]*\*/\nconst %s = (\{.*?\n\});\n/\* design-set %s end \*/"
-                     % (name, name.upper(), name), runtime, re.S).group(1)
-    return json.loads(re.sub(r",\n}$", "\n}", body))
-
-
-def _host_bridge():
+def _host_bridge(runtime):
     """The runtime's host bridge block, verbatim: the index runs the spec pages' bridge, not a copy (criterion-evidence #bridge-tab-pages)."""
-    runtime = Path(__file__).resolve().parent.joinpath("viz", "runtime.js").read_text(encoding="utf-8")
     start = runtime.index("/* ---------------- host bridge")
     end = runtime.index(_HOST_BRIDGE_END, start) + len(_HOST_BRIDGE_END)
     return runtime[start:end]
@@ -1393,7 +1405,9 @@ class MountHandler(SimpleHTTPRequestHandler):
                     if spec.get("inputs"):
                         spec["fact"] = facts.get(spec["stable"], {})
                         spec["gate"], spec["needs"], spec["mark"] = _gate(*spec["inputs"], spec["fact"])
-        marks = _design_set_svgs("marks")
+        # One read of the runtime per load: the set's tokens, marks, and icons, and the host bridge, all from it.
+        runtime = COMMENT_LAYER.read_text(encoding="utf-8")
+        tokens, marks, icons = _design_set(runtime)
 
         def ordered(projects):
             """(project, specs) by name; specs that need you first, then changed specs, then by title (#index-entry-order)."""
@@ -1408,7 +1422,7 @@ class MountHandler(SimpleHTTPRequestHandler):
             for project, specs in rows:
                 parts.append('<p class="project">%s</p><ul>' % html.escape(project))
                 for spec in specs:
-                    mark = '<span class="mark">%s</span>' % marks[spec["mark"]]
+                    mark = '<span class="mark">%s</span>' % marks.get(spec["mark"], "")
                     if spec["href"] is None:
                         parts.append('<li class="spec stale">%s<span class="title">%s</span><span class="gate">Stale</span></li>'
                                      % (mark, html.escape(spec["title"])))
@@ -1450,7 +1464,7 @@ class MountHandler(SimpleHTTPRequestHandler):
         held = sum(len(specs) for specs in settled.values())
         if settled:
             listing += '<details class="settled"><summary>%s<span>Settled (%d)</span></summary>%s</details>' % (
-                _design_set_svgs("icons")["chevron-right"], held, project_rows(ordered(settled)))
+                icons.get("chevron-right", ""), held, project_rows(ordered(settled)))
         listing = listing or '<p class="empty">No Spec Chat spec pages are available.</p>'
         # The muted count line beside the title: lanes that need you, lanes in progress, settled specs.
         tally = (["%d %s you" % (len(parts[True]), "lane needs" if len(parts[True]) == 1 else "lanes need")] if parts[True] else []) + (
@@ -1501,7 +1515,7 @@ main { padding: var(--ui-space-5) var(--ui-space-4); }
 }
 </style></head><body><main>%s%s</main><script>%s
 listenHost();
-</script></body></html>''' % (_design_set(), top, listing, _host_bridge())).encode("utf-8")
+</script></body></html>''' % (tokens, top, listing, _host_bridge(runtime))).encode("utf-8")
         self._send_body(body, "text/html; charset=utf-8")
 
     def _resolve_path(self, path, *, spec_only=False):

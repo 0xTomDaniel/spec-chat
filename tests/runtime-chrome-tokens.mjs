@@ -53,7 +53,7 @@ for (const name of ['--ui-on-marker', '--ui-marker-warning']) assert.ok(!(name i
 assert.ok(Object.keys(setDark).length > 10, 'the set carries its dark values');
 
 // lane-hosting #index-tokens: the index serves the runtime's own block, holding no token value of its own.
-assert.match(serve, /def _design_set\(\):/, 'the index takes the design set block from the runtime');
+assert.match(serve, /def _design_set\(runtime\):/, 'the index takes the design set block from the runtime');
 assert.doesNotMatch(serve, /--ui-[\w-]+\s*:/, 'the review server declares no token');
 
 // Every chrome rule, outside the two token blocks, as { media, sel, decls }.
