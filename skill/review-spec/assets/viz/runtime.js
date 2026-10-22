@@ -2585,12 +2585,15 @@ function mountTopLine() {
   indexLink.dataset.specChatNavigation = 'index';
   document.body.insertBefore(line, document.body.firstChild);
   mountRangeBar(line);
-  // Measured as the line goes in, so the page is already under it when a place is restored; the observer keeps it
-  // current. Hidden while the phone panel covers the page: keep the last height, so the page does not move under it.
+  // Measured as the line goes in, so the page is already under it when a place is restored. Any change the page makes in
+  // the line (the picker opening or closing, the range, an error) is measured at once, before any other task reads or
+  // paints the page; the resize observer runs only at the next rendering, and keeps it current as the width changes.
+  // Hidden while the phone panel covers the page: keep the last height, so the page does not move under it.
   const space = () => {
     if (line.offsetHeight) document.documentElement.style.setProperty('--hx-top-space', line.offsetHeight + 'px');
   };
   space();
+  new MutationObserver(space).observe(line, { subtree: true, childList: true, attributes: true, characterData: true });
   new ResizeObserver(space).observe(line);
 }
 
