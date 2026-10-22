@@ -76,8 +76,9 @@ class ReviewStateCollections(unittest.TestCase):
 
     def test_every_collection_is_reset_registered_and_navigated(self):
         reset = (FIXTURE / "reset.sh").read_text()
-        # The review service's registry, and review-plugged's, which holds qa-10.
-        registry = "".join((self.site.root / folder / "registry.toml").read_text() for folder in ("serve", "serve-plugged"))
+        # The review service's registry, review-plugged's, which holds qa-10, and review-sections', which holds qa-12.
+        registry = "".join((self.site.root / folder / "registry.toml").read_text()
+                           for folder in ("serve", "serve-plugged", "serve-sections"))
         nav = tomllib.loads((ROOT / "qa.toml").read_text())["nav"]
         hinted = {hint["path"].split("/")[1] for hint in nav.values()}
         for collection in spools.COLLECTIONS:
@@ -243,7 +244,7 @@ class ReviewStateCollections(unittest.TestCase):
         return result
 
     def test_index_gate_lanes_read_as_their_criteria_say(self):
-        """lane-hosting #acceptance-index-sections, -gate-decision, -gate-reply, -gate-draft, -gate-agent, -gate-ready,
+        """lane-hosting #acceptance-index-gate-decision, -gate-reply, -gate-draft, -gate-agent, -gate-ready,
         -gate-sent, -no-provider Givens, on the review service, which has no evidence provider: qa-3 to qa-7 hold
         Report filters alone with one thread each; Accept spec, as the page writes it, turns QA-5 to Accept spec sent."""
         site = Site()  # its own site: the Accept spec save leaves the shared seeded spools untouched
@@ -272,6 +273,42 @@ class ReviewStateCollections(unittest.TestCase):
         urllib.request.urlopen(request).close()
         self.assertEqual(self.lanes(base)["QA-5"],
                          ("In progress", "Nothing needs you", None, {"Report filters": "Accept spec sent"}))
+
+    def test_sections_index_holds_one_lane_per_part_and_settles_the_rest(self):
+        """lane-hosting #acceptance-index-sections Given, on review-sections: QA-11 a lane holding a spec with an open
+        decision, QA-12 a lane whose specs are all with the agent, and the main collection under a slug that is no lane
+        key. A registry serves its rows only, so no spec is served without a row (tests/review-serve-multi.py proves
+        that case)."""
+        import re
+
+        base = self.serve(registry="serve-sections", ready="/qa-11/docs/specs/report.spec.html", state="state-sections")
+        self.assertEqual(self.lanes(base), {
+            "QA-11": ("Needs you", "1 needs you", None, {"Weekly report": "Decision open"}),
+            "QA-12": ("In progress", "Nothing needs you", None, {"Report filters": "With the agent"}),
+        })
+        with urllib.request.urlopen(base + "/") as response:
+            body = response.read().decode()
+        settled = re.findall(r"<details\b[^>]*>(.*?)</details>", body, re.S)
+        self.assertEqual(len(settled), 1)
+        self.assertIn("<span>Settled (4)</span>", settled[0])
+        self.assertEqual(sorted(title for title, _ in self.rows(settled[0]).items()),
+                         ["Onboarding", "Report filters", "Report sorting", "Weekly report"])
+        self.assertEqual(re.findall(r'<a class="title" href="/([^/"]+)/', settled[0]), ["main"] * 4)
+
+    def test_bar_dirty_spec_differs_from_its_head(self):
+        """compared-range #acceptance-bar-dirty Given: bar-dirty's report spec holds an uncommitted edit, so its baseline
+        reads dirty; qa-fixture's does not."""
+        base = self.serve()
+
+        def baseline(collection):
+            query = urllib.parse.urlencode({"path": "%s/docs/specs/report.spec.html" % collection})
+            with urllib.request.urlopen(base + "/api/baseline?" + query) as response:
+                return json.load(response)
+
+        dirty, clean = baseline("bar-dirty"), baseline("qa-fixture")
+        self.assertEqual((dirty["dirty"], clean["dirty"]), (True, False))
+        self.assertEqual(dirty["head"], clean["head"])
+        self.assertIn(spools.INSERTED, self.current("bar-dirty"))
 
     def test_plugged_index_reads_the_declared_review_facts(self):
         """lane-hosting #acceptance-index-gate-accepted, #acceptance-index-proof, #acceptance-index-marks,

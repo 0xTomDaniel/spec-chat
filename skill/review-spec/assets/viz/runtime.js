@@ -2341,8 +2341,11 @@ html:has(> body > .hx-top-line){scroll-padding-top:var(--hx-top-space,0px)}
 .hx-panel{position:fixed;top:0;right:0;width:330px;height:100vh;background:var(--ui-page);color:var(--ui-ink);border-left:1px solid var(--ui-border);z-index:800;display:none;flex-direction:column;font:var(--ui-text-sm) var(--ui-font);box-shadow:none}
 .hx-panel.open{display:flex}
 body.hx-panel-open{padding-right:330px}
-.hx-panel-head{position:relative;min-height:44px;padding:var(--ui-space-3) var(--ui-space-4) var(--ui-space-3) calc(var(--ui-space-6) + var(--ui-space-4));box-sizing:border-box;border-bottom:1px solid var(--ui-border);font-weight:var(--ui-weight-semibold)}
-.hx-panel-head .hx-sub{font-weight:var(--ui-weight-regular);font-size:var(--ui-text-xs);color:var(--ui-muted)}
+/* The header text runs between the toggle and the gear, each held clear by its inset, its width, and a space-2 gap
+   (on a phone, the gear's 44px from a space-2 inset: 60px); the agent note moves to its own line as one unit when it
+   does not fit beside Review, and wraps only when longer than that line. */
+.hx-panel-head{position:relative;min-height:44px;padding:var(--ui-space-3) calc(var(--ui-space-6) + var(--ui-space-4)) var(--ui-space-3) calc(var(--ui-space-6) + var(--ui-space-4));box-sizing:border-box;border-bottom:1px solid var(--ui-border);font-weight:var(--ui-weight-semibold);overflow-wrap:anywhere}
+.hx-panel-head .hx-sub{display:inline-block;font-weight:var(--ui-weight-regular);font-size:var(--ui-text-xs);color:var(--ui-muted)}
 .hx-panel-toggle{position:absolute;top:var(--ui-space-2);left:var(--ui-space-2);width:var(--ui-space-6);height:var(--ui-space-6);border:1px solid var(--ui-border);background:var(--ui-surface);border-radius:var(--ui-radius-sm);color:var(--ui-muted);cursor:pointer;display:grid;place-items:center;padding:0}
 .hx-panel-toggle:hover{background:var(--ui-page);color:var(--ui-ink)}
 .hx-panel-gear{position:absolute;top:var(--ui-space-2);right:var(--ui-space-2);width:var(--ui-space-6);height:var(--ui-space-6);border:1px solid var(--ui-border);background:var(--ui-surface);border-radius:var(--ui-radius-sm);color:var(--ui-muted);cursor:pointer;display:grid;place-items:center;padding:0}
@@ -2532,7 +2535,7 @@ a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
 .hx-toolbar .hx-status{flex:1 0 100%;min-width:0;padding:0 var(--ui-space-2) var(--ui-space-1);overflow:hidden;text-align:center;text-overflow:ellipsis;white-space:nowrap}
 .hx-panel{width:100vw;height:100dvh;max-height:100dvh;border-left:0;box-sizing:border-box;padding-bottom:calc(var(--hx-dock-space,0px) + var(--ui-space-3) + env(safe-area-inset-bottom))}
 body.hx-panel-open{padding-right:0;overflow:hidden}
-.hx-panel-head{min-height:56px;padding:var(--ui-space-4) var(--ui-space-4) var(--ui-space-3) calc(var(--ui-space-6) + var(--ui-space-5))}
+.hx-panel-head{min-height:56px;padding:var(--ui-space-4) calc(var(--ui-space-6) + var(--ui-space-5) + var(--ui-space-1)) var(--ui-space-3) calc(var(--ui-space-6) + var(--ui-space-5))}
 .hx-panel-toggle{top:var(--ui-space-1);left:var(--ui-space-1);width:44px;height:44px;touch-action:manipulation}
 .hx-panel-gear{top:var(--ui-space-1);right:var(--ui-space-2);width:44px;height:44px;touch-action:manipulation}
 .hx-thread-dock{top:calc(var(--hx-top-space,0px) + var(--ui-space-2));right:var(--ui-space-2);padding:var(--ui-space-1)}

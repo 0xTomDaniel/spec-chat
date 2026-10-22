@@ -43,6 +43,14 @@ command = 'mkdir -p "$QA_ROOT/home" "$QA_ROOT/state-plugged" "$QA_ROOT/config" &
 url = "http://127.0.0.1:{port}"
 ready = "/qa-8/docs/specs/later-only.spec.html"
 
+[services.review-sections]
+# The review service on reset.sh's third registry, which holds exactly the parts lane-hosting #index-sections names: a
+# lane with an open decision, a lane whose specs are all with the agent, and a collection under a slug that is no lane
+# key. Its own state, so its Jev records stay apart from review's.
+command = 'mkdir -p "$QA_ROOT/home" "$QA_ROOT/state-sections" "$QA_ROOT/config" && cd "$QA_REPO_SPEC_CHAT" && exec env -u HERDR_SOCKET_PATH HOME="$QA_ROOT/home" XDG_STATE_HOME="$QA_ROOT/state-sections" XDG_CONFIG_HOME="$QA_ROOT/config" python3 tests/fixtures/qa/serve.py "$QA_ROOT/serve-sections/registry.toml" "$PORT"'
+url = "http://127.0.0.1:{port}"
+ready = "/qa-11/docs/specs/report.spec.html"
+
 # One Git repo of six specs, copied per collection (reset.sh): onboarding.spec.html marks the project rule "Every change
 # to what a user sees or does adds its onboarding section.", named "Every change ships its onboarding"; report.spec.html is the
 # spec under shaping, its head adding an export story with no onboarding criterion,
@@ -134,6 +142,11 @@ path = "{review}/tbd-open-jump/docs/specs/report.spec.html"
 path = "{review}/tbd-open-wrap/docs/specs/report.spec.html"
 [nav.acceptance-mobile-composer]
 path = "{review}/mobile-composer/docs/specs/report.spec.html"
+# Keyboard block targets (prompt-first-shaping #acceptance-block-target-enter, -space): Comment turns spec blocks into Tab
+# stops after the page's controls. From Comment, Tab passes Reading view, the panel toggle, the gear, and the hand-off
+# button, then focus wraps to the top of the page: Review index, Change base, the spec's title, and its path line; the
+# next stop is the first paragraph, "QA fixture: a feature spec under shaping." (about ten Tabs; headless wraps through
+# the page body once). A focused button is no paragraph: press Enter or Space only once that paragraph has focus.
 [nav.acceptance-block-target-enter]
 path = "{review}/block-target-enter/docs/specs/report.spec.html"
 [nav.acceptance-block-target-space]
@@ -197,10 +210,19 @@ path = "{review}/stale-page/docs/specs/report.spec.html"
 path = "{review}/agent-scan/docs/specs/report.spec.html"
 [nav.acceptance-name]
 path = "{review}/name-reply/docs/specs/report.spec.html"
-# spec-page-design #acceptance-icons: qa-1's report spec holds a draft, a handed-off, a replied, and a resolved thread
-# (spools.py every_status); open the review panel from the dock's icon.
+# spec-page-design #acceptance-icons, #acceptance-icons-dock: qa-1's report spec holds a draft, a handed-off, a replied,
+# and a resolved thread (spools.py every_status). Its page opens with the review panel closed; the thread dock is the
+# column of buttons at the top right, its first the one named "Open review sidebar".
+# - icons: open the review panel with that first dock button.
+# - icons-dock: the page as it opens, its panel closed; nothing to click.
 [nav.acceptance-icons]
 path = "{review}/qa-1/docs/specs/report.spec.html"
+[nav.acceptance-icons-dock]
+path = "{review}/qa-1/docs/specs/report.spec.html"
+# spec-page-design #acceptance-one-surface: "a spec served with a compared range" is qa-fixture's Onboarding, unchanged
+# since its row base, so its page opens on that range with no block changed (compared-range #reviewed-default).
+[nav.acceptance-one-surface]
+path = "{review}/qa-fixture/docs/specs/onboarding.spec.html"
 # spec-page-design #acceptance-focus-set: qa-4's Report filters holds one thread, resolved, and no open TBD (spools.py
 # all_resolved), so the panel's hand-off reads Accept spec; press Tab until Accept spec has focus.
 [nav.acceptance-focus-set]
@@ -208,10 +230,11 @@ path = "{review}/qa-4/docs/specs/later-only.spec.html"
 
 # Review index (lane-hosting #index-threads, #index-gates, #index-design, #index-marks), at the server root. The
 # review service ({review}) has no evidence provider; review-plugged ({review-plugged}) has one, answering from the
-# evidence service's declared review facts (reset.sh). Lane-key collections (tests/fixtures/qa/spools.py
-# INDEX_LANES) are lanes: a header (QA-1, its need count, a Proof link when one is named) over its project label and
-# its spec rows; every other collection settles under Settled (n). Each spec row leads with its status mark, then its
-# title, its gate word on the right, and one muted meta line under the title (thread counts, then Changed).
+# evidence service's declared review facts (reset.sh); review-sections ({review-sections}) holds the index parts alone.
+# Lane-key collections (tests/fixtures/qa/spools.py INDEX_LANES) are lanes: a header (QA-1, its need count, a Proof
+# link when one is named) over its project label and its spec rows; every other collection settles under Settled (n).
+# Each spec row leads with its status mark, then its title, its gate word on the right, and one muted meta line under
+# the title (thread counts, then Changed).
 # - QA-1 and QA-2 hold the four fixture specs (Weekly report changed since base, Onboarding
 #   unchanged, Report filters and Report sorting absent at base); Weekly report and Report sorting
 #   hold open TBDs. QA-1's Weekly report holds a draft, a handed-off, a replied, and a resolved
@@ -229,9 +252,10 @@ path = "{review}/qa-4/docs/specs/later-only.spec.html"
 # - review-index, index-threads, index-threads-none: read the QA-1 lane. Its Weekly report
 #   row holds a draft, a handed-off, a replied, and a resolved thread (3 open, 1 resolved);
 #   its other rows have no threads.
-# - index-sections: read the part headings and the QA-1 and QA-3 lanes, then open Settled at the
-#   bottom. The review service serves registry rows only, so no spec there is served without a row;
-#   that case is proven by tests/review-serve-multi.py
+# - index-sections, on review-sections: QA-11 holds Weekly report alone (open TBDs); QA-12 holds Report filters alone,
+#   its one thread handed off and not answered; the main collection's slug is no lane key and holds the four fixture
+#   specs. Read the part headings and both lanes, then open Settled at the bottom. A registry serves its rows only, so
+#   no spec there is served without a row; that case is proven by tests/review-serve-multi.py
 #   test_index_settles_specs_served_without_a_row_in_a_closed_disclosure.
 # - index-gate-decision: read QA-1's Weekly report row (open TBDs and a handed-off thread).
 # - index-gate-reply: read the QA-6 lane. index-gate-draft: read the QA-7 lane.
@@ -256,11 +280,13 @@ path = "{review}/qa-4/docs/specs/later-only.spec.html"
 #   title's first line.
 # - index-marks: on review-plugged, read QA-10's Weekly report (Decision open) and Report filters (With the agent)
 #   rows, and QA-8's Report filters (Accepted) row: each leads with its mark.
-# - index-focus: on review-plugged, press Tab until the QA-10 lane's Weekly report title has focus.
+# - index-focus: on review-plugged, press Tab until the QA-10 lane's Weekly report title has focus. Tab stops run down
+#   the page, and a lane's Proof link, in its header, comes before its spec titles: the first Tab lands on QA-9's Proof
+#   link, the second on QA-9's Report filters title, the third on QA-10's Weekly report title. A Proof link is no title.
 [nav.acceptance-review-index]
 path = "{review}/"
 [nav.acceptance-index-sections]
-path = "{review}/"
+path = "{review-sections}/"
 [nav.acceptance-index-gate-decision]
 path = "{review}/"
 [nav.acceptance-index-gate-reply]
@@ -373,6 +399,11 @@ path = "{review}/no-service/docs/pane.html"
 # listed commit (subject "base").
 [nav.acceptance-coverage-undeclared]
 path = "{review}/coverage-undeclared/docs/specs/print.spec.html?base=HEAD"
+
+# Compared range (compared-range #acceptance-bar-dirty): "a spec with uncommitted edits" is bar-dirty's report spec, whose
+# worktree holds the agent's edit, never committed (reset.sh, spools.py), so it differs from its head commit.
+[nav.acceptance-bar-dirty]
+path = "{review}/bar-dirty/docs/specs/report.spec.html"
 
 # Status route (review-service #steady-status): {review}/api/status (values). No page links to it, so it is opened at
 # that address.

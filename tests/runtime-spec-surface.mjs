@@ -186,6 +186,40 @@ try {
     await close();
   }
 
+  // The review panel's header text runs between the panel toggle and the gear at every width, never under either: it
+  // wraps instead. qa-1's agent has replied, so the header reads its last event time. Desktop widths keep the 330px
+  // panel; at and under the 640px breakpoint the panel takes the whole width.
+  const MOBILE = { isMobile: true, hasTouch: true };
+  for (const [viewport, options] of [[DESKTOP, {}], [{ width: 641, height: 800 }, {}], [{ width: 640, height: 800 }, MOBILE],
+    [PHONE, MOBILE], [{ width: 320, height: 640 }, MOBILE]]) {
+    const { page, close } = await open('qa-1', viewport, options);
+    await page.click('#hx-dock-open');
+    await page.waitForSelector('.hx-panel.open');
+    await page.waitForFunction(() => /agent last event/.test(document.getElementById('hx-agent').textContent));
+    const head = await page.evaluate(() => {
+      const box = el => el.getBoundingClientRect().toJSON();
+      const header = document.querySelector('.hx-panel-head');
+      const lines = [];
+      const walker = document.createTreeWalker(header, NodeFilter.SHOW_TEXT);
+      for (let node; (node = walker.nextNode());) {
+        if (!node.textContent.trim() || node.parentElement.closest('button')) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        lines.push(...[...range.getClientRects()].map(rect => rect.toJSON()));
+      }
+      return { lines, header: box(header), toggle: box(document.getElementById('hx-panel-toggle')),
+        gear: box(document.getElementById('hx-panel-gear')) };
+    });
+    const overlaps = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+    assert.ok(head.lines.length >= 2, `the header text shows at ${viewport.width}px`);
+    for (const line of head.lines) {
+      assert.ok(!overlaps(line, head.gear), `header text ends before the gear at ${viewport.width}px: ${JSON.stringify(line)} vs ${JSON.stringify(head.gear)}`);
+      assert.ok(!overlaps(line, head.toggle), `header text starts after the panel toggle at ${viewport.width}px`);
+      assert.ok(line.right <= head.header.right && line.bottom <= head.header.bottom, `header text stays inside its header at ${viewport.width}px`);
+    }
+    await close();
+  }
+
   // #acceptance-one-surface-phone: the first screen shows the top line, the title, and the start of the first section,
   // on one background, without horizontal scrolling. #acceptance-key-phone: no key in any toolbar button.
   {

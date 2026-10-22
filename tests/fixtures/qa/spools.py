@@ -112,6 +112,11 @@ def no_events(spool):
     return None
 
 
+def uncommitted(spool):
+    """No events; the agent's edit left in the worktree, never committed, so the served spec differs from its head."""
+    return insert_above
+
+
 def replied(spool, ident, anchor, text, browser="qa-browser-papaya", author="Papaya"):
     """A handed-off comment the agent answered: open, awaiting the human's resolve."""
     root = comment(spool, ident, browser, author, anchor, None, text)
@@ -184,13 +189,16 @@ COLLECTIONS = {
     "qa-6": agent_replied,
     "qa-7": unsent,
     "qa-10": with_agent,
+    "qa-12": with_agent,
+    "bar-dirty": uncommitted,
 }
 # collection -> the spec its seed writes on, when not the report spec: the index gate lanes, which
-# register Report filters alone, and review-plugged's qa-10, whose Report filters is with the agent (reset.sh)
-SPEC_OF = {lane: LATER for lane in ("qa-3", "qa-4", "qa-5", "qa-6", "qa-7", "qa-10")}
-# Lane-key collections, reached from the review index root (lane-hosting #index-threads, #index-gates, #index-marks);
-# their other specs have no threads. qa-10 is review-plugged's (reset.sh).
-INDEX_LANES = ("qa-1", "qa-2", "qa-3", "qa-4", "qa-5", "qa-6", "qa-7", "qa-10")
+# register Report filters alone, review-plugged's qa-10, whose Report filters is with the agent, and
+# review-sections' qa-12, whose one spec, Report filters, is with the agent (reset.sh)
+SPEC_OF = {lane: LATER for lane in ("qa-3", "qa-4", "qa-5", "qa-6", "qa-7", "qa-10", "qa-12")}
+# Lane-key collections, reached from the review index root (lane-hosting #index-threads, #index-gates, #index-marks,
+# #index-sections); their other specs have no threads. qa-10 is review-plugged's, qa-12 review-sections' (reset.sh).
+INDEX_LANES = ("qa-1", "qa-2", "qa-3", "qa-4", "qa-5", "qa-6", "qa-7", "qa-10", "qa-12")
 # collection -> agent edit that lands when the page next saves (land_pending_edit)
 PENDING = {"stale-page": insert_above}
 # collections whose agent answers each saved comment (answer_comment), so the page offers a reply
