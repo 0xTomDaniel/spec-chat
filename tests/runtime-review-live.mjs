@@ -106,10 +106,10 @@ try {
   await comment(b.page, TOTALS, 'draft from B');
   await waitThread(a.page, 'draft from B');
   await a.page.click('#hx-handoff');
-  await waitThread(b.page, 'first from A', "t.querySelector('.hx-pill').textContent === 'pending'");
+  await waitThread(b.page, 'first from A', "t.querySelector('.hx-pill').textContent === 'Pending'");
   for (const page of [a.page, b.page]) {
-    await waitThread(page, 'second from A', "t.querySelector('.hx-pill').textContent === 'pending'");
-    assert.deepEqual(byText(await threadsOf(page), 'draft from B').map(t => t.status), ['draft'], "B's draft stays a draft");
+    await waitThread(page, 'second from A', "t.querySelector('.hx-pill').textContent === 'Pending'");
+    assert.deepEqual(byText(await threadsOf(page), 'draft from B').map(t => t.status), ['Draft'], "B's draft stays a draft");
   }
   const handoff = spoolEvents().find(e => e.body.event === 'handoff').body;
   assert.equal(handoff.events.length, 2, "A's hand-off lists A's two drafts only");
@@ -166,7 +166,7 @@ try {
   await a.context.setOffline(true);
   await comment(a.page, EXPORT, 'offline from A');
   await a.page.waitForFunction(() => document.getElementById('hx-offline').textContent === 'Offline: 1 change waiting', null, { timeout: 3000 });
-  assert.deepEqual(byText(await threadsOf(a.page), 'offline from A').map(t => t.status), ['draft']);
+  assert.deepEqual(byText(await threadsOf(a.page), 'offline from A').map(t => t.status), ['Draft']);
   await comment(b.page, EXPORT, 'meanwhile from B');
   await b.page.waitForTimeout(300);
   await a.context.setOffline(false);
@@ -186,7 +186,7 @@ try {
   await a.page.close();
   await a.context.setOffline(false);
   a.page = await a.open();
-  await waitThread(a.page, 'closed while offline', "t.querySelector('.hx-pill').textContent === 'draft'");
+  await waitThread(a.page, 'closed while offline', "t.querySelector('.hx-pill').textContent === 'Draft'");
   await waitThread(b.page, 'closed while offline');
   assert.equal(spoolEvents().filter(e => e.body.text === 'closed while offline').length, 1);
   await a.context.close();

@@ -23,7 +23,7 @@ assert.ok(boot.indexOf('keepPlace()') < boot.indexOf('await hydrateIslands()'), 
 assert.ok(boot.indexOf('restorePlace()') > boot.indexOf('adoptForeignCharts()'), 'place restores after render');
 
 // Page: sections at document offsets; rect.top follows scrollY.
-function page({ storage, hash = '', embed = null, anchors = ['intro', 'place', 'place-save', 'later'] } = {}) {
+function page({ storage, hash = '', embed = null, anchors = ['intro', 'place', 'place-save', 'later'], topLine = 0 } = {}) {
   const tops = { intro: 0, place: 1000, 'place-save': 1200, later: 3000, hidden: 500 };
   const win = { scrollY: 0, listeners: {}, timers: [], scrolls: [] };
   win.addEventListener = (t, fn) => (win.listeners[t] ||= []).push(fn);
@@ -33,7 +33,9 @@ function page({ storage, hash = '', embed = null, anchors = ['intro', 'place', '
   Object.defineProperty(win, 'localStorage', { get() { if (storage instanceof Error) throw storage; return storage; } });
   const els = anchors.map(a => ({ dataset: { anchor: a },
     getBoundingClientRect: () => ({ top: tops[a] - win.scrollY, height: a === 'hidden' ? 0 : 150 }) }));
-  const doc = { querySelectorAll: () => els };
+  // the fixed top line (spec-page-design #top-line), when the page has one: its bottom edge in the viewport
+  const doc = { querySelectorAll: () => els,
+    getElementById: id => (id === 'hx-top-line' && topLine ? { getBoundingClientRect: () => ({ bottom: topLine }) } : null) };
   const setTimeout = fn => win.timers.push(fn);
   const clearTimeout = () => {};
   const location = { hash }; // the anchor is the location's fragment (review-service #served-anchor)
@@ -150,5 +152,20 @@ p = page({ storage: store, embed: 'app.review' });
 p.keepPlace()();
 assert.deepEqual(p.win.scrolls, []);
 assert.equal(p.win.listeners.scroll, undefined);
+
+// Under a fixed top line (spec-page-design #top-line) a place is measured from its bottom edge: an address anchor lands
+// just under it, and a saved place returns to the same spot under it.
+p = page({ storage: null, hash: '#place', topLine: 41 });
+p.keepPlace()();
+assert.deepEqual(p.win.scrolls, [959], 'the address anchor shows under the top line');
+const lined = memory();
+p = page({ storage: lined, topLine: 41 });
+p.keepPlace()();
+p.win.scrollY = 1199;
+p.win.fire('pagehide');
+assert.deepEqual(JSON.parse(lined.m.get(KEY)), { anchor: 'place-save', offset: 40 }, 'measured from under the top line');
+p = page({ storage: lined, topLine: 41 });
+p.keepPlace()();
+assert.deepEqual(p.win.scrolls, [1199], 'and restored there');
 
 console.log('runtime place tests passed');

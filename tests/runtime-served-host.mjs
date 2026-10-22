@@ -87,18 +87,18 @@ try {
   await frame.click(TOTALS);
   await frame.fill('.hx-composer textarea', 'Saved in the host frame.');
   await frame.click('.hx-composer [data-act=save]');
-  await frame.waitForFunction(() => [...document.querySelectorAll('#hx-threads .hx-thread')].some(t => t.querySelector('.hx-pill')?.textContent === 'draft'));
+  await frame.waitForFunction(() => [...document.querySelectorAll('#hx-threads .hx-thread')].some(t => t.querySelector('.hx-pill')?.textContent === 'Draft'));
   await frame.click('#hx-handoff');
   await frame.waitForFunction(() => [...document.querySelectorAll('#hx-threads .hx-thread')].some(t =>
-    t.querySelector('.hx-msg .hx-text')?.textContent === 'Saved in the host frame.' && t.querySelector('.hx-pill')?.textContent === 'pending'), null, { timeout: 5000 });
-  assert.deepEqual((await threads(frame)).map(t => t.status), ['pending'], 'the one thread is pending');
+    t.querySelector('.hx-msg .hx-text')?.textContent === 'Saved in the host frame.' && t.querySelector('.hx-pill')?.textContent === 'Pending'), null, { timeout: 5000 });
+  assert.deepEqual((await threads(frame)).map(t => t.status), ['Pending'], 'the one thread is pending');
   const events = spoolEvents('served-handoff');
   const saved = events.find(e => e.event === 'comment');
   assert.equal(saved.text, 'Saved in the host frame.');
   assert.deepEqual(events.find(e => e.event === 'handoff').events, [saved.id], 'the hand-off lists the comment');
   await page.close();
 
-  // #acceptance-served-index: Back to Spec Chat index shows the review index in the host's frame.
+  // #acceptance-served-index: the Review index link shows the review index in the host's frame.
   ({ page, frame } = await open('served-index'));
   const hostPage = page.url();
   await frame.click('.hx-service-index-link');

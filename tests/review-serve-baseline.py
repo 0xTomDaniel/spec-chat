@@ -135,10 +135,12 @@ class BaselineRouteTest(unittest.TestCase):
 
     def test_runtime_navigation_is_fixed_top_and_server_preserves_raw_spec_bytes(self):
         runtime = (ROOT / "skill" / "review-spec" / "assets" / "viz" / "runtime.js").read_text()
-        self.assertIn("document.body.insertBefore(indexLink, document.body.firstChild)", runtime)
-        self.assertRegex(runtime, r"\.hx-service-index-link\{position:fixed;top:var\(--ui-space-3\);left:var\(--ui-space-3\);z-index:1000;")
+        # spec-page-design #top-line: the index link opens the fixed top line, the body's first child.
+        self.assertIn("indexLink = line.appendChild(document.createElement('a'))", runtime)
+        self.assertIn("document.body.insertBefore(line, document.body.firstChild)", runtime)
+        self.assertRegex(runtime, r"\.hx-top-line\{position:fixed;top:0;left:0;right:0;")
         self.assertIn(".hx-service-index-link", runtime)
-        self.assertRegex(runtime, r"e\.target\.closest\('[^']*\.hx-service-index-link")
+        self.assertRegex(runtime, r"e\.target\.closest\('[^']*\.hx-top-line")
 
         source = b"<!doctype html><html><body><p data-anchor=\"rule\">raw bytes</p></body></html>"
         self.spec.write_bytes(source)
