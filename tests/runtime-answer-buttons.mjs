@@ -204,7 +204,7 @@ try {
     await answer(page, FIRST).tap();
     assert.deepEqual(await pressed(page), ['true', 'false']);
     assert.deepEqual(await surface(page), { composer: 0, panel: false, toast: SAVED }, 'no full-viewport composer or panel on a phone');
-    assert.equal(await page.textContent('#hx-mobile-handoff'), 'Hand off (1)');
+    assert.equal(await page.textContent('.hx-toolbar #hx-drafts'), '1 draft', "the bottom toolbar's drafts note");
     await context.close();
   }
 
