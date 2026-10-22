@@ -12,7 +12,8 @@ docs/specs/.viz/     shared runtime + vendored libs
 docs/specs/.style/   shared visual-spec styles
 skill/shape-spec/    shaping skill, validator, references
 skill/review-spec/   review skill, review-host, watch, server assets
-scripts/             install-spec-chat (onboarding entry point)
+scripts/             install-spec-chat (onboarding entry point), design-set-sync
+design-set.toml      the one pin of the shared design set
 tests/               all tests (Python, Node, shell)
 DESIGN.md            consensus design document
 ```
@@ -104,6 +105,15 @@ All other `runtime-*.mjs` tests run in Node without a browser.
 `docs/specs/.viz/runtime.js` must be byte-identical to
 `skill/review-spec/assets/viz/runtime.js`. This invariant is tested by
 `tests/review-spec-scripts.sh`.
+
+## Design set
+
+`design-set.toml` pins the shared design set (tokens, status marks, line icons) at one commit. `scripts/design-set-sync
+[CLONE]` builds it into the marked design-set region of `skill/review-spec/assets/viz/runtime.js` (the chrome CSS; the
+review index serves that same block) and of `skill/shape-spec/assets/style/spec.css` (the document's `--spec-*`
+values); `--check` only reports. Never edit a region by hand. Move the set only by changing the pin, then sync and copy
+both files to `docs/specs/.viz/` and `docs/specs/.style/`. `tests/design-set.py` checks the copies offline, and against
+the pinned commit when `DESIGN_SET_CLONE` names a clone holding it. Nothing fetches the set at run time.
 
 ## Spec format
 

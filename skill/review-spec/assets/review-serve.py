@@ -753,6 +753,16 @@ _COMMIT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 _HOST_BRIDGE_END = "/* ---------------- end host bridge ---------------- */"
 
 
+_DESIGN_SET = re.compile(r"/\* design-set [0-9a-f]{40} begin\b.*?/\* design-set end \*/\n", re.S)
+
+
+def _design_set():
+    """The pinned design set's tokens as the runtime's chrome CSS opens with them, verbatim: the index draws on the same
+    set at the same pin, never a copy of a value (lane-hosting #index-tokens)."""
+    runtime = Path(__file__).resolve().parent.joinpath("viz", "runtime.js").read_text(encoding="utf-8")
+    return _DESIGN_SET.search(runtime).group(0)
+
+
 def _host_bridge():
     """The runtime's host bridge block, verbatim: the index runs the spec pages' bridge, not a copy (criterion-evidence #bridge-tab-pages)."""
     runtime = Path(__file__).resolve().parent.joinpath("viz", "runtime.js").read_text(encoding="utf-8")
@@ -1427,66 +1437,42 @@ class MountHandler(SimpleHTTPRequestHandler):
         body = ('''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Spec Chat index</title><style>
-/* ui tokens */
-:root {
-  --ui-font: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --ui-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --ui-text-xs: 12px; --ui-text-sm: 14px; --ui-text-md: 16px; --ui-text-lg: 20px;
-  --ui-page: #ffffff; --ui-surface: #ffffff; --ui-ink: #333333; --ui-muted: #525252; --ui-border: #dfdfdf;
-  --ui-link: #333333; --ui-focus: #262626; --ui-action: #262626;
-  --ui-pass: #005c32; --ui-pass-soft: #e6efea;
-  --ui-fail: #a5000f; --ui-fail-soft: #f6e6e7;
-  --ui-attention: #b0540e; --ui-attention-soft: #faf4ef;
-  --ui-muted-soft: #eeeeee;
-  --ui-draft: #b0540e; --ui-draft-soft: #faf4ef;
-  --ui-resolved: #005c32; --ui-resolved-soft: #e6efea;
-  --ui-space-1: 4px; --ui-space-2: 8px; --ui-space-3: 12px; --ui-space-4: 16px; --ui-space-5: 24px; --ui-space-6: 32px;
-  --ui-radius: 8px; --ui-radius-sm: 6px; --ui-radius-pill: 999px;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ui-page: #1a1a1a; --ui-surface: #242424; --ui-ink: #e0e0e0; --ui-muted: #999999; --ui-border: #3a3a3a;
-    --ui-link: #e0e0e0; --ui-focus: #cccccc; --ui-action: #cccccc;
-    --ui-attention: #e5873a; --ui-attention-soft: #2e2218; --ui-draft: #e5873a; --ui-draft-soft: #2e2218;
-    --ui-pass: #3daa6e; --ui-pass-soft: #1a2e22; --ui-resolved: #3daa6e; --ui-resolved-soft: #1a2e22;
-    --ui-fail: #ffb4ab; --ui-fail-soft: #2e1a1c;
-  }
-}
+%s/* index: the design set's tokens alone (lane-hosting #index-design) */
 html { color-scheme: light dark; }
-body { margin: 0; background: var(--ui-page); color: var(--ui-ink); font-family: var(--ui-font); font-size: var(--ui-text-sm); font-weight: 400; line-height: 1.4; }
+body { margin: 0; background: var(--ui-page); color: var(--ui-ink); font-family: var(--ui-font); font-size: var(--ui-text-sm); font-weight: var(--ui-weight-regular); line-height: 1.4; }
 main { box-sizing: border-box; max-width: 72rem; margin: 0 auto; padding: var(--ui-space-6); }
-h1 { margin: 0 0 var(--ui-space-5); font-size: var(--ui-text-lg); font-weight: 600; line-height: 1.2; }
-.label { margin: 0 0 var(--ui-space-2); color: var(--ui-muted); font-size: var(--ui-text-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; overflow-wrap: anywhere; }
+h1 { margin: 0 0 var(--ui-space-5); font-size: var(--ui-text-lg); font-weight: var(--ui-weight-semibold); line-height: 1.2; }
+.label { margin: 0 0 var(--ui-space-2); color: var(--ui-muted); font-size: var(--ui-text-xs); font-weight: var(--ui-weight-semibold); letter-spacing: .06em; text-transform: uppercase; overflow-wrap: anywhere; }
 .lanes { display: grid; gap: var(--ui-space-2); grid-template-columns: repeat(auto-fill, minmax(min(100%%, calc(72rem / 4 - var(--ui-space-6))), 1fr)); align-items: start; margin: 0 0 var(--ui-space-5); }
 .lane, .card { box-sizing: border-box; min-width: 0; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); padding: var(--ui-space-3) var(--ui-space-4); }
 .lane.needs { border-left: var(--ui-space-1) solid var(--ui-attention); }
 .lane-head { display: flex; align-items: baseline; gap: var(--ui-space-2); margin: 0; }
-.key { flex: none; font-weight: 600; white-space: nowrap; }
+.key { flex: none; font-weight: var(--ui-weight-semibold); white-space: nowrap; }
 .count { flex: 1 1 auto; min-width: 0; text-align: right; color: var(--ui-muted); font-size: var(--ui-text-xs); }
-.proof { flex: none; color: var(--ui-link); font-size: var(--ui-text-xs); font-weight: 600; text-decoration: none; }
+.proof { flex: none; color: var(--ui-link); font-size: var(--ui-text-xs); font-weight: var(--ui-weight-semibold); text-decoration: none; }
 .proof:hover, .proof:focus-visible { text-decoration: underline; }
 .lane .label, .card ul + .label { margin: var(--ui-space-3) 0 var(--ui-space-1); }
 ul { list-style: none; margin: 0; padding: 0; }
 li { padding: var(--ui-space-2) 0; border-top: 1px solid var(--ui-border); }
 .row { display: flex; align-items: center; gap: var(--ui-space-3); }
-li a { flex: 1 1 auto; min-width: 0; color: var(--ui-link); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+li a { flex: 1 1 auto; min-width: 0; color: var(--ui-link); font-weight: var(--ui-weight-semibold); text-decoration: none; overflow-wrap: anywhere; }
 li a:hover, li a:focus-visible { text-decoration: underline; }
-a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; border-radius: var(--ui-radius-sm); }
+a:focus-visible, summary:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); border-radius: var(--ui-radius-sm); }
 .pills { flex: 0 1 auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--ui-space-1); margin-left: auto; }
-.pill { flex: none; padding: 0 var(--ui-space-2); line-height: 1.6; border-radius: var(--ui-radius-pill); background: var(--ui-attention-soft); color: var(--ui-attention); font-size: var(--ui-text-xs); font-weight: 600; }
+.pill { flex: none; padding: 0 var(--ui-space-2); line-height: 1.6; border-radius: var(--ui-radius-pill); background: var(--ui-attention-soft); color: var(--ui-attention); font-size: var(--ui-text-xs); font-weight: var(--ui-weight-semibold); }
 .pill.muted { background: var(--ui-surface); color: var(--ui-muted); border: 1px solid var(--ui-border); }
 li .stale-path { flex: 1 1 auto; min-width: 0; color: var(--ui-muted); overflow-wrap: anywhere; }
 .tallies { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); margin-top: var(--ui-space-1); }
-.tally { display: inline-flex; gap: var(--ui-space-1); padding: 0 var(--ui-space-2); line-height: 1.6; border-radius: var(--ui-radius-pill); font-size: var(--ui-text-xs); font-weight: 400; }
-.tally b { font-weight: 600; }
-.tally.open { background: var(--ui-draft-soft); color: var(--ui-draft); }
-.tally.resolved { background: var(--ui-resolved-soft); color: var(--ui-resolved); }
-.settled summary { cursor: pointer; margin: 0 0 var(--ui-space-2); font-size: var(--ui-text-md); font-weight: 600; }
+.tally { display: inline-flex; gap: var(--ui-space-1); padding: 0 var(--ui-space-2); line-height: 1.6; border-radius: var(--ui-radius-pill); font-size: var(--ui-text-xs); font-weight: var(--ui-weight-regular); }
+.tally b { font-weight: var(--ui-weight-semibold); }
+.tally.open { background: var(--ui-attention-soft); color: var(--ui-attention); }
+.tally.resolved { background: var(--ui-pass-soft); color: var(--ui-pass); }
+.settled summary { cursor: pointer; margin: 0 0 var(--ui-space-2); font-size: var(--ui-text-md); font-weight: var(--ui-weight-semibold); }
 .empty { color: var(--ui-muted); }
 @media (max-width: 640px) { main { padding: var(--ui-space-4); } }
 </style></head><body><main><h1>Review index</h1>%s</main><script>%s
 listenHost();
-</script></body></html>''' % (listing, _host_bridge())).encode("utf-8")
+</script></body></html>''' % (_design_set(), listing, _host_bridge())).encode("utf-8")
         self._send_body(body, "text/html; charset=utf-8")
 
     def _resolve_path(self, path, *, spec_only=False):
