@@ -158,11 +158,37 @@ for (const rule of rules)
     if (/^outline(-style|-width)?$/.test(prop) && /^(none|0)$/.test(value)) bad(rule, prop, value, 'removes the focus ring');
 assert.deepEqual(problems, [], 'no chrome rule removes the focus ring');
 const ringed = rings.flatMap(parts);
-for (const holder of ['.hx-toolbar', '.hx-panel', '.hx-thread-dock', '.hx-jev-pop', '.hx-range-bar', '.hx-layer'])
+// The top line holds the back link and the range bar (spec-page-design #top-line).
+for (const holder of ['.hx-toolbar', '.hx-panel', '.hx-thread-dock', '.hx-jev-pop', '.hx-top-line', '.hx-layer'])
   assert.ok(ringed.some(sel => new RegExp(`:is\\([^)]*\\${holder}\\b[^)]*\\) :focus-visible$`).test(sel)),
     'every control in ' + holder + ' shows the set ring');
-for (const control of ['.hx-pin', '.hx-jev-marker', '.hx-service-index-link'])
+for (const control of ['.hx-pin', '.hx-jev-marker'])
   assert.ok(ringed.some(sel => new RegExp(`:is\\([^)]*\\${control}\\b[^)]*\\):focus-visible$`).test(sel)), control + ' shows the set ring');
 assert.match(serve, /a:focus-visible, summary:focus-visible \{ outline: var\(--ui-focus-width\) solid var\(--ui-focus\); outline-offset: var\(--ui-focus-offset\);/,
   'the index shows the same ring');
+
+// #one-surface-rule, #top-line: the top line, the toolbar, and the review panel take the page color; the top line sits
+// on a hairline and the panel beside one; only the toolbar and an open popover lift on the shadow.
+const decl = (sel, prop) => desktop.filter(rule => parts(rule).includes(sel)).flatMap(rule => rule.decls)
+  .filter(([p]) => p === prop).map(([, v]) => v);
+for (const surface of ['.hx-top-line', '.hx-toolbar', '.hx-panel'])
+  assert.deepEqual(decl(surface, 'background'), ['var(--ui-page)'], surface + ' takes the page color');
+assert.deepEqual(decl('.hx-top-line', 'border-bottom'), ['1px solid var(--ui-border)'], 'a hairline under the top line');
+assert.deepEqual(decl('.hx-top-line', 'position'), ['fixed'], 'the top line is fixed');
+assert.deepEqual(decl('.hx-panel', 'border-left'), ['1px solid var(--ui-border)'], 'the panel beside a hairline');
+const lifted = rules.filter(rule => rule.decls.some(([p, v]) => p === 'box-shadow' && v.includes('var(--ui-shadow)')) && !rule.media)
+  .flatMap(parts);
+for (const flat of ['.hx-top-line', '.hx-panel', '.hx-panel.open', '.hx-thread-dock', '.hx-service-index-link', '.hx-range-bar'])
+  assert.ok(!lifted.includes(flat), flat + ' does not lift');
+assert.ok(lifted.includes('.hx-toolbar') && lifted.includes('.hx-jev-pop'), 'the toolbar and the popover lift');
+// The range is muted meta with its commits in ink; Change base is the text-link variant.
+assert.deepEqual(decl('.hx-range-copy', 'color'), ['var(--ui-muted)'], 'the range reads muted');
+assert.deepEqual(decl('.hx-range-id', 'color'), ['var(--ui-ink)'], 'its commits read in ink');
+assert.deepEqual([decl('.hx-range-change', 'background'), decl('.hx-range-change', 'border')], [['transparent'], ['none']],
+  'Change base is a text button');
+assert.deepEqual(decl('.hx-service-index-link', 'background'), [], 'the back link is not boxed');
+// #type-system-rule: pills, badges, and every chrome label read in sentence case, never capitals.
+for (const rule of rules)
+  for (const [prop, value] of rule.decls) if (prop === 'text-transform' && value === 'uppercase') bad(rule, prop, value, 'capitals');
+assert.deepEqual(problems, [], 'no chrome text in capitals');
 console.log('ok runtime chrome tokens');

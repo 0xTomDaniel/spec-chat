@@ -105,7 +105,7 @@ try {
     assert.deepEqual(await pressed(page), ['true', 'false']);
 
     await page.click('#hx-dock-open');
-    assert.deepEqual(await threads(page), [{ head: '#export-format › button[1]', status: 'draft', text: 'CSV only' }], 'one draft thread headed with the anchor and that button');
+    assert.deepEqual(await threads(page), [{ head: '#export-format › button[1]', status: 'Draft', text: 'CSV only' }], 'one draft thread headed with the anchor and that button');
     assert.equal(await page.textContent('#hx-drafts'), '1 draft');
 
     await page.click('#hx-handoff');
@@ -115,7 +115,7 @@ try {
     assert.deepEqual(spool('press').find(b => b.event === 'handoff').events, [stored.id], 'the hand-off sends the answer comment');
 
     // The same comment event a typed comment writes.
-    await page.click('#hx-mode');
+    await page.getByRole('button', { name: 'Comment', exact: true }).click(); // the toolbar's Comment button, by its name
     await page.click('p[data-anchor="report-totals"]');
     await page.fill('.hx-composer textarea', 'typed');
     await page.click('.hx-composer [data-act=save]');
@@ -211,7 +211,7 @@ try {
   // #acceptance-choice-comment-mode: an ordinary comment target; words added there make an answer too.
   {
     const { context, page } = await reviewer('comment-mode');
-    await page.click('#hx-mode');
+    await page.getByRole('button', { name: 'Comment', exact: true }).click(); // the toolbar's Comment button, by its name
     await answer(page, SECOND).click();
     await page.waitForFunction(() => document.activeElement?.matches('.hx-composer textarea'));
     assert.equal(await page.textContent('.hx-thread.active .hx-anchor'), '#export-format › button[2]', 'the composer is on that button');

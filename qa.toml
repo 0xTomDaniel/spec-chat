@@ -83,7 +83,7 @@ touch = true
 #   button reads Accept spec, and the missed note is the rule marker beside Acceptance
 #   criteria. Click Accept spec; nothing is typed.
 # - clear-thread: the page is the clear-thread report spec. Open the rule marker to show the card,
-#   turn on Comment (C), click the Acceptance criteria heading, type the value, save, then reload
+#   turn on Comment, click the Acceptance criteria heading, type the value, save, then reload
 #   the page (browser reload); the marker is still there.
 # - candidates, mark-as-rule, not-a-rule: the page is rule-candidate's onboarding spec, whose
 #   onboarding criterion is unmarked; open the marker beside that criterion to show the
@@ -138,7 +138,7 @@ path = "{review}/block-target-off/docs/specs/report.spec.html"
 # Answer buttons (prompt-first-shaping #answer-buttons): the report spec's Behavior TBD "whether the
 # export also offers XLSX" (export-format) offers two answer buttons, "CSV only (recommended)" and
 # "CSV and XLSX". "One answer button" is "CSV only (recommended)"; "another" is "CSV and XLSX".
-# Press them as page buttons, never through Comment (C) unless the When says so; nothing is typed.
+# Press them as page buttons, never through Comment unless the When says so; nothing is typed.
 # acceptance-choice-event is proven by tests/runtime-answer-buttons.mjs.
 [nav.acceptance-choice-press]
 path = "{review}/choice-press/docs/specs/report.spec.html"
@@ -170,7 +170,7 @@ path = "{review}/choice-comment-mode/docs/specs/report.spec.html"
 #   (gone: "Text removed" shows only in the opened thread).
 # - stale-page: the agent's edit (a paragraph inserted above the export sentence) waits
 #   beside the spec and lands when this page next saves an event (tests/fixtures/qa/
-#   serve.py), so the page as loaded predates the edit. Steps: turn on Comment (C),
+#   serve.py), so the page as loaded predates the edit. Steps: turn on Comment,
 #   select the export sentence's text, type the comment text from values, save. The save
 #   brings the "Spec updated by agent" banner; its Reload button is the Then's refresh.
 # - name: four steps, all required; do not stop after the first save. 1) Turn on Comment
@@ -191,6 +191,10 @@ path = "{review}/stale-page/docs/specs/report.spec.html"
 path = "{review}/agent-scan/docs/specs/report.spec.html"
 [nav.acceptance-name]
 path = "{review}/name-reply/docs/specs/report.spec.html"
+# spec-page-design #acceptance-icons: qa-1's report spec holds a draft, a handed-off, a replied, and a resolved thread
+# (spools.py every_status); open the review panel from the dock's icon.
+[nav.acceptance-icons]
+path = "{review}/qa-1/docs/specs/report.spec.html"
 
 # Review index (lane-hosting #index-threads, #index-gates), at the server root. The review service
 # ({review}) has no evidence provider; review-plugged ({review-plugged}) has one, answering from the
@@ -219,7 +223,7 @@ path = "{review}/name-reply/docs/specs/report.spec.html"
 # - index-gate-agent: read the QA-3 card. index-gate-ready, index-no-provider: read the QA-4 card.
 # - index-gate-sent: click the QA-5 card's "Report filters" title; on the spec page open the review
 #   sidebar with its "Open review sidebar" button (top right), click "Accept spec", then click
-#   "Back to Spec Chat index"; read the QA-5 card.
+#   "Review index"; read the QA-5 card.
 # - index-gate-accepted: read the QA-8 card on review-plugged.
 # - index-proof: click the QA-9 card's "Proof" link on review-plugged; it opens in a new tab.
 # - index-design: read the Needs you and In progress cards and the settled specs below them: no
@@ -228,7 +232,7 @@ path = "{review}/name-reply/docs/specs/report.spec.html"
 #   its Stale pill is its only word (lane-hosting #index-entry-status).
 # - index-threads-refresh: QA-2's Weekly report has one open thread, replied by the agent.
 #   Steps: click that row's "Weekly report" title in the QA-2 card; open the thread with its
-#   "Open thread 1" button; click its "✓ Resolve" button; click "Back to Spec Chat index" (the
+#   "Open thread 1" button; click its "✓ Resolve" button; click "Review index" (the
 #   reload); read the QA-2 Weekly report row.
 # - index-stale: read the QA-2 card. Its four specs are title links; docs/specs/archive.spec.html
 #   shows as plain text with a Stale pill on the right and no link.
@@ -271,9 +275,9 @@ path = "{review}/"
 # Capture hints, per criterion:
 # - served-threads: the report spec holds one open thread, Papaya's, replied by the agent. The step
 #   left is opening that thread with its "Open thread 1" button.
-# - served-handoff: turn on Comment (C), click the "The report page shows totals per week." block,
+# - served-handoff: turn on Comment, click the "The report page shows totals per week." block,
 #   type the value, save, then click "Hand off to agent →".
-# - served-index: click "Back to Spec Chat index".
+# - served-index: click "Review index".
 # - served-focus: focus on changes is turned on by choosing its baseline: click "Change base", then
 #   the older listed commit (subject "base").
 [nav.acceptance-served-threads]
@@ -346,7 +350,7 @@ path = "{review}/coverage-undeclared/docs/specs/print.spec.html?base=HEAD"
 # Status route (review-service #steady-status): {review}/api/status (values). No page links to it, so it is opened at
 # that address.
 # - steady-closed: starts on the report spec, so the service serves this browser a spec page; the start point then
-#   closes it by clicking its "Back to Spec Chat index" link.
+#   closes it by clicking its "Review index" link.
 [nav.acceptance-steady-closed]
 path = "{review}/qa-fixture/docs/specs/report.spec.html"
 selectors = ['a[data-spec-chat-navigation="index"]']
@@ -475,9 +479,14 @@ cannot_host = "capture has one browser context; the Given needs two live browser
 cannot_host = "capture has one browser context and creates no load on the shared box (no synthetic load), so no other reviewers' pages read Jev marks and no answers are recorded while the page opens, and no store many times the server's memory is written; proven by tests/jev-record-store.py (StoreMemoryTest, StoreLockTest) and tests/review-serve-jev.py test_overlapping_reads_of_one_page_keep_the_asks_both_want"
 # Capture runs story-review-index at desktop viewport; criteria cannot set a viewport.
 [entry.criteria.acceptance-index-link-panel]
-cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone-width open panel state cannot be reached; proven by tests/runtime-mobile-contract.mjs"
+cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone-width open panel state cannot be reached; proven by tests/runtime-spec-surface.mjs"
 [entry.criteria.acceptance-index-link-panel-closed]
-cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone-width open-then-closed panel state cannot be reached; proven by tests/runtime-mobile-contract.mjs"
+cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone-width open-then-closed panel state cannot be reached; proven by tests/runtime-spec-surface.mjs"
+# spec-page-design: story-one-surface and story-quiet-controls capture at desktop viewport too.
+[entry.criteria.acceptance-one-surface-phone]
+cannot_host = "story-one-surface captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone's first screen cannot be reached; proven by tests/runtime-spec-surface.mjs"
+[entry.criteria.acceptance-key-phone]
+cannot_host = "story-quiet-controls captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone toolbar cannot be reached; proven by tests/runtime-spec-surface.mjs"
 # Going offline is the device capability capture does not support (jev-capture #jc-capabilities).
 [entry.criteria.acceptance-offline-save]
 cannot_host = "capture cannot take the browser offline (device capability unsupported); proven by tests/runtime-review-live.mjs"

@@ -77,7 +77,7 @@ failure.
 
 ## Browser tests
 
-Eight tests need headless Chromium via `playwright-core`:
+Nine tests need headless Chromium via `playwright-core`:
 
 - `tests/runtime-pin-marker.mjs` (pin placement and clearance)
 - `tests/runtime-jev-popover.mjs` (Jev popover positioning)
@@ -87,6 +87,7 @@ Eight tests need headless Chromium via `playwright-core`:
 - `tests/runtime-answer-buttons.mjs` (answer buttons save a draft comment and show the chosen mark)
 - `tests/runtime-served-host.mjs` (a page served at another address, in a frame with no origin, through the QA fixture's test host)
 - `tests/runtime-comment-layer.mjs` (the comment layer on the QA fixture's host pages: served directly, at another origin, and in a frame with no origin)
+- `tests/runtime-spec-surface.mjs` (the spec page as one surface on the QA fixture's collections: top line, unboxed header, keys in tooltips, line icons, sentence-case pills)
 
 They read `PLAYWRIGHT_CORE` to locate the package:
 
@@ -109,10 +110,11 @@ All other `runtime-*.mjs` tests run in Node without a browser.
 ## Design set
 
 `design-set.toml` pins the shared design set (tokens, status marks, line icons) at one commit. `scripts/design-set-sync
-[CLONE]` builds it into the marked design-set region of `skill/review-spec/assets/viz/runtime.js` (the chrome CSS; the
-review index serves that same block) and of `skill/shape-spec/assets/style/spec.css` (the document's `--spec-*`
-values); `--check` only reports. Never edit a region by hand. Move the set only by changing the pin, then sync and copy
-both files to `docs/specs/.viz/` and `docs/specs/.style/`. `tests/design-set.py` checks the copies offline, and against
+[CLONE]` builds it into the marked design-set regions of `skill/review-spec/assets/viz/runtime.js` (the chrome CSS,
+which the review index serves as the same block, and the `ICONS` map of the set's line icons the chrome draws) and of
+`skill/shape-spec/assets/style/spec.css` (the document's `--spec-*` values); `--check` only reports. Never edit a
+region by hand. Move the set only by changing the pin, then sync and copy both files to `docs/specs/.viz/` and
+`docs/specs/.style/`. `tests/design-set.py` checks the copies offline, and against
 the pinned commit when `DESIGN_SET_CLONE` names a clone holding it. Nothing fetches the set at run time.
 
 ## Spec format

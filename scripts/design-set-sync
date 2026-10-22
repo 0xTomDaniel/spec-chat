@@ -3,20 +3,23 @@
 
     scripts/design-set-sync [--check] [CLONE]
 
-Takes tokens.css from exactly the commit design-set.toml pins, from CLONE (a design-set clone holding that commit) or
-else a fresh clone of the pinned repository, and rewrites each copy's region between its design-set markers; --check
-writes nothing and exits 1 naming each copy that differs. The one place a copy of the set is made: a new copy is added
-to COPIES. Nothing serves or fetches the set at run time.
+Takes tokens.css and icons/ from exactly the commit design-set.toml pins, from CLONE (a design-set clone holding that
+commit) or else a fresh clone of the pinned repository, and rewrites each region between its design-set markers; --check
+writes nothing and exits 1 naming each copy that differs. The one place a copy of the set is made: a new copy or region
+is added to COPIES. Nothing serves or fetches the set at run time.
 
 Copies:
   skill/review-spec/assets/viz/runtime.js   the chrome CSS opens with tokens.css as the set writes it; the review index
-                                            takes that same block from the runtime (review-serve.py), never a copy
+                                            takes that same block from the runtime (review-serve.py), never a copy;
+                                            its icons region holds every icons/*.svg as the ICONS map the chrome draws
+                                            its icons from (spec-page-design.spec.html#icons-rule)
   skill/shape-spec/assets/style/spec.css    the document's --spec-* values, each resolved from tokens.css, light and
                                             dark (spec-page-design.spec.html#document)
 
 The repo's own spec pages take the bundled runtime and stylesheet byte for byte (docs/specs/.viz, docs/specs/.style).
 """
 
+import json
 import re
 import subprocess
 import sys
@@ -28,6 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PIN = ROOT / "design-set.toml"
 BEGIN = re.compile(r"/\* design-set ([0-9a-f]{40}) begin\b[^\n]*\*/\n")
 END = "/* design-set end */\n"
+ICONS = "icons"
 
 # The document's names (spec-page-design.spec.html#document), each the set token it takes its value from.
 DOCUMENT = (
@@ -65,17 +69,25 @@ def pin() -> dict[str, str]:
     return tomllib.loads(PIN.read_text())
 
 
-def read(clone: Path, commit: str, path: str) -> str:
-    return subprocess.run(["git", "-C", str(clone), "show", f"{commit}:{path}"], capture_output=True, text=True,
-                          check=True).stdout
+def git(clone: Path, *args: str) -> str:
+    return subprocess.run(["git", "-C", str(clone), *args], capture_output=True, text=True, check=True).stdout
 
 
-def region(text: str, path: str) -> tuple[int, int, str]:
-    """(start, end, commit) of the one design-set region in a copy's text."""
-    begin = list(BEGIN.finditer(text))
-    if len(begin) != 1 or text.count(END) != 1 or text.index(END) < begin[0].end():
-        raise SystemExit(f"design-set-sync: {path} needs exactly one design-set begin and end marker")
-    return begin[0].start(), text.index(END) + len(END), begin[0].group(1)
+def markers(name: str) -> tuple[re.Pattern, str]:
+    """A region's begin pattern and end marker; the token region is the unnamed one."""
+    if not name:
+        return BEGIN, END
+    return re.compile(rf"/\* design-set {name} ([0-9a-f]{{40}}) begin\b[^\n]*\*/\n"), f"/* design-set {name} end */\n"
+
+
+def region(text: str, path: str, name: str = "") -> tuple[int, int, str]:
+    """(start, end, commit) of the one design-set region called ``name`` in a copy's text."""
+    begin_re, end = markers(name)
+    begin = list(begin_re.finditer(text))
+    if len(begin) != 1 or text.count(end) != 1 or text.index(end) < begin[0].end():
+        label = f"{name} " if name else ""
+        raise SystemExit(f"design-set-sync: {path} needs exactly one design-set {label}begin and end marker")
+    return begin[0].start(), text.index(end) + len(end), begin[0].group(1)
 
 
 def tokens(css: str) -> tuple[dict[str, str], dict[str, str]]:
@@ -100,17 +112,18 @@ def tokens(css: str) -> tuple[dict[str, str], dict[str, str]]:
     return resolved(base), resolved({**base, **declared(dark.group(1))})
 
 
-def runtime_block(commit: str, css: str) -> str:
+def runtime_block(commit: str, files: dict[str, str]) -> str:
     """The chrome's opening block: tokens.css as the set writes it, inside the runtime's CSS template literal."""
+    css = files["tokens.css"]
     if any(mark in css for mark in ("`", "${", "\\")):
         raise SystemExit("design-set-sync: tokens.css holds a character the runtime's CSS template literal would change")
     return (f"/* design-set {commit} begin: the pinned set's tokens.css, built in by scripts/design-set-sync;"
             " never edit by hand */\n" + css.strip() + "\n" + END)
 
 
-def document_block(commit: str, css: str) -> str:
+def document_block(commit: str, files: dict[str, str]) -> str:
     """The shared spec stylesheet's opening block: every --spec-* value from the set, light, then dark where it differs."""
-    light, dark = tokens(css)
+    light, dark = tokens(files["tokens.css"])
     missing = sorted({token for _, token in DOCUMENT} - set(light))
     if missing:
         raise SystemExit(f"design-set-sync: tokens.css has no {', '.join(missing)}")
@@ -122,17 +135,50 @@ def document_block(commit: str, css: str) -> str:
             "@media (prefers-color-scheme: dark) {\n  :root {\n" + "\n".join(darker) + "\n  }\n}\n" + END)
 
 
+def icon(svg: str) -> str:
+    """One icon as the runtime holds it: the set's SVG on one line, whitespace between tags dropped."""
+    return re.sub(r">\s+<", "><", svg.strip())
+
+
+def icons_block(commit: str, files: dict[str, str]) -> str:
+    """The runtime's ICONS map: every icons/*.svg by its name, one JS string each."""
+    names = sorted(path for path in files if path.startswith(f"{ICONS}/") and path.endswith(".svg"))
+    if not names:
+        raise SystemExit("design-set-sync: the set holds no icons/*.svg")
+    rows = [f"  {json.dumps(Path(path).stem)}: {json.dumps(icon(files[path]))}," for path in names]
+    return (f"/* design-set {ICONS} {commit} begin: the pinned set's icons/, built in by scripts/design-set-sync;"
+            " never edit by hand */\nconst ICONS = {\n" + "\n".join(rows) + "\n};\n" + markers(ICONS)[1])
+
+
+def held_icons(text: str, path: str) -> dict[str, str]:
+    """The icons/*.svg a copy's icons region holds, as the sync built them."""
+    start, end, _ = region(text, path, ICONS)
+    block = text[start:end]
+    body = block[block.index("const ICONS = ") + len("const ICONS = "):block.rindex(";\n/*")]
+    return {f"{ICONS}/{name}.svg": svg for name, svg in json.loads(re.sub(r",\n}$", "\n}", body)).items()}
+
+
+# Each copy and its regions, by name, with the builder that writes each from the set's files.
 COPIES = {
-    "skill/review-spec/assets/viz/runtime.js": runtime_block,
-    "skill/shape-spec/assets/style/spec.css": document_block,
+    "skill/review-spec/assets/viz/runtime.js": (("", runtime_block), (ICONS, icons_block)),
+    "skill/shape-spec/assets/style/spec.css": (("", document_block),),
 }
 
 
-def rebuild(path: str, commit: str, css: str) -> str:
-    """A copy's text with its design-set region built from tokens.css at the commit."""
+def rebuild(path: str, commit: str, files: dict[str, str]) -> str:
+    """A copy's text with each of its design-set regions built from the set's files at the commit."""
     text = (ROOT / path).read_text()
-    start, end, _ = region(text, path)
-    return text[:start] + COPIES[path](commit, css) + text[end:]
+    for name, builder in COPIES[path]:
+        start, end, _ = region(text, path, name)
+        text = text[:start] + builder(commit, files) + text[end:]
+    return text
+
+
+def set_files(clone: Path, commit: str) -> dict[str, str]:
+    """tokens.css and every icons/*.svg at the commit in ``clone``."""
+    icons = [path for path in git(clone, "ls-tree", "--name-only", commit, f"{ICONS}/").split("\n")
+             if path.endswith(".svg")]
+    return {path: git(clone, "show", f"{commit}:{path}") for path in ["tokens.css", *icons]}
 
 
 def build(clone: Path) -> dict[str, str]:
@@ -142,8 +188,8 @@ def build(clone: Path) -> dict[str, str]:
                            capture_output=True, text=True).stdout.strip()
     if found != commit:
         raise SystemExit(f"design-set-sync: {clone} holds no commit {commit}, the pin")
-    css = read(clone, commit, "tokens.css")
-    return {path: rebuild(path, commit, css) for path in COPIES}
+    files = set_files(clone, commit)
+    return {path: rebuild(path, commit, files) for path in COPIES}
 
 
 def main(argv: list[str]) -> int:
