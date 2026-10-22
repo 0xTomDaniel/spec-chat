@@ -24,7 +24,7 @@ DESIGN.md            consensus design document
 ```sh
 export SPEC_CHAT_TEST_TMP="$(cd "$(mktemp -d /tmp/spec-chat-tests.XXXXXX)" && pwd -P)"
 export TMPDIR="$SPEC_CHAT_TEST_TMP"
-trap 'sh tests/leftover-processes; rm -rf "$SPEC_CHAT_TEST_TMP"' EXIT
+trap 'sh tests/leftover-processes; rm -rf -- "${SPEC_CHAT_TEST_TMP:?}"' EXIT
 trap 'exit 130' INT TERM
 fail=0
 for f in tests/*.py tests/*.sh tests/*.mjs; do
