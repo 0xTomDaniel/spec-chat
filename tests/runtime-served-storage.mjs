@@ -1,6 +1,7 @@
 // review-service #served-storage, comment-layer #ui-frame: a page with no origin keeps its fruit name and outbox in its
 // frame's name. The name is read at each use; a name the host gives its frame, before the page loads or after, stays the
-// host's; and each review service's items stay apart, so a frame moved to another service never sends it the first's.
+// host's, and the changes the page queued before then still send; and each review service's items stay apart, so a frame
+// moved to another service never sends it the first's.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -44,9 +45,10 @@ frame = { name: '' };
 page = load(frame, SPEC);
 page.setItem(OUTBOX, '[1]');
 frame.name = 'host-target';
-assert.equal(page.getItem(OUTBOX), null, 'once the host names its frame, the page reads nothing from it');
+assert.equal(page.getItem(OUTBOX), '[1]', 'once the host names its frame, the page serves what it kept there from memory');
 assert.throws(() => page.setItem(OUTBOX, '[2]'), 'a write after the host named its frame is refused');
 assert.equal(frame.name, 'host-target', 'the name the host set after boot stays');
+assert.equal(load(frame, SPEC).getItem(OUTBOX), null, 'a reload in that frame finds nothing of the page');
 
 // Under the prefix, anything but a plain object reads as no items: no throw, and no key written after it is lost.
 for (const kept of ['[]', 'null', '"text"', '7', 'true', '{broken', '']) {
@@ -76,5 +78,51 @@ frame = { name: '' };
 load(frame, 'https://bb.example/pane', 'https://specs.example/').setItem(REVIEWER, 'papaya');
 assert.equal(load(frame, 'https://wb.example/pane', 'https://specs.example/').getItem(REVIEWER), 'papaya', 'another host page of the same service');
 assert.equal(load(frame, 'https://bb.example/pane', 'https://other.example/').getItem(REVIEWER), null, 'the same host page with another service');
+
+// Outbox level: a page with no origin and its outbox, saving through the runtime's own save and drain. Its review
+// service stores each event it is sent while online, and refuses the connection while offline.
+const outboxFrom = runtime.indexOf('const OUTBOX_KEY'), outboxTo = runtime.indexOf('\n// The service refused the event outright', outboxFrom);
+assert.ok(outboxFrom >= 0 && outboxTo > outboxFrom, 'runtime exposes the outbox');
+const noOrigin = name => ({ name, get localStorage() { throw new Error('no origin, no browser storage'); } });
+function loadOutbox(frame, address, service) {
+  const state = { reviewer: { browser: 'b1', author: 'mango' }, version: null, lastStamp: 0, outboxBlocked: false,
+    transport: { postEvent: async entry => { if (!service.online) throw new Error('offline'); service.stored.push(entry.body.text); return 'stored'; } } };
+  const none = () => {};
+  return Function('window', 'OWN_ADDRESS', 'LAYER_SERVICE', 'REVIEW_DIR', 'state', 'nextStamp', 'eventName', 'layerRoute', 'ingest', 'forgetEvent', 'renderOffline',
+    runtime.slice(outboxFrom, outboxTo) + '; return { save, flushOutbox, outboxEntries };')(
+    frame, new URL(address), null, 'lane/docs/specs/report.spec.html.review', state, last => last + 1, (event, stamp) => 'n' + stamp, none, none, none, none);
+}
+const waiting = page => page.outboxEntries().map(entry => entry.body.text);
+
+// Changes queued in the frame name before the host names its frame still send, with every change saved after; the
+// name stays the host's.
+let service = { online: false, stored: [] };
+frame = noOrigin('');
+let outbox = loadOutbox(frame, SPEC, service);
+outbox.save({ text: 'e1' }); await outbox.flushOutbox();
+outbox.save({ text: 'e2' }); await outbox.flushOutbox();
+assert.deepEqual(waiting(outbox), ['e1', 'e2'], 'offline, both changes wait');
+assert.ok(frame.name.startsWith('spec-chat:'), 'in the frame name');
+frame.name = 'host-target';
+outbox.save({ text: 'e3' }); await outbox.flushOutbox();
+assert.deepEqual(waiting(outbox), ['e1', 'e2', 'e3'], 'the next save keeps the changes queued before the host named its frame');
+service.online = true;
+await outbox.flushOutbox();
+assert.deepEqual(service.stored, ['e1', 'e2', 'e3'], 'all three send, in order');
+assert.deepEqual(waiting(outbox), [], 'and the outbox drains');
+assert.equal(frame.name, 'host-target', 'the name stays the host\'s');
+
+// Also with no save after the host names its frame: the queued changes send once the service is back.
+service = { online: false, stored: [] };
+frame = noOrigin('');
+outbox = loadOutbox(frame, SPEC, service);
+outbox.save({ text: 'e1' }); await outbox.flushOutbox();
+outbox.save({ text: 'e2' }); await outbox.flushOutbox();
+frame.name = 'host-target';
+service.online = true;
+await outbox.flushOutbox();
+assert.deepEqual(service.stored, ['e1', 'e2'], 'both send');
+assert.deepEqual(waiting(outbox), [], 'and the outbox drains');
+assert.equal(frame.name, 'host-target', 'the name stays the host\'s');
 
 console.log('runtime served storage tests passed');

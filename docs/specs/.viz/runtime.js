@@ -3400,9 +3400,11 @@ function reviewStorage() {
 // its frame's name, which lasts as long as the host's frame: across reloads and moves to the service's other pages in it.
 // The name holds each review service's items apart (the layer's service, or the page's at its own address), so a frame
 // moved to another service never sends it the first one's outbox. It is read at each use: a name the host gives its
-// frame, at any time, stays the host's (its links and forms may target it), so then the page keeps nothing there.
+// frame, at any time, stays the host's (its links and forms may target it), so then the page keeps nothing there: it
+// serves what it last read or wrote there from its own memory, so its unsent changes still send until it reloads.
 const FRAME_NAME = 'spec-chat:';
 const FRAME_SERVICE = (LAYER_SERVICE || OWN_ADDRESS).origin;
+let frameKept = {};
 const plainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 // Every service's items in the frame name, or null when the name is the host's.
 function frameServices() {
@@ -3417,8 +3419,9 @@ const serviceItems = services => (services && Object.hasOwn(services, FRAME_SERV
 function frameStorage() {
   return {
     getItem: key => {
-      const items = serviceItems(frameServices());
-      return Object.hasOwn(items, key) && typeof items[key] === 'string' ? items[key] : null;
+      const services = frameServices();
+      if (services) frameKept = serviceItems(services);
+      return Object.hasOwn(frameKept, key) && typeof frameKept[key] === 'string' ? frameKept[key] : null;
     },
     setItem: (key, value) => {
       const services = frameServices();
@@ -3427,6 +3430,7 @@ function frameStorage() {
       items[key] = String(value);
       services[FRAME_SERVICE] = items;
       window.name = FRAME_NAME + JSON.stringify(services);
+      frameKept = items;
     },
   };
 }
