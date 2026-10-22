@@ -201,6 +201,10 @@ path = "{review}/name-reply/docs/specs/report.spec.html"
 # (spools.py every_status); open the review panel from the dock's icon.
 [nav.acceptance-icons]
 path = "{review}/qa-1/docs/specs/report.spec.html"
+# spec-page-design #acceptance-focus-set: qa-4's Report filters holds one thread, resolved, and no open TBD (spools.py
+# all_resolved), so the panel's hand-off reads Accept spec; press Tab until Accept spec has focus.
+[nav.acceptance-focus-set]
+path = "{review}/qa-4/docs/specs/later-only.spec.html"
 
 # Review index (lane-hosting #index-threads, #index-gates, #index-design, #index-marks), at the server root. The
 # review service ({review}) has no evidence provider; review-plugged ({review-plugged}) has one, answering from the
@@ -243,7 +247,7 @@ path = "{review}/qa-1/docs/specs/report.spec.html"
 #   row has no gate or status; the word Stale is its only word (lane-hosting #index-entry-status).
 # - index-threads-refresh: QA-2's Weekly report has one open thread, replied by the agent.
 #   Steps: click that row's "Weekly report" title in the QA-2 lane; open the thread with its
-#   "Open thread 1" button; click its "✓ Resolve" button; click "Review index" (the
+#   "Open thread 1" button; click its "Resolve" button; click "Review index" (the
 #   reload); read the QA-2 Weekly report row.
 # - index-stale: read the QA-2 lane. Its four specs are title links; docs/specs/archive.spec.html
 #   shows as plain text with the word Stale on the right and no link.
@@ -643,7 +647,9 @@ cannot_host = "story-review-index captures at desktop viewport and qa.toml crite
 [entry.criteria.acceptance-index-dark]
 cannot_host = "capture cannot set the system appearance to dark; the QA-1 lane has threads in every status; proven by tests/runtime-review-index.mjs"
 [entry.criteria.acceptance-presentation-theme-dark]
-cannot_host = "capture cannot set the system appearance to dark; the shared stylesheet pins color-scheme light, so dark shows the light palette; proven by tests/spec-style-contract.py test_dark_appearance_renders_the_light_palette"
+cannot_host = "capture cannot set the system appearance to dark; the shared stylesheet follows it (color-scheme light dark) and gives a diagram the set's dark values; proven by tests/spec-style-contract.py test_dark_appearance_renders_a_dark_page_with_light_text"
+[entry.criteria.acceptance-dark-document]
+cannot_host = "capture cannot set the system appearance to dark; proven by tests/spec-style-contract.py test_dark_appearance_renders_a_dark_page_with_light_text and test_normal_and_muted_text_clear_the_body_contrast_floor_in_both_modes (the document, its tables and figures on the set's dark values) and tests/runtime-chrome-tokens.mjs (the chrome on the set's dark values)"
 # Capture runs story-consistent-chrome at desktop viewport; criteria cannot set a viewport.
 [entry.criteria.acceptance-button-system-phone]
 cannot_host = "story-consistent-chrome captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone screen cannot be reached; proven by tests/runtime-chrome-tokens.mjs"

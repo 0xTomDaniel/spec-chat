@@ -85,10 +85,10 @@ class MultiReviewServeTest(unittest.TestCase):
         server.terminate()
         server.communicate(timeout=3)
 
-    def start(self, resources):
+    def start(self, resources, server=SERVER):
         self.write_registry(resources)
         self.server = subprocess.Popen(
-            (sys.executable, str(SERVER), "--registry", str(self.registry), "--bind", "127.0.0.1", "--port", "0"),
+            (sys.executable, str(server), "--registry", str(self.registry), "--bind", "127.0.0.1", "--port", "0"),
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
         self.addCleanup(self.stop, self.server)
@@ -596,13 +596,9 @@ class MultiReviewServeTest(unittest.TestCase):
     def test_index_css_is_the_pinned_design_set_and_rules_use_only_its_variables(self):
         """lane-hosting #acceptance-index-tokens, #acceptance-index-dark, #acceptance-index-focus, #index-design,
         #index-tokens: the index opens with the runtime's design set block, verbatim, and holds no value of its own."""
-        import importlib.machinery
-        import importlib.util
         import re
 
-        loader = importlib.machinery.SourceFileLoader("design_set_sync", str(ROOT / "scripts/design-set-sync"))
-        sync = importlib.util.module_from_spec(importlib.util.spec_from_loader("design_set_sync", loader))
-        loader.exec_module(sync)
+        sync = self._sync()
         runtime = (VIZ / "runtime.js").read_text()
         start, end, commit = sync.region(runtime, "runtime.js")
         self.assertEqual(commit, sync.pin()["commit"])
@@ -682,15 +678,47 @@ class MultiReviewServeTest(unittest.TestCase):
         self.assertIn('grid-template-areas: "mark title" ". gate" ". meta";', phone)
         self.assertIn("min-height: calc(var(--ui-space-6) + var(--ui-space-3));", phone)  # 44px
 
+    def test_index_lists_every_spec_when_a_design_set_region_of_the_runtime_is_malformed(self):
+        """lane-hosting #index-marks, #index-tokens: the index reads the runtime's design-set regions the one way the
+        sync does (scripts/design-set-sync region(), held()); a malformed region leaves its part out, never an error."""
+        import shutil
+
+        install = self.work / "install"
+        shutil.copytree(SERVER.parent, install / "skill/review-spec/assets")
+        (install / "scripts").mkdir()
+        shutil.copy(ROOT / "scripts/design-set-sync", install / "scripts")
+        runtime = install / "skill/review-spec/assets/viz/runtime.js"
+        text = runtime.read_text()
+        self.assertEqual(text.count("/* design-set marks end */\n"), 1)
+        runtime.write_text(text.replace("/* design-set marks end */\n", ""))
+        board = self.make_resource("ann134")
+        Path(board["root"], board["spec"]).write_text("<title>Board</title>changed\n")
+        self.start([board], server=install / "skill/review-spec/assets/review-serve.py")
+        status, body = self.request("/")
+        self.assertEqual(status, 200)
+        body = body.decode()
+        self.assertIn('href="/ann134/docs/specs/domains/x.spec.html">Board</a>', body, "the spec is listed")
+        self.assertIn('<span class="mark"></span>', body, "without its mark")
+        for svg in self.marks().values():
+            self.assertNotIn(svg, body)
+        start, end, _ = self._sync().region(text, "runtime.js")
+        self.assertIn(text[start:end], body, "the tokens region still reads")
+
     @staticmethod
-    def marks():
-        """The set's status marks as the runtime holds them (scripts/design-set-sync), {name: svg}."""
+    def _sync():
+        """scripts/design-set-sync, the one reader of the runtime's design-set regions."""
         import importlib.machinery
         import importlib.util
 
         loader = importlib.machinery.SourceFileLoader("design_set_sync", str(ROOT / "scripts/design-set-sync"))
         sync = importlib.util.module_from_spec(importlib.util.spec_from_loader("design_set_sync", loader))
         loader.exec_module(sync)
+        return sync
+
+    @staticmethod
+    def marks():
+        """The set's status marks as the runtime holds them (scripts/design-set-sync), {name: svg}."""
+        sync = MultiReviewServeTest._sync()
         held = sync.held((VIZ / "runtime.js").read_text(), "runtime.js", sync.MARKS)
         return {path[len("marks/"):-len(".svg")]: svg for path, svg in held.items()}
 

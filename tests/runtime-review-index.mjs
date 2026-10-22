@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -14,11 +14,17 @@ import { dirname, join, resolve } from 'node:path';
 // fixture's evidence service answers, as qa.toml declares them, in headless Chromium.
 // Needs PLAYWRIGHT_CORE=<path to playwright-core>.
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime.js'), 'utf8');
 const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_CORE || 'playwright-core');
 
-// The set's status marks as the runtime holds them (scripts/design-set-sync): each mark's shape, its colors aside.
-const MARKS = JSON.parse(runtime.match(/\nconst MARKS = (\{[\s\S]*?\n\});\n/)[1].replace(/,\n}$/, '\n}'));
+// The set's status marks as the runtime holds them, read the one way scripts/design-set-sync and the review index read
+// its regions (held()): each mark's shape, its colors aside.
+const MARKS = JSON.parse(execFileSync('python3', ['-c', `import importlib.machinery, importlib.util, json, sys
+from pathlib import Path
+loader = importlib.machinery.SourceFileLoader("design_set_sync", sys.argv[1] + "/scripts/design-set-sync")
+sync = importlib.util.module_from_spec(importlib.util.spec_from_loader("design_set_sync", loader))
+loader.exec_module(sync)
+path = "skill/review-spec/assets/viz/runtime.js"
+print(json.dumps({Path(k).stem: v for k, v in sync.held(Path(sys.argv[1], path).read_text(), path, "marks").items()}))`, root], { encoding: 'utf8' }));
 const shape = svg => [...svg.matchAll(/<(circle|path)\b([^>]*?)\/?>/g)]
   .map(([, tag, attrs]) => tag + ['cx', 'cy', 'r', 'd'].map(name => (attrs.match(new RegExp(` ${name}="([^"]*)"`)) || [])[1] || '').join(' '))
   .join('|');

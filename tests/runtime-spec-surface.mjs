@@ -40,13 +40,17 @@ const DESKTOP = { width: 1280, height: 800 };
 const PHONE = { width: 390, height: 844 };
 const browser = await chromium.launch();
 const errors = [];
-const open = async (collection, viewport, options = {}) => {
+// Connected, its compared range shown: the page has rendered and any place it keeps is restored.
+const ready = async page => {
+  await page.waitForFunction(() => /connected/.test(document.getElementById('hx-status')?.textContent || ''));
+  await page.waitForFunction(() => /^Changes from /.test(document.getElementById('hx-range-copy')?.textContent || ''));
+};
+const open = async (collection, viewport, options = {}, address = '') => {
   const context = await browser.newContext({ viewport, ...options });
   const page = await context.newPage();
   page.on('pageerror', e => errors.push(String(e)));
-  await page.goto(`${service}/${collection}/${REPORT}`);
-  await page.waitForFunction(() => /connected/.test(document.getElementById('hx-status')?.textContent || ''));
-  await page.waitForFunction(() => /^Changes from /.test(document.getElementById('hx-range-copy')?.textContent || ''));
+  await page.goto(`${service}/${collection}/${REPORT}${address}`);
+  await ready(page);
   return { page, close: () => context.close() };
 };
 // What the top of the page shows: the top line's parts, the document header, and the backgrounds they sit on.
@@ -77,6 +81,14 @@ const surface = page => page.evaluate(() => {
     view: { width: innerWidth, height: innerHeight },
   };
 });
+// The set's line icons as the runtime holds them, read the one way scripts/design-set-sync reads its regions (held()).
+const ICONS = JSON.parse(execFileSync('python3', ['-c', `import importlib.machinery, importlib.util, json, sys
+from pathlib import Path
+loader = importlib.machinery.SourceFileLoader("design_set_sync", sys.argv[1] + "/scripts/design-set-sync")
+sync = importlib.util.module_from_spec(importlib.util.spec_from_loader("design_set_sync", loader))
+loader.exec_module(sync)
+path = "skill/review-spec/assets/viz/runtime.js"
+print(json.dumps({Path(k).stem: v for k, v in sync.held(Path(sys.argv[1], path).read_text(), path, "icons").items()}))`, root], { encoding: 'utf8' }));
 const rgb = hex => 'rgb(' + hex.match(/[0-9a-f]{2}/gi).map(h => parseInt(h, 16)).join(', ') + ')';
 
 try {
@@ -148,6 +160,15 @@ try {
       .map(pill => ({ shown: pill.innerText, transform: getComputedStyle(pill).textTransform })));
     assert.deepEqual(pills.map(p => p.shown).sort(), ['Acknowledged', 'Draft', 'Pending', 'Resolved'], 'every status pill reads in sentence case');
     for (const pill of pills) assert.equal(pill.transform, 'none', 'never capitals');
+    // #icons-rule: every chrome icon is the set's line icon, never a glyph. The replied thread's Reply holds the set's
+    // comment icon; Resolve reads its name alone, the set holding no check icon.
+    const replies = await iconOf('[data-act=reply]');
+    assert.ok(replies.length >= 1, 'the replied thread offers Reply');
+    for (const reply of replies) assert.deepEqual(reply, { ...LINE, text: 'Reply' }, 'Reply holds the set line icon');
+    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('[data-act=reply] svg path')].map(path => path.getAttribute('d'))),
+      replies.map(() => ICONS.comment.match(/ d="([^"]*)"/)[1]), "it is the set's comment icon");
+    assert.deepEqual(await iconOf('[data-act=resolve]'), [{ svgs: 0, text: 'Resolve', size: undefined, stroke: undefined, color: undefined }],
+      'Resolve reads its name alone');
     // the toggle keeps one icon open or closed; its name says what it does
     await page.click('#hx-panel-toggle');
     assert.deepEqual(await iconOf('#hx-panel-toggle'), [LINE], 'the closed toggle keeps the icon');
@@ -197,6 +218,75 @@ try {
     await page.click('#hx-panel-toggle');
     assert.equal(await linkShown(), true, 'closing the panel shows it again');
     await close();
+  }
+
+  // criterion-evidence #acceptance-place-restore: scrolled to a later section, a reader returns there at the same offset
+  // reload after reload, under the fixed top line (spec-page-design #top-line); #place-restore: an anchor in the address
+  // lands right under the top line. On a desktop and a phone screen short enough that the place is 200px down.
+  for (const [viewport, options] of [[{ width: 1280, height: 300 }, {}], [{ width: 390, height: 500 }, { isMobile: true, hasTouch: true }]]) {
+    const where = page => page.evaluate(() => ({ y: Math.round(scrollY),
+      line: document.querySelector('.hx-top-line').getBoundingClientRect().bottom,
+      body: parseFloat(getComputedStyle(document.body).paddingTop) }));
+    const { page, close } = await open('qa-fixture', viewport, options);
+    await page.evaluate(() => scrollTo(0, 200));
+    assert.equal((await where(page)).y, 200, 'scrolled to a later section');
+    for (const reload of [1, 2, 3]) {
+      await page.reload();
+      await ready(page);
+      await page.waitForTimeout(300); // nothing moves the page once it is shown
+      const now = await where(page);
+      assert.equal(now.y, 200, `reload ${reload} at ${viewport.width}px returns to the same place`);
+      assert.equal(Math.round(now.body), Math.round(now.line), 'the page starts right under the top line');
+    }
+    await close();
+    const addressed = await open('qa-fixture', viewport, options, '#story-export');
+    await addressed.page.waitForTimeout(300);
+    const landed = await addressed.page.evaluate(() => ({
+      anchor: document.querySelector('[data-anchor="story-export"]').getBoundingClientRect().top,
+      line: document.querySelector('.hx-top-line').getBoundingClientRect().bottom }));
+    assert.equal(Math.round(landed.anchor), Math.round(landed.line), `the address anchor lands right under the top line at ${viewport.width}px`);
+    await addressed.close();
+  }
+
+  // An embed host keeps its own look (the runtime loaded with data-review-dir): no top line, and the page does not move.
+  {
+    const context = await browser.newContext({ viewport: DESKTOP });
+    const page = await context.newPage();
+    await page.route(`${service}/qa-fixture/embed-host.html`, route => route.fulfill({ contentType: 'text/html', body:
+      '<!doctype html><html><body><main>Host app</main><script defer src="/qa-fixture/docs/specs/.viz/runtime.js" data-review-dir="docs/specs/report.spec.html.review"></script></body></html>' }));
+    await page.goto(`${service}/qa-fixture/embed-host.html`);
+    await page.waitForSelector('.hx-toolbar');
+    const host = await page.evaluate(() => ({ line: document.querySelectorAll('.hx-top-line').length, padding: getComputedStyle(document.body).paddingTop,
+      space: document.documentElement.style.getPropertyValue('--hx-top-space') }));
+    assert.deepEqual(host, { line: 0, padding: '0px', space: '' }, 'an embed host gets no top line');
+    await context.close();
+  }
+
+  // The error overlay reads in the set's error colors from the first moment the runtime runs, also when the page fails
+  // before its chrome mounts: here keepPlace throws as it arms its listeners.
+  {
+    const context = await browser.newContext({ viewport: DESKTOP });
+    await context.addInitScript(() => {
+      const add = EventTarget.prototype.addEventListener;
+      EventTarget.prototype.addEventListener = function (type, ...rest) {
+        if (this === window && type === 'wheel') { EventTarget.prototype.addEventListener = add; throw new Error('induced failure'); }
+        return add.call(this, type, ...rest);
+      };
+    });
+    const page = await context.newPage();
+    await page.goto(`${service}/qa-fixture/${REPORT}`);
+    await page.waitForSelector('#hx-errors');
+    const shown = await page.evaluate(() => {
+      const el = document.getElementById('hx-errors');
+      return { text: el.textContent, chrome: !!document.querySelector('.hx-toolbar'), background: getComputedStyle(el).backgroundColor,
+        color: getComputedStyle(el).color, error: getComputedStyle(document.documentElement).getPropertyValue('--ui-error').trim() };
+    });
+    assert.match(shown.text, /induced failure/, 'the failure shows');
+    assert.equal(shown.chrome, false, 'before the chrome mounts');
+    assert.match(shown.error, /^#[0-9a-f]{6}$/i, "the set's colors are on the page");
+    assert.equal(shown.background, rgb(shown.error), "on the set's error color, never transparent");
+    assert.notEqual(shown.color, shown.background, 'in a text color of its own');
+    await context.close();
   }
 
   assert.deepEqual(errors, [], 'no page errors');

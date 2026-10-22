@@ -30,7 +30,7 @@ assert.match(runtime, /e\.message === 'Script error\.' && !e\.filename && !e\.li
 assert.match(runtime, /overlay\('error', e\.message/, 'attributable script errors remain visible');
 assert.match(runtime, /if \(state\.handoffPosting \|\| !action\.enabled\) return/, 'handoff and Accept spec latch against duplicate submission');
 // lane-hosting #index-link: the back link opens the fixed top line (spec-page-design #top-line); the open phone panel
-// fills the screen and hides it, the desktop panel sits beside it (runtime-top-line.mjs proves both in a browser).
+// fills the screen and hides it, the desktop panel sits beside it (runtime-spec-surface.mjs proves both in a browser).
 assert.match(runtime, /hx-service-index-link/, 'HTTP detail pages expose a visible service index link');
 assert.ok(runtime.includes("new URL('/', OWN_ADDRESS).href"), 'service index link resolves to the configured service root');
 assert.match(runtime, /@media\(max-width:640px\)\{[^}]*(?:\}[^}@]*)*body\.hx-panel-open \.hx-top-line\{display:none\}/, 'phone-width open panel hides the top line and its index link');
