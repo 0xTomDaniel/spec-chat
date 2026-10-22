@@ -181,7 +181,7 @@ try {
     // The hand-off button reads its own state (Hand off, Accept spec, or the open TBDs that come first).
     const labels = await page.evaluate(() => [...document.querySelectorAll('.hx-toolbar button')].filter(b => b.checkVisibility())
       .map(b => ({ id: b.id, text: b.textContent, title: b.getAttribute('title') })));
-    assert.deepEqual(labels.map(l => l.id), ['hx-mode', 'hx-mobile-handoff', 'hx-reading'], 'the toolbar holds Comment, the hand-off, and Reading view');
+    assert.deepEqual(labels.map(l => l.id), ['hx-mode', 'hx-handoff', 'hx-reading'], 'the toolbar holds Comment, the panel\'s one hand-off, and Reading view');
     assert.deepEqual([labels[0].text, labels[2].text], ['Comment', 'Reading view'], 'they read Comment and Reading view');
     for (const label of labels) {
       assert.doesNotMatch(label.text, /\([A-Z]\)|⌘|Ctrl|Shift/, 'no key in a label: ' + label.text);

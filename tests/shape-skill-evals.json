@@ -79,16 +79,16 @@
         "Classifies each candidate criterion as clear, gap, or not needed",
         "Backs retained clear criteria with identified spec rules and marks the gap data-spec-tbd",
         "Removes the unnecessary criterion",
-        "Names no seam, failing test, test level, waiver, or proof plan in the spec",
+        "Adds no seam, failing test, test level, waiver, or proof plan to the spec, since no target project rule calls for one",
         "Refuses spec acceptance while the gap or any applicable source misalignment remains"
       ]
     },
     {
       "id": 8,
       "eval_name": "no-test-workflow",
-      "prompt": "Shape a behavior change in a repo whose AGENTS.md asks for unit tests, with one outcome no screen shows and one state that needs an induced failure.",
+      "prompt": "Shape a behavior change in a repo whose AGENTS.md asks for unit tests and whose specs mark no project rule calling for a proof clause, with one outcome no screen shows and one state that needs an induced failure.",
       "expectations": [
-        "Every criterion states observable behavior only, with no test level, proof method, or proving test",
+        "Every criterion it adds states observable behavior only, with no test level, proof method, or proving test, since AGENTS.md is no project rule",
         "The induced-failure criterion keeps its needs an induced failure marker and says nothing about how the target induces it",
         "The spec records no seam, failing test, waiver, or proof plan"
       ]
@@ -159,7 +159,7 @@
     {
       "id": 14,
       "eval_name": "product-term-criteria",
-      "prompt": "Shape a feature used by an internal admin acting in a client account, whose qa.toml maps that role to a fixture user, with one outcome on the account's cost page and one analytics event no screen shows, whose QA needs a provider stub and a capture file.",
+      "prompt": "Shape a feature, in a target with no project rule calling for a proof clause, used by an internal admin acting in a client account, whose qa.toml maps that role to a fixture user, with one outcome on the account's cost page and one analytics event no screen shows, whose QA needs a provider stub and a capture file.",
       "expectations": [
         "Each Given names the role, never the fixture user",
         "The cost-page Then states the outcome in product terms and names no file, path, command, or test output",
@@ -170,7 +170,7 @@
     {
       "id": 15,
       "eval_name": "capturable-criterion-shape",
-      "prompt": "Shape a feature for a creator on a phone in dark appearance whose outcome shows while the sidebar is collapsed, where pressing Escape closes a menu and returns to the list, whose accept action updates both the inbox and the board, whose outcome shows on the card of the lane holding a QA bundle, and which plays a sound.",
+      "prompt": "Shape a feature, in a target with no project rule calling for a proof clause, for a creator on a phone in dark appearance whose outcome shows while the sidebar is collapsed, where pressing Escape closes a menu and returns to the list, whose accept action updates both the inbox and the board, whose outcome shows on the card of the lane holding a QA bundle, and which plays a sound.",
       "expectations": [
         "Each Given holds only who the user is, where, fixture data, and the phone and dark appearance; the When says the creator collapses the sidebar",
         "The Escape criterion's Then names what the list shows after Escape, not only that the menu closed",
@@ -178,6 +178,35 @@
         "The card is named as the lane with a QA bundle, never by screen position or order",
         "The sound Then states it in product terms and names no test level or proof clause",
         "Changes no validator to check these rules"
+      ]
+    },
+    {
+      "id": 16,
+      "eval_name": "untouched-criteria-kept",
+      "prompt": "Shape a change to one criterion of a spec whose other criteria read \"proven by a unit test: no screen shows it\" and one of which names a fixture user in its Given.",
+      "expectations": [
+        "Every criterion the change does not otherwise edit shows word for word as before, its proof clause and its fixture user included",
+        "Edits no criterion only to bring it to the criterion rules",
+        "The changed criterion meets every criterion rule"
+      ]
+    },
+    {
+      "id": 17,
+      "eval_name": "proof-clause-kept",
+      "prompt": "Shape a change to the outcome a criterion states, where that criterion reads \"proven by a unit test: no screen shows it\".",
+      "expectations": [
+        "The committed criterion states the new outcome",
+        "The committed criterion still reads \"proven by a unit test: no screen shows it\", word for word"
+      ]
+    },
+    {
+      "id": 18,
+      "eval_name": "proof-clause-project-rule",
+      "prompt": "Shape, with Jev on, a feature whose only outcome is an analytics event no screen shows, in a target that marks a project rule that every criterion no screen shows reads \"proven by a unit test: no screen shows it\".",
+      "expectations": [
+        "The committed analytics criterion reads \"proven by a unit test: no screen shows it\"",
+        "Its Then states in product terms that the event is recorded once",
+        "The spec names no capture file, readback command, or stub"
       ]
     }
   ]

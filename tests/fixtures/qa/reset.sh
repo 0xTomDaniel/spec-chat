@@ -48,13 +48,13 @@
 # its pages' items name.
 set -eu
 collections="qa-fixture rule-candidate tbd-later tbd-later-handoff tbd-open-highlight tbd-open-single
-  next-tbd next-tbd-step next-tbd-handoff tbd-open-jump tbd-open-wrap mobile-composer
+  next-tbd next-tbd-step next-tbd-handoff tbd-open-jump tbd-open-wrap mobile-composer mobile-handoff
   block-target-enter block-target-space block-target-off
   choice-press choice-phone choice-thread choice-again choice-change choice-reload
   choice-handoff choice-comment-mode
   anchor-moved anchor-changed anchor-gone stale-page agent-scan name-reply advice
   clear-thread qa-1 qa-2 qa-3 qa-4 qa-5 qa-6 qa-7 dismiss dismiss-reload not-a-rule
-  served-threads served-handoff served-index served-focus coverage-undeclared
+  served-threads served-handoff served-index served-focus served-reload-handoff served-reload-outbox coverage-undeclared
   host-draft host-starters host-handoff host-handoff-two host-reply host-live host-same-subject
   host-quote host-quote-gone host-only-comments host-phone host-frame one-thread-spec one-thread-host
   no-scope no-service layer-markup layer-stores layer-focus"

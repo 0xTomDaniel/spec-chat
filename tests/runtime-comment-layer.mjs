@@ -194,14 +194,21 @@ try {
   assert.equal(specSaved.filter(e => e.event === 'handoff').length + hostedSaved.filter(e => e.event === 'handoff').length, 2, 'one hand-off per store');
   await page.close();
 
-  // #acceptance-host-frame: in a frame with no origin, on a public service.
+  // #acceptance-host-frame: in a frame with no origin, on a public service. #ui-frame: the draft stays this reviewer's
+  // across a reload in the host's frame, so its Hand off still lists it.
   ({ page, frame } = await open(`${host}/host-frame/docs/pane.html`));
   assert.equal(await frame.evaluate(() => self.origin), 'null', 'a frame with no origin');
   await control(frame, TURN).waitFor();
   await comment(frame, TURN, 'Saved in a frame with no origin.');
+  await frame.evaluate(() => { window.reloaded = false; setTimeout(() => location.reload(), 0); });
+  await frame.waitForFunction(() => !('reloaded' in window) && document.querySelector('[data-spec-chat="comment-layer"]'));
+  await control(frame, TURN).waitFor();
+  await pinOf(frame, TURN).click();
+  await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].status === 'Draft'`));
   await box(frame).locator('#hx-handoff').click();
   await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].status === 'Pending'`));
-  assert.equal(hostedEvents('host-frame').filter(e => e.event === 'handoff').length, 1);
+  const framed = hostedEvents('host-frame');
+  assert.deepEqual(framed.filter(e => e.event === 'handoff').map(e => e.events), [[framed.find(e => e.event === 'comment').id]], 'one hand-off, listing the draft saved before the reload');
   await page.close();
 
   // #acceptance-host-reply: the owner's answer under the handed-off comment, with the comment's kind and from link.

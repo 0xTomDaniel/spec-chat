@@ -64,8 +64,8 @@ scenario states the starting situation (Given) and the action (When), and the
 observable states the visible result (Then). A criterion in this shape is
 clear to read and checkable: anyone can set up the Given, do the When, and see
 whether the Then holds. Use plain language; quote a UI name when it helps.
-Existing criteria convert when a change touches them.
-Write every clear criterion at user-story level, what a person does and sees and never a click script, so a QA capture program can drive it without guessing; these rules apply at shaping and at repair.
+Write every clear criterion at user-story level, what a person does and sees and never a click script, so a QA capture program can drive it without guessing; these rules apply at shaping to each criterion the change adds or edits, and at repair to every criterion.
+Shaping never edits a criterion only to bring it to these rules: a criterion the change does not otherwise edit keeps its text word for word, whatever rule it misses.
 One scenario per criterion: no Given or When joins alternatives with "or"; each alternative becomes its own criterion.
 Then names the observable outcome in product terms, what the user sees at the end, as in "the account's cost page shows the generation under user-driven cost"; it names no artifact path, capture file, command, or test output.
 A Then that states only an absence also names something visible that proves the end state was reached, and a Then never defers to other contracts, as in "remains governed by existing contracts".
@@ -79,8 +79,10 @@ A Then reads from one screen; an outcome that needs two screens splits into one 
 A criterion names each thing by what it is, as in "the lane with a QA bundle", never by screen position or order, as in "the first card".
 Shaping, review, and repair judge these criterion rules; the structural validator does not, because each is a judgment on meaning a markup check cannot make.
 When no screen shows the outcome, as for an analytics event or a stored record, or the outcome lies outside the page, as for a sound, the browser tab title or icon, an operating system dialog, or a live third-party page, the Then states the outcome in product terms, as in "Then the funnel step is recorded once".
-This is the whole recipe for such a criterion: shaping does not add a capture file, readback command, or stub to make it drivable, and the target, not the spec, names any artifact.
-A criterion names no test level, proof method, or proving test, as in "proven by a unit test"; how a criterion is tested belongs to the target repository, never to the spec. An existing criterion that carries such a clause loses it when a change next touches its spec; no spec is edited only to remove it.
+This is Spec Chat's whole recipe for such a criterion: shaping does not add a capture file, readback command, or stub to make it drivable, and the target, not the spec, names any artifact.
+How a criterion is tested belongs to the target repository, so Spec Chat's criterion rules neither add nor remove a test level, proof method, or proving test, as in "proven by a unit test: no screen shows it".
+Shaping writes such a clause where a target project rule, a criterion the target marks with `data-project-rule`, calls for one; a criterion shaping adds under no such rule names no test level or proof.
+Shaping and repair keep every such clause a criterion carries, word for word, also when they rewrite the rest of that criterion or split it into several.
 QA harness setup is not product behavior: stubs, capture files, readback tooling, and fixture extensions never appear in a product spec; they belong to the target's qa.toml or QA docs.
 No hidden steps: when reaching the Then needs something the user must do, such as finishing a re-run setup after a handle change, the When says so in user terms; no step the Then depends on is left implied.
 Concrete values, selectors, and paths stay out of the spec: the When says what the user types or picks in user terms, as in "types a folder name", and the target's qa.toml hint file carries the exact value.
