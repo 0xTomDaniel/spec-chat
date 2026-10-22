@@ -2222,7 +2222,6 @@ const CSS = `
 .hx-toolbar{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);display:flex;gap:var(--ui-space-1);align-items:center;background:var(--ui-surface);border:1px solid var(--ui-border);border-radius:var(--ui-radius);box-shadow:0 8px 28px var(--ui-shadow);padding:var(--ui-space-1);z-index:900;font:var(--ui-text-sm) var(--ui-font)}
 .hx-toolbar button{font:600 var(--ui-text-xs) var(--ui-font);border:none;background:transparent;border-radius:var(--ui-radius-sm);padding:var(--ui-space-2) var(--ui-space-3);min-height:var(--ui-space-6);cursor:pointer;color:var(--ui-ink)}
 .hx-toolbar button:disabled{cursor:default;opacity:.45}
-.hx-mobile-handoff,.hx-mobile-next-tbd{display:none}
 .hx-toolbar button[aria-pressed=true]{background:var(--ui-draft-soft);color:var(--ui-draft)}
 .hx-toolbar .hx-status{color:var(--ui-muted);font-size:var(--ui-text-xs);padding:0 var(--ui-space-2)}
 .hx-toolbar .hx-offline{font-size:var(--ui-text-xs);font-weight:600;padding:0 var(--ui-space-2)}
@@ -2421,7 +2420,7 @@ a.hx-jev-pop-text{text-decoration:underline;text-underline-offset:2px}
 @media(max-width:640px){
 .hx-toolbar{left:var(--ui-space-3);right:var(--ui-space-3);bottom:calc(10px + env(safe-area-inset-bottom));transform:none;max-width:none;display:flex;flex-wrap:wrap;justify-content:stretch;gap:var(--ui-space-1);padding:var(--ui-space-1)}
 .hx-toolbar button{min-height:44px;flex:1 1 auto;padding:var(--ui-space-2) var(--ui-space-3);touch-action:manipulation}
-.hx-mobile-handoff,.hx-mobile-next-tbd:not([hidden]){display:block}
+.hx-toolbar .hx-handoff{display:contents}
 .hx-toolbar .hx-status{flex:1 0 100%;min-width:0;padding:0 var(--ui-space-2) var(--ui-space-1);overflow:hidden;text-align:center;text-overflow:ellipsis;white-space:nowrap}
 .hx-panel{width:100vw;height:100dvh;max-height:100dvh;border-left:0;box-sizing:border-box;padding-bottom:calc(var(--hx-dock-space,0px) + var(--ui-space-3) + env(safe-area-inset-bottom))}
 body.hx-panel-open{padding-right:0;overflow:hidden}
@@ -2521,7 +2520,7 @@ function mountUI() {
 
   const bar = document.createElement('div');
   bar.className = 'hx-toolbar';
-  bar.innerHTML = '<button id="hx-mode" aria-pressed="false">✛ Comment (C)</button><button class="hx-mobile-next-tbd" id="hx-mobile-next-tbd" type="button" hidden>Next TBD</button><button class="hx-mobile-handoff" id="hx-mobile-handoff" type="button" disabled>Hand off</button><button id="hx-connect" hidden>Connect review folder</button><button id="hx-repick" hidden>Choose different folder</button><span class="hx-offline" id="hx-offline" role="status" hidden></span><span class="hx-status" id="hx-status">starting…</span>';
+  bar.innerHTML = '<button id="hx-mode" aria-pressed="false">✛ Comment (C)</button><button id="hx-connect" hidden>Connect review folder</button><button id="hx-repick" hidden>Choose different folder</button><span class="hx-offline" id="hx-offline" role="status" hidden></span><span class="hx-status" id="hx-status">starting…</span>';
   document.body.appendChild(bar);
   // The narrow sidebar ends above the fixed dock, so its last content stays reachable.
   new ResizeObserver(() => document.documentElement.style.setProperty('--hx-dock-space', bar.offsetHeight + 'px')).observe(bar);
@@ -2537,10 +2536,15 @@ function mountUI() {
   panel.setAttribute('aria-label', 'Review sidebar');
   panel.innerHTML = '<div class="hx-panel-head">Review <span class="hx-sub" id="hx-agent"></span><button class="hx-panel-toggle" id="hx-panel-toggle" type="button" aria-expanded="false" aria-label="Open review sidebar">‹</button><button class="hx-panel-gear" id="hx-panel-gear" type="button" aria-expanded="false" aria-controls="hx-settings" aria-label="Review display settings" title="Display settings">⚙</button></div><div class="hx-panel-content" id="hx-panel-content" aria-hidden="true" inert><div class="hx-settings" id="hx-settings" hidden><label class="hx-set-row" for="hx-veil">Diff visibility<span class="hx-set-val" id="hx-veil-val">100%</span><input type="range" id="hx-veil" min="0" max="100" step="5" value="100"></label><p class="hx-set-note">How strongly unchanged blocks are dimmed and blurred. At 0 the whole spec reads at normal clarity.</p></div><div class="hx-threads" id="hx-threads"></div><div class="hx-handoff"><span class="hx-note" id="hx-drafts">0 drafts</span><button class="hx-btn hx-next-tbd" id="hx-next-tbd" type="button" hidden>Next TBD</button><button class="hx-btn pri" id="hx-handoff">Hand off to agent →</button></div></div>';
   document.body.appendChild(panel);
+  // #mobile-handoff: on a narrow screen the panel's one hand-off bar sits in the bottom toolbar, panel open or closed,
+  // so it stays operable while the panel's content is inert; on a desktop it ends the panel's content.
+  const handoffBar = panel.querySelector('.hx-handoff');
+  const narrow = window.matchMedia('(max-width: 640px)');
+  const dockHandoff = () => narrow.matches ? bar.insertBefore(handoffBar, document.getElementById('hx-mode').nextSibling) : document.getElementById('hx-panel-content').appendChild(handoffBar);
+  dockHandoff();
+  narrow.addEventListener('change', dockHandoff);
 
   document.getElementById('hx-mode').addEventListener('click', () => setCommentMode(!state.commentMode));
-  document.getElementById('hx-mobile-handoff').addEventListener('click', handoff);
-  document.getElementById('hx-mobile-next-tbd').addEventListener('click', nextTbd);
   document.getElementById('hx-dock-open').addEventListener('click', () => openPanel(true));
   document.getElementById('hx-panel-toggle').addEventListener('click', () => openPanel(!state.panelOpen));
   document.getElementById('hx-handoff').addEventListener('click', handoff);
@@ -2817,16 +2821,12 @@ function renderPanel() {
   const handoffState = renderHighlight();
   const drafts = handoffState.drafts;
   document.getElementById('hx-drafts').textContent = handoffState.finish ? 'Ready to accept' : drafts + ' draft' + (drafts === 1 ? '' : 's');
-  const desktopHandoff = document.getElementById('hx-handoff');
-  desktopHandoff.disabled = !handoffState.enabled;
-  desktopHandoff.textContent = handoffState.finish ? 'Accept spec' : handoffState.tbd ? tbdCountLabel('TBD open', handoffState.openTbds) : 'Hand off to agent →';
-  const mobileHandoff = document.getElementById('hx-mobile-handoff');
-  mobileHandoff.disabled = !handoffState.enabled;
-  mobileHandoff.textContent = handoffState.finish ? 'Accept spec' : handoffState.tbd ? tbdCountLabel('TBD open', handoffState.openTbds) : drafts ? 'Hand off (' + drafts + ')' : 'Hand off';
-  for (const nextButton of [document.getElementById('hx-next-tbd'), document.getElementById('hx-mobile-next-tbd')]) {
-    nextButton.hidden = !handoffState.nextTbd;
-    nextButton.textContent = tbdCountLabel('Next TBD', handoffState.openTbds);
-  }
+  const handoffButton = document.getElementById('hx-handoff');
+  handoffButton.disabled = !handoffState.enabled;
+  handoffButton.textContent = handoffState.finish ? 'Accept spec' : handoffState.tbd ? tbdCountLabel('TBD open', handoffState.openTbds) : 'Hand off to agent →';
+  const nextButton = document.getElementById('hx-next-tbd');
+  nextButton.hidden = !handoffState.nextTbd;
+  nextButton.textContent = tbdCountLabel('Next TBD', handoffState.openTbds);
   renderThreadDock();
   renderThreadHighlight();
 }
@@ -3357,6 +3357,7 @@ function nextTbd() {
 }
 
 function jumpToTbd(el) {
+  if (window.matchMedia('(max-width: 640px)').matches) openPanel(false); // a narrow screen's open panel covers the spec
   if (!el.matches('a[href],button,input,select,textarea,[tabindex]')) el.setAttribute('tabindex', '-1');
   el.scrollIntoView({ block: 'center', behavior: 'smooth' });
   el.focus({ preventScroll: true });
@@ -3388,11 +3389,50 @@ function toast(msg) {
  */
 const OUTBOX_KEY = 'spec-chat:outbox:' + REVIEW_DIR;
 const LOADED_KEY = 'spec-chat:events:' + REVIEW_DIR;
-let pageOutbox = null; // this page's own outbox when browser storage cannot keep it
+let pageOutbox = null; // this page's own outbox when neither browser storage nor its frame can keep it
 let flushing = null;
 
 function reviewStorage() {
-  try { return window.localStorage; } catch (_) { return null; }
+  try { return window.localStorage; } catch (_) { return frameStorage(); }
+}
+
+// review-service #served-storage: a page with no origin has no browser storage, so it keeps its fruit name and outbox in
+// its frame's name, which lasts as long as the host's frame: across reloads and moves to the service's other pages in it.
+// The name holds each review service's items apart (the layer's service, or the page's at its own address), so a frame
+// moved to another service never sends it the first one's outbox. It is read at each use: a name the host gives its
+// frame, at any time, stays the host's (its links and forms may target it), so then the page keeps nothing there: it
+// serves what it last read or wrote there from its own memory, so its unsent changes still send until it reloads.
+const FRAME_NAME = 'spec-chat:';
+const FRAME_SERVICE = (LAYER_SERVICE || OWN_ADDRESS).origin;
+let frameKept = {};
+const plainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+// Every service's items in the frame name, or null when the name is the host's.
+function frameServices() {
+  if (!window.name) return {};
+  if (!window.name.startsWith(FRAME_NAME)) return null;
+  try {
+    const services = JSON.parse(window.name.slice(FRAME_NAME.length));
+    return plainObject(services) ? services : {};
+  } catch (_) { return {}; }
+}
+const serviceItems = services => (services && Object.hasOwn(services, FRAME_SERVICE) && plainObject(services[FRAME_SERVICE]) ? services[FRAME_SERVICE] : {});
+function frameStorage() {
+  return {
+    getItem: key => {
+      const services = frameServices();
+      if (services) frameKept = serviceItems(services);
+      return Object.hasOwn(frameKept, key) && typeof frameKept[key] === 'string' ? frameKept[key] : null;
+    },
+    setItem: (key, value) => {
+      const services = frameServices();
+      if (!services) throw new Error('the frame name is the host\'s');
+      const items = serviceItems(services);
+      items[key] = String(value);
+      services[FRAME_SERVICE] = items;
+      window.name = FRAME_NAME + JSON.stringify(services);
+      frameKept = items;
+    },
+  };
 }
 
 function outboxEntries() {
@@ -3444,14 +3484,15 @@ function forgetEvent(name) {
   toast('The review service refused a change; it was not saved');
 }
 
+// The service's copy of the review, kept only in browser storage: a frame's name holds just this reviewer's own work.
 function keepLoaded(events) {
   if (events.length === state.storedCount) return;
   state.storedCount = events.length;
-  try { reviewStorage().setItem(LOADED_KEY, JSON.stringify(events)); } catch (_) { /* the page still shows them */ }
+  try { window.localStorage.setItem(LOADED_KEY, JSON.stringify(events)); } catch (_) { /* the page still shows them */ }
 }
 
 function loadedEvents() {
-  try { return JSON.parse(reviewStorage().getItem(LOADED_KEY) || '[]'); } catch (_) { return []; }
+  try { return JSON.parse(window.localStorage.getItem(LOADED_KEY) || '[]'); } catch (_) { return []; }
 }
 
 function renderOffline() {

@@ -24,7 +24,7 @@ DESIGN.md            consensus design document
 ```sh
 export SPEC_CHAT_TEST_TMP="$(cd "$(mktemp -d /tmp/spec-chat-tests.XXXXXX)" && pwd -P)"
 export TMPDIR="$SPEC_CHAT_TEST_TMP"
-trap 'sh tests/leftover-processes; rm -rf "$SPEC_CHAT_TEST_TMP"' EXIT
+trap 'sh tests/leftover-processes; rm -rf -- "${SPEC_CHAT_TEST_TMP:?}"' EXIT
 trap 'exit 130' INT TERM
 fail=0
 for f in tests/*.py tests/*.sh tests/*.mjs; do
@@ -84,7 +84,7 @@ Eight tests need headless Chromium via `playwright-core`:
 - `tests/runtime-review-live.mjs` (shared review state between reviewers' pages)
 - `tests/runtime-review-place.mjs` (marks through agent edits on the QA fixture collections)
 - `tests/runtime-answer-buttons.mjs` (answer buttons save a draft comment and show the chosen mark)
-- `tests/runtime-served-host.mjs` (a page served at another address, in a frame with no origin, through the QA fixture's test host)
+- `tests/runtime-served-host.mjs` (a page served at another address, in a frame with no origin, through the QA fixture's test host; at phone width, the review panel's one hand-off bar in the bottom toolbar, served directly and in that frame across a reload)
 - `tests/runtime-comment-layer.mjs` (the comment layer on the QA fixture's host pages: served directly, at another origin, and in a frame with no origin)
 
 They read `PLAYWRIGHT_CORE` to locate the package:
