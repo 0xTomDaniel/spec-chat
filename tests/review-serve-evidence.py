@@ -426,21 +426,22 @@ class IndexGatesTest(ProviderHarness):
                            status="resolved")
 
     def index(self, url):
-        """{lane key: (part, count, proof link or None, {title: pills})} and the raw body."""
+        """{lane key: (part, count, proof link or None, {title: [gate word, meta words...]})} and the raw body."""
         import html as html_lib
         import re
 
         with urllib.request.urlopen(url + "/", timeout=10) as response:
             body = response.read().decode()
         result = {}
-        for part, cards in re.findall(r'<p class="label">([^<]*)</p><nav class="lanes"[^>]*>(.*?)</nav>', body, re.S):
-            for key, card in re.findall(r'<section class="lane[^"]*" aria-label="([^"]+)">(.*?)</section>', cards, re.S):
-                count = re.search(r'<span class="count">([^<]*)</span>', card).group(1)
-                proof = re.search(r'<a class="proof"[^>]*>Proof</a>', card)
+        for part, lanes in re.findall(r'<nav class="part" aria-label="([^"]+)">(.*?)</nav>', body, re.S):
+            for key, lane in re.findall(r'<section class="lane" aria-label="([^"]+)">(.*?)</section>', lanes, re.S):
+                count = re.search(r'<span class="count">([^<]*)</span>', lane).group(1)
+                proof = re.search(r'<a class="proof"[^>]*>Proof</a>', lane)
                 rows = {}
-                for item in re.findall(r"<li>(.*?)</li>", card, re.S):
+                for item in re.findall(r'<li class="spec[^"]*">(.*?)</li>', lane, re.S):
                     texts = [t.strip() for t in html_lib.unescape(re.sub(r"<[^>]+>", "\n", item)).splitlines() if t.strip()]
-                    rows[texts[0]] = texts[1:]
+                    # The meta line: thread counts, then Changed, one word each here.
+                    rows[texts[0]] = texts[1:2] + [word for text in texts[2:] for word in text.split(" · ")]
                 result[key] = (part, count, proof and proof.group(0), rows)
         return result, body
 
@@ -464,11 +465,11 @@ class IndexGatesTest(ProviderHarness):
         with self.plugged(service.url):
             lanes, _ = self.index(url)
         self.assertEqual(lanes, {
-            "ABC-1": ("Needs you", "1 need you", None, {"Decision": ["Decision open", "1", "Open"]}),
-            "ABC-2": ("Needs you", "1 need you", None, {"Reply": ["Reply waiting", "1", "Open"]}),
-            "ABC-3": ("Needs you", "1 need you", None, {"Draft": ["Draft not sent", "1", "Open"]}),
-            "ABC-5": ("Needs you", "1 need you", None, {"Ready": ["Ready to accept", "1", "Resolved"]}),
-            "ABC-4": ("In progress", "Nothing needs you", None, {"Agent": ["With the agent", "1", "Open"]}),
+            "ABC-1": ("Needs you", "1 needs you", None, {"Decision": ["Decision open", "1 open"]}),
+            "ABC-2": ("Needs you", "1 needs you", None, {"Reply": ["Reply waiting", "1 open"]}),
+            "ABC-3": ("Needs you", "1 needs you", None, {"Draft": ["Draft not sent", "1 open"]}),
+            "ABC-5": ("Needs you", "1 needs you", None, {"Ready": ["Ready to accept", "1 resolved"]}),
+            "ABC-4": ("In progress", "Nothing needs you", None, {"Agent": ["With the agent", "1 open"]}),
             "ABC-7": ("In progress", "Nothing needs you", None, {"Accepted": ["Accepted 0123456"]}),
         })
         # One ask per load, one path parameter per lane spec's served path (#index-gates-provider).
@@ -498,8 +499,8 @@ class IndexGatesTest(ProviderHarness):
         with self.plugged(service.url):
             lanes, _ = self.index(url)
         self.assertEqual(lanes["ABC-1"], ("Needs you", "2 need you", None, {
-            "One": ["Decision open", "1", "Open"], "Two": ["Reply waiting", "2", "Open"],
-            "Three": ["With the agent", "1", "Open"]}))
+            "One": ["Decision open", "1 open"], "Two": ["Reply waiting", "2 open"],
+            "Three": ["With the agent", "1 open"]}))
 
     def test_accept_spec_sent_holds_until_the_spec_changes(self):
         """#acceptance-index-gate-sent: no provider; the newest hand-off is Accept spec (no `events` list) at the
@@ -510,7 +511,7 @@ class IndexGatesTest(ProviderHarness):
             version = response.headers["ETag"].strip('"')
         self.event(root, "sent", "human", 300, id="acc", event="handoff", browser="b", version=version)
         lanes, body = self.index(url)
-        self.assertEqual(lanes["ABC-6"], ("In progress", "Nothing needs you", None, {"Sent": ["Accept spec sent", "1", "Resolved"]}))
+        self.assertEqual(lanes["ABC-6"], ("In progress", "Nothing needs you", None, {"Sent": ["Accept spec sent", "1 resolved"]}))
         self.assertNotIn("error", body.lower())
         # A hand-off that lists its drafts is not Accept spec.
         self.event(root, "sent", "human", 400, id="h4", event="handoff", events=[], browser="b", version=version)
@@ -518,8 +519,8 @@ class IndexGatesTest(ProviderHarness):
         self.event(root, "sent", "human", 500, id="acc2", event="handoff", browser="b", version=version)
         self.assertEqual(self.index(url)[0]["ABC-6"][3]["Sent"][0], "Accept spec sent")
         (root / "docs/specs/sent.spec.html").write_text(spec_page("Sent", "<p>Edited.</p>"), encoding="utf-8")
-        self.assertEqual(self.index(url)[0]["ABC-6"], ("Needs you", "1 need you", None, {
-            "Sent": ["Ready to accept", "Changed", "1", "Resolved"]}))
+        self.assertEqual(self.index(url)[0]["ABC-6"], ("Needs you", "1 needs you", None, {
+            "Sent": ["Ready to accept", "1 resolved", "Changed"]}))
 
     def test_proof_link_opens_the_bundle_page_and_carries_its_bundle(self):
         """#acceptance-index-proof, #index-entry-lane: the card links the proof review facts name, a plain link to
@@ -544,14 +545,14 @@ class IndexGatesTest(ProviderHarness):
             "accepted": commit, "proof": {"bundle": "b-2", "url": "http://127.0.0.1:1/bundles/b-2"}}}})
         url, root = self.lanes([("abc5", "ready", spec_page("Ready"))])
         self.thread(root, "ready", "handoff", "reply", "resolve")
-        absent = ("Needs you", "1 need you", None, {"Ready": ["Ready to accept", "1", "Resolved"]})
+        absent = ("Needs you", "1 needs you", None, {"Ready": ["Ready to accept", "1 resolved"]})
         lanes, body = self.index(url)
         self.assertEqual(lanes, {"ABC-5": absent})
         self.assertNotIn("Accepted", body)
         with self.plugged(service.url):
             lanes, _ = self.index(url)
         self.assertEqual(lanes["ABC-5"][:2], ("In progress", "Nothing needs you"))
-        self.assertEqual(lanes["ABC-5"][3], {"Ready": ["Accepted fedcba9", "1", "Resolved"]})
+        self.assertEqual(lanes["ABC-5"][3], {"Ready": ["Accepted fedcba9", "1 resolved"]})
         self.assertIn('data-evidence-bundle="b-2"', lanes["ABC-5"][2])
         self.assertEqual(self.index(url)[0], {"ABC-5": absent})
         self.assertEqual(len(service.requests), 1)
@@ -565,7 +566,7 @@ class IndexGatesTest(ProviderHarness):
                 "proof": {"bundle": "b", "url": "https://evidence.example/bundles/b"}}
         url, _ = self.lanes([("abc5", "ready", spec_page("Ready"))])
         path = "abc5/docs/specs/ready.spec.html"
-        absent = {"ABC-5": ("Needs you", "1 need you", None, {"Ready": ["Ready to accept"]})}
+        absent = {"ABC-5": ("Needs you", "1 needs you", None, {"Ready": ["Ready to accept"]})}
         services = [self.fake(status=500, body={"specs": {path: good}}), self.fake(raw=b"<html>"),
                     self.fake(body=["list"]), self.fake(body={"specs": []}),
                     self.fake(body={"specs": {path: {"accepted": "HEAD~1", "proof": {"bundle": "b", "url": "javascript:alert(1)"}}}}),
@@ -708,7 +709,7 @@ class IndexGatesTest(ProviderHarness):
         url = self.review_server([row("aa", "main"), row("abc1", "lane"), row("abc1", "gone", stale="spec file is missing")])
         with self.plugged(service.url):
             lanes, body = self.index(url)
-        self.assertEqual(lanes, {"ABC-1": ("Needs you", "1 need you", None, {
+        self.assertEqual(lanes, {"ABC-1": ("Needs you", "1 needs you", None, {
             "Lane": ["Ready to accept"], "docs/specs/gone.spec.html": ["Stale"]})})
         self.assertNotIn("Decision open", body)
         self.assertEqual(parse_qs(urlparse(service.requests[0]).query)["path"], ["abc1/docs/specs/lane.spec.html"])

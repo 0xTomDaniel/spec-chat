@@ -23,7 +23,10 @@
 # bundle page and review facts answer, the evidence service (qa.toml) serves them as files, and
 # the review-plugged service's registry folder holds the provider file pointing at it
 # (review-service #providers-evidence). Its lanes qa-8 (named accepted at the head commit) and
-# qa-9 (named a proof bundle) register Report filters alone. The answer and the provider file
+# qa-9 (named a proof bundle) register Report filters alone; qa-10 registers Weekly report (open TBDs), Report filters
+# with the agent (spools.py), and long-title.spec.html, a long title waiting on acceptance, so one index shows the
+# attention, running, and pass marks and a title that wraps beside its gate word (lane-hosting #index-marks,
+# #index-design). The answer and the provider file
 # name the evidence service's address, so they are written once it runs (QA_URL_EVIDENCE, every
 # reset capture runs before a criterion); the reset before services start leaves both out. The
 # review service has no provider file: it is the box with no evidence provider.
@@ -58,7 +61,7 @@ collections="qa-fixture rule-candidate tbd-later tbd-later-handoff tbd-open-high
   host-draft host-starters host-handoff host-handoff-two host-reply host-live host-same-subject
   host-quote host-quote-gone host-only-comments host-phone host-frame one-thread-spec one-thread-host
   no-scope no-service layer-markup layer-stores layer-focus"
-plugged="qa-8 qa-9"
+plugged="qa-8 qa-9 qa-10"
 site="$QA_ROOT/site"
 serve="$QA_ROOT/serve"
 serve_plugged="$QA_ROOT/serve-plugged"
@@ -99,8 +102,9 @@ import json, os, sys
 registry, registry_plugged, site, base, entry, plugged, *collections = sys.argv[1:]
 plugged = plugged.split()
 own = {slug: entry + "-" + slug for slug in ("rule-candidate", "not-a-rule", "dismiss", "dismiss-reload")}
-# Index gate lanes register Report filters alone.
-alone = {"qa-3", "qa-4", "qa-5", "qa-6", "qa-7", *plugged}
+# Index gate lanes register Report filters alone; qa-10 a decision, a spec with the agent, and a long title.
+specs_of = {**{slug: ("later-only",) for slug in ("qa-3", "qa-4", "qa-5", "qa-6", "qa-7", "qa-8", "qa-9")},
+            "qa-10": ("report", "later-only", "long-title")}
 
 
 def row(slug, root, spec):
@@ -115,7 +119,7 @@ def row(slug, root, spec):
 
 def rows_of(slugs):
     return [row(slug, os.path.join(site, slug), "docs/specs/%s.spec.html" % spec) for slug in slugs
-            for spec in (("later-only",) if slug in alone else ("onboarding", "report", "later-only", "one-open"))]
+            for spec in specs_of.get(slug, ("onboarding", "report", "later-only", "one-open"))]
 
 
 rows = rows_of(collections)

@@ -183,13 +183,14 @@ COLLECTIONS = {
     "qa-5": all_resolved,
     "qa-6": agent_replied,
     "qa-7": unsent,
+    "qa-10": with_agent,
 }
 # collection -> the spec its seed writes on, when not the report spec: the index gate lanes, which
-# register Report filters alone (reset.sh)
-SPEC_OF = {lane: LATER for lane in ("qa-3", "qa-4", "qa-5", "qa-6", "qa-7")}
-# Lane-key collections, reached from the review index root (lane-hosting #index-threads, #index-gates); their
-# other specs have no threads.
-INDEX_LANES = ("qa-1", "qa-2", "qa-3", "qa-4", "qa-5", "qa-6", "qa-7")
+# register Report filters alone, and review-plugged's qa-10, whose Report filters is with the agent (reset.sh)
+SPEC_OF = {lane: LATER for lane in ("qa-3", "qa-4", "qa-5", "qa-6", "qa-7", "qa-10")}
+# Lane-key collections, reached from the review index root (lane-hosting #index-threads, #index-gates, #index-marks);
+# their other specs have no threads. qa-10 is review-plugged's (reset.sh).
+INDEX_LANES = ("qa-1", "qa-2", "qa-3", "qa-4", "qa-5", "qa-6", "qa-7", "qa-10")
 # collection -> agent edit that lands when the page next saves (land_pending_edit)
 PENDING = {"stale-page": insert_above}
 # collections whose agent answers each saved comment (answer_comment), so the page offers a reply

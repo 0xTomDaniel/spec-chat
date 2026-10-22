@@ -3,7 +3,7 @@
 
     scripts/design-set-sync [--check] [CLONE]
 
-Takes tokens.css and icons/ from exactly the commit design-set.toml pins, from CLONE (a design-set clone holding that
+Takes tokens.css, icons/, and marks/ from exactly the commit design-set.toml pins, from CLONE (a design-set clone holding that
 commit) or else a fresh clone of the pinned repository, and rewrites each region between its design-set markers; --check
 writes nothing and exits 1 naming each copy that differs. The one place a copy of the set is made: a new copy or region
 is added to COPIES. Nothing serves or fetches the set at run time.
@@ -12,7 +12,10 @@ Copies:
   skill/review-spec/assets/viz/runtime.js   the chrome CSS opens with tokens.css as the set writes it; the review index
                                             takes that same block from the runtime (review-serve.py), never a copy;
                                             its icons region holds every icons/*.svg as the ICONS map the chrome draws
-                                            its icons from (spec-page-design.spec.html#icons-rule)
+                                            its icons from (spec-page-design.spec.html#icons-rule); its marks region
+                                            every marks/*.svg as the MARKS map the review index draws its status marks
+                                            from, which review-serve.py reads from the runtime, never a copy
+                                            (lane-hosting.spec.html#index-marks)
   skill/shape-spec/assets/style/spec.css    the document's --spec-* values, each resolved from tokens.css, light and
                                             dark (spec-page-design.spec.html#document)
 
@@ -32,6 +35,7 @@ PIN = ROOT / "design-set.toml"
 BEGIN = re.compile(r"/\* design-set ([0-9a-f]{40}) begin\b[^\n]*\*/\n")
 END = "/* design-set end */\n"
 ICONS = "icons"
+MARKS = "marks"
 
 # The document's names (spec-page-design.spec.html#document), each the set token it takes its value from.
 DOCUMENT = (
@@ -136,31 +140,36 @@ def document_block(commit: str, files: dict[str, str]) -> str:
 
 
 def icon(svg: str) -> str:
-    """One icon as the runtime holds it: the set's SVG on one line, whitespace between tags dropped."""
+    """One icon or mark as the runtime holds it: the set's SVG on one line, whitespace between tags dropped."""
     return re.sub(r">\s+<", "><", svg.strip())
 
 
-def icons_block(commit: str, files: dict[str, str]) -> str:
-    """The runtime's ICONS map: every icons/*.svg by its name, one JS string each."""
-    names = sorted(path for path in files if path.startswith(f"{ICONS}/") and path.endswith(".svg"))
-    if not names:
-        raise SystemExit("design-set-sync: the set holds no icons/*.svg")
-    rows = [f"  {json.dumps(Path(path).stem)}: {json.dumps(icon(files[path]))}," for path in names]
-    return (f"/* design-set {ICONS} {commit} begin: the pinned set's icons/, built in by scripts/design-set-sync;"
-            " never edit by hand */\nconst ICONS = {\n" + "\n".join(rows) + "\n};\n" + markers(ICONS)[1])
+def svg_block(directory: str):
+    """The builder of a runtime map named for ``directory`` (ICONS, MARKS): every <directory>/*.svg by its name, one
+    JS string each."""
+    def build(commit: str, files: dict[str, str]) -> str:
+        names = sorted(path for path in files if path.startswith(f"{directory}/") and path.endswith(".svg"))
+        if not names:
+            raise SystemExit(f"design-set-sync: the set holds no {directory}/*.svg")
+        rows = [f"  {json.dumps(Path(path).stem)}: {json.dumps(icon(files[path]))}," for path in names]
+        return (f"/* design-set {directory} {commit} begin: the pinned set's {directory}/, built in by"
+                f" scripts/design-set-sync; never edit by hand */\nconst {directory.upper()} = {{\n" + "\n".join(rows)
+                + "\n};\n" + markers(directory)[1])
+    return build
 
 
-def held_icons(text: str, path: str) -> dict[str, str]:
-    """The icons/*.svg a copy's icons region holds, as the sync built them."""
-    start, end, _ = region(text, path, ICONS)
+def held(text: str, path: str, directory: str) -> dict[str, str]:
+    """The <directory>/*.svg a copy's region of that name holds, as the sync built them."""
+    start, end, _ = region(text, path, directory)
     block = text[start:end]
-    body = block[block.index("const ICONS = ") + len("const ICONS = "):block.rindex(";\n/*")]
-    return {f"{ICONS}/{name}.svg": svg for name, svg in json.loads(re.sub(r",\n}$", "\n}", body)).items()}
+    opening = f"const {directory.upper()} = "
+    body = block[block.index(opening) + len(opening):block.rindex(";\n/*")]
+    return {f"{directory}/{name}.svg": svg for name, svg in json.loads(re.sub(r",\n}$", "\n}", body)).items()}
 
 
 # Each copy and its regions, by name, with the builder that writes each from the set's files.
 COPIES = {
-    "skill/review-spec/assets/viz/runtime.js": (("", runtime_block), (ICONS, icons_block)),
+    "skill/review-spec/assets/viz/runtime.js": (("", runtime_block), (ICONS, svg_block(ICONS)), (MARKS, svg_block(MARKS))),
     "skill/shape-spec/assets/style/spec.css": (("", document_block),),
 }
 
@@ -175,10 +184,10 @@ def rebuild(path: str, commit: str, files: dict[str, str]) -> str:
 
 
 def set_files(clone: Path, commit: str) -> dict[str, str]:
-    """tokens.css and every icons/*.svg at the commit in ``clone``."""
-    icons = [path for path in git(clone, "ls-tree", "--name-only", commit, f"{ICONS}/").split("\n")
-             if path.endswith(".svg")]
-    return {path: git(clone, "show", f"{commit}:{path}") for path in ["tokens.css", *icons]}
+    """tokens.css and every icons/*.svg and marks/*.svg at the commit in ``clone``."""
+    svgs = [path for path in git(clone, "ls-tree", "--name-only", commit, f"{ICONS}/", f"{MARKS}/").split("\n")
+            if path.endswith(".svg")]
+    return {path: git(clone, "show", f"{commit}:{path}") for path in ["tokens.css", *svgs]}
 
 
 def build(clone: Path) -> dict[str, str]:
