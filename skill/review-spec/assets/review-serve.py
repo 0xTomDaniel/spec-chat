@@ -1716,7 +1716,8 @@ listenHost();
     def _status(self):
         """GET /api/status (review-service #steady-status): answered at once from the process itself, no store read."""
         waiting, running = self.server.jev.queue_counts()
-        return self._json({"rss_bytes": _rss_bytes(), "connections": self.server.connections,
+        return self._json({"rss_bytes": _rss_bytes(), "uptime_seconds": int(time.monotonic() - self.server.started),
+                           "connections": self.server.connections,
                            "jev": {"waiting": waiting, "running": running}})
 
     def _jev_board(self):
@@ -1917,6 +1918,7 @@ class ReviewThreadingHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
     def __init__(self, *args, **kwargs):
+        self.started = time.monotonic()  # /api/status uptime_seconds counts from here (review-service #steady-status)
         self.connections = 0  # open connections, each one request thread (review-service #steady-connections)
         self._connections_lock = threading.Lock()
         super().__init__(*args, **kwargs)

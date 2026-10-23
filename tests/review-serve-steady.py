@@ -167,13 +167,17 @@ class Steady(unittest.TestCase):
 
 
 class StatusRouteTest(Steady):
-    def test_status_reports_memory_connections_and_jev_queue(self):
+    def test_status_reports_memory_uptime_connections_and_jev_queue(self):
         """#proof-steady-first-test, #acceptance-status."""
         service = self.jev_service()
         server = self.server([], service)
         status = self.status(server)
-        self.assertEqual(set(status), {"rss_bytes", "connections", "jev"})
+        self.assertEqual(set(status), {"rss_bytes", "uptime_seconds", "connections", "jev"})
         self.assertGreater(status["rss_bytes"], 1 << 20)
+        self.assertIs(type(status["uptime_seconds"]), int)  # whole seconds
+        self.assertLess(status["uptime_seconds"], 5)  # just started
+        server.started -= 3600.7  # as if started an hour ago
+        self.assertIn(self.status(server)["uptime_seconds"], (3600, 3601, 3602))
         self.assertEqual(status["connections"], 1)  # the one asking
         self.assertEqual(status["jev"], {"waiting": 0, "running": 0})
         with patch.object(service, "queue_counts", lambda: (7, 3)):
