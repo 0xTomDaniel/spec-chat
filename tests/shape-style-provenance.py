@@ -41,7 +41,7 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
         link = f'<link rel="stylesheet" href="{href}">' if href else ""
         self.spec.write_text(f"<!doctype html><html><head>{link}{extra}{local}</head><body>{body}</body></html>\n")
 
-    def write_shaped_spec(self, story=DEFAULT_STORY, scope="traceability", current="", acceptance_heading="Acceptance criteria", acceptance_extra=' data-story="story"', boundary_extra="", boundary_scope="Observable scope is this review", scenario_text="When the rule is exercised", observable_text="The observable result is recorded"):
+    def write_shaped_spec(self, story=DEFAULT_STORY, scope="traceability", current="", acceptance_heading="Acceptance criteria", acceptance_extra=' data-story="story"', boundary_extra="", boundary_scope="Observable scope is this review", scenario_text="When the rule is exercised", observable_text="The observable result is recorded", extra_criteria=""):
         current_attr = f' data-current-slice="{current}"' if current else ""
         body = f"""<article class=\"spec\" data-spec-contract=\"shaped-sections-v1\"{current_attr}>
 <section data-spec-section=\"user-stories\" data-anchor=\"user-stories\">
@@ -49,7 +49,7 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
 </section>
 <section data-spec-section=\"acceptance\" data-acceptance-scope=\"{scope}\" data-anchor=\"acceptance\">
 <h2>{acceptance_heading}</h2>
-<p data-acceptance-criterion data-anchor=\"acceptance-rule\"{acceptance_extra}><span data-acceptance-scenario>{scenario_text}</span><span data-acceptance-observable>{observable_text}</span></p>
+<p data-acceptance-criterion data-anchor=\"acceptance-rule\"{acceptance_extra}><span data-acceptance-scenario>{scenario_text}</span><span data-acceptance-observable>{observable_text}</span></p>{extra_criteria}
 </section>
 <section data-spec-section=\"modular-boundaries\" data-anchor=\"modular-boundaries\">
 <h2>Modular boundaries</h2>
@@ -460,6 +460,60 @@ class ShapeStyleProvenanceTest(unittest.TestCase):
         result = self.validate(base)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+
+    def two_screen_warnings(self, result):
+        return [line for line in result.stderr.splitlines() if line.startswith("warning:")]
+
+    def test_two_screen_warning_on_added_criteria(self):
+        """prompt-first-shaping #complete-criterion-two-screen-warning, #acceptance-one-screen-warn-tabs,
+        #acceptance-one-screen-warn-navigation, #acceptance-one-screen-reason, #acceptance-one-screen-no-screen:
+        an added criterion whose Then names two tabs or joins two outcomes with a navigation step warns once,
+        naming it and the words that raised it; a reason or a no-screen Then raises none; an empty reason still
+        warns; every case passes with the summary line unchanged."""
+        tabs = "Then the Transcript tab marks the hook and the Overview tab names it."
+        cases = {
+            "tabs": (tabs, "", ["Transcript tab", "Overview tab"]),
+            "navigation": ("Then the clip plays and Back returns to Discover.", "", ["returns to Discover"]),
+            "reason": (tabs, ' data-one-screen="both tabs show side by side on one screen"', None),
+            "empty-reason": (tabs, ' data-one-screen=" "', ["Transcript tab", "Overview tab"]),
+            "no-screen": ("Then the settings page and the billing page record the change once, proven by a unit test: no screen shows it.", "", None),
+            "one-screen": ("Then the Transcript tab marks the hook and names it in its header.", "", None),
+        }
+        for name, (observable, extra, words) in cases.items():
+            with self.subTest(case=name):
+                base = self.empty_base()
+                self.write_shaped_spec(observable_text=observable, acceptance_extra=' data-story="story"' + extra)
+                shutil.copy2(FALLBACK, self.style)
+                result = self.validate(base)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, "style=fallback stories=valid sections=valid\n")
+                warnings = self.two_screen_warnings(result)
+                if words is None:
+                    self.assertEqual(warnings, [], result.stderr)
+                else:
+                    self.assertEqual(len(warnings), 1, result.stderr)
+                    self.assertIn("acceptance-rule", warnings[0])
+                    for word in words:
+                        self.assertIn(word, warnings[0])
+
+    def test_two_screen_warning_skips_criterion_unchanged_from_base(self):
+        """prompt-first-shaping #acceptance-one-screen-unedited: editing a different criterion leaves no warning for
+        the two-tab criterion the author left as it was; the edited one is still judged."""
+        tabs = "Then the Transcript tab marks the hook and the Overview tab names it."
+        other = '<p data-acceptance-criterion data-anchor="acceptance-other" data-story="story"><span data-acceptance-scenario>When the author opens it</span><span data-acceptance-observable>{}</span></p>'
+        self.write_shaped_spec(observable_text=tabs, extra_criteria=other.format("Then the list shows the item."))
+        shutil.copy2(FALLBACK, self.style)
+        base = self.commit()
+        self.write_shaped_spec(observable_text=tabs, extra_criteria=other.format("Then the list shows the renamed item."))
+        result = self.validate(base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.two_screen_warnings(result), [], result.stderr)
+        self.write_shaped_spec(observable_text=tabs, extra_criteria=other.format("Then the Inbox page shows the item and the Board page lists it."))
+        result = self.validate(base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        warnings = self.two_screen_warnings(result)
+        self.assertEqual(len(warnings), 1, result.stderr)
+        self.assertIn("acceptance-other", warnings[0])
 
 if __name__ == "__main__":
     unittest.main()
