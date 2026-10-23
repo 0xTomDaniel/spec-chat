@@ -76,7 +76,9 @@ class ReviewStateCollections(unittest.TestCase):
 
     def test_every_collection_is_reset_registered_and_navigated(self):
         reset = (FIXTURE / "reset.sh").read_text()
-        registry = (self.site.root / "serve" / "registry.toml").read_text()
+        # The review service's registry, review-plugged's, which holds qa-10, and review-sections', which holds qa-12.
+        registry = "".join((self.site.root / folder / "registry.toml").read_text()
+                           for folder in ("serve", "serve-plugged", "serve-sections"))
         nav = tomllib.loads((ROOT / "qa.toml").read_text())["nav"]
         hinted = {hint["path"].split("/")[1] for hint in nav.values()}
         for collection in spools.COLLECTIONS:
@@ -183,32 +185,27 @@ class ReviewStateCollections(unittest.TestCase):
 
     def test_index_lanes_show_their_seeded_thread_counts(self):
         """lane-hosting #acceptance-index-threads, -threads-none, -threads-refresh, -index-stale Givens: QA-1 holds
-        every status (3 Open, 1 Resolved) on its report spec and none on the others; QA-2 one open thread, and a
-        spec registered from a removed worktree, shown as its path with a Stale pill and no link."""
-        import html
+        every status (3 open, 1 resolved) on its report spec and none on the others; QA-2 one open thread, and a
+        spec registered from a removed worktree, shown as its path with the word Stale and no link."""
         import re
 
         base = self.serve()
         with urllib.request.urlopen(base + "/") as response:
             body = response.read().decode()
-        cards = dict(re.findall(r'<section class="lane[^"]*" aria-label="([^"]+)">(.*?)</section>', body, re.S))
-        self.assertEqual(list(cards), ["QA-1", "QA-2", "QA-4", "QA-5", "QA-6", "QA-7", "QA-3"])
+        lanes = dict(re.findall(r'<section class="lane" aria-label="([^"]+)">(.*?)</section>', body, re.S))
+        self.assertEqual(list(lanes), ["QA-1", "QA-2", "QA-4", "QA-5", "QA-6", "QA-7", "QA-3"])
 
-        def rows(card):
-            result = {}
-            for item in re.findall(r"<li>(.*?)</li>", card, re.S):
-                parts = [p.strip() for p in html.unescape(re.sub(r"<[^>]+>", "\n", item)).splitlines() if p.strip()]
-                result[parts[0]] = [p for p in parts[1:] if p != "Changed"]
-            return result
+        def rows(lane):
+            return {title: [gate] + [word for word in meta if word != "Changed"] for title, (gate, meta) in self.rows(lane).items()}
 
         # Gate words (lane-hosting #index-gates): the report specs hold open TBDs, the others none and no thread.
         quiet = {"Onboarding": ["Ready to accept"], "Report filters": ["Ready to accept"], "Report sorting": ["Decision open"]}
-        self.assertEqual(rows(cards["QA-1"]), {**quiet, "Weekly report": ["Decision open", "3", "Open", "1", "Resolved"]})
+        self.assertEqual(rows(lanes["QA-1"]), {**quiet, "Weekly report": ["Decision open", "3 open", "1 resolved"]})
         stale = "docs/specs/archive.spec.html"
-        self.assertEqual(rows(cards["QA-2"]), {**quiet, "Weekly report": ["Decision open", "1", "Open"], stale: ["Stale"]})
-        links = re.findall(r"<a [^>]*>([^<]*)</a>", cards["QA-2"])
+        self.assertEqual(rows(lanes["QA-2"]), {**quiet, "Weekly report": ["Decision open", "1 open"], stale: ["Stale"]})
+        links = re.findall(r"<a [^>]*>([^<]*)</a>", lanes["QA-2"])
         self.assertEqual(sorted(links), ["Onboarding", "Report filters", "Report sorting", "Weekly report"])
-        self.assertIn(">4 need you<", cards["QA-2"])  # a stale row has no gate and counts toward nothing
+        self.assertIn(">4 need you<", lanes["QA-2"])  # a stale row has no gate and counts toward nothing
         statuses = {th["id"]: th["status"] for th in spool.fold_threads(self.site.events("qa-1") + [
             {"name": name, "actor": "agent", "body": json.loads((Path(self.site.spec("qa-1") + ".review") / "agent" / name).read_text())}
             for name in os.listdir(self.site.spec("qa-1") + ".review/agent")]).values()}
@@ -216,7 +213,21 @@ class ReviewStateCollections(unittest.TestCase):
                                     "qa-resolved": "resolved"})
 
     @staticmethod
-    def lanes(base):
+    def rows(lane):
+        """{title: (gate word or None, [meta words])} of one lane's spec rows (lane-hosting #index-entry-title)."""
+        import html
+        import re
+
+        result = {}
+        for item in re.findall(r'<li class="spec[^"]*">(.*?)</li>', lane, re.S):
+            title = html.unescape(re.search(r'<(?:a|span) class="title"[^>]*>([^<]*)<', item).group(1))
+            gate = re.search(r'<span class="gate[^"]*">([^<]*)</span>', item)
+            meta = re.search(r'<span class="meta">([^<]*)</span>', item)
+            result[title] = (gate and html.unescape(gate.group(1)), meta.group(1).split(" · ") if meta else [])
+        return result
+
+    @classmethod
+    def lanes(cls, base):
         """{lane key: (part, count, proof link address or None, {title: gate word})} of the index at base."""
         import html
         import re
@@ -224,17 +235,16 @@ class ReviewStateCollections(unittest.TestCase):
         with urllib.request.urlopen(base + "/") as response:
             body = response.read().decode()
         result = {}
-        for part, cards in re.findall(r'<p class="label">([^<]*)</p><nav class="lanes"[^>]*>(.*?)</nav>', body, re.S):
-            for key, card in re.findall(r'<section class="lane[^"]*" aria-label="([^"]+)">(.*?)</section>', cards, re.S):
-                rows = {html.unescape(title): html.unescape(gate) for title, gate in re.findall(
-                    r'<a href="[^"]*">([^<]*)</a><span class="pills"><span class="pill[^"]*">([^<]*)</span>', card)}
-                proof = re.search(r'<a class="proof" href="([^"]*)"', card)
-                result[key] = (part, re.search(r'<span class="count">([^<]*)</span>', card).group(1),
-                               proof and html.unescape(proof.group(1)), rows)
+        for part, lanes in re.findall(r'<nav class="part" aria-label="([^"]+)">(.*?)</nav>', body, re.S):
+            for key, lane in re.findall(r'<section class="lane" aria-label="([^"]+)">(.*?)</section>', lanes, re.S):
+                proof = re.search(r'<a class="proof" href="([^"]*)"', lane)
+                result[key] = (part, re.search(r'<span class="count">([^<]*)</span>', lane).group(1),
+                               proof and html.unescape(proof.group(1)),
+                               {title: gate for title, (gate, _) in cls.rows(lane).items()})
         return result
 
     def test_index_gate_lanes_read_as_their_criteria_say(self):
-        """lane-hosting #acceptance-index-sections, -gate-decision, -gate-reply, -gate-draft, -gate-agent, -gate-ready,
+        """lane-hosting #acceptance-index-gate-decision, -gate-reply, -gate-draft, -gate-agent, -gate-ready,
         -gate-sent, -no-provider Givens, on the review service, which has no evidence provider: qa-3 to qa-7 hold
         Report filters alone with one thread each; Accept spec, as the page writes it, turns QA-5 to Accept spec sent."""
         site = Site()  # its own site: the Accept spec save leaves the shared seeded spools untouched
@@ -245,10 +255,10 @@ class ReviewStateCollections(unittest.TestCase):
         self.assertEqual(lanes["QA-1"][0], "Needs you")
         self.assertEqual(lanes["QA-1"][3]["Weekly report"], "Decision open")  # open TBDs and a handed-off thread
         expected = {"QA-3": ("In progress", "Nothing needs you", None, {"Report filters": "With the agent"}),
-                    "QA-4": ("Needs you", "1 need you", None, {"Report filters": "Ready to accept"}),
-                    "QA-5": ("Needs you", "1 need you", None, {"Report filters": "Ready to accept"}),
-                    "QA-6": ("Needs you", "1 need you", None, {"Report filters": "Reply waiting"}),
-                    "QA-7": ("Needs you", "1 need you", None, {"Report filters": "Draft not sent"})}
+                    "QA-4": ("Needs you", "1 needs you", None, {"Report filters": "Ready to accept"}),
+                    "QA-5": ("Needs you", "1 needs you", None, {"Report filters": "Ready to accept"}),
+                    "QA-6": ("Needs you", "1 needs you", None, {"Report filters": "Reply waiting"}),
+                    "QA-7": ("Needs you", "1 needs you", None, {"Report filters": "Draft not sent"})}
         self.assertEqual({key: lanes[key] for key in expected}, expected)
         # Accept spec: the page's empty hand-off, naming the version it was served (review-state #live-accept).
         path = "/qa-5/" + spools.LATER.replace(os.sep, "/")
@@ -264,10 +274,50 @@ class ReviewStateCollections(unittest.TestCase):
         self.assertEqual(self.lanes(base)["QA-5"],
                          ("In progress", "Nothing needs you", None, {"Report filters": "Accept spec sent"}))
 
+    def test_sections_index_holds_one_lane_per_part_and_settles_the_rest(self):
+        """lane-hosting #acceptance-index-sections Given, on review-sections: QA-11 a lane holding a spec with an open
+        decision, QA-12 a lane whose specs are all with the agent, and the main collection under a slug that is no lane
+        key. A registry serves its rows only, so no spec is served without a row (tests/review-serve-multi.py proves
+        that case)."""
+        import re
+
+        base = self.serve(registry="serve-sections", ready="/qa-11/docs/specs/report.spec.html", state="state-sections")
+        self.assertEqual(self.lanes(base), {
+            "QA-11": ("Needs you", "1 needs you", None, {"Weekly report": "Decision open"}),
+            "QA-12": ("In progress", "Nothing needs you", None, {"Report filters": "With the agent"}),
+        })
+        with urllib.request.urlopen(base + "/") as response:
+            body = response.read().decode()
+        settled = re.findall(r"<details\b[^>]*>(.*?)</details>", body, re.S)
+        self.assertEqual(len(settled), 1)
+        self.assertIn("<span>Settled (4)</span>", settled[0])
+        self.assertEqual(sorted(title for title, _ in self.rows(settled[0]).items()),
+                         ["Onboarding", "Report filters", "Report sorting", "Weekly report"])
+        self.assertEqual(re.findall(r'<a class="title" href="/([^/"]+)/', settled[0]), ["main"] * 4)
+
+    def test_bar_dirty_spec_differs_from_its_head(self):
+        """compared-range #acceptance-bar-dirty Given: bar-dirty's report spec holds an uncommitted edit, so its baseline
+        reads dirty; qa-fixture's does not."""
+        base = self.serve()
+
+        def baseline(collection):
+            query = urllib.parse.urlencode({"path": "%s/docs/specs/report.spec.html" % collection})
+            with urllib.request.urlopen(base + "/api/baseline?" + query) as response:
+                return json.load(response)
+
+        dirty, clean = baseline("bar-dirty"), baseline("qa-fixture")
+        self.assertEqual((dirty["dirty"], clean["dirty"]), (True, False))
+        self.assertEqual(dirty["head"], clean["head"])
+        self.assertIn(spools.INSERTED, self.current("bar-dirty"))
+
     def test_plugged_index_reads_the_declared_review_facts(self):
-        """lane-hosting #acceptance-index-gate-accepted, #acceptance-index-proof Givens, on review-plugged: once the
-        evidence service runs, reset.sh declares its review facts answer and the provider file naming it; the provider
-        names QA-8's Report filters accepted at the head commit, and a proof bundle for QA-9, whose page it serves."""
+        """lane-hosting #acceptance-index-gate-accepted, #acceptance-index-proof, #acceptance-index-marks,
+        #acceptance-index-title-column, #acceptance-index-focus Givens, on review-plugged: once the evidence service
+        runs, reset.sh declares its review facts answer and the provider file naming it; the provider names QA-8's
+        Report filters accepted at the head commit, and a proof bundle for QA-9, whose page it serves. QA-10 holds an
+        open decision, a spec with the agent, and a long title waiting on acceptance."""
+        import re
+
         site = Site()
         self.addCleanup(site.tmp.cleanup)
         self.assertEqual(sorted(os.listdir(site.root / "serve-plugged" / "providers")), [])
@@ -281,13 +331,27 @@ class ReviewStateCollections(unittest.TestCase):
         url = "http://127.0.0.1:%d" % port
         base = self.serve(site, "serve-plugged", "/qa-8/docs/specs/later-only.spec.html", "state-plugged")
         self.assertEqual(self.lanes(base)["QA-8"][3], {"Report filters": "Ready to accept"})  # no provider file yet
+        long_title = ("Weekly report export to spreadsheets, with per-team totals, saved filters, and the chosen sort kept"
+                      " between visits")
+        qa10 = ("Needs you", "2 need you", None, {"Weekly report": "Decision open", long_title: "Ready to accept",
+                                                  "Report filters": "With the agent"})
         site.reset(QA_STORY="story-review-index", QA_URL_EVIDENCE=url)
         head = subprocess.check_output(["git", "-C", str(site.root / "site" / "qa-8"), "rev-parse", "HEAD"], text=True).strip()
         bundle = url + "/bundles/qa-proof/"
         self.assertEqual(self.lanes(base), {
             "QA-8": ("In progress", "Nothing needs you", None, {"Report filters": "Accepted " + head[:7]}),
-            "QA-9": ("Needs you", "1 need you", bundle, {"Report filters": "Ready to accept"}),
+            "QA-9": ("Needs you", "1 needs you", bundle, {"Report filters": "Ready to accept"}),
+            "QA-10": qa10,
         })
+        # #acceptance-index-marks: the decision, the spec with the agent, and the accepted spec lead with the attention,
+        # running, and pass marks, the set's own (review-serve-multi.py checks each mark's shape).
+        with urllib.request.urlopen(base + "/") as response:
+            body = response.read().decode()
+        marks = {name: svg for name, svg in re.findall(r'"(attention|running|pass)": ("<svg.*?</svg>")', (
+            ROOT / "skill/review-spec/assets/viz/runtime.js").read_text())}
+        for title, mark in (("Weekly report", "attention"), ("Report filters", "running"), ("Report filters", "pass")):
+            self.assertRegex(body, r'<li class="spec"><span class="mark">%s</span><a class="title" href="[^"]*">%s</a>'
+                             % (re.escape(json.loads(marks[mark])), title))
         with urllib.request.urlopen(bundle) as response:
             self.assertIn(b"<title>Evidence bundle qa-proof</title>", response.read())
 

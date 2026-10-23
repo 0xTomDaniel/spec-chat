@@ -43,11 +43,20 @@ command = 'mkdir -p "$QA_ROOT/home" "$QA_ROOT/state-plugged" "$QA_ROOT/config" &
 url = "http://127.0.0.1:{port}"
 ready = "/qa-8/docs/specs/later-only.spec.html"
 
-# One Git repo of four specs, copied per collection (reset.sh): onboarding.spec.html marks the project rule "Every change
+[services.review-sections]
+# The review service on reset.sh's third registry, which holds exactly the parts lane-hosting #index-sections names: a
+# lane with an open decision, a lane whose specs are all with the agent, and a collection under a slug that is no lane
+# key. Its own state, so its Jev records stay apart from review's.
+command = 'mkdir -p "$QA_ROOT/home" "$QA_ROOT/state-sections" "$QA_ROOT/config" && cd "$QA_REPO_SPEC_CHAT" && exec env -u HERDR_SOCKET_PATH HOME="$QA_ROOT/home" XDG_STATE_HOME="$QA_ROOT/state-sections" XDG_CONFIG_HOME="$QA_ROOT/config" python3 tests/fixtures/qa/serve.py "$QA_ROOT/serve-sections/registry.toml" "$PORT"'
+url = "http://127.0.0.1:{port}"
+ready = "/qa-11/docs/specs/report.spec.html"
+
+# One Git repo of six specs, copied per collection (reset.sh): onboarding.spec.html marks the project rule "Every change
 # to what a user sees or does adds its onboarding section.", named "Every change ships its onboarding"; report.spec.html is the
 # spec under shaping, its head adding an export story with no onboarding criterion,
 # two open TBDs, the first offering two answer buttons, and one later TBD; later-only.spec.html's only TBD is later;
-# one-open.spec.html has exactly one open TBD; print.spec.html, registered only in coverage-undeclared, has stories
+# one-open.spec.html has exactly one open TBD; long-title.spec.html, registered only in qa-10, has a long title and no
+# TBD; print.spec.html, registered only in coverage-undeclared, has stories
 # and criteria that name no story (no data-story), its head rewording two sections. No spec has a comment thread, except
 # the review-state collections' report spec and the index gate lanes' later-only spec (spools.py, nav hints below). Jev
 # records are written by the fake as pages load and kept across resets; dismissals
@@ -68,6 +77,11 @@ viewport = { width = 1280, height = 800 }
 viewport = { width = 390, height = 844 }
 touch = true
 
+# Review index story-index-calm: "a narrow pane" is narrower than the index's 48rem column, yet wider than the
+# design set's 640px phone width, under which the gate word moves under its title (lane-hosting #index-design).
+[entry.stories.story-index-calm]
+viewport = { width = 720, height = 800 }
+
 # Rule-card capture hints, per criterion (the capture agent reads these). The rule marker is
 # the "Jev notes" button beside the Acceptance criteria heading; opening it shows the rule card
 # "Every change ships its onboarding". Every collection except rule-candidate, not-a-rule, dismiss,
@@ -83,7 +97,7 @@ touch = true
 #   button reads Accept spec, and the missed note is the rule marker beside Acceptance
 #   criteria. Click Accept spec; nothing is typed.
 # - clear-thread: the page is the clear-thread report spec. Open the rule marker to show the card,
-#   turn on Comment (C), click the Acceptance criteria heading, type the value, save, then reload
+#   turn on Comment, click the Acceptance criteria heading, type the value, save, then reload
 #   the page (browser reload); the marker is still there.
 # - candidates, mark-as-rule, not-a-rule: the page is rule-candidate's onboarding spec, whose
 #   onboarding criterion is unmarked; open the marker beside that criterion to show the
@@ -128,6 +142,11 @@ path = "{review}/tbd-open-jump/docs/specs/report.spec.html"
 path = "{review}/tbd-open-wrap/docs/specs/report.spec.html"
 [nav.acceptance-mobile-composer]
 path = "{review}/mobile-composer/docs/specs/report.spec.html"
+# Keyboard block targets (prompt-first-shaping #acceptance-block-target-enter, -space): Comment turns spec blocks into Tab
+# stops after the page's controls. From Comment, Tab passes Reading view, the panel toggle, the gear, and the hand-off
+# button, then focus wraps to the top of the page: Review index, Change base, the spec's title, and its path line; the
+# next stop is the first paragraph, "QA fixture: a feature spec under shaping." (about ten Tabs; headless wraps through
+# the page body once). A focused button is no paragraph: press Enter or Space only once that paragraph has focus.
 [nav.acceptance-block-target-enter]
 path = "{review}/block-target-enter/docs/specs/report.spec.html"
 [nav.acceptance-block-target-space]
@@ -138,7 +157,7 @@ path = "{review}/block-target-off/docs/specs/report.spec.html"
 # Answer buttons (prompt-first-shaping #answer-buttons): the report spec's Behavior TBD "whether the
 # export also offers XLSX" (export-format) offers two answer buttons, "CSV only (recommended)" and
 # "CSV and XLSX". "One answer button" is "CSV only (recommended)"; "another" is "CSV and XLSX".
-# Press them as page buttons, never through Comment (C) unless the When says so; nothing is typed.
+# Press them as page buttons, never through Comment unless the When says so; nothing is typed.
 # acceptance-choice-event is proven by tests/runtime-answer-buttons.mjs.
 [nav.acceptance-choice-press]
 path = "{review}/choice-press/docs/specs/report.spec.html"
@@ -170,7 +189,7 @@ path = "{review}/choice-comment-mode/docs/specs/report.spec.html"
 #   (gone: "Text removed" shows only in the opened thread).
 # - stale-page: the agent's edit (a paragraph inserted above the export sentence) waits
 #   beside the spec and lands when this page next saves an event (tests/fixtures/qa/
-#   serve.py), so the page as loaded predates the edit. Steps: turn on Comment (C),
+#   serve.py), so the page as loaded predates the edit. Steps: turn on Comment,
 #   select the export sentence's text, type the comment text from values, save. The save
 #   brings the "Spec updated by agent" banner; its Reload button is the Then's refresh.
 # - name: four steps, all required; do not stop after the first save. 1) Turn on Comment
@@ -191,51 +210,83 @@ path = "{review}/stale-page/docs/specs/report.spec.html"
 path = "{review}/agent-scan/docs/specs/report.spec.html"
 [nav.acceptance-name]
 path = "{review}/name-reply/docs/specs/report.spec.html"
+# spec-page-design #acceptance-icons, #acceptance-icons-dock: qa-1's report spec holds a draft, a handed-off, a replied,
+# and a resolved thread (spools.py every_status). Its page opens with the review panel closed; the thread dock is the
+# column of buttons at the top right, its first the one named "Open review sidebar".
+# - icons: open the review panel with that first dock button.
+# - icons-dock: the page as it opens, its panel closed; nothing to click.
+[nav.acceptance-icons]
+path = "{review}/qa-1/docs/specs/report.spec.html"
+[nav.acceptance-icons-dock]
+path = "{review}/qa-1/docs/specs/report.spec.html"
+# spec-page-design #acceptance-one-surface: "a spec served with a compared range" is qa-fixture's Onboarding, unchanged
+# since its row base, so its page opens on that range with no block changed (compared-range #reviewed-default).
+[nav.acceptance-one-surface]
+path = "{review}/qa-fixture/docs/specs/onboarding.spec.html"
+# spec-page-design #acceptance-focus-set: qa-4's Report filters holds one thread, resolved, and no open TBD (spools.py
+# all_resolved), so the panel's hand-off reads Accept spec; press Tab until Accept spec has focus.
+[nav.acceptance-focus-set]
+path = "{review}/qa-4/docs/specs/later-only.spec.html"
 
-# Review index (lane-hosting #index-threads, #index-gates), at the server root. The review service
-# ({review}) has no evidence provider; review-plugged ({review-plugged}) has one, answering from the
-# evidence service's declared review facts (reset.sh). Lane-key collections (tests/fixtures/qa/spools.py
-# INDEX_LANES) are lane cards; every other collection settles under Settled (n).
+# Review index (lane-hosting #index-threads, #index-gates, #index-design, #index-marks), at the server root. The
+# review service ({review}) has no evidence provider; review-plugged ({review-plugged}) has one, answering from the
+# evidence service's declared review facts (reset.sh); review-sections ({review-sections}) holds the index parts alone.
+# Lane-key collections (tests/fixtures/qa/spools.py INDEX_LANES) are lanes: a header (QA-1, its need count, a Proof
+# link when one is named) over its project label and its spec rows; every other collection settles under Settled (n).
+# Each spec row leads with its status mark, then its title, its gate word on the right, and one muted meta line under
+# the title (thread counts, then Changed).
 # - QA-1 and QA-2 hold the four fixture specs (Weekly report changed since base, Onboarding
 #   unchanged, Report filters and Report sorting absent at base); Weekly report and Report sorting
 #   hold open TBDs. QA-1's Weekly report holds a draft, a handed-off, a replied, and a resolved
-#   thread (3 Open, 1 Resolved); QA-2's one open thread, replied by the agent; QA-2 also holds
+#   thread (3 open, 1 resolved); QA-2's one open thread, replied by the agent; QA-2 also holds
 #   docs/specs/archive.spec.html, registered from a worktree since removed (reset.sh), a stale row.
 # - QA-3 to QA-7 each hold Report filters alone (no open TBD) with one thread: QA-3 handed off,
 #   not answered; QA-4 and QA-5 resolved; QA-6 replied by the agent, not resolved; QA-7 a comment
 #   saved, not handed off.
 # - On review-plugged, QA-8 and QA-9 each hold Report filters alone, no thread: the evidence
-#   provider names QA-8's accepted at the fixture's head commit, and a proof bundle for QA-9.
+#   provider names QA-8's accepted at the fixture's head commit, and a proof bundle for QA-9. QA-10
+#   holds Weekly report (open TBDs), Report filters handed off and not answered, and "Weekly report
+#   export to spreadsheets, with per-team totals, saved filters, and the chosen sort kept between
+#   visits", a long title with no TBD and no thread.
 # Capture hints, per criterion:
-# - review-index, index-threads, index-threads-none: read the QA-1 card. Its Weekly report
-#   row holds a draft, a handed-off, a replied, and a resolved thread (3 Open, 1 Resolved);
+# - review-index, index-threads, index-threads-none: read the QA-1 lane. Its Weekly report
+#   row holds a draft, a handed-off, a replied, and a resolved thread (3 open, 1 resolved);
 #   its other rows have no threads.
-# - index-sections: read the part headings and the QA-1 and QA-3 cards, then open Settled at the
-#   bottom. The review service serves registry rows only, so no spec there is served without a row;
-#   that case is proven by tests/review-serve-multi.py
+# - index-sections, on review-sections: QA-11 holds Weekly report alone (open TBDs); QA-12 holds Report filters alone,
+#   its one thread handed off and not answered; the main collection's slug is no lane key and holds the four fixture
+#   specs. Read the part headings and both lanes, then open Settled at the bottom. A registry serves its rows only, so
+#   no spec there is served without a row; that case is proven by tests/review-serve-multi.py
 #   test_index_settles_specs_served_without_a_row_in_a_closed_disclosure.
 # - index-gate-decision: read QA-1's Weekly report row (open TBDs and a handed-off thread).
-# - index-gate-reply: read the QA-6 card. index-gate-draft: read the QA-7 card.
-# - index-gate-agent: read the QA-3 card. index-gate-ready, index-no-provider: read the QA-4 card.
-# - index-gate-sent: click the QA-5 card's "Report filters" title; on the spec page open the review
+# - index-gate-reply: read the QA-6 lane. index-gate-draft: read the QA-7 lane.
+# - index-gate-agent: read the QA-3 lane. index-gate-ready, index-no-provider: read the QA-4 lane.
+# - index-gate-sent: click the QA-5 lane's "Report filters" title; on the spec page open the review
 #   sidebar with its "Open review sidebar" button (top right), click "Accept spec", then click
-#   "Back to Spec Chat index"; read the QA-5 card.
-# - index-gate-accepted: read the QA-8 card on review-plugged.
-# - index-proof: click the QA-9 card's "Proof" link on review-plugged; it opens in a new tab.
-# - index-design: read the Needs you and In progress cards and the settled specs below them: no
-#   spec row reads "Up to date", each lane spec row shows its gate word once, each card how many of
-#   its specs need you, and the page has no sideways scroll. QA-2's stale row has no gate or status;
-#   its Stale pill is its only word (lane-hosting #index-entry-status).
+#   "Review index"; read the QA-5 lane.
+# - index-gate-accepted: read the QA-8 lane on review-plugged.
+# - index-proof: click the QA-9 lane's "Proof" link on review-plugged; it opens in a new tab.
+# - index-design: read the Needs you and In progress lanes and the settled specs below them: no
+#   spec row reads "Up to date", each lane spec row shows its gate word once beside its mark, each
+#   lane header how many of its specs need you, and the page has no sideways scroll. QA-2's stale
+#   row has no gate or status; the word Stale is its only word (lane-hosting #index-entry-status).
 # - index-threads-refresh: QA-2's Weekly report has one open thread, replied by the agent.
-#   Steps: click that row's "Weekly report" title in the QA-2 card; open the thread with its
-#   "Open thread 1" button; click its "✓ Resolve" button; click "Back to Spec Chat index" (the
+#   Steps: click that row's "Weekly report" title in the QA-2 lane; open the thread with its
+#   "Open thread 1" button; click its "Resolve" button; click "Review index" (the
 #   reload); read the QA-2 Weekly report row.
-# - index-stale: read the QA-2 card. Its four specs are title links; docs/specs/archive.spec.html
-#   shows as plain text with a Stale pill on the right and no link.
+# - index-stale: read the QA-2 lane. Its four specs are title links; docs/specs/archive.spec.html
+#   shows as plain text with the word Stale on the right and no link.
+# - index-title-column (story-index-calm, a narrow pane, its viewport above): read the QA-10 lane on
+#   review-plugged. Its long title wraps in its own column; Ready to accept stays on the right, beside the
+#   title's first line.
+# - index-marks: on review-plugged, read QA-10's Weekly report (Decision open) and Report filters (With the agent)
+#   rows, and QA-8's Report filters (Accepted) row: each leads with its mark.
+# - index-focus: on review-plugged, press Tab until the QA-10 lane's Weekly report title has focus. Tab stops run down
+#   the page, and a lane's Proof link, in its header, comes before its spec titles: the first Tab lands on QA-9's Proof
+#   link, the second on QA-9's Report filters title, the third on QA-10's Weekly report title. A Proof link is no title.
 [nav.acceptance-review-index]
 path = "{review}/"
 [nav.acceptance-index-sections]
-path = "{review}/"
+path = "{review-sections}/"
 [nav.acceptance-index-gate-decision]
 path = "{review}/"
 [nav.acceptance-index-gate-reply]
@@ -264,6 +315,12 @@ path = "{review}/"
 path = "{review}/"
 [nav.acceptance-index-stale]
 path = "{review}/"
+[nav.acceptance-index-title-column]
+path = "{review-plugged}/"
+[nav.acceptance-index-marks]
+path = "{review-plugged}/"
+[nav.acceptance-index-focus]
+path = "{review-plugged}/"
 
 # Pages served at another address (review-service #story-served): each criterion opens its served-*
 # collection's report spec in the test host, which frames it with no origin. reset.sh records a public
@@ -271,9 +328,9 @@ path = "{review}/"
 # Capture hints, per criterion:
 # - served-threads: the report spec holds one open thread, Papaya's, replied by the agent. The step
 #   left is opening that thread with its "Open thread 1" button.
-# - served-handoff: turn on Comment (C), click the "The report page shows totals per week." block,
+# - served-handoff: turn on Comment, click the "The report page shows totals per week." block,
 #   type the value, save, then click "Hand off to agent →".
-# - served-index: click "Back to Spec Chat index".
+# - served-index: click "Review index".
 # - served-focus: focus on changes is turned on by choosing its baseline: click "Change base", then
 #   the older listed commit (subject "base").
 [nav.acceptance-served-threads]
@@ -343,10 +400,15 @@ path = "{review}/no-service/docs/pane.html"
 [nav.acceptance-coverage-undeclared]
 path = "{review}/coverage-undeclared/docs/specs/print.spec.html?base=HEAD"
 
+# Compared range (compared-range #acceptance-bar-dirty): "a spec with uncommitted edits" is bar-dirty's report spec, whose
+# worktree holds the agent's edit, never committed (reset.sh, spools.py), so it differs from its head commit.
+[nav.acceptance-bar-dirty]
+path = "{review}/bar-dirty/docs/specs/report.spec.html"
+
 # Status route (review-service #steady-status): {review}/api/status (values). No page links to it, so it is opened at
 # that address.
 # - steady-closed: starts on the report spec, so the service serves this browser a spec page; the start point then
-#   closes it by clicking its "Back to Spec Chat index" link.
+#   closes it by clicking its "Review index" link.
 [nav.acceptance-steady-closed]
 path = "{review}/qa-fixture/docs/specs/report.spec.html"
 selectors = ['a[data-spec-chat-navigation="index"]']
@@ -475,9 +537,14 @@ cannot_host = "capture has one browser context; the Given needs two live browser
 cannot_host = "capture has one browser context and creates no load on the shared box (no synthetic load), so no other reviewers' pages read Jev marks and no answers are recorded while the page opens, and no store many times the server's memory is written; proven by tests/jev-record-store.py (StoreMemoryTest, StoreLockTest) and tests/review-serve-jev.py test_overlapping_reads_of_one_page_keep_the_asks_both_want"
 # Capture runs story-review-index at desktop viewport; criteria cannot set a viewport.
 [entry.criteria.acceptance-index-link-panel]
-cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone-width open panel state cannot be reached; proven by tests/runtime-mobile-contract.mjs"
+cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone-width open panel state cannot be reached; proven by tests/runtime-spec-surface.mjs"
 [entry.criteria.acceptance-index-link-panel-closed]
-cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone-width open-then-closed panel state cannot be reached; proven by tests/runtime-mobile-contract.mjs"
+cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone-width open-then-closed panel state cannot be reached; proven by tests/runtime-spec-surface.mjs"
+# spec-page-design: story-one-surface and story-quiet-controls capture at desktop viewport too.
+[entry.criteria.acceptance-one-surface-phone]
+cannot_host = "story-one-surface captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone's first screen cannot be reached; proven by tests/runtime-spec-surface.mjs"
+[entry.criteria.acceptance-key-phone]
+cannot_host = "story-quiet-controls captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone toolbar cannot be reached; proven by tests/runtime-spec-surface.mjs"
 # Going offline is the device capability capture does not support (jev-capture #jc-capabilities).
 [entry.criteria.acceptance-offline-save]
 cannot_host = "capture cannot take the browser offline (device capability unsupported); proven by tests/runtime-review-live.mjs"
@@ -606,12 +673,14 @@ cannot_host = "the When is an author edit to the spec file while the reviewer vi
 [entry.criteria.acceptance-onboarding-doc]
 cannot_host = "the onboarding documentation is the repo README, which the review service does not serve; proven by tests/install-spec-chat.py test_onboarding_doc_says_how_to_write_a_project_rule"
 [entry.criteria.acceptance-index-design-phone]
-cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone screen cannot be reached; proven by tests/review-serve-multi.py"
+cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone screen cannot be reached; proven by tests/runtime-review-index.mjs"
 # Setting the system appearance is not a browser capability (jev-capture #jc-capabilities).
 [entry.criteria.acceptance-index-dark]
-cannot_host = "capture cannot set the system appearance to dark; the QA-1 lane card has threads in every status; proven by tests/review-serve-multi.py (dark tokens, 4.5:1 per pill)"
+cannot_host = "capture cannot set the system appearance to dark; the QA-1 lane has threads in every status; proven by tests/runtime-review-index.mjs"
 [entry.criteria.acceptance-presentation-theme-dark]
-cannot_host = "capture cannot set the system appearance to dark; the shared stylesheet pins color-scheme light, so dark shows the light palette; proven by tests/spec-style-contract.py test_dark_appearance_renders_the_light_palette"
+cannot_host = "capture cannot set the system appearance to dark; the shared stylesheet follows it (color-scheme light dark) and gives a diagram the set's dark values; proven by tests/spec-style-contract.py test_dark_appearance_renders_a_dark_page_with_light_text"
+[entry.criteria.acceptance-dark-document]
+cannot_host = "capture cannot set the system appearance to dark; proven by tests/spec-style-contract.py test_dark_appearance_renders_a_dark_page_with_light_text and test_normal_and_muted_text_clear_the_body_contrast_floor_in_both_modes (the document, its tables and figures on the set's dark values) and tests/runtime-chrome-tokens.mjs (the chrome on the set's dark values)"
 # Capture runs story-consistent-chrome at desktop viewport; criteria cannot set a viewport.
 [entry.criteria.acceptance-button-system-phone]
 cannot_host = "story-consistent-chrome captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone screen cannot be reached; proven by tests/runtime-chrome-tokens.mjs"

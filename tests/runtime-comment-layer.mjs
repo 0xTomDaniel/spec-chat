@@ -94,7 +94,7 @@ const comment = async (frame, name, text, starter = null) => {
   if (starter) await box(frame).locator(`[data-starter="${starter}"]`).click();
   await box(frame).locator('.hx-composer textarea').pressSequentially(text);
   await box(frame).locator('.hx-composer [data-act=save]').click();
-  await waitCards(frame, cardsMatch(`cards => cards.some(c => c.status === 'draft')`));
+  await waitCards(frame, cardsMatch(`cards => cards.some(c => c.status === 'Draft')`));
 };
 // A message as drawn reads its author name, a space or a line, then its text, never the two run together.
 const apart = (who, text) => new RegExp('^' + who + '\\s+' + text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
@@ -146,7 +146,7 @@ try {
   assert.equal(await box(frame).locator('.hx-composer textarea').inputValue(), 'Question ', 'the starter begins the draft');
   await box(frame).locator('.hx-composer textarea').pressSequentially('why per week and not per day?');
   await box(frame).locator('.hx-composer [data-act=save]').click();
-  await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].status === 'draft'`));
+  await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].status === 'Draft'`));
   assert.deepEqual((await cards(frame)).map(c => c.texts), [['Question why per week and not per day?']], 'the comment, beginning with Question');
   const [drawn] = await cards(frame);
   assert.match(drawn.read[0], apart(drawn.who[0], 'Question why per week and not per day?'), 'its author name stands apart from its text');
@@ -184,9 +184,9 @@ try {
   await comment(frame, TURN, 'Why the table headers?', 'Question');
   assert.equal(await box(frame).locator('#hx-drafts').textContent(), '2 drafts');
   await box(frame).locator('#hx-handoff').click();
-  await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].status === 'pending'`));
+  await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].status === 'Pending'`));
   await pinOf(frame, CRITERION).click();
-  await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].status === 'pending' && cards[0].texts[0] === 'Round to whole units.'`));
+  await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].status === 'Pending' && cards[0].texts[0] === 'Round to whole units.'`));
   const specSaved = specEvents('host-handoff-two'), hostedSaved = hostedEvents('host-handoff-two');
   assert.deepEqual(specSaved.find(e => e.event === 'handoff').events, [specSaved.find(e => e.event === 'comment').id], 'the spec\'s hand-off lists its draft');
   assert.deepEqual(hostedSaved.find(e => e.event === 'handoff').events, [hostedSaved.find(e => e.event === 'comment').id], 'the hosted threads\' hand-off lists its draft');
@@ -204,9 +204,9 @@ try {
   await frame.waitForFunction(() => !('reloaded' in window) && document.querySelector('[data-spec-chat="comment-layer"]'));
   await control(frame, TURN).waitFor();
   await pinOf(frame, TURN).click();
-  await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].status === 'draft'`));
+  await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].status === 'Draft'`));
   await box(frame).locator('#hx-handoff').click();
-  await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].status === 'pending'`));
+  await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].status === 'Pending'`));
   const framed = hostedEvents('host-frame');
   assert.deepEqual(framed.filter(e => e.event === 'handoff').map(e => e.events), [[framed.find(e => e.event === 'comment').id]], 'one hand-off, listing the draft saved before the reload');
   await page.close();
@@ -217,7 +217,7 @@ try {
   await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].texts.length === 2`));
   let [card] = await cards(frame);
   assert.deepEqual([card.who, card.texts, card.status], [['Papaya', 'Agent'],
-    ['Question: why name the columns after the table headers?', 'So the CSV reads like the table the manager sees.'], 'acknowledged']);
+    ['Question: why name the columns after the table headers?', 'So the CSV reads like the table the manager sees.'], 'Acknowledged']);
   assert.deepEqual([card.kind, card.from], ['Agent turn', 'https://review.qa.invalid/host-pages/docs/pane.html'], '#ui-from');
   await page.close();
 
@@ -229,7 +229,7 @@ try {
   await page.waitForTimeout(300); // past an injected image's error
   [card] = await cards(frame);
   assert.deepEqual([card.status, card.who, card.texts, card.kind, card.from, card.notice],
-    ['acknowledged', [MARKUP, 'Agent'], [MARKUP, MARKUP], MARKUP, null, `Text removed“${MARKUP}”`]);
+    ['Acknowledged', [MARKUP, 'Agent'], [MARKUP, MARKUP], MARKUP, null, `Text removed“${MARKUP}”`]);
   assert.deepEqual(await frame.evaluate(() => [window.__xss,
     document.querySelector('[data-spec-chat="comment-layer"]').shadowRoot.querySelectorAll('img').length]), [undefined, 0]);
   assert.equal(await pinOf(frame, TURN).getAttribute('data-s'), 'acknowledged');
@@ -284,7 +284,7 @@ try {
   // #acceptance-host-live: the owner replies in the pending thread; the open page shows it within 2 seconds.
   ({ page, frame } = await open(pane('host-live')));
   await pinOf(frame, TURN).click();
-  await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].status === 'pending'`));
+  await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].status === 'Pending'`));
   mkdirSync(join(hostedDir('host-live'), 'agent'), { recursive: true });
   writeFileSync(join(hostedDir('host-live'), 'agent', `${BigInt(Date.now()) * 1000000n}-reply-qa-live-answer.json`), JSON.stringify({
     id: 'qa-live-answer', event: 'reply', actor: 'agent', respondsTo: 'qa-turn', threadId: 'qa-turn', target: null,
@@ -318,7 +318,7 @@ try {
   assert.equal(await box(frame).locator('.hx-thread.active > .hx-quote').textContent(), `“${QUOTE}”`, 'the composer holds the quote');
   await box(frame).locator('.hx-composer textarea').pressSequentially('Which headers?');
   await box(frame).locator('.hx-composer [data-act=save]').click();
-  await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].status === 'draft'`));
+  await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].status === 'Draft'`));
   assert.deepEqual((await cards(frame))[0].quotes, [`“${QUOTE}”`], 'its thread shows that quote');
   const marks = await frame.locator('.hx-quote-mark').evaluateAll(els => els.map(el => el.getBoundingClientRect().toJSON()));
   assert.ok(marks.length >= 1, 'the selected text is marked');
@@ -343,7 +343,7 @@ try {
   await box(frame).locator('[data-starter="Change"]').tap();
   await box(frame).locator('.hx-composer textarea').pressSequentially('name the columns by the export spec.');
   await box(frame).locator('.hx-composer [data-act=save]').tap();
-  await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].status === 'draft'`));
+  await waitCards(frame, cardsMatch(`cards => cards.length === 1 && cards[0].status === 'Draft'`));
   assert.deepEqual((await cards(frame))[0].texts, ['Change name the columns by the export spec.']);
   await pinOf(frame, TURN).waitFor();
   const sheet = await box(frame).boundingBox();

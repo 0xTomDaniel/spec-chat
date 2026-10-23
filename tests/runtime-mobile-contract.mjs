@@ -11,7 +11,7 @@ assert.match(runtime, /\.hx-panel\{width:100vw;height:100dvh;max-height:100dvh/,
 assert.match(runtime, /@media\(max-width:640px\)\{[^]*\.hx-panel\{[^}]*box-sizing:border-box;padding-bottom:calc\(var\(--hx-dock-space,0px\) \+ var\(--ui-space-3\) \+ env\(safe-area-inset-bottom\)\)/, 'mobile sidebar content ends above the fixed dock');
 assert.match(runtime, /new ResizeObserver\(\(\) => document\.documentElement\.style\.setProperty\('--hx-dock-space', bar\.offsetHeight \+ 'px'\)\)\.observe\(bar\)/, 'dock height tracks the rendered toolbar');
 assert.match(runtime, /\.hx-panel\{[^}]*display:none;/, 'closed panel cannot widen or intercept the mobile page');
-assert.match(runtime, /\.hx-panel\.open\{display:flex;/, 'open panel restores layout and interaction');
+assert.match(runtime, /\.hx-panel\.open\{display:flex[;}]/, 'open panel restores layout and interaction');
 assert.match(runtime, /article\.spec pre\{white-space:pre-wrap;overflow-wrap:anywhere\}/, 'standalone doctrine and code blocks cannot widen mobile specs');
 assert.match(runtime, /Math\.max\(0, Math\.min\(pos\.left, holder\.clientWidth - pinSize\)\)/, 'mobile pins are clamped inside their anchored holder');
 assert.match(runtime, /if \(marker\.getBoundingClientRect\(\)\.right > document\.documentElement\.clientWidth\) marker\.dataset\.inset = 'true'/, 'Jev markers move inside the column edge when the margin cannot hold them');
@@ -29,11 +29,13 @@ assert.match(runtime, /@media\(max-width:640px\)\{[^]*\.hx-toolbar button\{min-h
 assert.match(runtime, /e\.message === 'Script error\.' && !e\.filename && !e\.lineno && !e\.colno && !e\.error/, 'fully opaque browser errors do not raise a fatal review overlay');
 assert.match(runtime, /overlay\('error', e\.message/, 'attributable script errors remain visible');
 assert.match(runtime, /if \(state\.handoffPosting \|\| !action\.enabled\) return/, 'handoff and Accept spec latch against duplicate submission');
+// lane-hosting #index-link: the back link opens the fixed top line (spec-page-design #top-line); the open phone panel
+// fills the screen and hides it, the desktop panel sits beside it (runtime-spec-surface.mjs proves both in a browser).
 assert.match(runtime, /hx-service-index-link/, 'HTTP detail pages expose a visible service index link');
 assert.ok(runtime.includes("new URL('/', OWN_ADDRESS).href"), 'service index link resolves to the configured service root');
-assert.match(runtime, /@media\(max-width:640px\)\{[^}]*(?:\}[^}@]*)*body\.hx-panel-open \.hx-service-index-link\{display:none\}/, 'phone-width open panel hides the service index link');
-assert.doesNotMatch(runtime.split('@media(max-width:640px)')[0], /body\.hx-panel-open \.hx-service-index-link/, 'desktop open panel keeps the service index link');
-assert.match(runtime, /Back to Spec Chat index/, 'service index link has an accessible visible label');
+assert.match(runtime, /@media\(max-width:640px\)\{[^}]*(?:\}[^}@]*)*body\.hx-panel-open \.hx-top-line\{display:none\}/, 'phone-width open panel hides the top line and its index link');
+assert.doesNotMatch(runtime.split('@media(max-width:640px)')[0], /body\.hx-panel-open \.hx-(?:top-line|service-index-link)\{display:none/, 'desktop open panel keeps the index link');
+assert.match(runtime, /ICONS\['chevron-left'\] \+ '<span>Review index<\/span>'/, 'the index link reads a chevron and Review index');
 assert.match(runtime, /automatic wake did not occur; send a new chat message to resume/, 'queued handoff gives an explicit manual-resume instruction');
 
 console.log('runtime mobile contract tests passed');

@@ -23,10 +23,18 @@
 # bundle page and review facts answer, the evidence service (qa.toml) serves them as files, and
 # the review-plugged service's registry folder holds the provider file pointing at it
 # (review-service #providers-evidence). Its lanes qa-8 (named accepted at the head commit) and
-# qa-9 (named a proof bundle) register Report filters alone. The answer and the provider file
+# qa-9 (named a proof bundle) register Report filters alone; qa-10 registers Weekly report (open TBDs), Report filters
+# with the agent (spools.py), and long-title.spec.html, a long title waiting on acceptance, so one index shows the
+# attention, running, and pass marks and a title that wraps beside its gate word (lane-hosting #index-marks,
+# #index-design). The answer and the provider file
 # name the evidence service's address, so they are written once it runs (QA_URL_EVIDENCE, every
 # reset capture runs before a criterion); the reset before services start leaves both out. The
 # review service has no provider file: it is the box with no evidence provider.
+#
+# The review-sections service's registry holds exactly the parts lane-hosting #index-sections names: the qa-11 lane,
+# Weekly report alone (open TBDs, a decision open); the qa-12 lane, Report filters alone with its one thread handed off
+# and not answered (spools.py), so all its specs are with the agent; and the main collection, a slug that is no lane
+# key, holding the four specs. A registry serves its rows only, so no spec there is served without a row.
 #
 # A rule is its criterion's mark in its home spec (project-rules #declare): onboarding.spec.html
 # marks its onboarding criterion. Dismissals live in the warning ledger by project and spec
@@ -38,6 +46,9 @@
 #
 # print.spec.html's criteria name no story (jev-suggestions #coverage-declared) and its head only rewords its base;
 # it is registered only in coverage-undeclared, so every other collection serves the same four specs.
+#
+# bar-dirty's report spec carries the agent's edit uncommitted in its worktree (spools.py), so it differs from its head
+# (compared-range #acceptance-bar-dirty).
 #
 # The registry records a public base address, so the service, though on loopback, is public
 # and answers a page with no origin (review-service #served-private): the test host (host.py)
@@ -53,19 +64,21 @@ collections="qa-fixture rule-candidate tbd-later tbd-later-handoff tbd-open-high
   choice-press choice-phone choice-thread choice-again choice-change choice-reload
   choice-handoff choice-comment-mode
   anchor-moved anchor-changed anchor-gone stale-page agent-scan name-reply advice
-  clear-thread qa-1 qa-2 qa-3 qa-4 qa-5 qa-6 qa-7 dismiss dismiss-reload not-a-rule
+  clear-thread qa-1 qa-2 qa-3 qa-4 qa-5 qa-6 qa-7 dismiss dismiss-reload not-a-rule bar-dirty
   served-threads served-handoff served-index served-focus served-reload-handoff served-reload-outbox coverage-undeclared
   host-draft host-starters host-handoff host-handoff-two host-reply host-live host-same-subject
   host-quote host-quote-gone host-only-comments host-phone host-frame one-thread-spec one-thread-host
   no-scope no-service layer-markup layer-stores layer-focus"
-plugged="qa-8 qa-9"
+plugged="qa-8 qa-9 qa-10"
+sections="qa-11 qa-12 main"
 site="$QA_ROOT/site"
 serve="$QA_ROOT/serve"
 serve_plugged="$QA_ROOT/serve-plugged"
+serve_sections="$QA_ROOT/serve-sections"
 evidence="$QA_ROOT/evidence"
 repo="$site/.repo"
 rm -rf "$site" "$evidence" "$serve_plugged/providers"
-mkdir -p "$site" "$serve" "$serve_plugged/providers"
+mkdir -p "$site" "$serve" "$serve_plugged/providers" "$serve_sections"
 # Fixed identity and dates: every reset yields the same commits.
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
   GIT_AUTHOR_NAME=qa GIT_AUTHOR_EMAIL=qa@example.invalid GIT_AUTHOR_DATE=2026-01-01T00:00:00Z \
@@ -80,7 +93,7 @@ cp -R "$QA_FIXTURE/head/." "$repo/"
 git -C "$repo" add -A
 git -C "$repo" commit -qm head
 head="$(git -C "$repo" rev-parse HEAD)"
-for collection in $collections $plugged; do
+for collection in $collections $plugged $sections; do
   cp -R "$repo" "$site/$collection"
 done
 rm -rf "$repo"
@@ -94,13 +107,16 @@ python3 "$QA_FIXTURE/spools.py" "$site"
 # Registry: every spec of every collection, in this reset's projects. Python writes it
 # so paths are escaped as TOML strings.
 project="qa-$(date +%s%N)"
-python3 - "$serve/registry.toml" "$serve_plugged/registry.toml" "$site" "$base" "$project" "$plugged" $collections <<'PY'
+python3 - "$serve/registry.toml" "$serve_plugged/registry.toml" "$serve_sections/registry.toml" "$site" "$base" "$project" \
+  "$plugged" "$sections" $collections <<'PY'
 import json, os, sys
-registry, registry_plugged, site, base, entry, plugged, *collections = sys.argv[1:]
-plugged = plugged.split()
+registry, registry_plugged, registry_sections, site, base, entry, plugged, sections, *collections = sys.argv[1:]
+plugged, sections = plugged.split(), sections.split()
 own = {slug: entry + "-" + slug for slug in ("rule-candidate", "not-a-rule", "dismiss", "dismiss-reload")}
-# Index gate lanes register Report filters alone.
-alone = {"qa-3", "qa-4", "qa-5", "qa-6", "qa-7", *plugged}
+# Index gate lanes register Report filters alone; qa-10 a decision, a spec with the agent, and a long title; qa-11 a
+# decision alone, qa-12 a spec with the agent alone.
+specs_of = {**{slug: ("later-only",) for slug in ("qa-3", "qa-4", "qa-5", "qa-6", "qa-7", "qa-8", "qa-9", "qa-12")},
+            "qa-10": ("report", "later-only", "long-title"), "qa-11": ("report",)}
 
 
 def row(slug, root, spec):
@@ -115,7 +131,7 @@ def row(slug, root, spec):
 
 def rows_of(slugs):
     return [row(slug, os.path.join(site, slug), "docs/specs/%s.spec.html" % spec) for slug in slugs
-            for spec in (("later-only",) if slug in alone else ("onboarding", "report", "later-only", "one-open"))]
+            for spec in specs_of.get(slug, ("onboarding", "report", "later-only", "one-open"))]
 
 
 rows = rows_of(collections)
@@ -125,9 +141,10 @@ rows.append(row("qa-2", os.path.join(site, "qa-2-removed"), "docs/specs/archive.
 with open(registry + ".tmp", "w", encoding="utf-8") as out:
     out.write('[process]\npublic_base = "https://review.qa.invalid"\n\n' + "\n".join(rows))
 os.replace(registry + ".tmp", registry)
-with open(registry_plugged + ".tmp", "w", encoding="utf-8") as out:
-    out.write("\n".join(rows_of(plugged)))
-os.replace(registry_plugged + ".tmp", registry_plugged)
+for path, slugs in ((registry_plugged, plugged), (registry_sections, sections)):
+    with open(path + ".tmp", "w", encoding="utf-8") as out:
+        out.write("\n".join(rows_of(slugs)))
+    os.replace(path + ".tmp", path)
 PY
 python3 "$QA_FIXTURE/panes.py" "$site" "$serve" "$project"
 # The evidence provider's declared answers (lane-hosting #index-gates-provider), once its service runs.

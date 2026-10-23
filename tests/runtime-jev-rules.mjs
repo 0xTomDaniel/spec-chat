@@ -108,6 +108,8 @@ const fetch = async (url, init) => {
 const settle = async () => { for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve)); };
 const pollTimers = [];
 const code = [
+  // the chrome's icons, the set's, which the rule card draws its source arrow from
+  slice('const ICONS = {', '/* design-set icons end */'),
   slice('function jevParams(', '\n\nfunction jevItem('),
   slice('function findAnchor(', '\n\nfunction clearJev('),
   slice('// Background answers', '\n\n// One evidence read'),

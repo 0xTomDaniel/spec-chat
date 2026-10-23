@@ -9,6 +9,8 @@ import contextlib
 import functools
 import hashlib
 import html
+import importlib.machinery
+import importlib.util
 import http.client
 import io
 import ipaddress
@@ -753,9 +755,38 @@ _COMMIT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 _HOST_BRIDGE_END = "/* ---------------- end host bridge ---------------- */"
 
 
-def _host_bridge():
+# scripts/design-set-sync, the one reader of a copy's design-set regions (region(), held()); the index reads the
+# runtime's regions through it, never a second parser.
+_SYNC_LOADER = importlib.machinery.SourceFileLoader(
+    "review_serve_design_set_sync", str(Path(__file__).resolve().parents[3] / "scripts" / "design-set-sync"))
+_SYNC = importlib.util.module_from_spec(importlib.util.spec_from_loader(_SYNC_LOADER.name, _SYNC_LOADER))
+_SYNC_LOADER.exec_module(_SYNC)
+_RUNTIME_PATH = "skill/review-spec/assets/viz/runtime.js"
+
+
+def _design_set(runtime):
+    """(tokens, marks, icons): the pinned design set as the runtime holds it, verbatim, so the index draws on the same
+    set at the same pin, never a copy of a value (lane-hosting #index-tokens, #index-marks). tokens is the block the
+    chrome CSS opens with; marks and icons are {name: svg}. A malformed region, which the sync names by exiting, leaves
+    its part empty: the index still lists every spec."""
+    def read(part, empty):
+        try:
+            return part()
+        except (SystemExit, ValueError):
+            return empty
+
+    def tokens():
+        start, end, _ = _SYNC.region(runtime, _RUNTIME_PATH)
+        return runtime[start:end]
+
+    def svgs(name):
+        return {Path(path).stem: svg for path, svg in _SYNC.held(runtime, _RUNTIME_PATH, name).items()}
+
+    return read(tokens, ""), read(lambda: svgs(_SYNC.MARKS), {}), read(lambda: svgs(_SYNC.ICONS), {})
+
+
+def _host_bridge(runtime):
     """The runtime's host bridge block, verbatim: the index runs the spec pages' bridge, not a copy (criterion-evidence #bridge-tab-pages)."""
-    runtime = Path(__file__).resolve().parent.joinpath("viz", "runtime.js").read_text(encoding="utf-8")
     start = runtime.index("/* ---------------- host bridge")
     end = runtime.index(_HOST_BRIDGE_END, start) + len(_HOST_BRIDGE_END)
     return runtime[start:end]
@@ -817,21 +848,23 @@ def _spool_reading(mount, path):
 
 
 def _gate(open_tbds, reading, version, fact):
-    """A lane spec's gate word and whether it needs you: the first row of lane-hosting #index-gates that holds."""
+    """A lane spec's gate word, whether it needs you, and its status mark: the first row of lane-hosting #index-gates
+    that holds, and its mark (#index-marks): attention when it needs you, running while with the agent or sent, pass
+    once accepted."""
     waiting = reading["waiting"] if reading else frozenset()
     if open_tbds:
-        return "Decision open", True
+        return "Decision open", True, "attention"
     if waiting - {"draft", "pending"}:
-        return "Reply waiting", True  # an agent reply answers the thread's newest human message
+        return "Reply waiting", True, "attention"  # an agent reply answers the thread's newest human message
     if "draft" in waiting:
-        return "Draft not sent", True
+        return "Draft not sent", True, "attention"
     if "pending" in waiting:
-        return "With the agent", False
+        return "With the agent", False, "running"
     if fact.get("accepted"):
-        return "Accepted " + fact["accepted"][:7], False
+        return "Accepted " + fact["accepted"][:7], False, "pass"
     if reading and reading["accepted"] and reading["accepted"] == version:
-        return "Accept spec sent", False
-    return "Ready to accept", True
+        return "Accept spec sent", False, "running"
+    return "Ready to accept", True, "attention"
 
 
 def _web_address(value):
@@ -1349,14 +1382,16 @@ class MountHandler(SimpleHTTPRequestHandler):
             specs = lanes.setdefault(lane, {}).setdefault(project, [])
             if mount.get("stale"):
                 # A stale row: its spec path as plain text, no link, no status, no gate (#index-entry-stale).
-                specs.append({"title": spec, "href": None, "status": None, "gate": None, "needs": False})
+                specs.append({"title": spec, "href": None, "status": None, "counts": None, "gate": None,
+                              "needs": False, "mark": "neutral"})
                 continue
             status, title, open_tbds, version = _index_row(mount, path, row)
             reading = _spool_reading(mount, path)
             specs.append({"title": title, "status": status, "counts": reading and reading["counts"], "stable": stable,
                           "href": ("/" if mount["slug"] else "") + quote(stable, safe="/") + (("?" + query) if query else ""),
-                          # Settled specs show no gate word (#index-gates-rule).
-                          "inputs": (open_tbds, reading, version) if lane else None, "gate": None, "needs": False})
+                          # Settled specs show no gate word, and so the neutral mark (#index-gates-rule, #index-marks).
+                          "inputs": (open_tbds, reading, version) if lane else None, "gate": None, "needs": False,
+                          "mark": "neutral"})
             listed.update((path, os.path.realpath(path) + ".review"))
         # Each cache holds the specs served now, not every spec ever served (review-service #steady-bound).
         for cache in (_ROW_CACHE, _SPOOL_CACHE):
@@ -1369,7 +1404,10 @@ class MountHandler(SimpleHTTPRequestHandler):
                 for spec in specs:
                     if spec.get("inputs"):
                         spec["fact"] = facts.get(spec["stable"], {})
-                        spec["gate"], spec["needs"] = _gate(*spec["inputs"], spec["fact"])
+                        spec["gate"], spec["needs"], spec["mark"] = _gate(*spec["inputs"], spec["fact"])
+        # One read of the runtime per load: the set's tokens, marks, and icons, and the host bridge, all from it.
+        runtime = COMMENT_LAYER.read_text(encoding="utf-8")
+        tokens, marks, icons = _design_set(runtime)
 
         def ordered(projects):
             """(project, specs) by name; specs that need you first, then changed specs, then by title (#index-entry-order)."""
@@ -1378,29 +1416,31 @@ class MountHandler(SimpleHTTPRequestHandler):
                 for project in sorted(projects)]
 
         def project_rows(rows):
-            """The listing of ordered(projects)."""
+            """The listing of ordered(projects) (#index-entry-table): each project's muted label, then its spec rows, each
+            its status mark, its title in a column of its own, its gate word in another, and one muted meta line."""
             parts = []
             for project, specs in rows:
-                parts.append('<p class="label">%s</p><ul>' % html.escape(project))
+                parts.append('<p class="project">%s</p><ul>' % html.escape(project))
                 for spec in specs:
+                    mark = '<span class="mark">%s</span>' % marks.get(spec["mark"], "")
                     if spec["href"] is None:
-                        parts.append('<li><div class="row"><span class="stale-path">%s</span><span class="pills"><span class="pill muted">Stale</span></span></div></li>' % html.escape(spec["title"]))
+                        parts.append('<li class="spec stale">%s<span class="title">%s</span><span class="gate">Stale</span></li>'
+                                     % (mark, html.escape(spec["title"])))
                         continue
-                    # The gate word, muted unless it needs you, then Changed: no word says up to date (#index-entry-title).
-                    pills = '<span class="pill%s">%s</span>' % ("" if spec["needs"] else " muted", html.escape(spec["gate"])) if spec["gate"] else ""
-                    pills += '<span class="pill">Changed</span>' if spec["status"] else ""
-                    pills = '<span class="pills">%s</span>' % pills if pills else ""
-                    # Count pills, Open then Resolved; a status with no threads has no pill (#index-threads).
-                    tallies = "".join(
-                        '<span class="tally %s"><b>%d</b> %s</span>' % (word.lower(), count, word)
-                        for word, count in zip(("Open", "Resolved"), spec["counts"] or (0, 0)) if count)
-                    parts.append('<li><div class="row"><a href="%s">%s</a>%s</div>%s</li>' % (
-                        html.escape(spec["href"], quote=True), html.escape(spec["title"]), pills,
-                        '<div class="tallies">%s</div>' % tallies if tallies else ""))
-                parts.append('</ul>')
+                    gate = '<span class="gate%s">%s</span>' % (
+                        " needs" if spec["needs"] else "", html.escape(spec["gate"])) if spec["gate"] else ""
+                    # Thread counts, open then resolved, each its number then its word, a status with no threads absent
+                    # (#index-threads); then Changed: no word says up to date (#index-entry-title).
+                    meta = ["%d %s" % (count, word) for word, count in zip(("open", "resolved"), spec["counts"] or (0, 0)) if count]
+                    meta += ["Changed"] if spec["status"] else []
+                    parts.append('<li class="spec">%s<a class="title" href="%s">%s</a>%s%s</li>' % (
+                        mark, html.escape(spec["href"], quote=True), html.escape(spec["title"]), gate,
+                        '<span class="meta">%s</span>' % " · ".join(meta) if meta else ""))
+                parts.append("</ul>")
             return "".join(parts)
 
-        def card(lane, projects):
+        def lane_rows(lane, projects):
+            """One lane: its header, then its rows; a group of rows, never a card (#index-entry-purpose)."""
             rows = ordered(projects)
             needs = sum(spec["needs"] for _, specs in rows for spec in specs)
             # The lane's Proof link: the first proof review facts name for its specs, in index order (#index-entry-lane).
@@ -1409,84 +1449,73 @@ class MountHandler(SimpleHTTPRequestHandler):
             link = '<a class="proof" href="%s" target="_blank" rel="noopener" data-evidence-bundle="%s">Proof</a>' % (
                 html.escape(proof["url"], quote=True), html.escape(proof["bundle"], quote=True)) if proof else ""
             key = html.escape(_lane_label(lane)[0])
-            return '<section class="lane%s" aria-label="%s"><p class="lane-head"><span class="key">%s</span><span class="count">%s</span>%s</p>%s</section>' % (
-                " needs" if needs else "", key, key, "%d need you" % needs if needs else "Nothing needs you", link,
-                project_rows(rows))
+            count = "%d %s you" % (needs, "needs" if needs == 1 else "need") if needs else "Nothing needs you"
+            return '<section class="lane" aria-label="%s"><h3 class="lane-head"><span class="key">%s</span><span class="count">%s</span>%s</h3>%s</section>' % (
+                key, key, count, link, project_rows(rows))
 
-        # Needs you, then In progress, each lanes by issue number, each only when it holds a card (#index-sections).
+        # Needs you, then In progress, each lanes by issue number, each only when it holds a lane (#index-sections).
         parts = {True: [], False: []}
         for lane, projects in sorted(lanes.items(), key=lambda item: _lane_label(item[0])[1]):
-            parts[any(spec["needs"] for specs in projects.values() for spec in specs)].append(card(lane, projects))
+            parts[any(spec["needs"] for specs in projects.values() for spec in specs)].append(lane_rows(lane, projects))
         listing = "".join(
-            '<p class="label">%s</p><nav class="lanes" aria-label="%s">%s</nav>' % (label, label, "\n".join(parts[needs]))
+            '<nav class="part" aria-label="%s"><h2>%s <span class="n">%d</span></h2>%s</nav>' % (
+                label, label, len(parts[needs]), "".join(parts[needs]))
             for needs, label in ((True, "Needs you"), (False, "In progress")) if parts[needs])
+        held = sum(len(specs) for specs in settled.values())
         if settled:
-            listing += '<details class="settled"><summary>Settled (%d)</summary><div class="card">%s</div></details>' % (
-                sum(len(specs) for specs in settled.values()), project_rows(ordered(settled)))
+            listing += '<details class="settled"><summary>%s<span>Settled (%d)</span></summary>%s</details>' % (
+                icons.get("chevron-right", ""), held, project_rows(ordered(settled)))
         listing = listing or '<p class="empty">No Spec Chat spec pages are available.</p>'
+        # The muted count line beside the title: lanes that need you, lanes in progress, settled specs.
+        tally = (["%d %s you" % (len(parts[True]), "lane needs" if len(parts[True]) == 1 else "lanes need")] if parts[True] else []) + (
+            ["%d in progress" % len(parts[False])] if parts[False] else []) + (["%d settled" % held] if held else [])
+        top = '<header><h1>Review index</h1>%s</header>' % ('<p class="tally">%s</p>' % " · ".join(tally) if tally else "")
         body = ('''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Spec Chat index</title><style>
-/* ui tokens */
-:root {
-  --ui-font: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --ui-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --ui-text-xs: 12px; --ui-text-sm: 14px; --ui-text-md: 16px; --ui-text-lg: 20px;
-  --ui-page: #ffffff; --ui-surface: #ffffff; --ui-ink: #333333; --ui-muted: #525252; --ui-border: #dfdfdf;
-  --ui-link: #333333; --ui-focus: #262626; --ui-action: #262626;
-  --ui-pass: #005c32; --ui-pass-soft: #e6efea;
-  --ui-fail: #a5000f; --ui-fail-soft: #f6e6e7;
-  --ui-attention: #b0540e; --ui-attention-soft: #faf4ef;
-  --ui-muted-soft: #eeeeee;
-  --ui-draft: #b0540e; --ui-draft-soft: #faf4ef;
-  --ui-resolved: #005c32; --ui-resolved-soft: #e6efea;
-  --ui-space-1: 4px; --ui-space-2: 8px; --ui-space-3: 12px; --ui-space-4: 16px; --ui-space-5: 24px; --ui-space-6: 32px;
-  --ui-radius: 8px; --ui-radius-sm: 6px; --ui-radius-pill: 999px;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ui-page: #1a1a1a; --ui-surface: #242424; --ui-ink: #e0e0e0; --ui-muted: #999999; --ui-border: #3a3a3a;
-    --ui-link: #e0e0e0; --ui-focus: #cccccc; --ui-action: #cccccc;
-    --ui-attention: #e5873a; --ui-attention-soft: #2e2218; --ui-draft: #e5873a; --ui-draft-soft: #2e2218;
-    --ui-pass: #3daa6e; --ui-pass-soft: #1a2e22; --ui-resolved: #3daa6e; --ui-resolved-soft: #1a2e22;
-    --ui-fail: #ffb4ab; --ui-fail-soft: #2e1a1c;
-  }
-}
+%s/* index: the design set's tokens alone (lane-hosting #index-design): quiet rows, no card, border box, stripe, or pill */
 html { color-scheme: light dark; }
-body { margin: 0; background: var(--ui-page); color: var(--ui-ink); font-family: var(--ui-font); font-size: var(--ui-text-sm); font-weight: 400; line-height: 1.4; }
-main { box-sizing: border-box; max-width: 72rem; margin: 0 auto; padding: var(--ui-space-6); }
-h1 { margin: 0 0 var(--ui-space-5); font-size: var(--ui-text-lg); font-weight: 600; line-height: 1.2; }
-.label { margin: 0 0 var(--ui-space-2); color: var(--ui-muted); font-size: var(--ui-text-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; overflow-wrap: anywhere; }
-.lanes { display: grid; gap: var(--ui-space-2); grid-template-columns: repeat(auto-fill, minmax(min(100%%, calc(72rem / 4 - var(--ui-space-6))), 1fr)); align-items: start; margin: 0 0 var(--ui-space-5); }
-.lane, .card { box-sizing: border-box; min-width: 0; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); padding: var(--ui-space-3) var(--ui-space-4); }
-.lane.needs { border-left: var(--ui-space-1) solid var(--ui-attention); }
-.lane-head { display: flex; align-items: baseline; gap: var(--ui-space-2); margin: 0; }
-.key { flex: none; font-weight: 600; white-space: nowrap; }
-.count { flex: 1 1 auto; min-width: 0; text-align: right; color: var(--ui-muted); font-size: var(--ui-text-xs); }
-.proof { flex: none; color: var(--ui-link); font-size: var(--ui-text-xs); font-weight: 600; text-decoration: none; }
+body { margin: 0; background: var(--ui-page); color: var(--ui-ink); font-family: var(--ui-font); font-size: var(--ui-text-sm); font-weight: var(--ui-weight-regular); line-height: 1.4; }
+main { box-sizing: border-box; max-width: 48rem; margin: 0 auto; padding: var(--ui-space-6) var(--ui-space-5); }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--ui-space-1) var(--ui-space-3); }
+h1 { margin: 0; font-size: var(--ui-text-lg); font-weight: var(--ui-weight-semibold); line-height: 1.2; }
+.tally, .count, h2 .n, .project, .meta { color: var(--ui-muted); font-weight: var(--ui-weight-regular); }
+.tally { margin: 0; font-size: var(--ui-text-xs); }
+h2 { margin: var(--ui-space-5) 0 0; padding: 0 var(--ui-space-1) var(--ui-space-2); border-bottom: 1px solid var(--ui-border); font-size: var(--ui-text-ui); font-weight: var(--ui-weight-semibold); }
+.lane-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--ui-space-3); margin: var(--ui-space-3) 0 0; padding: 0 var(--ui-space-1); font-size: var(--ui-text-sm); font-weight: var(--ui-weight-semibold); }
+.key { white-space: nowrap; }
+.count { font-size: var(--ui-text-xs); }
+.proof { margin-left: auto; color: var(--ui-link); font-size: var(--ui-text-xs); font-weight: var(--ui-weight-regular); text-decoration: none; }
 .proof:hover, .proof:focus-visible { text-decoration: underline; }
-.lane .label, .card ul + .label { margin: var(--ui-space-3) 0 var(--ui-space-1); }
+.project { margin: var(--ui-space-1) 0 0; padding: 0 var(--ui-space-1) 0 calc(var(--ui-space-1) + var(--ui-space-4) + var(--ui-space-3)); font-size: var(--ui-text-xs); overflow-wrap: anywhere; }
 ul { list-style: none; margin: 0; padding: 0; }
-li { padding: var(--ui-space-2) 0; border-top: 1px solid var(--ui-border); }
-.row { display: flex; align-items: center; gap: var(--ui-space-3); }
-li a { flex: 1 1 auto; min-width: 0; color: var(--ui-link); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
-li a:hover, li a:focus-visible { text-decoration: underline; }
-a:focus-visible, summary:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; border-radius: var(--ui-radius-sm); }
-.pills { flex: 0 1 auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--ui-space-1); margin-left: auto; }
-.pill { flex: none; padding: 0 var(--ui-space-2); line-height: 1.6; border-radius: var(--ui-radius-pill); background: var(--ui-attention-soft); color: var(--ui-attention); font-size: var(--ui-text-xs); font-weight: 600; }
-.pill.muted { background: var(--ui-surface); color: var(--ui-muted); border: 1px solid var(--ui-border); }
-li .stale-path { flex: 1 1 auto; min-width: 0; color: var(--ui-muted); overflow-wrap: anywhere; }
-.tallies { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); margin-top: var(--ui-space-1); }
-.tally { display: inline-flex; gap: var(--ui-space-1); padding: 0 var(--ui-space-2); line-height: 1.6; border-radius: var(--ui-radius-pill); font-size: var(--ui-text-xs); font-weight: 400; }
-.tally b { font-weight: 600; }
-.tally.open { background: var(--ui-draft-soft); color: var(--ui-draft); }
-.tally.resolved { background: var(--ui-resolved-soft); color: var(--ui-resolved); }
-.settled summary { cursor: pointer; margin: 0 0 var(--ui-space-2); font-size: var(--ui-text-md); font-weight: 600; }
-.empty { color: var(--ui-muted); }
-@media (max-width: 640px) { main { padding: var(--ui-space-4); } }
-</style></head><body><main><h1>Review index</h1>%s</main><script>%s
+.spec { position: relative; display: grid; grid-template-columns: var(--ui-space-4) minmax(0, 1fr) auto; grid-template-areas: "mark title gate" ". meta meta"; align-items: start; gap: 0 var(--ui-space-3); padding: var(--ui-space-2) var(--ui-space-1); border-bottom: 1px solid var(--ui-border); }
+.spec:not(.stale):hover { background: var(--ui-surface-soft); }
+.mark { grid-area: mark; display: flex; align-items: center; height: calc(var(--ui-text-sm) * 1.4); }
+.mark svg { display: block; }
+.title { grid-area: title; align-self: baseline; min-width: 0; color: var(--ui-ink); font-weight: var(--ui-weight-medium); text-decoration: none; overflow-wrap: anywhere; }
+a.title::after { content: ""; position: absolute; inset: 0; }
+a.title:hover, a.title:focus-visible { text-decoration: underline; }
+.stale .title { color: var(--ui-muted); font-weight: var(--ui-weight-regular); }
+.gate { grid-area: gate; align-self: baseline; color: var(--ui-muted); font-size: var(--ui-text-xs); white-space: nowrap; }
+.gate.needs { color: var(--ui-attention); }
+.meta { grid-area: meta; font-size: var(--ui-text-xs); overflow-wrap: anywhere; }
+a:focus-visible, summary:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); border-radius: var(--ui-radius-sm); }
+.settled { margin: var(--ui-space-5) 0 0; }
+.settled summary { display: flex; align-items: center; gap: var(--ui-space-1); padding: var(--ui-space-1); cursor: pointer; list-style: none; font-size: var(--ui-text-ui); font-weight: var(--ui-weight-semibold); }
+.settled summary::-webkit-details-marker { display: none; }
+.settled summary svg { flex: none; color: var(--ui-muted); transition: transform var(--ui-motion-duration) var(--ui-motion-ease); }
+.settled[open] summary svg { transform: rotate(90deg); }
+.empty { margin: var(--ui-space-5) 0 0; color: var(--ui-muted); }
+@media (max-width: 640px) {
+main { padding: var(--ui-space-5) var(--ui-space-4); }
+.spec { grid-template-columns: var(--ui-space-4) minmax(0, 1fr); grid-template-areas: "mark title" ". gate" ". meta"; align-content: center; min-height: calc(var(--ui-space-6) + var(--ui-space-3)); box-sizing: border-box; }
+.gate { align-self: start; white-space: normal; }
+.settled summary { min-height: calc(var(--ui-space-6) + var(--ui-space-3)); box-sizing: border-box; }
+}
+</style></head><body><main>%s%s</main><script>%s
 listenHost();
-</script></body></html>''' % (listing, _host_bridge())).encode("utf-8")
+</script></body></html>''' % (tokens, top, listing, _host_bridge(runtime))).encode("utf-8")
         self._send_body(body, "text/html; charset=utf-8")
 
     def _resolve_path(self, path, *, spec_only=False):

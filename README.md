@@ -111,6 +111,8 @@ skill/shape-spec/        shaping skill, validator, references
 skill/review-spec/       review skill, review server, watch and reply scripts
 skill/repair-specs/      spec repair skill
 scripts/install-spec-chat  install and onboarding entry point
+scripts/design-set-sync  builds the pinned design set into the runtime and spec stylesheet
+design-set.toml          the one design set pin
 tests/                   all tests (Python, Node, shell)
 qa.toml                  QA capture target
 DESIGN.md                consensus design document

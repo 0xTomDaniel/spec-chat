@@ -95,14 +95,14 @@ const threads = frame => frame.evaluate(() => [...document.querySelectorAll('#hx
 const shows = (frame, text, status) => frame.waitForFunction(([text, status]) => [...document.querySelectorAll('#hx-threads .hx-thread')].some(t =>
   t.querySelector('.hx-msg .hx-text')?.textContent === text && t.querySelector('.hx-pill')?.textContent === status), [text, status], { timeout: 5000 });
 const panelOpen = frame => frame.evaluate(() => document.querySelector('.hx-panel').classList.contains('open'));
-// On a phone: Comment (C), then a tap on the block, then the composer's Comment; saving leaves the panel open.
+// On a phone: Comment, then a tap on the block, then the composer's Comment; saving leaves the panel open.
 const phoneComment = async (frame, block, text) => {
   if (await panelOpen(frame)) await frame.tap('#hx-panel-toggle');
   await frame.tap('#hx-mode');
   await frame.tap(block);
   await frame.fill('.hx-composer textarea', text);
   await frame.tap('.hx-composer [data-act=save]');
-  await shows(frame, text, 'draft');
+  await shows(frame, text, 'Draft');
 };
 // The bottom toolbar's drafts note and shown buttons, and every shown hand-off control on the screen.
 const toolbar = frame => frame.evaluate(() => {
@@ -143,15 +143,15 @@ try {
   await frame.click(TOTALS);
   await frame.fill('.hx-composer textarea', 'Saved in the host frame.');
   await frame.click('.hx-composer [data-act=save]');
-  await frame.waitForFunction(() => [...document.querySelectorAll('#hx-threads .hx-thread')].some(t => t.querySelector('.hx-pill')?.textContent === 'draft'));
+  await frame.waitForFunction(() => [...document.querySelectorAll('#hx-threads .hx-thread')].some(t => t.querySelector('.hx-pill')?.textContent === 'Draft'));
   await frame.click('#hx-handoff');
   await frame.waitForFunction(() => [...document.querySelectorAll('#hx-threads .hx-thread')].some(t =>
-    t.querySelector('.hx-msg .hx-text')?.textContent === 'Saved in the host frame.' && t.querySelector('.hx-pill')?.textContent === 'pending'), null, { timeout: 5000 });
-  assert.deepEqual((await threads(frame)).map(t => t.status), ['pending'], 'the one thread is pending');
+    t.querySelector('.hx-msg .hx-text')?.textContent === 'Saved in the host frame.' && t.querySelector('.hx-pill')?.textContent === 'Pending'), null, { timeout: 5000 });
+  assert.deepEqual((await threads(frame)).map(t => t.status), ['Pending'], 'the one thread is pending');
   await handedOff('served-handoff', 'Saved in the host frame.'); // shown pending at once, stored once the service answers
   await page.close();
 
-  // #acceptance-served-index: Back to Spec Chat index shows the review index in the host's frame.
+  // #acceptance-served-index: the Review index link shows the review index in the host's frame.
   ({ page, frame } = await open('served-index'));
   const hostPage = page.url();
   await frame.click('.hx-service-index-link');
@@ -189,7 +189,7 @@ try {
   ({ page, frame } = await open('mobile-handoff', { on: phone, direct: true }));
   await phoneComment(frame, TOTALS, 'Saved on a phone.');
   assert.deepEqual(await toolbar(frame), { drafts: '1 draft', buttons: [
-    { text: '✛ Comment (C)', tall: true }, { text: 'Next TBD (2)', tall: true }, { text: 'Hand off to agent →', tall: true }, { text: 'Reading view', tall: true },
+    { text: 'Comment', tall: true }, { text: 'Next TBD (2)', tall: true }, { text: 'Hand off to agent →', tall: true }, { text: 'Reading view', tall: true },
   ] }, 'the panel\'s one hand-off bar in the bottom toolbar, every control 44 pixels tall');
   // #acceptance-mobile-one-control: with the panel open, one Hand off and one Next TBD (2) on the screen.
   assert.equal(await panelOpen(frame), true);
@@ -239,7 +239,7 @@ try {
   assert.deepEqual(spoolEvents('served-reload-outbox'), [], 'nothing stored while unreachable');
   reachable = true;
   await reload(frame);
-  await shows(frame, 'Saved offline in the host frame.', 'draft');
+  await shows(frame, 'Saved offline in the host frame.', 'Draft');
   await draftsNote(frame, '1 draft');
   await until(() => spoolEvents('served-reload-outbox').some(e => e.text === 'Saved offline in the host frame.'), 'the waiting comment is stored');
   await page.close();

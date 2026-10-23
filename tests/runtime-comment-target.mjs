@@ -64,7 +64,7 @@ try {
     }, TOTALS);
     assert.deepEqual(reading, { role: null, tabindex: null }, 'reading view adds no button role or Tab stop');
 
-    await page.click('#hx-mode');
+    await page.getByRole('button', { name: 'Comment', exact: true }).click(); // the toolbar's Comment button, by its name
     const on = await page.evaluate(() => {
       const leaves = [...document.querySelectorAll('[data-anchor]')].filter(b => !b.querySelector('[data-anchor]'));
       const parents = [...document.querySelectorAll('[data-anchor]')].filter(b => b.querySelector('[data-anchor]'));
@@ -81,7 +81,7 @@ try {
     assert.equal(name, 1, 'the block button is named by its own text');
 
     // Off: each block back to its own role and Tab order.
-    await page.click('#hx-mode');
+    await page.getByRole('button', { name: 'Comment', exact: true }).click(); // the toolbar's Comment button, by its name
     const off = await page.evaluate(s => {
       const p = document.querySelector(s), own = document.querySelector('[data-anchor="context"]');
       return {
@@ -101,7 +101,7 @@ try {
   // Enter and Space open the composer on the focused block, text box focused.
   for (const key of ['Enter', ' ']) {
     const { page, errors } = await open();
-    await page.click('#hx-mode');
+    await page.getByRole('button', { name: 'Comment', exact: true }).click(); // the toolbar's Comment button, by its name
     await tabTo(page, TOTALS);
     await page.keyboard.press(key);
     const box = await composer(page);
@@ -134,7 +134,7 @@ try {
   // Modified or repeated Enter and Space are not block activation.
   for (const key of ['Shift+Enter', 'Control+Enter', 'Alt+ ', 'Meta+Enter']) {
     const { page } = await open();
-    await page.click('#hx-mode');
+    await page.getByRole('button', { name: 'Comment', exact: true }).click(); // the toolbar's Comment button, by its name
     await tabTo(page, TOTALS);
     await page.keyboard.press(key);
     await page.waitForTimeout(100);
@@ -143,7 +143,7 @@ try {
   }
   {
     const { page } = await open();
-    await page.click('#hx-mode');
+    await page.getByRole('button', { name: 'Comment', exact: true }).click(); // the toolbar's Comment button, by its name
     await tabTo(page, TOTALS);
     await page.evaluate(s => document.querySelector(s).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true })), TOTALS);
     await page.waitForTimeout(100);
@@ -154,7 +154,7 @@ try {
   // Text selection inside a block still works and comments on the selected text.
   {
     const { page } = await open();
-    await page.click('#hx-mode');
+    await page.getByRole('button', { name: 'Comment', exact: true }).click(); // the toolbar's Comment button, by its name
     await page.locator(TOTALS).scrollIntoViewIfNeeded();
     const p = await page.locator(TOTALS).boundingBox();
     await page.mouse.move(p.x + 2, p.y + p.height / 2);

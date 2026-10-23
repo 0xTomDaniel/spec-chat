@@ -180,7 +180,7 @@ assert.equal(resolveState.expandedResolved.size, 0);
 assert.equal(refreshed, 2, 'one refresh per click');
 const panel = slice('function renderPanel(', '\n\n// A card');
 assert.doesNotMatch(runtime, /Resolve thread|jev-resolve/, 'no card has its own Resolve thread button');
-assert.match(panel, /if \(th\.status === 'acknowledged'\) \{[\s\S]*?'✓ Resolve'[\s\S]*?resolveThread\(th\)/, "each card's own resolve control is unchanged");
+assert.match(panel, /if \(th\.status === 'acknowledged'\) \{[\s\S]*?'Resolve'[\s\S]*?resolveThread\(th\)/, "each card's own resolve control is unchanged");
 assert.match(panel, /const hinted = threads\.filter\(looksResolved\);\n\s+if \(hinted\.length\) \{[\s\S]*?'Resolve all \(' \+ hinted\.length \+ '\)'[\s\S]*?resolveThreads\(hinted\)[\s\S]*?wrap\.appendChild\(all\);\n  \}\n  const handoffState/,
   'Resolve all (n) sits after every card, only when a thread looks resolved');
 assert.match(panel, /const orphanHint = openOrphanHint\(th\);/, 'cards read the orphan guess only while open');
