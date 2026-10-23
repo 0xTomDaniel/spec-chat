@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterable, Iterator, Mapping
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -50,6 +50,9 @@ DRAFT_CHECK_KINDS = frozenset({"contradicts", "contradicts-nongoal", "oversteps"
 # fewer, as each starts a claude process on the box.
 ASK_WORKERS = 8
 LLM_RUNS = 2
+# Asks that wait at most (review-service #steady-bound): past them an ask stays pending unqueued, and a read that
+# still misses its key queues it again (#ask-queue), so the queue holds no more however many pairs reads walk.
+ASK_WAITING = 1024
 # A reader wants its waiting asks while a read of it runs and for this long after one ends (#ask-queue): the page
 # and jev-read read again 2 s after a read while anything is pending, so a reader silent longer has gone (a closed
 # or hidden tab, a finished agent read) and the asks only it wanted leave the queue unasked.
@@ -2046,6 +2049,7 @@ def lane_check(left: str, a: Mapping[str, Any], right: str, b: Mapping[str, Any]
     item = _chain("lane", a["anchor"], second, [first, second], {"base": a["base"], "head": "working-tree"}, steps)
     item["pair"] = (a["path"], b["path"])
     item["sides"] = ((left, a["path"], a["anchor"]), (right, b["path"], b["anchor"]))
+    item["clauses"] = (left, a, right, b)  # what a waiting ask holds, building the chain again when it starts
     return item
 
 
@@ -2123,6 +2127,10 @@ def _commit(root: str, ref: str) -> str | None:
     return value.decode().strip() if value else None
 
 
+# Cross-lane pairs of two clause lists kept built (#fast-marks); more, as for two lanes each adding a large spec, are
+# built one at a time as a read walks them (review-service #steady-bound).
+LANE_KEPT_PAIRS = 1024
+
 # Fast reads (jev-suggestions #fast-marks-section): results kept in memory by the content of their inputs, up to
 # this many bytes (#acceptance-store-memory). Bounded by size, not count: one spec's question lists run to megabytes,
 # and every edit keeps a new set while the superseded one ages out.
@@ -2159,11 +2167,12 @@ def _content_digest(value: Any) -> str:
     return digest.hexdigest()
 
 
-def _footprint(value: Any) -> int:
-    """Bytes a value holds in memory: each object reachable through its containers, counted once."""
+def _footprint(value: Any, limit: int | None = None) -> int:
+    """Bytes a value holds in memory: each object reachable through its containers, counted once; counting stops
+    once past `limit`, so measuring a value too large to keep costs no more than the limit."""
     seen: set[int] = set()
     stack, total = [value], 0
-    while stack:
+    while stack and (limit is None or total <= limit):
         item = stack.pop()
         if id(item) in seen:
             continue
@@ -2178,8 +2187,9 @@ def _footprint(value: Any) -> int:
 
 
 class _Kept:
-    """In-memory results beside the held records, least recently used dropped first beyond `limit` bytes; nothing
-    is stored and a restart starts empty."""
+    """In-memory results beside the held records, least recently used dropped first beyond `limit` bytes, and a
+    value larger than the limit returned but never kept (review-service #steady-bound); nothing is stored and a
+    restart starts empty."""
 
     def __init__(self, limit: int = KEPT_BYTES):
         self.limit = limit
@@ -2194,13 +2204,15 @@ class _Kept:
                 self.values.move_to_end(key)
                 return self.values[key][0]
         value = make()
-        size = _footprint(value)
+        size = _footprint(value, self.limit)
+        if size > self.limit:
+            return value
         with self.lock:
             if key in self.values:
                 self.used -= self.values.pop(key)[1]
             self.values[key] = (value, size)
             self.used += size
-            while self.used > self.limit and len(self.values) > 1:  # the value just made stays
+            while self.used > self.limit:
                 self.used -= self.values.popitem(last=False)[1][1]
         return value
 
@@ -2623,8 +2635,8 @@ class JevService:
         return futures
 
     def _ask_question(self, question: Mapping[str, Any], seam: "JevSeam") -> None:
-        if question.get("kind") == "lane" and "chain" in question:
-            self._ask_lane_steps(question["chain"], seam)
+        if question.get("kind") == "lane" and "clauses" in question:
+            self._ask_lane(question["clauses"], seam)
         else:
             seam.answer(question)
 
@@ -2632,15 +2644,18 @@ class JevService:
         """Under _ask_lock: the ask in flight for any of the keys, else a new one of them, started on a free worker
         or waiting for one; a waiting ask is noted as wanted by `read`, (reader, read number), keeping the reader's
         latest read that wants it: reads of one reader overlap, as from two tabs, and end in any order. None once
-        stopped."""
+        stopped, or with ASK_WAITING asks waiting: then the ask stays pending, unqueued, until a later read."""
         if self._ask_pool is None:
             return None
         future = next((self._asking[key] for key in keys if key in self._asking), None)
         if future is None:
+            start = self._drains < self._ask_workers
+            if not start and len(self._waiting) >= ASK_WAITING:
+                return None
             future = Future()
             for key in keys:
                 self._asking[key] = future
-            if self._drains < self._ask_workers:
+            if start:
                 self._drains += 1
                 future.set_running_or_notify_cancel()
                 self._ask_pool.submit(self._drain, future, keys, ask)
@@ -2718,15 +2733,15 @@ class JevService:
         with self._ask_lock:
             return len(self._waiting), self._drains
 
-    def _lane_questions(self, rows: Any, *, exclude_test: bool = True,
-                        mains: dict[str, str | None] | None = None) -> list[dict[str, Any]]:
-        """Cross-lane questions over every registry row's changed clauses (#cross-lane-clauses), kept by
-        content (#fast-marks): a read resolves each repository's target main once, or takes mains already
-        resolved, and reparses nothing unchanged.
-        Only slugs of the same project are paired (#cross-lane-pairs, #shared-own-project).
+    def _lane_questions(self, rows: Any, *, exclude_test: bool = True, mains: dict[str, str | None] | None = None,
+                        own: str | None = None) -> Iterator[dict[str, Any]]:
+        """Cross-lane questions over every registry row's changed clauses (#cross-lane-clauses), one chain at a time:
+        every pair of two slugs' clauses, or with `own`, a page's served path, only the pairs on its own clauses. A
+        read resolves each repository's target main once, or takes mains already resolved, and reparses nothing
+        unchanged. Only slugs of the same project are paired (#cross-lane-pairs, #shared-own-project).
         Test-flagged slugs are excluded from cross-lane checks (#cross-lane-test-host)."""
         if not {"about", "contradicts", "oversteps", "overlaps"} <= set(self.seam.question_sets):
-            return []
+            return
         projects: dict[str, dict[str, list[dict[str, str]]]] = {}
         mains = {} if mains is None else dict(mains)
         for row in rows or ():
@@ -2739,13 +2754,36 @@ class JevService:
                 clauses.setdefault(str(row["slug"]), []).extend(self._changed_clauses(row, mains))
             except Exception:
                 continue
-        result: list[dict[str, Any]] = []
         for clauses in projects.values():
-            try:
-                result.extend(self._built("lane", clauses))
-            except Exception:
-                continue
-        return result
+            slugs = sorted(clauses)
+            for index, left in enumerate(slugs):
+                for right in slugs[index + 1:]:
+                    a, b = clauses[left], clauses[right]
+                    if own is None:
+                        yield from self._lane_pairs(left, a, right, b)
+                    else:
+                        yield from self._lane_pairs(left, [clause for clause in a if clause["path"] == own], right, b)
+                        yield from self._lane_pairs(left, a, right, [clause for clause in b if clause["path"] == own])
+
+    def _lane_pairs(self, left: str, a: list[dict[str, Any]], right: str, b: list[dict[str, Any]]) -> Iterable[dict[str, Any]]:
+        """The lane check of each clause of `a` with each of `b`, the lower slug's first (#cross-lane-question). Up to
+        LANE_KEPT_PAIRS pairs are kept by content (#fast-marks); more are built as walked and dropped, so what a read
+        holds or builds does not grow with the pairs it walks (review-service #steady-bound)."""
+        if not a or not b:
+            return ()
+        try:
+            if len(a) * len(b) <= LANE_KEPT_PAIRS:
+                return self._built("lane", {left: a, right: b})
+        except Exception:
+            return ()
+
+        def walked() -> Iterator[dict[str, Any]]:
+            for first in a:
+                for second in b:
+                    chain = lane_check(left, first, right, second)
+                    self._keyed(chain["chain"][:1])  # the gate every walk reads; a later step is keyed when reached
+                    yield chain
+        return walked()
 
     def _lane_items(self, mount: Mapping[str, Any], rows: Any, read: tuple[Any, int] | None = None) -> list[dict[str, Any]]:
         """`lane` items on this page's own clauses from held records; misses are asked after answering.
@@ -2759,9 +2797,7 @@ class JevService:
             return record if state == "final" else None
 
         items = []
-        for chain in self._lane_questions(rows):
-            if own not in chain["pair"]:
-                continue
+        for chain in self._lane_questions(rows, own=own):
             results = lane_result(chain["chain"], final)
             # Emit finding items
             for result in results:
@@ -2813,13 +2849,17 @@ class JevService:
         if _confident_label(a) == "no" and _confident_label(b) == "no":
             seam.ask(steps[4])
 
+    def _ask_lane(self, clauses: tuple[Any, ...], seam: "JevSeam | None" = None) -> None:
+        """Ask the lane check of a clause pair, its chain built as the ask starts: waiting, it holds only its clauses."""
+        self._ask_lane_steps(lane_check(*clauses)["chain"], seam)
+
     def _lane_submit(self, chain: Mapping[str, Any], seam: "JevSeam | None" = None,
                      read: tuple[Any, int] | None = None) -> None:
         """Ask a lane chain in the background; deduped by its steps' keys."""
         seam = seam or self.seam
         keys = tuple(seam.key(step) for step in chain["chain"])
         with self._ask_lock:
-            self._submit(keys, functools.partial(self._ask_lane_steps, chain["chain"], seam), read)
+            self._submit(keys, functools.partial(self._ask_lane, chain["clauses"], seam), read)
 
     def _board_from_records(self, rows: Any, mains: dict[str, str | None] | None = None
                             ) -> tuple[dict[str, Any], dict[str, dict[str, Any]], bool]:
@@ -2858,8 +2898,8 @@ class JevService:
         for chain in self._lane_questions(rows, mains=mains):
             results = lane_result(chain["chain"], get_held)
             for r in results:
-                if r.get("outcome") is None and "step" in r:
-                    misses.setdefault(self.seam.key(r["step"]), dict(chain))
+                if r.get("outcome") is None and "step" in r and len(misses) < ASK_WAITING:  # no more could wait
+                    misses.setdefault(self.seam.key(r["step"]), {"kind": "lane", "clauses": chain["clauses"]})
             if any(_confident_label(r) in LANE_FINDINGS for r in results):
                 conflict_pairs.add(chain["pair"])
         answer = {"jev": "on", "rows": answer_rows, "conflicts": [{"a": a, "b": b} for a, b in sorted(conflict_pairs)]}

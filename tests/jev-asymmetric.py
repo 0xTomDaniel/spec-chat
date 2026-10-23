@@ -353,7 +353,7 @@ class HeldEscalationTest(unittest.TestCase):
         service = self.service(provider, [])
         step = draft_check()["chain"][1]
         self.crash_left(service, step)
-        chain = {"kind": "lane", "pair": ("a", "b"), "chain": [step]}
+        chain = {"kind": "lane", "pair": ("a", "b"), "chain": [step], "clauses": ()}
         service._material_questions = lambda row: []
         service._lane_questions = lambda rows, **kwargs: [chain]
         _, misses, _ = service._board_from_records([{"slug": "a", "spec": "x", "id": "1"}])
