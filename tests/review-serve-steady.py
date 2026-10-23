@@ -12,6 +12,7 @@ import sys
 import tempfile
 import threading
 import time
+import tracemalloc
 import unittest
 import urllib.request
 from pathlib import Path
@@ -54,6 +55,18 @@ class FakeProvider:
         labels = list(payload["questions"][kind]["criteria"])
         choice, confidence = self.answer(kind, labels) if self.answer else settled_answer(kind, labels)
         return {"answers": {kind: {"choice": choice, "confidence": confidence}}}
+
+
+class HeldProvider(FakeProvider):
+    """Answers nothing until released, as a slow Jev: the asks past the running few wait in the ask queue."""
+
+    def __init__(self):
+        super().__init__()
+        self.release = threading.Event()
+
+    def decide(self, payload):
+        self.release.wait()
+        return super().decide(payload)
 
 
 def git(root, *args):
@@ -230,7 +243,7 @@ class ReadsTest(Steady):
         for _ in range(2):
             first = [self.read(service, rows, index) for index in (0, 1)]
             self.settle_asks(service)
-        self.assertTrue(service._lane_questions(rows))
+        self.assertTrue(list(service._lane_questions(rows)))
         parses, keys = [], []
         feed, canonical = jev._AnchorParser.feed, jev._canonical
         with patch.object(jev._AnchorParser, "feed", lambda parser, data: (parses.append(1), feed(parser, data))[1]), \
@@ -243,7 +256,7 @@ class ReadsTest(Steady):
     def test_kept_key_is_the_computed_key(self):
         rows = self.lanes()
         service = self.jev_service()
-        chains = service._lane_questions(rows)
+        chains = list(service._lane_questions(rows))
         self.assertTrue(chains)
         for step in (step for chain in chains for step in chain["chain"]):
             fresh = {name: value for name, value in step.items() if name != jev.QUESTION_KEY}
@@ -427,6 +440,51 @@ class MemoryTest(Steady):
         last = self.status(server)["rss_bytes"]
         self.assertEqual(held(), shape)
         self.assertLess(last - first, 16 << 20, (first, last))
+
+    def large_lanes(self, clauses):
+        """Two lanes of one project, each adding the same large spec: all its clauses differ from target main, so
+        their cross-lane pairs number clauses squared."""
+        def large(lane, edit=""):
+            return section(*((f"c{index}", f"Clause {index} of lane {lane} sorts cards by age and edits specs{edit}.")
+                             for index in range(clauses)))
+        x, base_x = repo(self.dir / "x", section(("keep", "Keep.")), large("x"))
+        y, base_y = repo(self.dir / "y", section(("keep", "Keep.")), large("y"))
+        return [row(x, "ann1", base_x), row(y, "ann2", base_y)], large
+
+    def test_repeated_reads_of_a_large_spec_keep_memory_within_a_fixed_bound(self):
+        """#acceptance-steady-memory, #steady-bound with #cross-lane-pairs: Jev reads of a large spec, again and again
+        while it is edited and Jev answers slowly, each walk thousands of cross-lane pairs; the service keeps no more
+        than its kept bound and its ask queue's, and a read builds no more than a fixed bound, however many pairs."""
+        clauses = 48
+        rows, large = self.large_lanes(clauses)
+        provider = HeldProvider()
+        service = self.jev_service(provider)
+        limit = 1 << 20
+        service.__dict__["_kept_results"] = jev._Kept(limit)
+        service.seam.store.limit = 200  # held records have their own fixed bound (#record-held)
+        page = rows[0]
+        tracemalloc.start()
+        try:
+            for index in range(3):
+                Path(page["spec_file"]).write_text(large("x", " " + "again " * index), encoding="utf-8")
+                before = tracemalloc.get_traced_memory()[0]
+                tracemalloc.reset_peak()
+                response = service.response(page, page["spec_file"], page["spec"], page["base"], [], "", rows)
+                built = tracemalloc.get_traced_memory()[1] - before
+                pending = [item for item in response["items"] if item["kind"] == "lane" and item["state"] == "pending"]
+                del response
+                self.assertEqual(len(pending), clauses * clauses)  # every pair is walked: each is pending on its page
+                del pending
+                held = tracemalloc.get_traced_memory()[0]
+                if not index:
+                    first = held
+                self.assertLessEqual(service._kept.used, limit)
+                self.assertLess(built, 8 << 20, "a read built %d MiB" % (built >> 20))
+                self.assertLess(held - first, 2 << 20, "reads kept %d MiB more" % ((held - first) >> 20))
+                self.assertLessEqual(service.queue_counts()[0], jev.ASK_WAITING)
+        finally:
+            tracemalloc.stop()
+            provider.release.set()
 
 
 if __name__ == "__main__":
