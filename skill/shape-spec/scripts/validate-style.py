@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate style provenance and changed-spec story declaration structure."""
+"""Validate style provenance and changed-spec story declaration structure; warn on a Then that may span two screens."""
 
 from html.parser import HTMLParser
 from pathlib import Path
@@ -25,6 +25,7 @@ class SpecParser(HTMLParser):
         self.top_level_sections = []
         self.section_stack = []
         self.active_criteria = []
+        self.criteria = []
         self.active_boundaries = []
         self.captures = []
         self.contract = None
@@ -87,10 +88,12 @@ class SpecParser(HTMLParser):
         if tag in {"h2", "h3"} and section:
             self._capture("heading", tag, depth, section)
         if "data-acceptance-criterion" in values:
-            criterion = {"anchor": anchor, "fields": {}, "tag": tag, "depth": depth, "stories": (values.get("data-story") or "").split()}
+            criterion = {"anchor": anchor, "fields": {}, "tag": tag, "depth": depth, "stories": (values.get("data-story") or "").split(), "one_screen": values.get("data-one-screen") or ""}
             if section:
                 section["criteria"].append(criterion)
+            self.criteria.append(criterion)
             self.active_criteria.append(criterion)
+            self._capture("criterion-field", tag, depth, (criterion, "text"))
         if "data-modular-boundary" in values:
             boundary = {"anchor": anchor, "fields": {}, "tag": tag, "depth": depth}
             if section:
@@ -331,6 +334,82 @@ def validate_shape_sections(parser):
     return None
 
 
+# prompt-first-shaping #complete-criterion-two-screen-warning: words that suggest a Then reads from two screens.
+NOT_A_NAME = frozenset(
+    "a an the this that these those its their his her your my our one two both all each every any no same whole "
+    "other another new current open per in on at to of into from by for with and or".split()
+)
+SURFACE = r"(screen|tab|page|route)"
+NAMED_SURFACE = re.compile(r"\b([\w'’-]+)\s+" + SURFACE + r"(?![\w-])", re.I)
+JOINED_SURFACES = re.compile(r"\b([\w'’-]+)\s+and\s+(?:the\s+)?([\w'’-]+)\s+" + SURFACE + r"s\b", re.I)
+NAVIGATION = re.compile(
+    r"(?:\band\b|\bthen\b|[,;.])\s+((?:(?!(?:and|then)\b)[\w'’-]+\s+){0,4}?"
+    r"(?:(?:returns|returning|goes\s+back|going\s+back|navigates|navigating|redirects|redirecting"
+    r"|takes\s+(?:the\s+\w+|them|you)|taking\s+(?:the\s+\w+|them|you))\s+(?:back\s+)?to\s+(?:the\s+)?[\w'’-]+"
+    r"|(?:opens|opening|switches\s+to|switching\s+to)\s+(?:another|a\s+different|the\s+other|a\s+new|the\s+[\w'’-]+)\s+"
+    + SURFACE + r"))",
+    re.I,
+)
+NO_SCREEN = re.compile(r"\bno\s+screen\s+shows\b", re.I)
+
+
+def then_text(criterion):
+    observable = criterion["fields"].get("observable")
+    if observable:
+        return observable
+    match = re.search(r"\bThen\b.*", criterion["fields"].get("text", ""))
+    return match.group(0) if match else ""
+
+
+def two_screen_words(then):
+    """The words that make a Then look to span two screens, or none."""
+    if NO_SCREEN.search(then):
+        return []
+    then = re.sub(r"^\s*Then\b", "", then)
+    named = {}
+
+    def name(qualifier, noun, words):
+        key = re.sub(r"['’]s$", "", qualifier).casefold()
+        if key not in NOT_A_NAME:
+            named.setdefault(noun.casefold(), {}).setdefault(key, words)
+
+    for match in JOINED_SURFACES.finditer(then):
+        first, second, noun = match.groups()
+        if first.casefold() not in NOT_A_NAME and second.casefold() not in NOT_A_NAME:
+            name(first, noun, f"{first} {noun}")
+            name(second, noun, f"{second} {noun}")
+    for match in NAMED_SURFACE.finditer(then):
+        if not re.search(r"\bno\s+$", then[:match.start()], re.I):
+            name(match.group(1), match.group(2), match.group(0))
+    words = [word for names in named.values() if len(names) > 1 for word in names.values()]
+    navigation = NAVIGATION.search(then)
+    if navigation:
+        words.append(navigation.group(1))
+    return words
+
+
+def two_screen_warnings(parser, prior_html):
+    """Warn on each added or edited criterion whose Then looks to span two screens and carries no reason."""
+    base = SpecParser()
+    if prior_html is not None:
+        base.feed(prior_html)
+        base.close()
+    unchanged = {(criterion["anchor"], criterion["fields"].get("text")) for criterion in base.criteria}
+    warnings = []
+    for criterion in parser.criteria:
+        if criterion["one_screen"].strip() or (criterion["anchor"], criterion["fields"].get("text")) in unchanged:
+            continue
+        words = two_screen_words(then_text(criterion))
+        if words:
+            label = criterion["anchor"] or "without an anchor"
+            quoted = ", ".join(f'"{word}"' for word in words)
+            warnings.append(
+                f"warning: criterion {label} Then may span two screens ({quoted}); "
+                'split it per the one-screen rule or give the reason as data-one-screen="<reason>"'
+            )
+    return warnings
+
+
 def main(argv):
     if len(argv) != 4:
         return fail("usage: validate-style.py <repository> <spec-html> <exact-base>")
@@ -388,6 +467,9 @@ def main(argv):
             return fail(section_error)
         story_state = "valid"
         section_state = "valid" if parser.contract else "legacy"
+        prior_html = prior_spec.stdout.decode(errors="replace") if prior_spec.returncode == 0 else None
+        for warning in two_screen_warnings(parser, prior_html):
+            print(warning, file=sys.stderr)
 
     print(f"style={style_state} stories={story_state} sections={section_state}")
     return 0

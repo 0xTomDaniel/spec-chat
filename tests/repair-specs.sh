@@ -53,15 +53,21 @@ if grep -qF 'terminal output or a named file' "$AUTHORING"; then
 fi
 need "$REPAIR" "QA harness setup"
 # fixture-only Given, final-screen Then, one screen, names not positions
+# (prompt-first-shaping #complete-criterion-one-screen, #complete-criterion-judged, #complete-criterion-two-screen-warning)
 need "$AUTHORING" "A Given holds only state a fixture can set"
 need "$AUTHORING" "never only that something closed"
 need "$AUTHORING" "A Then reads from one screen"
 need "$AUTHORING" "never by screen position or order"
-need "$AUTHORING" "the structural validator does not"
+need "$AUTHORING" "the structural validator fails on none of them"
+need "$AUTHORING" "only warns on a Then that looks to span two screens"
+need "$AUTHORING" 'data-one-screen="both tabs show side by side on one screen"'
+need "$AUTHORING" "no warning leads shaping or repair to edit a criterion the change does not otherwise edit"
 need "$AUTHORING" "the outcome lies outside the page"
 need "$SHAPE" "one screen per Then"
 need "$SHAPE" "never by screen position or order"
-need "$SHAPE" "the validator does not check them"
+need "$SHAPE" "the validator fails on none of them and only warns on a Then that may span two screens"
+need "$SHAPE" "answer each warning by splitting that criterion per the one-screen rule"
+need "$SHAPE" "Never edit a criterion the change does not otherwise edit to answer a warning"
 need "$REPAIR" "move that gesture into the When"
 # When-action and then-step (prompt-first-shaping#complete-criterion-when-action,
 # #complete-criterion-then-step; repair-specs#acceptance-criteria-when-look, #acceptance-criteria-then-step)
