@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ADR: review state as grow-only sets over the spool</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../specs/.style/spec.css">
+<script defer src="../specs/.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Review state as grow-only sets over the spool</h1>
+<nav data-anchor="breadcrumbs">docs / adr / review-state-spool-crdt.spec.html</nav>
+<p data-anchor="supersedes">Supersedes <a href="./review-state-crdt.spec.html">Review state as a grow-only CRDT over the spool</a>.
+Decision behind <a href="../specs/review-state.spec.html">Shared review state</a>.</p>
+</header>
+
+<section data-anchor="context">
+<h2>Context</h2>
+<p data-anchor="context-needs">Review needs three things: several reviewers live on one spec, marks that survive the agent's edits, and offline merge from a browser on reconnect.</p>
+<p data-anchor="context-spool">The spool already holds one immutable file per event with unique ids and reference-based causality, which is a grow-only set.</p>
+<p data-anchor="context-text">During review, spec text has one writer, the agent, editing a committed file; direct live editing by humans is expected later.</p>
+<p data-anchor="context-stack">The review service is Python standard library only, and the runtime is one classic script with vendored libraries that must work over <code>file://</code>.</p>
+</section>
+
+<section data-anchor="decision">
+<h2>Decision</h2>
+<p data-anchor="decision-model">Review state is a state-based CRDT of two grow-only sets in the existing spool, events and stored spec versions, merged by union, with everything else derived by one deterministic fold.</p>
+<p data-anchor="decision-marks">A mark's place is computed from the spec version it was written against, never stored, so nothing is written when the agent edits.</p>
+<p data-anchor="decision-git">Spec text stays in Git and the worktree file only; review state never holds a second live copy of it.</p>
+<p data-anchor="decision-library">No third-party CRDT library while the agent is the one text writer.</p>
+</section>
+
+<section data-anchor="why">
+<h2>Why</h2>
+<p data-anchor="why-union">Union merge needs no coordination, so live sync, offline reconnect, and several reviewers are one mechanism over the store that already exists.</p>
+<p data-anchor="why-one-writer">With one text writer, concurrent text editing is not a need, so a text CRDT would add a dependency, a second copy of spec text, and a doc-to-commit step for nothing.</p>
+<p data-anchor="why-git">Keeping text in Git leaves the existing commit-before-reply step the only path from edit to review.</p>
+</section>
+
+<section data-anchor="alternatives">
+<h2>Alternatives rejected</h2>
+<div class="table-scroll" data-anchor="alternatives-table-scroll">
+<table data-anchor="alternatives-table">
+<thead><tr><th>Option</th><th>Rejected because</th></tr></thead>
+<tbody>
+<tr data-anchor="alt-yjs"><td>Yjs doc per spec with pycrdt in the service</td><td>A binary service dependency, a second live copy of spec text, a new store beside the spool, and a CRDT client for agents, all for concurrent text editing nobody does yet</td></tr>
+<tr data-anchor="alt-automerge"><td>Automerge doc per spec</td><td>The same costs as Yjs plus a heavier WASM runtime on the page</td></tr>
+<tr data-anchor="alt-relay"><td>Yjs on the page with an opaque relay in the service</td><td>A Node runtime on the service host and two processes to keep in step</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section data-anchor="consequences">
+<h2>Consequences</h2>
+<p data-anchor="cons-tradeoff">Marks on heavily rewritten text resolve as changed or gone rather than kept.</p>
+<p data-anchor="cons-one-store">The spool is extended, not replaced; the agent's scan, cursor, reply, and wake keep their contracts.</p>
+<p data-anchor="cons-trust">The page has <a href="../specs/review-state.spec.html#trust-no-login">no login</a>, <a href="../specs/review-state.spec.html#trust-agent-disk">agent events stay on disk</a>, and <a href="../specs/review-state.spec.html#trust-immutable">event files are never overwritten</a>.</p>
+<p data-anchor="cons-reopen">Move trigger: direct human editing of spec text or any second concurrent text writer; then spec text moves to a text CRDT on the page, and only the mark resolver changes.</p>
+</section>
+
+</article>
+</body>
+</html>

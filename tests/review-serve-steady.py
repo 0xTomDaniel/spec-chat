@@ -1,0 +1,670 @@
+"""Steady review service (review-service #steady, #proof-steady-seam): status route, connections, reads that
+reparse nothing unchanged, a board refresh that stands while its inputs do, and an idle service that reads nothing."""
+
+import builtins
+import contextlib
+import http.client
+import importlib.util
+import io
+import json
+import os
+import re
+import socket
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import tracemalloc
+import unittest
+import urllib.request
+from pathlib import Path
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+ASSETS = ROOT / "skill" / "review-spec" / "assets"
+sys.path.insert(0, str(ASSETS))
+jev = importlib.import_module("jev")
+place = importlib.import_module("place")
+_serve_spec = importlib.util.spec_from_file_location("review_serve_steady_test", ASSETS / "review-serve.py")
+serve = importlib.util.module_from_spec(_serve_spec)
+_serve_spec.loader.exec_module(serve)
+
+SPEC = "docs/specs/board.spec.html"
+QUESTIONS = ROOT / "skill" / "review-spec" / "assets" / "jev"
+DRAFT = {"contradicts", "oversteps", "overlaps"}
+
+
+def settled_answer(kind, labels):
+    """A confident answer each question set knows: no change of behavior, else no, else its first label."""
+    for label in ("no-behavior-change", "no"):
+        if label in labels:
+            return label, 0.9
+    return labels[0], 0.9
+
+
+class FakeProvider:
+    """Answers every question at once; counts calls."""
+
+    def __init__(self, answer=None):
+        self.answer = answer
+        self.calls = []
+        self.lock = threading.Lock()
+
+    def decide(self, payload):
+        with self.lock:
+            self.calls.append(payload)
+        kind = next(iter(payload["questions"]))
+        labels = list(payload["questions"][kind]["criteria"])
+        choice, confidence = self.answer(kind, labels) if self.answer else settled_answer(kind, labels)
+        return {"answers": {kind: {"choice": choice, "confidence": confidence}}}
+
+
+class HeldProvider(FakeProvider):
+    """Answers nothing until released, as a slow Jev: the asks past the running few wait in the ask queue."""
+
+    def __init__(self):
+        super().__init__()
+        self.release = threading.Event()
+
+    def decide(self, payload):
+        self.release.wait()
+        return super().decide(payload)
+
+
+def git(root, *args):
+    return subprocess.check_output(("git", "-C", str(root), *args), text=True).strip()
+
+
+def section(*clauses):
+    leaves = "".join(f'<p data-anchor="{anchor}">{text}</p>' for anchor, text in clauses)
+    return f'<html><head><title>Board</title></head><body><section data-anchor="root"><h2>Board</h2>{leaves}</section></body></html>\n'
+
+
+def repo(directory, before, after):
+    """A worktree whose spec is `before` at base and origin/HEAD, `after` on disk."""
+    root = Path(directory).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    git(root, "init", "-q")
+    path = root / SPEC
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(before, encoding="utf-8")
+    git(root, "add", SPEC)
+    git(root, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "base")
+    base = git(root, "rev-parse", "HEAD")
+    git(root, "update-ref", "refs/remotes/origin/main", base)
+    git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+    path.write_text(after, encoding="utf-8")
+    return root, base
+
+
+def row(root, slug, base):
+    return {"id": f"spec:{slug}:aa::{SPEC}", "slug": slug, "project": "p", "root": str(root),
+            "narrow_root": str(Path(root) / "docs"), "spec": SPEC, "spec_file": str(Path(root) / SPEC),
+            "path": f"{slug}/{SPEC}", "base": base, "owner": "w1:p1", "cursor_name": ".cursor-owner"}
+
+
+def history(spec_file, comments):
+    """A spool with review history: comments, each handed off, all consumed by the owner's cursor."""
+    review = Path(str(spec_file) + ".review")
+    (review / "human").mkdir(parents=True, exist_ok=True)
+    names = []
+    for index in range(comments):
+        stamp = 1000 + 2 * index
+        comment = {"id": f"c{index}", "event": "comment", "actor": "human", "anchorId": "a", "text": f"Note {index}.",
+                   "target": {"type": "block"}}
+        handoff = {"id": f"h{index}", "event": "handoff", "actor": "human", "events": [f"c{index}"]}
+        for name, body in ((f"{stamp}-comment-c{index}.json", comment), (f"{stamp + 1}-handoff-h{index}.json", handoff)):
+            (review / "human" / name).write_text(json.dumps(body), encoding="utf-8")
+            names.append(name)
+    (review / ".cursor-owner").write_text("".join(name + "\n" for name in names), encoding="utf-8")
+    return review
+
+
+def aged(*paths):
+    """File times well in the past, as on a box where nothing was written for a while."""
+    past = time.time() - 60
+    for path in paths:
+        os.utime(path, (past, past))
+
+
+class Steady(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name).resolve()
+        self.services, self.servers = [], []
+
+    def tearDown(self):
+        for server in self.servers:
+            server.shutdown()
+            server.server_close()
+        for service in self.services:
+            service.stop()
+        self.tmp.cleanup()
+
+    def jev_service(self, provider=None):
+        service = jev.JevService(state_dir=self.dir / "state", provider=provider or FakeProvider(), api_key="fake",
+                                 question_dirs=[QUESTIONS])
+        self.services.append(service)
+        return service
+
+    def lanes(self):
+        """Two lanes of one project, each changing two clauses against target main."""
+        keep = section(("a", "Keep."), ("b", "Keep too."))
+        x, base_x = repo(self.dir / "x", keep, section(("a", "Cards sort by age."), ("b", "The board edits specs.")))
+        y, base_y = repo(self.dir / "y", keep, section(("a", "Cards sort by title."), ("b", "Only owners edit specs.")))
+        return [row(x, "ann1", base_x), row(y, "ann2", base_y)]
+
+    def server(self, rows, service):
+        server = serve.ReviewThreadingHTTPServer(("127.0.0.1", 0), serve.MountHandler)
+        server.mount_state = serve.MountState(rows)
+        server.state_dir = str(self.dir / "providers")
+        server.jev = service
+        server.wake_controller = serve.WakeController(server)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.servers.append(server)
+        return server
+
+    def status(self, server):
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open("http://127.0.0.1:%d/api/status" % server.server_port, timeout=10) as response:
+            return json.loads(response.read())
+
+    def board(self, service, rows):
+        answer = service.board(rows)
+        self.assertTrue(service._board_idle.wait(20))
+        return answer
+
+    def settle_asks(self, service):
+        deadline = time.monotonic() + 20
+        while service.queue_counts() != (0, 0) or service._asking:
+            self.assertLess(time.monotonic(), deadline, "asks never settled")
+            time.sleep(0.02)
+
+
+class StatusRouteTest(Steady):
+    def test_status_reports_memory_uptime_connections_and_jev_queue(self):
+        """#proof-steady-first-test, #acceptance-status."""
+        service = self.jev_service()
+        server = self.server([], service)
+        status = self.status(server)
+        self.assertEqual(set(status), {"rss_bytes", "uptime_seconds", "connections", "jev"})
+        self.assertGreater(status["rss_bytes"], 1 << 20)
+        self.assertIs(type(status["uptime_seconds"]), int)  # whole seconds
+        self.assertLess(status["uptime_seconds"], 5)  # just started
+        server.started -= 3600.7  # as if started an hour ago
+        self.assertIn(self.status(server)["uptime_seconds"], (3600, 3601, 3602))
+        self.assertEqual(status["connections"], 1)  # the one asking
+        self.assertEqual(status["jev"], {"waiting": 0, "running": 0})
+        with patch.object(service, "queue_counts", lambda: (7, 3)):
+            self.assertEqual(self.status(server)["jev"], {"waiting": 7, "running": 3})
+
+    def test_status_names_a_refused_keys_pause(self):
+        """#acceptance-status-paused, #steady-status: the provider refuses Jev's key; during the refusal's pause the
+        route shows when it ends and the provider's status beside the asks waiting and running, and not after it."""
+
+        class Refused(FakeProvider):
+            def decide(self, payload):
+                super().decide(payload)
+                raise jev.ProviderFailure("OpenRouter decision request failed: HTTP 402", None, 402)
+
+        now = [1000.0]
+        service = self.jev_service(Refused())
+        server = self.server([], service)
+        with patch.object(jev, "_wall", lambda: now[0]):
+            service.seam.ask({"kind": "type", "state": {"after": "Cards sort by age."}, "sources": [], "revision": "head"})
+            now[0] += 10
+            self.assertEqual(self.status(server)["jev"], {"waiting": 0, "running": 0, "status": 402,
+                                                          "paused_until": jev._instant(1000.0 + jev.REFUSED_PAUSE)})
+            now[0] += jev.REFUSED_PAUSE
+            self.assertEqual(self.status(server)["jev"], {"waiting": 0, "running": 0})
+
+    def test_status_reads_no_store(self):
+        service = self.jev_service()
+        server = self.server(self.lanes(), service)
+        opened = []
+        real_open = builtins.open
+
+        def counted(file, *args, **kwargs):
+            if str(file).startswith(str(self.dir)):
+                opened.append(str(file))
+            return real_open(file, *args, **kwargs)
+
+        with patch.object(builtins, "open", counted), patch.object(io, "open", counted):
+            self.status(server)
+        self.assertEqual(opened, [])
+
+
+class ConnectionsTest(Steady):
+    def test_closed_pages_leave_only_the_asking_connection(self):
+        """#acceptance-steady-closed: pages whose tabs closed without closing their keep-alive connections; after
+        the handler's idle timeout (shortened here) the status route shows one connection, its own."""
+        service = self.jev_service()
+        server = self.server([], service)
+        pages = []
+        with patch.object(serve.MountHandler, "timeout", 1.0):
+            for _ in range(3):
+                page = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=10)
+                page.request("GET", "/api/status")
+                page.getresponse().read()
+                pages.append(page)  # left open: the page never closes it
+            self.assertEqual(self.status(server)["connections"], 4)
+            deadline = time.monotonic() + 10
+            while self.status(server)["connections"] != 1:
+                self.assertLess(time.monotonic(), deadline, "idle connections stayed open")
+                time.sleep(0.1)
+        for page in pages:
+            page.close()
+
+
+class ReadsTest(Steady):
+    def read(self, service, rows, index):
+        mount = rows[index]
+        return service.response(mount, mount["spec_file"], mount["spec"], mount["base"], [], "", rows)
+
+    def test_repeat_read_reparses_and_rekeys_nothing(self):
+        """#steady-bound: a read of unchanged specs parses no spec and computes no question key again: each row's
+        changed clauses, their context, and every question's key are built once per content."""
+        rows = self.lanes()
+        service = self.jev_service()
+        for _ in range(2):
+            first = [self.read(service, rows, index) for index in (0, 1)]
+            self.settle_asks(service)
+        self.assertTrue(list(service._lane_questions(rows)))
+        parses, keys = [], []
+        feed, canonical = jev._AnchorParser.feed, jev._canonical
+        with patch.object(jev._AnchorParser, "feed", lambda parser, data: (parses.append(1), feed(parser, data))[1]), \
+                patch.object(jev, "_canonical", lambda value: (keys.append(1), canonical(value))[1]):
+            again = [self.read(service, rows, index) for index in (0, 1)]
+        self.assertEqual(again, first)
+        self.assertEqual(parses, [], "a read parsed an unchanged spec")
+        self.assertEqual(keys, [], "a read computed a question key again")
+
+    def test_kept_key_is_the_computed_key(self):
+        rows = self.lanes()
+        service = self.jev_service()
+        chains = list(service._lane_questions(rows))
+        self.assertTrue(chains)
+        for step in (step for chain in chains for step in chain["chain"]):
+            fresh = {name: value for name, value in step.items() if name != jev.QUESTION_KEY}
+            self.assertEqual(service.seam.key(step), service.seam.key(fresh))
+
+    def test_a_full_ask_queue_costs_a_walked_pair_no_step_key(self):
+        """#fast-marks, #ask-queue with #steady-bound: every worker busy and the ask queue full, a read walking more
+        pairs than are kept built keys only each pair's gate, the step its walk reads: a pending pair stays pending,
+        unqueued, and no key of its later steps is computed. With room in the queue its ask is keyed by every step."""
+        rows = self.lanes()
+        question_key = jev._question_key
+        for room in (True, False):
+            with self.subTest(room=room), patch.object(jev, "LANE_KEPT_PAIRS", 0), \
+                    patch.object(jev, "ASK_WAITING", jev.ASK_WAITING if room else 0):
+                service = self.jev_service()
+                service._lines["jev"].size = 0  # every worker busy: an ask waits, or with no room stays pending
+                self.read(service, rows, 0)
+                kinds = []
+                with patch.object(jev, "_question_key",
+                                  lambda question, qset: (kinds.append(question["kind"]), question_key(question, qset))[1]):
+                    lanes = [item for item in self.read(service, rows, 0)["items"] if item["kind"] == "lane"]
+                self.assertEqual({item["state"] for item in lanes}, {"pending"})
+                self.assertEqual(len(lanes), 4)
+                if room:
+                    self.assertLessEqual({"contradicts", "oversteps", "overlaps"}, set(kinds))
+                else:
+                    self.assertEqual(kinds, ["about"] * len(lanes), "a full queue cost a key of a step not read")
+
+    def test_a_pair_whose_check_raises_is_skipped_kept_or_walked(self):
+        """#cross-lane-pairs with #steady-bound: whether a project's pairs are kept built or walked, a pair whose
+        lane check raises is skipped and the read answers with every other pair's lane item."""
+        rows = self.lanes()
+        check = jev.lane_check
+
+        def check_or_raise(left, a, right, b):
+            if (a["anchor"], b["anchor"]) == ("a", "a"):
+                raise ValueError("a pair that cannot be checked")
+            return check(left, a, right, b)
+
+        for bound in (jev.LANE_KEPT_PAIRS, 0):
+            with self.subTest(walked=not bound), patch.object(jev, "LANE_KEPT_PAIRS", bound), \
+                    patch.object(jev, "lane_check", check_or_raise):
+                service = self.jev_service()
+                service._lines["jev"].size = 0  # nothing answers: every pair stays pending
+                items = self.read(service, rows, 0)["items"]
+                pairs = {(item["id"], item["target"].rpartition("#")[2]) for item in items if item["kind"] == "lane"}
+                self.assertEqual(pairs, {("a", "b"), ("b", "a"), ("b", "b")})
+
+
+class BoardTest(Steady):
+    def test_unchanged_inputs_skip_the_board_pass(self):
+        """#cross-lane-async with #steady-bound: a settled board recomputes nothing until a row's spec text or
+        target main changes."""
+        rows = self.lanes()
+        service = self.jev_service()
+        self.board(service, rows)
+        settled = self.board(service, rows)
+        self.assertEqual(len(settled["rows"]), 2)
+        passes = []
+        real = service._board_from_records
+        with patch.object(service, "_board_from_records", lambda *args: (passes.append(1), real(*args))[1]):
+            for _ in range(5):
+                self.assertEqual(self.board(service, rows), settled)
+            self.assertEqual(passes, [])
+            Path(rows[0]["spec_file"]).write_text(section(("a", "Cards sort by size."), ("b", "The board edits specs.")),
+                                                  encoding="utf-8")
+            self.board(service, rows)
+            self.assertTrue(passes)
+            passes.clear()
+            git(rows[1]["root"], "update-ref", "refs/remotes/origin/main",
+                git(rows[1]["root"], "-c", "user.name=T", "-c", "user.email=t@example.com",
+                    "commit-tree", "-m", "main moved", "-p", rows[1]["base"], rows[1]["base"] + "^{tree}"))
+            self.board(service, rows)
+            self.assertTrue(passes, "a moved target main did not refresh the board")
+
+    def test_board_reads_each_base_once_through_kept(self):
+        """The material questions come from the kept builder and the base text from _at: an edit reads no base again."""
+        rows = self.lanes()[:1]
+        service = self.jev_service()
+        shows = []
+        run = subprocess.run
+
+        def counted(argv, *args, **kwargs):
+            if argv and argv[0] == "git" and "show" in argv:
+                shows.append(argv)
+            return run(argv, *args, **kwargs)
+
+        with patch.object(jev.subprocess, "run", counted):
+            self.board(service, rows)
+            Path(rows[0]["spec_file"]).write_text(section(("a", "Cards sort by size."), ("b", "Edited.")), encoding="utf-8")
+            self.board(service, rows)
+        self.assertEqual(len(shows), 1, shows)
+
+    def test_unfinished_answer_is_asked_again_after_its_pause(self):
+        """A pass with an answer still unavailable does not stand: once its pause ends the board asks again."""
+        failing = [True]
+
+        def answer(kind, labels):
+            if failing[0]:
+                raise OSError("jev down")
+            return settled_answer(kind, labels)
+
+        rows = self.lanes()[:1]
+        provider = FakeProvider(answer)
+        service = self.jev_service(provider)
+        with patch.object(jev, "RETRY_PAUSE", 0):
+            self.board(service, rows)
+            self.assertEqual(self.board(service, rows)["rows"][0]["material"], "unknown")
+            failing[0] = False
+            self.board(service, rows)
+        self.assertEqual(self.board(service, rows)["rows"][0]["material"], "no")
+
+
+class IdleTest(Steady):
+    def test_an_idle_hour_reads_no_spec_spool_or_record(self):
+        """#acceptance-steady-idle: registered specs with review history and Jev answers, no page open, no hand-off
+        waiting: an hour of the service's own work reads no spec, spool event, or Jev record, and asks Jev nothing."""
+        rows = self.lanes()
+        provider = FakeProvider()
+        service = self.jev_service(provider)
+        reviews = [history(item["spec_file"], 40) for item in rows]
+        self.board(service, rows)  # Jev answers on record
+        self.settle_asks(service)
+        server = self.server(rows, service)
+        aged(*(path for review in reviews for path in (review / "human", review / ".cursor-owner")))
+        asked = len(provider.calls)
+        opened, records, spools, launched = [], [], [], []
+        real_open, real_os_open, lines, spool_read = builtins.open, os.open, jev._lines, serve._read_spool_events
+        popen = subprocess.Popen
+
+        def counted(file, *args, **kwargs):
+            if str(file).startswith(str(self.dir)):
+                opened.append(str(file))
+            return real_open(file, *args, **kwargs)
+
+        def counted_os(file, *args, **kwargs):
+            if isinstance(file, str) and not os.path.isabs(file):  # relative to a spool folder descriptor
+                opened.append(file)
+            elif str(file).startswith(str(self.dir)):
+                opened.append(str(file))
+            return real_os_open(file, *args, **kwargs)
+
+        class Counted(popen):
+            def __init__(self, argv, *args, **kwargs):
+                launched.append(argv)
+                super().__init__(argv, *args, **kwargs)
+
+        with patch.object(builtins, "open", counted), patch.object(io, "open", counted), \
+                patch.object(os, "open", counted_os), patch.object(subprocess, "Popen", Counted), \
+                patch.object(jev, "_lines", lambda path: (records.append(path), lines(path))[1]), \
+                patch.object(serve, "_read_spool_events", lambda *a: (spools.append(a), spool_read(*a))[1]):
+            for _ in range(3600 // serve.WAKE_POLL_SECONDS):
+                server.wake_controller.poll()
+        cursors = [path for path in opened if path.endswith(".cursor-owner")]
+        self.assertLessEqual(len(cursors), len(rows), "the cursor was read again with nothing changed")
+        events = [path for path in opened if path.endswith(".json")]
+        specs = [path for path in opened if path.endswith(".spec.html")]
+        self.assertEqual((events, specs, records, spools, launched), ([], [], [], [], []))
+        self.assertEqual(len(provider.calls), asked)
+        self.assertEqual(server.wake_controller.states, {})
+
+    def test_a_new_hand_off_is_still_noticed(self):
+        rows = self.lanes()[:1]
+        review = history(rows[0]["spec_file"], 2)
+        service = self.jev_service()
+        server = self.server(rows, service)
+        aged(review / "human", review / ".cursor-owner")
+        controller = server.wake_controller
+        controller.poll()
+        self.assertEqual(controller.batches[rows[0]["id"]][1], ())
+        (review / "human" / "2000-comment-n.json").write_text(json.dumps(
+            {"id": "n", "event": "comment", "actor": "human", "anchorId": "a", "text": "New."}), encoding="utf-8")
+        (review / "human" / "2001-handoff-hn.json").write_text(json.dumps(
+            {"id": "hn", "event": "handoff", "actor": "human", "events": ["n"]}), encoding="utf-8")
+        controller.poll()
+        self.assertEqual(controller.batches[rows[0]["id"]][1], ("2000-comment-n.json", "2001-handoff-hn.json"))
+
+
+class JevReadLogTest(Steady):
+    """review-service #service-log-jev: each /api/jev read writes one service log line as it ends."""
+
+    LINE = re.compile(r"review-serve: jev read spec=(\S+) base=(\S+) ms=(\d+) items=(\d+) pending=(\d+) "
+                      r"waiting=(\d+) running=(\d+)( reader=left)?\n")
+
+    def logged(self, log, timeout=10):
+        """The service log's jev read lines, once one is written: the line follows the answer."""
+        deadline = time.monotonic() + timeout
+        while "jev read" not in log.getvalue() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        return [line + "\n" for line in log.getvalue().splitlines() if "jev read" in line]
+
+    def test_a_jev_read_logs_one_line_with_its_time_and_pending_items(self):
+        """#acceptance-log-jev-read: a reviewer opens a served spec with Jev on: the service log holds one line for
+        that spec's Jev read, its spec and base, how long it took, its items and how many are pending, and the ask
+        queue's waiting and running asks."""
+        rows = self.lanes()
+        provider = HeldProvider()
+        service = self.jev_service(provider)
+        server = self.server(rows, service)
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        log = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(log):
+                with opener.open("http://127.0.0.1:%d/api/jev?path=%s&base=%s" % (
+                        server.server_port, rows[0]["path"], rows[0]["base"]), timeout=10) as response:
+                    answer = json.loads(response.read())
+                lines = self.logged(log)
+        finally:
+            provider.release.set()
+        self.assertEqual(len(lines), 1, log.getvalue())
+        spec, base, ms, items, pending, waiting, running, left = self.LINE.fullmatch(lines[0]).groups()
+        self.assertEqual((spec, base, left), ("/" + rows[0]["path"], rows[0]["base"], None))
+        self.assertLess(int(ms), 10000)
+        self.assertEqual(int(items), len(answer["items"]))
+        self.assertEqual(int(pending), sum(item["state"] == "pending" for item in answer["items"]))
+        self.assertGreater(int(pending), 0)
+        self.assertGreater(int(running), 0)
+        self.assertGreaterEqual(int(waiting), 0)
+
+    def test_a_reader_gone_before_the_answer_is_logged_as_left_with_no_error(self):
+        """#acceptance-log-jev-left: a reviewer opens a served spec, then closes the page within its Jev read: the
+        service log holds that read's one line saying its reader left, and no error; the service answers on. A
+        reader that leaves as the answer is sent, a broken pipe or a reset, is logged the same."""
+        rows = self.lanes()
+        service = self.jev_service()
+        server = self.server(rows, service)
+        questions, entered, release = service.questions, threading.Event(), threading.Event()
+
+        def slow(*args, **kwargs):  # the read runs until the page has closed
+            entered.set()
+            release.wait(10)
+            return questions(*args, **kwargs)
+
+        service.questions = slow
+        request = ("GET /api/jev?path=%s&base=%s HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+                   % (rows[0]["path"], rows[0]["base"])).encode()
+        log = io.StringIO()
+        with contextlib.redirect_stderr(log):
+            page = socket.create_connection(("127.0.0.1", server.server_port), timeout=10)
+            page.sendall(request)
+            self.assertTrue(entered.wait(10))
+            page.close()  # the tab closes within the read
+            release.set()
+            lines = self.logged(log)
+        self.assertEqual(len(lines), 1, log.getvalue())
+        self.assertEqual(self.LINE.fullmatch(lines[0]).group(8), " reader=left")
+        self.assertNotIn("Traceback", log.getvalue())
+        self.assertNotIn("Exception", log.getvalue())
+        deadline = time.monotonic() + 10
+        while self.status(server)["connections"] != 1:  # the left page's connection closes; the service answers on
+            self.assertLess(time.monotonic(), deadline, "the left page's connection stayed open")
+            time.sleep(0.02)
+
+        service.questions = questions
+        for error in (BrokenPipeError, ConnectionResetError):
+            with self.subTest(error=error.__name__):
+                send = serve.MountHandler._json
+
+                def broken(handler, value, *args, **kwargs):
+                    if "items" in value:
+                        raise error()
+                    return send(handler, value, *args, **kwargs)
+
+                log = io.StringIO()
+                with contextlib.redirect_stderr(log), patch.object(serve.MountHandler, "_json", broken):
+                    page = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=10)
+                    page.request("GET", "/api/jev?path=%s&base=%s" % (rows[0]["path"], rows[0]["base"]))
+                    with self.assertRaises((http.client.RemoteDisconnected, ConnectionError)):
+                        page.getresponse()
+                    page.close()
+                    lines = self.logged(log)
+                self.assertEqual(len(lines), 1, log.getvalue())
+                self.assertEqual(self.LINE.fullmatch(lines[0]).group(8), " reader=left")
+                self.assertNotIn("Traceback", log.getvalue())
+
+
+class MemoryTest(Steady):
+    ROUNDS = 8
+
+    def test_rounds_of_pages_hold_memory_within_a_fixed_bound(self):
+        """#acceptance-steady-memory: pages open, poll, read Jev, and close, round after round; the service's
+        memory after the last round stays within a fixed bound of its memory after the first, and what it holds
+        per spec, page, and connection is the same after every round."""
+        rows = self.lanes()
+        for item in rows:
+            history(item["spec_file"], 20)
+        service = self.jev_service()
+        server = self.server(rows, service)
+        port = server.server_port
+
+        def round_():
+            pages = []
+            for item in rows:
+                page = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+                for method, path in (("GET", "/" + item["path"]), ("HEAD", "/" + item["path"]),
+                                     ("GET", "/api/events?dir=" + item["path"] + ".review"),
+                                     ("GET", "/api/jev?path=%s&base=%s" % (item["path"], item["base"])),
+                                     ("GET", "/api/jev?path=%s&base=%s&view=reading" % (item["path"], item["base"])),
+                                     ("GET", "/api/jev/board"), ("GET", "/")):
+                    page.request(method, path)
+                    response = page.getresponse()
+                    response.read()
+                    self.assertEqual(response.status, 200, path)
+                pages.append(page)
+            for page in pages:
+                page.close()
+            self.settle_asks(service)
+            deadline = time.monotonic() + 10
+            while self.status(server)["connections"] != 1:
+                self.assertLess(time.monotonic(), deadline)
+                time.sleep(0.05)
+
+        def held():
+            return (len(service._kept.values), service._kept.used, len(place._RESOLVERS), len(serve._ROW_CACHE),
+                    len(serve._SPOOL_CACHE), service.queue_counts(), len(service._marks))
+
+        round_()
+        round_()
+        first, shape = self.status(server)["rss_bytes"], held()
+        for _ in range(self.ROUNDS):
+            round_()
+        last = self.status(server)["rss_bytes"]
+        self.assertEqual(held(), shape)
+        self.assertLess(last - first, 16 << 20, (first, last))
+
+    def large_lanes(self, clauses):
+        """Two lanes of one project, each adding the same large spec: all its clauses differ from target main, so
+        their ranked cross-lane pairs grow with the clauses (jev-suggestions #candidate-ranking-lane)."""
+        def large(lane, edit=""):
+            return section(*((f"c{index}", f"Clause {index} of lane {lane} sorts cards by age and edits specs{edit}.")
+                             for index in range(clauses)))
+        x, base_x = repo(self.dir / "x", section(("keep", "Keep.")), large("x"))
+        y, base_y = repo(self.dir / "y", section(("keep", "Keep.")), large("y"))
+        return [row(x, "ann1", base_x), row(y, "ann2", base_y)], large
+
+    def test_repeated_reads_of_a_large_spec_keep_memory_within_a_fixed_bound(self):
+        """#acceptance-steady-memory, #steady-bound with #cross-lane-pairs: Jev reads of a large spec, again and again
+        while it is edited and Jev answers slowly, each walk thousands of cross-lane pairs; the service keeps no more
+        than its kept bound and its ask queue's, and a read builds no more than a fixed bound, however many pairs."""
+        clauses = 130
+        rows, large = self.large_lanes(clauses)
+
+        def ranked(edit):
+            """The shortlisted pairs of the two lanes' changed clauses, every one on the page's clauses."""
+            texts = {slug: [{"after": clause[2]} for clause in jev.changed_leaf_clauses(text, section(("keep", "Keep.")))]
+                     for slug, text in (("ann1", large("x", edit)), ("ann2", large("y")))}
+            return sum(len(indices) for indices in jev.lane_shortlist(texts).values())
+
+        provider = HeldProvider()
+        service = self.jev_service(provider)
+        limit = 1 << 20
+        service.__dict__["_kept_results"] = jev._Kept(limit)
+        service.seam.store.limit = 200  # held records have their own fixed bound (#record-held)
+        page = rows[0]
+        tracemalloc.start()
+        try:
+            for index in range(3):
+                edit = " " + "again " * index
+                Path(page["spec_file"]).write_text(large("x", edit), encoding="utf-8")
+                before = tracemalloc.get_traced_memory()[0]
+                tracemalloc.reset_peak()
+                response = service.response(page, page["spec_file"], page["spec"], page["base"], [], "", rows)
+                built = tracemalloc.get_traced_memory()[1] - before
+                pending = [item for item in response["items"] if item["kind"] == "lane" and item["state"] == "pending"]
+                del response
+                pairs = ranked(edit)
+                self.assertGreater(pairs, jev.LANE_KEPT_PAIRS)  # more than are kept built: walked one at a time
+                self.assertLess(pairs, clauses * clauses)
+                self.assertEqual(len(pending), pairs)  # every ranked pair is walked: each is pending on its page
+                del pending
+                held = tracemalloc.get_traced_memory()[0]
+                if not index:
+                    first = held
+                self.assertLessEqual(service._kept.used, limit)
+                self.assertLess(built, 8 << 20, "a read built %d MiB" % (built >> 20))
+                self.assertLess(held - first, 2 << 20, "reads kept %d MiB more" % ((held - first) >> 20))
+                self.assertLessEqual(service.queue_counts()[0], jev.ASK_WAITING)
+        finally:
+            tracemalloc.stop()
+            provider.release.set()
+
+
+if __name__ == "__main__":
+    unittest.main()

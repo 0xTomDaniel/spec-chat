@@ -1,0 +1,1188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-design-source" content="skill/review-spec/assets/viz/runtime.js@495bc8f5b skill/shape-spec/assets/style/spec.css@5de1bcc8a design-set.toml@553b61008 docs/specs/spec-page-design.spec.html@ae1f4b146 DESIGN.md@eb97aaac4">
+<title>Jev marker and popover - mockup</title>
+<style>
+  /* Design source: the pinned design set's tokens as runtime.js builds them in (design-set.toml pins the set), the
+     runtime's ui tokens, and spec.css's --spec-* document values, each by its name and value. Every rule sits under a
+     frame or on a class used only inside one (rv-), so the review page's own chrome is never restyled. */
+  [data-mockup-frame] {
+    --ui-page: #ffffff; --ui-surface: #ffffff; --ui-surface-soft: #f5f5f5; --ui-ink: #333333; --ui-muted: #525252;
+    --ui-muted-soft: #eeeeee; --ui-border: #dfdfdf; --ui-action: #1d4ed8; --ui-action-soft: #eff3ff;
+    --ui-link: var(--ui-action); --ui-focus: var(--ui-action); --ui-pass: #005c32; --ui-pass-soft: #e6efea;
+    --ui-fail: #a5000f; --ui-fail-soft: #f6e6e7; --ui-attention: #b0540e; --ui-attention-soft: #faf4ef;
+    --ui-font: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --ui-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --ui-text-xs: 12px; --ui-text-ui: 13px; --ui-text-sm: 14px; --ui-text-md: 16px; --ui-text-lg: 20px; --ui-text-xl: 24px; --ui-text-2xl: 30px;
+    --ui-weight-regular: 400; --ui-weight-medium: 500; --ui-weight-semibold: 600;
+    --ui-space-1: 4px; --ui-space-2: 8px; --ui-space-3: 12px; --ui-space-4: 16px; --ui-space-5: 24px; --ui-space-6: 32px;
+    --ui-radius-sm: 6px; --ui-radius: 8px; --ui-radius-pill: 999px; --ui-focus-width: 2px; --ui-focus-offset: 2px;
+    --ui-motion-duration: 150ms; --ui-motion-ease: ease-out;
+    --ui-draft: var(--ui-attention); --ui-draft-soft: var(--ui-attention-soft); --ui-ack: var(--ui-action); --ui-ack-soft: var(--ui-action-soft);
+    --ui-resolved: var(--ui-pass); --ui-resolved-soft: var(--ui-pass-soft); --ui-error: var(--ui-fail);
+    --ui-marker: #767b85; --ui-marker-important: #d1242f; --ui-marker-pass: #1a7f37; --ui-on-marker: #ffffff; --ui-marker-warning: #e5534b;
+    --ui-pin-ring: rgba(176, 84, 14, 0.25); --ui-shadow: rgba(51, 51, 51, 0.14); --ui-veil: rgba(0, 0, 0, 0.42);
+    --spec-paper: #ffffff; --spec-ink: #333333; --spec-body: #333333; --spec-muted: #525252; --spec-focus-context: #525252;
+    --spec-hairline: #dfdfdf; --spec-blue: #1d4ed8;
+    --spec-font: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --spec-text-meta: 12px; --spec-text-small: 14px; --spec-text-lede: 16px; --spec-text-heading: 24px; --spec-text-display: 30px;
+    --spec-weight-regular: 400; --spec-weight-semibold: 600;
+  }
+  @media (prefers-color-scheme: dark) {
+    [data-mockup-frame] {
+      --ui-page: #1a1a1a; --ui-surface: #242424; --ui-surface-soft: #2a2a2a; --ui-ink: #e0e0e0; --ui-muted: #999999;
+      --ui-muted-soft: #2e2e2e; --ui-border: #3a3a3a; --ui-action: #7896ef; --ui-action-soft: #1a2040; --ui-pass: #3daa6e;
+      --ui-pass-soft: #1a2e22; --ui-fail: #ffb4ab; --ui-fail-soft: #2e1a1c; --ui-attention: #e5873a; --ui-attention-soft: #2e2218;
+      --ui-pin-ring: rgba(229, 135, 58, 0.25); --ui-shadow: rgba(0, 0, 0, 0.4); --ui-veil: rgba(0, 0, 0, 0.6);
+      --spec-paper: #1a1a1a; --spec-ink: #e0e0e0; --spec-body: #e0e0e0; --spec-muted: #999999; --spec-focus-context: #999999;
+      --spec-hairline: #3a3a3a; --spec-blue: #7896ef;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-mockup-frame] { --ui-motion-duration: 0ms; }
+  }
+
+  /* the frame: a spec page served by a review service, its chrome the runtime's (CSS const) */
+  [data-mockup-frame] { box-sizing: border-box; position: relative; overflow: hidden; background: var(--spec-paper); color: var(--spec-body);
+                        font: var(--spec-weight-regular) 15px/1.6 var(--spec-font); }
+  [data-mockup-frame="desktop"] { width: 1440px; }
+  [data-mockup-frame="phone"] { width: 390px; }
+  [data-mockup-frame] *, [data-mockup-frame] *::before, [data-mockup-frame] *::after { box-sizing: border-box; }
+  [data-mockup-frame] :focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  /* the button system (spec-page-design #button-system): primary, secondary, icon, text link */
+  .rv-btn { font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); color: var(--ui-ink); background: var(--ui-surface);
+            border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); min-height: var(--ui-space-6); margin: 0;
+            padding: var(--ui-space-2) var(--ui-space-3); white-space: nowrap; cursor: pointer;
+            transition: background var(--ui-motion-duration) var(--ui-motion-ease), color var(--ui-motion-duration) var(--ui-motion-ease); }
+  .rv-btn:hover { background: var(--ui-surface-soft); }
+  .rv-btn:active { background: var(--ui-muted-soft); }
+  .rv-btn:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .rv-btn:disabled { cursor: default; opacity: .45; }
+  .rv-btn:disabled:hover { background: var(--ui-surface); }
+  .rv-pri:disabled:hover { background: var(--ui-ink); border-color: var(--ui-ink); }
+  .rv-pri { background: var(--ui-ink); color: var(--ui-page); border-color: var(--ui-ink); }
+  .rv-pri:hover { background: var(--ui-muted); border-color: var(--ui-muted); }
+  .rv-pri:active { background: var(--ui-ink); }
+  .rv-text { border-color: transparent; background: transparent; }
+  .rv-icon { width: var(--ui-space-6); height: var(--ui-space-6); padding: 0; display: grid; place-items: center; color: var(--ui-muted); }
+  .rv-icon:hover { background: var(--ui-page); color: var(--ui-ink); }
+  [data-mockup-frame="phone"] .rv-btn { min-height: 44px; }
+  [data-mockup-frame="phone"] .rv-icon { width: 44px; height: 44px; }
+  /* top line (spec-page-design #top-line): the index link and the range bar on the page color over a hairline */
+  .rv-top { position: absolute; top: 0; left: 0; right: 0; z-index: 8; display: flex; align-items: flex-start; gap: var(--ui-space-3);
+            padding: var(--ui-space-1) var(--ui-space-4); background: var(--ui-page); border-bottom: 1px solid var(--ui-border);
+            color: var(--ui-ink); font: var(--ui-text-sm)/1.4 var(--ui-font); }
+  [data-mockup-frame="desktop"] .rv-top.rv-beside-panel { right: 330px; }
+  .rv-index { flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--ui-space-1); min-height: var(--ui-space-6);
+              border-radius: var(--ui-radius-sm); color: var(--ui-ink); font: var(--ui-weight-medium) var(--ui-text-xs)/1 var(--ui-font); text-decoration: none; }
+  .rv-index:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .rv-index svg { color: var(--ui-muted); }
+  .rv-range { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--ui-space-2); }
+  .rv-range-copy { flex: 1 1 auto; min-width: 0; margin: 0; color: var(--ui-muted); overflow-wrap: anywhere; }
+  .rv-range-copy code { font: var(--ui-weight-medium) var(--ui-text-sm) var(--ui-mono); color: var(--ui-ink); }
+  .rv-change { border: none; background: transparent; }
+  [data-mockup-frame="phone"] .rv-top { flex-wrap: wrap; gap: 0 var(--ui-space-2); padding: 0 var(--ui-space-2) var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-index { min-height: 44px; padding: 0 var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-range { flex: 1 1 100%; padding: 0 var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-range-copy { font-size: var(--ui-text-xs); }
+  [data-mockup-frame="phone"] .rv-range-copy code { font-size: var(--ui-text-xs); }
+  [data-mockup-frame="phone"] .rv-change { position: absolute; top: 0; right: var(--ui-space-2); }
+  /* the document (spec.css): one calm page from the set's values */
+  .rv-doc { width: min(1080px, calc(100% - 48px)); margin: 0 auto; padding: 81px 0 120px; }
+  [data-mockup-frame="desktop"] .rv-doc.rv-beside-panel { width: 1062px; margin: 0 354px 0 24px; }
+  [data-mockup-frame="phone"] .rv-doc { width: calc(100% - 32px); padding: 90px 0 200px; }
+  .rv-doc p { max-width: 72ch; margin: 0 0 10px; }
+  .rv-doc .rv-crumbs { color: var(--spec-muted); font-size: var(--spec-text-meta); line-height: 1.5; }
+  .rv-doc h1 { max-width: 72ch; margin: 6px 0 12px; color: var(--spec-ink); font-size: var(--spec-text-display); font-weight: var(--spec-weight-semibold);
+               line-height: 1.2; letter-spacing: -0.01em; }
+  [data-mockup-frame="phone"] .rv-doc h1 { font-size: var(--spec-text-heading); }
+  .rv-doc .rv-section { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--spec-hairline); }
+  [data-mockup-frame="phone"] .rv-doc .rv-section { margin-top: 40px; }
+  .rv-doc h2 { margin: 0 0 12px; color: var(--spec-ink); font-size: var(--spec-text-heading); font-weight: var(--spec-weight-semibold); line-height: 1.25; letter-spacing: -0.01em; }
+  .rv-block { position: relative; }
+  .rv-doc .rv-block { max-width: 72ch; }
+  .rv-pinned { padding-right: var(--ui-space-6); }
+  [data-mockup-frame="phone"] .rv-pinned { padding-right: calc(var(--ui-space-6) + var(--ui-space-4)); min-height: 66px; }
+  /* an open TBD (prompt-first-shaping #finish-tbd-highlight): outlined in the draft color, a later one not */
+  .rv-tbd { transition: outline-color var(--ui-motion-duration) var(--ui-motion-ease); }
+  /* answer buttons in the document (#answer-buttons): the chrome's choice shape; chosen: pressed, checked, outlined */
+  .rv-answer { display: inline-block; min-height: var(--ui-space-6); margin: var(--ui-space-1) var(--ui-space-1) 0 0; padding: var(--ui-space-2) var(--ui-space-3);
+               border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill); background: var(--ui-surface); color: var(--ui-ink);
+               font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); cursor: pointer; }
+  .rv-answer:hover { background: var(--ui-surface-soft); }
+  .rv-answer:active { background: var(--ui-muted-soft); }
+  .rv-answer:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  [data-mockup-frame="phone"] .rv-answer { min-height: 44px; }
+  /* pins (spec-page-design #surface-pins): a teardrop in its status color, at the block's corner */
+  .rv-pin { position: absolute; right: 0; top: 0; z-index: 3; width: 24px; height: 24px; border-radius: 50% 50% 50% 4px; display: grid; place-items: center;
+            font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); font-style: normal; color: var(--ui-page); background: var(--ui-draft); box-shadow: 0 2px 8px var(--ui-shadow); }
+  .rv-pin.rv-ack { background: var(--ui-ack); }
+  .rv-pin.rv-done { background: var(--ui-surface); color: var(--ui-resolved); border: 2px solid var(--ui-resolved); }
+  [data-mockup-frame="phone"] .rv-pin { width: 44px; height: 44px; }
+  /* toolbar (spec-page-design #surface-toolbar): bottom center on a desktop; on a phone the bottom toolbar holding the
+     panel's one hand-off bar (#mobile-handoff) */
+  .rv-toolbar { position: absolute; z-index: 12; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: var(--ui-space-1); align-items: center;
+                white-space: nowrap; background: var(--ui-page); border: 1px solid var(--ui-border); border-radius: var(--ui-radius);
+                box-shadow: 0 8px 28px var(--ui-shadow); padding: var(--ui-space-1); font: var(--ui-text-sm) var(--ui-font); }
+  .rv-toolbar .rv-tool { border-color: transparent; background: transparent; }
+  .rv-toolbar .rv-tool:hover { background: var(--ui-surface-soft); }
+  .rv-toolbar .rv-tool[aria-pressed="true"] { background: var(--ui-draft-soft); color: var(--ui-draft); }
+  .rv-status { color: var(--ui-muted); font-size: var(--ui-text-xs); padding: 0 var(--ui-space-2); }
+  [data-mockup-frame="phone"] .rv-toolbar { left: var(--ui-space-3); right: var(--ui-space-3); bottom: 10px; transform: none; flex-wrap: wrap; white-space: normal; }
+  [data-mockup-frame="phone"] .rv-toolbar .rv-btn { flex: 1 1 auto; }
+  [data-mockup-frame="phone"] .rv-toolbar .rv-note { flex: 1 1 auto; }
+  [data-mockup-frame="phone"] .rv-toolbar .rv-status { flex: 1 0 100%; min-width: 0; padding: 0 var(--ui-space-2) var(--ui-space-1); text-align: center;
+                                                        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rv-note { font-size: var(--ui-text-xs); color: var(--ui-muted); }
+  /* thread dock (#surface-dock): top right under the top line, gone while the panel is open */
+  .rv-dock { position: absolute; z-index: 7; top: 53px; right: var(--ui-space-3); display: flex; flex-direction: column; gap: var(--ui-space-1);
+             padding: var(--ui-space-1); background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); }
+  .rv-dock .rv-icon { border: 1px solid var(--ui-border); background: var(--ui-surface); border-radius: var(--ui-radius-sm); }
+  .rv-dock .rv-thread { width: var(--ui-space-6); height: var(--ui-space-6); padding: 0; display: grid; place-items: center; font: var(--ui-weight-semibold) var(--ui-text-xs)/1 var(--ui-mono);
+                        border: 1px solid var(--ui-draft); color: var(--ui-draft); background: var(--ui-draft-soft); border-radius: var(--ui-radius-sm); }
+  .rv-dock .rv-thread.rv-ack { border-color: var(--ui-ack); color: var(--ui-ack); background: var(--ui-ack-soft); }
+  .rv-dock .rv-thread.rv-done { border-color: var(--ui-resolved); color: var(--ui-resolved); background: var(--ui-resolved-soft); }
+  .rv-dock-threads { display: flex; flex-direction: column; gap: var(--ui-space-1); border-top: 1px solid var(--ui-border); padding-top: var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-dock { top: 74px; right: var(--ui-space-2); }
+  [data-mockup-frame="phone"] .rv-dock .rv-thread { width: 44px; height: 44px; }
+  /* review panel (#surface-panel): 330px at the right on a desktop; the whole screen on a phone, over the bottom toolbar's space */
+  .rv-panel { position: absolute; z-index: 6; top: 0; right: 0; bottom: 0; width: 330px; display: flex; flex-direction: column; background: var(--ui-page);
+              color: var(--ui-ink); border-left: 1px solid var(--ui-border); font: var(--ui-text-sm) var(--ui-font); }
+  /* on a phone the open panel covers the top line and the dock, which the runtime hides, under the bottom toolbar */
+  [data-mockup-frame="phone"] .rv-panel { left: 0; width: auto; border-left: 0; padding-bottom: 136px; z-index: 11; }
+  .rv-head { position: relative; min-height: 44px; padding: var(--ui-space-3) 48px; border-bottom: 1px solid var(--ui-border); font-weight: var(--ui-weight-semibold); overflow-wrap: anywhere; }
+  .rv-head .rv-count, .rv-head .rv-sub { font-weight: var(--ui-weight-regular); font-size: var(--ui-text-xs); color: var(--ui-muted); }
+  .rv-head .rv-icon { position: absolute; top: var(--ui-space-2); border: 1px solid var(--ui-border); background: var(--ui-surface); }
+  .rv-head .rv-toggle { left: var(--ui-space-2); }
+  .rv-head .rv-gear { right: var(--ui-space-2); }
+  [data-mockup-frame="phone"] .rv-head { min-height: 56px; padding: var(--ui-space-4) 56px var(--ui-space-3); }
+  [data-mockup-frame="phone"] .rv-head .rv-icon { top: var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-head .rv-toggle { left: var(--ui-space-1); }
+  .rv-stream { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; gap: var(--ui-space-3);
+               padding: var(--ui-space-3) var(--ui-space-3) var(--ui-space-2); }
+  .rv-entry { display: flex; flex-direction: column; align-items: flex-start; gap: var(--ui-space-1); min-width: 0; }
+  .rv-entry.rv-me { align-items: flex-end; }
+  .rv-msg { display: flex; flex-direction: column; align-items: flex-start; gap: var(--ui-space-1); max-width: 86%; min-width: 0; }
+  .rv-me > .rv-msg, .rv-msg.rv-me { align-self: flex-end; align-items: flex-end; }
+  .rv-who { padding: 0 var(--ui-space-3); font: var(--ui-text-xs)/1.4 var(--ui-font); color: var(--ui-muted); }
+  .rv-bubble { position: relative; max-width: 100%; padding: var(--ui-space-2) var(--ui-space-3); border-radius: calc(2 * var(--ui-radius)); font: var(--ui-text-sm)/1.4 var(--ui-font); overflow-wrap: anywhere; }
+  .rv-me .rv-bubble { background: var(--ui-action); color: var(--ui-page); border-bottom-right-radius: var(--ui-radius-sm); }
+  .rv-them .rv-bubble { background: var(--ui-surface-soft); color: var(--ui-ink); border-bottom-left-radius: var(--ui-radius-sm); }
+  .rv-me .rv-bubble.rv-draft { background: var(--ui-action-soft); color: var(--ui-ink); box-shadow: inset 0 0 0 1px var(--ui-action); }
+  .rv-chip { max-width: 100%; padding: 0 var(--ui-space-2); border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill); background: var(--ui-page);
+             color: var(--ui-muted); font: var(--ui-text-xs)/1.6 var(--ui-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rv-replies { max-width: 100%; padding: 0 var(--ui-space-3); color: var(--ui-muted); font: var(--ui-text-xs)/1.5 var(--ui-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rv-replies b { color: var(--ui-ink); font-weight: var(--ui-weight-semibold); }
+  .rv-receipt { padding: 0 var(--ui-space-3); font: var(--ui-weight-semibold) var(--ui-text-xs)/1.5 var(--ui-font); color: var(--ui-draft); }
+  .rv-receipt.rv-ack { color: var(--ui-ack); }
+  .rv-receipt.rv-done { color: var(--ui-resolved); padding: 0; }
+  .rv-resolved-line { align-self: stretch; padding: var(--ui-space-1) var(--ui-space-3); border-top: 1px solid var(--ui-border); border-bottom: 1px solid var(--ui-border);
+                      color: var(--ui-muted); font: var(--ui-text-xs)/1.5 var(--ui-font); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rv-choices { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); margin-top: var(--ui-space-2); }
+  .rv-choice { min-height: var(--ui-space-6); margin: 0; padding: var(--ui-space-2) var(--ui-space-3); border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill);
+               background: var(--ui-surface); color: var(--ui-ink); font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); cursor: pointer; }
+  .rv-choice:hover { background: var(--ui-surface-soft); }
+  .rv-choice:active { background: var(--ui-muted-soft); }
+  .rv-choice:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .rv-choice.rv-words { border-color: transparent; background: transparent; }
+  [data-mockup-frame="phone"] .rv-choice { min-height: 44px; }
+  /* the panel's one hand-off bar: its note, Next TBD, and the action, primary rightmost */
+  .rv-handoff { display: flex; justify-content: flex-end; align-items: center; gap: var(--ui-space-1); padding: var(--ui-space-2) var(--ui-space-3); border-top: 1px solid var(--ui-border); }
+  .rv-handoff .rv-note { margin-right: auto; min-width: 0; white-space: nowrap; }
+  /* a new comment's composer, at the bottom of the conversation (#surface-composer): send primary rightmost, cancel left */
+  .rv-compose { display: flex; flex-direction: column; gap: var(--ui-space-1); padding: var(--ui-space-2) var(--ui-space-3); border: 1px solid var(--ui-border);
+                border-radius: var(--ui-radius); background: var(--ui-surface); }
+  .rv-anchor { font: var(--ui-text-xs) var(--ui-mono); color: var(--ui-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rv-field { display: block; width: 100%; min-height: 56px; margin-top: var(--ui-space-1); padding: var(--ui-space-1) var(--ui-space-2); border: 1px solid var(--ui-border);
+              border-radius: var(--ui-radius-sm); background: var(--ui-surface); color: var(--ui-ink); font: var(--ui-text-sm)/1.4 var(--ui-font); resize: none; }
+  .rv-field::placeholder { color: var(--ui-muted); }
+  .rv-field:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  [data-mockup-frame="phone"] .rv-field { min-height: 120px; padding: var(--ui-space-2) var(--ui-space-3); font-size: var(--ui-text-md); }
+  .rv-compose-actions { display: flex; justify-content: flex-end; gap: var(--ui-space-1); margin-top: var(--ui-space-1); }
+  /* toast (#surface-toast): the saved and handed-off notices */
+  .rv-toast { position: absolute; z-index: 13; bottom: 76px; left: 50%; transform: translateX(-50%); padding: var(--ui-space-2) var(--ui-space-4); border-radius: var(--ui-radius);
+              background: var(--ui-ink); color: var(--ui-page); font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); white-space: nowrap; box-shadow: 0 8px 28px var(--ui-shadow);
+              transition: opacity var(--ui-motion-duration) var(--ui-motion-ease); }
+  [data-mockup-frame="phone"] .rv-toast { bottom: 152px; max-width: calc(100% - 24px); white-space: normal; text-align: center; }
+
+  /* this screen's parts */
+  .rv-inline-handoff { display: contents; }
+  .rv-tbd-open { outline: 2px solid var(--ui-draft); outline-offset: var(--ui-space-1); }
+  .rv-holder { position: relative; }
+  [data-mockup-frame="desktop"] { min-height: 1000px; }
+  [data-mockup-frame="phone"] { min-height: 1180px; }
+  [data-mockup-frame="desktop"] .rv-panel { min-height: 100%; }
+  /* Git focus against the base (runtime FOCUS_CSS): an unchanged block takes the focus-context color under a veil */
+  .rv-recede { position: relative; }
+  .rv-recede::after { content: ""; position: absolute; inset: -3px; border-radius: inherit; pointer-events: none; z-index: 2; opacity: 0;
+                      background: var(--ui-veil); -webkit-backdrop-filter: blur(2.5px); backdrop-filter: blur(2.5px); }
+  /* Jev marker (jev-suggestions #markers): a dot in the right margin beside its first line; Important red with its glyph,
+     Warning light red, neutral grey; on a phone inside the column's edge */
+  .rv-marker { position: absolute; top: 24px; left: calc(100% + 10px); z-index: 4; width: 10px; height: 10px; margin: 0; padding: 0; border: 0; border-radius: 50%;
+               background: var(--ui-marker); color: var(--ui-on-marker); display: grid; place-items: center; cursor: pointer;
+               font: var(--ui-weight-semibold) var(--ui-text-xs)/1 var(--ui-font); transition: box-shadow var(--ui-motion-duration) var(--ui-motion-ease); }
+  .rv-marker::before { content: ""; position: absolute; inset: -10px 0 -10px -16px; }
+  .rv-marker:hover { box-shadow: 0 0 0 3px var(--ui-pin-ring); }
+  .rv-marker:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .rv-marker.rv-important { width: 14px; height: 14px; background: var(--ui-marker-important); }
+  .rv-marker.rv-important::after { content: "!"; }
+  .rv-marker.rv-warning { background: var(--ui-marker-warning); }
+  .jv-clause > .rv-marker { top: 8px; }
+  .jv-clause > .rv-marker.rv-important { top: 6px; }
+  [data-mockup-frame="phone"] .rv-marker { left: auto; right: 0; }
+  [data-mockup-frame="phone"] .rv-marker::before { inset: -14px 0 -14px -28px; }
+  [data-mockup-frame="phone"] .rv-holder > p, [data-mockup-frame="phone"] p.rv-holder { padding-right: var(--ui-space-5); }
+  /* a block with a marker and a pin reserves a right column: the marker beside its first line, the pin below it */
+  .jv-col { padding-right: var(--ui-space-6); min-height: 54px; }
+  .jv-col > .rv-marker { left: auto; right: 0; top: 5px; }
+  .jv-col > .jv-wheel { left: auto; right: 2px; top: 7px; }
+  .jv-col > .jv-col-pin { top: 29px; right: 0; }
+  [data-mockup-frame="phone"] .jv-col { padding-right: calc(var(--ui-space-6) + var(--ui-space-4)); min-height: 90px; }
+  [data-mockup-frame="phone"] .jv-col > p { padding-right: 0; }
+  [data-mockup-frame="phone"] .jv-col > .jv-col-pin { top: 33px; right: 0; }
+  /* the pending wheel (#pending-any): turning while its question waits on the LLM; still under reduced motion */
+  .rv-wheel { position: absolute; top: 26px; left: calc(100% + 12px); width: 10px; height: 10px; border-radius: 50%;
+              border: 2px solid var(--ui-marker); border-right-color: transparent; animation: rv-spin calc(7 * var(--ui-motion-duration)) var(--ui-motion-ease) infinite; }
+  @keyframes rv-spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .rv-wheel { animation: none; } }
+  /* Jev popover (#markers-open): its right edge on the marker's, below it, on a desktop; a sheet above the bottom toolbar on a phone */
+  .rv-pop { position: absolute; z-index: 9; width: max-content; min-width: 180px; max-width: 340px; padding: var(--ui-space-2) var(--ui-space-3);
+            border: 1px solid var(--ui-ink); border-radius: var(--ui-radius); background: var(--ui-surface); color: var(--ui-ink);
+            box-shadow: 0 8px 28px var(--ui-shadow); font: var(--ui-text-sm)/1.4 var(--ui-font); text-align: left; }
+  .rv-pop-notes { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--ui-space-1); }
+  .jv-note { display: grid; gap: var(--ui-space-1); }
+  .rv-pop-text { font-weight: var(--ui-weight-semibold); color: var(--ui-ink); overflow-wrap: anywhere; }
+  a.rv-pop-text { text-decoration: underline; text-underline-offset: 2px; }
+  a.rv-pop-text:focus-visible, .rv-pop-text:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); border-radius: var(--ui-radius-sm); }
+  .jv-attention .rv-pop-text { color: var(--ui-fail); }
+  .jv-neutral .rv-pop-text { color: var(--ui-muted); }
+  .jv-quote { color: var(--ui-ink); overflow-wrap: anywhere; }
+  .jv-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--ui-space-1) var(--ui-space-2); font-size: var(--ui-text-xs); color: var(--ui-muted); overflow-wrap: anywhere; }
+  .jv-sentence { display: none; font-size: var(--ui-text-xs); color: var(--ui-muted); }
+  .jv-note:hover .jv-sentence, .jv-note:focus-within .jv-sentence, .jv-hovered .jv-sentence { display: block; }
+  .jv-actions { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); }
+  .jv-act { border-color: var(--ui-ack); color: var(--ui-ack); }
+  .jv-batch { display: inline-flex; align-items: center; gap: var(--ui-space-1); white-space: nowrap; }
+  .jv-more { margin: 0; min-height: var(--ui-space-6); padding: 0; border: 0; background: none; font: var(--ui-text-xs) var(--ui-font); color: var(--ui-ack);
+             text-decoration: underline; text-underline-offset: 2px; cursor: pointer; border-radius: var(--ui-radius-sm); }
+  .jv-more:hover { color: var(--ui-ink); }
+  .jv-more:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  [data-mockup-frame="desktop"] .jv-pop-export { right: 0; top: 27px; }
+  [data-mockup-frame="desktop"] .jv-pop-story { left: calc(100% + 24px); top: 28px; transform: translateX(-100%); }
+  [data-mockup-frame="desktop"] :is(.jv-pop-type, .jv-pop-unavailable, .jv-pop-reworded) { left: calc(100% + 20px); top: 42px; transform: translateX(-100%); }
+  [data-mockup-frame="phone"] .rv-pop { left: var(--ui-space-3); right: var(--ui-space-3); width: auto; max-width: none; padding: var(--ui-space-3); bottom: 148px; }
+  [data-mockup-frame="phone"] .jv-act, [data-mockup-frame="phone"] .jv-more { min-height: 44px; }
+  /* a conflict link's arrival (#markers-arrival): the open-TBD outline, nothing of its own */
+  .jv-arrived { outline: 2px solid var(--ui-draft); outline-offset: var(--ui-space-1); }
+  /* No behavior change: the section dimmed, readable (runtime [data-hx-jev-type=no-behavior-change]) */
+  .jv-cosmetic, .jv-cosmetic h2 { color: var(--spec-muted); }
+  /* the page-level Jev note (#state-off, #state-request-failed): one muted line above the spec */
+  .jv-page-note { box-sizing: border-box; max-width: 720px; margin: 0 auto var(--ui-space-3); padding: var(--ui-space-1) var(--ui-space-3); border: 1px solid var(--ui-border);
+                  border-radius: var(--ui-radius); background: var(--ui-surface-soft); color: var(--ui-muted); font: var(--ui-weight-semibold) var(--ui-text-xs)/1.35 var(--ui-font); }
+  .rv-doc .jv-page-note { max-width: 720px; }
+  .jv-field { min-height: 112px; }
+  /* a criterion's evidence (criterion evidence): its marker beside its first line follows it (#markers-color), QA passed a
+     green check; its note listed first in the popover (#markers-content): the label, a muted context line with its bundle
+     link, and for a stale or reworded note the legend and the inline diff (runtime .hx-jev-pop-meta, -link, -diff) */
+  .rv-marker.rv-passed { width: 14px; height: 14px; background: var(--ui-marker-pass); }
+  .rv-marker.rv-passed::after { content: "\2713"; }
+  .jv-evidence > .rv-marker { top: .35em; }
+  .rv-doc .jv-evidence > p { margin-bottom: 10px; }
+  .jv-link { color: var(--ui-ack); text-decoration: underline; text-underline-offset: 2px; }
+  .jv-link:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); border-radius: var(--ui-radius-sm); }
+  .jv-legend { font-size: var(--ui-text-xs); color: var(--ui-muted); margin-bottom: var(--ui-space-1); }
+  .jv-legend del, .jv-diff del { text-decoration: none; background: var(--ui-fail-soft); }
+  .jv-legend ins, .jv-diff ins { text-decoration: none; background: var(--ui-pass-soft); }
+  .jv-legend del, .jv-legend ins { padding: 0 var(--ui-space-1); }
+  .jv-diff { font-size: var(--ui-text-xs); color: var(--ui-ink); overflow-wrap: anywhere; }
+  [data-mockup-frame="desktop"] .jv-pop-evidence { left: calc(100% + 24px); top: 28px; transform: translateX(-100%); }
+  /* See mockup chip (mockups #chip-look), in the flow after the block's text */
+  .sp-chip { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; margin-left: var(--ui-space-2);
+             padding: 0 var(--ui-space-2); border: 1px solid currentColor; border-radius: var(--ui-radius-pill); background: var(--ui-surface); color: var(--ui-link);
+             font: var(--ui-weight-semibold) var(--ui-text-xs)/1.6 var(--ui-font); text-decoration: none; }
+  .sp-chip:hover { background: var(--ui-action-soft); }
+  .sp-chip:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  /* Screens index under the header (spec-page-design #surface-screen-index): a list in hairlines, each row one link */
+  .sp-screens { display: block; margin: var(--ui-space-5) 0 0; padding: 0; background: var(--ui-page); color: var(--ui-ink); font: var(--ui-weight-regular) var(--ui-text-xs)/1.4 var(--ui-font); }
+  .sp-screens-head { display: flex; align-items: baseline; gap: var(--ui-space-2); max-width: none; margin: 0 0 var(--ui-space-2); color: var(--ui-ink); font: var(--ui-weight-semibold) var(--ui-text-sm)/1.4 var(--ui-font); }
+  .sp-screens-count { color: var(--ui-muted); font-weight: var(--ui-weight-regular); font-size: var(--ui-text-xs); }
+  .sp-screens ul { list-style: none; margin: 0; padding: 0; border: 1px solid var(--ui-border); border-radius: var(--ui-radius); }
+  .sp-screens li { max-width: none; margin: 0; padding: 0; }
+  .sp-screens li + li { border-top: 1px solid var(--ui-border); }
+  .sp-screen { display: grid; grid-template-columns: 16px minmax(0, 220fr) minmax(0, 526fr) minmax(0, 220fr) 16px; grid-template-areas: "mark name meta open go"; align-items: center;
+               column-gap: var(--ui-space-3); min-height: 44px; padding: var(--ui-space-2) var(--ui-space-4); color: var(--ui-ink); text-decoration: none;
+               font: var(--ui-text-xs)/1.4 var(--ui-font); transition: background var(--ui-motion-duration) var(--ui-motion-ease); }
+  .sp-screen:hover { background: var(--ui-surface-soft); }
+  .sp-screen:active { background: var(--ui-muted-soft); }
+  .sp-screen:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .sp-screens li:first-child .sp-screen { border-top-left-radius: var(--ui-radius); border-top-right-radius: var(--ui-radius); }
+  .sp-screens li:last-child .sp-screen { border-bottom-left-radius: var(--ui-radius); border-bottom-right-radius: var(--ui-radius); }
+  .sp-screen svg { display: block; }
+  .sp-mark { grid-area: mark; }
+  .sp-name { grid-area: name; min-width: 0; color: var(--ui-ink); font: var(--ui-weight-medium) var(--ui-text-sm)/1.4 var(--ui-font); }
+  .sp-meta { grid-area: meta; display: grid; grid-template-columns: minmax(0, 1fr) 140px; column-gap: var(--ui-space-3); min-width: 0; color: var(--ui-muted); }
+  .sp-views { grid-column: 2; }
+  .sp-open { grid-area: open; color: var(--ui-muted); }
+  .sp-open.sp-waiting { color: var(--ui-attention); font-weight: var(--ui-weight-medium); }
+  .sp-go { grid-area: go; color: var(--ui-muted); }
+  [data-mockup-frame="phone"] .sp-screen { grid-template-columns: 16px minmax(0, 1fr) 16px; grid-template-areas: "mark name go" ". meta go" ". open go"; row-gap: 2px; padding: var(--ui-space-3); }
+  [data-mockup-frame="phone"] .sp-meta { display: flex; flex-wrap: wrap; column-gap: var(--ui-space-1); }
+  [data-mockup-frame="phone"] .sp-kind::after { content: " ·"; }
+  [data-mockup-frame="phone"] .rv-pop { max-height: 338px; overflow: auto; }
+
+  [data-mockup-frame][data-at$=" checking"] [data-show]:not([data-show~="checking"]),
+  [data-mockup-frame][data-at="checking"] [data-show]:not([data-show~="checking"]),
+  [data-mockup-frame][data-at$=" marks"] [data-show]:not([data-show~="marks"]),
+  [data-mockup-frame][data-at="marks"] [data-show]:not([data-show~="marks"]),
+  [data-mockup-frame][data-at$=" popover"] [data-show]:not([data-show~="popover"]),
+  [data-mockup-frame][data-at="popover"] [data-show]:not([data-show~="popover"]),
+  [data-mockup-frame][data-at$=" reconcile"] [data-show]:not([data-show~="reconcile"]),
+  [data-mockup-frame][data-at="reconcile"] [data-show]:not([data-show~="reconcile"]),
+  [data-mockup-frame][data-at$=" reconcile-all"] [data-show]:not([data-show~="reconcile-all"]),
+  [data-mockup-frame][data-at="reconcile-all"] [data-show]:not([data-show~="reconcile-all"]),
+  [data-mockup-frame][data-at$=" warnings"] [data-show]:not([data-show~="warnings"]),
+  [data-mockup-frame][data-at="warnings"] [data-show]:not([data-show~="warnings"]),
+  [data-mockup-frame][data-at$=" gaps"] [data-show]:not([data-show~="gaps"]),
+  [data-mockup-frame][data-at="gaps"] [data-show]:not([data-show~="gaps"]),
+  [data-mockup-frame][data-at$=" story"] [data-show]:not([data-show~="story"]),
+  [data-mockup-frame][data-at="story"] [data-show]:not([data-show~="story"]),
+  [data-mockup-frame][data-at$=" criterion"] [data-show]:not([data-show~="criterion"]),
+  [data-mockup-frame][data-at="criterion"] [data-show]:not([data-show~="criterion"]),
+  [data-mockup-frame][data-at$=" type"] [data-show]:not([data-show~="type"]),
+  [data-mockup-frame][data-at="type"] [data-show]:not([data-show~="type"]),
+  [data-mockup-frame][data-at$=" change"] [data-show]:not([data-show~="change"]),
+  [data-mockup-frame][data-at="change"] [data-show]:not([data-show~="change"]),
+  [data-mockup-frame][data-at$=" unavailable"] [data-show]:not([data-show~="unavailable"]),
+  [data-mockup-frame][data-at="unavailable"] [data-show]:not([data-show~="unavailable"]),
+  [data-mockup-frame][data-at$=" settled"] [data-show]:not([data-show~="settled"]),
+  [data-mockup-frame][data-at="settled"] [data-show]:not([data-show~="settled"]),
+  [data-mockup-frame][data-at$=" arrival"] [data-show]:not([data-show~="arrival"]),
+  [data-mockup-frame][data-at="arrival"] [data-show]:not([data-show~="arrival"]),
+  [data-mockup-frame][data-at$=" reworded"] [data-show]:not([data-show~="reworded"]),
+  [data-mockup-frame][data-at="reworded"] [data-show]:not([data-show~="reworded"]),
+  [data-mockup-frame][data-at$=" jev-off"] [data-show]:not([data-show~="jev-off"]),
+  [data-mockup-frame][data-at="jev-off"] [data-show]:not([data-show~="jev-off"]),
+  [data-mockup-frame][data-at$=" jev-unavailable"] [data-show]:not([data-show~="jev-unavailable"]),
+  [data-mockup-frame][data-at="jev-unavailable"] [data-show]:not([data-show~="jev-unavailable"]),
+  [data-mockup-frame][data-at$=" evidence"] [data-show]:not([data-show~="evidence"]),
+  [data-mockup-frame][data-at="evidence"] [data-show]:not([data-show~="evidence"]),
+  [data-mockup-frame][data-at$=" stale"] [data-show]:not([data-show~="stale"]),
+  [data-mockup-frame][data-at="stale"] [data-show]:not([data-show~="stale"]),
+  [data-mockup-frame][data-at$=" reproof"] [data-show]:not([data-show~="reproof"]),
+  [data-mockup-frame][data-at="reproof"] [data-show]:not([data-show~="reproof"]),
+  [data-mockup-frame][data-at$=" reproof-all"] [data-show]:not([data-show~="reproof-all"]),
+  [data-mockup-frame][data-at="reproof-all"] [data-show]:not([data-show~="reproof-all"]),
+  [data-mockup-frame][data-at$=" passed-reworded"] [data-show]:not([data-show~="passed-reworded"]),
+  [data-mockup-frame][data-at="passed-reworded"] [data-show]:not([data-show~="passed-reworded"]),
+  [data-mockup-frame][data-at$=" failed"] [data-show]:not([data-show~="failed"]),
+  [data-mockup-frame][data-at="failed"] [data-show]:not([data-show~="failed"]),
+  [data-mockup-frame][data-at$=" no-qa"] [data-show]:not([data-show~="no-qa"]),
+  [data-mockup-frame][data-at="no-qa"] [data-show]:not([data-show~="no-qa"]),
+  [data-mockup-frame][data-at$=" landed"] [data-show]:not([data-show~="landed"]),
+  [data-mockup-frame][data-at="landed"] [data-show]:not([data-show~="landed"]),
+  [data-mockup-frame][data-at$=" single"] [data-show]:not([data-show~="single"]),
+  [data-mockup-frame][data-at="single"] [data-show]:not([data-show~="single"]),
+  [data-mockup-frame]:not([data-at]) [data-show]:not([data-show~="checking"]) { display: none; }
+  [data-mockup-frame][data-at$=" checking"] [data-recede~="checking"],
+  [data-mockup-frame][data-at="checking"] [data-recede~="checking"],
+  [data-mockup-frame][data-at$=" marks"] [data-recede~="marks"],
+  [data-mockup-frame][data-at="marks"] [data-recede~="marks"],
+  [data-mockup-frame][data-at$=" popover"] [data-recede~="popover"],
+  [data-mockup-frame][data-at="popover"] [data-recede~="popover"],
+  [data-mockup-frame][data-at$=" reconcile"] [data-recede~="reconcile"],
+  [data-mockup-frame][data-at="reconcile"] [data-recede~="reconcile"],
+  [data-mockup-frame][data-at$=" reconcile-all"] [data-recede~="reconcile-all"],
+  [data-mockup-frame][data-at="reconcile-all"] [data-recede~="reconcile-all"],
+  [data-mockup-frame][data-at$=" warnings"] [data-recede~="warnings"],
+  [data-mockup-frame][data-at="warnings"] [data-recede~="warnings"],
+  [data-mockup-frame][data-at$=" gaps"] [data-recede~="gaps"],
+  [data-mockup-frame][data-at="gaps"] [data-recede~="gaps"],
+  [data-mockup-frame][data-at$=" story"] [data-recede~="story"],
+  [data-mockup-frame][data-at="story"] [data-recede~="story"],
+  [data-mockup-frame][data-at$=" criterion"] [data-recede~="criterion"],
+  [data-mockup-frame][data-at="criterion"] [data-recede~="criterion"],
+  [data-mockup-frame][data-at$=" type"] [data-recede~="type"],
+  [data-mockup-frame][data-at="type"] [data-recede~="type"],
+  [data-mockup-frame][data-at$=" change"] [data-recede~="change"],
+  [data-mockup-frame][data-at="change"] [data-recede~="change"],
+  [data-mockup-frame][data-at$=" unavailable"] [data-recede~="unavailable"],
+  [data-mockup-frame][data-at="unavailable"] [data-recede~="unavailable"],
+  [data-mockup-frame][data-at$=" settled"] [data-recede~="settled"],
+  [data-mockup-frame][data-at="settled"] [data-recede~="settled"],
+  [data-mockup-frame][data-at$=" arrival"] [data-recede~="arrival"],
+  [data-mockup-frame][data-at="arrival"] [data-recede~="arrival"],
+  [data-mockup-frame][data-at$=" reworded"] [data-recede~="reworded"],
+  [data-mockup-frame][data-at="reworded"] [data-recede~="reworded"],
+  [data-mockup-frame][data-at$=" jev-off"] [data-recede~="jev-off"],
+  [data-mockup-frame][data-at="jev-off"] [data-recede~="jev-off"],
+  [data-mockup-frame][data-at$=" jev-unavailable"] [data-recede~="jev-unavailable"],
+  [data-mockup-frame][data-at="jev-unavailable"] [data-recede~="jev-unavailable"],
+  [data-mockup-frame]:not([data-at]) [data-recede~="checking"] { color: var(--spec-focus-context); }
+  [data-mockup-frame][data-at$=" checking"] [data-recede~="checking"] h1,
+  [data-mockup-frame][data-at="checking"] [data-recede~="checking"] h1,
+  [data-mockup-frame][data-at$=" marks"] [data-recede~="marks"] h1,
+  [data-mockup-frame][data-at="marks"] [data-recede~="marks"] h1,
+  [data-mockup-frame][data-at$=" popover"] [data-recede~="popover"] h1,
+  [data-mockup-frame][data-at="popover"] [data-recede~="popover"] h1,
+  [data-mockup-frame][data-at$=" reconcile"] [data-recede~="reconcile"] h1,
+  [data-mockup-frame][data-at="reconcile"] [data-recede~="reconcile"] h1,
+  [data-mockup-frame][data-at$=" reconcile-all"] [data-recede~="reconcile-all"] h1,
+  [data-mockup-frame][data-at="reconcile-all"] [data-recede~="reconcile-all"] h1,
+  [data-mockup-frame][data-at$=" warnings"] [data-recede~="warnings"] h1,
+  [data-mockup-frame][data-at="warnings"] [data-recede~="warnings"] h1,
+  [data-mockup-frame][data-at$=" gaps"] [data-recede~="gaps"] h1,
+  [data-mockup-frame][data-at="gaps"] [data-recede~="gaps"] h1,
+  [data-mockup-frame][data-at$=" story"] [data-recede~="story"] h1,
+  [data-mockup-frame][data-at="story"] [data-recede~="story"] h1,
+  [data-mockup-frame][data-at$=" criterion"] [data-recede~="criterion"] h1,
+  [data-mockup-frame][data-at="criterion"] [data-recede~="criterion"] h1,
+  [data-mockup-frame][data-at$=" type"] [data-recede~="type"] h1,
+  [data-mockup-frame][data-at="type"] [data-recede~="type"] h1,
+  [data-mockup-frame][data-at$=" change"] [data-recede~="change"] h1,
+  [data-mockup-frame][data-at="change"] [data-recede~="change"] h1,
+  [data-mockup-frame][data-at$=" unavailable"] [data-recede~="unavailable"] h1,
+  [data-mockup-frame][data-at="unavailable"] [data-recede~="unavailable"] h1,
+  [data-mockup-frame][data-at$=" settled"] [data-recede~="settled"] h1,
+  [data-mockup-frame][data-at="settled"] [data-recede~="settled"] h1,
+  [data-mockup-frame][data-at$=" arrival"] [data-recede~="arrival"] h1,
+  [data-mockup-frame][data-at="arrival"] [data-recede~="arrival"] h1,
+  [data-mockup-frame][data-at$=" reworded"] [data-recede~="reworded"] h1,
+  [data-mockup-frame][data-at="reworded"] [data-recede~="reworded"] h1,
+  [data-mockup-frame][data-at$=" jev-off"] [data-recede~="jev-off"] h1,
+  [data-mockup-frame][data-at="jev-off"] [data-recede~="jev-off"] h1,
+  [data-mockup-frame][data-at$=" jev-unavailable"] [data-recede~="jev-unavailable"] h1,
+  [data-mockup-frame][data-at="jev-unavailable"] [data-recede~="jev-unavailable"] h1,
+  [data-mockup-frame]:not([data-at]) [data-recede~="checking"] h1 { color: var(--spec-focus-context); }
+  [data-mockup-frame][data-at$=" checking"] [data-recede~="checking"]::after,
+  [data-mockup-frame][data-at="checking"] [data-recede~="checking"]::after,
+  [data-mockup-frame][data-at$=" marks"] [data-recede~="marks"]::after,
+  [data-mockup-frame][data-at="marks"] [data-recede~="marks"]::after,
+  [data-mockup-frame][data-at$=" popover"] [data-recede~="popover"]::after,
+  [data-mockup-frame][data-at="popover"] [data-recede~="popover"]::after,
+  [data-mockup-frame][data-at$=" reconcile"] [data-recede~="reconcile"]::after,
+  [data-mockup-frame][data-at="reconcile"] [data-recede~="reconcile"]::after,
+  [data-mockup-frame][data-at$=" reconcile-all"] [data-recede~="reconcile-all"]::after,
+  [data-mockup-frame][data-at="reconcile-all"] [data-recede~="reconcile-all"]::after,
+  [data-mockup-frame][data-at$=" warnings"] [data-recede~="warnings"]::after,
+  [data-mockup-frame][data-at="warnings"] [data-recede~="warnings"]::after,
+  [data-mockup-frame][data-at$=" gaps"] [data-recede~="gaps"]::after,
+  [data-mockup-frame][data-at="gaps"] [data-recede~="gaps"]::after,
+  [data-mockup-frame][data-at$=" story"] [data-recede~="story"]::after,
+  [data-mockup-frame][data-at="story"] [data-recede~="story"]::after,
+  [data-mockup-frame][data-at$=" criterion"] [data-recede~="criterion"]::after,
+  [data-mockup-frame][data-at="criterion"] [data-recede~="criterion"]::after,
+  [data-mockup-frame][data-at$=" type"] [data-recede~="type"]::after,
+  [data-mockup-frame][data-at="type"] [data-recede~="type"]::after,
+  [data-mockup-frame][data-at$=" change"] [data-recede~="change"]::after,
+  [data-mockup-frame][data-at="change"] [data-recede~="change"]::after,
+  [data-mockup-frame][data-at$=" unavailable"] [data-recede~="unavailable"]::after,
+  [data-mockup-frame][data-at="unavailable"] [data-recede~="unavailable"]::after,
+  [data-mockup-frame][data-at$=" settled"] [data-recede~="settled"]::after,
+  [data-mockup-frame][data-at="settled"] [data-recede~="settled"]::after,
+  [data-mockup-frame][data-at$=" arrival"] [data-recede~="arrival"]::after,
+  [data-mockup-frame][data-at="arrival"] [data-recede~="arrival"]::after,
+  [data-mockup-frame][data-at$=" reworded"] [data-recede~="reworded"]::after,
+  [data-mockup-frame][data-at="reworded"] [data-recede~="reworded"]::after,
+  [data-mockup-frame][data-at$=" jev-off"] [data-recede~="jev-off"]::after,
+  [data-mockup-frame][data-at="jev-off"] [data-recede~="jev-off"]::after,
+  [data-mockup-frame][data-at$=" jev-unavailable"] [data-recede~="jev-unavailable"]::after,
+  [data-mockup-frame][data-at="jev-unavailable"] [data-recede~="jev-unavailable"]::after,
+  [data-mockup-frame]:not([data-at]) [data-recede~="checking"]::after { opacity: 1; }
+  [data-mockup-frame="desktop"][data-at$=" checking"] [data-beside~="checking"],
+  [data-mockup-frame="desktop"][data-at="checking"] [data-beside~="checking"],
+  [data-mockup-frame="desktop"][data-at$=" marks"] [data-beside~="marks"],
+  [data-mockup-frame="desktop"][data-at="marks"] [data-beside~="marks"],
+  [data-mockup-frame="desktop"][data-at$=" popover"] [data-beside~="popover"],
+  [data-mockup-frame="desktop"][data-at="popover"] [data-beside~="popover"],
+  [data-mockup-frame="desktop"][data-at$=" reconcile"] [data-beside~="reconcile"],
+  [data-mockup-frame="desktop"][data-at="reconcile"] [data-beside~="reconcile"],
+  [data-mockup-frame="desktop"][data-at$=" reconcile-all"] [data-beside~="reconcile-all"],
+  [data-mockup-frame="desktop"][data-at="reconcile-all"] [data-beside~="reconcile-all"],
+  [data-mockup-frame="desktop"][data-at$=" warnings"] [data-beside~="warnings"],
+  [data-mockup-frame="desktop"][data-at="warnings"] [data-beside~="warnings"],
+  [data-mockup-frame="desktop"][data-at$=" gaps"] [data-beside~="gaps"],
+  [data-mockup-frame="desktop"][data-at="gaps"] [data-beside~="gaps"],
+  [data-mockup-frame="desktop"][data-at$=" story"] [data-beside~="story"],
+  [data-mockup-frame="desktop"][data-at="story"] [data-beside~="story"],
+  [data-mockup-frame="desktop"][data-at$=" criterion"] [data-beside~="criterion"],
+  [data-mockup-frame="desktop"][data-at="criterion"] [data-beside~="criterion"],
+  [data-mockup-frame="desktop"][data-at$=" type"] [data-beside~="type"],
+  [data-mockup-frame="desktop"][data-at="type"] [data-beside~="type"],
+  [data-mockup-frame="desktop"][data-at$=" change"] [data-beside~="change"],
+  [data-mockup-frame="desktop"][data-at="change"] [data-beside~="change"],
+  [data-mockup-frame="desktop"][data-at$=" unavailable"] [data-beside~="unavailable"],
+  [data-mockup-frame="desktop"][data-at="unavailable"] [data-beside~="unavailable"],
+  [data-mockup-frame="desktop"][data-at$=" settled"] [data-beside~="settled"],
+  [data-mockup-frame="desktop"][data-at="settled"] [data-beside~="settled"],
+  [data-mockup-frame="desktop"][data-at$=" arrival"] [data-beside~="arrival"],
+  [data-mockup-frame="desktop"][data-at="arrival"] [data-beside~="arrival"],
+  [data-mockup-frame="desktop"][data-at$=" reworded"] [data-beside~="reworded"],
+  [data-mockup-frame="desktop"][data-at="reworded"] [data-beside~="reworded"],
+  [data-mockup-frame="desktop"][data-at$=" jev-off"] [data-beside~="jev-off"],
+  [data-mockup-frame="desktop"][data-at="jev-off"] [data-beside~="jev-off"],
+  [data-mockup-frame="desktop"][data-at$=" jev-unavailable"] [data-beside~="jev-unavailable"],
+  [data-mockup-frame="desktop"][data-at="jev-unavailable"] [data-beside~="jev-unavailable"],
+  [data-mockup-frame="desktop"][data-at$=" evidence"] [data-beside~="evidence"],
+  [data-mockup-frame="desktop"][data-at="evidence"] [data-beside~="evidence"],
+  [data-mockup-frame="desktop"][data-at$=" stale"] [data-beside~="stale"],
+  [data-mockup-frame="desktop"][data-at="stale"] [data-beside~="stale"],
+  [data-mockup-frame="desktop"][data-at$=" reproof"] [data-beside~="reproof"],
+  [data-mockup-frame="desktop"][data-at="reproof"] [data-beside~="reproof"],
+  [data-mockup-frame="desktop"][data-at$=" reproof-all"] [data-beside~="reproof-all"],
+  [data-mockup-frame="desktop"][data-at="reproof-all"] [data-beside~="reproof-all"],
+  [data-mockup-frame="desktop"][data-at$=" passed-reworded"] [data-beside~="passed-reworded"],
+  [data-mockup-frame="desktop"][data-at="passed-reworded"] [data-beside~="passed-reworded"],
+  [data-mockup-frame="desktop"][data-at$=" failed"] [data-beside~="failed"],
+  [data-mockup-frame="desktop"][data-at="failed"] [data-beside~="failed"],
+  [data-mockup-frame="desktop"][data-at$=" no-qa"] [data-beside~="no-qa"],
+  [data-mockup-frame="desktop"][data-at="no-qa"] [data-beside~="no-qa"],
+  [data-mockup-frame="desktop"][data-at$=" landed"] [data-beside~="landed"],
+  [data-mockup-frame="desktop"][data-at="landed"] [data-beside~="landed"],
+  [data-mockup-frame="desktop"][data-at$=" single"] [data-beside~="single"],
+  [data-mockup-frame="desktop"][data-at="single"] [data-beside~="single"],
+  [data-mockup-frame="desktop"]:not([data-at]) [data-beside~="checking"] { width: 1062px; margin: 0 354px 0 24px; }
+  [data-mockup-frame="desktop"][data-at$=" checking"] [data-beside-top~="checking"],
+  [data-mockup-frame="desktop"][data-at="checking"] [data-beside-top~="checking"],
+  [data-mockup-frame="desktop"][data-at$=" marks"] [data-beside-top~="marks"],
+  [data-mockup-frame="desktop"][data-at="marks"] [data-beside-top~="marks"],
+  [data-mockup-frame="desktop"][data-at$=" popover"] [data-beside-top~="popover"],
+  [data-mockup-frame="desktop"][data-at="popover"] [data-beside-top~="popover"],
+  [data-mockup-frame="desktop"][data-at$=" reconcile"] [data-beside-top~="reconcile"],
+  [data-mockup-frame="desktop"][data-at="reconcile"] [data-beside-top~="reconcile"],
+  [data-mockup-frame="desktop"][data-at$=" reconcile-all"] [data-beside-top~="reconcile-all"],
+  [data-mockup-frame="desktop"][data-at="reconcile-all"] [data-beside-top~="reconcile-all"],
+  [data-mockup-frame="desktop"][data-at$=" warnings"] [data-beside-top~="warnings"],
+  [data-mockup-frame="desktop"][data-at="warnings"] [data-beside-top~="warnings"],
+  [data-mockup-frame="desktop"][data-at$=" gaps"] [data-beside-top~="gaps"],
+  [data-mockup-frame="desktop"][data-at="gaps"] [data-beside-top~="gaps"],
+  [data-mockup-frame="desktop"][data-at$=" story"] [data-beside-top~="story"],
+  [data-mockup-frame="desktop"][data-at="story"] [data-beside-top~="story"],
+  [data-mockup-frame="desktop"][data-at$=" criterion"] [data-beside-top~="criterion"],
+  [data-mockup-frame="desktop"][data-at="criterion"] [data-beside-top~="criterion"],
+  [data-mockup-frame="desktop"][data-at$=" type"] [data-beside-top~="type"],
+  [data-mockup-frame="desktop"][data-at="type"] [data-beside-top~="type"],
+  [data-mockup-frame="desktop"][data-at$=" change"] [data-beside-top~="change"],
+  [data-mockup-frame="desktop"][data-at="change"] [data-beside-top~="change"],
+  [data-mockup-frame="desktop"][data-at$=" unavailable"] [data-beside-top~="unavailable"],
+  [data-mockup-frame="desktop"][data-at="unavailable"] [data-beside-top~="unavailable"],
+  [data-mockup-frame="desktop"][data-at$=" settled"] [data-beside-top~="settled"],
+  [data-mockup-frame="desktop"][data-at="settled"] [data-beside-top~="settled"],
+  [data-mockup-frame="desktop"][data-at$=" arrival"] [data-beside-top~="arrival"],
+  [data-mockup-frame="desktop"][data-at="arrival"] [data-beside-top~="arrival"],
+  [data-mockup-frame="desktop"][data-at$=" reworded"] [data-beside-top~="reworded"],
+  [data-mockup-frame="desktop"][data-at="reworded"] [data-beside-top~="reworded"],
+  [data-mockup-frame="desktop"][data-at$=" jev-off"] [data-beside-top~="jev-off"],
+  [data-mockup-frame="desktop"][data-at="jev-off"] [data-beside-top~="jev-off"],
+  [data-mockup-frame="desktop"][data-at$=" jev-unavailable"] [data-beside-top~="jev-unavailable"],
+  [data-mockup-frame="desktop"][data-at="jev-unavailable"] [data-beside-top~="jev-unavailable"],
+  [data-mockup-frame="desktop"][data-at$=" evidence"] [data-beside-top~="evidence"],
+  [data-mockup-frame="desktop"][data-at="evidence"] [data-beside-top~="evidence"],
+  [data-mockup-frame="desktop"][data-at$=" stale"] [data-beside-top~="stale"],
+  [data-mockup-frame="desktop"][data-at="stale"] [data-beside-top~="stale"],
+  [data-mockup-frame="desktop"][data-at$=" reproof"] [data-beside-top~="reproof"],
+  [data-mockup-frame="desktop"][data-at="reproof"] [data-beside-top~="reproof"],
+  [data-mockup-frame="desktop"][data-at$=" reproof-all"] [data-beside-top~="reproof-all"],
+  [data-mockup-frame="desktop"][data-at="reproof-all"] [data-beside-top~="reproof-all"],
+  [data-mockup-frame="desktop"][data-at$=" passed-reworded"] [data-beside-top~="passed-reworded"],
+  [data-mockup-frame="desktop"][data-at="passed-reworded"] [data-beside-top~="passed-reworded"],
+  [data-mockup-frame="desktop"][data-at$=" failed"] [data-beside-top~="failed"],
+  [data-mockup-frame="desktop"][data-at="failed"] [data-beside-top~="failed"],
+  [data-mockup-frame="desktop"][data-at$=" no-qa"] [data-beside-top~="no-qa"],
+  [data-mockup-frame="desktop"][data-at="no-qa"] [data-beside-top~="no-qa"],
+  [data-mockup-frame="desktop"][data-at$=" landed"] [data-beside-top~="landed"],
+  [data-mockup-frame="desktop"][data-at="landed"] [data-beside-top~="landed"],
+  [data-mockup-frame="desktop"][data-at$=" single"] [data-beside-top~="single"],
+  [data-mockup-frame="desktop"][data-at="single"] [data-beside-top~="single"],
+  [data-mockup-frame="desktop"]:not([data-at]) [data-beside-top~="checking"] { right: 330px; }
+  [data-mockup-frame][data-at$=" checking"] [data-hide~="checking"],
+  [data-mockup-frame][data-at="checking"] [data-hide~="checking"],
+  [data-mockup-frame][data-at$=" marks"] [data-hide~="marks"],
+  [data-mockup-frame][data-at="marks"] [data-hide~="marks"],
+  [data-mockup-frame][data-at$=" popover"] [data-hide~="popover"],
+  [data-mockup-frame][data-at="popover"] [data-hide~="popover"],
+  [data-mockup-frame][data-at$=" reconcile"] [data-hide~="reconcile"],
+  [data-mockup-frame][data-at="reconcile"] [data-hide~="reconcile"],
+  [data-mockup-frame][data-at$=" reconcile-all"] [data-hide~="reconcile-all"],
+  [data-mockup-frame][data-at="reconcile-all"] [data-hide~="reconcile-all"],
+  [data-mockup-frame][data-at$=" warnings"] [data-hide~="warnings"],
+  [data-mockup-frame][data-at="warnings"] [data-hide~="warnings"],
+  [data-mockup-frame][data-at$=" gaps"] [data-hide~="gaps"],
+  [data-mockup-frame][data-at="gaps"] [data-hide~="gaps"],
+  [data-mockup-frame][data-at$=" story"] [data-hide~="story"],
+  [data-mockup-frame][data-at="story"] [data-hide~="story"],
+  [data-mockup-frame][data-at$=" criterion"] [data-hide~="criterion"],
+  [data-mockup-frame][data-at="criterion"] [data-hide~="criterion"],
+  [data-mockup-frame][data-at$=" type"] [data-hide~="type"],
+  [data-mockup-frame][data-at="type"] [data-hide~="type"],
+  [data-mockup-frame][data-at$=" change"] [data-hide~="change"],
+  [data-mockup-frame][data-at="change"] [data-hide~="change"],
+  [data-mockup-frame][data-at$=" unavailable"] [data-hide~="unavailable"],
+  [data-mockup-frame][data-at="unavailable"] [data-hide~="unavailable"],
+  [data-mockup-frame][data-at$=" settled"] [data-hide~="settled"],
+  [data-mockup-frame][data-at="settled"] [data-hide~="settled"],
+  [data-mockup-frame][data-at$=" arrival"] [data-hide~="arrival"],
+  [data-mockup-frame][data-at="arrival"] [data-hide~="arrival"],
+  [data-mockup-frame][data-at$=" reworded"] [data-hide~="reworded"],
+  [data-mockup-frame][data-at="reworded"] [data-hide~="reworded"],
+  [data-mockup-frame][data-at$=" jev-off"] [data-hide~="jev-off"],
+  [data-mockup-frame][data-at="jev-off"] [data-hide~="jev-off"],
+  [data-mockup-frame][data-at$=" jev-unavailable"] [data-hide~="jev-unavailable"],
+  [data-mockup-frame][data-at="jev-unavailable"] [data-hide~="jev-unavailable"],
+  [data-mockup-frame][data-at$=" evidence"] [data-hide~="evidence"],
+  [data-mockup-frame][data-at="evidence"] [data-hide~="evidence"],
+  [data-mockup-frame][data-at$=" stale"] [data-hide~="stale"],
+  [data-mockup-frame][data-at="stale"] [data-hide~="stale"],
+  [data-mockup-frame][data-at$=" reproof"] [data-hide~="reproof"],
+  [data-mockup-frame][data-at="reproof"] [data-hide~="reproof"],
+  [data-mockup-frame][data-at$=" reproof-all"] [data-hide~="reproof-all"],
+  [data-mockup-frame][data-at="reproof-all"] [data-hide~="reproof-all"],
+  [data-mockup-frame][data-at$=" passed-reworded"] [data-hide~="passed-reworded"],
+  [data-mockup-frame][data-at="passed-reworded"] [data-hide~="passed-reworded"],
+  [data-mockup-frame][data-at$=" failed"] [data-hide~="failed"],
+  [data-mockup-frame][data-at="failed"] [data-hide~="failed"],
+  [data-mockup-frame][data-at$=" no-qa"] [data-hide~="no-qa"],
+  [data-mockup-frame][data-at="no-qa"] [data-hide~="no-qa"],
+  [data-mockup-frame][data-at$=" landed"] [data-hide~="landed"],
+  [data-mockup-frame][data-at="landed"] [data-hide~="landed"],
+  [data-mockup-frame][data-at$=" single"] [data-hide~="single"],
+  [data-mockup-frame][data-at="single"] [data-hide~="single"],
+  [data-mockup-frame]:not([data-at]) [data-hide~="checking"] { opacity: 0; pointer-events: none; }
+  [data-mockup-frame][data-at$=" checking"] [data-open~="checking"],
+  [data-mockup-frame][data-at="checking"] [data-open~="checking"],
+  [data-mockup-frame][data-at$=" marks"] [data-open~="marks"],
+  [data-mockup-frame][data-at="marks"] [data-open~="marks"],
+  [data-mockup-frame][data-at$=" popover"] [data-open~="popover"],
+  [data-mockup-frame][data-at="popover"] [data-open~="popover"],
+  [data-mockup-frame][data-at$=" reconcile"] [data-open~="reconcile"],
+  [data-mockup-frame][data-at="reconcile"] [data-open~="reconcile"],
+  [data-mockup-frame][data-at$=" reconcile-all"] [data-open~="reconcile-all"],
+  [data-mockup-frame][data-at="reconcile-all"] [data-open~="reconcile-all"],
+  [data-mockup-frame][data-at$=" warnings"] [data-open~="warnings"],
+  [data-mockup-frame][data-at="warnings"] [data-open~="warnings"],
+  [data-mockup-frame][data-at$=" gaps"] [data-open~="gaps"],
+  [data-mockup-frame][data-at="gaps"] [data-open~="gaps"],
+  [data-mockup-frame][data-at$=" story"] [data-open~="story"],
+  [data-mockup-frame][data-at="story"] [data-open~="story"],
+  [data-mockup-frame][data-at$=" criterion"] [data-open~="criterion"],
+  [data-mockup-frame][data-at="criterion"] [data-open~="criterion"],
+  [data-mockup-frame][data-at$=" type"] [data-open~="type"],
+  [data-mockup-frame][data-at="type"] [data-open~="type"],
+  [data-mockup-frame][data-at$=" change"] [data-open~="change"],
+  [data-mockup-frame][data-at="change"] [data-open~="change"],
+  [data-mockup-frame][data-at$=" unavailable"] [data-open~="unavailable"],
+  [data-mockup-frame][data-at="unavailable"] [data-open~="unavailable"],
+  [data-mockup-frame][data-at$=" settled"] [data-open~="settled"],
+  [data-mockup-frame][data-at="settled"] [data-open~="settled"],
+  [data-mockup-frame][data-at$=" arrival"] [data-open~="arrival"],
+  [data-mockup-frame][data-at="arrival"] [data-open~="arrival"],
+  [data-mockup-frame][data-at$=" reworded"] [data-open~="reworded"],
+  [data-mockup-frame][data-at="reworded"] [data-open~="reworded"],
+  [data-mockup-frame][data-at$=" jev-off"] [data-open~="jev-off"],
+  [data-mockup-frame][data-at="jev-off"] [data-open~="jev-off"],
+  [data-mockup-frame][data-at$=" jev-unavailable"] [data-open~="jev-unavailable"],
+  [data-mockup-frame][data-at="jev-unavailable"] [data-open~="jev-unavailable"],
+  [data-mockup-frame][data-at$=" evidence"] [data-open~="evidence"],
+  [data-mockup-frame][data-at="evidence"] [data-open~="evidence"],
+  [data-mockup-frame][data-at$=" stale"] [data-open~="stale"],
+  [data-mockup-frame][data-at="stale"] [data-open~="stale"],
+  [data-mockup-frame][data-at$=" reproof"] [data-open~="reproof"],
+  [data-mockup-frame][data-at="reproof"] [data-open~="reproof"],
+  [data-mockup-frame][data-at$=" reproof-all"] [data-open~="reproof-all"],
+  [data-mockup-frame][data-at="reproof-all"] [data-open~="reproof-all"],
+  [data-mockup-frame][data-at$=" passed-reworded"] [data-open~="passed-reworded"],
+  [data-mockup-frame][data-at="passed-reworded"] [data-open~="passed-reworded"],
+  [data-mockup-frame][data-at$=" failed"] [data-open~="failed"],
+  [data-mockup-frame][data-at="failed"] [data-open~="failed"],
+  [data-mockup-frame][data-at$=" no-qa"] [data-open~="no-qa"],
+  [data-mockup-frame][data-at="no-qa"] [data-open~="no-qa"],
+  [data-mockup-frame][data-at$=" landed"] [data-open~="landed"],
+  [data-mockup-frame][data-at="landed"] [data-open~="landed"],
+  [data-mockup-frame][data-at$=" single"] [data-open~="single"],
+  [data-mockup-frame][data-at="single"] [data-open~="single"],
+  [data-mockup-frame]:not([data-at]) [data-open~="checking"] { box-shadow: 0 0 0 3px var(--ui-pin-ring); }
+
+</style>
+<script defer src="../../.viz/runtime.js"></script>
+</head>
+<body>
+<section data-mockup-frame="desktop" data-anchor="desktop" data-illustrates="markers note-actions batch">
+<div class="rv-top" data-beside-top="reconcile reconcile-all warnings gaps criterion change reproof reproof-all" data-anchor="desktop-top-line"><a class="rv-index" href="#review-index"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg><span>Review index</span></a><div class="rv-range"><p class="rv-range-copy">Changes from <code>4b92aed</code> 2026-01-01 to <code>533c8e2</code> 2026-01-01</p><button type="button" class="rv-btn rv-change">Change base</button></div></div>
+<main class="rv-doc" data-anchor="desktop-doc" data-show="checking marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled" data-beside="reconcile reconcile-all warnings gaps criterion change">
+  <header class="rv-recede" data-recede="checking marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled" data-anchor="desktop-header">
+    <h1>Weekly report</h1>
+    <p class="rv-crumbs">docs / specs / report.spec.html</p>
+    <p>QA fixture: a feature spec under shaping.</p>
+  </header>
+  <section class="rv-section rv-holder" data-anchor="desktop-stories" data-illustrates="markers-one">
+    <h2>User stories</h2>
+    <button type="button" class="rv-marker " data-anchor="desktop-stories-marker" data-show="checking marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled" aria-haspopup="dialog" aria-label="Jev notes: Behavior" data-illustrates="type-behavioral markers-one level-neutral"></button>
+    <p class="rv-block rv-recede" data-recede="checking marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled">As a manager, I read totals per week on the report page.</p>
+    <p class="rv-block rv-holder jv-clause" data-anchor="desktop-story-export" data-illustrates="acceptance-corpus-restate acceptance-coverage">As a manager, I download the table I see.
+      <button type="button" class="rv-marker rv-important" data-anchor="desktop-story-marker" data-show="checking marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable" data-open="story criterion" aria-haspopup="dialog" aria-label="Jev notes: Overlaps report-page.spec.html#story-export; No criterion covers this" data-illustrates="acceptance-coverage level-important"></button><button type="button" class="rv-marker rv-warning" data-anchor="desktop-story-settled-marker" data-show="settled" aria-haspopup="dialog" aria-label="Jev notes: Overlaps report-page.spec.html#story-export" data-illustrates="acceptance-warning-color level-warning"></button>
+      <div class="rv-pop jv-pop-story" role="dialog" aria-label="Jev notes" data-anchor="desktop-story-popover" data-show="story">
+      <ul class="rv-pop-notes">
+        <li class="jv-note" data-anchor="desktop-note-overlaps" data-illustrates="acceptance-note-none-overlaps note-none"><a class="rv-pop-text" href="#story-export">Overlaps report-page.spec.html#story-export</a>
+          <span class="jv-quote">“As a manager, I export the totals I see.”</span><span class="jv-meta">Report page · User stories</span></li>
+        <li class="jv-note jv-attention" data-anchor="desktop-note-no-criterion" data-illustrates="note-criterion"><span class="rv-pop-text">No criterion covers this</span>
+          <div class="jv-actions"><button type="button" class="rv-btn jv-act" data-anchor="desktop-ask-criterion">Ask for a criterion</button><button type="button" class="rv-btn jv-act">Ask about all gaps (2)</button></div></li>
+      </ul></div></p>
+  </section>
+  <section class="rv-section rv-holder" data-anchor="desktop-criteria">
+    <h2>Acceptance criteria</h2>
+    <button type="button" class="rv-marker " data-anchor="desktop-criteria-marker" data-show="checking marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled" data-open="type change" aria-haspopup="dialog" aria-label="Jev notes: Behavior" data-illustrates="type-behavioral feature-type"></button>
+    <div class="rv-pop jv-pop-type" role="dialog" aria-label="Jev notes" data-anchor="desktop-type-popover" data-show="type">
+      <ul class="rv-pop-notes"><li class="jv-note" data-illustrates="type-behavioral note-change"><span class="rv-pop-text">Behavior</span>
+        <div class="jv-actions"><button type="button" class="rv-btn jv-act" data-anchor="desktop-comment-change">Comment on this change</button></div></li></ul></div>
+    <p class="rv-block rv-recede" data-recede="checking marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled">The report page shows totals per week.</p>
+    <div class="rv-block rv-holder jv-col" data-anchor="desktop-report-export" data-illustrates="markers-pin-clear acceptance-pin-clear-desktop acceptance-pin-clear-desktop-pin acceptance-corpus acceptance-verifier">
+      <p>The export button downloads a CSV of the current table.</p>
+      <span class="rv-wheel jv-wheel" data-anchor="desktop-export-wheel" data-show="checking" role="img" aria-label="checking Contradicts report-page.spec.html#page-export" data-illustrates="pending-any"></span>
+      <button type="button" class="rv-marker rv-important" data-anchor="desktop-export-marker" data-show="marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled" data-open="popover reconcile reconcile-all warnings gaps" aria-haspopup="dialog" aria-label="Jev notes: Oversteps qa-20 #page-export-file; Contradicts report-page.spec.html#page-export; No story backs this" data-illustrates="acceptance-markers level-important markers-color"></button>
+      <i class="rv-pin rv-ack jv-col-pin" data-anchor="desktop-export-pin" data-illustrates="markers-pin-clear">1</i>
+      <div class="rv-pop jv-pop-export" role="dialog" aria-label="Jev notes" data-anchor="desktop-export-popover" data-show="popover" data-illustrates="markers-content markers-open acceptance-inert">
+      <ul class="rv-pop-notes">
+        <li class="jv-note" data-anchor="desktop-note-oversteps" data-illustrates="feature-cross-lane cross-lane-finding note-reconcile"><a class="rv-pop-text" href="#page-export-file">Oversteps qa-20 #page-export-file</a>
+          <span class="jv-quote">“The export dialog lists the rows the CSV holds and downloads weekly-totals-2026-W01.csv.”</span><span class="jv-meta">Report page · Acceptance criteria</span>
+          <div class="jv-actions"><button type="button" class="rv-btn jv-act" data-anchor="desktop-reconcile-lane">Ask agent to reconcile</button><span class="jv-batch"><button type="button" class="rv-btn jv-act" data-anchor="desktop-reconcile-all">Reconcile all (1)</button><button type="button" class="jv-more" data-anchor="desktop-warnings">+1 warning</button></span></div></li>
+        <li class="jv-note jv-attention" data-anchor="desktop-note-contradicts" data-illustrates="feature-corpus corpus-context note-reconcile"><a class="rv-pop-text" href="#page-export">Contradicts report-page.spec.html#page-export</a>
+          <span class="jv-quote">“The Export CSV button opens the export dialog.”</span><span class="jv-meta">Report page · Acceptance criteria</span>
+          <div class="jv-actions"><button type="button" class="rv-btn jv-act" data-anchor="desktop-reconcile">Ask agent to reconcile</button></div></li>
+        <li class="jv-note jv-attention" data-anchor="desktop-note-no-story" data-illustrates="coverage-declared note-story note-gaps-all"><span class="rv-pop-text">No story backs this</span>
+          <div class="jv-actions"><button type="button" class="rv-btn jv-act">Ask for a story</button><button type="button" class="rv-btn jv-act" data-anchor="desktop-gaps">Ask about all gaps (2)</button></div></li>
+      </ul></div>
+    </div>
+  </section>
+  <section class="rv-section rv-holder" data-anchor="desktop-behavior">
+    <h2>Behavior</h2>
+    <button type="button" class="rv-marker " data-anchor="desktop-behavior-marker" data-show="marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled" data-open="unavailable" aria-haspopup="dialog" aria-label="Jev notes: Jev unavailable" data-illustrates="acceptance-neutral level-neutral"></button>
+    <div class="rv-pop jv-pop-unavailable" role="dialog" aria-label="Jev notes" data-anchor="desktop-unavailable-popover" data-show="unavailable">
+      <ul class="rv-pop-notes"><li class="jv-note jv-neutral jv-hovered" data-illustrates="neutral-questions neutral-questions-rule"><span class="rv-pop-text" role="note" tabindex="0" aria-label="Jev could not check whether this changes behavior">Jev unavailable</span>
+        <span class="jv-sentence" aria-hidden="true">Jev could not check whether this changes behavior</span></li></ul></div>
+    <p class="rv-tbd-open">TBD: whether the export also offers XLSX. <button type="button" class="rv-answer">CSV only (recommended)</button> <button type="button" class="rv-answer">CSV and XLSX</button></p>
+    <p class="rv-tbd-open">TBD: the file name of the downloaded CSV.</p>
+    <p>TBD: scheduled exports, in a later slice.</p>
+  </section>
+</main>
+<main class="rv-doc" data-anchor="desktop-page-doc" data-show="arrival" data-illustrates="markers-arrival">
+  <header data-anchor="desktop-page-header">
+    <h1>Report page</h1>
+    <p class="rv-crumbs">docs / specs / report-page.spec.html</p>
+    <p>QA fixture: a spec whose mockup set draws its screens.</p>
+  </header>
+  <nav class="sp-screens" data-anchor="desktop-page-screens" aria-label="Screens"><p class="sp-screens-head">Screens <span class="sp-screens-count">3</span></p><ul><li><a class="sp-screen" href="#desktop-page-screens"><span class="sp-mark"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" stroke="var(--ui-muted, currentColor)"/></svg></span><span class="sp-name">Report page</span><span class="sp-meta"><span class="sp-kind">Drawn mockup</span><span class="sp-views">Desktop and phone</span></span><span class="sp-open">No open threads</span><span class="sp-go"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></span></a></li><li><a class="sp-screen" href="#desktop-page-screens"><span class="sp-mark"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" stroke="var(--ui-muted, currentColor)"/></svg></span><span class="sp-name">Team page</span><span class="sp-meta"><span class="sp-kind">Drawn mockup</span><span class="sp-views">Desktop and phone</span></span><span class="sp-open">No open threads</span><span class="sp-go"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></span></a></li><li><a class="sp-screen" href="#desktop-page-screens"><span class="sp-mark"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" stroke="var(--ui-muted, currentColor)"/></svg></span><span class="sp-name">Export dialog</span><span class="sp-meta"><span class="sp-kind">Drawn mockup</span><span class="sp-views">Desktop and phone</span></span><span class="sp-open">No open threads</span><span class="sp-go"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></span></a></li></ul></nav>
+  <section class="rv-section">
+    <h2>Acceptance criteria</h2>
+    <p class="rv-block">The report page shows each team as a card with its avatar and its total for the week. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a></p>
+    <p class="rv-block">Pressing a team's card opens its team page, listing its totals for the last three weeks. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a><a class="sp-chip" href="#see-mockup">See mockup · Team page</a></p>
+    <p class="rv-block">The onboarding tour points to the team cards first.</p>
+    <p class="rv-block jv-arrived" data-anchor="desktop-page-export" data-illustrates="acceptance-link-arrival-other markers-arrival">The Export CSV button opens the export dialog. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a><a class="sp-chip" href="#see-mockup">See mockup · Export dialog</a></p>
+    <p class="rv-block">The export dialog lists the rows the CSV holds and downloads weekly-totals-2026-W01.csv. <a class="sp-chip" href="#see-mockup">See mockup · Export dialog</a></p>
+  </section>
+</main>
+<main class="rv-doc" data-anchor="desktop-print-doc" data-show="reworded">
+  <header class="rv-recede" data-recede="reworded">
+    <h1>Report printing</h1>
+    <p class="rv-crumbs">docs / specs / print.spec.html</p>
+    <p>QA fixture: an older spec whose criteria name no story.</p>
+  </header>
+  <section class="rv-section rv-holder jv-cosmetic" data-anchor="desktop-print-stories" data-illustrates="acceptance-types-reword type-cosmetic">
+    <h2>User stories</h2>
+    <button type="button" class="rv-marker " data-anchor="desktop-print-stories-marker" data-show="reworded" data-open="reworded" aria-haspopup="dialog" aria-label="Jev notes: No behavior change" data-illustrates="type-cosmetic"></button>
+    <div class="rv-pop jv-pop-reworded" role="dialog" aria-label="Jev notes" data-anchor="desktop-reworded-popover" data-show="reworded">
+      <ul class="rv-pop-notes"><li class="jv-note jv-neutral" data-illustrates="type-cosmetic acceptance-note-none"><span class="rv-pop-text">No behavior change</span></li></ul></div>
+    <p>As a manager, I print the report and hand it out at the weekly meeting.</p>
+    <p>As a manager, I print a range of weeks at once.</p>
+  </section>
+  <section class="rv-section rv-holder jv-cosmetic" data-anchor="desktop-print-criteria" data-illustrates="acceptance-types-typo type-cosmetic">
+    <h2>Acceptance criteria</h2>
+    <button type="button" class="rv-marker " data-anchor="desktop-print-criteria-marker" data-show="reworded" aria-haspopup="dialog" aria-label="Jev notes: No behavior change" data-illustrates="type-cosmetic"></button>
+    <p>The Print button prints the report page exactly as shown.</p>
+    <p>Printing a range of weeks prints one page per week; the report's onboarding section gains a Printing step.</p>
+  </section>
+</main>
+<main class="rv-doc jv-noted" data-anchor="desktop-plain-doc" data-show="jev-off jev-unavailable">
+  <p class="jv-page-note" data-anchor="desktop-jev-note" data-illustrates="state-off state-request-failed story-neutral"><span data-show="jev-off">Jev off</span><span data-show="jev-unavailable">Jev unavailable</span></p>
+  <header data-anchor="desktop-plain-header">
+    <h1>Weekly report</h1>
+    <p class="rv-crumbs">docs / specs / report.spec.html</p>
+    <p>QA fixture: a feature spec under shaping.</p>
+  </header>
+  <section class="rv-section">
+    <h2>User stories</h2>
+    <p class="rv-block">As a manager, I read totals per week on the report page.</p>
+    <p class="rv-block">As a manager, I download the table I see.</p>
+  </section>
+  <section class="rv-section">
+    <h2>Acceptance criteria</h2>
+    <p class="rv-block">The report page shows totals per week.</p>
+    <div class="rv-block rv-pinned"><p>The export button downloads a CSV of the current table.</p><i class="rv-pin rv-ack">1</i></div>
+  </section>
+  <section class="rv-section">
+    <h2>Behavior</h2>
+    <p class="rv-tbd-open">TBD: whether the export also offers XLSX. <button type="button" class="rv-answer">CSV only (recommended)</button> <button type="button" class="rv-answer">CSV and XLSX</button></p>
+    <p class="rv-tbd-open">TBD: the file name of the downloaded CSV.</p>
+    <p>TBD: scheduled exports, in a later slice.</p>
+  </section>
+</main>
+<main class="rv-doc" data-anchor="desktop-evidence-doc" data-show="evidence stale reproof reproof-all passed-reworded failed no-qa landed single" data-beside="reproof reproof-all">
+  <header data-anchor="desktop-evidence-header">
+    <h1>Report page</h1>
+    <p class="rv-crumbs">docs / specs / report-page.spec.html</p>
+    <p>QA fixture: a spec whose mockup set draws its screens.</p>
+  </header>
+  <nav class="sp-screens" data-anchor="desktop-evidence-screens" aria-label="Screens"><p class="sp-screens-head">Screens <span class="sp-screens-count">3</span></p><ul><li><a class="sp-screen" href="#desktop-evidence-screens"><span class="sp-mark"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" stroke="var(--ui-muted, currentColor)"/></svg></span><span class="sp-name">Report page</span><span class="sp-meta"><span class="sp-kind">Drawn mockup</span><span class="sp-views">Desktop and phone</span></span><span class="sp-open">No open threads</span><span class="sp-go"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></span></a></li><li><a class="sp-screen" href="#desktop-evidence-screens"><span class="sp-mark"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" stroke="var(--ui-muted, currentColor)"/></svg></span><span class="sp-name">Team page</span><span class="sp-meta"><span class="sp-kind">Drawn mockup</span><span class="sp-views">Desktop and phone</span></span><span class="sp-open">No open threads</span><span class="sp-go"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></span></a></li><li><a class="sp-screen" href="#desktop-evidence-screens"><span class="sp-mark"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" stroke="var(--ui-muted, currentColor)"/></svg></span><span class="sp-name">Export dialog</span><span class="sp-meta"><span class="sp-kind">Drawn mockup</span><span class="sp-views">Desktop and phone</span></span><span class="sp-open">No open threads</span><span class="sp-go"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></span></a></li></ul></nav>
+  <section class="rv-section">
+    <h2>User stories</h2>
+    <p>As a manager, I see each team's weekly total at a glance.</p>
+    <p>As a manager, I export the totals I see.</p>
+  </section>
+  <section class="rv-section" data-anchor="desktop-evidence-criteria">
+    <h2>Acceptance criteria</h2>
+    <div class="rv-block rv-holder jv-evidence" data-anchor="desktop-ev-teams" data-illustrates="markers-one"><p>The report page shows each team as a card with its avatar and its total for the week. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a></p><button type="button" class="rv-marker rv-passed" data-anchor="desktop-ev-marker-teams" data-show="evidence stale reproof reproof-all passed-reworded failed no-qa landed single" data-open="passed-reworded" aria-haspopup="dialog" aria-label="Jev notes: QA passed · reworded" data-illustrates="markers-color"></button><div class="rv-pop jv-pop-evidence" role="dialog" aria-label="Jev notes" data-anchor="desktop-ev-pop-teams" data-show="passed-reworded" data-illustrates="markers-content markers-color"><ul class="rv-pop-notes"><li class="jv-note"><a class="rv-pop-text" href="#desktop-ev-bundle-teams">QA passed · reworded</a><span class="jv-meta"><span>#41 · 2 d</span><a class="jv-link" href="#desktop-ev-bundle-teams">bundle</a></span><div class="jv-legend"><del>removed</del> / <ins>added</ins></div><span class="jv-diff">The report page shows each team as a card with its avatar and its <del>weekly total.</del> <ins>total for the week.</ins></span></li></ul></div></div>
+    <div class="rv-block rv-holder jv-evidence" data-anchor="desktop-ev-team" data-illustrates="markers-one"><p>Pressing a team's card opens its team page, listing its totals for the last three weeks. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a><a class="sp-chip" href="#see-mockup">See mockup · Team page</a></p><button type="button" class="rv-marker rv-important" data-anchor="desktop-ev-marker-team" data-show="evidence stale reproof reproof-all passed-reworded failed no-qa" data-open="stale reproof reproof-all" aria-haspopup="dialog" aria-label="Jev notes: QA stale" data-illustrates="level-important"></button><button type="button" class="rv-marker rv-passed" data-anchor="desktop-ev-marker-team-passed" data-show="landed single" data-open="landed" aria-haspopup="dialog" aria-label="Jev notes: QA passed" data-illustrates="markers-color settle-stale"></button><div class="rv-pop jv-pop-evidence" role="dialog" aria-label="Jev notes" data-anchor="desktop-ev-pop-team" data-show="stale" data-illustrates="markers-content markers-open note-reproof note-reproof-all batch-place"><ul class="rv-pop-notes"><li class="jv-note jv-attention"><a class="rv-pop-text" href="#desktop-ev-bundle-team">QA stale</a><span class="jv-meta"><span>#58 · 9 d · not on main</span><a class="jv-link" href="#desktop-ev-bundle-team">bundle</a></span><div class="jv-legend"><del>removed</del> / <ins>added</ins></div><span class="jv-diff">Pressing a team's card opens its team page, listing its totals for the last <del>two</del> <ins>three</ins> weeks.</span><div class="jv-actions"><button type="button" class="rv-btn jv-act" data-anchor="desktop-ev-ask">Ask for re-proof</button><button type="button" class="rv-btn jv-act" data-anchor="desktop-ev-all">Re-proof all stale (2)</button></div></li></ul></div><div class="rv-pop jv-pop-evidence" role="dialog" aria-label="Jev notes" data-anchor="desktop-ev-pop-team-landed" data-show="landed" data-illustrates="settle-stale settle-rule markers-color"><ul class="rv-pop-notes"><li class="jv-note"><a class="rv-pop-text" href="#desktop-ev-bundle-team">QA passed</a><span class="jv-meta"><span>#63 · 1 h</span><a class="jv-link" href="#desktop-ev-bundle-team">bundle</a></span></li></ul></div></div>
+    <div class="rv-block rv-holder jv-evidence" data-anchor="desktop-ev-onboarding" data-illustrates="markers-one"><p>The onboarding tour points to the team cards first.</p><button type="button" class="rv-marker" data-anchor="desktop-ev-marker-onboarding" data-show="evidence stale reproof reproof-all passed-reworded failed no-qa landed single" data-open="no-qa" aria-haspopup="dialog" aria-label="Jev notes: No QA yet" data-illustrates="markers-color"></button><div class="rv-pop jv-pop-evidence" role="dialog" aria-label="Jev notes" data-anchor="desktop-ev-pop-onboarding" data-show="no-qa" data-illustrates="markers-content markers-color"><ul class="rv-pop-notes"><li class="jv-note"><span class="rv-pop-text">No QA yet</span></li></ul></div></div>
+    <div class="rv-block rv-holder jv-evidence" data-anchor="desktop-ev-export" data-illustrates="markers-one"><p>The Export CSV button opens the export dialog. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a><a class="sp-chip" href="#see-mockup">See mockup · Export dialog</a></p><button type="button" class="rv-marker rv-important" data-anchor="desktop-ev-marker-export" data-show="evidence stale reproof reproof-all passed-reworded failed no-qa landed single" data-open="failed" aria-haspopup="dialog" aria-label="Jev notes: QA failed" data-illustrates="level-important"></button><div class="rv-pop jv-pop-evidence" role="dialog" aria-label="Jev notes" data-anchor="desktop-ev-pop-export" data-show="failed" data-illustrates="markers-content level-important"><ul class="rv-pop-notes"><li class="jv-note jv-attention"><a class="rv-pop-text" href="#desktop-ev-bundle-export">QA failed</a><span class="jv-meta"><span>#12 · 3 h</span><a class="jv-link" href="#desktop-ev-bundle-export">bundle</a></span></li></ul></div></div>
+    <div class="rv-block rv-holder jv-evidence" data-anchor="desktop-ev-file" data-illustrates="markers-one"><p>The export dialog lists the rows the CSV holds and downloads weekly-totals-2026-W01.csv. <a class="sp-chip" href="#see-mockup">See mockup · Export dialog</a></p><button type="button" class="rv-marker rv-important" data-anchor="desktop-ev-marker-file" data-show="evidence stale reproof reproof-all passed-reworded failed no-qa landed single" data-open="single" aria-haspopup="dialog" aria-label="Jev notes: QA stale" data-illustrates="level-important"></button><div class="rv-pop jv-pop-evidence" role="dialog" aria-label="Jev notes" data-anchor="desktop-ev-pop-file" data-show="single" data-illustrates="batch-rule note-reproof"><ul class="rv-pop-notes"><li class="jv-note jv-attention"><a class="rv-pop-text" href="#desktop-ev-bundle-file">QA stale</a><span class="jv-meta"><span>#61 · 5 m</span><a class="jv-link" href="#desktop-ev-bundle-file">bundle</a></span><div class="jv-legend"><del>removed</del> / <ins>added</ins></div><span class="jv-diff">The export dialog lists the rows the CSV holds and downloads <del>weekly-totals.csv.</del> <ins>weekly-totals-2026-W01.csv.</ins></span><div class="jv-actions"><button type="button" class="rv-btn jv-act">Ask for re-proof</button></div></li></ul></div></div>
+  </section>
+  <section class="rv-section">
+    <h2>Behavior</h2>
+    <p>Cards are ordered by the week's total, highest first. Totals come from the weekly totals the report service holds. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a></p>
+  </section>
+</main>
+<nav class="rv-dock" data-anchor="desktop-dock" data-hide="reconcile reconcile-all warnings gaps criterion change reproof reproof-all" aria-label="Review conversations"><button type="button" class="rv-btn rv-icon" aria-label="Open review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M3.5 6h5A1.5 1.5 0 0 1 10 7.5v3A1.5 1.5 0 0 1 8.5 12H6.5L4 14v-2h-.5A1.5 1.5 0 0 1 2 10.5v-3A1.5 1.5 0 0 1 3.5 6z"/><path d="M6 6V3.5A1.5 1.5 0 0 1 7.5 2h5A1.5 1.5 0 0 1 14 3.5v3A1.5 1.5 0 0 1 12.5 8H12v2l-2-1.5"/></svg></button><div class="rv-dock-threads" data-show="checking marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled jev-off jev-unavailable"><button type="button" class="rv-thread rv-ack">1</button></div></nav>
+<aside class="rv-panel" data-anchor="desktop-panel" data-show="reconcile reconcile-all warnings gaps criterion change" aria-label="Review sidebar">
+  <div class="rv-head" data-anchor="desktop-panel-head">Conversation <span class="rv-count">1 thread · 2 questions</span> <span class="rv-sub">· agent last event 00:00:00</span><button type="button" class="rv-btn rv-icon rv-toggle" aria-label="Collapse review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M10 2.5v11"/></svg></button><button type="button" class="rv-btn rv-icon rv-gear" aria-label="Review display settings" title="Display settings"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6.34 3.18L6.6 1.4L9.4 1.4L9.66 3.18L11.35 4.15L13.02 3.48L14.42 5.91L13.01 7.03L13.01 8.97L14.42 10.09L13.02 12.52L11.35 11.85L9.66 12.82L9.4 14.6L6.6 14.6L6.34 12.82L4.65 11.85L2.98 12.52L1.58 10.09L2.99 8.97L2.99 7.03L1.58 5.91L2.98 3.48L4.65 4.15z"/><circle cx="8" cy="8" r="2"/></svg></button></div>
+  <div class="rv-stream" data-anchor="desktop-stream">
+    <div class="rv-entry rv-me">
+      <div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble">Say which columns the CSV holds.</div></div>
+      <span class="rv-chip">Acceptance criteria · The export button downloads a CSV…</span>
+      <span class="rv-replies">1 reply · <b>Agent:</b> Done; OK to resolve?</span><span class="rv-receipt rv-ack">Seen</span>
+    </div>
+    <div class="rv-entry rv-them">
+      <div class="rv-msg rv-them"><span class="rv-who">Agent</span>
+        <div class="rv-bubble">TBD: whether the export also offers XLSX.<div class="rv-choices"><button type="button" class="rv-choice">CSV only (recommended)</button><button type="button" class="rv-choice">CSV and XLSX</button><button type="button" class="rv-choice rv-words">Reply</button></div></div></div>
+      <span class="rv-chip">Behavior · TBD: whether the export also offers XLSX</span>
+    </div>
+    <div class="rv-entry rv-them">
+      <div class="rv-msg rv-them"><span class="rv-who">Agent</span>
+        <div class="rv-bubble">TBD: the file name of the downloaded CSV.<div class="rv-choices"><button type="button" class="rv-choice rv-words">Reply</button></div></div></div>
+      <span class="rv-chip">Behavior · TBD: the file name of the downloaded…</span>
+    </div>
+    <div class="rv-compose" data-show="reconcile" data-anchor="desktop-composer-reconcile">
+      <div class="rv-anchor">#report-export</div>
+      <textarea class="rv-field rv-focused jv-field" aria-label="Comment">Reconcile this clause with docs/specs/report-page.spec.html#page-export.</textarea>
+      <div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri">Comment</button></div>
+    </div>
+    <div class="rv-compose" data-show="reconcile-all" data-anchor="desktop-composer-reconcile-all">
+      <div class="rv-anchor">#report-export</div>
+      <textarea class="rv-field rv-focused jv-field" aria-label="Comment">Reconcile each clause with its link:
+#report-export Contradicts docs/specs/report-page.spec.html#page-export</textarea>
+      <div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri">Comment</button></div>
+    </div>
+    <div class="rv-compose" data-show="warnings" data-anchor="desktop-composer-warnings">
+      <div class="rv-anchor">#report-export</div>
+      <textarea class="rv-field rv-focused jv-field" aria-label="Comment">Reconcile each clause with its link:
+#report-export Oversteps /qa-20/docs/specs/report-page.spec.html#page-export-file
+#report-export Contradicts docs/specs/report-page.spec.html#page-export</textarea>
+      <div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri">Comment</button></div>
+    </div>
+    <div class="rv-compose" data-show="gaps" data-anchor="desktop-composer-gaps">
+      <div class="rv-anchor">#report-export</div>
+      <textarea class="rv-field rv-focused jv-field" aria-label="Comment">Add a criterion for each story, or name the story for each criterion:
+#story-export No criterion covers this
+#report-export No story backs this</textarea>
+      <div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri">Comment</button></div>
+    </div>
+    <div class="rv-compose" data-show="criterion" data-anchor="desktop-composer-criterion">
+      <div class="rv-anchor">#story-export</div>
+      <textarea class="rv-field rv-focused jv-field" aria-label="Comment">Add an acceptance criterion that verifies this story.</textarea>
+      <div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri">Comment</button></div>
+    </div>
+    <div class="rv-compose" data-show="change" data-anchor="desktop-composer-change">
+      <div class="rv-anchor">#acceptance</div>
+      <textarea class="rv-field rv-focused jv-field" aria-label="Comment">About this change: </textarea>
+      <div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri">Comment</button></div>
+    </div>
+  </div>
+  <div class="rv-handoff" data-anchor="desktop-handoff"><span class="rv-note">0 drafts</span><button type="button" class="rv-btn">TBD open (2)</button></div>
+</aside>
+<aside class="rv-panel" data-anchor="desktop-evidence-panel" data-show="reproof reproof-all" aria-label="Review sidebar">
+  <div class="rv-head" data-anchor="desktop-evidence-panel-head">Conversation <span class="rv-count">0 threads</span> <span class="rv-sub">· no agent events yet</span><button type="button" class="rv-btn rv-icon rv-toggle" aria-label="Collapse review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M10 2.5v11"/></svg></button><button type="button" class="rv-btn rv-icon rv-gear" aria-label="Review display settings" title="Display settings"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6.34 3.18L6.6 1.4L9.4 1.4L9.66 3.18L11.35 4.15L13.02 3.48L14.42 5.91L13.01 7.03L13.01 8.97L14.42 10.09L13.02 12.52L11.35 11.85L9.66 12.82L9.4 14.6L6.6 14.6L6.34 12.82L4.65 11.85L2.98 12.52L1.58 10.09L2.99 8.97L2.99 7.03L1.58 5.91L2.98 3.48L4.65 4.15z"/><circle cx="8" cy="8" r="2"/></svg></button></div>
+  <div class="rv-stream" data-anchor="desktop-evidence-stream">
+    <div class="rv-compose" data-show="reproof" data-anchor="desktop-composer-reproof">
+      <div class="rv-anchor">#page-team</div>
+      <textarea class="rv-field rv-focused jv-field" aria-label="Comment">page-team changed since its evidence (#58, 2026-10-27): please recapture it.</textarea>
+      <div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri">Comment</button></div>
+    </div>
+    <div class="rv-compose" data-show="reproof-all" data-anchor="desktop-composer-reproof-all">
+      <div class="rv-anchor">#page-team</div>
+      <textarea class="rv-field rv-focused jv-field" aria-label="Comment">Re-proof each criterion, changed since its evidence:
+page-team (#58, 2026-10-27)
+page-export-file (#61, 2026-11-05)</textarea>
+      <div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri">Comment</button></div>
+    </div>
+  </div>
+  <div class="rv-handoff" data-anchor="desktop-evidence-handoff"><span class="rv-note">Ready to accept</span><button type="button" class="rv-btn">Accept spec</button></div>
+</aside>
+
+<div class="rv-toolbar" data-anchor="desktop-toolbar"><button type="button" class="rv-btn rv-tool" title="Comment (C)">Comment</button><button type="button" class="rv-btn rv-tool" aria-pressed="false">Reading view</button><span class="rv-status">connected · review-serve · <span data-show="checking marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled jev-off jev-unavailable">1 thread</span><span data-show="arrival reworded evidence stale reproof reproof-all passed-reworded failed no-qa landed single">0 threads</span></span></div>
+</section>
+<section data-mockup-frame="phone" data-anchor="phone" data-illustrates="markers note-actions batch markers-mobile">
+<div class="rv-top" data-anchor="phone-top-line"><a class="rv-index" href="#review-index"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg><span>Review index</span></a><button type="button" class="rv-btn rv-change">Change base</button><div class="rv-range"><p class="rv-range-copy">Changes from <code>4b92aed</code> 2026-01-01 to <code>533c8e2</code> 2026-01-01</p></div></div>
+<main class="rv-doc" data-anchor="phone-doc" data-show="checking marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled" data-beside="reconcile reconcile-all warnings gaps criterion change">
+  <header class="rv-recede" data-recede="checking marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled" data-anchor="phone-header">
+    <h1>Weekly report</h1>
+    <p class="rv-crumbs">docs / specs / report.spec.html</p>
+    <p>QA fixture: a feature spec under shaping.</p>
+  </header>
+  <section class="rv-section rv-holder" data-anchor="phone-stories" data-illustrates="markers-one">
+    <h2>User stories</h2>
+    <button type="button" class="rv-marker " data-anchor="phone-stories-marker" data-show="checking marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled" aria-haspopup="dialog" aria-label="Jev notes: Behavior" data-illustrates="type-behavioral markers-one level-neutral"></button>
+    <p class="rv-block rv-recede" data-recede="checking marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled">As a manager, I read totals per week on the report page.</p>
+    <p class="rv-block rv-holder jv-clause" data-anchor="phone-story-export" data-illustrates="acceptance-corpus-restate acceptance-coverage">As a manager, I download the table I see.
+      <button type="button" class="rv-marker rv-important" data-anchor="phone-story-marker" data-show="checking marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable" data-open="story criterion" aria-haspopup="dialog" aria-label="Jev notes: Overlaps report-page.spec.html#story-export; No criterion covers this" data-illustrates="acceptance-coverage level-important"></button><button type="button" class="rv-marker rv-warning" data-anchor="phone-story-settled-marker" data-show="settled" aria-haspopup="dialog" aria-label="Jev notes: Overlaps report-page.spec.html#story-export" data-illustrates="acceptance-warning-color level-warning"></button>
+      </p>
+  </section>
+  <section class="rv-section rv-holder" data-anchor="phone-criteria">
+    <h2>Acceptance criteria</h2>
+    <button type="button" class="rv-marker " data-anchor="phone-criteria-marker" data-show="checking marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled" data-open="type change" aria-haspopup="dialog" aria-label="Jev notes: Behavior" data-illustrates="type-behavioral feature-type"></button>
+    
+    <p class="rv-block rv-recede" data-recede="checking marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled">The report page shows totals per week.</p>
+    <div class="rv-block rv-holder jv-col" data-anchor="phone-report-export" data-illustrates="markers-pin-clear acceptance-pin-clear acceptance-pin-clear-pin acceptance-corpus acceptance-verifier">
+      <p>The export button downloads a CSV of the current table.</p>
+      <span class="rv-wheel jv-wheel" data-anchor="phone-export-wheel" data-show="checking" role="img" aria-label="checking Contradicts report-page.spec.html#page-export" data-illustrates="pending-any"></span>
+      <button type="button" class="rv-marker rv-important" data-anchor="phone-export-marker" data-show="marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled" data-open="popover reconcile reconcile-all warnings gaps" aria-haspopup="dialog" aria-label="Jev notes: Oversteps qa-20 #page-export-file; Contradicts report-page.spec.html#page-export; No story backs this" data-illustrates="acceptance-markers level-important markers-color"></button>
+      <i class="rv-pin rv-ack jv-col-pin" data-anchor="phone-export-pin" data-illustrates="markers-pin-clear">1</i>
+      
+    </div>
+  </section>
+  <section class="rv-section rv-holder" data-anchor="phone-behavior">
+    <h2>Behavior</h2>
+    <button type="button" class="rv-marker " data-anchor="phone-behavior-marker" data-show="marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled" data-open="unavailable" aria-haspopup="dialog" aria-label="Jev notes: Jev unavailable" data-illustrates="acceptance-neutral level-neutral"></button>
+    
+    <p class="rv-tbd-open">TBD: whether the export also offers XLSX. <button type="button" class="rv-answer">CSV only (recommended)</button> <button type="button" class="rv-answer">CSV and XLSX</button></p>
+    <p class="rv-tbd-open">TBD: the file name of the downloaded CSV.</p>
+    <p>TBD: scheduled exports, in a later slice.</p>
+  </section>
+</main>
+<main class="rv-doc" data-anchor="phone-page-doc" data-show="arrival" data-illustrates="markers-arrival">
+  <header data-anchor="phone-page-header">
+    <h1>Report page</h1>
+    <p class="rv-crumbs">docs / specs / report-page.spec.html</p>
+    <p>QA fixture: a spec whose mockup set draws its screens.</p>
+  </header>
+  <nav class="sp-screens" data-anchor="phone-page-screens" aria-label="Screens"><p class="sp-screens-head">Screens <span class="sp-screens-count">3</span></p><ul><li><a class="sp-screen" href="#phone-page-screens"><span class="sp-mark"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" stroke="var(--ui-muted, currentColor)"/></svg></span><span class="sp-name">Report page</span><span class="sp-meta"><span class="sp-kind">Drawn mockup</span><span class="sp-views">Desktop and phone</span></span><span class="sp-open">No open threads</span><span class="sp-go"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></span></a></li><li><a class="sp-screen" href="#phone-page-screens"><span class="sp-mark"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" stroke="var(--ui-muted, currentColor)"/></svg></span><span class="sp-name">Team page</span><span class="sp-meta"><span class="sp-kind">Drawn mockup</span><span class="sp-views">Desktop and phone</span></span><span class="sp-open">No open threads</span><span class="sp-go"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></span></a></li><li><a class="sp-screen" href="#phone-page-screens"><span class="sp-mark"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" stroke="var(--ui-muted, currentColor)"/></svg></span><span class="sp-name">Export dialog</span><span class="sp-meta"><span class="sp-kind">Drawn mockup</span><span class="sp-views">Desktop and phone</span></span><span class="sp-open">No open threads</span><span class="sp-go"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></span></a></li></ul></nav>
+  <section class="rv-section">
+    <h2>Acceptance criteria</h2>
+    <p class="rv-block">The report page shows each team as a card with its avatar and its total for the week. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a></p>
+    <p class="rv-block">Pressing a team's card opens its team page, listing its totals for the last three weeks. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a><a class="sp-chip" href="#see-mockup">See mockup · Team page</a></p>
+    <p class="rv-block">The onboarding tour points to the team cards first.</p>
+    <p class="rv-block jv-arrived" data-anchor="phone-page-export" data-illustrates="acceptance-link-arrival-other markers-arrival">The Export CSV button opens the export dialog. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a><a class="sp-chip" href="#see-mockup">See mockup · Export dialog</a></p>
+    <p class="rv-block">The export dialog lists the rows the CSV holds and downloads weekly-totals-2026-W01.csv. <a class="sp-chip" href="#see-mockup">See mockup · Export dialog</a></p>
+  </section>
+</main>
+<main class="rv-doc" data-anchor="phone-print-doc" data-show="reworded">
+  <header class="rv-recede" data-recede="reworded">
+    <h1>Report printing</h1>
+    <p class="rv-crumbs">docs / specs / print.spec.html</p>
+    <p>QA fixture: an older spec whose criteria name no story.</p>
+  </header>
+  <section class="rv-section rv-holder jv-cosmetic" data-anchor="phone-print-stories" data-illustrates="acceptance-types-reword type-cosmetic">
+    <h2>User stories</h2>
+    <button type="button" class="rv-marker " data-anchor="phone-print-stories-marker" data-show="reworded" data-open="reworded" aria-haspopup="dialog" aria-label="Jev notes: No behavior change" data-illustrates="type-cosmetic"></button>
+    
+    <p>As a manager, I print the report and hand it out at the weekly meeting.</p>
+    <p>As a manager, I print a range of weeks at once.</p>
+  </section>
+  <section class="rv-section rv-holder jv-cosmetic" data-anchor="phone-print-criteria" data-illustrates="acceptance-types-typo type-cosmetic">
+    <h2>Acceptance criteria</h2>
+    <button type="button" class="rv-marker " data-anchor="phone-print-criteria-marker" data-show="reworded" aria-haspopup="dialog" aria-label="Jev notes: No behavior change" data-illustrates="type-cosmetic"></button>
+    <p>The Print button prints the report page exactly as shown.</p>
+    <p>Printing a range of weeks prints one page per week; the report's onboarding section gains a Printing step.</p>
+  </section>
+</main>
+<main class="rv-doc jv-noted" data-anchor="phone-plain-doc" data-show="jev-off jev-unavailable">
+  <p class="jv-page-note" data-anchor="phone-jev-note" data-illustrates="state-off state-request-failed story-neutral"><span data-show="jev-off">Jev off</span><span data-show="jev-unavailable">Jev unavailable</span></p>
+  <header data-anchor="phone-plain-header">
+    <h1>Weekly report</h1>
+    <p class="rv-crumbs">docs / specs / report.spec.html</p>
+    <p>QA fixture: a feature spec under shaping.</p>
+  </header>
+  <section class="rv-section">
+    <h2>User stories</h2>
+    <p class="rv-block">As a manager, I read totals per week on the report page.</p>
+    <p class="rv-block">As a manager, I download the table I see.</p>
+  </section>
+  <section class="rv-section">
+    <h2>Acceptance criteria</h2>
+    <p class="rv-block">The report page shows totals per week.</p>
+    <div class="rv-block rv-pinned"><p>The export button downloads a CSV of the current table.</p><i class="rv-pin rv-ack">1</i></div>
+  </section>
+  <section class="rv-section">
+    <h2>Behavior</h2>
+    <p class="rv-tbd-open">TBD: whether the export also offers XLSX. <button type="button" class="rv-answer">CSV only (recommended)</button> <button type="button" class="rv-answer">CSV and XLSX</button></p>
+    <p class="rv-tbd-open">TBD: the file name of the downloaded CSV.</p>
+    <p>TBD: scheduled exports, in a later slice.</p>
+  </section>
+</main>
+<main class="rv-doc" data-anchor="phone-evidence-doc" data-show="evidence stale reproof reproof-all passed-reworded failed no-qa landed single" data-beside="reproof reproof-all">
+  <header data-anchor="phone-evidence-header">
+    <h1>Report page</h1>
+    <p class="rv-crumbs">docs / specs / report-page.spec.html</p>
+    <p>QA fixture: a spec whose mockup set draws its screens.</p>
+  </header>
+  <nav class="sp-screens" data-anchor="phone-evidence-screens" aria-label="Screens"><p class="sp-screens-head">Screens <span class="sp-screens-count">3</span></p><ul><li><a class="sp-screen" href="#phone-evidence-screens"><span class="sp-mark"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" stroke="var(--ui-muted, currentColor)"/></svg></span><span class="sp-name">Report page</span><span class="sp-meta"><span class="sp-kind">Drawn mockup</span><span class="sp-views">Desktop and phone</span></span><span class="sp-open">No open threads</span><span class="sp-go"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></span></a></li><li><a class="sp-screen" href="#phone-evidence-screens"><span class="sp-mark"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" stroke="var(--ui-muted, currentColor)"/></svg></span><span class="sp-name">Team page</span><span class="sp-meta"><span class="sp-kind">Drawn mockup</span><span class="sp-views">Desktop and phone</span></span><span class="sp-open">No open threads</span><span class="sp-go"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></span></a></li><li><a class="sp-screen" href="#phone-evidence-screens"><span class="sp-mark"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" stroke="var(--ui-muted, currentColor)"/></svg></span><span class="sp-name">Export dialog</span><span class="sp-meta"><span class="sp-kind">Drawn mockup</span><span class="sp-views">Desktop and phone</span></span><span class="sp-open">No open threads</span><span class="sp-go"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></span></a></li></ul></nav>
+  <section class="rv-section">
+    <h2>User stories</h2>
+    <p>As a manager, I see each team's weekly total at a glance.</p>
+    <p>As a manager, I export the totals I see.</p>
+  </section>
+  <section class="rv-section" data-anchor="phone-evidence-criteria">
+    <h2>Acceptance criteria</h2>
+    <div class="rv-block rv-holder jv-evidence" data-anchor="phone-ev-teams" data-illustrates="markers-one"><p>The report page shows each team as a card with its avatar and its total for the week. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a></p><button type="button" class="rv-marker rv-passed" data-anchor="phone-ev-marker-teams" data-show="evidence stale reproof reproof-all passed-reworded failed no-qa landed single" data-open="passed-reworded" aria-haspopup="dialog" aria-label="Jev notes: QA passed · reworded" data-illustrates="markers-color"></button></div>
+    <div class="rv-block rv-holder jv-evidence" data-anchor="phone-ev-team" data-illustrates="markers-one"><p>Pressing a team's card opens its team page, listing its totals for the last three weeks. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a><a class="sp-chip" href="#see-mockup">See mockup · Team page</a></p><button type="button" class="rv-marker rv-important" data-anchor="phone-ev-marker-team" data-show="evidence stale reproof reproof-all passed-reworded failed no-qa" data-open="stale reproof reproof-all" aria-haspopup="dialog" aria-label="Jev notes: QA stale" data-illustrates="level-important"></button><button type="button" class="rv-marker rv-passed" data-anchor="phone-ev-marker-team-passed" data-show="landed single" data-open="landed" aria-haspopup="dialog" aria-label="Jev notes: QA passed" data-illustrates="markers-color settle-stale"></button></div>
+    <div class="rv-block rv-holder jv-evidence" data-anchor="phone-ev-onboarding" data-illustrates="markers-one"><p>The onboarding tour points to the team cards first.</p><button type="button" class="rv-marker" data-anchor="phone-ev-marker-onboarding" data-show="evidence stale reproof reproof-all passed-reworded failed no-qa landed single" data-open="no-qa" aria-haspopup="dialog" aria-label="Jev notes: No QA yet" data-illustrates="markers-color"></button></div>
+    <div class="rv-block rv-holder jv-evidence" data-anchor="phone-ev-export" data-illustrates="markers-one"><p>The Export CSV button opens the export dialog. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a><a class="sp-chip" href="#see-mockup">See mockup · Export dialog</a></p><button type="button" class="rv-marker rv-important" data-anchor="phone-ev-marker-export" data-show="evidence stale reproof reproof-all passed-reworded failed no-qa landed single" data-open="failed" aria-haspopup="dialog" aria-label="Jev notes: QA failed" data-illustrates="level-important"></button></div>
+    <div class="rv-block rv-holder jv-evidence" data-anchor="phone-ev-file" data-illustrates="markers-one"><p>The export dialog lists the rows the CSV holds and downloads weekly-totals-2026-W01.csv. <a class="sp-chip" href="#see-mockup">See mockup · Export dialog</a></p><button type="button" class="rv-marker rv-important" data-anchor="phone-ev-marker-file" data-show="evidence stale reproof reproof-all passed-reworded failed no-qa landed single" data-open="single" aria-haspopup="dialog" aria-label="Jev notes: QA stale" data-illustrates="level-important"></button></div>
+  </section>
+  <section class="rv-section">
+    <h2>Behavior</h2>
+    <p>Cards are ordered by the week's total, highest first. Totals come from the weekly totals the report service holds. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a></p>
+  </section>
+</main>
+<nav class="rv-dock" data-anchor="phone-dock" data-hide="reconcile reconcile-all warnings gaps criterion change reproof reproof-all" aria-label="Review conversations"><button type="button" class="rv-btn rv-icon" aria-label="Open review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M3.5 6h5A1.5 1.5 0 0 1 10 7.5v3A1.5 1.5 0 0 1 8.5 12H6.5L4 14v-2h-.5A1.5 1.5 0 0 1 2 10.5v-3A1.5 1.5 0 0 1 3.5 6z"/><path d="M6 6V3.5A1.5 1.5 0 0 1 7.5 2h5A1.5 1.5 0 0 1 14 3.5v3A1.5 1.5 0 0 1 12.5 8H12v2l-2-1.5"/></svg></button><div class="rv-dock-threads" data-show="checking marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled jev-off jev-unavailable"><button type="button" class="rv-thread rv-ack">1</button></div></nav>
+<aside class="rv-panel" data-anchor="phone-panel" data-show="reconcile reconcile-all warnings gaps criterion change" aria-label="Review sidebar">
+  <div class="rv-head" data-anchor="phone-panel-head">Conversation <span class="rv-count">1 thread · 2 questions</span> <span class="rv-sub">· agent last event 00:00:00</span><button type="button" class="rv-btn rv-icon rv-toggle" aria-label="Collapse review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M10 2.5v11"/></svg></button><button type="button" class="rv-btn rv-icon rv-gear" aria-label="Review display settings" title="Display settings"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6.34 3.18L6.6 1.4L9.4 1.4L9.66 3.18L11.35 4.15L13.02 3.48L14.42 5.91L13.01 7.03L13.01 8.97L14.42 10.09L13.02 12.52L11.35 11.85L9.66 12.82L9.4 14.6L6.6 14.6L6.34 12.82L4.65 11.85L2.98 12.52L1.58 10.09L2.99 8.97L2.99 7.03L1.58 5.91L2.98 3.48L4.65 4.15z"/><circle cx="8" cy="8" r="2"/></svg></button></div>
+  <div class="rv-stream" data-anchor="phone-stream">
+    <div class="rv-entry rv-me">
+      <div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble">Say which columns the CSV holds.</div></div>
+      <span class="rv-chip">Acceptance criteria · The export button downloads a CSV…</span>
+      <span class="rv-replies">1 reply · <b>Agent:</b> Done; OK to resolve?</span><span class="rv-receipt rv-ack">Seen</span>
+    </div>
+    <div class="rv-entry rv-them">
+      <div class="rv-msg rv-them"><span class="rv-who">Agent</span>
+        <div class="rv-bubble">TBD: whether the export also offers XLSX.<div class="rv-choices"><button type="button" class="rv-choice">CSV only (recommended)</button><button type="button" class="rv-choice">CSV and XLSX</button><button type="button" class="rv-choice rv-words">Reply</button></div></div></div>
+      <span class="rv-chip">Behavior · TBD: whether the export also offers XLSX</span>
+    </div>
+    <div class="rv-entry rv-them">
+      <div class="rv-msg rv-them"><span class="rv-who">Agent</span>
+        <div class="rv-bubble">TBD: the file name of the downloaded CSV.<div class="rv-choices"><button type="button" class="rv-choice rv-words">Reply</button></div></div></div>
+      <span class="rv-chip">Behavior · TBD: the file name of the downloaded…</span>
+    </div>
+    <div class="rv-compose" data-show="reconcile" data-anchor="phone-composer-reconcile">
+      <div class="rv-anchor">#report-export</div>
+      <textarea class="rv-field rv-focused jv-field" aria-label="Comment">Reconcile this clause with docs/specs/report-page.spec.html#page-export.</textarea>
+      <div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri">Comment</button></div>
+    </div>
+    <div class="rv-compose" data-show="reconcile-all" data-anchor="phone-composer-reconcile-all">
+      <div class="rv-anchor">#report-export</div>
+      <textarea class="rv-field rv-focused jv-field" aria-label="Comment">Reconcile each clause with its link:
+#report-export Contradicts docs/specs/report-page.spec.html#page-export</textarea>
+      <div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri">Comment</button></div>
+    </div>
+    <div class="rv-compose" data-show="warnings" data-anchor="phone-composer-warnings">
+      <div class="rv-anchor">#report-export</div>
+      <textarea class="rv-field rv-focused jv-field" aria-label="Comment">Reconcile each clause with its link:
+#report-export Oversteps /qa-20/docs/specs/report-page.spec.html#page-export-file
+#report-export Contradicts docs/specs/report-page.spec.html#page-export</textarea>
+      <div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri">Comment</button></div>
+    </div>
+    <div class="rv-compose" data-show="gaps" data-anchor="phone-composer-gaps">
+      <div class="rv-anchor">#report-export</div>
+      <textarea class="rv-field rv-focused jv-field" aria-label="Comment">Add a criterion for each story, or name the story for each criterion:
+#story-export No criterion covers this
+#report-export No story backs this</textarea>
+      <div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri">Comment</button></div>
+    </div>
+    <div class="rv-compose" data-show="criterion" data-anchor="phone-composer-criterion">
+      <div class="rv-anchor">#story-export</div>
+      <textarea class="rv-field rv-focused jv-field" aria-label="Comment">Add an acceptance criterion that verifies this story.</textarea>
+      <div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri">Comment</button></div>
+    </div>
+    <div class="rv-compose" data-show="change" data-anchor="phone-composer-change">
+      <div class="rv-anchor">#acceptance</div>
+      <textarea class="rv-field rv-focused jv-field" aria-label="Comment">About this change: </textarea>
+      <div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri">Comment</button></div>
+    </div>
+  </div>
+  
+</aside>
+<aside class="rv-panel" data-anchor="phone-evidence-panel" data-show="reproof reproof-all" aria-label="Review sidebar">
+  <div class="rv-head" data-anchor="phone-evidence-panel-head">Conversation <span class="rv-count">0 threads</span> <span class="rv-sub">· no agent events yet</span><button type="button" class="rv-btn rv-icon rv-toggle" aria-label="Collapse review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M10 2.5v11"/></svg></button><button type="button" class="rv-btn rv-icon rv-gear" aria-label="Review display settings" title="Display settings"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6.34 3.18L6.6 1.4L9.4 1.4L9.66 3.18L11.35 4.15L13.02 3.48L14.42 5.91L13.01 7.03L13.01 8.97L14.42 10.09L13.02 12.52L11.35 11.85L9.66 12.82L9.4 14.6L6.6 14.6L6.34 12.82L4.65 11.85L2.98 12.52L1.58 10.09L2.99 8.97L2.99 7.03L1.58 5.91L2.98 3.48L4.65 4.15z"/><circle cx="8" cy="8" r="2"/></svg></button></div>
+  <div class="rv-stream" data-anchor="phone-evidence-stream">
+    <div class="rv-compose" data-show="reproof" data-anchor="phone-composer-reproof">
+      <div class="rv-anchor">#page-team</div>
+      <textarea class="rv-field rv-focused jv-field" aria-label="Comment">page-team changed since its evidence (#58, 2026-10-27): please recapture it.</textarea>
+      <div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri">Comment</button></div>
+    </div>
+    <div class="rv-compose" data-show="reproof-all" data-anchor="phone-composer-reproof-all">
+      <div class="rv-anchor">#page-team</div>
+      <textarea class="rv-field rv-focused jv-field" aria-label="Comment">Re-proof each criterion, changed since its evidence:
+page-team (#58, 2026-10-27)
+page-export-file (#61, 2026-11-05)</textarea>
+      <div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri">Comment</button></div>
+    </div>
+  </div>
+</aside>
+<div class="rv-pop jv-pop-export" role="dialog" aria-label="Jev notes" data-anchor="phone-export-popover" data-show="popover" data-illustrates="markers-content markers-open acceptance-inert">
+      <ul class="rv-pop-notes">
+        <li class="jv-note" data-anchor="phone-note-oversteps" data-illustrates="feature-cross-lane cross-lane-finding note-reconcile"><a class="rv-pop-text" href="#page-export-file">Oversteps qa-20 #page-export-file</a>
+          <span class="jv-quote">“The export dialog lists the rows the CSV holds and downloads weekly-totals-2026-W01.csv.”</span><span class="jv-meta">Report page · Acceptance criteria</span>
+          <div class="jv-actions"><button type="button" class="rv-btn jv-act" data-anchor="phone-reconcile-lane">Ask agent to reconcile</button><span class="jv-batch"><button type="button" class="rv-btn jv-act" data-anchor="phone-reconcile-all">Reconcile all (1)</button><button type="button" class="jv-more" data-anchor="phone-warnings">+1 warning</button></span></div></li>
+        <li class="jv-note jv-attention" data-anchor="phone-note-contradicts" data-illustrates="feature-corpus corpus-context note-reconcile"><a class="rv-pop-text" href="#page-export">Contradicts report-page.spec.html#page-export</a>
+          <span class="jv-quote">“The Export CSV button opens the export dialog.”</span><span class="jv-meta">Report page · Acceptance criteria</span>
+          <div class="jv-actions"><button type="button" class="rv-btn jv-act" data-anchor="phone-reconcile">Ask agent to reconcile</button></div></li>
+        <li class="jv-note jv-attention" data-anchor="phone-note-no-story" data-illustrates="coverage-declared note-story note-gaps-all"><span class="rv-pop-text">No story backs this</span>
+          <div class="jv-actions"><button type="button" class="rv-btn jv-act">Ask for a story</button><button type="button" class="rv-btn jv-act" data-anchor="phone-gaps">Ask about all gaps (2)</button></div></li>
+      </ul></div>
+<div class="rv-pop jv-pop-story" role="dialog" aria-label="Jev notes" data-anchor="phone-story-popover" data-show="story">
+      <ul class="rv-pop-notes">
+        <li class="jv-note" data-anchor="phone-note-overlaps" data-illustrates="acceptance-note-none-overlaps note-none"><a class="rv-pop-text" href="#story-export">Overlaps report-page.spec.html#story-export</a>
+          <span class="jv-quote">“As a manager, I export the totals I see.”</span><span class="jv-meta">Report page · User stories</span></li>
+        <li class="jv-note jv-attention" data-anchor="phone-note-no-criterion" data-illustrates="note-criterion"><span class="rv-pop-text">No criterion covers this</span>
+          <div class="jv-actions"><button type="button" class="rv-btn jv-act" data-anchor="phone-ask-criterion">Ask for a criterion</button><button type="button" class="rv-btn jv-act">Ask about all gaps (2)</button></div></li>
+      </ul></div>
+<div class="rv-pop jv-pop-type" role="dialog" aria-label="Jev notes" data-anchor="phone-type-popover" data-show="type">
+      <ul class="rv-pop-notes"><li class="jv-note" data-illustrates="type-behavioral note-change"><span class="rv-pop-text">Behavior</span>
+        <div class="jv-actions"><button type="button" class="rv-btn jv-act" data-anchor="phone-comment-change">Comment on this change</button></div></li></ul></div>
+<div class="rv-pop jv-pop-unavailable" role="dialog" aria-label="Jev notes" data-anchor="phone-unavailable-popover" data-show="unavailable">
+      <ul class="rv-pop-notes"><li class="jv-note jv-neutral jv-hovered" data-illustrates="neutral-questions neutral-questions-rule"><span class="rv-pop-text" role="note" tabindex="0" aria-label="Jev could not check whether this changes behavior">Jev unavailable</span>
+        <span class="jv-sentence" aria-hidden="true">Jev could not check whether this changes behavior</span></li></ul></div>
+<div class="rv-pop jv-pop-reworded" role="dialog" aria-label="Jev notes" data-anchor="phone-reworded-popover" data-show="reworded">
+      <ul class="rv-pop-notes"><li class="jv-note jv-neutral" data-illustrates="type-cosmetic acceptance-note-none"><span class="rv-pop-text">No behavior change</span></li></ul></div>
+<div class="rv-pop jv-pop-evidence" role="dialog" aria-label="Jev notes" data-anchor="phone-ev-pop-teams" data-show="passed-reworded" data-illustrates="markers-content markers-color"><ul class="rv-pop-notes"><li class="jv-note"><a class="rv-pop-text" href="#phone-ev-bundle-teams">QA passed · reworded</a><span class="jv-meta"><span>#41 · 2 d</span><a class="jv-link" href="#phone-ev-bundle-teams">bundle</a></span><div class="jv-legend"><del>removed</del> / <ins>added</ins></div><span class="jv-diff">The report page shows each team as a card with its avatar and its <del>weekly total.</del> <ins>total for the week.</ins></span></li></ul></div><div class="rv-pop jv-pop-evidence" role="dialog" aria-label="Jev notes" data-anchor="phone-ev-pop-team" data-show="stale" data-illustrates="markers-content markers-open note-reproof note-reproof-all batch-place"><ul class="rv-pop-notes"><li class="jv-note jv-attention"><a class="rv-pop-text" href="#phone-ev-bundle-team">QA stale</a><span class="jv-meta"><span>#58 · 9 d · not on main</span><a class="jv-link" href="#phone-ev-bundle-team">bundle</a></span><div class="jv-legend"><del>removed</del> / <ins>added</ins></div><span class="jv-diff">Pressing a team's card opens its team page, listing its totals for the last <del>two</del> <ins>three</ins> weeks.</span><div class="jv-actions"><button type="button" class="rv-btn jv-act" data-anchor="phone-ev-ask">Ask for re-proof</button><button type="button" class="rv-btn jv-act" data-anchor="phone-ev-all">Re-proof all stale (2)</button></div></li></ul></div><div class="rv-pop jv-pop-evidence" role="dialog" aria-label="Jev notes" data-anchor="phone-ev-pop-team-landed" data-show="landed" data-illustrates="settle-stale settle-rule markers-color"><ul class="rv-pop-notes"><li class="jv-note"><a class="rv-pop-text" href="#phone-ev-bundle-team">QA passed</a><span class="jv-meta"><span>#63 · 1 h</span><a class="jv-link" href="#phone-ev-bundle-team">bundle</a></span></li></ul></div><div class="rv-pop jv-pop-evidence" role="dialog" aria-label="Jev notes" data-anchor="phone-ev-pop-onboarding" data-show="no-qa" data-illustrates="markers-content markers-color"><ul class="rv-pop-notes"><li class="jv-note"><span class="rv-pop-text">No QA yet</span></li></ul></div><div class="rv-pop jv-pop-evidence" role="dialog" aria-label="Jev notes" data-anchor="phone-ev-pop-export" data-show="failed" data-illustrates="markers-content level-important"><ul class="rv-pop-notes"><li class="jv-note jv-attention"><a class="rv-pop-text" href="#phone-ev-bundle-export">QA failed</a><span class="jv-meta"><span>#12 · 3 h</span><a class="jv-link" href="#phone-ev-bundle-export">bundle</a></span></li></ul></div><div class="rv-pop jv-pop-evidence" role="dialog" aria-label="Jev notes" data-anchor="phone-ev-pop-file" data-show="single" data-illustrates="batch-rule note-reproof"><ul class="rv-pop-notes"><li class="jv-note jv-attention"><a class="rv-pop-text" href="#phone-ev-bundle-file">QA stale</a><span class="jv-meta"><span>#61 · 5 m</span><a class="jv-link" href="#phone-ev-bundle-file">bundle</a></span><div class="jv-legend"><del>removed</del> / <ins>added</ins></div><span class="jv-diff">The export dialog lists the rows the CSV holds and downloads <del>weekly-totals.csv.</del> <ins>weekly-totals-2026-W01.csv.</ins></span><div class="jv-actions"><button type="button" class="rv-btn jv-act">Ask for re-proof</button></div></li></ul></div>
+<div class="rv-toolbar" data-anchor="phone-toolbar"><button type="button" class="rv-btn rv-tool" title="Comment (C)">Comment</button><div class="rv-inline-handoff" data-anchor="phone-handoff"><span class="rv-note"><span data-show="checking marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled jev-off jev-unavailable">0 drafts</span><span data-show="arrival reworded evidence stale reproof reproof-all passed-reworded failed no-qa landed single">Ready to accept</span></span><button type="button" class="rv-btn rv-pri" data-show="checking marks popover story type unavailable settled jev-off jev-unavailable">TBD open (2)</button><button type="button" class="rv-btn rv-pri" data-show="arrival reworded evidence stale passed-reworded failed no-qa landed single">Accept spec</button><button type="button" class="rv-btn" data-show="reproof reproof-all">Accept spec</button><button type="button" class="rv-btn" data-show="reconcile reconcile-all warnings gaps criterion change">TBD open (2)</button></div><button type="button" class="rv-btn rv-tool" aria-pressed="false">Reading view</button><span class="rv-status">connected · review-serve · <span data-show="checking marks popover reconcile reconcile-all warnings gaps story criterion type change unavailable settled jev-off jev-unavailable">1 thread</span><span data-show="arrival reworded evidence stale reproof reproof-all passed-reworded failed no-qa landed single">0 threads</span></span></div>
+</section>
+<ol data-mockup-steps>
+  <li data-step="checking" data-illustrates="pending-any state-pending fast-marks-background acceptance-background">Git focus on the draft: each answered mark in place, and the export criterion's marker a turning wheel while its checks wait on the LLM</li>
+  <li data-step="marks" data-illustrates="acceptance-markers acceptance-verifier acceptance-own-project markers-one markers-quiet markers-color corpus-labels verifier-role state-label shared-own-project">The answers arrive with no reload: one marker per noted section or clause, the export criterion's Important, the restating story's light red, the rest grey, no text moved or tinted</li>
+  <li data-step="popover" data-step-by="desktop-export-marker phone-export-marker" data-illustrates="acceptance-markers-hover acceptance-markers-focus acceptance-markers-tap acceptance-coverage-criterion acceptance-reconcile-all-once acceptance-inert markers-open markers-content note-one note-reconcile note-reconcile-all note-story note-gaps-all batch-place feature-corpus feature-cross-lane cross-lane-finding corpus-context">Its marker opened by hover, focus, or tap: Oversteps qa-20, Contradicts the report page's export clause, each quoted with its context, and No story backs this, each with its button; Reconcile all (1) with +1 warning and Ask about all gaps (2) once, on the buttons' line</li>
+  <li data-step="reconcile" data-step-by="desktop-reconcile phone-reconcile" data-illustrates="acceptance-note-draft acceptance-note-draft-unsent note-reconcile note-fixed shared-never-act">Ask agent to reconcile on Contradicts: the composer opens at the criterion with its fixed draft linking the other clause; nothing is written until Comment</li>
+  <li data-step="reconcile-all" data-step-by="desktop-reconcile-all phone-reconcile-all" data-illustrates="acceptance-reconcile-all acceptance-reconcile-all-unsent batch-reconcile batch-rule batch-levels">Cancel, then Reconcile all (1): one draft listing every Important reconcile note with its link, as the flags read</li>
+  <li data-step="warnings" data-step-by="desktop-warnings phone-warnings" data-illustrates="acceptance-reconcile-all-warnings acceptance-reconcile-all-warnings-unsent note-reconcile-all">Cancel, then +1 warning: the same draft, the Warning ones added</li>
+  <li data-step="gaps" data-step-by="desktop-gaps phone-gaps" data-illustrates="acceptance-gaps-all acceptance-gaps-all-unsent batch-gaps note-gaps-all">Cancel, then Ask about all gaps (2): one draft listing every coverage gap</li>
+  <li data-step="story" data-step-by="desktop-story-marker phone-story-marker" data-illustrates="acceptance-coverage acceptance-corpus-restate acceptance-note-none-overlaps coverage-declared level-warning note-none">Cancel, then the new story's marker: Overlaps the report page's story, with no button, and No criterion covers this with Ask for a criterion</li>
+  <li data-step="criterion" data-step-by="desktop-ask-criterion phone-ask-criterion" data-illustrates="acceptance-note-draft-criterion acceptance-note-draft-criterion-unsent note-criterion">Ask for a criterion: the composer opens at the story with its fixed draft</li>
+  <li data-step="type" data-step-by="desktop-criteria-marker phone-criteria-marker" data-illustrates="acceptance-types type-behavioral feature-type change-type">Cancel, then the Acceptance criteria section's marker: Behavior, with Comment on this change</li>
+  <li data-step="change" data-step-by="desktop-comment-change phone-comment-change" data-illustrates="acceptance-note-draft-change acceptance-note-draft-change-unsent note-change">Comment on this change: the composer opens at the section with About this change:</li>
+  <li data-step="unavailable" data-step-by="desktop-behavior-marker phone-behavior-marker" data-illustrates="acceptance-neutral acceptance-note-none-unavailable neutral-questions neutral-questions-rule state-error level-neutral">Cancel, then the Behavior section's marker: Jev unavailable, muted, its full sentence on hover, with no button; Comment and Hand off stay</li>
+  <li data-step="settled" data-illustrates="settle-gap settle-rule acceptance-warning-color acceptance-warning-color-dark level-important level-oversteps level-warning level-neutral">The author names the story on the criterion; on the next head, after a reload, both gap marks are gone with no Jev label left: the story's light red dot, the criterion's Important !, the grey sections</li>
+  <li data-step="arrival" data-illustrates="acceptance-link-arrival-other markers-arrival">Following Contradicts opens the report page spec on its export clause with the open-TBD outline, and no other highlight</li>
+  <li data-step="reworded" data-illustrates="acceptance-types-typo acceptance-types-reword acceptance-note-none type-cosmetic">Report printing in Git focus, its sections only reworded: No behavior change, each section dimmed and readable, with no button</li>
+  <li data-step="jev-off" data-illustrates="acceptance-neutral-off acceptance-note-none-off state-off story-neutral">On a box with no Jev key: one Jev off note above the spec, no marker, and Comment and Hand off available</li>
+  <li data-step="jev-unavailable" data-illustrates="acceptance-request-failed state-request-failed">The Jev request itself fails: one Jev unavailable note above the spec</li>
+  <li data-step="evidence" data-illustrates="markers-color markers-one level-important">On the Report page spec, served with an evidence provider: each criterion's marker follows its evidence, a green check, a colored !, or the quiet grey dot</li>
+  <li data-step="stale" data-step-by="desktop-ev-marker-team phone-ev-marker-team" data-illustrates="markers-content markers-open note-reproof note-reproof-all batch-place">The team page criterion's marker: QA stale first in its popover, its context and bundle link, the proven text against the text as read, Ask for re-proof, and Re-proof all stale (2)</li>
+  <li data-step="reproof" data-step-by="desktop-ev-ask phone-ev-ask" data-illustrates="note-one note-reproof">Ask for re-proof: the composer opens at the criterion with its re-proof draft; nothing is written until Comment</li>
+  <li data-step="reproof-all" data-step-by="desktop-ev-all phone-ev-all" data-illustrates="batch-reproof batch-rule batch-levels">Cancel, then Re-proof all stale (2): one draft listing every stale criterion in page order</li>
+  <li data-step="passed-reworded" data-step-by="desktop-ev-marker-teams phone-ev-marker-teams" data-illustrates="markers-color">Cancel, then the first criterion's green check: QA passed · reworded, the diff and its legend, and no button</li>
+  <li data-step="failed" data-step-by="desktop-ev-marker-export phone-ev-marker-export" data-illustrates="level-important">The export criterion's marker: QA failed on matching text, its context, and no diff and no button</li>
+  <li data-step="no-qa" data-step-by="desktop-ev-marker-onboarding phone-ev-marker-onboarding" data-illustrates="markers-color">The onboarding criterion's grey dot: No QA yet, with no context and no links</li>
+  <li data-step="landed" data-illustrates="settle-stale settle-rule">Evidence of the team page criterion's current text lands; after a reload its marker is the green check and its popover reads QA passed, with no stale note left</li>
+  <li data-step="single" data-step-by="desktop-ev-marker-file phone-ev-marker-file" data-illustrates="batch-rule note-reproof">The download criterion, the one still QA stale: Ask for re-proof alone, and no Re-proof all stale</li>
+</ol>
+</body>
+</html>

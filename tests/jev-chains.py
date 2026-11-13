@@ -1,0 +1,163 @@
+"""Yes/no questions and chains (jev-suggestions #chains, #proof-chain-test)."""
+
+import importlib.util
+import json
+import threading
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+_spec = importlib.util.spec_from_file_location("jev_chains_test", ROOT / "skill" / "review-spec" / "assets" / "jev.py")
+jev = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(jev)
+SETS = jev.load_question_sets(ROOT / "skill" / "review-spec" / "assets" / "jev")
+
+BASE = '<section data-anchor="s"><p data-anchor="new">Old words.</p><p data-anchor="other">Other clause here.</p></section>'
+CURRENT = '<section data-anchor="s"><p data-anchor="new">New clause words here.</p><p data-anchor="other">Other clause here.</p></section>'
+# Draft checks pair only with clauses of other specs (#corpus-same-spec).
+OTHER = '<section data-anchor="s"><p data-anchor="other">Other clause here.</p><p data-anchor="non-goal">Offline.</p></section>'
+SERVED = [{"path": "other.spec.html", "source": OTHER}]
+
+
+class FakeProvider:
+    """Jev answers per question kind as (choice, confidence); the general LLM per kind; every call is kept."""
+
+    def __init__(self, answers, general=None):
+        self.answers, self.general = dict(answers), dict(general or {})
+        self.calls, self.general_calls = [], []
+        self.lock = threading.Lock()
+
+    def decide(self, payload):
+        kind = next(iter(payload["questions"]))
+        with self.lock:
+            self.calls.append(kind)
+        choice, confidence = self.answers.get(kind, ("no", 0.95))
+        return {"model": "fake", "answers": {kind: {"choice": choice, "confidence": confidence,
+                                                    "probabilities": {choice: confidence}}}}
+
+    def complete(self, payload):
+        with self.lock:
+            kind = self.calls[-1]  # a chain asks in order: the fallback follows its own Jev call
+            self.general_calls.append(kind)
+        return {"choices": [{"message": {"content": json.dumps({"choice": self.general[kind]})}}]}
+
+
+def draft_check(target_non_goal=False):
+    items = [item for item in jev.build_corpus_questions(CURRENT, BASE, "spec.html", "base", "head", SERVED)
+             if item["target"] == "other.spec.html#" + ("non-goal" if target_non_goal else "other")]
+    return items[0]
+
+
+class ChainTest(unittest.TestCase):
+    def seam(self, provider):
+        return jev.JevSeam(SETS, provider=provider, api_key="fake")
+
+    def test_first_failing_chain_test(self):
+        # yes to about? then yes to contradicts?: no third call, Contradicts.
+        provider = FakeProvider({"about": ("yes", 0.95), "contradicts": ("yes", 0.95)})
+        result = self.seam(provider).ask_chain(draft_check()["chain"])
+        self.assertEqual(provider.calls, ["about", "contradicts"])
+        self.assertEqual(result["answer"]["label"], "contradicts")
+        self.assertEqual(result["outcome"], "shown")
+        # about(yes) then three no answers: the whole chain, no mark.
+        provider = FakeProvider({"about": ("yes", 0.95)})
+        result = self.seam(provider).ask_chain(draft_check()["chain"])
+        self.assertEqual(provider.calls, ["about", "contradicts", "oversteps", "overlaps"])
+        self.assertIsNone(result["answer"]["label"])
+
+    def test_no_own_spec_candidate_and_non_goal_asks_only_contradicts(self):
+        # #corpus-same-spec: no clause of the own spec, non-goal or not, is a candidate.
+        source = CURRENT.replace("</section>", '</section><section data-anchor="non-goals"><p data-anchor="non-goal">Offline.</p></section>')
+        self.assertEqual(jev.build_corpus_questions(source, BASE, "spec.html", "base", "head"), [])
+        items = [draft_check(target_non_goal=True)]
+        self.assertEqual([step["kind"] for step in items[0]["chain"]], ["about", "contradicts-nongoal"])
+        self.assertTrue(items[0]["chain"][1]["state"]["target_non_goal"])
+        provider = FakeProvider({"about": ("yes", 0.95)})
+        self.assertIsNone(self.seam(provider).ask_chain(items[0]["chain"])["answer"]["label"])
+        self.assertEqual(provider.calls, ["about", "contradicts-nongoal"])
+
+    def test_every_chain_record_is_yes_or_no_and_one_record_per_question(self):
+        provider = FakeProvider({"about": ("yes", 0.95)})
+        seam = self.seam(provider)
+        seam.ask_chain(draft_check()["chain"])
+        records = list(seam.store.records())
+        self.assertEqual(len(records), 4)
+        self.assertEqual({record["answer"]["label"] for record in records}, {"yes", "no"})
+        for name in ("about", "type", "contradicts", "oversteps", "overlaps"):
+            with self.subTest(set=name):
+                self.assertEqual(set(SETS[name].criteria()), {"yes", "no"})
+                self.assertTrue(SETS[name].fallback)
+        # A repeat asks nothing: each question is its own cache entry.
+        seam.ask_chain(draft_check()["chain"])
+        self.assertEqual(len(provider.calls), 4)
+
+    def test_unavailable_stops_the_chain(self):
+        class Down(FakeProvider):
+            def decide(self, payload):
+                self.calls.append(next(iter(payload["questions"])))
+                raise RuntimeError("down")
+        provider = Down({})
+        result = self.seam(provider).ask_chain(draft_check()["chain"])
+        self.assertEqual(result["outcome"], "unavailable")
+        self.assertEqual(provider.calls, ["about"])
+
+    def test_change_type_yes_is_behavior_no_is_no_behavior_change(self):
+        for choice, label in (("yes", "behavior"), ("no", "no-behavior-change")):
+            with self.subTest(choice=choice):
+                question = jev.build_type_questions(CURRENT, BASE, "spec.html", "base", "head")[0]
+                result = self.seam(FakeProvider({"type": (choice, 0.95)})).ask_chain(question["chain"])
+                self.assertEqual(result["answer"]["label"], label)
+
+    def test_the_rule_check_is_one_general_llm_call_never_a_jev_chain(self):
+        """#chain-rule, project-rules #q-rule-llm: one general LLM question about each rule, never asked of Jev; one
+        record per rule; a rule with a record is not asked again, so a rule added later is asked alone."""
+        article, endpoint, help_page = ("Every change ships its article.", "Every endpoint ships its rate-limit test.",
+                                        "Every screen ships its help page.")
+
+        def built(*texts):
+            scopes = [{"state": {"criterion": text}, "target": "o.spec.html#r%d" % n, "word": "o"}
+                      for n, text in enumerate(texts)]
+            return jev.build_rule_questions(scopes, CURRENT, "spec.html", "base", "head", "s")
+
+        self.assertEqual([(q["kind"], "chain" in q) for q in built(article, endpoint)], [("rule", False)] * 2)
+
+        class Rules(FakeProvider):
+            def complete(self, payload):
+                rules = json.loads(payload["messages"][-1]["content"])["rules"]
+                with self.lock:
+                    self.general_calls.append(list(rules.values()))
+                said = {number: self.general[text] for number, text in rules.items()}
+                return {"choices": [{"message": {"content": json.dumps(said)}}]}
+
+        provider = Rules({}, {article: "missed", endpoint: "not triggered", help_page: "covered"})
+        seam = self.seam(provider)
+        records = seam.check_rules(built(article, endpoint))
+        self.assertEqual([r["answer"]["label"] for r in records], ["missed", "not triggered"])
+        self.assertEqual((provider.calls, provider.general_calls), ([], [[article, endpoint]]))
+        self.assertEqual(seam.check_rules(built(article, endpoint)), records)  # answered: nothing asked
+        records = seam.check_rules(built(article, endpoint, help_page))
+        self.assertEqual([r["answer"]["label"] for r in records], ["missed", "not triggered", "covered"])
+        self.assertEqual((provider.calls, provider.general_calls), ([], [[article, endpoint], [help_page]]))
+
+    def test_material_from_change_type(self):
+        def record(label, outcome="shown"):
+            return {"outcome": outcome, "answer": {"label": label}}
+        no, yes = record("no-behavior-change"), record("behavior")
+        self.assertEqual(jev.material([no, yes]), "yes")
+        self.assertEqual(jev.material([no, no]), "no")
+        self.assertEqual(jev.material([no, None]), "unknown")
+        self.assertEqual(jev.material([no, record(None, "unavailable")]), "unknown")
+
+    def test_levels_hold_only_important_and_warning_kinds(self):
+        important = {"human": "important", "agent": "important"}
+        self.assertEqual(jev.MARK_LEVELS, {
+            "contradicts": important, "missed": important, "no-criterion": important,
+            "no-story": important, "qa-failed": important, "qa-stale": important,
+            "overlaps": {"human": "warning", "agent": "warning"},
+            "oversteps": {"human": "warning", "agent": "important"},
+            "candidate": {"human": "warning", "agent": "warning"}})  # jev-suggestions #level-candidate
+
+
+if __name__ == "__main__":
+    unittest.main()

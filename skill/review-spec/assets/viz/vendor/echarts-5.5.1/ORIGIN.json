@@ -1,0 +1,38 @@
+{
+  "asset": "../echarts-5.5.1.min.js",
+  "packages": [
+    {
+      "name": "echarts",
+      "version": "5.5.1",
+      "license": "Apache-2.0",
+      "metadata_url": "https://registry.npmjs.org/echarts/5.5.1",
+      "tarball_url": "https://registry.npmjs.org/echarts/-/echarts-5.5.1.tgz",
+      "dist_integrity": "sha512-Fce8upazaAXUVUVsjgV6mBnGuqgO+JNDlcgF79Dksy4+wgGpQB2lmYoO4TSweFg/mZITdpGHomw/cNBJZj1icA==",
+      "dist_shasum": "8dc9c68d0c548934bedcb5f633db07ed1dd2101c",
+      "archive_bytes": 10364258,
+      "archive_sha256": "1f0eae29c406496a77789a7d7f56b811cae034ac95c0b3808215998f4ba0fbf3",
+      "files": {
+        "package/dist/echarts.min.js": {"sha256": "e84270bd0cd5bdf60fefc26d00c2a391cb2e81f4d26a7a9ee16185a54773a3cf", "local": "../echarts-5.5.1.min.js"},
+        "package/LICENSE": {"sha256": "634293835b43a6dd2094fa39182a3d9a6b9ca43b7fdb9ac354e8037af2a3093a", "local": "LICENSE"},
+        "package/NOTICE": {"sha256": "fa99ac3af859d0e13166906dc53a73ad34a08898da7e8ae83407275496e9e30c", "local": "NOTICE"},
+        "package/licenses/LICENSE-d3": {"sha256": "e1211892da0b0e0585b7aebe8f98c1274fba15bafe47fa1f4ee8a7a502c06304", "local": "licenses/LICENSE-d3"}
+      }
+    },
+    {
+      "name": "zrender",
+      "version": "5.6.0",
+      "license": "BSD-3-Clause",
+      "bundled_by": "echarts 5.5.1 dependency zrender 5.6.0, built into dist/echarts.min.js",
+      "metadata_url": "https://registry.npmjs.org/zrender/5.6.0",
+      "tarball_url": "https://registry.npmjs.org/zrender/-/zrender-5.6.0.tgz",
+      "dist_integrity": "sha512-uzgraf4njmmHAbEUxMJ8Oxg+P3fT04O+9p7gY+wJRVxo8Ge+KmYv0WJev945EH4wFuc4OY2NLXz46FZrWS9xJg==",
+      "dist_shasum": "01325b0bb38332dd5e87a8dbee7336cafc0f4a5b",
+      "archive_bytes": 860568,
+      "archive_sha256": "63e23231896aa7b87c7c38c5d203a78c938060d04b5162bc164300cb2d98ce2e",
+      "files": {
+        "package/LICENSE": {"sha256": "a681e9d183c72b4af4856935893805eb48c08f0f5a3f260203db7444c20fb98a", "local": "licenses/LICENSE-zrender"}
+      }
+    }
+  ],
+  "verification": "Each archive's npm dist integrity (SHA-512) and shasum (SHA-1) checked against its registry metadata, then each named member's bytes compared with the local copy. Texts are retained unchanged. The bundle's embedded tslib 2.3.0 notice (0BSD) is kept in the minified file."
+}

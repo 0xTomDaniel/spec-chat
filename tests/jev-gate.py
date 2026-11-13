@@ -1,0 +1,418 @@
+"""Gate question filters unrelated pairs before chain (jev-suggestions #gate, #proof-gate)."""
+
+import importlib.util
+import json
+import os
+import tempfile
+import threading
+import time
+import unittest
+import unittest.mock
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+_spec = importlib.util.spec_from_file_location("jev_gate_test", ROOT / "skill" / "review-spec" / "assets" / "jev.py")
+jev = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(jev)
+SETS = jev.load_question_sets(ROOT / "skill" / "review-spec" / "assets" / "jev")
+
+BASE = '<section data-anchor="s"><p data-anchor="new">Old words.</p><p data-anchor="other">Other clause here.</p></section>'
+CURRENT = '<section data-anchor="s"><p data-anchor="new">New clause words here.</p><p data-anchor="other">Other clause here.</p></section>'
+# Draft checks pair only with clauses of other specs (#corpus-same-spec).
+OTHER = '<section data-anchor="s"><p data-anchor="other">Other clause here.</p><p data-anchor="non-goal">Offline.</p></section>'
+SERVED = [{"path": "other.spec.html", "source": OTHER}]
+
+
+class FakeProvider:
+    """Jev answers per question kind as (choice, confidence); the general LLM per kind; every call is kept."""
+
+    def __init__(self, answers, general=None):
+        self.answers, self.general = dict(answers), dict(general or {})
+        self.calls, self.general_calls = [], []
+        self.lock = threading.Lock()
+
+    def decide(self, payload):
+        kind = next(iter(payload["questions"]))
+        with self.lock:
+            self.calls.append(kind)
+        choice, confidence = self.answers.get(kind, ("no", 0.95))
+        return {"model": "fake", "answers": {kind: {"choice": choice, "confidence": confidence,
+                                                    "probabilities": {choice: confidence}}}}
+
+    def complete(self, payload):
+        with self.lock:
+            kind = self.calls[-1]
+            self.general_calls.append(kind)
+        label = self.general[kind]
+        # Verifier format (#verifier): answer + quoted spans
+        result = {"answer": label}
+        if label == "yes":
+            result["clause_span"] = "clause conflict"
+            result["target_span"] = "target conflict"
+        return {"choices": [{"message": {"content": json.dumps(result)}}]}
+
+
+def draft_check():
+    items = [item for item in jev.build_corpus_questions(CURRENT, BASE, "spec.html", "base", "head", SERVED)
+             if item["target"] == "other.spec.html#other"]
+    return items[0]
+
+
+class GateTest(unittest.TestCase):
+    def seam(self, provider):
+        return jev.JevSeam(SETS, provider=provider, api_key="fake")
+
+    def test_gate_added_before_chain(self):
+        """#gate-chain: the about? gate is the first step of every draft-check chain."""
+        chain = draft_check()["chain"]
+        self.assertEqual(chain[0]["kind"], "about")
+        self.assertEqual(chain[1]["kind"], "contradicts")
+        self.assertIn("first", chain[0]["state"])
+        self.assertIn("second", chain[0]["state"])
+
+    def test_gate_state_carries_clause_text_and_context(self):
+        """#gate-set-state: first/second each with context fields."""
+        ctx = {"surface": "My spec", "section": "Rules"}
+        tctx = {"surface": "Other spec"}
+        item = jev.draft_check("a", "old", "new text", "other", "other text",
+                               path="spec", base="base", revision="head",
+                               context=ctx, target_context=tctx)
+        gate = item["chain"][0]
+        sides = sorted((gate["state"]["first"], gate["state"]["second"]), key=lambda side: side["text"])
+        self.assertEqual(sides, [{"text": "new text", "surface": "My spec", "section": "Rules"},
+                                 {"text": "other text", "surface": "Other spec"}])
+
+    def test_gate_state_order_is_fixed_by_content(self):
+        """#gate-set-state: the pair's two clauses in an order fixed by their content, never by which side asks, so
+        the same two clauses asked from any spec or slug share one record: draft and lane gates alike."""
+        seam = self.seam(FakeProvider({}))
+        ctx, tctx = {"surface": "My spec", "section": "Rules"}, {"surface": "Other spec"}
+        forth = jev.draft_check("a", "old", "Zeta clause.", "other#b", "Alpha clause.", path="spec", base="base",
+                                revision="head", context=ctx, target_context=tctx)["chain"][0]
+        back = jev.draft_check("b", "older", "Alpha clause.", "spec#a", "Zeta clause.", path="other", base="main",
+                               revision="working-tree", context=tctx, target_context=ctx)["chain"][0]
+        self.assertEqual(forth["state"], back["state"])
+        self.assertEqual(seam.key(forth), seam.key(back))
+        a = {"path": "ann1/spec", "anchor": "a", "before": "old", "after": "Zeta clause.", "base": "m", "context": ctx}
+        b = {"path": "ann2/other", "anchor": "b", "before": "old", "after": "Alpha clause.", "base": "m", "context": tctx}
+        lane = jev.lane_check("ann1", a, "ann2", b)["chain"][0]
+        self.assertEqual(lane["state"], forth["state"])  # the lower slug's clause first in the chain, not in the gate
+        self.assertEqual(seam.key(lane), seam.key(forth))
+        self.assertEqual(seam.key(jev.lane_check("ann0", b, "ann1", a)["chain"][0]), seam.key(forth))
+
+    def test_gate_no_skips_chain(self):
+        """#gate-chain: a no gate answer skips the contradicts/oversteps chain entirely."""
+        provider = FakeProvider({"about": ("no", 0.95)})
+        result = self.seam(provider).ask_chain(draft_check()["chain"])
+        self.assertEqual(provider.calls, ["about"])
+        self.assertIsNone(result["answer"]["label"])
+        self.assertEqual(result["outcome"], "shown")
+
+    def test_gate_yes_proceeds_to_chain(self):
+        """#gate-chain: a yes gate answer proceeds to the contradicts/oversteps chain."""
+        provider = FakeProvider({"about": ("yes", 0.95), "contradicts": ("yes", 0.95)})
+        result = self.seam(provider).ask_chain(draft_check()["chain"])
+        self.assertEqual(provider.calls, ["about", "contradicts"])
+        self.assertEqual(result["answer"]["label"], "contradicts")
+
+    def test_gate_yes_full_chain(self):
+        """#gate-chain: about?(yes) then three no answers run the whole chain to no mark."""
+        provider = FakeProvider({"about": ("yes", 0.95)})
+        result = self.seam(provider).ask_chain(draft_check()["chain"])
+        self.assertEqual(provider.calls, ["about", "contradicts", "oversteps", "overlaps"])
+        self.assertIsNone(result["answer"]["label"])
+
+    def test_gate_no_fewer_provider_calls(self):
+        """#acceptance-gate-cost: a no gate skips the chain, so fewer provider calls."""
+        provider = FakeProvider({"about": ("no", 0.95)})
+        self.seam(provider).ask_chain(draft_check()["chain"])
+        self.assertEqual(len(provider.calls), 1)  # only about, no contradicts
+
+    def test_gate_display_labels_exclude_gate(self):
+        """Gate answer is not a display label."""
+        item = draft_check()
+        self.assertEqual(item["display_labels"], ["contradicts", "oversteps", "overlaps", "partial-overlap"])
+
+    def test_gate_cache_by_content_hash(self):
+        """#acceptance-gate-cache: same clause pair reuses cached gate record."""
+        provider = FakeProvider({"about": ("no", 0.95)})
+        seam = self.seam(provider)
+        chain = draft_check()["chain"]
+        seam.ask_chain(chain)
+        self.assertEqual(len(provider.calls), 1)
+        # Same chain again: cached, no new call
+        seam.ask_chain(chain)
+        self.assertEqual(len(provider.calls), 1)
+
+    def test_gate_failure_not_recorded_as_unrelated(self):
+        """#gate-parallel: a failed gate is never recorded as unrelated, but as unavailable."""
+        class Down(FakeProvider):
+            def decide(self, payload):
+                self.calls.append(next(iter(payload["questions"])))
+                raise RuntimeError("provider down")
+        provider = Down({})
+        result = self.seam(provider).ask_chain(draft_check()["chain"])
+        self.assertEqual(result["outcome"], "unavailable")
+        self.assertEqual(provider.calls, ["about"])
+        # Chain did not proceed past gate
+        self.assertEqual(len(provider.calls), 1)
+
+    def test_gate_failure_retry(self):
+        """#gate-parallel: a failed gate uses the one-retry rule with a pause."""
+        class FailOnce(FakeProvider):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.fail_count = 0
+            def decide(self, payload):
+                kind = next(iter(payload["questions"]))
+                with self.lock:
+                    self.calls.append(kind)
+                if kind == "about" and self.fail_count == 0:
+                    self.fail_count += 1
+                    raise RuntimeError("transient")
+                return super().decide(payload)
+        provider = FailOnce({"about": ("yes", 0.95), "contradicts": ("yes", 0.95)})
+        seam = self.seam(provider)
+        chain = draft_check()["chain"]
+        # First ask: gate fails, records unavailable with retry_at
+        result = seam.ask_chain(chain)
+        self.assertEqual(result["outcome"], "unavailable")
+        # Override wall clock: after the pause, asking again retries
+        record = seam.store.get(seam.key(chain[0]))
+        self.assertIsNotNone(record)
+        self.assertEqual(record["outcome"], "unavailable")
+
+    def test_about_question_set_exists(self):
+        """#boundary-gate-set: the about question set is loaded with yes/no labels."""
+        self.assertIn("about", SETS)
+        qset = SETS["about"]
+        self.assertEqual(qset.id, "about")
+        self.assertEqual(set(qset.criteria()), {"yes", "no"})
+        self.assertTrue(qset.fallback)
+
+    def test_about_set_says_the_order_carries_no_meaning(self):
+        """#gate-set-state: from version 3 it asks the content-ordered pair, so about@2 records are no longer read and the
+        after-start compaction retires them (#record-compact)."""
+        self.assertEqual(SETS["about"].version, 4)
+        self.assertIn("The order of the two clauses carries no meaning.", SETS["about"].instructions)
+
+
+class LaneGateTest(unittest.TestCase):
+    """#gate-lane: cross-lane checks use the same gate."""
+
+    def test_lane_check_has_gate_first(self):
+        a = {"path": "a.spec.html", "anchor": "c1", "before": "old", "after": "new a", "base": "abc"}
+        b = {"path": "b.spec.html", "anchor": "c2", "before": "old", "after": "new b", "base": "def"}
+        item = jev.lane_check("left", a, "right", b)
+        self.assertEqual(item["chain"][0]["kind"], "about")
+        # 5 steps: about, contradicts, oversteps_fwd, oversteps_back, overlaps
+        self.assertEqual(len(item["chain"]), 5)
+        kinds = [step["kind"] for step in item["chain"]]
+        self.assertEqual(kinds, ["about", "contradicts", "oversteps", "oversteps", "overlaps"])
+
+    def test_lane_result_gate_no_skips_all(self):
+        """#gate-lane: gate no skips the entire lane check."""
+        a = {"path": "a.spec.html", "anchor": "c1", "before": "old", "after": "new a", "base": "abc"}
+        b = {"path": "b.spec.html", "anchor": "c2", "before": "old", "after": "new b", "base": "def"}
+        item = jev.lane_check("left", a, "right", b)
+        gate_no = {"outcome": "shown", "answer": {"label": "no"}, "record_id": "r1"}
+        results = jev.lane_result(item["chain"], lambda step: gate_no if step["kind"] == "about" else None)
+        self.assertEqual(len(results), 1)
+        self.assertIsNone(results[0]["answer"]["label"])
+        self.assertEqual(results[0]["outcome"], "shown")
+
+    def test_lane_result_gate_yes_proceeds(self):
+        """#gate-lane: gate yes proceeds to contradicts."""
+        a = {"path": "a.spec.html", "anchor": "c1", "before": "old", "after": "new a", "base": "abc"}
+        b = {"path": "b.spec.html", "anchor": "c2", "before": "old", "after": "new b", "base": "def"}
+        item = jev.lane_check("left", a, "right", b)
+        gate_yes = {"outcome": "shown", "answer": {"label": "yes"}, "record_id": "r1"}
+        contradicts_yes = {"outcome": "shown", "answer": {"label": "yes"}, "record_id": "r2"}
+
+        def get(step):
+            if step["kind"] == "about":
+                return gate_yes
+            if step["kind"] == "contradicts":
+                return contradicts_yes
+            return None
+
+        results = jev.lane_result(item["chain"], get)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["answer"]["label"], "contradicts")
+
+    def test_lane_result_gate_pending(self):
+        """Gate not yet answered: lane result is pending."""
+        a = {"path": "a.spec.html", "anchor": "c1", "before": "old", "after": "new a", "base": "abc"}
+        b = {"path": "b.spec.html", "anchor": "c2", "before": "old", "after": "new b", "base": "def"}
+        item = jev.lane_check("left", a, "right", b)
+        results = jev.lane_result(item["chain"], lambda step: None)
+        self.assertEqual(len(results), 1)
+        self.assertIsNone(results[0]["outcome"])
+        self.assertEqual(results[0]["step"]["kind"], "about")
+
+    def test_ask_lane_steps_gate_no_stops(self):
+        """_ask_lane_steps with gate no: only about is asked."""
+        provider = FakeProvider({"about": ("no", 0.95)})
+        seam = jev.JevSeam(SETS, provider=provider, api_key="fake")
+        a = {"path": "a.spec.html", "anchor": "c1", "before": "old", "after": "new a", "base": "abc"}
+        b = {"path": "b.spec.html", "anchor": "c2", "before": "old", "after": "new b", "base": "def"}
+        item = jev.lane_check("left", a, "right", b)
+        service = object.__new__(jev.JevService)
+        service.seam = seam
+        service._ask_lane_steps(item["chain"], seam)
+        self.assertEqual(provider.calls, ["about"])
+
+    def test_ask_lane_steps_gate_yes_proceeds(self):
+        """_ask_lane_steps with gate yes: asks contradicts and further."""
+        provider = FakeProvider({"about": ("yes", 0.95), "contradicts": ("yes", 0.95)})
+        seam = jev.JevSeam(SETS, provider=provider, api_key="fake")
+        a = {"path": "a.spec.html", "anchor": "c1", "before": "old", "after": "new a", "base": "abc"}
+        b = {"path": "b.spec.html", "anchor": "c2", "before": "old", "after": "new b", "base": "def"}
+        item = jev.lane_check("left", a, "right", b)
+        service = object.__new__(jev.JevService)
+        service.seam = seam
+        service._ask_lane_steps(item["chain"], seam)
+        # Gate yes, contradicts yes -> chain stops at contradicts
+        self.assertEqual(provider.calls, ["about", "contradicts"])
+
+
+class ClaudeCliOnlyTest(unittest.TestCase):
+    """General LLM always runs through Claude CLI; OpenRouter is Jev Decisions only (#rule-cli-only)."""
+
+    def test_fallback_always_cli_without_injected(self):
+        """Without an injected provider, _fallback_provider always returns ClaudeCliProvider."""
+        seam = jev.JevSeam(SETS, api_key="fake")
+        primary = seam.provider()
+        fallback = seam._fallback_provider(primary)
+        self.assertIsInstance(fallback, jev.ClaudeCliProvider)
+
+    def test_fallback_injected_returns_primary(self):
+        """An injected provider (test double) is used for both decide and complete."""
+        primary = FakeProvider({"about": ("yes", 0.95)})
+        seam = jev.JevSeam(SETS, provider=primary, api_key="fake")
+        self.assertIs(seam._fallback_provider(primary), primary)
+
+    def test_claude_cli_provider_has_complete(self):
+        provider = jev.ClaudeCliProvider()
+        self.assertTrue(hasattr(provider, "complete"))
+        self.assertEqual(provider.timeout, jev.GENERAL_LLM_TIMEOUT)
+
+    def cli(self, directory, body):
+        """A stand-in claude command: a shell script that starts a child, writes its pid, then runs `body`."""
+        script = Path(directory) / "claude"
+        script.write_text("#!/bin/sh\nsleep 30 &\necho $! > %s/child\n%s\n" % (directory, body))
+        script.chmod(0o755)
+        return str(script)
+
+    def gone(self, pid, timeout=5):
+        """The process ended (or is only a zombie its parent has not yet reaped)."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                with open("/proc/%d/stat" % pid) as stat:
+                    if stat.read().rsplit(")", 1)[1].split()[0] == "Z":
+                        return True
+            except OSError:
+                return True
+            time.sleep(0.02)
+        return False
+
+    def test_timed_out_cli_run_ends_its_whole_process_group(self):
+        """#ask-queue, jev-contract #retry: a run that outlives its timeout fails once, at its timeout, and nothing it
+        started keeps running on the box."""
+        with tempfile.TemporaryDirectory() as directory:
+            provider = jev.ClaudeCliProvider(command=self.cli(directory, "wait"), timeout=2)
+            started = time.monotonic()
+            with self.assertRaisesRegex(RuntimeError, "timed out"):
+                provider.complete({"messages": [{"role": "user", "content": "q"}]})
+            self.assertLess(time.monotonic() - started, 8)
+            child = int((Path(directory) / "child").read_text())
+            self.assertTrue(self.gone(child))
+
+    def test_cli_answer_returns_at_exit_while_a_child_holds_its_output(self):
+        """A run that exits answers at once, even with a child it started still holding its output."""
+        envelope = json.dumps({"result": json.dumps({"choice": "yes"}), "modelUsage": {"fake-llm": {}}})
+        with tempfile.TemporaryDirectory() as directory:
+            provider = jev.ClaudeCliProvider(command=self.cli(directory, "printf '%%s\\n' '%s'" % envelope), timeout=10)
+            started = time.monotonic()
+            try:
+                response = provider.complete({"messages": [{"role": "user", "content": "q"}]})
+            finally:
+                child = int((Path(directory) / "child").read_text())
+                os.kill(child, 9)
+            self.assertLess(time.monotonic() - started, 5)
+            self.assertEqual(json.loads(response["choices"][0]["message"]["content"]), {"choice": "yes"})
+            self.assertEqual(response["model"], "fake-llm")
+
+    def test_cli_exit_failure_is_one_failed_call(self):
+        with tempfile.TemporaryDirectory() as directory:
+            provider = jev.ClaudeCliProvider(command=self.cli(directory, "kill $!; exit 3"), timeout=10)
+            with self.assertRaisesRegex(RuntimeError, "exited 3"):
+                provider.complete({"messages": [{"role": "user", "content": "q"}]})
+
+    def test_openrouter_provider_has_no_complete(self):
+        """OpenRouterProvider has decide() only; no complete() method (#rule-cli-only)."""
+        provider = jev.OpenRouterProvider("fake")
+        self.assertTrue(hasattr(provider, "decide"))
+        self.assertFalse(hasattr(provider, "complete"))
+
+    def test_model_reader_empty_when_unconfigured(self):
+        """No llm_model configured: reader returns '' so CLI picks its own default."""
+        seam = jev.JevSeam(SETS, api_key="fake")
+        self.assertEqual(seam.llm_model(), "")
+
+    def test_model_reader_explicit_value(self):
+        """Configured llm_model is passed through."""
+        seam = jev.JevSeam(SETS, api_key="fake", llm_model="sonnet")
+        self.assertEqual(seam.llm_model(), "sonnet")
+
+    def test_fallback_path_uses_injected_complete(self):
+        """Verify band answer calls injected provider's complete(), not ClaudeCliProvider (#asymmetric)."""
+        # P(yes)=0.8 lands in verify band [0.7, 0.9) so the verifier is called
+        primary = FakeProvider({"contradicts": ("yes", 0.8)}, general={"contradicts": "yes"})
+        seam = jev.JevSeam(SETS, provider=primary, api_key="fake")
+        question = draft_check()["chain"][1]
+        result = seam.ask(question)
+        self.assertEqual(primary.general_calls, ["contradicts"])
+        self.assertEqual(result["answer"]["label"], "yes")
+
+    def test_verify_band_runs_through_the_cli_provider(self):
+        """#verifier-role: with no injected provider the verify band calls the CLI general LLM; its yes records verified (jev-suggestions #record-outcome)."""
+        primary = FakeProvider({"contradicts": ("yes", 0.8)}, general={"contradicts": "yes"})
+        seam = jev.JevSeam(SETS, api_key="fake")
+        seam.provider = lambda: primary
+        payloads = []
+
+        def cli_complete(_self, payload):
+            payloads.append(payload)
+            return primary.complete(payload)
+
+        with unittest.mock.patch.object(jev.ClaudeCliProvider, "complete", cli_complete):
+            result = seam.ask(draft_check()["chain"][1])
+        self.assertEqual([payload["model"] for payload in payloads], [""])
+        self.assertEqual(result["outcome"], "verified")
+        self.assertEqual(result["answer"]["label"], "yes")
+
+    def test_record_source_jev_for_primary(self):
+        """Primary Jev answers carry source: 'jev' (jev-seam #record-source)."""
+        primary = FakeProvider({"contradicts": ("yes", 0.95)})
+        seam = jev.JevSeam(SETS, provider=primary, api_key="fake")
+        question = draft_check()["chain"][1]
+        result = seam.ask(question)
+        self.assertEqual(result["source"], "jev")
+        self.assertNotIn("escalated", result)
+
+    def test_record_source_llm_for_fallback(self):
+        """Verifier answers carry source: 'llm' (jev-seam #record-source)."""
+        # P(yes)=0.8 in verify band [0.7, 0.9): goes to verifier (#asymmetric)
+        primary = FakeProvider({"contradicts": ("yes", 0.8)}, general={"contradicts": "yes"})
+        seam = jev.JevSeam(SETS, provider=primary, api_key="fake")
+        question = draft_check()["chain"][1]
+        result = seam.ask(question)
+        self.assertEqual(result["source"], "llm")
+        self.assertTrue(result["escalated"])
+
+
+if __name__ == "__main__":
+    unittest.main()

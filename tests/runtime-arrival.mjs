@@ -1,0 +1,73 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
+// Arrival at an anchor (a Jev link on this or another spec, or Go to) gets the open-TBD highlight.
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime.js'), 'utf8');
+const slice = (from, to) => {
+  const start = runtime.indexOf(from);
+  const end = runtime.indexOf(to, start);
+  assert.ok(start >= 0 && end > start, 'runtime exposes ' + from);
+  return runtime.slice(start, end);
+};
+const code = [
+  slice('function findAnchor(', '\n\nfunction clearJev('),
+  slice('function reviewHandoffState(', '\n\nfunction handoffObservation('),
+  slice('function addressPlace(', '\n\nfunction keepPlace('),
+  slice('function scrollToJevAnchor(', '\n\nfunction orphanHintElement('),
+  slice('function offView(', '\n\n'),
+  slice('function inView(', '\n\n'),
+  slice('function endArrival(', '\n\n'),
+  slice('function openTbdCount(', '\n'),
+].join('\n\n');
+
+const block = (anchor, tbd = null) => {
+  const classes = new Set();
+  // closest: an arrival reveals a frame the toggle hides (inView); no spec block is in one.
+  const el = { dataset: { anchor }, scrolled: [], closest: () => null, classList: { add: c => classes.add(c), remove: c => classes.delete(c), contains: c => classes.has(c) },
+    scrollIntoView: options => el.scrolled.push(options.block) };
+  el.tbd = tbd && { getAttribute: () => tbd, closest: () => el };
+  return el;
+};
+const blocks = [block('intro'), block('rule'), block('open', 'q'), block('other')];
+const document = { querySelectorAll: sel => sel === '[data-anchor]' ? blocks
+  : sel === '[data-spec-tbd]' ? blocks.filter(b => b.tbd).map(b => b.tbd)
+  : sel === '.hx-tbd-open' ? blocks.filter(b => b.classList.contains('hx-tbd-open')) : [] };
+const location = { hash: '' };
+const draft = new Map([['d', { status: 'draft' }]]);
+const state = { threads: draft };
+// mockup: no arrival asks a mockup's frames on a spec page (endArrival).
+const mockup = { arrival: null };
+const { renderHighlight, scrollToJevAnchor } = Function('document', 'location', 'state', 'COMMENT_UI', 'mockup', code + '; return { renderHighlight, scrollToJevAnchor };')(document, location, state, false, mockup);
+const lit = () => blocks.filter(b => b.classList.contains('hx-tbd-open')).map(b => b.dataset.anchor);
+
+// A page arrived at #rule (another spec's Jev link) highlights rule, and the open TBD keeps its highlight while a draft keeps the action Hand off.
+location.hash = '#rule';
+renderHighlight();
+assert.deepEqual(lit(), ['rule', 'open']);
+// With TBD open as the action, both show the same highlight.
+state.threads = new Map();
+renderHighlight();
+assert.deepEqual(lit(), ['rule', 'open']);
+state.threads = draft;
+
+// Go to on this spec moves the address; the hashchange arrival scrolls and moves the highlight.
+scrollToJevAnchor('other');
+assert.equal(location.hash, 'other');
+location.hash = '#other';
+scrollToJevAnchor('other');
+assert.deepEqual(lit(), ['open', 'other']);
+assert.deepEqual(blocks[3].scrolled, ['center']);
+// An address naming no anchor adds no highlight beyond open TBDs.
+location.hash = '#hxdebug';
+renderHighlight();
+assert.deepEqual(lit(), ['open']);
+
+// One highlight style: the Jev flash is gone, and boot listens for arrivals.
+assert.doesNotMatch(runtime, /hx-jev-target-flash|hx-jev-flash/);
+const bootAt = runtime.indexOf('(async function boot()');
+assert.match(runtime.slice(bootAt), /renderHighlight\(\);\n\s+window\.addEventListener\('hashchange', arriveAtAddress\);/);
+
+console.log('runtime arrival tests passed');

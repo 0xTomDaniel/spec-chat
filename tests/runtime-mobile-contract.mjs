@@ -1,0 +1,47 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime.js'), 'utf8');
+
+assert.match(runtime, /@media\(max-width:640px\)/, 'runtime defines a narrow review layout');
+assert.match(runtime, /\.hx-panel\{width:100vw;height:100dvh;max-height:100dvh/, 'mobile review uses a dynamic full-viewport sheet');
+assert.match(runtime, /@media\(max-width:640px\)\{[^]*\.hx-panel\{[^}]*box-sizing:border-box;padding-bottom:calc\(var\(--hx-dock-space,0px\) \+ var\(--ui-space-3\) \+ env\(safe-area-inset-bottom\)\)/, 'mobile sidebar content ends above the fixed dock');
+assert.match(runtime, /new ResizeObserver\(\(\) => document\.documentElement\.style\.setProperty\('--hx-dock-space', bar\.offsetHeight \+ 'px'\)\)\.observe\(bar\)/, 'dock height tracks the rendered toolbar');
+assert.match(runtime, /\.hx-panel\{[^}]*display:none;/, 'closed panel cannot widen or intercept the mobile page');
+assert.match(runtime, /\.hx-panel\.open\{display:flex[;}]/, 'open panel restores layout and interaction');
+assert.match(runtime, /article\.spec pre\{white-space:pre-wrap;overflow-wrap:anywhere\}/, 'standalone doctrine and code blocks cannot widen mobile specs');
+assert.match(runtime, /Math\.max\(0, Math\.min\(pos\.left, shownWidth\(holder\) - pinSize\)\)/, 'mobile pins are clamped inside their anchored holder, as shown');
+assert.match(runtime, /if \(marker\.getBoundingClientRect\(\)\.right > document\.documentElement\.clientWidth\) marker\.dataset\.inset = 'true'/, 'Jev markers move inside the column edge when the margin cannot hold them');
+assert.match(runtime, /\.hx-jev-marker\[data-inset=true\]\{left:auto;right:0\}/, 'inset Jev markers sit at the content column edge');
+assert.match(runtime, /@media\(max-width:640px\)\{[^]*\.hx-jev-pop\{left:var\(--ui-space-3\);right:var\(--ui-space-3\);top:auto;bottom:calc\(10px \+ var\(--hx-dock-space,64px\)/, 'mobile Jev popover is a sheet above the review controls');
+assert.match(runtime, /\.hx-composer textarea\{min-height:120px;font-size:var\(--ui-text-md\)/, 'mobile composer avoids browser input zoom');
+assert.match(runtime, /\.hx-dock-open,\.hx-dock-thread\{width:44px;height:44px/, 'mobile conversation controls meet the touch target floor');
+assert.match(runtime, /const NARROW = window\.matchMedia\('\(max-width: 640px\)'\);/, 'one narrow-width query, the CSS breakpoint');
+// shell #shell-ui-page-frame: the comment UI page is as narrow beside a desktop page as on a phone, so its phone
+// is its touch screen.
+assert.match(runtime, /if \(COMMENT_UI\) style\.textContent = style\.textContent\.replace\(\/@media\\\(max-width:640px\\\)\/g, '@media\(pointer:coarse\)'\);/, 'the comment UI page reads its phone CSS by the same query');
+assert.match(runtime, /openPanel\(!NARROW\.matches\)/, 'mobile comment mode exposes the document before target selection');
+// prompt-first-shaping #mobile-handoff: the panel's one hand-off bar, in the bottom toolbar on a narrow screen.
+assert.doesNotMatch(runtime, /hx-mobile-handoff|hx-mobile-next-tbd/, 'the toolbar holds no Hand off or Next TBD of its own');
+const mountUI = runtime.slice(runtime.indexOf('function mountUI()'), runtime.indexOf('\nfunction setCommentTargets('));
+assert.equal((mountUI.match(/id="hx-handoff"|id="hx-next-tbd"|id="hx-drafts"/g) || []).length, 3, 'one drafts note, Next TBD, and Hand off on the spec page');
+// prompt-first-shaping #mobile-held: a held page draws none; the comment UI page its own one of each.
+const commentUI = runtime.slice(runtime.indexOf('function mountCommentUI()'), runtime.indexOf('\nfunction commentUITransport('));
+assert.equal((commentUI.match(/id="hx-handoff"|id="hx-next-tbd"|id="hx-drafts"/g) || []).length, 3, 'one drafts note, Next TBD, and Hand off on the comment UI page');
+assert.equal((runtime.match(/id="hx-handoff"|id="hx-next-tbd"|id="hx-drafts"/g) || []).length, 6, 'and on no other surface');
+assert.match(runtime, /@media\(max-width:640px\)\{[^]*\.hx-toolbar \.hx-handoff\{display:contents\}/, 'in the toolbar its note and buttons are toolbar items');
+assert.match(runtime, /@media\(max-width:640px\)\{[^]*\.hx-toolbar button\{min-height:44px/, 'mobile toolbar actions, Next TBD included, keep 44 pixel targets');
+assert.match(runtime, /e\.message === 'Script error\.' && !e\.filename && !e\.lineno && !e\.colno && !e\.error/, 'fully opaque browser errors do not raise a fatal review overlay');
+assert.match(runtime, /overlay\('error', e\.message/, 'attributable script errors remain visible');
+assert.match(runtime, /if \(state\.handoffPosting \|\| !action\.enabled\) return/, 'handoff and Accept spec latch against duplicate submission');
+// review-index #index-link: the back link opens the fixed top line (spec-page-design #top-line); the open phone panel
+// fills the screen and hides it, the desktop panel sits beside it (runtime-spec-surface.mjs proves both in a browser).
+assert.match(runtime, /hx-service-index-link/, 'HTTP detail pages expose a visible service index link');
+assert.ok(runtime.includes("new URL('/', OWN_ADDRESS).href"), 'service index link resolves to the configured service root');
+assert.match(runtime, /ICONS\['chevron-left'\] \+ '<span>Review index<\/span>'/, 'the index link reads a chevron and Review index');
+assert.match(runtime, /automatic wake did not occur; send a new chat message to resume/, 'queued handoff gives an explicit manual-resume instruction');
+
+console.log('runtime mobile contract tests passed');

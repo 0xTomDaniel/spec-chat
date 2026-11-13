@@ -1,0 +1,127 @@
+# Spec Chat
+
+Visual HTML specs you annotate in the browser; a coding agent addresses the annotations and edits the spec in place. Discussion happens *on* the visualization, not in chat prose.
+
+**Status:** design phase. Product design history: [DESIGN.md](DESIGN.md) · canonical prompt-first shaping contract: [docs/specs/prompt-first-shaping.spec.html](docs/specs/prompt-first-shaping.spec.html)
+
+## The idea in one pass
+
+- Specs are visual HTML documents (charts, diagrams, math — semantic islands, not rendered debris). The HTML **is** the spec — no markdown counterpart, no sync loop.
+- Open a spec as a plain file, press bare `C`, and annotate **anything on the page** — a chart bar, an axis tick, a diagram arrow, the title, the divider under it. Clipboard shortcuts such as `Ctrl+C` and `Command+C` remain untouched.
+- Annotations land in actor-segregated event spools (`spec.html.review/human/`, `agent/` — one file per event; no shared writable file, ever).
+- A compact floating dock shows one status-colored square per conversation; selecting a square opens that thread, while comment mode or the dock’s chat control opens the full review sidebar.
+- Threads support human↔agent follow-up replies and append-only edits to unanswered human messages; selecting a thread rings the exact page element it annotates, and resolved threads collapse automatically while remaining browsable.
+- One parked CLI watcher (Claude Code, Codex CLI, or pi) covers the whole spec collection by default: it discovers per-page hand-off spools, drains batches serially with independent cursors/session state, edits the selected spec, and writes replies back. In-session subscription inference; no MCP, hooks, inference service, or mandatory daemon.
+- A prompt-first shaping skill commits the spec seed locally, opens Git-derived focus through a private review link by default, and keeps the same authoring turn parked through hand-off batches.
+
+## Constraints (fixed)
+
+Agent-agnostic across Claude Code / Codex / pi · plain files + CLI + skills over MCP/hooks/inference services · all inference through the CLI session, except optional Jev typed suggestions called by the review server and off without a key ([jev-suggestions](docs/specs/jev-suggestions.spec.html)) · tiny HTTP file transport only when the browser cannot share the filesystem (loopback on one machine, box-side public service for remote review) · no alt-tabbing to the terminal to trigger the agent.
+
+## Install and onboarding
+
+One entry point, `scripts/install-spec-chat`, run from a Spec Chat clone. The light core below is all most repos need; the hosted review service is an opt-in on top.
+
+### Use it on your repo
+
+From your repo root (a plain folder works too; Git is not required):
+
+```sh
+<spec-chat clone>/scripts/install-spec-chat --specs docs/specs
+```
+
+This puts the skills (`spec-chat-shape`, `spec-chat-review`, `repair-specs`) in your repo's `.agents/skills` (each a link into the clone), links `.claude/skills/<skill>` and `.codex/skills/<skill>` to them with relative links (`../../.agents/skills/<skill>`), and copies the page runtime (`.viz`) and style (`.style`) into the spec folder. No hosting, keys, or registry. `--agents-only` skips the `.claude/skills` and `.codex/skills` links, for repos that keep skills only in `.agents/skills`.
+
+The repo is the Git top of the folder you run it from (or that folder, outside Git); `--prefix <repo>` names another. The installer never installs skills under your home folder: it refuses `$HOME` as the repo, so nothing lands in `~/.agents/skills`, `~/.claude/skills`, or `~/.codex/skills`.
+
+It prints `spec-chat onboarding pending` and a `next: ... --review ...` hint, and `$XDG_STATE_HOME/spec-chat/onboarding.toml` keeps `status = "pending"`. That is expected on the light path: `done` only means the hosted service is set up.
+
+Open a spec in the browser, either way:
+
+- as a plain file (`file://`): the page asks for write access to the spec folder or an ancestor;
+- over loopback, no prompts, any browser:
+
+  ```sh
+  python3 .agents/skills/spec-chat-review/assets/review-serve.py docs 0
+  ```
+
+  It binds `127.0.0.1` on a free port (`0`) and prints the URL. Stop it when review ends.
+
+Press `C`, comment, and hand off. Then ask your agent to review the spec (the `spec-chat-review` skill). Its loop is plain files (here `c1` and `p1` are the comment and anchor ids from the hand-off):
+
+```sh
+R=.agents/skills/spec-chat-review/scripts
+sh $R/watch-specs.sh docs .cursor-owner 0 3   # one immediate scan: rows <spec> <file name>
+sh $R/emit-reply.sh docs/specs/example.spec.html.review/ c1 p1 '{"type":"text","key":"downloads a CSV"}' acknowledged 'no spec change' 'Date, item, total.'
+printf '%s\n' <file names printed by the scan above> >> docs/specs/example.spec.html.review/.cursor-owner
+```
+
+The scan's `0` is the wait (none) and `3` the poll interval; exit status 3 means nothing is pending. After replying, append exactly the file names the scan printed to the cursor of the spec in the scan's first column (`<spec>.review/.cursor-owner`). Never rescan into the cursor: hand-offs that arrived in between would be marked seen unprocessed.
+
+The agent runs these for you; they are shown so you can see nothing else is involved.
+
+Caveats:
+
+- `watch-specs.sh` needs `python3` (standard library only).
+- Marks follow agent edits only over HTTP; loopback is enough. On `file://` a mark places by its anchor and quote.
+- Jev suggestions are off without a key ([jev-suggestions](docs/specs/jev-suggestions.spec.html)).
+
+A rerun from a clone at the same commit changes nothing. `--undo` removes only what earlier runs added, recorded under `[installed]` in that same `onboarding.toml`, then the file. It is Spec Chat's one onboarding file; an older `install.toml` is folded in and deleted. `--check` reads that setup and changes nothing (the [setup check](#optional-hosted-review-service), step 4).
+
+### Optional: hosted review service
+
+For reviewers on other machines: box hosting, the service registry, owner wake, Jev suggestions, and live multi-reviewer review. Opt-in steps:
+
+1. `install-spec-chat --specs <spec folder> --review <first .spec.html>` starts or joins the default session's review service with that spec, prints its URL, and sets `status = "done"`. The spec must be in a Git repository.
+2. Box setup, by the box owner, once: add `--public <host>`, `--private`, `--proof-host <host>`, `--public-base <address>` (e.g. `https://spec.<a-b-c-d>.sslip.io`; every review link starts with it; an `https://` address keeps the service on loopback behind that front until cleared), `--shell <origin>` (an origin that may hold the review pages as a shell, such as a workbench; give it again for more; `--shell ''` clears them), or `--service` (run the review service as a box user service: systemd `--user` with lingering, up at boot, restarted when it dies, from this clone; `--undo` removes it) to step 1. Lanes never pass them.
+3. After a pull: `onboarding.toml` publishes `after_pull`, this clone's `install-spec-chat --after-pull`, the step a host runs with no shell after fast-forwarding this clone. It takes no other flag. It first writes the published fields of `onboarding.toml` as this clone's installer publishes them, its `commit` this clone's current one, keeping its `status` and `[installed]`, so a field the pulled code publishes, such as `check`, reaches the box with no installer run. `commit` is the commit this clone was at as the installer last wrote those fields, by an install or this step (none outside Git), so a host tells an install older than its pulled clone ([published onboarding](docs/specs/review-service.spec.html#published-onboarding)). It then restarts each session's live review service onto the pulled code, each in its own session (through its unit when one is recorded, else, where the box's user service manager lingers, in a transient unit of it, so the service outlives the step and whatever ran it) and succeeds once each one's status route answers with an uptime shorter than the step has run; a stopped service stays stopped, and on failure the last line of its error output names why, and for a service its session ([after a pull](docs/specs/review-service.spec.html#service-after-pull)). A box whose clone was pulled past the change that added `after_pull` has none until the installer runs again: rerun `install-spec-chat` once from the repo it installed into (or with its `--prefix`).
+4. Setup check: `onboarding.toml` publishes `check`, this clone's `install-spec-chat --check`, beside `after_pull`: the step a host runs with no shell and no input to read how the box has Spec Chat set up. A box installed before `check` was published gets it from its next after-pull step, with no installer rerun. It takes no other flag and changes nothing. It names each problem on its own error line with the step that fixes it, and exits non-zero when it finds any: no onboarding file or one out of date, its `commit` aside, which readers compare with the clone's own (run the installer again), a skill no longer linked in a repo it installed into (remove whatever holds the link's place, such as a link to another skill or a folder, which the installer never replaces, then rerun with `--prefix <repo>`), the box user service gone or not enabled (`--service`, after `systemctl --user unmask` when masked), or a session's running review service not on this clone's commit (the after-pull step). What it cannot ask, such as a user service manager with no user bus, it reports on its output as not checked, no problem ([setup check](docs/specs/review-service.spec.html#service-check)).
+5. Owner wake and Jev suggestions are the box's providers, plugged in once in the default session's service state and read by every session's service ([Providers](docs/specs/review-service.spec.html#providers)).
+
+Canonical contract: [remote hosting lifecycle](skill/review-spec/SKILL.md#remote-hosting-lifecycle).
+
+- The box hosts two independent services only: Spec Chat review (this repo, one service per Herdr session) and the evidence provider named in the box's `providers/evidence.toml` ([Providers](docs/specs/review-service.spec.html#providers)).
+- Each service has its own launcher, process, approved-port discovery, collision-safe binding, narrow root, public URL, exact served-byte check, and baseline check. Starting, failing, or stopping one never touches the other.
+- A lane runs only `skill/review-spec/scripts/review-host.py register --slug <lane-key> --owner <pane> <spec path>`, repeating the spec path for more specs. It joins its caller's Herdr session's service, at `hosting/${HERDR_SESSION:-default}` in Spec Chat's state; a box without Herdr is the default session. A plain spec path infers project, root, and base from Git; `--base <ref>` overrides the base; the `PROJECT_ID=ROOT:SPEC_PATH@BASE` form still works; `--prototype <address>` names where the lane's running prototype answers at its root, run by the project's prototype command as the product ships, so a prototype mockup's page frames it through the service at the lane's own prototype origin, `<lane-key>-prototype.` before the service's host name (again, it changes; `''` clears it). It names no exposure. It checks exact spec bytes and `/api/baseline` on the box before printing the URL.
+- Box setup, by the box owner and outside any lane: `--public <host>`, `--private`, `--proof-host <host>`, `--public-base <address>`, `--shell <origin>` (again for more), and `--service`, each once: `scripts/install-spec-chat` sets up the default session's service; a named session's service is set up by `review-host.py register` with those flags (`--unit <name>` for `--service`), run from that session. Approved ports come from `SPEC_CHAT_APPROVED_INGRESS_PORTS` or readable host firewall rules. The service listens on loopback by default (reach it with `ssh -L`); public binds an approved port with a no-login warning, and the registry keeps that choice across restarts. `review-host.py --state-dir` names a separate, isolated service for tests or deliberate isolation; lanes do not pass it.
+- Ordinary edits to a served spec keep the same server and URL alive. Rerun exact served-byte and `/api/baseline` checks for the same selected base after each edit. Restart only when the root, collection, process, port, runtime, or ownership changes, or when the server is dead.
+- Shared helper code is allowed only when service-neutral.
+- BB is a laptop client. Box hosting boot never requires, installs, or starts BB. BB consumes two public URLs: the Spec Chat URL and the evidence URL.
+- No external probe, tunnel, VPN, or client-machine setup. Public URLs are not authentication boundaries and never enter Linear, pull requests, or other public durable records.
+
+## Writing a project rule
+
+A project rule is an acceptance criterion that applies to every feature, such as *"When any change adds a screen or alters what a user can do, the change ships with its help center article."* Jev checks every spec under shaping against the project's rules ([project-wide rules](docs/specs/project-rules.spec.html)).
+
+A project rule is a promise a later feature could break: what the product does for its users, such as *every tab keeps its place until reload*, or how the project builds and ships it, such as *CI covers every acceptance criterion*. A design-system convention, how the interface looks or moves or which shared part draws a kind of thing, such as *every loading state uses the shared skeleton*, is never marked: it lives in the design system, its design document and shared parts, where a code check rejects a hand-rolled version. A project keeps at most one project rule for its design system, the umbrella *the interface uses the design system's shared parts*, whose text links the design system; a new shared part or convention needs no rule of its own.
+
+To declare one, mark its criterion in its home spec with a short name, and say in its text that it applies to every feature:
+
+```html
+<p data-acceptance-criterion data-anchor="acceptance-help" data-project-rule="Every screen ships its help article">
+  When any change adds a screen or alters what a user can do, the change ships with its help center article.</p>
+```
+
+The mark is the whole declaration: removing it, or the criterion, retires the rule. Jev flags an unmarked criterion that reads as project-wide as a possible project rule, so none slips in unmarked.
+
+## Repo layout
+
+```
+docs/specs/              canonical *.spec.html, one per capability
+  .viz/                  shared runtime + vendored libs
+  .style/                shared visual-spec styles
+docs/adr/                architecture decision records
+skill/shape-spec/        shaping skill, validator, references
+skill/review-spec/       review skill, review server, watch and reply scripts
+skill/repair-specs/      spec repair skill
+scripts/install-spec-chat  install and onboarding entry point
+scripts/design-set-sync  builds the pinned design set into the runtime and spec stylesheet
+design-set.toml          the one design set pin
+tests/                   all tests (Python, Node, shell)
+qa.toml                  QA capture target
+DESIGN.md                consensus design document
+```
+
+## License
+
+Licensed under the Apache License, Version 2.0 — see [LICENSE](LICENSE).

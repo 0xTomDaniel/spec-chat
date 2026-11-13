@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-chrome" content="Weekly totals">
+<meta name="mockup-design-source" content="docs/specs/.viz/runtime.js@$commit">
+<title>$title - mockup</title>
+<style>
+  /* The design set's tokens (design-set.toml pins it; the runtime holds them), by name and value. Every rule sits under a
+     frame. Each step is drawn from the frame's data-at, the steps reached so far (mockups #markup-at). */
+  [data-mockup-frame] {
+    --ui-page: #ffffff;
+    --ui-surface: #ffffff;
+    --ui-surface-soft: #f5f5f5;
+    --ui-ink: #333333;
+    --ui-muted: #525252;
+    --ui-border: #dfdfdf;
+    --ui-action: #1d4ed8;
+    --ui-action-soft: #eff3ff;
+    --ui-focus: #1d4ed8;
+    --ui-pass: #005c32;
+    --ui-font: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --ui-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --ui-text-sm: 14px;
+    --ui-text-md: 16px;
+    --ui-text-lg: 20px;
+    --ui-text-xl: 24px;
+    --ui-text-2xl: 30px;
+    --ui-weight-regular: 400;
+    --ui-weight-medium: 500;
+    --ui-weight-semibold: 600;
+    --ui-space-1: 4px;
+    --ui-space-2: 8px;
+    --ui-space-3: 12px;
+    --ui-space-4: 16px;
+    --ui-space-5: 24px;
+    --ui-space-6: 32px;
+    --ui-radius-sm: 6px;
+    --ui-radius: 8px;
+    --ui-radius-pill: 999px;
+    --ui-focus-width: 2px;
+    --ui-focus-offset: 2px;
+    --ui-motion-duration: 150ms;
+    --ui-motion-ease: ease-out;
+  }
+  @media (prefers-color-scheme: dark) {
+    [data-mockup-frame] {
+      --ui-page: #1a1a1a;
+      --ui-surface: #242424;
+      --ui-surface-soft: #2a2a2a;
+      --ui-ink: #e0e0e0;
+      --ui-muted: #999999;
+      --ui-border: #3a3a3a;
+      --ui-action: #7896ef;
+      --ui-action-soft: #1a2040;
+      --ui-focus: #7896ef;
+      --ui-pass: #3daa6e;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-mockup-frame] { --ui-motion-duration: 0ms; }
+  }
+  [data-mockup-frame] {
+    box-sizing: border-box;
+    position: relative;
+    background: var(--ui-page);
+    color: var(--ui-ink);
+    font: var(--ui-weight-regular) var(--ui-text-md)/1.5 var(--ui-font);
+  }
+  [data-mockup-frame="desktop"] { width: 1440px; min-height: 900px; padding: var(--ui-space-6); }
+  [data-mockup-frame="phone"] { width: 390px; min-height: 844px; padding: var(--ui-space-4); }
+  [data-mockup-frame] * { box-sizing: border-box; }
+  [data-mockup-frame] h1, [data-mockup-frame] h2, [data-mockup-frame] h3, [data-mockup-frame] p, [data-mockup-frame] ul { margin: 0; padding: 0; }
+  [data-mockup-frame] button { font: inherit; font-size: var(--ui-text-sm); font-weight: var(--ui-weight-medium); border-radius: var(--ui-radius-sm);
+           padding: var(--ui-space-2) var(--ui-space-4); border: 1px solid var(--ui-border); background: var(--ui-surface);
+           color: var(--ui-ink); cursor: pointer;
+           transition: background var(--ui-motion-duration) var(--ui-motion-ease), border-color var(--ui-motion-duration) var(--ui-motion-ease); }
+  [data-mockup-frame] button:hover { background: var(--ui-surface-soft); }
+  [data-mockup-frame] button:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  [data-mockup-frame] button:disabled { color: var(--ui-muted); background: var(--ui-surface-soft); cursor: not-allowed; }
+  [data-mockup-frame] button.primary { background: var(--ui-action); border-color: var(--ui-action); color: var(--ui-page); }
+  [data-mockup-frame="phone"] button { min-height: 44px; }
+  .bar { display: flex; align-items: baseline; gap: var(--ui-space-4); padding-bottom: var(--ui-space-5);
+         border-bottom: 1px solid var(--ui-border); margin-bottom: var(--ui-space-5); }
+  [data-mockup-frame="phone"] .bar { flex-direction: column; gap: var(--ui-space-1); padding-bottom: var(--ui-space-4); margin-bottom: var(--ui-space-4); }
+  .bar h1 { font-size: var(--ui-text-2xl); font-weight: var(--ui-weight-semibold); }
+  [data-mockup-frame="phone"] .bar h1 { font-size: var(--ui-text-xl); }
+  .muted { color: var(--ui-muted); font-size: var(--ui-text-sm); }
+  .body { display: flex; gap: var(--ui-space-6); align-items: flex-start; }
+  [data-mockup-frame="phone"] .body { flex-direction: column; gap: var(--ui-space-4); }
+  .cards { list-style: none; display: grid; gap: var(--ui-space-4); width: 420px; flex: 0 0 auto; }
+  [data-mockup-frame="phone"] .cards { width: 100%; gap: var(--ui-space-3); }
+  .card { background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); padding: var(--ui-space-5);
+          display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: var(--ui-space-3); row-gap: var(--ui-space-2);
+          transition: border-color var(--ui-motion-duration) var(--ui-motion-ease), box-shadow var(--ui-motion-duration) var(--ui-motion-ease); }
+  [data-mockup-frame="phone"] .card { padding: var(--ui-space-4); }
+  .card .avatar { width: 40px; height: 40px; border-radius: var(--ui-radius-pill); display: block; grid-row: span 2; }
+  .card .team { font-weight: var(--ui-weight-medium); }
+  .card .total { font-size: var(--ui-text-2xl); font-weight: var(--ui-weight-semibold); font-variant-numeric: tabular-nums; grid-column: 3; grid-row: 1 / span 2; }
+  [data-mockup-frame="phone"] .card .total { font-size: var(--ui-text-xl); }
+  .card button { grid-column: 1 / -1; justify-self: start; }
+  [data-at~="team-open"] .card.payments { border-color: var(--ui-action); box-shadow: 0 0 0 1px var(--ui-action); }
+  .panel { flex: 1 1 auto; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); padding: var(--ui-space-5);
+           display: grid; gap: var(--ui-space-3); opacity: 0; visibility: hidden;
+           transition: opacity var(--ui-motion-duration) var(--ui-motion-ease), visibility var(--ui-motion-duration) var(--ui-motion-ease); }
+  [data-mockup-frame="phone"] .panel { width: 100%; padding: var(--ui-space-4); }
+  [data-at~="team-open"] .panel { opacity: 1; visibility: visible; }
+  .panel h2 { font-size: var(--ui-text-xl); font-weight: var(--ui-weight-semibold); }
+  .panel table, .dialog table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .panel th, .panel td, .dialog th, .dialog td { text-align: left; padding: var(--ui-space-2) var(--ui-space-3); border-bottom: 1px solid var(--ui-border); }
+  .panel th, .dialog th { color: var(--ui-muted); font-size: var(--ui-text-sm); font-weight: var(--ui-weight-medium); }
+  .panel .number, .dialog .number { text-align: right; }
+  .panel button { justify-self: start; }
+  .dialog { position: absolute; left: 50%; top: 160px; width: 560px; margin-left: -280px; background: var(--ui-surface); border: 1px solid var(--ui-border);
+            border-radius: var(--ui-radius); padding: var(--ui-space-5); display: grid; gap: var(--ui-space-4); opacity: 0; visibility: hidden;
+            transition: opacity var(--ui-motion-duration) var(--ui-motion-ease), visibility var(--ui-motion-duration) var(--ui-motion-ease); }
+  [data-mockup-frame="phone"] .dialog { left: var(--ui-space-4); right: var(--ui-space-4); top: 120px; width: auto; margin-left: 0; padding: var(--ui-space-4); }
+  [data-at~="export"] .dialog { opacity: 1; visibility: visible; }
+  .dialog h2 { font-size: var(--ui-text-xl); font-weight: var(--ui-weight-semibold); }
+  .dialog .file { font-family: var(--ui-mono); font-size: var(--ui-text-sm); background: var(--ui-surface-soft); border: 1px solid var(--ui-surface-soft);
+                  border-radius: var(--ui-radius-sm); padding: var(--ui-space-2) var(--ui-space-3);
+                  transition: border-color var(--ui-motion-duration) var(--ui-motion-ease); }
+  [data-at~="file-named"] .dialog .file { border-color: var(--ui-action); background: var(--ui-action-soft); }
+  .dialog .progress, .dialog .done { display: none; font-size: var(--ui-text-sm); }
+  [data-at~="downloading"] .dialog .progress { display: block; color: var(--ui-muted); }
+  [data-at~="downloaded"] .dialog .progress { display: none; }
+  [data-at~="downloaded"] .dialog .done { display: block; color: var(--ui-pass); font-weight: var(--ui-weight-medium); }
+  .dialog .actions { display: flex; gap: var(--ui-space-3); justify-content: flex-end; }
+  /* another direction's frames, where the screen shows directions: every team's last three weeks in one table */
+  .teams { width: 100%; max-width: 760px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .teams th, .teams td { text-align: left; padding: var(--ui-space-3) var(--ui-space-4); border-bottom: 1px solid var(--ui-border); }
+  .teams th { color: var(--ui-muted); font-size: var(--ui-text-sm); font-weight: var(--ui-weight-medium); }
+  .teams .number { text-align: right; }
+  .teams .now { font-weight: var(--ui-weight-semibold); }
+  [data-mockup-frame="phone"] .teams th, [data-mockup-frame="phone"] .teams td { padding: var(--ui-space-2) var(--ui-space-1); font-size: var(--ui-text-sm); }
+</style>
+<script defer src="../../.viz/runtime.js"></script>
+</head>
+<body>
+<section data-mockup-frame="desktop" data-anchor="desktop" data-illustrates="page-teams">
+  <header class="bar" data-anchor="desktop-bar">
+    <h1>Weekly report</h1>
+    <p class="muted">Week 2026-W01</p>
+  </header>
+  <div class="body">
+    <ul class="cards" data-anchor="desktop-cards" data-illustrates="page-teams page-order">
+      <li class="card payments" data-anchor="desktop-card-payments">
+        <img class="avatar" src="payments.svg" alt="Payments team avatar">
+        <p class="team">Payments</p>
+        <p class="muted">Total for the week</p>
+        <p class="total">1,284</p>
+        <button type="button" data-anchor="desktop-open">Last three weeks</button>
+      </li>
+      <li class="card" data-anchor="desktop-card-search">
+        <img class="avatar" src="search.svg" alt="Search team avatar">
+        <p class="team">Search</p>
+        <p class="muted">Total for the week</p>
+        <p class="total">962</p>
+      </li>
+      <li class="card" data-anchor="desktop-card-mobile">
+        <img class="avatar" src="mobile.svg" alt="Mobile team avatar">
+        <p class="team">Mobile</p>
+        <p class="muted">Total for the week</p>
+        <p class="total">731</p>
+      </li>
+    </ul>
+    <div class="panel" data-anchor="desktop-panel">
+      <h2>Payments</h2>
+      <table>
+        <thead><tr><th>Week</th><th class="number">Total</th></tr></thead>
+        <tbody>
+          <tr><td>2025-W51</td><td class="number">1,190</td></tr>
+          <tr><td>2025-W52</td><td class="number">1,236</td></tr>
+          <tr><td>2026-W01</td><td class="number">1,284</td></tr>
+        </tbody>
+      </table>
+      <button type="button" class="primary" data-anchor="desktop-export" data-illustrates="page-export">Export CSV</button>
+    </div>
+  </div>
+  <div class="dialog" role="dialog" aria-label="Export CSV" data-anchor="desktop-dialog">
+    <h2>Export CSV</h2>
+    <p class="file" data-anchor="desktop-file">weekly-totals-2026-W01.csv</p>
+    <table>
+      <thead><tr><th>Team</th><th class="number">Total for 2026-W01</th></tr></thead>
+      <tbody>
+        <tr><td>Payments</td><td class="number">1,284</td></tr>
+        <tr><td>Search</td><td class="number">962</td></tr>
+        <tr><td>Mobile</td><td class="number">731</td></tr>
+      </tbody>
+    </table>
+    <p class="progress">Downloading weekly-totals-2026-W01.csv</p>
+    <p class="done">Downloaded weekly-totals-2026-W01.csv</p>
+    <footer class="actions">
+      <button type="button" data-anchor="desktop-cancel">Cancel</button>
+      <button type="button" class="primary" data-anchor="desktop-download">Download</button>
+    </footer>
+  </div>
+</section>
+<section data-mockup-frame="phone" data-anchor="phone" data-illustrates="page-teams">
+  <header class="bar" data-anchor="phone-bar">
+    <h1>Weekly report</h1>
+    <p class="muted">Week 2026-W01</p>
+  </header>
+  <div class="body">
+    <ul class="cards" data-anchor="phone-cards" data-illustrates="page-teams page-order">
+      <li class="card payments" data-anchor="phone-card-payments">
+        <img class="avatar" src="payments.svg" alt="Payments team avatar">
+        <p class="team">Payments</p>
+        <p class="muted">Total for the week</p>
+        <p class="total">1,284</p>
+        <button type="button" data-anchor="phone-open">Last three weeks</button>
+      </li>
+      <li class="card" data-anchor="phone-card-search">
+        <img class="avatar" src="search.svg" alt="Search team avatar">
+        <p class="team">Search</p>
+        <p class="muted">Total for the week</p>
+        <p class="total">962</p>
+      </li>
+      <li class="card" data-anchor="phone-card-mobile">
+        <img class="avatar" src="mobile.svg" alt="Mobile team avatar">
+        <p class="team">Mobile</p>
+        <p class="muted">Total for the week</p>
+        <p class="total">731</p>
+      </li>
+    </ul>
+    <div class="panel" data-anchor="phone-panel">
+      <h2>Payments</h2>
+      <table>
+        <thead><tr><th>Week</th><th class="number">Total</th></tr></thead>
+        <tbody>
+          <tr><td>2025-W51</td><td class="number">1,190</td></tr>
+          <tr><td>2025-W52</td><td class="number">1,236</td></tr>
+          <tr><td>2026-W01</td><td class="number">1,284</td></tr>
+        </tbody>
+      </table>
+      <button type="button" class="primary" data-anchor="phone-export" data-illustrates="page-export">Export CSV</button>
+    </div>
+  </div>
+  <div class="dialog" role="dialog" aria-label="Export CSV" data-anchor="phone-dialog">
+    <h2>Export CSV</h2>
+    <p class="file" data-anchor="phone-file">weekly-totals-2026-W01.csv</p>
+    <table>
+      <thead><tr><th>Team</th><th class="number">Total for 2026-W01</th></tr></thead>
+      <tbody>
+        <tr><td>Payments</td><td class="number">1,284</td></tr>
+        <tr><td>Search</td><td class="number">962</td></tr>
+        <tr><td>Mobile</td><td class="number">731</td></tr>
+      </tbody>
+    </table>
+    <p class="progress">Downloading weekly-totals-2026-W01.csv</p>
+    <p class="done">Downloaded weekly-totals-2026-W01.csv</p>
+    <footer class="actions">
+      <button type="button" data-anchor="phone-cancel">Cancel</button>
+      <button type="button" class="primary" data-anchor="phone-download">Download</button>
+    </footer>
+  </div>
+</section>
+<ol data-mockup-steps>
+$steps
+</ol>
+$questions
+$directions
+</body>
+</html>

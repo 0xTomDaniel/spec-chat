@@ -1,0 +1,634 @@
+#!/usr/bin/env python3
+"""Spec Chat's one install and onboarding entry point.
+
+Installs the skills into the target repo's .agents/skills (links into this clone) and
+links each one from the other agents' skill folders (.claude/skills, .codex/skills) relatively (skipped with
+--agents-only), never into the home directory; installs the page runtime and style into a named spec folder,
+sets up the default session's review service through review-host.py, whatever
+session it runs in, and publishes
+$XDG_STATE_HOME/spec-chat/onboarding.toml, with the commit this clone is at, which also records what it added
+under [installed]. A rerun from a clone at the same commit changes nothing; --undo removes only what that file
+records, then the file; --after-pull, which onboarding.toml publishes as after_pull, writes that
+file's published fields as this clone publishes them, then restarts each session's review service onto this clone's
+code after a pull; --check, which it publishes as check, reads how the box has Spec Chat set up and changes nothing.
+"""
+
+from __future__ import annotations
+
+import argparse
+import filecmp
+import functools
+import importlib.util
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import tomllib
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+HOST = ROOT / "skill/review-spec/scripts/review-host.py"
+SKILLS = {"spec-chat-shape": ROOT / "skill/shape-spec", "spec-chat-review": ROOT / "skill/review-spec", "repair-specs": ROOT / "skill/repair-specs"}
+AGENTS_SKILLS = ".agents/skills"  # where the skills live, inside the target repo, never under $HOME
+SKILL_DIRS = (".claude/skills", ".codex/skills")  # each entry: a relative link to AGENTS_SKILLS/<name>
+ASSETS = {".viz": ROOT / "skill/review-spec/assets/viz", ".style": ROOT / "skill/shape-spec/assets/style"}
+DOC = (ROOT / "README.md").as_uri() + "#install-and-onboarding"
+INSTALLER = str(ROOT / "scripts/install-spec-chat")
+# The step a host runs, with no shell, after fast-forwarding this clone (review-service #service-after-pull).
+AFTER_PULL = [INSTALLER, "--after-pull"]
+# The step a host runs, with no shell and no input, to read how the box has Spec Chat set up (#service-check).
+CHECK = [INSTALLER, "--check"]
+ONBOARDING_OWNER = "install-spec-chat"
+UNIT = "spec-chat-review.service"
+
+
+class InstallError(Exception):
+    pass
+
+
+def state_root() -> Path:
+    return Path(os.environ.get("XDG_STATE_HOME") or "~/.local/state").expanduser() / "spec-chat"
+
+
+def service_state(state: Path, session: str = "default") -> Path:
+    """A session's service (review-service #service-location); the default session's is the one the box user service
+    runs, and the one the installer sets up, whatever session the installer runs in."""
+    return state / "hosting" / session
+
+
+def review_host(state: Path, command: str, *args: str, session: str = "default",
+                **run) -> subprocess.CompletedProcess:
+    """Run a review-host command on a session's service as a process outside any Herdr pane, in that session
+    (review-service #service-session): with none of the caller's HERDR_* variables, since any of them can route it, the
+    server it starts, and that server's wake checks and sends to the caller's session, and with HERDR_SESSION naming
+    a named session, as Herdr names it to its panes; the default session's names none."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("HERDR_")}
+    if session != "default":
+        env["HERDR_SESSION"] = session
+    return subprocess.run([sys.executable, str(HOST), command, "--state-dir", str(service_state(state, session)),
+                           *args], env=env, **run)
+
+
+def toml_list(values: list[str]) -> str:
+    return "[" + ", ".join('"' + v.replace("\\", "\\\\").replace('"', '\\"') + '"' for v in values) + "]"
+
+
+def write_if_changed(path: Path, text: str) -> None:
+    if path.exists() and path.read_text(encoding="utf-8") == text:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def read_toml(path: Path) -> dict:
+    """A TOML file's tables, none when it is missing; one that cannot be read fails naming that file."""
+    try:
+        return tomllib.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+        raise InstallError(f"{path} cannot be read ({exc})") from exc
+
+
+KEYS = ("links", "copies", "resources", "units")
+
+
+def install_record(path: Path, record: object) -> dict:
+    """An install record as the installer writes it: a table whose links, copies, resources, and units are lists of
+    strings; one of any other shape fails naming its file, as one that cannot be read does."""
+    if isinstance(record, dict) and all(isinstance(record.get(key, []), list)
+                                        and all(isinstance(item, str) for item in record.get(key, [])) for key in KEYS):
+        return record
+    raise InstallError(f"{path} cannot be read (its install record is not a table of string lists: {', '.join(KEYS)})")
+
+
+def recorded(state: Path) -> tuple[dict, dict[str, list[str]]]:
+    """onboarding.toml and its [installed] record, with a legacy install.toml folded in."""
+    onboarding = read_toml(state / "onboarding.toml")
+    legacy = state / "install.toml"
+    sources = (install_record(state / "onboarding.toml", onboarding.get("installed", {})),
+               install_record(legacy, read_toml(legacy)))
+    return onboarding, {key: list(dict.fromkeys(v for src in sources for v in src.get(key, []))) for key in KEYS}
+
+
+def clone_commit() -> str:
+    """The commit this clone is at, empty when it cannot be read, as outside Git or with no git to run."""
+    try:
+        return git(ROOT, "rev-parse", "--verify", "HEAD^{commit}")
+    except InstallError:
+        return ""
+
+
+def published(status: str) -> dict[str, str | list[str]]:
+    """What onboarding.toml publishes as this clone's installer publishes it (review-service #published-onboarding),
+    but commit, which write_onboarding adds as it writes and readers compare with the clone's own (#service-check);
+    [installed] is the installer's own."""
+    return {"status": status, "doc": DOC, "after_pull": AFTER_PULL, "check": CHECK}
+
+
+def kept_status(onboarding: dict) -> str:
+    """The onboarding file's status as the installer keeps it on a run that registers nothing."""
+    return "done" if onboarding.get("status") == "done" else "pending"
+
+
+def write_onboarding(state: Path, status: str, installed: dict[str, list[str]]) -> Path:
+    """onboarding.toml's published fields, with commit, this clone's as it writes, none when it cannot be read."""
+    path = state / "onboarding.toml"
+    commit = clone_commit()
+    fields = {**published(status), **({"commit": commit} if commit else {})}
+    text = "".join(f"{key} = {toml_list(value) if isinstance(value, list) else toml_list([value])[1:-1]}\n"
+                   for key, value in fields.items())
+    text += "\n[installed]\n" + "".join(f"{key} = {toml_list(installed[key])}\n" for key in KEYS)
+    write_if_changed(path, text)
+    (state / "install.toml").unlink(missing_ok=True)
+    return path
+
+
+def _normalize_origin(url: str) -> str:
+    """The repository path of a git remote URL, so each way of naming one repository matches: o/r for
+    ssh://git@github.com/o/r.git, ssh://git@github.com:22/o/r.git, git@github.com:o/r.git, and https://github.com/o/r.
+    A URL has a scheme; an scp-like address a colon before any slash; anything else is a local path."""
+    if "://" in url:
+        path = url.split("://", 1)[1].partition("/")[2]
+    elif ":" in url.split("/", 1)[0]:
+        path = url.partition(":")[2]
+    else:
+        path = url
+    return path.strip("/").removesuffix(".git")
+
+
+def origin_url(where: Path) -> str:
+    """The origin URL of the clone where lies in, empty when it cannot be read, as outside Git or with no git to run."""
+    try:
+        return git(where, "remote", "get-url", "origin")
+    except InstallError:
+        return ""
+
+
+def same_origin(path: Path) -> bool:
+    """path lies in a clone of this repository, one with the same origin: the installer's adoption
+    (review-service #onboarding-entry)."""
+    theirs, ours = (_normalize_origin(origin_url(where)) for where in (path if path.is_dir() else path.parent, ROOT))
+    return bool(theirs and ours and theirs == ours)
+
+
+def same_tree(a: Path, b: Path) -> bool:
+    cmp = filecmp.dircmp(a, b)
+    if cmp.left_only or cmp.right_only or cmp.funny_files:
+        return False
+    if filecmp.cmpfiles(a, b, cmp.common_files, shallow=False)[1:] != ([], []):
+        return False
+    return all(same_tree(a / d, b / d) for d in cmp.common_dirs)
+
+
+def link(source: Path, target: Path, added: list[str], relative: bool = False) -> None:
+    """Link target to source; relative=True writes the link as a path relative to target's folder."""
+    want = os.path.relpath(source, target.parent) if relative else str(source)
+    if target.is_symlink() and not target.exists():
+        target.unlink()  # a dangling link belongs to nobody
+    if target.is_symlink() and target.resolve() == source.resolve():
+        if os.readlink(target) == want or str(target) not in added:
+            return
+        target.unlink()  # ours, written another way by an earlier run: rewrite it as wanted
+    if target.exists() or target.is_symlink():
+        if target.is_symlink() and same_origin(target.resolve()):
+            print(f"adopted: {target} -> {target.resolve()}")
+            return
+        what = os.readlink(target) if target.is_symlink() else (
+            "directory" if target.is_dir() else "file")
+        print(f"skipped: {target} (occupied by {what})")
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.symlink_to(want)
+    if str(target) not in added:
+        added.append(str(target))
+
+
+def copy_assets(specs: Path, added: list[str]) -> None:
+    if not specs.is_dir():
+        raise InstallError(f"spec folder does not exist: {specs}")
+    for name, source in ASSETS.items():
+        target = specs / name
+        if target.exists():
+            if not same_tree(source, target):
+                print(f"kept existing {target}; review preflight owns runtime migration")
+            continue
+        shutil.copytree(source, target)
+        added.append(str(target))
+
+
+def git(cwd: Path, *args: str) -> str:
+    try:
+        result = subprocess.run(["git", "-C", str(cwd), *args], text=True, capture_output=True)
+    except OSError as exc:  # no git to run
+        raise InstallError(f"git {' '.join(args)} cannot run ({exc})") from exc
+    if result.returncode:
+        raise InstallError(result.stderr.strip() or f"git {' '.join(args)} failed")
+    return result.stdout.strip()
+
+
+def unit_path() -> Path:
+    return Path(os.environ.get("XDG_CONFIG_HOME") or "~/.config").expanduser() / "systemd/user" / UNIT
+
+
+def quote(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def unit_text(state: Path) -> str:
+    """A box user service running this clone's review host: up at boot without login, again after it dies."""
+    command = [str(Path(sys.executable).resolve()), str(HOST), "serve", "--state-dir", str(service_state(state))]
+    env = {"HOME": str(Path.home()), "PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+    env.update({k: v for k, v in os.environ.items() if k.startswith("SPEC_CHAT_") and v})
+    return ("[Unit]\nDescription=Spec Chat review service (install-spec-chat)\n\n[Service]\nType=simple\n"
+            f"WorkingDirectory={ROOT}\n"
+            f"Environment={' '.join(quote(f'{k}={v}') for k, v in env.items())}\n"
+            f"ExecStart={' '.join(quote(part) for part in command)}\n"
+            "Restart=always\nRestartSec=2\n\n[Install]\nWantedBy=default.target\n")
+
+
+def run(*command: str) -> None:
+    if subprocess.run(command, stdout=subprocess.DEVNULL).returncode:
+        raise InstallError(f"{' '.join(command)} failed")
+
+
+def install_service(state: Path, units: list[str]) -> None:
+    """Box setup: install and enable the review service's user unit; review-host starts it through the unit."""
+    path = unit_path()
+    write_if_changed(path, unit_text(state))
+    if str(path) not in units:
+        units.append(str(path))
+    run("systemctl", "--user", "daemon-reload")
+    # Linger is box-wide and shared with other user services, so undo leaves it on.
+    run("loginctl", "enable-linger", os.environ.get("USER") or Path.home().name)
+    run("systemctl", "--user", "enable", UNIT)
+
+
+def review_first_spec(spec: Path, state: Path, visibility: list[str]) -> str:
+    """Register the first spec with the default session's review service; return its row id."""
+    spec = spec.resolve()
+    if not spec.is_file() or not spec.name.endswith(".spec.html"):
+        raise InstallError(f"--review needs an existing *.spec.html file: {spec}")
+    top = Path(git(spec.parent, "rev-parse", "--show-toplevel")).resolve()
+    rel = spec.relative_to(top).as_posix()
+    name = _normalize_origin(origin_url(top)).rsplit("/", 1)[-1] or top.name
+    slug = re.sub(r"[^a-z0-9-]+", "-", name.lower()).strip("-")[:63] or "spec"
+    if review_host(state, "register", "--slug", slug, "--owner", ONBOARDING_OWNER, str(spec), *visibility).returncode:
+        raise InstallError("review-host register failed")
+    rows = read_toml(service_state(state) / "registry.toml").get("resource", [])
+    row = next((r for r in rows if r.get("root") == str(top) and r.get("spec") == rel and r.get("slug") == slug), None)
+    if row is None:
+        raise InstallError("registered spec not found in the review service registry")
+    return row["id"]
+
+
+def install(args: argparse.Namespace, prefix: Path, state: Path) -> None:
+    onboarding, manifest = recorded(state)
+    done = onboarding.get("status") == "done"
+    try:
+        for name, source in SKILLS.items():
+            entry = prefix / AGENTS_SKILLS / name
+            link(source, entry, manifest["links"])
+            for base in () if args.agents_only else SKILL_DIRS:
+                link(entry, prefix / base / name, manifest["links"], relative=True)
+        if args.specs:
+            copy_assets(Path(args.specs).expanduser().resolve(), manifest["copies"])
+        visibility = (["--public", args.public] if args.public else ["--private"] if args.private else [])
+        visibility += ["--proof-host", args.proof_host] if args.proof_host else []
+        visibility += ["--public-base", args.public_base] if args.public_base is not None else []
+        visibility += [flag for origin in args.shell or () for flag in ("--shell", origin)]
+        visibility += ["--unit", UNIT] if args.service else []
+        if visibility and not args.review:
+            raise InstallError("--public, --private, --proof-host, --public-base, --shell, and --service need --review "
+                               "<spec>")
+        if args.service:
+            install_service(state, manifest["units"])
+        if args.review and (not done or visibility):
+            rid = review_first_spec(Path(args.review).expanduser(), state, visibility)
+            if rid not in manifest["resources"]:
+                manifest["resources"].append(rid)
+            done = True
+    finally:
+        status = "done" if done else "pending"
+        onboarding_path = write_onboarding(state, status, manifest)
+    print(f"spec-chat onboarding {status}: {onboarding_path}")
+    if status == "pending":
+        print("next: install-spec-chat --specs <spec folder> --review <first .spec.html>")
+
+
+def git_keeps(path: Path) -> str:
+    """Why --undo keeps *path*, an unmodified asset folder (review-service #onboarding-entry): git tracks a file in it,
+    or git cannot answer for the repository it lies in; empty when git answers it tracks none there, or no .git at or
+    above it puts it in any repository."""
+    try:
+        tracked = git(path, "ls-files", ".")
+    except InstallError as exc:
+        return f"{path}: {exc}" if any((where / ".git").exists() for where in (path, *path.parents)) else ""
+    return f"git-tracked {path}" if tracked else ""
+
+
+def _stop_review_server(state: Path) -> None:
+    """Stop the review server if its process is recorded and alive."""
+    registry = service_state(state) / "registry.toml"
+    if not registry.exists():
+        return
+    process = read_toml(registry).get("process", {})
+    pid = process.get("pid")
+    if not pid:
+        return
+    try:
+        os.kill(int(pid), 0)  # probe: is it alive?
+    except (OSError, ValueError):
+        return
+    review_host(state, "stop", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print(f"stopped review server (pid {pid})")
+
+
+def undo(state: Path) -> None:
+    _, manifest = recorded(state)
+    sources = {str(s.resolve()) for s in SKILLS.values()}
+    for item in manifest["links"]:
+        path = Path(item)
+        if path.is_symlink() and (not path.exists() or str(path.resolve()) in sources):
+            path.unlink()
+    for item in manifest["copies"]:
+        path = Path(item)
+        source = ASSETS.get(path.name)
+        if source and path.is_dir() and same_tree(source, path):
+            if kept := git_keeps(path):
+                print(f"left {kept}")
+            else:
+                shutil.rmtree(path)
+        elif path.exists():
+            print(f"left changed {path}")
+    for rid in manifest["resources"]:
+        review_host(state, "remove", "--id", rid, stdout=subprocess.DEVNULL)
+    _stop_review_server(state)
+    for item in manifest["units"]:
+        path = Path(item)
+        subprocess.run(["systemctl", "--user", "disable", "--now", path.name], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL)
+        path.unlink(missing_ok=True)
+        subprocess.run(["systemctl", "--user", "daemon-reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for path in (state / "onboarding.toml", state / "install.toml"):
+        path.unlink(missing_ok=True)
+    print("spec-chat install undone")
+
+
+def sessions(state: Path) -> list[str]:
+    """Each session whose service is recorded, hosting/<key>/registry.toml: the default session's first, whether
+    recorded or not, then each named one's."""
+    named = sorted(path.parent.name for path in (state / "hosting").glob("*/registry.toml"))
+    return ["default", *(key for key in named if key != "default")]
+
+
+def republish(state: Path) -> None:
+    """review-service #service-after-pull: write the onboarding file's published fields as this clone's installer
+    publishes them, its commit this clone's current one, keeping its status and [installed] record, so a field the
+    pulled code publishes reaches the box with no installer run. With no onboarding file there is none to keep: the
+    installer writes one."""
+    if (state / "onboarding.toml").exists():
+        onboarding, manifest = recorded(state)
+        write_onboarding(state, kept_status(onboarding), manifest)
+
+
+def after_pull(state: Path) -> int:
+    """review-service #service-after-pull: first write the onboarding file's published fields as this clone's
+    installer publishes them, then restart each session's service onto this clone's code, each in its own session; a
+    stopped service stays stopped. review-host succeeds only once the status route answers with an uptime
+    shorter than it has run; otherwise its last error line names that the service did not answer on this clone's
+    code, and why. Every session is restarted whatever an earlier one did, and each failure's line, naming its
+    session, ends the step's error output, so its last line names why. An onboarding file left unwritten fails the step
+    the same way, every session still restarted."""
+    failures = []
+    try:
+        republish(state)
+    except (InstallError, OSError) as exc:
+        failures.append(f"onboarding file not written: {exc}")
+    for session in sessions(state):
+        print(f"session {session}:", flush=True)
+        result = review_host(state, "restart", session=session, stderr=subprocess.PIPE, text=True)
+        lines = result.stderr.splitlines()
+        if result.returncode:
+            why = lines.pop() if lines else f"review-host restart exited {result.returncode}"
+            failures.append(f"session {session}: {why}")
+        sys.stderr.write("".join(line + "\n" for line in lines))
+        sys.stderr.flush()
+    for line in failures:
+        print(line, file=sys.stderr)
+    return 1 if failures else 0
+
+
+def target_repo(prefix: str | None) -> Path:
+    """The repo the skills install into: --prefix, else the Git top of the working directory, else the directory.
+    Never the home directory: skills live in a repo's .agents/skills, not in ~/.agents/skills."""
+    if prefix:
+        path = Path(prefix).expanduser().resolve()
+    else:
+        cwd = Path.cwd().resolve()
+        try:
+            path = Path(git(cwd, "rev-parse", "--show-toplevel")).resolve()
+        except InstallError:
+            path = cwd
+    if path == Path.home().resolve():
+        raise InstallError(f"skills install into a repo's {AGENTS_SKILLS}, never the home directory ({path}); "
+                           "run from the repo root or pass --prefix <repo>")
+    return path
+
+
+def installed_repos(manifest: dict[str, list[str]]) -> dict[Path, dict[str, list[str]]]:
+    """The repositories the installer recorded linking skills into, each with the skill folders it linked each skill
+    in there: repo -> {skill: [folder, ...]}. A repository since removed has nothing to link into, and a link under the
+    home folder is an older installer's, which no run links again, so neither is read."""
+    home = Path.home().resolve()
+    repos: dict[Path, dict[str, list[str]]] = {}
+    for item in manifest["links"]:
+        link = Path(item)
+        repo = link.parents[2]
+        folder = link.parent.relative_to(repo).as_posix()
+        if link.name in SKILLS and folder in (AGENTS_SKILLS, *SKILL_DIRS) and repo.resolve() != home and repo.is_dir():
+            repos.setdefault(repo, {}).setdefault(link.name, []).append(folder)
+    return repos
+
+
+def rerun(repos: dict[Path, dict[str, list[str]]], repo: Path | None = None, *flags: str) -> str:
+    """The installer run again for repo, else for the first repository it recorded installing into, with the folders
+    it linked there; with none recorded, a run from the repository to install into."""
+    repo = repo or next(iter(repos), None)
+    if repo is None:
+        return " ".join([shlex.quote(INSTALLER), *flags]) + " from the repository to install Spec Chat into"
+    folders = {folder for skills in repos[repo].values() for folder in skills}
+    return " ".join([shlex.join([INSTALLER, "--prefix", str(repo), *(["--agents-only"] if folders == {AGENTS_SKILLS}
+                                                                       else [])]), *flags])
+
+
+def leads_to_skill(path: Path, name: str) -> bool:
+    """path is a link leading to that skill in this clone or in another clone of this repository, the installer's
+    adoption (review-service #onboarding-entry)."""
+    if not (path.is_symlink() and path.exists()):
+        return False
+    resolved = path.resolve()
+    if resolved == SKILLS[name].resolve():
+        return True
+    try:
+        top = Path(git(resolved, "rev-parse", "--show-toplevel")).resolve()
+    except InstallError:
+        return False
+    return resolved == top / SKILLS[name].relative_to(ROOT) and same_origin(resolved)
+
+
+def holder(repo: Path, folder: str, name: str) -> Path | None:
+    """What holds the place of a skill link in a repository that does not lead to the skill: the installer adopts any
+    link into a clone of this repository and skips any other occupant, so its run links the skill again only once that
+    is removed (review-service #service-check). None when nothing does, a link leading nowhere included, which the
+    installer removes itself. A link in another agent's skill folder leading to the repository's own entry in
+    .agents/skills, as the installer writes it, is held by what holds that entry."""
+    path = repo / folder / name
+    if not path.exists():
+        return None
+    entry = repo / AGENTS_SKILLS / name
+    if folder != AGENTS_SKILLS and path.is_symlink() and Path(os.path.normpath(path.parent / os.readlink(path))) == entry:
+        return holder(repo, AGENTS_SKILLS, name)
+    return path
+
+
+@functools.cache
+def review_host_module():
+    """review-host, read in for its one rule for a running service (process_owns_registry), its one way of asking
+    the box's user service manager (systemctl, systemctl_said), and its one rule for whether that manager can be asked
+    (manager_reachable), loaded only when a service or a unit is recorded."""
+    sys.dont_write_bytecode = True  # the check writes nothing, a bytecode cache included
+    spec = importlib.util.spec_from_file_location("spec_chat_review_host", HOST)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def check(state: Path) -> int:
+    """review-service #service-check: read how the box has Spec Chat set up, changing nothing: it writes, starts, and
+    stops nothing, and takes no state lock. Each problem it finds goes on its own error line, naming it and the step
+    that fixes it; any problem fails it. What it cannot ask is no problem: its output says it was not checked."""
+    problems = []
+    path = state / "onboarding.toml"
+    try:
+        onboarding, manifest = recorded(state)
+    except InstallError as exc:
+        onboarding, manifest = None, {key: [] for key in KEYS}
+        problems.append(f"Spec Chat file {exc}; fix: correct or remove it, then run {rerun({})}")
+    repos = installed_repos(manifest)
+    if onboarding is not None and not path.exists():
+        problems.append(f"no Spec Chat onboarding file at {path}; fix: run {rerun(repos)}")
+    elif onboarding is not None:
+        want = published(kept_status(onboarding))
+        # Its commit aside: readers compare it with the clone's own (review-service #service-check).
+        fields = {key: value for key, value in onboarding.items() if key not in ("installed", "commit")}
+        stale = [f"{key} {'differs' if key in fields else 'missing'}" for key in want if fields.get(key) != want[key]]
+        stale += [f"extra {key}" for key in fields if key not in want]
+        if stale:
+            problems.append(f"Spec Chat onboarding file {path} is out of date ({', '.join(stale)}); fix: run "
+                            f"{rerun(repos)}")
+    for repo, skills in repos.items():
+        for name, folders in skills.items():
+            lost = [folder for folder in folders if not leads_to_skill(repo / folder / name, name)]
+            if lost:
+                held = [shlex.quote(str(place)) for place in dict.fromkeys(holder(repo, folder, name) for folder in lost)
+                        if place]
+                remove = f"remove what holds its place, {', '.join(held)}, then " if held else ""
+                problems.append(f"Spec Chat skill {name} is not linked in {repo} ({', '.join(lost)}); fix: {remove}run "
+                                f"{rerun(repos, repo)}")
+    for item in manifest["units"]:
+        unit = Path(item)
+        fix = f"run box setup's --service: {rerun(repos, None, '--review', '<first .spec.html>', '--service')}"
+        if not unit.is_file():
+            lost = "is gone"
+        else:
+            host = review_host_module()
+            answer = host.systemctl("is-enabled", unit.name)
+            if answer.returncode == 0:
+                continue
+            if not host.manager_reachable():  # as with no user bus: what it cannot ask is no problem
+                print(f"Spec Chat box user service {unit.name} not checked: the box's user service manager cannot be "
+                      f"asked ({host.systemctl_said(answer)})")
+                continue
+            # The manager answers, so any failure is not enabled: a state it names, else why, as older systemd names
+            # a unit it does not know on its error output alone.
+            said = answer.stdout.strip() or host.systemctl_said(answer)
+            lost = f"is not enabled ({said})"
+            if said.startswith("masked"):
+                fix = f"run systemctl --user unmask {unit.name}, then {fix}"
+        problems.append(f"Spec Chat box user service {unit.name} {lost}, so the review service no longer starts with "
+                        f"the box; fix: {fix}")
+    head = clone_commit()
+    for session in sessions(state):
+        registry = service_state(state, session) / "registry.toml"
+        try:
+            process = read_toml(registry).get("process") or {}
+        except InstallError:
+            continue
+        commit = process.get("commit") or ""
+        if process and commit != head and review_host_module().process_owns_registry(process.get("pid"), registry):
+            began = f"started on commit {commit[:12]}" if commit else "records no commit it started on"
+            problems.append(f"Spec Chat review service of session {session} is not on this clone's commit: it "
+                            f"{began}, the clone is at {head[:12]}; fix: run the after-pull step: "
+                            f"{shlex.join(AFTER_PULL)}")
+    for problem in problems:
+        print(problem, file=sys.stderr)
+    return 1 if problems else 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="install-spec-chat", description=__doc__.splitlines()[0])
+    parser.add_argument("--prefix", metavar="REPO",
+                        help="repo that gets the skills in .agents/skills, linked from .claude/skills and "
+                             ".codex/skills (default: the Git top of the working directory, else the directory; "
+                             "never $HOME)")
+    parser.add_argument("--agents-only", action="store_true",
+                        help="put the skills only in .agents/skills; no .claude/skills or .codex/skills links")
+    parser.add_argument("--specs", metavar="DIR", help="spec folder that gets the page runtime (.viz) and style (.style)")
+    parser.add_argument("--review", metavar="SPEC", help="first *.spec.html to review through the default session's service")
+    visibility = parser.add_mutually_exclusive_group()
+    visibility.add_argument("--public", metavar="HOST", help="box setup: serve review publicly on HOST (no login)")
+    visibility.add_argument("--private", action="store_true", help="box setup: return review to loopback")
+    parser.add_argument("--proof-host", help="box setup: public proof host for a wildcard bind")
+    parser.add_argument("--public-base", metavar="URL",
+                        help="box setup: address every review link starts with, e.g. https://spec.<a-b-c-d>.sslip.io")
+    parser.add_argument("--shell", action="append", metavar="ORIGIN",
+                        help="box setup: an origin that may hold the review pages as a shell, e.g. a workbench's; give "
+                             "again for more; '' clears them")
+    parser.add_argument("--service", action="store_true",
+                        help="box setup: run the review service as a box user service (systemd --user, linger)")
+    parser.add_argument("--undo", action="store_true", help="remove only what earlier runs added")
+    parser.add_argument("--after-pull", action="store_true",
+                        help="after fast-forwarding this clone: write the onboarding file's published fields as "
+                             "this clone publishes them, then restart each session's review service onto its code; "
+                             "takes no other flag")
+    parser.add_argument("--check", action="store_true",
+                        help="read how the box has Spec Chat set up, changing nothing: one error line per problem with "
+                             "the step that fixes it; takes no other flag")
+    args = parser.parse_args(argv)
+    for step in ("after_pull", "check"):
+        if getattr(args, step) and any(value != parser.get_default(name) for name, value in vars(args).items()
+                                       if name != step):
+            parser.error(f"--{step.replace('_', '-')} takes no other flag")
+    state = state_root()
+    if args.after_pull:
+        return after_pull(state)
+    if args.check:
+        return check(state)
+    try:
+        if args.undo:
+            undo(state)
+        else:
+            install(args, target_repo(args.prefix), state)
+    except InstallError as exc:
+        print(f"install-spec-chat: error: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

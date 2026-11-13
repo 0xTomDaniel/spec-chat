@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team page - mockup</title>
+<style>
+  /* The design set's tokens (design-set.toml pins it), by name and value. Every rule sits under a frame. */
+  [data-mockup-frame] {
+    --ui-page: #ffffff;
+    --ui-surface: #ffffff;
+    --ui-surface-soft: #f5f5f5;
+    --ui-ink: #333333;
+    --ui-muted: #525252;
+    --ui-border: #dfdfdf;
+    --ui-action: #1d4ed8;
+    --ui-action-soft: #eff3ff;
+    --ui-font: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --ui-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --ui-text-sm: 14px;
+    --ui-text-md: 16px;
+    --ui-text-xl: 24px;
+    --ui-text-2xl: 30px;
+    --ui-weight-regular: 400;
+    --ui-weight-medium: 500;
+    --ui-weight-semibold: 600;
+    --ui-space-1: 4px;
+    --ui-space-2: 8px;
+    --ui-space-3: 12px;
+    --ui-space-4: 16px;
+    --ui-space-5: 24px;
+    --ui-space-6: 32px;
+    --ui-radius-sm: 6px;
+    --ui-radius: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    [data-mockup-frame] {
+      --ui-page: #1a1a1a;
+      --ui-surface: #242424;
+      --ui-surface-soft: #2a2a2a;
+      --ui-ink: #e0e0e0;
+      --ui-muted: #999999;
+      --ui-border: #3a3a3a;
+      --ui-action: #7896ef;
+      --ui-action-soft: #1a2040;
+    }
+  }
+  [data-mockup-frame] {
+    box-sizing: border-box;
+    background: var(--ui-page);
+    color: var(--ui-ink);
+    font: var(--ui-weight-regular) var(--ui-text-md)/1.5 var(--ui-font);
+  }
+  [data-mockup-frame="desktop"] { width: 1440px; padding: var(--ui-space-6); }
+  [data-mockup-frame="phone"] { width: 390px; padding: var(--ui-space-4); }
+  [data-mockup-frame] * { box-sizing: border-box; }
+  [data-mockup-frame] h1, [data-mockup-frame] h2, [data-mockup-frame] p, [data-mockup-frame] ul { margin: 0; padding: 0; }
+  .bar { display: flex; align-items: baseline; gap: var(--ui-space-4); padding-bottom: var(--ui-space-5);
+         border-bottom: 1px solid var(--ui-border); margin-bottom: var(--ui-space-5); }
+  [data-mockup-frame="phone"] .bar { flex-direction: column; gap: var(--ui-space-1); padding-bottom: var(--ui-space-4);
+                                     margin-bottom: var(--ui-space-4); }
+  .bar h1 { font-size: var(--ui-text-2xl); font-weight: var(--ui-weight-semibold); }
+  [data-mockup-frame="phone"] .bar h1 { font-size: var(--ui-text-xl); }
+  .muted { color: var(--ui-muted); font-size: var(--ui-text-sm); }
+  .cards { list-style: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--ui-space-5); }
+  [data-mockup-frame="phone"] .cards { grid-template-columns: 1fr; gap: var(--ui-space-3); }
+  .card { background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: var(--ui-radius);
+          padding: var(--ui-space-5); min-height: 200px; display: grid; align-content: start; gap: var(--ui-space-2); }
+  [data-mockup-frame="phone"] .card { min-height: 0; padding: var(--ui-space-4); grid-template-columns: auto 1fr auto;
+                                      align-items: center; column-gap: var(--ui-space-3); row-gap: 0; }
+  [data-mockup-frame="phone"] .card .avatar { grid-row: span 2; }
+  [data-mockup-frame="phone"] .card .total { grid-column: 3; grid-row: 1 / span 2; }
+  .avatar { width: 48px; height: 48px; border-radius: 50%; display: block; }
+  [data-mockup-frame="phone"] .avatar { width: 40px; height: 40px; }
+  .team { font-weight: var(--ui-weight-medium); }
+  .total { font-size: var(--ui-text-2xl); font-weight: var(--ui-weight-semibold); font-variant-numeric: tabular-nums; }
+  [data-mockup-frame="phone"] .total { font-size: var(--ui-text-xl); }
+  .actions { display: flex; gap: var(--ui-space-3); margin-top: var(--ui-space-5); align-items: center; }
+  [data-mockup-frame="phone"] .actions { flex-direction: column; align-items: stretch; margin-top: var(--ui-space-4); }
+  [data-mockup-frame] button { font: inherit; font-size: var(--ui-text-sm); font-weight: var(--ui-weight-medium); border-radius: var(--ui-radius-sm);
+           padding: var(--ui-space-2) var(--ui-space-4); border: 1px solid var(--ui-border); background: var(--ui-surface);
+           color: var(--ui-ink); }
+  [data-mockup-frame] button.primary { background: var(--ui-action); border-color: var(--ui-action); color: #ffffff; }
+  [data-mockup-frame] table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  [data-mockup-frame] th, [data-mockup-frame] td { text-align: left; padding: var(--ui-space-3) var(--ui-space-4); border-bottom: 1px solid var(--ui-border); }
+  [data-mockup-frame] th { color: var(--ui-muted); font-size: var(--ui-text-sm); font-weight: var(--ui-weight-medium); }
+  [data-mockup-frame] td.number, [data-mockup-frame] th.number { text-align: right; }
+  .dialog { max-width: 560px; margin: var(--ui-space-6) auto; background: var(--ui-surface); border: 1px solid var(--ui-border);
+            border-radius: var(--ui-radius); padding: var(--ui-space-5); display: grid; gap: var(--ui-space-4); }
+  [data-mockup-frame="phone"] .dialog { margin: 0; padding: var(--ui-space-4); }
+  .dialog h2 { font-size: var(--ui-text-xl); font-weight: var(--ui-weight-semibold); }
+  .dialog .file { font-family: var(--ui-mono); font-size: var(--ui-text-sm);
+          background: var(--ui-surface-soft); border-radius: var(--ui-radius-sm); padding: var(--ui-space-2) var(--ui-space-3); }
+  .dialog .actions { justify-content: flex-end; margin-top: 0; }
+</style>
+<script defer src="../../.viz/runtime.js"></script>
+</head>
+<body>
+<section data-mockup-frame="desktop" data-anchor="desktop" data-illustrates="page-team">
+  <header class="bar" data-anchor="desktop-bar">
+    <h1>Payments</h1>
+    <p class="muted">Totals for the last three weeks</p>
+  </header>
+  <table data-anchor="desktop-weeks" data-illustrates="page-team">
+    <thead><tr><th>Week</th><th class="number">Total</th></tr></thead>
+    <tbody>
+      <tr><td>2025-W51</td><td class="number">1,190</td></tr>
+      <tr><td>2025-W52</td><td class="number">1,236</td></tr>
+      <tr><td>2026-W01</td><td class="number">1,284</td></tr>
+    </tbody>
+  </table>
+</section>
+<section data-mockup-frame="phone" data-anchor="phone" data-illustrates="page-team">
+  <header class="bar" data-anchor="phone-bar">
+    <h1>Payments</h1>
+    <p class="muted">Totals for the last three weeks</p>
+  </header>
+  <table data-anchor="phone-weeks" data-illustrates="page-team">
+    <thead><tr><th>Week</th><th class="number">Total</th></tr></thead>
+    <tbody>
+      <tr><td>2025-W51</td><td class="number">1,190</td></tr>
+      <tr><td>2025-W52</td><td class="number">1,236</td></tr>
+      <tr><td>2026-W01</td><td class="number">1,284</td></tr>
+    </tbody>
+  </table>
+</section>
+</body>
+</html>

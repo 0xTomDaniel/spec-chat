@@ -1,0 +1,254 @@
+---
+name: spec-chat-review
+description: "Run the spec-chat review loop - park on a visual HTML spec's annotation spool, address human comments as they arrive, edit the spec in place, and reply through the review channel. Use this whenever the user wants to review, annotate, or discuss a .spec.html file; says things like start review mode, watch for annotations, address the annotations, or I'll comment in the browser; mentions spec-chat, spec.html, hand-off batches, or a *.review/ directory; or asks about the status of a spec review. Also use it when the user authored a spec earlier in the session and now wants feedback round-trips on it, even if they don't name the tool - and when they ask to see, understand, or be walked through a spec.html, since the walkthrough should happen visually in the rendered page rather than as terminal text. Review-only permits questions and atomic corrections; load spec-chat-shape too before any batch materially changes behavior or information architecture."
+---
+
+# spec-chat review loop
+
+spec-chat specs are visual HTML documents (`*.spec.html`) the user annotates in a browser. Annotations arrive as one-file-per-event JSON in an actor-segregated spool next to the spec:
+
+```
+<spec>.spec.html.review/
+  human/     ← browser writes here; you NEVER do
+  agent/     ← you write here; the browser renders these live
+  versions/  ← <sha256>.html: each spec text a page was shown; the service writes, read-only to you
+```
+
+Events are immutable and named by their writer, `<createdAt ns>-<event>-<id>.json`; never rename, rewrite, or delete one.
+
+Your job in review mode: reconcile hand-off batches, route material authoring through `spec-chat-shape`, apply each comment to the spec, reply through the spool, and leave review in one truthful terminal control state.
+
+## Remote hosting lifecycle
+
+A lane registers its specs with one command, the lane command:
+
+```sh
+scripts/review-host.py register --slug <lane-key> --owner <pane> <spec path>
+```
+
+Repeat the spec path for more specs. The lane key and owner pane id come from the caller. Every `review-host` command acts on its caller's Herdr session's review service, at `$XDG_STATE_HOME/spec-chat/hosting/${HERDR_SESSION:-default}` (a box without Herdr is the default session), so run it from the owner's own session: a pane id names a pane of that session only. The command names no exposure: that service already owns it (see `### Box setup`). A plain spec path infers project, root, and base from Git; `--base <ref>` overrides the base, and `--resource PROJECT_ID=ROOT:SPEC_PATH@BASE` still works. Its one optional address, `--prototype <address>`, names where the lane's running prototype answers at its root, often on loopback, run from the lane worktree by the project's [prototype command](../../docs/specs/mockups.spec.html#prototype-seam) as the product ships, with no base path; the service serves it at the lane's own prototype origin, `<lane-key>-prototype.` before the service's host name ([prototype proxy](../../docs/specs/review-service.spec.html#prototype-proxy)), so a prototype mockup's page frames it wherever the service is. A service whose address names its host by an IP address off loopback has no prototype origin: its prototype mockups read Prototype not running until box setup gives it a public base address with a host name (see `### Box setup`). Registering the specs again with it changes it on their rows and keeps their review; `--prototype ''` clears it. Rows stay registered until lane teardown, and teardown deletes the row: `review-host remove` deletes it rather than keeping it as lifecycle removed.
+
+The lane's cursor is `.cursor-owner`, the one the review host watches by default. Every loop command below uses it.
+
+### Scope rows and hosted threads
+
+A host page loads the comment layer and gives each thing it shows a scope and a subject. A comment on a subject naming a spec a row of its scope serves is kept in that spec's spool at that anchor; any other subject goes to the scope's hosted threads, a spool with no spec, at `comments/<scope>/` in the session's service state (`human/`, `agent/`, the owners' cursors). A lane's spec rows are its scope already. An operator outside any lane registers a scope row, naming only a scope and their pane:
+
+```sh
+scripts/review-host.py register --slug <scope> --owner <pane>
+```
+
+It prints `scope:<scope> scope <scope> wake=verified owner=<pane>` (or `wake=unavailable`). The scope's hosted threads wake the owner of its row registered last, by the prompt `Spec Chat human comment hand-off ready: scope <scope>, hosted threads <path>, cursor <cursor>, <n> events. ...`. `review-host remove --id scope:<scope>` deletes the row; the scope's last row takes its hosted threads with it.
+
+Hosted threads run the same loop with the prompt's `<path>` as both spec root and spool: scan `scripts/watch-specs.sh <path> <cursor> 0 3` (rows start with `<path>`; no spec, so no `place` line), reply with `scripts/emit-reply.sh <path> <respondsTo-id> '' '<target-json>' ...`, and append to `<path>/<cursor>`. A hand-off there reviews no spec: run no `reviewed`.
+
+### Pages a shell holds
+
+A shell, such as a workbench, frames pages and the service's comment UI page, `<url>/comments`, once per window; a page it holds draws its pins and no comment UI, and every comment, hand-off, and Accept spec on it is written from the comment UI page, into the same spools and hosted threads, so the loop is unchanged. A shell author follows `references/shell.md`: the hello, the shell messages and their fields, the relay by frame, and `#browser=<id>` for a phone shell's frames. Only an origin named in box setup holds a page, besides the service's own, which holds the prototype routes it serves at each lane's prototype origin under their mockup pages.
+
+### Box setup
+
+By the box owner, once, outside any lane: `--public <host>` (listen there on an approved ingress port; the page has no login), `--private` (loopback, reached with the printed `ssh -L` tunnel), `--proof-host <host>` (public proof host for a wildcard bind), `--public-base <address>` (every review link and the published `url` start with it, e.g. an HTTPS front; the proof still checks the listener; an `https://` address holds the listener on loopback for the front to proxy to, keeping the recorded visibility for when it is cleared), and `--shell <origin>` (an origin that may hold the service's pages as a shell, `scheme://host[:port]`; give it again for more; recorded, so later registrations keep it; `--shell ''` clears them; the running service reads them with no restart). Each flag sets up its caller's session's service; a named session's service starts private on loopback until set up from that session. `scripts/install-spec-chat --service` runs the default session's service as a box user service (systemd `--user`, lingering): up at boot without login, restarted when it dies, from this clone's code; `register` and `stop` then go through its unit. Approved ports come from `SPEC_CHAT_APPROVED_INGRESS_PORTS` or readable host firewall rules. The registry keeps the bind across restarts. `--state-dir` names a separate, isolated service for tests or deliberate isolation; lanes do not pass it. `scripts/install-spec-chat` runs box setup; see the README.
+
+## The loop
+
+1. **Reconnect before parking.** On every newly started or resumed spec-chat turn, first run one immediate, read-only collection scan:
+
+   ```
+   scripts/watch-specs.sh <spec-root> .cursor-owner 0 3
+   ```
+
+   Exit 0 prints tab-separated `<html-path> <human-event-filename>` rows for the first ready page; exit 3 means the backlog is empty. For each reported comment (a thread is placed by its root comment), stderr adds `place <event-filename> <state> #<anchor> <start>-<end> <quote>`: where that mark sits in the current spec (the same place the page shows), resolved by `assets/place.py`. `kept`: text unchanged; `changed`: read the quote as the surviving text; `gone`: the marked text was removed, so the original quote is in the event. A placed mark on an element or a block has no current text: its line gives the quote its comment captured. For each event of a thread written on a host page, in a spec's spool or a scope's hosted threads, stderr adds `host <event-filename> <subject> <kind> <label> <from> <quote>`, the thread's root comment's fields (`assets/spool.py`; subject empty in a spec's spool, where the `place` line gives the anchor). `kind` is the host's routing word for what the subject is: route each comment by it; Spec Chat names no host and no routing policy. `from` reopens what the human saw. For each event of a thread whose root comment carries a spot, stderr adds `spot <event-filename> <step> <moment> <box> <picture>`: the walkthrough step the mockup's frames showed, the video's moment in seconds, the box as `<left>,<top>,<width>,<height>` fractions of the video's frame or, with no video, of the page's view, and the path of the picture its page made of the boxed spot, each empty when absent; open the picture to see what the human saw; the `place` line still gives the block. For each event that carries its lane's stage, stderr adds `stage <event-filename> <words>`, the stage the lane was at when it was written (an edit's is its message's); `emit-reply.sh` stamps each reply with the stage its thread's lane is at now, the lane its comment recorded, as its session's review service names it. For a TBD question's answers, handed-off comments on its block by a button or in words, stderr adds `answer <event-filename> #<question> <about> <step> <words>` for the newest, the question's answer (`about` and `step`: the parts and step a mockup's question names, else empty), and `superseded <event-filename> <newer-event-filename>` for each earlier one: act on the answer, never on a superseded one. Cursor only the stdout file names. A ready result is each hand-off not in the cursor and the events it lists in `events` (one reviewer's drafts; other reviewers' drafts stay out), in filename order, the order the conversation shows its threads; a hand-off without `events` brings every unprocessed event before it. Host wake uses the same batch. Do not reuse, poll, or wait on a watcher/tool session cancelled with the prior turn, and do not start detached Codex processing automatically; the detached process could race the interactive thread.
+
+2. **Drain the reported batch.** Read each event file in the printed order. Rehydrate context from FILES (the current spec, the unresolved events, `<spec>.review/context.md`), not from what you remember of the chat. Chat history is never the review database; files are what survive compaction, session changes, CLI switches, and stopped turns. Fold each thread before acting: human `reply` events continue the existing conversation, and human `edit` events replace the message named by `supersedes`. Ignore superseded text. Each `handoff` event is a human spec review: for a hosted spec, run `scripts/review-host.py reviewed --id <resource id>` before editing. It sets the row `base` to the newest commit whose page is the version the newest hand-off's page showed (the spec's, or a mockup's of its set), committing the spec and its mockup set first when the working file is that version; a commit made after that version stays a change since the base. When neither the working file nor a commit on the branch holds that version, it leaves the base and says so.
+
+3. **Classify before editing, then apply each comment** to the spec in place. Questions and atomic corrections that do not change behavior or information architecture remain review-only. A batch is material when it adds or changes a behavior cluster, user outcome, flow, state model, module boundary, acceptance family, spatial contract, or the page's information architecture. Before a material edit, load `spec-chat-shape` and apply its complete authoring contract to the affected spec. The existence or age of the spec never exempts it. If the current page cannot carry the new material with readable visual density, restructure it instead of appending prose, cards, or one catch-all diagram. An informational comment may use `change: "no spec change"`; answer through the channel without forcing an edit.
+
+4. **Commit accepted spec changes before reply.** Commit every accepted spec change locally before the browser receives its reply or refreshed Git focus. Never push, open a pull request, or create an issue; publishing is the caller's. `spec-chat-shape` owns the seed order.
+
+5. **Reply to each newest human message** with the bundled emitter (one event per comment, follow-up reply, or edit addressed):
+
+   ```
+   scripts/emit-reply.sh <spec>.review/ <respondsTo-id> <anchorId> '<target-json>' acknowledged '<change-summary>' '<reply text>'
+   ```
+
+   In a scope's hosted threads, the first argument is the hosted threads path and `anchorId` is `''`.
+   `respondsTo-id` must be the exact newest human `comment`, `reply`, or `edit` id, not automatically the root comment id. Field exactness matters: the browser runtime renders `respondsTo`, `text`, `status`, and `change`; a missing or renamed field means the user sees nothing. End replies that made an edit with an offer to resolve ("OK to resolve?").
+
+   A decision you need from the human is never a question in a reply: write it into the spec as an open TBD block at the clause it decides, offering each option as an answer button, the recommended option's button text ending in `(recommended)` (`spec-chat-shape` Review shaping; markup in its `references/authoring.md`), commit it before the reply, and let the reply point to that TBD. The human answers with one press, or with an ordinary comment on that block for an answer no button offers.
+
+6. **Externalize agreements** after the spec changes and replies succeed: durable decisions go into the spec itself and a one-line note in `<spec>.review/context.md`. This is what lets a different session, or a different CLI, pick up the review cold.
+
+7. **Advance that spec's cursor only after the entire reported batch was successfully processed and every reply was emitted**, by APPENDING exactly the filenames the scan reported:
+
+   ```
+   printf '%s\n' <file1> <file2> >> <spec>.review/.cursor-owner
+   ```
+
+   Never regenerate the cursor with `ls`; events that arrived while you were processing would be silently marked as seen and skipped. Never advance it after a partial or failed drain; leaving it unchanged makes the next turn recover the same durable batch. This append-only rule is the lossless commit point.
+
+8. **Reconcile to empty, then select one terminal control state.** Repeat the zero-wait scan and steps 2-7 until it exits 3, then choose exactly one:
+
+   - `turn-yielded`: run `scripts/review-control.sh yielded <spec-root> .cursor-owner 3600 3` through a verified same-turn yield and keep this turn open. A final response is forbidden.
+   - `host-wake`: register the spec with the lane command, using the owner pane id, never an agent or tab name. Pass no `--base`: re-registering an existing row keeps its recorded base. Final is allowed only when registration printed `wake=verified owner=<pane>`; the review host then prompts that pane once per hand-off batch. `wake=unavailable` selects `manual-resume`.
+   - `manual-resume`: run `scripts/review-control.sh manual`, return a final response that explicitly requires a new human chat message, and claim no automatic wake. Keep the same review server and checker alive while waiting. The new message resumes the checker against that URL.
+
+   `<spec-root>` is normally the repository's shared `docs/` collection root.
+   `review-control.sh` holds one local kernel lock per canonical collection root and cursor, so a second yielded owner fails visibly instead of racing the first.
+   A raw `watch-specs.sh` long wait is detection-only and now fails unless invoked by `review-control.sh`.
+   A background shell, unified exec session, watcher PID, or returned tool session never proves host attachment.
+   Before any final response, transition out of `turn-yielded` into verified `host-wake` or explicit `manual-resume`.
+   Detached Codex processing is disabled because it can race the interactive owner.
+
+## Mockups
+
+A spec's mockup set is the folder `mockups/<spec name>/` beside it (`<spec name>` is the file name without `.spec.html`): one `<NN>-<screen>.mockup.html` per screen, each at production fidelity: the screen's running prototype, its file naming the route (below), or, only for [chrome the project does not own](../../docs/specs/mockups.spec.html#prototype-drawn), a drawn page naming that product in `<meta name="mockup-chrome">`, with one desktop and one phone frame (`data-mockup-frame`); its frames and regions carry `data-anchor`, they and its walkthrough's steps name the spec anchors they show in `data-illustrates`, its open questions sit in `<aside data-mockup-questions>`, and a screen's first round may list its directions in `<ul data-mockup-directions>` (`spec-chat-shape`'s `references/authoring.md`). The set is served and reviewed under its spec's row, with no registration of its own. Each mockup's review state is a spool beside it, `<mockup>.review/`, of the spec spool's shape (`human/`, `agent/`, `versions/`, cursors).
+
+Run the loop on a mockup as on its spec, with the mockup's spool in place of the spec's:
+
+- Scan: the same collection scan covers every mockup spool under `<spec-root>`. A mockup's rows start with the mockup's path; its `place` lines resolve each mark in the current mockup: `#<anchor>` is the frame or region it marks, and the quote is its quote. A comment at a walkthrough step gets a `spot` line naming the step; a question's answer gets an `answer` line naming the question, its parts, and its step, and each earlier answer a `superseded` line. A Pick on a direction is an answer on the directions list: its `answer` line names the list's anchor as `#<question>`, with `about` and `step` empty, and the picked direction's name as its words, by which you find that direction's `<li>` in the list, and its route or frames.
+- Review: a mockup hand-off is a human review of its spec. For a hosted spec, run `reviewed` with the spec's row id.
+- Edit the mockup in place. The spec stays canonical for behavior: a comment that changes behavior changes the spec first (classify it as for the spec, step 3), then the mockup to match. Keep every `data-anchor` (threads attach to them) and a drawn mockup's both frames; show the target state only, at production fidelity, with real content. A comment on how a prototype looks or acts changes the prototype, product code on the lane branch outside this skill; its next round shows the change. Settle a question by editing the mockup, the spec, or both, removing the question, and replying on its thread. A mockup that shows directions goes back to one direction in the round after, whatever the hand-off holds: the one the newest Pick names, else the agent's pick, with the other directions and the directions list removed (`spec-chat-shape`'s `references/authoring.md`); settle a Pick by replying on its thread. Commit the mockup with the spec before replying (step 4).
+- Reply: `scripts/emit-reply.sh <mockup>.review/ <respondsTo-id> <anchorId> '<target-json>' ...`.
+- Cursor: append the scan's file names to `<mockup>.review/.cursor-owner`.
+
+A prototype mockup frames the lane's running prototype instead of drawing frames: its file names the route in `<meta name="mockup-prototype">` and holds its regions, each found on the route by its `data-select`, its steps with the actions that reach each, and its questions (`spec-chat-shape`'s `references/authoring.md`), and the product's code carries nothing of Spec Chat's. Its page frames the route at the lane's prototype origin, at desktop and phone width, held, every element a comment target; a comment names its region (or the frame) and the step, and resolves on the route as it now runs: its `place` line gives the region's anchor and the comment's quote, which you find on the route by the region's selector. Each round's videos sit in the mockup's spool, `<mockup>.review/videos/<commit>-desktop.webm` and `<commit>-phone.webm`, each with its `.vtt` captions beside it; the lane's recorder writes them, the page shows the newest round's under the frames and each older one under Earlier rounds. A comment on a round's video names it by its round and viewport, anchor `round-<commit>-<desktop|phone>`, target `video[1]`, with its `moment` and any `box` (`references/event-schema.md`).
+
+Accept spec on a spec with a mockup set accepts the set with it: its hand-off, in the spec's spool, names each mockup and the version its page showed (`mockups`, `references/event-schema.md`). For each, the scan's stderr adds `accept <event-filename> <mockup path> <version>`; `<version>` is the SHA-256 of the mockup page as served, the version the spec page was told, or for a prototype mockup the round's commit; `<mockup>.review/versions/<version>.html` holds that page only if the mockup page was served at it. A caller's receipt for the spec at a commit covers the set's files at that commit, and each prototype mockup's route and components in the product at that commit; a mockup has no acceptance of its own.
+
+## The spec dialect (how to edit)
+
+- The spec HTML IS the canonical document. One sentence per line in prose; stable `data-anchor` attributes on every block, never remove or rename them (pins anchor to them).
+- Visual state lives in semantic islands: `<script type="application/spec+json" data-render="chart" data-lib="echarts">` with pretty-printed JSON, rendered into a sibling `[data-render-target]`. Edit the island JSON, not rendered output. Pretty-printing is what makes your string-match edits land unambiguously; keep it.
+- New meaningful elements get sensible anchors; new sections get `data-anchor` + an `<h2>`.
+
+## Material edit gate
+
+`spec-chat-review` owns the conversation and spool transaction, not material authoring quality.
+When a handed-off batch is material, `spec-chat-shape` becomes a required co-skill before the first file edit.
+Read its authoring reference and reassess the complete affected page before the material batch's replies; the human reviewer is the visual gate.
+For each changed user-facing story, evaluate whether its guided-journey yes/no declaration is semantically correct; for yes, also evaluate the linked step, passive/required mode, and required-flow success milestone. Structural validation does not decide these meanings.
+For every new or materially revised governing HTML spec with `data-spec-contract="shaped-sections-v1"`, run the shaping validator before reply or handoff. It must find exactly one visible `User stories`, `Acceptance criteria`, and `Modular boundaries` section, in that order, with anchored observable acceptance and boundary fields. A validator failure blocks review.
+Do not grandfather a weak existing page, preserve a poor layout merely to minimize the diff, or call a material expansion review-only.
+If `spec-chat-shape` is unavailable, leave the batch durable and stop before editing rather than silently using the review-only path.
+
+## Anchors in events
+
+`anchorId` names the block; `target` narrows to an element within it:
+- `{"type":"datum","key":"enqueue"}`: a chart mark; grep the key in the island JSON
+- `{"type":"axis-y","key":"800"}` / `{"type":"target","key":"800"}`: axis ticks / markLines
+- `{"type":"element","key":"p[2]"}`: 2nd `<p>` within the anchored block (structural path = source location, since the spec is the source file)
+- `{"type":"text","key":"<quote>"}`: a text selection; the quote tells you the passage
+
+If an anchor or target no longer exists (the spec moved under the pin), reply with `status: "orphaned"`, quoting the event's stored quote; do not guess at intent.
+
+## Statuses
+
+Every new human comment, follow-up reply, or edit is `draft` → (hand-off) → `pending` → your reply to that exact message id makes the thread `acknowledged` → the human resolves (a `status` event with `resolved`). You never mark threads resolved yourself; you propose it.
+
+A resolved thread remains expandable. When its latest message is from the agent, the browser offers **Reply and reopen**. Saving that response writes the existing human `reply` event and naturally derives `draft`; there is no reopen status or new event type.
+
+If a hand-off remains unacknowledged past the existing timeout, the browser states that automatic wake did not occur and instructs the human to send a new chat message to resume.
+
+When every thread of the spec and its mockups is resolved and no open TBD remains in the spec or its mockups' questions (any `data-spec-tbd` whose value is not `later`), the no-draft action becomes **Accept spec**, spec acceptance (formerly called Finish review). It writes the existing empty hand-off, which for a spec with a mockup set names each mockup and its version (`## Mockups`). Reconcile it and settle any final durable change. Run `scripts/review-host.py reviewed --id <resource id>`; it records no acceptance, since that hand-off in the spool is Spec Chat's only view of the acceptance. Record it in no Spec Chat file; the spec carries no Status line or acceptance mark, and a caller that keeps acceptances quotes that hand-off in its own record. Advance the exact cursor. Never change an accepted spec's meaning without a new human review; directed edits the accepted spec itself calls for, and markup-only changes a validator requires, are delivery, and stay changes since the reviewed version until the next human review. Every sent hand-off, a comment batch or spec acceptance, is a human spec review. Spec acceptance is the spool fact for delivery approval under the reviewed canonical spec; host rows remain until lane teardown. It does not accept an implementation PR, approve a merge, promote to preproduction, or approve live traffic.
+
+## Event schema
+
+Full field-by-field reference for reading and writing the spool: `references/event-schema.md`. Read it rather than reverse-engineering the schema from `runtime.js`.
+
+## Per-CLI attachment
+
+The loop is identical on every CLI. Read `references/cli-adapters.md` before selecting `turn-yielded`, `host-wake`, or `manual-resume`.
+
+## Git-derived focus
+
+Prompt-first shaping opens the HTTP page with `focus=changes&base=<exact-local-review-base>`. An explicit base is the exact selected snapshot, including a previously reviewed sibling branch. Pin its resolved commit in the review URL. The runtime reads baseline HTML through the review server, compares stable current anchor signatures, keeps added or modified current blocks clear, and recedes unchanged current blocks. A new spec remains entirely clear. A normal URL renders every block at normal clarity. Only automatic base discovery uses a merge base.
+
+When the selected base does not contain a spec, the baseline response keeps the selected commit in `base` and returns null for both `htmlBase` and `html`; the complete current spec is new.
+
+Before handing off the review, verify the served source and comparison:
+
+```sh
+python3 scripts/verify-review.py <repository> <spec-html> '<review-url>' <exact-review-base>
+```
+
+The read-only check compares served page bytes with the local file plus the meta the service adds, and baseline HTML with local files and Git, and fails on a substituted baseline or wrong served page. It does not require both changed and unchanged blocks. Reuse a verified host while its collection and owner remain unchanged; rerun the byte check after source or baseline changes.
+
+The review server reads only local Git. It never fetches, checks out, stages, commits, or writes repository state. If no baseline is available, the browser shows a visible warning and the complete current spec without stale focus.
+
+The highlighted current spec is the diff viewer. Added or modified root blocks carry a runtime-owned focus boundary that remains visible across custom page styles; unchanged context recedes but stays readable. Do not require pull-request review, a side-by-side page, deleted-content ghosts, issue metadata, anchor lists, or a stored focus manifest.
+
+## Transports (agent side is identical)
+
+You only ever read and write spool files; the transport is the browser's problem. Two situations you may need to set up:
+
+Whichever transport is in play, host the spec with `assets/review-serve.py`.
+Do not substitute `python3 -m http.server` or another static file server: it serves the page but provides no annotation spool, no `/api/baseline`, no capability check, and no review URL contract, so the review layer silently never works.
+
+- **Local browser, same machine**: nothing to run; the page connects to the folder directly (file:// + FSA). Browser security does not reliably persist write permission. When an IndexedDB handle returns `prompt`, the runtime shows **Resume review** and requests write permission on the already-selected handle; **Choose different folder** remains a separate picker fallback for a moved tree, wrong prior scope, or Chromium shell that does not surface the regrant prompt. Chromium can follow the native directory picker with a separate **Allow this site to edit files?** browser window; the runtime must name that step and visibly wait for it because shells such as Arc may not layer it over the spec window. The grant accepts ANY ancestor folder of the spec: pick it in the dialog or drag it from Finder onto the page; the runtime walks down to the spec's folder itself and remembers the ancestor. Caveats: Chromium refuses grants on the top-level roots themselves (home, Documents, Desktop, Downloads; children beneath them are fine), so suggest a workspace/projects folder one level down; if the granted tree contains two same-named specs at matching sub-paths the runtime refuses to guess and asks for a narrower grant. The spec's exact path also lands on the clipboard when the picker opens (⌘⇧G + paste in the macOS panel). If the user wants zero prompts or uses Safari or Firefox, run `assets/review-serve.py` on loopback; the HTTP transport auto-connects. The served folder need not be a Git repository: outside Git the folder itself is the collection and comments, replies, and hand-offs work, while the compared range and issue focus report unavailable. The server refuses broad roots (`/`, volume roots, home or its ancestors, home Desktop/Documents/Downloads, a repository root, or a non-Git folder containing a repository).
+- **Remote browser**: register with the lane command (`## Remote hosting lifecycle`). It joins its Herdr session's review service, which keeps one `registry.toml` with a `[process]` table (pid, port, bind, host, commit, the commit its clone's code was at as it started, url, and when set public_base, unit, and the public_bind and public_host kept while an HTTPS base holds it on loopback) and resource rows, serves `assets/review-serve.py`, and checks exact resource bytes plus `/api/baseline` before printing the URL. Exposure is box setup's: a private service prints the `ssh -L <port>:127.0.0.1:<port> <box>` tunnel; a public one, or one behind an HTTPS public base, warns that anyone who can reach it can read and comment without logging in. A live service is reused unchanged. Use `remove` to delete a resource row.
+
+## Scaffolding spec-chat into a repo
+
+The skill is self-contained: `assets/` carries the browser runtime (`viz/runtime.js` + vendored ECharts) and the remote-transport server (`review-serve.py`). If the target repo has no spec-chat infrastructure yet:
+
+1. Create `docs/specs/` and `docs/adr/` at the repo root. Copy `assets/viz/` to `docs/specs/.viz/` (runtime + vendor, committed with the repo; vendoring is deliberate: specs must render without network). Put shared visual-spec styles in `docs/specs/.style/` when the collection uses them.
+2. Gitignore the spools: add `*.review/` to `.gitignore`.
+3. Reference shared assets relative to the page: a root `docs/specs/*.spec.html` page uses `<script defer src="./.viz/runtime.js">`; a nested page such as `docs/specs/domains/*.spec.html` uses `../.viz/runtime.js`; and `docs/adr/*.spec.html` uses `../specs/.viz/runtime.js` (plus the equivalent `.style/` path). The runtime is a classic script, never `type="module"` (browsers CORS-block module scripts on `file://`, which is the primary local transport).
+
+Before every initial or resumed review, run the self-contained compatibility preflight from this skill:
+
+```
+python3 scripts/preflight.py <target-repository-root> <spec-html>
+```
+
+Preflight preserves a target runtime that declares every capability required by the current bundle.
+It replaces only an incompatible runtime from the bundle, including vendored visual dependencies, and rejects semantic islands without a same-parent `data-render-target`.
+It never writes a review server into the target: every launch runs this skill's own `assets/review-serve.py`, directly on loopback or through `scripts/review-host.py`.
+Treat a preflight failure as a review blocker.
+A migration is its own commit, never mixed into a feature commit: in a Git target, preflight commits it alone, touching only the shared runtime assets, and prints `migration=<commit>`.
+The hand-off names that commit.
+It ships inside the same change as the feature, never as a separate change or an earlier merge to the target's main branch.
+If the server was already running when runtime migration occurred, restart it through
+review-host stop and the lane command, then rerun host checks before handoff. This is a
+runtime change; ordinary edits to a served spec do not require a restart.
+
+**Exception, module-loading migration**: if an existing repo's runtime is loaded with `<script type="module">` (or its `runtime.js` still contains `import.meta.url`), it predates the classic-script fix and is broken on `file://` (browsers CORS-block module scripts there; the annotation layer silently never loads). On contact, replace the vendored `.viz/runtime.js` with this skill's copy and switch every page to a classic `<script defer>` tag using the correct relative path described above.
+
+## Starting a review when asked
+
+1. Confirm the page exists, run `scripts/preflight.py`, and identify the shared collection root (normally the repository's `docs/` directory, not the page's immediate `docs/specs/`, `docs/specs/<domain>/`, or `docs/adr/` directory; use the narrowest common ancestor for a legacy or explicitly different layout).
+2. Start `assets/review-serve.py` when HTTP review is required. For remote review, register with the lane command; exposure is box setup's. Verify the served runtime advertises the required capabilities and `/api/baseline` succeeds for the exact page and review base. Keep that server and URL through ordinary edits, rerunning exact served-byte and `/api/baseline` checks for the same base after each edit. Restart only for a root, collection, process, port, runtime, or ownership change, or when the server is dead.
+3. Present the verified review URL. For a private page on another machine, also give the printed `ssh -L` tunnel. Do not hand back a GitHub link.
+4. On both an initial start and any resumed/reconnected turn, run `scripts/watch-specs.sh <spec-root> .cursor-owner 0 3`; drain, reply, and cursor each ready batch, then repeat until exit 3.
+5. After reconciliation is empty, establish `turn-yielded`, verified `host-wake` through the lane command, or `manual-resume` through `scripts/review-control.sh`.
+6. State the selected control state truthfully. Never say watching, attached, or active after final unless `host-wake` is verified.
+
+## Mobile review contract
+
+The HTTP review transport supports phone and tablet annotation as a first-class
+surface. At narrow viewports the toolbar must stay inside the visual viewport,
+all review controls must provide at least a 44px touch target, textareas must use
+at least 16px text to avoid browser input zoom, and the review panel must use a
+safe-area-aware full-viewport sheet without shifting the spec sideways.
+
+Entering Comment mode on a narrow viewport closes the sheet so the human can tap
+the document target. Tapping an anchored target then reopens the sheet with the
+composer focused. Preserve this target-first sequence when changing panel or
+toolbar behavior; a full-screen sheet that remains open during target selection
+makes mobile annotation impossible.
+
+The mobile toolbar keeps Hand off beside Comment. It stays disabled with no
+drafts, displays the current draft count, and emits the same handoff event as the
+panel action.
+
+Prefer a page viewport declaration containing
+`width=device-width, initial-scale=1, viewport-fit=cover`. The runtime still
+contains itself when `viewport-fit=cover` is absent, but the declaration lets its
+safe-area padding protect controls on notched devices.
+
+If asked only for **status** (no review mode), read the spool, summarize threads by status, and don't edit anything.
+
+## Get out of the terminal: visual-first
+
+When the user asks to see, understand, or walk through a spec ("what's in this spec?", "walk me through it"), don't answer with a terminal summary: the whole point of spec-chat is that the spec is better experienced rendered. Set up the visual surface (open the file locally, or start the review host if remote), start review mode, and offer to have the conversation in-page: they can pin questions on the elements they're asking about and your walkthrough arrives as replies anchored to the exact marks. A terminal summary is the fallback when the user can't open a browser, not the default.

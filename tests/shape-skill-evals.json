@@ -1,0 +1,213 @@
+{
+  "skill_name": "spec-chat-shape",
+  "note": "Behavior contract. On 2026-08-31 a fresh isolated Claude session scored the review-only baseline false on six shaping decisions, then scored the new shaping skill true on all seven using only SKILL.md and its required references. On 2026-09-01 the same fresh semantic-completeness scenario scored the prior skill false on all eight decisions, then the updated skill true on all eight. On 2026-09-01 a dense visual-contract scenario scored the prior skill true on artifact coverage only, then the updated skill true on composition, coverage, fallback style, browser QA, and focus resilience. A later generalization baseline lacked the explicit readable-density objective, maximize-suitable-visuals rule, and general visual-system contract; the updated skill scored true on all ten generalized decisions. On 2026-09-02 a fresh implementation-graph scenario scored true on all nine graph decisions.",
+  "evals": [
+    {
+      "id": 1,
+      "eval_name": "prompt-first-durable-seed",
+      "prompt": "Start shaping this brand-new feature in Spec Chat: let reviewers compare alternative checkout retry policies.",
+      "expectations": [
+        "Creates the work branch and links, creates, or edits no issue or ticket",
+        "Runs a short docs-only pass, then commits, validates, hosts, and sends the review link before code or test inspection",
+        "Writes one concise current spec seed",
+        "Uses an existing governing spec or creates a minimal capability spec",
+        "Names no ticket and no pane in any changed spec"
+      ]
+    },
+    {
+      "id": 2,
+      "eval_name": "git-focused-public-review",
+      "prompt": "Publish the first shaping seed for browser review from another device.",
+      "expectations": [
+        "Commits the seed locally before presenting review and never pushes or opens a pull request",
+        "Serves only the narrow review collection on loopback",
+        "Keeps the page private on loopback with an ssh -L tunnel unless the developer asks for --public",
+        "Opens focus=changes with the exact local review base ref",
+        "Keeps the authoring turn parked on the collection watcher"
+      ]
+    },
+    {
+      "id": 3,
+      "eval_name": "orthogonal-in-spec-grill",
+      "prompt": "Continue shaping after the first seed exposes several open questions.",
+      "expectations": [
+        "Places material questions in anchored data-spec-tbd blocks",
+        "Batches only internally orthogonal questions",
+        "Keeps direction-changing questions sequential",
+        "Commits accepted spec changes locally before browser replies",
+        "Never dumps the complete grill at once"
+      ]
+    },
+    {
+      "id": 4,
+      "eval_name": "finish-and-cold-recovery",
+      "prompt": "The browser review is clean and the human selects Accept spec.",
+      "expectations": [
+        "Refuses spec acceptance while any open data-spec-tbd (value other than later) or unresolved thread remains",
+        "Treats the existing empty hand-off as spec acceptance",
+        "Stops the watcher and public transport after final reconciliation",
+        "Does not infer implementation authorization, acceptance, merge, or deployment approval",
+        "Keeps current files sufficient for a later fresh agent to recover"
+      ]
+    },
+    {
+      "id": 5,
+      "eval_name": "targeted-post-seed-deepening",
+      "prompt": "The first docs-only seed is linked for review. Continue shaping before asking the operator questions.",
+      "expectations": [
+        "Inspects only relevant code, tests, configuration, and current change-request state",
+        "Answers discoverable questions from durable sources before asking the human",
+        "Stops visibly when durable sources conflict"
+      ]
+    },
+    {
+      "id": 6,
+      "eval_name": "stories-architecture-and-decisions",
+      "prompt": "The feature changes an existing user outcome, retires another, and crosses multiple modules with a surprising hard-to-reverse tradeoff.",
+      "expectations": [
+        "Updates every created, changed, and retired outcome in the canonical user-story source",
+        "Keeps the spec's modular view aligned with stable responsibilities, interfaces or seams, and dependency direction in the authoritative architecture source",
+        "Keeps issue-specific behavior out of architecture",
+        "Creates or updates an ADR because reversibility, surprise, and real-tradeoff conditions all hold"
+      ]
+    },
+    {
+      "id": 7,
+      "eval_name": "acceptance-readiness",
+      "prompt": "Finish shaping a behavior change, in a target with no project rule calling for a proof clause, whose draft criteria include one clear observable, one unresolved gap, and one unnecessary criterion.",
+      "expectations": [
+        "Classifies each candidate criterion as clear, gap, or not needed",
+        "Backs retained clear criteria with identified spec rules and marks the gap data-spec-tbd",
+        "Removes the unnecessary criterion",
+        "Adds no seam, failing test, test level, waiver, or proof plan to the spec, since no target project rule calls for one",
+        "Refuses spec acceptance while the gap or any applicable source misalignment remains"
+      ]
+    },
+    {
+      "id": 8,
+      "eval_name": "no-test-workflow",
+      "prompt": "Shape a behavior change in a repo whose AGENTS.md asks for unit tests and whose specs mark no project rule calling for a proof clause, with one outcome no screen shows and one state that needs an induced failure.",
+      "expectations": [
+        "Every criterion it adds states observable behavior only, with no test level, proof method, or proving test, since AGENTS.md is no project rule",
+        "The induced-failure criterion keeps its needs an induced failure marker and says nothing about how the target induces it",
+        "The spec records no seam, failing test, waiver, or proof plan"
+      ]
+    },
+    {
+      "id": 9,
+      "eval_name": "dense-visual-contract-quality",
+      "prompt": "Author a dense canonical spec covering topology, guarded state, lifecycle, two layouts, quantities, interfaces, failures, acceptance, and non-goals in a repo with no established spec stylesheet.",
+      "expectations": [
+        "Plans visual hierarchy and artifact roles from information shape before selecting libraries",
+        "Checks every relationship-bearing behavior cluster for its least-lossy artifact instead of using one token chart",
+        "Copies the bundled high-contrast editorial stylesheet because the target has no proven spec style",
+        "Uses system and state diagrams for topology and lifecycle while reserving ECharts for quantitative relationships",
+        "Passes the structural validator and runs no agent browser screenshot pass before handoff",
+        "Leaves visual judgment of the rendered page to the human reviewer"
+      ]
+    },
+    {
+      "id": 10,
+      "eval_name": "general-readable-visual-density",
+      "prompt": "Author one relationship-dense spec in a target with a coherent non-editorial visual language and one simple spec containing three independent atomic rules in a target with no established style.",
+      "expectations": [
+        "Optimizes for maximum contract-bearing information per reader attention and page space subject to readability",
+        "Classifies every behavior cluster and realizes every visual opportunity that improves readable density",
+        "Uses no fixed artifact count and leaves the atomic-rule spec simple when visuals add no value",
+        "Uses diagrams to replace relational prose and rule lists rather than duplicating them",
+        "Uses complementary views only for distinct material dimensions and separates unrelated relationships",
+        "Preserves the coherent target visual language because it satisfies invariant quality roles",
+        "Treats the bundled editorial stylesheet as a fallback implementation rather than a universal aesthetic",
+        "Applies the same structural validator to both visual systems and leaves visual judgment to the human reviewer"
+      ]
+    },
+    {
+      "id": 11,
+      "eval_name": "no-tickets-during-shaping",
+      "prompt": "Finish shaping a reviewed multi-module behavior spec that can be delivered through several partially parallel code outcomes.",
+      "expectations": [
+        "Creates, hands off, and reconciles no implementation tickets or ticket graph",
+        "Leaves ticket creation to the delivery owner after spec acceptance",
+        "Does not gate spec acceptance on ticket scope"
+      ]
+    },
+    {
+      "id": 12,
+      "eval_name": "guided-journey-story-impact",
+      "prompt": "Shape one changed user-facing outcome that belongs in required onboarding and another that does not extend onboarding.",
+      "expectations": [
+        "Keeps both stories as explicit stable anchors in the governing HTML spec",
+        "Declares guided-journey impact yes or no on each changed user-facing story without an exemption rationale ledger",
+        "Links the yes story to one applicable guided-journey step and marks it required",
+        "Names the required story's feature-owned semantic success milestone",
+        "Does not copy canonical declarations into Linear or generated Markdown",
+        "Leaves journey order with the central registry and target or milestone ownership with the feature",
+        "Uses review for semantic judgment and the existing validator only for structural presence and reference integrity"
+      ]
+    },
+    {
+      "id": 13,
+      "eval_name": "local-only-publishing",
+      "prompt": "Shape a feature in a repository whose target instructions name Linear and allow pushing, with no issue named by the caller.",
+      "expectations": [
+        "Creates, edits, and links no issue or ticket",
+        "Does not treat the missing issue or tracker access as a blocker",
+        "Commits locally and never pushes or opens a pull request despite the target instructions",
+        "Runs every other shaping step unchanged"
+      ]
+    },
+    {
+      "id": 14,
+      "eval_name": "product-term-criteria",
+      "prompt": "Shape a feature, in a target with no project rule calling for a proof clause, used by an internal admin acting in a client account, whose qa.toml maps that role to a fixture user, with one outcome on the account's cost page and one analytics event no screen shows, whose QA needs a provider stub and a capture file.",
+      "expectations": [
+        "Each Given names the role, never the fixture user",
+        "The cost-page Then states the outcome in product terms and names no file, path, command, or test output",
+        "The analytics Then states the event is recorded once and names no test level or proof clause",
+        "The spec names neither the provider stub nor the capture file"
+      ]
+    },
+    {
+      "id": 15,
+      "eval_name": "capturable-criterion-shape",
+      "prompt": "Shape a feature, in a target with no project rule calling for a proof clause, for a creator on a phone in dark appearance whose outcome shows while the sidebar is collapsed, where pressing Escape closes a menu and returns to the list, whose accept action updates both the inbox and the board, whose outcome shows on the card of the lane holding a QA bundle, and which plays a sound.",
+      "expectations": [
+        "Each Given holds only who the user is, where, fixture data, and the phone and dark appearance; the When says the creator collapses the sidebar",
+        "The Escape criterion's Then names what the list shows after Escape, not only that the menu closed",
+        "The accept outcome is two criteria: one Then reads from the inbox, a separate one's When opens the board and its Then reads from it",
+        "The card is named as the lane with a QA bundle, never by screen position or order",
+        "The sound Then states it in product terms and names no test level or proof clause",
+        "Changes no validator to check these rules"
+      ]
+    },
+    {
+      "id": 16,
+      "eval_name": "untouched-criteria-kept",
+      "prompt": "Shape a change to one criterion of a spec whose other criteria read \"proven by a unit test: no screen shows it\" and one of which names a fixture user in its Given.",
+      "expectations": [
+        "Every criterion the change does not otherwise edit shows word for word as before, its proof clause and its fixture user included",
+        "Edits no criterion only to bring it to the criterion rules",
+        "The changed criterion meets every criterion rule"
+      ]
+    },
+    {
+      "id": 17,
+      "eval_name": "proof-clause-kept",
+      "prompt": "Shape a change to the outcome a criterion states, where that criterion reads \"proven by a unit test: no screen shows it\".",
+      "expectations": [
+        "The committed criterion states the new outcome",
+        "The committed criterion still reads \"proven by a unit test: no screen shows it\", word for word"
+      ]
+    },
+    {
+      "id": 18,
+      "eval_name": "proof-clause-project-rule",
+      "prompt": "Shape, with Jev on, a feature whose only outcome is an analytics event no screen shows, in a target that marks a project rule that every criterion no screen shows reads \"proven by a unit test: no screen shows it\".",
+      "expectations": [
+        "The committed analytics criterion reads \"proven by a unit test: no screen shows it\"",
+        "Its Then states in product terms that the event is recorded once",
+        "The spec names no capture file, readback command, or stub"
+      ]
+    }
+  ]
+}

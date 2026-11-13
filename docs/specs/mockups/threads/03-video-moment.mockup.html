@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-design-source" content="skill/review-spec/assets/viz/runtime.js@495bc8f5b skill/shape-spec/assets/style/spec.css@5de1bcc8a design-set.toml@553b61008 docs/specs/spec-page-design.spec.html@ae1f4b146 DESIGN.md@eb97aaac4">
+<title>Comment on a video moment - mockup</title>
+<style>
+  /* Design source: the pinned design set's tokens as runtime.js builds them in (design-set.toml pins the set), the
+     runtime's ui tokens, and spec.css's --spec-* document values, each by its name and value. Every rule sits under a
+     frame or on a class used only inside one (rv-), so the review page's own chrome is never restyled. */
+  [data-mockup-frame] {
+    --ui-page: #ffffff; --ui-surface: #ffffff; --ui-surface-soft: #f5f5f5; --ui-ink: #333333; --ui-muted: #525252;
+    --ui-muted-soft: #eeeeee; --ui-border: #dfdfdf; --ui-action: #1d4ed8; --ui-action-soft: #eff3ff;
+    --ui-link: var(--ui-action); --ui-focus: var(--ui-action); --ui-pass: #005c32; --ui-pass-soft: #e6efea;
+    --ui-fail: #a5000f; --ui-fail-soft: #f6e6e7; --ui-attention: #b0540e; --ui-attention-soft: #faf4ef;
+    --ui-font: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --ui-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --ui-text-xs: 12px; --ui-text-ui: 13px; --ui-text-sm: 14px; --ui-text-md: 16px; --ui-text-lg: 20px; --ui-text-xl: 24px; --ui-text-2xl: 30px;
+    --ui-weight-regular: 400; --ui-weight-medium: 500; --ui-weight-semibold: 600;
+    --ui-space-1: 4px; --ui-space-2: 8px; --ui-space-3: 12px; --ui-space-4: 16px; --ui-space-5: 24px; --ui-space-6: 32px;
+    --ui-radius-sm: 6px; --ui-radius: 8px; --ui-radius-pill: 999px; --ui-focus-width: 2px; --ui-focus-offset: 2px;
+    --ui-motion-duration: 150ms; --ui-motion-ease: ease-out;
+    --ui-draft: var(--ui-attention); --ui-draft-soft: var(--ui-attention-soft); --ui-ack: var(--ui-action); --ui-ack-soft: var(--ui-action-soft);
+    --ui-resolved: var(--ui-pass); --ui-resolved-soft: var(--ui-pass-soft); --ui-error: var(--ui-fail);
+    --ui-marker: #767b85; --ui-marker-important: #d1242f; --ui-marker-pass: #1a7f37; --ui-on-marker: #ffffff; --ui-marker-warning: #e5534b;
+    --ui-pin-ring: rgba(176, 84, 14, 0.25); --ui-shadow: rgba(51, 51, 51, 0.14); --ui-veil: rgba(0, 0, 0, 0.42);
+    --spec-paper: #ffffff; --spec-ink: #333333; --spec-body: #333333; --spec-muted: #525252; --spec-focus-context: #525252;
+    --spec-hairline: #dfdfdf; --spec-blue: #1d4ed8;
+    --spec-font: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --spec-text-meta: 12px; --spec-text-small: 14px; --spec-text-lede: 16px; --spec-text-heading: 24px; --spec-text-display: 30px;
+    --spec-weight-regular: 400; --spec-weight-semibold: 600;
+  }
+  @media (prefers-color-scheme: dark) {
+    [data-mockup-frame] {
+      --ui-page: #1a1a1a; --ui-surface: #242424; --ui-surface-soft: #2a2a2a; --ui-ink: #e0e0e0; --ui-muted: #999999;
+      --ui-muted-soft: #2e2e2e; --ui-border: #3a3a3a; --ui-action: #7896ef; --ui-action-soft: #1a2040; --ui-pass: #3daa6e;
+      --ui-pass-soft: #1a2e22; --ui-fail: #ffb4ab; --ui-fail-soft: #2e1a1c; --ui-attention: #e5873a; --ui-attention-soft: #2e2218;
+      --ui-pin-ring: rgba(229, 135, 58, 0.25); --ui-shadow: rgba(0, 0, 0, 0.4); --ui-veil: rgba(0, 0, 0, 0.6);
+      --spec-paper: #1a1a1a; --spec-ink: #e0e0e0; --spec-body: #e0e0e0; --spec-muted: #999999; --spec-focus-context: #999999;
+      --spec-hairline: #3a3a3a; --spec-blue: #7896ef;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-mockup-frame] { --ui-motion-duration: 0ms; }
+  }
+
+  /* the frame: a spec page served by a review service, its chrome the runtime's (CSS const) */
+  [data-mockup-frame] { box-sizing: border-box; position: relative; overflow: hidden; background: var(--spec-paper); color: var(--spec-body);
+                        font: var(--spec-weight-regular) 15px/1.6 var(--spec-font); }
+  [data-mockup-frame="desktop"] { width: 1440px; }
+  [data-mockup-frame="phone"] { width: 390px; }
+  [data-mockup-frame] *, [data-mockup-frame] *::before, [data-mockup-frame] *::after { box-sizing: border-box; }
+  [data-mockup-frame] :focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  /* the button system (spec-page-design #button-system): primary, secondary, icon, text link */
+  .rv-btn { font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); color: var(--ui-ink); background: var(--ui-surface);
+            border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); min-height: var(--ui-space-6); margin: 0;
+            padding: var(--ui-space-2) var(--ui-space-3); white-space: nowrap; cursor: pointer;
+            transition: background var(--ui-motion-duration) var(--ui-motion-ease), color var(--ui-motion-duration) var(--ui-motion-ease); }
+  .rv-btn:hover { background: var(--ui-surface-soft); }
+  .rv-btn:active { background: var(--ui-muted-soft); }
+  .rv-btn:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .rv-btn:disabled { cursor: default; opacity: .45; }
+  .rv-btn:disabled:hover { background: var(--ui-surface); }
+  .rv-pri:disabled:hover { background: var(--ui-ink); border-color: var(--ui-ink); }
+  .rv-pri { background: var(--ui-ink); color: var(--ui-page); border-color: var(--ui-ink); }
+  .rv-pri:hover { background: var(--ui-muted); border-color: var(--ui-muted); }
+  .rv-pri:active { background: var(--ui-ink); }
+  .rv-text { border-color: transparent; background: transparent; }
+  .rv-icon { width: var(--ui-space-6); height: var(--ui-space-6); padding: 0; display: grid; place-items: center; color: var(--ui-muted); }
+  .rv-icon:hover { background: var(--ui-page); color: var(--ui-ink); }
+  [data-mockup-frame="phone"] .rv-btn { min-height: 44px; }
+  [data-mockup-frame="phone"] .rv-icon { width: 44px; height: 44px; }
+  /* top line (spec-page-design #top-line): the index link and the range bar on the page color over a hairline */
+  .rv-top { position: absolute; top: 0; left: 0; right: 0; z-index: 8; display: flex; align-items: flex-start; gap: var(--ui-space-3);
+            padding: var(--ui-space-1) var(--ui-space-4); background: var(--ui-page); border-bottom: 1px solid var(--ui-border);
+            color: var(--ui-ink); font: var(--ui-text-sm)/1.4 var(--ui-font); }
+  [data-mockup-frame="desktop"] .rv-top.rv-beside-panel { right: 330px; }
+  .rv-index { flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--ui-space-1); min-height: var(--ui-space-6);
+              border-radius: var(--ui-radius-sm); color: var(--ui-ink); font: var(--ui-weight-medium) var(--ui-text-xs)/1 var(--ui-font); text-decoration: none; }
+  .rv-index:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .rv-index svg { color: var(--ui-muted); }
+  .rv-range { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--ui-space-2); }
+  .rv-range-copy { flex: 1 1 auto; min-width: 0; margin: 0; color: var(--ui-muted); overflow-wrap: anywhere; }
+  .rv-range-copy code { font: var(--ui-weight-medium) var(--ui-text-sm) var(--ui-mono); color: var(--ui-ink); }
+  .rv-change { border: none; background: transparent; }
+  [data-mockup-frame="phone"] .rv-top { flex-wrap: wrap; gap: 0 var(--ui-space-2); padding: 0 var(--ui-space-2) var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-index { min-height: 44px; padding: 0 var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-range { flex: 1 1 100%; padding: 0 var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-range-copy { font-size: var(--ui-text-xs); }
+  [data-mockup-frame="phone"] .rv-range-copy code { font-size: var(--ui-text-xs); }
+  [data-mockup-frame="phone"] .rv-change { position: absolute; top: 0; right: var(--ui-space-2); }
+  /* the document (spec.css): one calm page from the set's values */
+  .rv-doc { width: min(1080px, calc(100% - 48px)); margin: 0 auto; padding: 81px 0 120px; }
+  [data-mockup-frame="desktop"] .rv-doc.rv-beside-panel { width: 1062px; margin: 0 354px 0 24px; }
+  [data-mockup-frame="phone"] .rv-doc { width: calc(100% - 32px); padding: 90px 0 200px; }
+  .rv-doc p { max-width: 72ch; margin: 0 0 10px; }
+  .rv-doc .rv-crumbs { color: var(--spec-muted); font-size: var(--spec-text-meta); line-height: 1.5; }
+  .rv-doc h1 { max-width: 72ch; margin: 6px 0 12px; color: var(--spec-ink); font-size: var(--spec-text-display); font-weight: var(--spec-weight-semibold);
+               line-height: 1.2; letter-spacing: -0.01em; }
+  [data-mockup-frame="phone"] .rv-doc h1 { font-size: var(--spec-text-heading); }
+  .rv-doc .rv-section { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--spec-hairline); }
+  [data-mockup-frame="phone"] .rv-doc .rv-section { margin-top: 40px; }
+  .rv-doc h2 { margin: 0 0 12px; color: var(--spec-ink); font-size: var(--spec-text-heading); font-weight: var(--spec-weight-semibold); line-height: 1.25; letter-spacing: -0.01em; }
+  .rv-block { position: relative; }
+  .rv-doc .rv-block { max-width: 72ch; }
+  .rv-pinned { padding-right: var(--ui-space-6); }
+  [data-mockup-frame="phone"] .rv-pinned { padding-right: calc(var(--ui-space-6) + var(--ui-space-4)); min-height: 66px; }
+  /* an open TBD (prompt-first-shaping #finish-tbd-highlight): outlined in the draft color, a later one not */
+  .rv-tbd { transition: outline-color var(--ui-motion-duration) var(--ui-motion-ease); }
+  /* answer buttons in the document (#answer-buttons): the chrome's choice shape; chosen: pressed, checked, outlined */
+  .rv-answer { display: inline-block; min-height: var(--ui-space-6); margin: var(--ui-space-1) var(--ui-space-1) 0 0; padding: var(--ui-space-2) var(--ui-space-3);
+               border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill); background: var(--ui-surface); color: var(--ui-ink);
+               font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); cursor: pointer; }
+  .rv-answer:hover { background: var(--ui-surface-soft); }
+  .rv-answer:active { background: var(--ui-muted-soft); }
+  .rv-answer:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  [data-mockup-frame="phone"] .rv-answer { min-height: 44px; }
+  /* pins (spec-page-design #surface-pins): a teardrop in its status color, at the block's corner */
+  .rv-pin { position: absolute; right: 0; top: 0; z-index: 3; width: 24px; height: 24px; border-radius: 50% 50% 50% 4px; display: grid; place-items: center;
+            font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); font-style: normal; color: var(--ui-page); background: var(--ui-draft); box-shadow: 0 2px 8px var(--ui-shadow); }
+  .rv-pin.rv-ack { background: var(--ui-ack); }
+  .rv-pin.rv-done { background: var(--ui-surface); color: var(--ui-resolved); border: 2px solid var(--ui-resolved); }
+  [data-mockup-frame="phone"] .rv-pin { width: 44px; height: 44px; }
+  /* toolbar (spec-page-design #surface-toolbar): bottom center on a desktop; on a phone the bottom toolbar holding the
+     panel's one hand-off bar (#mobile-handoff) */
+  .rv-toolbar { position: absolute; z-index: 12; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: var(--ui-space-1); align-items: center;
+                white-space: nowrap; background: var(--ui-page); border: 1px solid var(--ui-border); border-radius: var(--ui-radius);
+                box-shadow: 0 8px 28px var(--ui-shadow); padding: var(--ui-space-1); font: var(--ui-text-sm) var(--ui-font); }
+  .rv-toolbar .rv-tool { border-color: transparent; background: transparent; }
+  .rv-toolbar .rv-tool:hover { background: var(--ui-surface-soft); }
+  .rv-toolbar .rv-tool[aria-pressed="true"] { background: var(--ui-draft-soft); color: var(--ui-draft); }
+  .rv-status { color: var(--ui-muted); font-size: var(--ui-text-xs); padding: 0 var(--ui-space-2); }
+  [data-mockup-frame="phone"] .rv-toolbar { left: var(--ui-space-3); right: var(--ui-space-3); bottom: 10px; transform: none; flex-wrap: wrap; white-space: normal; }
+  [data-mockup-frame="phone"] .rv-toolbar .rv-btn { flex: 1 1 auto; }
+  [data-mockup-frame="phone"] .rv-toolbar .rv-note { flex: 1 1 auto; }
+  [data-mockup-frame="phone"] .rv-toolbar .rv-status { flex: 1 0 100%; min-width: 0; padding: 0 var(--ui-space-2) var(--ui-space-1); text-align: center;
+                                                        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rv-note { font-size: var(--ui-text-xs); color: var(--ui-muted); }
+  /* thread dock (#surface-dock): top right under the top line, gone while the panel is open */
+  .rv-dock { position: absolute; z-index: 7; top: 53px; right: var(--ui-space-3); display: flex; flex-direction: column; gap: var(--ui-space-1);
+             padding: var(--ui-space-1); background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); }
+  .rv-dock .rv-icon { border: 1px solid var(--ui-border); background: var(--ui-surface); border-radius: var(--ui-radius-sm); }
+  .rv-dock .rv-thread { width: var(--ui-space-6); height: var(--ui-space-6); padding: 0; display: grid; place-items: center; font: var(--ui-weight-semibold) var(--ui-text-xs)/1 var(--ui-mono);
+                        border: 1px solid var(--ui-draft); color: var(--ui-draft); background: var(--ui-draft-soft); border-radius: var(--ui-radius-sm); }
+  .rv-dock .rv-thread.rv-ack { border-color: var(--ui-ack); color: var(--ui-ack); background: var(--ui-ack-soft); }
+  .rv-dock .rv-thread.rv-done { border-color: var(--ui-resolved); color: var(--ui-resolved); background: var(--ui-resolved-soft); }
+  .rv-dock-threads { display: flex; flex-direction: column; gap: var(--ui-space-1); border-top: 1px solid var(--ui-border); padding-top: var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-dock { top: 74px; right: var(--ui-space-2); }
+  [data-mockup-frame="phone"] .rv-dock .rv-thread { width: 44px; height: 44px; }
+  /* review panel (#surface-panel): 330px at the right on a desktop; the whole screen on a phone, over the bottom toolbar's space */
+  .rv-panel { position: absolute; z-index: 6; top: 0; right: 0; bottom: 0; width: 330px; display: flex; flex-direction: column; background: var(--ui-page);
+              color: var(--ui-ink); border-left: 1px solid var(--ui-border); font: var(--ui-text-sm) var(--ui-font); }
+  /* on a phone the open panel covers the top line and the dock, which the runtime hides, under the bottom toolbar */
+  [data-mockup-frame="phone"] .rv-panel { left: 0; width: auto; border-left: 0; padding-bottom: 136px; z-index: 11; }
+  .rv-head { position: relative; min-height: 44px; padding: var(--ui-space-3) 48px; border-bottom: 1px solid var(--ui-border); font-weight: var(--ui-weight-semibold); overflow-wrap: anywhere; }
+  .rv-head .rv-count, .rv-head .rv-sub { font-weight: var(--ui-weight-regular); font-size: var(--ui-text-xs); color: var(--ui-muted); }
+  .rv-head .rv-icon { position: absolute; top: var(--ui-space-2); border: 1px solid var(--ui-border); background: var(--ui-surface); }
+  .rv-head .rv-toggle { left: var(--ui-space-2); }
+  .rv-head .rv-gear { right: var(--ui-space-2); }
+  [data-mockup-frame="phone"] .rv-head { min-height: 56px; padding: var(--ui-space-4) 56px var(--ui-space-3); }
+  [data-mockup-frame="phone"] .rv-head .rv-icon { top: var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-head .rv-toggle { left: var(--ui-space-1); }
+  .rv-stream { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; gap: var(--ui-space-3);
+               padding: var(--ui-space-3) var(--ui-space-3) var(--ui-space-2); }
+  .rv-entry { display: flex; flex-direction: column; align-items: flex-start; gap: var(--ui-space-1); min-width: 0; }
+  .rv-entry.rv-me { align-items: flex-end; }
+  .rv-msg { display: flex; flex-direction: column; align-items: flex-start; gap: var(--ui-space-1); max-width: 86%; min-width: 0; }
+  .rv-me > .rv-msg, .rv-msg.rv-me { align-self: flex-end; align-items: flex-end; }
+  .rv-who { padding: 0 var(--ui-space-3); font: var(--ui-text-xs)/1.4 var(--ui-font); color: var(--ui-muted); }
+  .rv-bubble { position: relative; max-width: 100%; padding: var(--ui-space-2) var(--ui-space-3); border-radius: calc(2 * var(--ui-radius)); font: var(--ui-text-sm)/1.4 var(--ui-font); overflow-wrap: anywhere; }
+  .rv-me .rv-bubble { background: var(--ui-action); color: var(--ui-page); border-bottom-right-radius: var(--ui-radius-sm); }
+  .rv-them .rv-bubble { background: var(--ui-surface-soft); color: var(--ui-ink); border-bottom-left-radius: var(--ui-radius-sm); }
+  .rv-me .rv-bubble.rv-draft { background: var(--ui-action-soft); color: var(--ui-ink); box-shadow: inset 0 0 0 1px var(--ui-action); }
+  .rv-chip { max-width: 100%; padding: 0 var(--ui-space-2); border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill); background: var(--ui-page);
+             color: var(--ui-muted); font: var(--ui-text-xs)/1.6 var(--ui-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rv-replies { max-width: 100%; padding: 0 var(--ui-space-3); color: var(--ui-muted); font: var(--ui-text-xs)/1.5 var(--ui-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rv-replies b { color: var(--ui-ink); font-weight: var(--ui-weight-semibold); }
+  .rv-receipt { padding: 0 var(--ui-space-3); font: var(--ui-weight-semibold) var(--ui-text-xs)/1.5 var(--ui-font); color: var(--ui-draft); }
+  .rv-receipt.rv-ack { color: var(--ui-ack); }
+  .rv-receipt.rv-done { color: var(--ui-resolved); padding: 0; }
+  .rv-resolved-line { align-self: stretch; padding: var(--ui-space-1) var(--ui-space-3); border-top: 1px solid var(--ui-border); border-bottom: 1px solid var(--ui-border);
+                      color: var(--ui-muted); font: var(--ui-text-xs)/1.5 var(--ui-font); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rv-choices { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); margin-top: var(--ui-space-2); }
+  .rv-choice { min-height: var(--ui-space-6); margin: 0; padding: var(--ui-space-2) var(--ui-space-3); border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill);
+               background: var(--ui-surface); color: var(--ui-ink); font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); cursor: pointer; }
+  .rv-choice:hover { background: var(--ui-surface-soft); }
+  .rv-choice:active { background: var(--ui-muted-soft); }
+  .rv-choice:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .rv-choice.rv-words { border-color: transparent; background: transparent; }
+  [data-mockup-frame="phone"] .rv-choice { min-height: 44px; }
+  /* the panel's one hand-off bar: its note, Next TBD, and the action, primary rightmost */
+  .rv-handoff { display: flex; justify-content: flex-end; align-items: center; gap: var(--ui-space-1); padding: var(--ui-space-2) var(--ui-space-3); border-top: 1px solid var(--ui-border); }
+  .rv-handoff .rv-note { margin-right: auto; min-width: 0; white-space: nowrap; }
+  /* a new comment's composer, at the bottom of the conversation (#surface-composer): send primary rightmost, cancel left */
+  .rv-compose { display: flex; flex-direction: column; gap: var(--ui-space-1); padding: var(--ui-space-2) var(--ui-space-3); border: 1px solid var(--ui-border);
+                border-radius: var(--ui-radius); background: var(--ui-surface); }
+  .rv-anchor { font: var(--ui-text-xs) var(--ui-mono); color: var(--ui-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rv-field { display: block; width: 100%; min-height: 56px; margin-top: var(--ui-space-1); padding: var(--ui-space-1) var(--ui-space-2); border: 1px solid var(--ui-border);
+              border-radius: var(--ui-radius-sm); background: var(--ui-surface); color: var(--ui-ink); font: var(--ui-text-sm)/1.4 var(--ui-font); resize: none; }
+  .rv-field::placeholder { color: var(--ui-muted); }
+  .rv-field:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  [data-mockup-frame="phone"] .rv-field { min-height: 120px; padding: var(--ui-space-2) var(--ui-space-3); font-size: var(--ui-text-md); }
+  .rv-compose-actions { display: flex; justify-content: flex-end; gap: var(--ui-space-1); margin-top: var(--ui-space-1); }
+  /* toast (#surface-toast): the saved and handed-off notices */
+  .rv-toast { position: absolute; z-index: 13; bottom: 76px; left: 50%; transform: translateX(-50%); padding: var(--ui-space-2) var(--ui-space-4); border-radius: var(--ui-radius);
+              background: var(--ui-ink); color: var(--ui-page); font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); white-space: nowrap; box-shadow: 0 8px 28px var(--ui-shadow);
+              transition: opacity var(--ui-motion-duration) var(--ui-motion-ease); }
+  [data-mockup-frame="phone"] .rv-toast { bottom: 152px; max-width: calc(100% - 24px); white-space: normal; text-align: center; }
+
+  [data-mockup-frame] {
+    --spec-soft: #f5f5f5; --spec-code: #f5f5f5; --spec-rule: #dfdfdf; --spec-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --spec-weight-medium: 500; --spec-radius-sm: 6px; --spec-radius: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    [data-mockup-frame] { --spec-soft: #2a2a2a; --spec-code: #2a2a2a; --spec-rule: #3a3a3a; }
+  }
+
+  /* this screen's parts */
+  .rv-inline-handoff { display: contents; }
+  [data-mockup-frame="desktop"] .rv-panel { min-height: 100%; }
+  .rv-stream > *, .sp-focused-stream > * { flex-shrink: 0; }
+  .th-answer { align-self: stretch; }
+  /* an answer is this browser's reply under the agent's question: its bubble keeps this browser's side and color */
+  .th-answer .rv-me > .rv-bubble { background: var(--ui-action); color: var(--ui-page); border-radius: calc(2 * var(--ui-radius)); border-bottom-right-radius: var(--ui-radius-sm); }
+  .th-answer .rv-me > .rv-bubble.rv-draft { background: var(--ui-action-soft); color: var(--ui-ink); }
+  .rv-tbd-open { outline: 2px solid var(--ui-draft); outline-offset: var(--ui-space-1); }
+  /* a message's stage tag beside its author (threads #stage-tag) */
+  .th-stage { display: inline-block; margin-left: var(--ui-space-1); padding: 0 var(--ui-space-2); border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill);
+              background: var(--ui-page); color: var(--ui-muted); font: var(--ui-weight-medium) var(--ui-text-xs)/1.5 var(--ui-font); }
+  /* the waiting dot (threads #unread): on a thread's first message and its pin while the agent has the last word */
+  .th-dot { position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%; background: var(--ui-action); border: 2px solid var(--ui-page); pointer-events: none; }
+  .rv-pin .th-dot { top: -4px; right: -4px; }
+  .rv-bubble[role="button"] { cursor: pointer; }
+  .rv-bubble[role="button"]:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  /* a thread's chip and replies line are buttons (threads #root-chip, #replies-collapse) */
+  button.rv-chip { margin: 0; text-align: left; cursor: pointer; }
+  button.rv-chip:hover { color: var(--ui-ink); border-color: var(--ui-muted); }
+  button.rv-chip:focus-visible, button.rv-replies:focus-visible, .rv-resolved-line:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  button.rv-replies { margin: 0; border: 0; background: none; text-align: left; cursor: pointer; }
+  button.rv-replies:hover { text-decoration: underline; text-underline-offset: 2px; }
+  button.rv-resolved-line { margin: 0; background: none; border-left: 0; border-right: 0; cursor: pointer; }
+  .th-replies { display: flex; flex-direction: column; gap: var(--ui-space-1); align-self: stretch; }
+  .th-replies > .rv-msg.rv-them { align-self: flex-start; }
+  .th-replies > .rv-msg.rv-me { align-self: flex-end; }
+  /* the focused thread (threads #focus): its messages alone over the conversation dimmed; on a phone a sheet over the
+     screen's lower half, its spot ringed above it and the page dimmed around */
+  .sp-veil { position: absolute; inset: 0; z-index: 3; background: var(--ui-veil); }
+  .sp-focused { position: absolute; top: var(--ui-space-2); left: var(--ui-space-2); right: var(--ui-space-2); bottom: var(--ui-space-2); z-index: 4; display: flex; flex-direction: column;
+                background: var(--ui-page); color: var(--ui-ink); border: 1px solid var(--ui-border); border-radius: calc(2 * var(--ui-radius)); box-shadow: 0 12px 32px var(--ui-shadow);
+                font: var(--ui-text-sm) var(--ui-font); }
+  .sp-focused-head { display: flex; align-items: center; gap: var(--ui-space-1); padding: var(--ui-space-1) var(--ui-space-2); border-bottom: 1px solid var(--ui-border); }
+  .sp-back { display: inline-flex; align-items: center; gap: var(--ui-space-1); margin-right: auto; border-color: transparent; background: transparent; }
+  .sp-focused-stream { flex: 1 1 auto; min-height: 0; padding: var(--ui-space-3); display: flex; flex-direction: column; gap: var(--ui-space-2); overflow: hidden; }
+  .sp-reply { display: flex; align-items: flex-end; gap: var(--ui-space-2); padding: var(--ui-space-2) var(--ui-space-3); border-top: 1px solid var(--ui-border); }
+  .sp-reply .rv-field { flex: 1 1 auto; min-height: 36px; margin: 0; border-radius: calc(2 * var(--ui-radius)); padding: var(--ui-space-2) var(--ui-space-3); }
+  .sp-grip { display: none; }
+  [data-mockup-frame="phone"] .sp-focused { top: 422px; left: 0; right: 0; bottom: 0; z-index: 11; border: 0; border-radius: calc(2 * var(--ui-radius)) calc(2 * var(--ui-radius)) 0 0;
+                                            box-shadow: 0 -12px 32px var(--ui-shadow); padding-bottom: 136px; }
+  [data-mockup-frame="phone"] .sp-grip { display: block; align-self: center; width: 36px; height: 4px; margin: var(--ui-space-2) 0 0; border-radius: var(--ui-radius-pill); background: var(--ui-border); }
+  [data-mockup-frame="phone"] .sp-reply .rv-field { min-height: 44px; font-size: var(--ui-text-md); }
+  /* a new comment's composer at the bottom of the conversation (spec-page-design #surface-composer): send primary
+     rightmost, cancel left of it */
+  .rv-compose .rv-field { min-height: 56px; }
+  [data-mockup-frame="phone"] .rv-compose .rv-field { min-height: 120px; }
+  [data-mockup-frame="desktop"] { min-height: 1000px; }
+  /* the page's video in its figure (spec.css figure): a frame of the report page at the moment it shows, drawn from the
+     fixture's prototype route, letterboxed on the ink the runtime gives a video's ground (.hx-round-video) */
+  .vm-figure { margin: var(--ui-space-5) 0 0; padding: var(--ui-space-5); background: var(--spec-soft); border: 1px solid var(--spec-hairline); border-radius: var(--spec-radius); }
+  [data-mockup-frame="phone"] .vm-figure { padding: var(--ui-space-3); }
+  .vm-figure figcaption { margin-top: var(--ui-space-3); color: var(--spec-muted); font-size: var(--spec-text-small); line-height: 1.5; }
+  .vm-player { position: relative; width: 640px; height: 400px; overflow: hidden; background: var(--ui-ink); }
+  [data-mockup-frame="phone"] .vm-player { width: 332px; height: 208px; }
+  [data-mockup-frame][data-at$=" comment-mode"] .vm-player { cursor: crosshair; }
+  .vm-shot { position: absolute; left: 0; top: 0; width: 1280px; height: 800px; transform-origin: 0 0; transform: scale(0.5); background: var(--ui-page); color: var(--ui-ink);
+             font: var(--ui-text-md)/1.5 var(--ui-font); }
+  [data-mockup-frame="phone"] .vm-shot { transform: scale(0.259375); }
+  .vm-bar { display: flex; justify-content: space-between; padding: var(--ui-space-4) var(--ui-space-5); border-bottom: 1px solid var(--ui-border); font-weight: var(--ui-weight-semibold); }
+  .vm-bar span + span { color: var(--ui-muted); font-weight: var(--ui-weight-medium); }
+  .vm-main { display: flex; gap: var(--ui-space-5); align-items: flex-start; padding: var(--ui-space-5); }
+  .vm-cards { display: flex; flex-direction: column; gap: var(--ui-space-3); flex: 0 0 320px; }
+  .vm-card { display: flex; justify-content: space-between; padding: var(--ui-space-4); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); }
+  .vm-card.vm-on { background: var(--ui-surface-soft); }
+  .vm-card b, .vm-weeks b { font-weight: var(--ui-weight-semibold); }
+  .vm-panel { flex: 1 1 auto; padding: var(--ui-space-5); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); }
+  .vm-panel h3 { margin: 0 0 var(--ui-space-3); font-size: var(--ui-text-lg); }
+  .vm-weeks { margin: 0 0 var(--ui-space-4); padding: 0; list-style: none; }
+  .vm-weeks li { display: flex; justify-content: space-between; padding: var(--ui-space-2) 0; border-bottom: 1px solid var(--ui-border); }
+  .vm-export { display: inline-block; padding: var(--ui-space-2) var(--ui-space-4); border-radius: var(--ui-radius); background: var(--ui-action); color: var(--ui-page); font-weight: var(--ui-weight-semibold); }
+  .vm-dialog { margin-top: var(--ui-space-4); padding: var(--ui-space-4); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); }
+  .vm-dialog code { font-family: var(--ui-mono); }
+  /* the browser's own controls over the video's foot */
+  .vm-controls { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: var(--ui-space-3); padding: var(--ui-space-2) var(--ui-space-3);
+                 background: var(--ui-ink); color: var(--ui-page); font: var(--ui-text-xs) var(--ui-mono); }
+  .vm-track { flex: 1 1 auto; height: 4px; border-radius: var(--ui-radius-pill); background: var(--ui-muted); position: relative; }
+  .vm-track i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--ui-radius-pill); background: var(--ui-page); }
+  [data-mockup-frame="phone"] .vm-controls { gap: var(--ui-space-2); padding: var(--ui-space-1) var(--ui-space-2); }
+  /* the box on the paused frame and the rail under the video (threads #video-moment, runtime .hx-video-box, .hx-video-rail) */
+  .vm-box { position: absolute; left: 5%; top: 30%; width: 30%; height: 45%; border: 2px solid var(--ui-attention); border-radius: var(--ui-radius-sm);
+            box-shadow: 0 0 0 4px var(--ui-pin-ring); pointer-events: none; }
+  .vm-rail { position: relative; display: block; width: 640px; height: 28px; margin-top: var(--ui-space-2); border-bottom: 1px solid var(--ui-border); }
+  [data-mockup-frame="phone"] .vm-rail { width: 332px; height: 44px; }
+  .vm-mark { position: absolute; top: 2px; left: 45%; width: 22px; height: 22px; transform: translateX(-50%); margin: 0; padding: 0; border: none; border-radius: 50% 50% 50% 4px;
+             display: grid; place-items: center; cursor: pointer; color: var(--ui-page); background: var(--ui-draft); font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); }
+  .vm-mark:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  [data-mockup-frame="phone"] .vm-mark { width: 36px; height: 36px; }
+  .vm-time { position: absolute; right: 0; top: 4px; color: var(--ui-muted); font: var(--ui-text-xs) var(--ui-mono); }
+  [data-mockup-frame="phone"] .vm-time { top: 12px; }
+  [data-mockup-frame][data-at$=" paused"] [data-show]:not([data-show~="paused"]),
+  [data-mockup-frame][data-at="paused"] [data-show]:not([data-show~="paused"]),
+  [data-mockup-frame][data-at$=" comment-mode"] [data-show]:not([data-show~="comment-mode"]),
+  [data-mockup-frame][data-at="comment-mode"] [data-show]:not([data-show~="comment-mode"]),
+  [data-mockup-frame][data-at$=" boxed"] [data-show]:not([data-show~="boxed"]),
+  [data-mockup-frame][data-at="boxed"] [data-show]:not([data-show~="boxed"]),
+  [data-mockup-frame][data-at$=" saved"] [data-show]:not([data-show~="saved"]),
+  [data-mockup-frame][data-at="saved"] [data-show]:not([data-show~="saved"]),
+  [data-mockup-frame][data-at$=" played"] [data-show]:not([data-show~="played"]),
+  [data-mockup-frame][data-at="played"] [data-show]:not([data-show~="played"]),
+  [data-mockup-frame][data-at$=" chip"] [data-show]:not([data-show~="chip"]),
+  [data-mockup-frame][data-at="chip"] [data-show]:not([data-show~="chip"]),
+  [data-mockup-frame][data-at$=" mark"] [data-show]:not([data-show~="mark"]),
+  [data-mockup-frame][data-at="mark"] [data-show]:not([data-show~="mark"]),
+  [data-mockup-frame]:not([data-at]) [data-show]:not([data-show~="paused"]) { display: none; }
+  [data-mockup-frame][data-at$=" paused"] [data-beside~="paused"],
+  [data-mockup-frame][data-at="paused"] [data-beside~="paused"],
+  [data-mockup-frame][data-at$=" comment-mode"] [data-beside~="comment-mode"],
+  [data-mockup-frame][data-at="comment-mode"] [data-beside~="comment-mode"],
+  [data-mockup-frame][data-at$=" boxed"] [data-beside~="boxed"],
+  [data-mockup-frame][data-at="boxed"] [data-beside~="boxed"],
+  [data-mockup-frame][data-at$=" saved"] [data-beside~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-beside~="saved"],
+  [data-mockup-frame][data-at$=" played"] [data-beside~="played"],
+  [data-mockup-frame][data-at="played"] [data-beside~="played"],
+  [data-mockup-frame][data-at$=" chip"] [data-beside~="chip"],
+  [data-mockup-frame][data-at="chip"] [data-beside~="chip"],
+  [data-mockup-frame][data-at$=" mark"] [data-beside~="mark"],
+  [data-mockup-frame][data-at="mark"] [data-beside~="mark"],
+  [data-mockup-frame]:not([data-at]) [data-beside~="paused"] { right: 330px; }
+  [data-mockup-frame][data-at$=" paused"] [data-beside-doc~="paused"],
+  [data-mockup-frame][data-at="paused"] [data-beside-doc~="paused"],
+  [data-mockup-frame][data-at$=" comment-mode"] [data-beside-doc~="comment-mode"],
+  [data-mockup-frame][data-at="comment-mode"] [data-beside-doc~="comment-mode"],
+  [data-mockup-frame][data-at$=" boxed"] [data-beside-doc~="boxed"],
+  [data-mockup-frame][data-at="boxed"] [data-beside-doc~="boxed"],
+  [data-mockup-frame][data-at$=" saved"] [data-beside-doc~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-beside-doc~="saved"],
+  [data-mockup-frame][data-at$=" played"] [data-beside-doc~="played"],
+  [data-mockup-frame][data-at="played"] [data-beside-doc~="played"],
+  [data-mockup-frame][data-at$=" chip"] [data-beside-doc~="chip"],
+  [data-mockup-frame][data-at="chip"] [data-beside-doc~="chip"],
+  [data-mockup-frame][data-at$=" mark"] [data-beside-doc~="mark"],
+  [data-mockup-frame][data-at="mark"] [data-beside-doc~="mark"],
+  [data-mockup-frame]:not([data-at]) [data-beside-doc~="paused"] { width: 1062px; margin: 0 354px 0 24px; }
+  [data-mockup-frame][data-at$=" paused"] [data-ring~="paused"],
+  [data-mockup-frame][data-at="paused"] [data-ring~="paused"],
+  [data-mockup-frame][data-at$=" comment-mode"] [data-ring~="comment-mode"],
+  [data-mockup-frame][data-at="comment-mode"] [data-ring~="comment-mode"],
+  [data-mockup-frame][data-at$=" boxed"] [data-ring~="boxed"],
+  [data-mockup-frame][data-at="boxed"] [data-ring~="boxed"],
+  [data-mockup-frame][data-at$=" saved"] [data-ring~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-ring~="saved"],
+  [data-mockup-frame][data-at$=" played"] [data-ring~="played"],
+  [data-mockup-frame][data-at="played"] [data-ring~="played"],
+  [data-mockup-frame][data-at$=" chip"] [data-ring~="chip"],
+  [data-mockup-frame][data-at="chip"] [data-ring~="chip"],
+  [data-mockup-frame][data-at$=" mark"] [data-ring~="mark"],
+  [data-mockup-frame][data-at="mark"] [data-ring~="mark"],
+  [data-mockup-frame]:not([data-at]) [data-ring~="paused"] { outline: 2px solid var(--ui-draft); outline-offset: var(--ui-space-1); box-shadow: 0 0 0 calc(var(--ui-space-1) + 3px) var(--ui-pin-ring); border-radius: var(--ui-radius-sm); }
+  [data-mockup-frame][data-at$=" paused"] [data-spot~="paused"],
+  [data-mockup-frame][data-at="paused"] [data-spot~="paused"],
+  [data-mockup-frame][data-at$=" comment-mode"] [data-spot~="comment-mode"],
+  [data-mockup-frame][data-at="comment-mode"] [data-spot~="comment-mode"],
+  [data-mockup-frame][data-at$=" boxed"] [data-spot~="boxed"],
+  [data-mockup-frame][data-at="boxed"] [data-spot~="boxed"],
+  [data-mockup-frame][data-at$=" saved"] [data-spot~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-spot~="saved"],
+  [data-mockup-frame][data-at$=" played"] [data-spot~="played"],
+  [data-mockup-frame][data-at="played"] [data-spot~="played"],
+  [data-mockup-frame][data-at$=" chip"] [data-spot~="chip"],
+  [data-mockup-frame][data-at="chip"] [data-spot~="chip"],
+  [data-mockup-frame][data-at$=" mark"] [data-spot~="mark"],
+  [data-mockup-frame][data-at="mark"] [data-spot~="mark"],
+  [data-mockup-frame]:not([data-at]) [data-spot~="paused"] { box-shadow: 0 0 0 calc(var(--ui-space-1) + 3px) var(--ui-pin-ring), 0 0 0 100vmax var(--ui-veil); outline: 2px solid var(--ui-draft); outline-offset: var(--ui-space-1); z-index: 10; background: var(--spec-paper); border-radius: var(--ui-radius-sm); }
+  [data-mockup-frame][data-at$=" paused"] [data-dim~="paused"]::after,
+  [data-mockup-frame][data-at="paused"] [data-dim~="paused"]::after,
+  [data-mockup-frame][data-at$=" comment-mode"] [data-dim~="comment-mode"]::after,
+  [data-mockup-frame][data-at="comment-mode"] [data-dim~="comment-mode"]::after,
+  [data-mockup-frame][data-at$=" boxed"] [data-dim~="boxed"]::after,
+  [data-mockup-frame][data-at="boxed"] [data-dim~="boxed"]::after,
+  [data-mockup-frame][data-at$=" saved"] [data-dim~="saved"]::after,
+  [data-mockup-frame][data-at="saved"] [data-dim~="saved"]::after,
+  [data-mockup-frame][data-at$=" played"] [data-dim~="played"]::after,
+  [data-mockup-frame][data-at="played"] [data-dim~="played"]::after,
+  [data-mockup-frame][data-at$=" chip"] [data-dim~="chip"]::after,
+  [data-mockup-frame][data-at="chip"] [data-dim~="chip"]::after,
+  [data-mockup-frame][data-at$=" mark"] [data-dim~="mark"]::after,
+  [data-mockup-frame][data-at="mark"] [data-dim~="mark"]::after,
+  [data-mockup-frame]:not([data-at]) [data-dim~="paused"]::after { content: ""; position: absolute; inset: 0; background: var(--ui-veil); }
+  [data-mockup-frame][data-at$=" paused"] [data-chosen~="paused"],
+  [data-mockup-frame][data-at="paused"] [data-chosen~="paused"],
+  [data-mockup-frame][data-at$=" comment-mode"] [data-chosen~="comment-mode"],
+  [data-mockup-frame][data-at="comment-mode"] [data-chosen~="comment-mode"],
+  [data-mockup-frame][data-at$=" boxed"] [data-chosen~="boxed"],
+  [data-mockup-frame][data-at="boxed"] [data-chosen~="boxed"],
+  [data-mockup-frame][data-at$=" saved"] [data-chosen~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-chosen~="saved"],
+  [data-mockup-frame][data-at$=" played"] [data-chosen~="played"],
+  [data-mockup-frame][data-at="played"] [data-chosen~="played"],
+  [data-mockup-frame][data-at$=" chip"] [data-chosen~="chip"],
+  [data-mockup-frame][data-at="chip"] [data-chosen~="chip"],
+  [data-mockup-frame][data-at$=" mark"] [data-chosen~="mark"],
+  [data-mockup-frame][data-at="mark"] [data-chosen~="mark"],
+  [data-mockup-frame]:not([data-at]) [data-chosen~="paused"] { border: 2px solid var(--ui-draft); background: var(--ui-draft-soft); color: var(--ui-ink); }
+  [data-mockup-frame][data-at$=" paused"] [data-chosen~="paused"]::before,
+  [data-mockup-frame][data-at="paused"] [data-chosen~="paused"]::before,
+  [data-mockup-frame][data-at$=" comment-mode"] [data-chosen~="comment-mode"]::before,
+  [data-mockup-frame][data-at="comment-mode"] [data-chosen~="comment-mode"]::before,
+  [data-mockup-frame][data-at$=" boxed"] [data-chosen~="boxed"]::before,
+  [data-mockup-frame][data-at="boxed"] [data-chosen~="boxed"]::before,
+  [data-mockup-frame][data-at$=" saved"] [data-chosen~="saved"]::before,
+  [data-mockup-frame][data-at="saved"] [data-chosen~="saved"]::before,
+  [data-mockup-frame][data-at$=" played"] [data-chosen~="played"]::before,
+  [data-mockup-frame][data-at="played"] [data-chosen~="played"]::before,
+  [data-mockup-frame][data-at$=" chip"] [data-chosen~="chip"]::before,
+  [data-mockup-frame][data-at="chip"] [data-chosen~="chip"]::before,
+  [data-mockup-frame][data-at$=" mark"] [data-chosen~="mark"]::before,
+  [data-mockup-frame][data-at="mark"] [data-chosen~="mark"]::before,
+  [data-mockup-frame]:not([data-at]) [data-chosen~="paused"]::before { content: "\2713" / ""; margin-right: var(--ui-space-1); }
+  [data-mockup-frame][data-at$=" paused"] [data-quiet~="paused"],
+  [data-mockup-frame][data-at="paused"] [data-quiet~="paused"],
+  [data-mockup-frame][data-at$=" comment-mode"] [data-quiet~="comment-mode"],
+  [data-mockup-frame][data-at="comment-mode"] [data-quiet~="comment-mode"],
+  [data-mockup-frame][data-at$=" boxed"] [data-quiet~="boxed"],
+  [data-mockup-frame][data-at="boxed"] [data-quiet~="boxed"],
+  [data-mockup-frame][data-at$=" saved"] [data-quiet~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-quiet~="saved"],
+  [data-mockup-frame][data-at$=" played"] [data-quiet~="played"],
+  [data-mockup-frame][data-at="played"] [data-quiet~="played"],
+  [data-mockup-frame][data-at$=" chip"] [data-quiet~="chip"],
+  [data-mockup-frame][data-at="chip"] [data-quiet~="chip"],
+  [data-mockup-frame][data-at$=" mark"] [data-quiet~="mark"],
+  [data-mockup-frame][data-at="mark"] [data-quiet~="mark"],
+  [data-mockup-frame]:not([data-at]) [data-quiet~="paused"] { background: var(--ui-surface); color: var(--ui-ink); border-color: var(--ui-border); }
+  [data-mockup-frame][data-at$=" paused"] [data-pressed~="paused"],
+  [data-mockup-frame][data-at="paused"] [data-pressed~="paused"],
+  [data-mockup-frame][data-at$=" comment-mode"] [data-pressed~="comment-mode"],
+  [data-mockup-frame][data-at="comment-mode"] [data-pressed~="comment-mode"],
+  [data-mockup-frame][data-at$=" boxed"] [data-pressed~="boxed"],
+  [data-mockup-frame][data-at="boxed"] [data-pressed~="boxed"],
+  [data-mockup-frame][data-at$=" saved"] [data-pressed~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-pressed~="saved"],
+  [data-mockup-frame][data-at$=" played"] [data-pressed~="played"],
+  [data-mockup-frame][data-at="played"] [data-pressed~="played"],
+  [data-mockup-frame][data-at$=" chip"] [data-pressed~="chip"],
+  [data-mockup-frame][data-at="chip"] [data-pressed~="chip"],
+  [data-mockup-frame][data-at$=" mark"] [data-pressed~="mark"],
+  [data-mockup-frame][data-at="mark"] [data-pressed~="mark"],
+  [data-mockup-frame]:not([data-at]) [data-pressed~="paused"] { background: var(--ui-draft-soft); color: var(--ui-draft); }
+  [data-mockup-frame][data-at$=" paused"] [data-active~="paused"],
+  [data-mockup-frame][data-at="paused"] [data-active~="paused"],
+  [data-mockup-frame][data-at$=" comment-mode"] [data-active~="comment-mode"],
+  [data-mockup-frame][data-at="comment-mode"] [data-active~="comment-mode"],
+  [data-mockup-frame][data-at$=" boxed"] [data-active~="boxed"],
+  [data-mockup-frame][data-at="boxed"] [data-active~="boxed"],
+  [data-mockup-frame][data-at$=" saved"] [data-active~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-active~="saved"],
+  [data-mockup-frame][data-at$=" played"] [data-active~="played"],
+  [data-mockup-frame][data-at="played"] [data-active~="played"],
+  [data-mockup-frame][data-at$=" chip"] [data-active~="chip"],
+  [data-mockup-frame][data-at="chip"] [data-active~="chip"],
+  [data-mockup-frame][data-at$=" mark"] [data-active~="mark"],
+  [data-mockup-frame][data-at="mark"] [data-active~="mark"],
+  [data-mockup-frame]:not([data-at]) [data-active~="paused"] { box-shadow: 0 0 0 4px var(--ui-pin-ring); }
+  [data-mockup-frame][data-at$=" paused"] [data-lift~="paused"],
+  [data-mockup-frame][data-at="paused"] [data-lift~="paused"],
+  [data-mockup-frame][data-at$=" comment-mode"] [data-lift~="comment-mode"],
+  [data-mockup-frame][data-at="comment-mode"] [data-lift~="comment-mode"],
+  [data-mockup-frame][data-at$=" boxed"] [data-lift~="boxed"],
+  [data-mockup-frame][data-at="boxed"] [data-lift~="boxed"],
+  [data-mockup-frame][data-at$=" saved"] [data-lift~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-lift~="saved"],
+  [data-mockup-frame][data-at$=" played"] [data-lift~="played"],
+  [data-mockup-frame][data-at="played"] [data-lift~="played"],
+  [data-mockup-frame][data-at$=" chip"] [data-lift~="chip"],
+  [data-mockup-frame][data-at="chip"] [data-lift~="chip"],
+  [data-mockup-frame][data-at$=" mark"] [data-lift~="mark"],
+  [data-mockup-frame][data-at="mark"] [data-lift~="mark"],
+  [data-mockup-frame]:not([data-at]) [data-lift~="paused"] { position: relative; top: -450px; }
+  .th-veil { position: absolute; inset: 0; z-index: 9; background: var(--ui-veil); }
+  [data-mockup-frame="phone"] .vm-figure[data-anchor] { z-index: 10; }
+
+</style>
+<script defer src="../../.viz/runtime.js"></script>
+</head>
+<body>
+<section data-mockup-frame="desktop" data-anchor="desktop" data-illustrates="video-moment">
+<div class="rv-top" data-anchor="desktop-top-line" data-beside="boxed saved chip mark"><a class="rv-index" href="#review-index"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg><span>Review index</span></a><div class="rv-range"><p class="rv-range-copy">Changes from <code>4b92aed</code> 2026-01-01 to <code>533c8e2</code> 2026-01-01</p><button type="button" class="rv-btn rv-change">Change base</button></div></div>
+<main class="rv-doc" data-anchor="desktop-doc" data-beside-doc="boxed saved chip mark">
+  <header>
+    <h1>Report walkthrough</h1>
+    <p class="rv-crumbs">docs / specs / report-video.spec.html</p>
+    <p>QA fixture: a spec showing a short video of the report page, recorded from the build.</p>
+  </header>
+  <section class="rv-section">
+    <h2>User stories</h2>
+    <p>As a manager, I watch the report page's walkthrough before it ships.</p>
+  </section>
+  <section class="rv-section">
+    <h2>Acceptance criteria</h2>
+    <p>The walkthrough shows the totals, a team's panel, then the export dialog.</p>
+  </section>
+  <section class="rv-section">
+    <h2>Walkthrough</h2>
+    <figure class="vm-figure rv-block" data-anchor="desktop-block-video" data-illustrates="video-target">
+      <div class="vm-player" role="img" aria-label="Video: Report page walkthrough" data-anchor="desktop-player" data-illustrates="video-target acceptance-video-box acceptance-video-chip">
+        <div data-show="paused comment-mode boxed saved chip mark"><div class="vm-shot" aria-hidden="true"><div class="vm-bar"><span>Weekly report</span><span>2026-W01</span></div>
+      <div class="vm-main"><div class="vm-cards"><div class="vm-card vm-on"><span>Payments</span><b>1,284</b></div><div class="vm-card"><span>Search</span><b>962</b></div><div class="vm-card"><span>Mobile</span><b>731</b></div></div>
+      <div class="vm-panel"><h3>Payments</h3><ol class="vm-weeks"><li><span>2025-W51</span><b>1,190</b></li><li><span>2025-W52</span><b>1,236</b></li><li><span>2026-W01</span><b>1,284</b></li></ol>
+      <span class="vm-export">Export CSV</span></div></div></div></div><div data-show="played"><div class="vm-shot" aria-hidden="true"><div class="vm-bar"><span>Weekly report</span><span>2026-W01</span></div>
+      <div class="vm-main"><div class="vm-cards"><div class="vm-card vm-on"><span>Payments</span><b>1,284</b></div><div class="vm-card"><span>Search</span><b>962</b></div><div class="vm-card"><span>Mobile</span><b>731</b></div></div>
+      <div class="vm-panel"><h3>Payments</h3><ol class="vm-weeks"><li><span>2025-W51</span><b>1,190</b></li><li><span>2025-W52</span><b>1,236</b></li><li><span>2026-W01</span><b>1,284</b></li></ol>
+      <span class="vm-export">Export CSV</span><div class="vm-dialog"><p><code>payments-2026-W01.csv</code> downloads.</p></div></div></div></div></div>
+        <div class="vm-box" data-anchor="desktop-box" data-show="boxed saved chip mark" data-illustrates="video-fields acceptance-video-box"></div>
+        <div class="vm-controls"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg><span data-show="paused comment-mode boxed saved chip mark">0:01 / 0:04</span><span data-show="played">0:03 / 0:04</span>
+          <span class="vm-track"><i data-show="paused comment-mode boxed saved chip mark" style="width: 45%"></i><i data-show="played" style="width: 80%"></i></span></div>
+      </div>
+      <div class="vm-rail" data-anchor="desktop-rail" data-show="saved played chip mark" data-illustrates="video-rail acceptance-video-box"><button type="button" class="vm-mark" data-anchor="desktop-mark" data-active="chip mark" aria-label="Thread 1 at 0:01">1</button><span class="vm-time">0:04</span></div>
+      <figcaption>Report page walkthrough, recorded from the build.</figcaption>
+    </figure>
+  </section>
+</main>
+<nav class="rv-dock" aria-label="Review conversations" data-show="paused comment-mode played"><button type="button" class="rv-btn rv-icon" aria-label="Open review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M3.5 6h5A1.5 1.5 0 0 1 10 7.5v3A1.5 1.5 0 0 1 8.5 12H6.5L4 14v-2h-.5A1.5 1.5 0 0 1 2 10.5v-3A1.5 1.5 0 0 1 3.5 6z"/><path d="M6 6V3.5A1.5 1.5 0 0 1 7.5 2h5A1.5 1.5 0 0 1 14 3.5v3A1.5 1.5 0 0 1 12.5 8H12v2l-2-1.5"/></svg></button><div class="rv-dock-threads" data-show="played chip"><button type="button" class="rv-thread">1</button></div></nav>
+<aside class="rv-panel" data-anchor="desktop-panel" data-show="boxed saved chip mark" aria-label="Review sidebar" data-illustrates="root-chip-moment acceptance-video-moment">
+  <div class="rv-head" data-anchor="desktop-panel-head">Conversation <span class="rv-count"><span data-show="paused comment-mode boxed">0 threads</span><span data-show="saved played chip mark">1 thread</span></span> <span class="rv-sub"><span>· no agent events yet</span></span><button type="button" class="rv-btn rv-icon rv-toggle" aria-label="Collapse review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M10 2.5v11"/></svg></button><button type="button" class="rv-btn rv-icon rv-gear" aria-label="Review display settings" title="Display settings"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6.34 3.18L6.6 1.4L9.4 1.4L9.66 3.18L11.35 4.15L13.02 3.48L14.42 5.91L13.01 7.03L13.01 8.97L14.42 10.09L13.02 12.52L11.35 11.85L9.66 12.82L9.4 14.6L6.6 14.6L6.34 12.82L4.65 11.85L2.98 12.52L1.58 10.09L2.99 8.97L2.99 7.03L1.58 5.91L2.98 3.48L4.65 4.15z"/><circle cx="8" cy="8" r="2"/></svg></button></div>
+  <div class="rv-stream"><div class="rv-entry rv-me" data-show="saved chip mark" data-anchor="desktop-thread-box" data-illustrates="root-chip-moment acceptance-video-moment acceptance-video-chip">
+      <div class="rv-msg rv-me"><span class="rv-who">Papaya<span class="th-stage">Spec review</span></span><div class="rv-bubble rv-draft" role="button" tabindex="0">The team panel should fade in faster.</div></div>
+      <button type="button" class="rv-chip" data-anchor="desktop-chip-moment">Walkthrough · 0:01 · Box</button><span class="rv-receipt">Draft</span>
+    </div><div class="rv-compose" data-show="boxed" data-anchor="desktop-composer" data-illustrates="video-moment">
+      <span class="rv-anchor">Walkthrough · 0:01 · Box</span>
+      <textarea class="rv-field" aria-label="Comment">The team panel should fade in faster.</textarea>
+      <div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri" data-anchor="desktop-send">Comment</button></div>
+    </div></div>
+  <div class="rv-handoff"><span class="rv-note"><span data-show="paused comment-mode boxed">0 drafts</span><span data-show="saved played chip mark">1 draft</span></span><button type="button" class="rv-btn rv-pri" data-quiet="boxed mark">Hand off to agent →</button></div>
+  <div class="sp-veil" data-show="mark"></div>
+  <div class="sp-focused" role="dialog" aria-label="Thread" data-anchor="desktop-focus" data-show="mark" data-illustrates="video-rail">
+    <span class="sp-grip"></span>
+    <div class="sp-focused-head"><button type="button" class="rv-btn sp-back"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg><span>Conversation</span></button></div>
+    <div class="sp-focused-stream"><div class="rv-entry rv-me"><div class="rv-msg rv-me"><span class="rv-who">Papaya<span class="th-stage">Spec review</span></span><div class="rv-bubble rv-draft">The team panel should fade in faster.</div></div>
+      <button type="button" class="rv-chip">Walkthrough · 0:01 · Box</button><div class="rv-compose-actions"><button type="button" class="rv-btn">Edit</button></div><span class="rv-receipt">Draft</span></div></div>
+    <div class="sp-reply"><textarea class="rv-field" rows="1" aria-label="Reply" placeholder="Reply…"></textarea><button type="button" class="rv-btn rv-pri" aria-label="Save reply">Save</button></div>
+  </div>
+</aside>
+<div class="rv-toolbar" data-anchor="desktop-toolbar"><button type="button" class="rv-btn rv-tool" title="Comment (C)" aria-pressed="false" data-anchor="desktop-comment" data-pressed="comment-mode boxed">Comment</button><button type="button" class="rv-btn rv-tool" aria-pressed="false">Reading view</button><span class="rv-status">connected · review-serve · <span data-show="paused comment-mode boxed">0 threads</span><span data-show="saved played chip mark">1 thread</span></span></div>
+</section>
+<section data-mockup-frame="phone" data-anchor="phone" data-illustrates="video-moment">
+<div class="rv-top" data-anchor="phone-top-line" data-dim="mark"><a class="rv-index" href="#review-index"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg><span>Review index</span></a><button type="button" class="rv-btn rv-change">Change base</button><div class="rv-range"><p class="rv-range-copy">Changes from <code>4b92aed</code> 2026-01-01 to <code>533c8e2</code> 2026-01-01</p></div></div>
+<main class="rv-doc" data-anchor="phone-doc" data-lift="mark">
+  <header>
+    <h1>Report walkthrough</h1>
+    <p class="rv-crumbs">docs / specs / report-video.spec.html</p>
+    <p>QA fixture: a spec showing a short video of the report page, recorded from the build.</p>
+  </header>
+  <section class="rv-section">
+    <h2>User stories</h2>
+    <p>As a manager, I watch the report page's walkthrough before it ships.</p>
+  </section>
+  <section class="rv-section">
+    <h2>Acceptance criteria</h2>
+    <p>The walkthrough shows the totals, a team's panel, then the export dialog.</p>
+  </section>
+  <section class="rv-section">
+    <h2>Walkthrough</h2>
+    <figure class="vm-figure rv-block" data-anchor="phone-block-video" data-illustrates="video-target">
+      <div class="vm-player" role="img" aria-label="Video: Report page walkthrough" data-anchor="phone-player" data-illustrates="video-target acceptance-video-box acceptance-video-chip">
+        <div data-show="paused comment-mode boxed saved chip mark"><div class="vm-shot" aria-hidden="true"><div class="vm-bar"><span>Weekly report</span><span>2026-W01</span></div>
+      <div class="vm-main"><div class="vm-cards"><div class="vm-card vm-on"><span>Payments</span><b>1,284</b></div><div class="vm-card"><span>Search</span><b>962</b></div><div class="vm-card"><span>Mobile</span><b>731</b></div></div>
+      <div class="vm-panel"><h3>Payments</h3><ol class="vm-weeks"><li><span>2025-W51</span><b>1,190</b></li><li><span>2025-W52</span><b>1,236</b></li><li><span>2026-W01</span><b>1,284</b></li></ol>
+      <span class="vm-export">Export CSV</span></div></div></div></div><div data-show="played"><div class="vm-shot" aria-hidden="true"><div class="vm-bar"><span>Weekly report</span><span>2026-W01</span></div>
+      <div class="vm-main"><div class="vm-cards"><div class="vm-card vm-on"><span>Payments</span><b>1,284</b></div><div class="vm-card"><span>Search</span><b>962</b></div><div class="vm-card"><span>Mobile</span><b>731</b></div></div>
+      <div class="vm-panel"><h3>Payments</h3><ol class="vm-weeks"><li><span>2025-W51</span><b>1,190</b></li><li><span>2025-W52</span><b>1,236</b></li><li><span>2026-W01</span><b>1,284</b></li></ol>
+      <span class="vm-export">Export CSV</span><div class="vm-dialog"><p><code>payments-2026-W01.csv</code> downloads.</p></div></div></div></div></div>
+        <div class="vm-box" data-anchor="phone-box" data-show="boxed saved chip mark" data-illustrates="video-fields acceptance-video-box"></div>
+        <div class="vm-controls"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg><span data-show="paused comment-mode boxed saved chip mark">0:01 / 0:04</span><span data-show="played">0:03 / 0:04</span>
+          <span class="vm-track"><i data-show="paused comment-mode boxed saved chip mark" style="width: 45%"></i><i data-show="played" style="width: 80%"></i></span></div>
+      </div>
+      <div class="vm-rail" data-anchor="phone-rail" data-show="saved played chip mark" data-illustrates="video-rail acceptance-video-box"><button type="button" class="vm-mark" data-anchor="phone-mark" data-active="chip mark" aria-label="Thread 1 at 0:01">1</button><span class="vm-time">0:04</span></div>
+      <figcaption>Report page walkthrough, recorded from the build.</figcaption>
+    </figure>
+  </section>
+</main>
+<nav class="rv-dock" aria-label="Review conversations" data-show="paused comment-mode played chip"><button type="button" class="rv-btn rv-icon" aria-label="Open review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M3.5 6h5A1.5 1.5 0 0 1 10 7.5v3A1.5 1.5 0 0 1 8.5 12H6.5L4 14v-2h-.5A1.5 1.5 0 0 1 2 10.5v-3A1.5 1.5 0 0 1 3.5 6z"/><path d="M6 6V3.5A1.5 1.5 0 0 1 7.5 2h5A1.5 1.5 0 0 1 14 3.5v3A1.5 1.5 0 0 1 12.5 8H12v2l-2-1.5"/></svg></button><div class="rv-dock-threads" data-show="played chip"><button type="button" class="rv-thread">1</button></div></nav>
+<div class="th-veil" data-show="mark"></div>
+<aside class="rv-panel" data-anchor="phone-panel" data-show="boxed saved" aria-label="Review sidebar" data-illustrates="root-chip-moment acceptance-video-moment">
+  <div class="rv-head" data-anchor="phone-panel-head">Conversation <span class="rv-count"><span data-show="paused comment-mode boxed">0 threads</span><span data-show="saved played chip mark">1 thread</span></span> <span class="rv-sub"><span>· no agent events yet</span></span><button type="button" class="rv-btn rv-icon rv-toggle" aria-label="Collapse review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M10 2.5v11"/></svg></button><button type="button" class="rv-btn rv-icon rv-gear" aria-label="Review display settings" title="Display settings"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6.34 3.18L6.6 1.4L9.4 1.4L9.66 3.18L11.35 4.15L13.02 3.48L14.42 5.91L13.01 7.03L13.01 8.97L14.42 10.09L13.02 12.52L11.35 11.85L9.66 12.82L9.4 14.6L6.6 14.6L6.34 12.82L4.65 11.85L2.98 12.52L1.58 10.09L2.99 8.97L2.99 7.03L1.58 5.91L2.98 3.48L4.65 4.15z"/><circle cx="8" cy="8" r="2"/></svg></button></div>
+  <div class="rv-stream"><div class="rv-entry rv-me" data-show="saved chip mark" data-anchor="phone-thread-box" data-illustrates="root-chip-moment acceptance-video-moment acceptance-video-chip">
+      <div class="rv-msg rv-me"><span class="rv-who">Papaya<span class="th-stage">Spec review</span></span><div class="rv-bubble rv-draft" role="button" tabindex="0">The team panel should fade in faster.</div></div>
+      <button type="button" class="rv-chip" data-anchor="phone-chip-moment">Walkthrough · 0:01 · Box</button><span class="rv-receipt">Draft</span>
+    </div><div class="rv-compose" data-show="boxed" data-anchor="phone-composer" data-illustrates="video-moment">
+      <span class="rv-anchor">Walkthrough · 0:01 · Box</span>
+      <textarea class="rv-field" aria-label="Comment">The team panel should fade in faster.</textarea>
+      <div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri" data-anchor="phone-send">Comment</button></div>
+    </div></div>
+</aside>
+<div class="sp-focused" role="dialog" aria-label="Thread" data-anchor="phone-sheet" data-show="mark" data-illustrates="video-rail focus-phone">
+    <span class="sp-grip"></span>
+    <div class="sp-focused-head"><button type="button" class="rv-btn sp-back"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg><span>Conversation</span></button></div>
+    <div class="sp-focused-stream"><div class="rv-entry rv-me"><div class="rv-msg rv-me"><span class="rv-who">Papaya<span class="th-stage">Spec review</span></span><div class="rv-bubble rv-draft">The team panel should fade in faster.</div></div>
+      <button type="button" class="rv-chip">Walkthrough · 0:01 · Box</button><div class="rv-compose-actions"><button type="button" class="rv-btn">Edit</button></div><span class="rv-receipt">Draft</span></div></div>
+    <div class="sp-reply"><textarea class="rv-field" rows="1" aria-label="Reply" placeholder="Reply…"></textarea><button type="button" class="rv-btn rv-pri" aria-label="Save reply">Save</button></div>
+  </div>
+<div class="rv-toolbar" data-anchor="phone-toolbar" data-illustrates="focus-phone"><button type="button" class="rv-btn rv-tool" aria-pressed="false" data-anchor="phone-comment" data-pressed="comment-mode boxed">Comment</button><div class="rv-inline-handoff"><span class="rv-note"><span data-show="paused comment-mode boxed">0 drafts</span><span data-show="saved played chip mark">1 draft</span></span><button type="button" class="rv-btn rv-pri" data-quiet="boxed mark">Hand off to agent →</button></div><button type="button" class="rv-btn rv-tool" aria-pressed="false">Reading view</button><span class="rv-status">connected · review-serve · <span data-show="paused comment-mode boxed">0 threads</span><span data-show="saved played chip mark">1 thread</span></span></div>
+</section>
+<ol data-mockup-steps>
+  <li data-step="paused" data-illustrates="video-target">The walkthrough video played, then paused at 0:01</li>
+  <li data-step="comment-mode" data-step-by="desktop-comment phone-comment" data-illustrates="video-target">Comment pressed: the video takes a click or a dragged box</li>
+  <li data-step="boxed" data-step-by="desktop-player phone-player" data-illustrates="video-moment video-fields">A box dragged across the paused frame: the comment marks 0:01 with that box</li>
+  <li data-step="saved" data-step-by="desktop-send phone-send" data-illustrates="acceptance-video-moment acceptance-video-box root-chip-moment video-rail">Comment: the bubble's chip reads the moment, the box stays on the frame, and the rail marks 0:01</li>
+  <li data-step="played">The video plays on past the moment: the box gone</li>
+  <li data-step="chip" data-step-by="desktop-chip-moment phone-chip-moment" data-illustrates="acceptance-video-chip root-chip-moment">The thread's chip pressed: the video paused at 0:01 with the box drawn</li>
+  <li data-step="mark" data-step-by="desktop-mark phone-mark" data-illustrates="video-rail focus-phone">The rail's mark pressed: the moment and its box, and the thread focused</li>
+</ol>
+</body>
+</html>

@@ -1,0 +1,50 @@
+#!/bin/sh
+# Write one agent reply event into the spool, schema-exact (the browser
+# runtime renders respondsTo/text/status/change - field names matter).
+# usage: emit-reply.sh REVIEW_DIR RESPONDS_TO ANCHOR_ID TARGET_JSON STATUS CHANGE TEXT
+#   REVIEW_DIR: <spec>.review/ or <mockup>.review/ (the page the scan row names),
+#     or the scope's hosted threads path the scan rows name
+#   ANCHOR_ID: the comment's anchorId, or '' in hosted threads (the reply joins
+#     its thread by RESPONDS_TO; its subject stays on the root comment)
+#   TARGET_JSON: the comment's target verbatim, or 'null'
+#   STATUS: acknowledged | orphaned
+#   CHANGE: short change summary, or 'no spec change'
+# The reply also carries `stage`, the stage its lane is at now, as its session's review service tells it
+# (review-host.py stage): its thread's lane, the one its comment recorded, else the spool's; none when the service tells
+# none or does not answer (threads #stage-tag-source).
+# Uses jq if present, else python3; errors clearly if neither exists.
+set -eu
+DIR=$1; RT=$2; ANCHOR=$3; TARGET=$4; STATUS=$5; CHANGE=$6; TEXT=$7
+mkdir -p "$DIR/agent"
+STAGE=$(python3 "$(dirname "$0")/review-host.py" stage "$DIR" --responds-to "$RT" 2>/dev/null || :)
+# portable across GNU/BSD: ns via python3 (BSD date lacks %N), UTC ISO time
+NS=$(python3 -c 'import time; print(time.time_ns())' 2>/dev/null || date +%s%N)
+ID="r${NS}"; AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+# named by its writer, <createdAt ns>-<event>-<id>.json; never overwrites (noclobber, open "x")
+OUT="$DIR/agent/${NS}-reply-$ID.json"
+set -C
+
+if command -v jq >/dev/null 2>&1; then
+  jq -n --arg id "$ID" --arg rt "$RT" --arg anchor "$ANCHOR" --argjson target "$TARGET" \
+        --arg status "$STATUS" --arg change "$CHANGE" --arg text "$TEXT" --arg at "$AT" --arg stage "$STAGE" \
+    '{id:$id, event:"reply", respondsTo:$rt, anchorId:$anchor, target:$target,
+      text:$text, status:$status, change:$change, actor:"agent",
+      createdAt:$at, schemaVersion:1} + (if $stage == "" then {} else {stage:$stage} end)' > "$OUT"
+elif command -v python3 >/dev/null 2>&1; then
+  # env-passing avoids shell-quoting hazards in TARGET/TEXT
+  ID="$ID" RT="$RT" ANCHOR="$ANCHOR" TARGET="$TARGET" STATUS="$STATUS" \
+  CHANGE="$CHANGE" TEXT="$TEXT" AT="$AT" OUT="$OUT" STAGE="$STAGE" python3 - <<'PY'
+import json, os
+e = os.environ
+json.dump({"id": e["ID"], "event": "reply", "respondsTo": e["RT"],
+           "anchorId": e["ANCHOR"], "target": json.loads(e["TARGET"]),
+           "text": e["TEXT"], "status": e["STATUS"], "change": e["CHANGE"],
+           "actor": "agent", "createdAt": e["AT"], "schemaVersion": 1,
+           **({"stage": e["STAGE"]} if e["STAGE"] else {})},
+          open(e["OUT"], "x"))
+PY
+else
+  echo "emit-reply.sh: needs jq or python3 to write JSON safely; neither found" >&2
+  exit 1
+fi
+echo "replied -> $OUT ($RT)"

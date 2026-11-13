@@ -1,0 +1,210 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime.js'), 'utf8');
+const slice = (from, to) => {
+  const start = runtime.indexOf(from);
+  const end = runtime.indexOf(to, start);
+  assert.ok(start >= 0 && end > start, 'runtime exposes ' + from);
+  return runtime.slice(start, end);
+};
+
+const paramsStart = runtime.indexOf('function jevParams(');
+const paramsEnd = runtime.indexOf('\n\nasync function fetchJev(', paramsStart);
+assert.ok(paramsStart >= 0 && paramsEnd > paramsStart, 'runtime exposes Jev request parameters');
+const jevParams = Function('OWN_ADDRESS', 'URLSearchParams', 'state', runtime.slice(paramsStart, paramsEnd) + '; return jevParams;')(
+  new URL('http://review.example/docs/specs/example.spec.html?view=reading&extra=ignored'),
+  URLSearchParams,
+  { readingView: false },
+);
+const params = jevParams('base-123');
+assert.equal(params.get('path'), 'docs/specs/example.spec.html');
+assert.equal(params.get('base'), 'base-123');
+assert.equal(params.has('view'), false);
+assert.equal(params.has('extra'), false);
+
+const fetchStart = runtime.indexOf('async function fetchJev(');
+const fetchEnd = runtime.indexOf('\n\nfunction jevItem(', fetchStart);
+assert.ok(fetchStart >= 0 && fetchEnd > fetchStart, 'runtime exposes Jev route consumer');
+let requested = '';
+const fakeFetch = async url => {
+  requested = url;
+  return { ok: true, json: async () => ({ jev: 'on', items: [
+    { kind: 'corpus', id: 'draft', state: 'label', label: 'overlaps', target: 'other#flow', record: 'r1', level: 'warning', agent_level: 'warning' },
+    { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2' },
+    { kind: 'lane', id: 'rule', state: 'label', label: 'contradicts', side: 'first', other: 'ann2', target: 'ann2/y.spec.html#b', record: 'r3', level: 'important', agent_level: 'important' },
+    { kind: 'corpus', id: 'cite', state: 'label', label: 'contradicts', target: 'r.spec.html#a', record: 'r4', level: 'important',
+      rule: { target: 'r.spec.html#a', text: 'Every feature has a.', name: 'A', home: 'docs/r.spec.html#a', served: false, extra: 1 } },
+    { kind: 'rule', id: 'acceptance', state: 'label', label: 'missed', target: 'r.spec.html#a', record: 'r5', level: 'important',
+      text: 'Every feature has a.', name: 'A', home: 'docs/r.spec.html#a', served: false },
+  ], levels: { overlaps: { human: 'warning', agent: 'warning' }, contradicts: { human: 'important', agent: 'important' } } }) };
+};
+const fetchJev = Function('fetch', 'jevParams', 'OWN_ADDRESS', 'URLSearchParams', runtime.slice(fetchStart, fetchEnd) + '; return fetchJev;')(
+  fakeFetch,
+  jevParams,
+  new URL('http://review.example/docs/specs/example.spec.html'),
+  URLSearchParams,
+);
+const answer = await fetchJev('base-123');
+assert.match(requested, /^\/api\/jev\\?/);
+// The browser keeps only the human level; agent_level is for the agent read (#markers-levels-source).
+assert.deepEqual(answer, {
+  jev: 'on',
+  items: [
+    { kind: 'corpus', id: 'draft', state: 'label', label: 'overlaps', target: 'other#flow', record: 'r1', level: 'warning', side: null, other: null, word: null, text: null, name: null, home: null, served: true, rule: null, escalated: false },
+    { kind: 'orphan', id: 'thread-1', state: 'label', label: 'one candidate', target: 'new-section', record: 'r2', level: null, side: null, other: null, word: null, text: null, name: null, home: null, served: true, rule: null, escalated: false },
+    { kind: 'lane', id: 'rule', state: 'label', label: 'contradicts', target: 'ann2/y.spec.html#b', record: 'r3', level: 'important', side: 'first', other: 'ann2', word: null, text: null, name: null, home: null, served: true, rule: null, escalated: false },
+    // a mark citing a marked rule keeps that rule's target, text, name, home, and whether the page's lane serves that
+    // home for its card (project-rules #card-variants, #card-source)
+    { kind: 'corpus', id: 'cite', state: 'label', label: 'contradicts', target: 'r.spec.html#a', record: 'r4', level: 'important', side: null, other: null, word: null, text: null, name: null, home: null, served: true,
+      rule: { target: 'r.spec.html#a', text: 'Every feature has a.', name: 'A', home: 'docs/r.spec.html#a', served: false }, escalated: false },
+    // a rule item carries its criterion text, name, home, and whether the page's lane serves it (project-rules #boundaries)
+    { kind: 'rule', id: 'acceptance', state: 'label', label: 'missed', target: 'r.spec.html#a', record: 'r5', level: 'important', side: null, other: null, word: null,
+      text: 'Every feature has a.', name: 'A', home: 'docs/r.spec.html#a', served: false, rule: null, escalated: false },
+  ],
+  levels: { overlaps: { human: 'warning', agent: 'warning' }, contradicts: { human: 'important', agent: 'important' } },
+});
+assert.equal((runtime.match(/fetch\('\/api\/jev\?/g) || []).length, 1, 'all Jev display uses one request seam');
+assert.match(runtime, /120000/, 'Jev fetch allows a cold provider request to finish');
+assert.match(runtime, /hint\.label === 'resolved in spirit'/, 'unrelated resolved answers never display');
+assert.doesNotMatch(runtime, /async function loadJev\(/, 'coverage shares the main Jev request');
+assert.doesNotMatch(runtime, /const jevState/, 'coverage shares the main Jev state');
+assert.match(runtime, /renderPanel\(\);\n  renderPins\(\);/, 'base changes clear thread and pin Jev displays');
+
+const moveStart = runtime.indexOf('async function moveOrphans(');
+const moveEnd = runtime.indexOf('\n\nconst chartInfoFor', moveStart);
+assert.ok(moveStart >= 0 && moveEnd > moveStart, 'runtime exposes orphan move action');
+const posted = [];
+const moveState = {
+  movingOrphans: new Set(),
+  activeThread: 'thread-1',
+};
+let moveRefreshes = 0;
+const toasts = [];
+const save = event => { posted.push(event); };
+const laneOf = Function(runtime.match(/^const laneOf = [^\n]*$/m)[0] + '; return laneOf;')();
+const { moveOrphan, moveOrphans } = Function('state', 'humanId', 'renderPanel', 'toast', 'refresh', 'renderPins', 'save', 'laneOf', runtime.slice(moveStart, moveEnd) + '; return { moveOrphan, moveOrphans };')(
+  moveState,
+  prefix => prefix + 'fixed',
+  () => {},
+  text => toasts.push(text),
+  async () => { moveRefreshes++; },
+  () => {},
+  save,
+  laneOf,
+);
+const movedRoot = { body: { quote: 'old quote', text: 'Original note' } };
+await moveOrphan({ id: 'thread-1', ev: movedRoot, messages: [movedRoot] }, 'new-section');
+assert.equal(posted.length, 2);
+assert.equal(posted[0].event, 'comment');
+assert.equal(posted[0].anchorId, 'new-section');
+assert.equal(posted[0].quote, 'old quote');
+assert.equal(posted[0].text, 'Original note');
+assert.equal(posted[1].event, 'status');
+assert.equal(posted[1].status, 'resolved');
+assert.ok(!('lane' in posted[0]) && !('stage' in posted[0]), 'a comment that recorded no lane or stage moves with none');
+// threads #stage-tag-source: the moved comment is the same message, so it keeps the lane and the stage it recorded.
+posted.length = 0;
+const laned = { body: { quote: 'q', text: 'Laned note', lane: 'abc1', stage: 'Spec review' } };
+await moveOrphan({ id: 'thread-2', ev: laned, messages: [laned] }, 'new-section');
+assert.deepEqual([posted[0].lane, posted[0].stage], ['abc1', 'Spec review']);
+
+// #acceptance-move-all: Move all (n) moves each thread exactly as its own Move comment here, nothing else.
+const moveEvents = () => posted.map(e => ({ ...e, createdAt: null }));
+const rootA = { body: { quote: 'quote a', text: 'Note a' } };
+const rootB = { body: { text: 'Note b' } };
+const threadA = { id: 'thread-a', ev: rootA, messages: [rootA] };
+const threadB = { id: 'thread-b', ev: rootB, messages: [rootB] };
+posted.length = 0;
+await moveOrphan(threadA, 'sec-a');
+await moveOrphan(threadB, 'sec-b');
+const oneByOne = moveEvents();
+posted.length = 0;
+moveRefreshes = 0;
+await moveOrphans([{ th: threadA, target: 'sec-a' }, { th: threadB, target: 'sec-b' }]);
+assert.deepEqual(moveEvents(), oneByOne, 'the batch posts the same events as each card, in order');
+assert.deepEqual(posted.map(e => e.respondsTo || e.anchorId), ['sec-a', 'thread-a', 'sec-b', 'thread-b'], 'no other thread changes');
+assert.equal(moveRefreshes, 1, 'one refresh per click');
+assert.equal(toasts.at(-1), 'Moved 2 comments');
+assert.equal(moveState.movingOrphans.size, 0);
+
+// #settle-orphan: a resolved orphan is settled, so its card offers no Jev orphan guess at all.
+const openStart = runtime.indexOf('function openOrphanHint(');
+assert.ok(openStart >= 0, 'runtime exposes the open orphan guess');
+const openOrphanHint = Function('jevItem', runtime.slice(openStart, runtime.indexOf('\n}\n', openStart) + 2) + '; return openOrphanHint;')(
+  (kind, id) => kind === 'orphan' ? { kind, id, state: id === 'unsure' ? 'unsure' : 'label', label: 'x', target: 'moved' } : null);
+assert.equal(openOrphanHint({ id: 't', status: 'pending' }).target, 'moved');
+assert.equal(openOrphanHint({ id: 't', status: 'acknowledged' }).target, 'moved');
+assert.equal(openOrphanHint({ id: 't', status: 'resolved' }), null, 'no Possibly moved to, Go to, or move button once resolved');
+assert.equal(openOrphanHint({ id: 'unsure', status: 'resolved' }), null, 'no unsure Jev label once resolved');
+
+// #state-unsure: an unsure orphan or resolved answer shows nothing on the thread card; Jev unavailable is named.
+const noticeStart = runtime.indexOf('function threadJevNotice(');
+assert.ok(noticeStart >= 0, 'runtime exposes the thread Jev notice');
+const threadJevNotice = Function(runtime.slice(noticeStart, runtime.indexOf('\n}\n', noticeStart) + 2) + '; return threadJevNotice;')();
+const unsure = kind => ({ kind, id: 't', state: 'unsure' });
+assert.equal(threadJevNotice(unsure('orphan'), unsure('resolved')), null, 'unsure orphan and resolved show nothing');
+assert.equal(threadJevNotice(null, unsure('resolved')), null);
+assert.equal(threadJevNotice(unsure('orphan'), { kind: 'resolved', id: 't', state: 'unavailable' }).state, 'unavailable');
+assert.doesNotMatch(runtime, /data-state=unsure/, 'no unsure thread label style');
+
+// #acceptance-note-draft: a draft button only opens the existing composer with fixed text; nothing is written. Every
+// note draft button opens it (runtime-jev-render.mjs): #acceptance-note-draft-unsent, #acceptance-note-draft-criterion-unsent,
+// #acceptance-note-draft-change-unsent, #acceptance-reconcile-all-unsent, #acceptance-reconcile-all-warnings-unsent,
+// #acceptance-gaps-all-unsent.
+const composerStart = runtime.indexOf('function openComposer(');
+const composerEnd = runtime.indexOf('\n\nconst label', composerStart);
+assert.ok(composerStart >= 0 && composerEnd > composerStart, 'runtime exposes the comment composer');
+const composerState = {};
+const openComposer = Function('state', 'setCommentMode', 'openPanel', 'renderPanel', 'setTimeout', 'shell',
+  runtime.slice(composerStart, composerEnd) + '; return openComposer;')(composerState, () => {}, () => {}, () => {}, () => {}, { held: false });
+posted.length = 0;
+openComposer('story-a', null, null, 'Add an acceptance criterion that verifies this story.');
+assert.deepEqual(composerState.composer, { kind: 'comment', anchorId: 'story-a', target: null, quote: null,
+  text: 'Add an acceptance criterion that verifies this story.' });
+openComposer('clause-a', { type: 'element', key: 'p:1' }, 'quote');
+assert.equal(composerState.composer.text, '', 'ordinary comments still open empty');
+assert.equal(posted.length, 0, 'opening a draft writes nothing');
+
+// #acceptance-note-resolve: Resolve all (n) resolves every Looks resolved thread with the card's own resolve event.
+const resolveStart = runtime.indexOf('async function resolveThreads(');
+const resolveEnd = runtime.indexOf('\nfunction selectThread(', resolveStart);
+assert.ok(resolveStart >= 0 && resolveEnd > resolveStart, 'runtime exposes the shared resolve path');
+let refreshed = 0;
+const resolveState = {};
+const { resolveThreads, resolveThread } = Function('state', 'humanId', 'toast', 'refresh', 'save',
+  runtime.slice(resolveStart, resolveEnd) + '\n; return { resolveThreads, resolveThread };')(
+  resolveState, prefix => prefix + 'fixed', () => {}, () => { refreshed++; }, save);
+const resolvedEvent = id => ({ id: 'sfixed', event: 'status', respondsTo: id, threadId: id, status: 'resolved', actor: 'human', createdAt: null, schemaVersion: 1 });
+posted.length = 0;
+await resolveThread({ id: 't1' });
+assert.deepEqual(posted.map(e => ({ ...e, createdAt: null })), [resolvedEvent('t1')]);
+posted.length = 0;
+await resolveThreads([{ id: 't2' }, { id: 't3' }]);
+assert.deepEqual(posted.map(e => ({ ...e, createdAt: null })), [resolvedEvent('t2'), resolvedEvent('t3')], 'one resolve event per hinted thread, nothing else');
+assert.equal(refreshed, 2, 'one refresh per click');
+const panel = slice('function renderPanel(', '\n\n// A card');
+assert.doesNotMatch(runtime, /Resolve thread|jev-resolve/, 'no card has its own Resolve thread button');
+assert.match(panel, /if \(th\.status === 'acknowledged'\) \{[\s\S]*?'Resolve'[\s\S]*?resolveThread\(th\)/, "each card's own resolve control is unchanged");
+assert.match(panel, /const hinted = threads\.filter\(looksResolved\);\n\s+if \(hinted\.length\) \{[\s\S]*?'Resolve all \(' \+ hinted\.length \+ '\)'[\s\S]*?resolveThreads\(hinted\)[\s\S]*?nodes\.push\(all\);\n  \}\n  \/\/ threads #stream-new/,
+  'Resolve all (n) sits after every thread, only when a thread looks resolved');
+assert.match(panel, /const orphanHint = openOrphanHint\(th\);/, 'cards read the orphan guess only while open');
+assert.match(panel, /const movable = threads\.map\(th => \(\{ th, hint: openOrphanHint\(th\) \}\)\)\s*\.filter\(m => m\.hint && m\.hint\.state === 'label' && m\.hint\.target\)\s*\.map\(m => \(\{ th: m\.th, target: m\.hint\.target \}\)\);\n\s+if \(movable\.length >= 2\) \{[\s\S]*?'Move all \(' \+ movable\.length \+ '\)'[\s\S]*?moveOrphans\(movable\)[\s\S]*?nodes\.push\(moveAll\);\n  \}\n  const hinted/,
+  'Move all (n) sits at the bottom of the list beside Resolve all, only with two or more open orphans');
+
+// #acceptance-resolved-tag: the tag shows only while the thread is open; once resolved its own indicator replaces it.
+const looksStart = runtime.indexOf('function looksResolved(');
+const looksResolved = Function('jevItem', runtime.slice(looksStart, runtime.indexOf('\n}\n', looksStart) + 2) + '; return looksResolved;')(
+  (kind, id) => kind === 'resolved' && id === 'hinted' ? { kind, id, state: 'label', label: 'resolved in spirit' } : null);
+assert.equal(looksResolved({ id: 'hinted', status: 'pending' }), true);
+assert.equal(looksResolved({ id: 'hinted', status: 'acknowledged' }), true);
+assert.equal(looksResolved({ id: 'hinted', status: 'resolved' }), false);
+assert.equal(looksResolved({ id: 'other', status: 'pending' }), false);
+assert.match(panel, /\(looksResolved\(th\) \? '<span class="hx-jev-thread-label">Looks resolved<\/span>' : ''\)/);
+assert.match(panel, /const resolvedHint = th\.status === 'resolved' \? null : jevItem\('resolved', th\.id\);/, 'a resolved card shows no resolved-in-spirit Jev label');
+assert.match(slice('function renderPins(', '\n\nfunction renderBadges('), /const hinted = looksResolved\(th\);/, 'the pin tag follows the card tag');
+
+console.log('runtime Jev contract tests passed');

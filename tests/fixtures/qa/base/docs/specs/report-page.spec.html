@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./.style/spec.css">
+<title>Report page</title>
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Report page</h1>
+<nav data-anchor="breadcrumbs">docs / specs / report-page.spec.html</nav>
+<p data-anchor="context">QA fixture: a spec whose mockup set draws its screens.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="true" data-anchor="story-teams">As a manager, I see each team's weekly total at a glance.</p>
+</section>
+
+<section data-spec-section="acceptance" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="page-teams" data-story="story-teams">The report page shows each team as a card with its total for the week.</p>
+<p data-acceptance-criterion data-anchor="page-team" data-story="story-teams">Pressing a team's card opens its team page, listing its totals for the last three weeks.</p>
+<p data-acceptance-criterion data-anchor="page-onboarding" data-story="story-teams">The onboarding tour points to the team cards first.</p>
+</section>
+
+<section data-spec-section="behavior" data-anchor="behavior">
+<h2>Behavior</h2>
+<p data-anchor="page-order">Cards are ordered by the week's total, highest first. Totals come from the weekly totals the report service holds.</p>
+</section>
+
+</article>
+</body>
+</html>

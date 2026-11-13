@@ -1,0 +1,401 @@
+import importlib.util
+import json
+import re
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from unittest.mock import patch
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SERVER = ROOT / "skill" / "review-spec" / "assets" / "review-serve.py"
+VERIFIER = ROOT / "skill" / "review-spec" / "scripts" / "verify-review.py"
+module = importlib.util.spec_from_file_location("verify_review", VERIFIER)
+verifier = importlib.util.module_from_spec(module)
+module.loader.exec_module(verifier)
+
+
+def run(*args, cwd):
+    subprocess.run(args, cwd=cwd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+class BaselineRouteTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.temp.name)
+        self.docs = self.repo / "docs"
+        self.specs = self.docs / "specs"
+        self.specs.mkdir(parents=True)
+        run("git", "init", "-b", "main", cwd=self.repo)
+        run("git", "config", "user.name", "Spec Chat Test", cwd=self.repo)
+        run("git", "config", "user.email", "spec-chat@example.test", cwd=self.repo)
+        self.spec = self.specs / "focus.spec.html"
+        self.spec.write_text('<p data-anchor="rule">baseline rule</p>\n')
+        run("git", "add", ".", cwd=self.repo)
+        run("git", "commit", "-m", "baseline", cwd=self.repo)
+        self.base = subprocess.check_output(("git", "rev-parse", "HEAD"), cwd=self.repo, text=True).strip()
+        run("git", "switch", "-c", "stack-base", cwd=self.repo)
+        self.spec.write_text('<p data-anchor="rule">stacked base rule</p>\n')
+        run("git", "add", ".", cwd=self.repo)
+        run("git", "commit", "-m", "stack base", cwd=self.repo)
+        self.stack_base = subprocess.check_output(("git", "rev-parse", "HEAD"), cwd=self.repo, text=True).strip()
+        run("git", "switch", "-c", "feature", cwd=self.repo)
+        self.spec.write_text('<p data-anchor="rule">changed rule</p>\n<p data-anchor="new">new rule</p>\n')
+        (self.specs / "new.spec.html").write_text('<p data-anchor="new-file">new file</p>\n')
+
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            self.port = sock.getsockname()[1]
+        self.server = subprocess.Popen(
+            (sys.executable, str(SERVER), str(self.docs), str(self.port)),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        for _ in range(200):
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{self.port}/", timeout=0.1).close()
+                break
+            except Exception:
+                time.sleep(0.02)
+        else:
+            self.fail("review server did not start")
+
+    def tearDown(self):
+        self.server.terminate()
+        self.server.wait(timeout=2)
+        self.temp.cleanup()
+
+    def baseline(self, path, base=None):
+        params = {"path": path}
+        if base is not None:
+            params["base"] = base
+        query = urllib.parse.urlencode(params)
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/baseline?{query}") as response:
+            return json.load(response)
+
+    def test_service_root_serves_a_responsive_index_with_detail_links(self):
+        (self.docs / "evidence-bundle.html").write_text("<title>Evidence</title>")
+        (self.docs / "index.html").write_text("<title>Collection index</title>")
+        support = self.docs / "support"
+        support.mkdir()
+        (support / "fixture.html").write_text("<title>Fixture</title>")
+        (support / "fixture.spec.html").write_text("<title>Fixture spec</title>")
+        hidden = self.docs / ".hidden"
+        hidden.mkdir()
+        (hidden / "hidden.spec.html").write_text("<title>Hidden spec</title>")
+
+        index_url = f"http://127.0.0.1:{self.port}/?focus=changes&base=main"
+        with urllib.request.urlopen(index_url) as response:
+            body = response.read().decode()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.headers.get_content_type(), "text/html")
+        self.assertIn('<meta name="viewport"', body)
+        self.assertIn('<title>Spec Chat index</title>', body)
+        self.assertIn('href="specs/focus.spec.html?focus=changes&amp;base=main"', body)
+        self.assertIn('focus.spec', body)
+        self.assertNotIn("evidence-bundle.html", body)
+        self.assertNotIn("index.html", body)
+        self.assertNotIn("support/", body)
+        self.assertNotIn(".hidden/", body)
+
+        source = (
+            b"<!doctype html><html><body><p data-anchor=\"rule\">baseline rule</p>"
+            b"</body></html>"
+        )
+        self.spec.write_bytes(source)
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/specs/focus.spec.html?focus=changes&base=main",
+            headers={"Accept": "text/html"},
+        )
+        with urllib.request.urlopen(request) as response:
+            detail = response.read()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(detail, source)
+
+    def test_index_runs_the_runtime_host_bridge_then_the_set_find_script_and_nothing_else(self):
+        # host-bridge #bridge-tab-pages, #acceptance-tab-index: same bridge code, not a second copy; then the
+        # design set's Find script as the runtime holds it, read as the index reads it (review-index #find-seam).
+        runtime = (ROOT / "skill" / "review-spec" / "assets" / "viz" / "runtime.js").read_text()
+        start = runtime.index("/* ---------------- host bridge")
+        end_marker = "/* ---------------- end host bridge ---------------- */"
+        block = runtime[start:runtime.index(end_marker, start) + len(end_marker)]
+        spec = importlib.util.spec_from_file_location("review_serve_design_set", SERVER)
+        serve = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(serve)
+        find = serve._design_set(runtime)[3]["find.js"]
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as response:
+            body = response.read().decode()
+        scripts = re.findall(r"<script>(.*?)</script>", body, re.S)
+        self.assertEqual(scripts, [block + "\nlistenHost();\n", find])
+        self.assertNotIn("<script src", body)
+
+    def test_runtime_navigation_is_fixed_top_and_server_preserves_raw_spec_bytes(self):
+        runtime = (ROOT / "skill" / "review-spec" / "assets" / "viz" / "runtime.js").read_text()
+        # spec-page-design #top-line: the index link opens the fixed top line, the body's first child.
+        self.assertIn("indexLink = line.appendChild(document.createElement('a'))", runtime)
+        self.assertIn("document.body.insertBefore(line, document.body.firstChild)", runtime)
+        self.assertRegex(runtime, r"\.hx-top-line\{position:fixed;top:0;left:0;right:0;")
+        self.assertIn(".hx-service-index-link", runtime)
+        self.assertRegex(runtime, r"e\.target\.closest\('[^']*\.hx-top-line")
+
+        source = b"<!doctype html><html><body><p data-anchor=\"rule\">raw bytes</p></body></html>"
+        self.spec.write_bytes(source)
+        for accept in (None, "text/html"):
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{self.port}/specs/focus.spec.html",
+                headers={} if accept is None else {"Accept": accept},
+            )
+            with urllib.request.urlopen(request) as response:
+                self.assertEqual(response.read(), source)
+                self.assertEqual(response.headers.get_content_type(), "text/html")
+        self.assertEqual(self.spec.read_bytes(), source)
+
+    def verify(self, path="specs/focus.spec.html", base="main", local_spec=None):
+        link_base = subprocess.check_output(("git", "rev-parse", base), cwd=self.repo, text=True).strip()
+        return subprocess.run(
+            (sys.executable, str(VERIFIER), str(self.repo), str(local_spec or self.docs / path),
+             f"http://127.0.0.1:{self.port}/{path}?focus=changes&base={link_base}", base),
+            text=True, capture_output=True,
+        )
+
+    def test_verifier_checks_served_bytes_and_exact_git_source(self):
+        result = self.verify()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        facts = json.loads(result.stdout)
+        self.assertEqual(facts["base"], self.base)
+        self.assertEqual(facts["htmlBase"], self.base)
+        self.assertEqual(facts["source"], "base")
+
+    def test_verifier_accepts_a_new_file_without_unchanged_blocks(self):
+        result = self.verify("specs/new.spec.html")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["source"], "new")
+
+    def test_verifier_compares_the_served_page_with_the_file_plus_the_meta_the_service_adds(self):
+        # review-preflight #compatibility-http-proof, review-service #published-spec-page,
+        # #acceptance-share-meta-register: a page with a real head and no share meta is served with meta the file lacks.
+        source = (b'<!doctype html><html><head><meta charset="utf-8"><title>Focus</title></head>'
+                  b'<body><p data-anchor="rule">changed rule</p></body></html>\n')
+        self.spec.write_bytes(source)
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/specs/focus.spec.html") as response:
+            self.assertNotEqual(response.read(), source)
+        result = self.verify()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.spec.read_bytes(), source)
+        url = f"http://127.0.0.1:{self.port}/specs/focus.spec.html"
+        with patch.object(verifier, "read_url", side_effect=[source]):
+            with self.assertRaisesRegex(ValueError, "served spec bytes differ"):
+                verifier.verify(self.repo, self.spec, url, "main")
+
+    def test_verifier_rejects_a_different_served_spec(self):
+        result = self.verify(local_spec=self.specs / "new.spec.html")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("served spec bytes differ", result.stderr)
+
+    def test_verifier_rejects_a_link_with_a_different_baseline(self):
+        url = f"http://127.0.0.1:{self.port}/specs/focus.spec.html?focus=changes&base=stack-base"
+        with self.assertRaisesRegex(ValueError, "review URL selects a different baseline"):
+            verifier.verify(self.repo, self.spec, url, "main")
+
+    def test_verifier_requires_a_pinned_base_in_focused_links(self):
+        url = f"http://127.0.0.1:{self.port}/specs/focus.spec.html"
+        for query in ("?focus=changes", "?focus=changes&base=main"):
+            with self.subTest(query=query):
+                with self.assertRaisesRegex(ValueError, "focused review URL"):
+                    verifier.verify(self.repo, self.spec, url + query, "main")
+        # A normal view can still verify its source and an explicit comparison.
+        self.assertEqual(verifier.verify(self.repo, self.spec, url, "main")["source"], "base")
+
+    def test_verifier_rejects_incorrect_baseline_response(self):
+        expected = self.baseline("specs/focus.spec.html", "main")
+        url = f"http://127.0.0.1:{self.port}/specs/focus.spec.html"
+        for override in ({"base": self.stack_base}, {"htmlBase": self.stack_base}, {"html": "wrong snapshot"}):
+            with self.subTest(override=override):
+                with patch.object(verifier, "read_url", side_effect=[self.spec.read_bytes(), json.dumps(expected | override).encode()]):
+                    with self.assertRaises(ValueError):
+                        verifier.verify(self.repo, self.spec, url, "main")
+
+    def test_returns_baseline_html_from_local_merge_base(self):
+        result = self.baseline("specs/focus.spec.html")
+        self.assertEqual(result["base"], self.base)
+        self.assertIn("baseline rule", result["html"])
+        self.assertNotIn("changed rule", result["html"])
+
+    def test_automatic_base_uses_merge_base_when_main_advances(self):
+        run("git", "add", ".", cwd=self.repo)
+        run("git", "commit", "-m", "feature change", cwd=self.repo)
+        run("git", "switch", "main", cwd=self.repo)
+        self.spec.write_text('<p data-anchor="rule">main newer rule</p>\n')
+        run("git", "add", str(self.spec), cwd=self.repo)
+        run("git", "commit", "-m", "advance main", cwd=self.repo)
+        run("git", "switch", "feature", cwd=self.repo)
+
+        result = self.baseline("specs/focus.spec.html")
+        self.assertEqual(result["base"], self.base)
+        self.assertIn("baseline rule", result["html"])
+        self.assertNotIn("main newer rule", result["html"])
+
+    def test_new_file_has_no_baseline_html(self):
+        result = self.baseline("specs/new.spec.html")
+        self.assertEqual(result["base"], self.base)
+        self.assertIsNone(result["html"])
+        self.assertIsNone(result["htmlBase"])
+        self.assertEqual(result["baseDate"], subprocess.check_output(("git", "show", "-s", "--format=%cs", self.base), cwd=self.repo, text=True).strip())
+
+    def test_baseline_includes_range_facts_for_a_dirty_worktree(self):
+        result = self.baseline("specs/focus.spec.html", "main")
+        head = subprocess.check_output(("git", "rev-parse", "HEAD"), cwd=self.repo, text=True).strip()
+        head_date = subprocess.check_output(("git", "show", "-s", "--format=%cs", head), cwd=self.repo, text=True).strip()
+        base_date = subprocess.check_output(("git", "show", "-s", "--format=%cs", self.base), cwd=self.repo, text=True).strip()
+
+        self.assertEqual(result["head"], head)
+        self.assertTrue(result["dirty"])
+        self.assertEqual(result["headDate"], head_date)
+        self.assertEqual(result["baseDate"], base_date)
+        self.assertLessEqual(len(result["commits"]), 20)
+        self.assertEqual(result["commits"][0]["id"], head)
+        self.assertEqual(result["commits"][0]["date"], head_date)
+        self.assertEqual(result["commits"][0]["subject"], "stack base")
+
+    def test_baseline_history_is_capped_and_option_like_base_is_rejected(self):
+        for index in range(22):
+            self.spec.write_text(f'<p data-anchor="rule">revision {index}</p>\n')
+            run("git", "add", str(self.spec), cwd=self.repo)
+            run("git", "commit", "-m", f"revision {index}", cwd=self.repo)
+
+        result = self.baseline("specs/focus.spec.html", "main")
+        self.assertEqual(len(result["commits"]), 20)
+        self.assertEqual(result["commits"][0]["subject"], "revision 21")
+        self.assertEqual(result["commits"][-1]["subject"], "revision 2")
+
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.baseline("specs/focus.spec.html", "--output=/tmp/unexpected")
+        self.assertEqual(error.exception.code, 400)
+
+    def test_committed_new_file_is_new_when_absent_from_base(self):
+        seeded = self.specs / "seeded.spec.html"
+        seeded.write_text('<p data-anchor="seed">seeded baseline</p>\n')
+        run("git", "add", str(seeded), cwd=self.repo)
+        run("git", "commit", "-m", "new spec", cwd=self.repo)
+        result = self.baseline("specs/seeded.spec.html", "main")
+
+        self.assertEqual(result["base"], self.base)
+        self.assertIsNone(result["htmlBase"])
+        self.assertIsNone(result["html"])
+        checked = self.verify("specs/seeded.spec.html")
+        self.assertEqual(checked.returncode, 0, checked.stderr)
+        self.assertEqual(json.loads(checked.stdout)["source"], "new")
+        self.assertIsNone(json.loads(checked.stdout)["htmlBase"])
+
+    def test_explicit_sibling_snapshot_is_not_replaced_by_a_shared_ancestor(self):
+        run("git", "add", ".", cwd=self.repo)
+        run("git", "commit", "-m", "current feature", cwd=self.repo)
+        run("git", "switch", "-c", "reviewed-sibling", "main", cwd=self.repo)
+        expected = '<p data-anchor="rule">previously reviewed sibling</p>\n'
+        self.spec.write_text(expected)
+        run("git", "add", ".", cwd=self.repo)
+        run("git", "commit", "-m", "reviewed snapshot", cwd=self.repo)
+        sibling = subprocess.check_output(("git", "rev-parse", "HEAD"), cwd=self.repo, text=True).strip()
+        run("git", "switch", "feature", cwd=self.repo)
+
+        for ref in (sibling, "reviewed-sibling"):
+            with self.subTest(ref=ref):
+                result = self.baseline("specs/focus.spec.html", ref)
+                self.assertEqual(result["base"], sibling)
+                self.assertEqual(result["htmlBase"], sibling)
+                self.assertEqual(result["html"], expected)
+
+    def test_explicit_base_supports_stacked_change_requests(self):
+        result = self.baseline("specs/focus.spec.html", "stack-base")
+        self.assertEqual(result["base"], self.stack_base)
+        self.assertIn("stacked base rule", result["html"])
+        self.assertEqual(result["htmlBase"], self.stack_base)
+
+    def test_missing_explicit_base_fails_visibly(self):
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.baseline("specs/focus.spec.html", "missing-base")
+        self.assertEqual(error.exception.code, 409)
+
+    def test_rejects_paths_outside_the_served_collection(self):
+        query = urllib.parse.urlencode({"path": "../secret"})
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/baseline?{query}")
+        self.assertEqual(error.exception.code, 400)
+
+    def test_refuses_to_serve_the_repository_root(self):
+        """review-service #acceptance-local-server-broad-root: the repository root is refused, naming a narrow
+        review collection."""
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+        process = subprocess.Popen(
+            (sys.executable, str(SERVER), str(self.repo), str(port)),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            output, error = process.communicate(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            process.wait(timeout=2)
+            self.fail("review server accepted the repository root")
+        self.assertNotEqual(process.returncode, 0)
+        self.assertIn("review collection", output + error)
+
+    def test_static_serving_does_not_follow_symlinks_outside_collection(self):
+        secret = self.repo / "secret.txt"
+        secret.write_text("not public")
+        (self.docs / "leak.txt").symlink_to(secret)
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(f"http://127.0.0.1:{self.port}/leak.txt")
+        self.assertEqual(error.exception.code, 404)
+
+    def test_refuses_to_serve_an_ancestor_of_a_repository(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ancestor = Path(directory)
+            repo = ancestor / "repo"
+            repo.mkdir()
+            run("git", "init", "-b", "main", cwd=repo)
+            (ancestor / "private-notes.txt").write_text("not public")
+            with socket.socket() as sock:
+                sock.bind(("127.0.0.1", 0))
+                port = sock.getsockname()[1]
+            process = subprocess.Popen(
+                (sys.executable, str(SERVER), str(ancestor), str(port)),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                output, error = process.communicate(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.terminate()
+                process.wait(timeout=2)
+                self.fail("review server accepted a repository ancestor")
+            self.assertNotEqual(process.returncode, 0)
+            self.assertIn("review collection", output + error)
+
+    def test_rejects_malformed_public_event_names(self):
+        query = urllib.parse.urlencode({"dir": "specs/focus.spec.html.review", "actor": "human"})
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/api/events?{query}",
+            data=json.dumps({"event": "../escape", "id": "bad/id"}).encode(),
+            method="POST",
+        )
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(request)
+        self.assertEqual(error.exception.code, 400)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Git-derived focus - spec</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./.style/spec.css">
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Git-derived focus</h1>
+<nav data-anchor="breadcrumbs">docs / specs / git-focus.spec.html</nav>
+<p data-anchor="context">Every HTTP-served spec highlights what its branch changed against a base, derived from Git alone; <a href="./compared-range.spec.html">Compared commit range</a> extends it.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories" id="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-reviewer">As a reviewer, I want additions to remain clear while existing context recedes so the canonical spec itself explains the current issue-scoped change.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="git-focus" data-anchor="acceptance" id="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-focus-changes" data-story="story-reviewer"><span data-acceptance-scenario>Given a reviewer on a spec that adds and changes blocks against its base, When the reviewer opens it with focus against that base,</span> <span data-acceptance-observable>Then every outermost added or modified block is clear with a visible focus boundary and every unchanged block recedes.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-focus-visibility" data-story="story-reviewer"><span data-acceptance-scenario>Given a reviewer on a desktop on a spec that adds and changes blocks against its base, When the reviewer opens it with focus against that base, then opens Display settings, then sets Diff visibility to 0%, then reloads the page, then opens Display settings again,</span> <span data-acceptance-observable>Then Diff visibility reads 0%, and every block, unchanged ones included, reads at normal clarity.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-focus-new-spec" data-story="story-reviewer"><span data-acceptance-scenario>Given a reviewer on a spec absent from its base, When the reviewer opens it with focus against that base,</span> <span data-acceptance-observable>Then the whole spec is clear and no block recedes.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-focus-fail" data-story="story-reviewer"><span data-acceptance-scenario>Given a reviewer on a spec whose Git comparison cannot be calculated, which needs an induced failure: Git comparison, When the reviewer opens it with focus,</span> <span data-acceptance-observable>Then focus mode shows its failure visibly and the complete current spec renders without stale highlighting.</span></p>
+<p data-anchor="acceptance-rules-note">Onboarding: not needed, focus extends the review page with no new user surface.
+CI: the focus tests run in CI with no other tool of the box installed and no provider file (<a href="./review-service.spec.html#acceptance-ci-alone">CI rule</a>).
+One hand-off control for desktop and phone: not affected, focus adds no hand-off control (<a href="./prompt-first-shaping.spec.html#acceptance-one-handoff-rule">phone rule</a>, <a href="./prompt-first-shaping.spec.html#acceptance-one-handoff-rule-desktop">desktop rule</a>).
+Never strip proof clauses or rewrite unedited criteria: not affected, no criterion here carries a proof clause (<a href="./prompt-first-shaping.spec.html#acceptance-proof-clause-rule">shaping rule</a>, <a href="./prompt-first-shaping.spec.html#acceptance-proof-clause-rule-repair">repair rule</a>).
+Any origin only without login or cookie: kept, focus reads the review service&rsquo;s <a href="./compared-range.spec.html#baseline-response">baseline</a> and adds no login and no cookie (<a href="./served-pages.spec.html#acceptance-origin-safe">rule</a>).
+Every mockup at production fidelity: kept, the focus view&rsquo;s mockup is drawn from the runtime&rsquo;s chrome and design set tokens: its screen is review chrome a mockup page shows, and the page that frames a prototype cannot frame itself (<a href="./mockups.spec.html#prototype-drawn">drawn mockup</a>, <a href="./mockups.spec.html#acceptance-fidelity-rule">rule</a>).</p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries" id="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-focus"><span data-boundary-responsibility>The browser runtime owns classifying current anchored blocks against the base and drawing focus.</span> <span data-boundary-seam>Caller-facing seam: <code>GET /api/baseline</code> <code>base</code>, <code>htmlBase</code>, <code>html</code>.</span> <span data-boundary-dependency>Dependency direction: self-contained; the server reads local Git only.</span> <span data-boundary-scope>Observable scope: clear blocks with a focus boundary, receded blocks, the failure notice.</span></p>
+</section>
+
+<section data-anchor="focus-view" id="focus-view">
+<h2>Git-derived focus is the diff viewer</h2>
+<p data-anchor="focus-only-review">The highlighted current spec is the complete required human diff-review surface.</p>
+<p data-anchor="focus-clear">Every current block added or modified by the work branch remains fully clear.</p>
+<p data-anchor="focus-boundary">The runtime marks each outermost added or modified block with an unmistakable focus boundary that remains visible across custom spec styles without outlining every changed descendant.</p>
+<p data-anchor="focus-recede">Every unchanged current block recedes visually so the issue-scoped additions hold attention.</p>
+<p data-anchor="focus-new-file">A new spec is entirely clear.</p>
+<p data-anchor="focus-normal-view">A spec with no change against its compared base renders the whole current document at normal clarity; from any entry, a spec with changes shows them highlighted, as <a href="./compared-range.spec.html#change-highlight-optin">compared range</a> states.</p>
+<p data-anchor="focus-no-metadata">Focus is derived from Git and never maintained through embedded issue metadata, sidecars, anchor lists, or hand-authored change markers.</p>
+<p data-anchor="focus-commit-discipline">The shaping skill commits every accepted spec change locally before presenting the refreshed focus view, so the Git-derived review state remains durable and reproducible.</p>
+<p data-anchor="focus-http">Prompt-first shaping uses the existing HTTP review transport on desktop and mobile because a browser file page cannot inspect Git.</p>
+<p data-anchor="focus-local-git">The review server reads only the current local repository and never fetches, checks out, stages, commits, or writes Git state.</p>
+<p data-anchor="focus-no-octo">No focus behavior imports, invokes, expects, or mentions an orchestrator.</p>
+<p data-anchor="focus-base-override">An explicit review base resolves to the exact selected local commit, including a previously reviewed sibling branch, while automatic discovery alone uses a merge base.</p>
+<p data-anchor="focus-baseline-provenance">The baseline response retains the selected commit in <code>base</code>; a file absent from the selected base is entirely new and returns null for both <code>htmlBase</code> and <code>html</code>.</p>
+<p data-anchor="focus-failure">If Git comparison cannot be calculated, focus mode fails visibly and renders the complete current spec without stale highlighting.</p>
+<p data-anchor="focus-removal">A removed behavior must be expressed by the resulting current rule or constraint, because a silent deletion with no current replacement cannot be reviewed in the current-spec highlighting model.</p>
+<p data-anchor="focus-no-other-diff">Focus requires no side-by-side viewer, removed-content tray, deletion ghost, or pull-request review.</p>
+<p data-anchor="focus-future-diff">The contract leaves room for optional richer in-spec diff views when real use justifies them.</p>
+</section>
+
+<section data-anchor="mobile-review" id="mobile-review">
+<h2>Mobile review</h2>
+<p data-anchor="mobile-focus">Issue focus and receded context remain legible and operable on narrow screens without shifting the spec sideways.</p>
+</section>
+
+<section data-anchor="focus-proof" id="focus-proof">
+<h2>Implementation and proof contract</h2>
+<p data-anchor="tdd-focus-red">A runtime test proves the runtime classifies current anchored blocks against a Git baseline and renders focus solely from that classification.</p>
+<p data-anchor="tdd-exact-baseline">A regression requests both the ref and commit of a sibling snapshot and verifies exact baseline bytes; source-verifier tests cover substituted baselines, wrong served pages, absent-at-base new specs, and uncommitted new files.</p>
+<p data-anchor="tdd-focus-green">The focus test passes for added, modified, unchanged, new-file, normal-view, and unavailable-baseline cases.</p>
+<p data-anchor="tdd-focus-boundary">The runtime test proves only outermost changed blocks receive the explicit focus boundary and that the focus capability migrates stale repository copies.</p>
+</section>
+
+<section data-anchor="focus-non-goals" id="focus-non-goals">
+<h2>Non-goals</h2>
+<p data-anchor="non-goal-review-pr">Git-derived focus does not require humans to inspect GitHub or another change-request UI to understand the spec change.</p>
+</section>
+
+</article>
+</body>
+</html>

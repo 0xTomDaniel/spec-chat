@@ -1,0 +1,4 @@
+# gitignore per spec-chat design: raw review spools stay local by default
+*.review/
+__pycache__/
+skill/spec-chat-review-workspace/

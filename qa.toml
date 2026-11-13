@@ -1,0 +1,1885 @@
+# QA capture target: the Spec Chat review page (annotateanything
+# docs/specs/jev-capture.spec.html#jc-target). Commands run in the environment root
+# with QA_ROOT, QA_FIXTURE, QA_REPO_<REPO>, QA_HEAD_<REPO>, QA_URL_<SERVICE>; a
+# service also gets PORT, reset gets QA_STORY. Python stdlib only: no setup or rebuild.
+
+# Test paths searched for a no-browser criterion's anchor.
+tests = ["tests"]
+
+[repos.spec-chat]
+url = "https://github.com/0xTomDaniel/spec-chat.git"
+
+[services.review]
+# The real review-serve.py on the fixture registry, Jev answered by the rules test's
+# fake provider (tests/fixtures/qa/serve.py). Box state isolated: HOME, XDG state and
+# config under $QA_ROOT, no Herdr socket, so no provider file or records, but for reset.sh's
+# fake wake provider: every owner is present, and each wake is a line in $QA_ROOT/wakes.log.
+command = 'mkdir -p "$QA_ROOT/home" "$QA_ROOT/state" "$QA_ROOT/config" && cd "$QA_REPO_SPEC_CHAT" && exec env -u HERDR_SOCKET_PATH HOME="$QA_ROOT/home" XDG_STATE_HOME="$QA_ROOT/state" XDG_CONFIG_HOME="$QA_ROOT/config" python3 tests/fixtures/qa/serve.py "$QA_ROOT/serve/registry.toml" "$PORT"'
+url = "http://127.0.0.1:{port}"
+ready = "/qa-fixture/docs/specs/report.spec.html"
+
+[services.review-second]
+# A second review service (served-pages #served-storage): the same command on reset.sh's fourth registry, public too,
+# which holds served-storage-return and served-storage-stored at the review service's roots, so their specs are on two
+# review services, and served-storage-service at its own copy, so its spool is not the review service's. Its own state,
+# and no wake provider, so only the review service wakes an owner.
+command = 'mkdir -p "$QA_ROOT/home" "$QA_ROOT/state-second" "$QA_ROOT/config" && cd "$QA_REPO_SPEC_CHAT" && exec env -u HERDR_SOCKET_PATH HOME="$QA_ROOT/home" XDG_STATE_HOME="$QA_ROOT/state-second" XDG_CONFIG_HOME="$QA_ROOT/config" python3 tests/fixtures/qa/serve.py "$QA_ROOT/serve-second/registry.toml" "$PORT"'
+url = "http://127.0.0.1:{port}"
+ready = "/served-storage-service/docs/specs/report.spec.html"
+
+[services.host]
+# The fixture's test host (tests/fixtures/qa/host.py): serves the review services' pages at its own
+# address, each with a base address naming the page, in a frame sandboxed without same-origin access,
+# so the page runs with no origin (served-pages #served-rule). Declared after review and review-second, so it starts
+# with QA_URL_REVIEW and QA_URL_REVIEW_SECOND. {host}/<path> frames review's page at <path>; its header's Service 1
+# and Service 2 buttons open the page at <path> from review and from review-second in the same frame.
+# {host}/named/<path> is the same host page with its frame named by the host, the name cleared once the page has loaded.
+command = 'cd "$QA_REPO_SPEC_CHAT" && exec python3 tests/fixtures/qa/host.py "$QA_URL_REVIEW" "$QA_URL_REVIEW_SECOND" "$PORT"'
+url = "http://127.0.0.1:{port}"
+ready = "/"
+
+[services.shell]
+# The fixture's test shell (tests/fixtures/qa/shell.py, shell #shell): frames review's page at <path> held, beside
+# review's comment UI page (/comments), or with it as a sheet on a phone, and relays the shell messages between them by
+# window. Declared after review, so it starts with QA_URL_REVIEW; reset.sh names its origin (QA_URL_SHELL) in review's
+# registry as box setup's --shell does, so the pages it frames are held. {shell}/<path> holds review's page at <path>; the
+# bar's Messages lists every message it relays and the page's last publish, and Comments shows the comment UI again.
+# {shell}/bare/<path> is the same with its frames sandboxed with no origin.
+command = 'cd "$QA_REPO_SPEC_CHAT" && exec python3 tests/fixtures/qa/shell.py "$QA_URL_REVIEW" "$PORT"'
+url = "http://127.0.0.1:{port}"
+ready = "/"
+
+[services.shell-other]
+# The same test shell at another origin, which the box names nowhere (shell #shell-setting-obey): it says hello
+# with comments too, and the page it frames stays alone.
+command = 'cd "$QA_REPO_SPEC_CHAT" && exec python3 tests/fixtures/qa/shell.py "$QA_URL_REVIEW" "$PORT"'
+url = "http://127.0.0.1:{port}"
+ready = "/"
+
+[services.prototype]
+# The fixture's running prototype (tests/fixtures/qa/prototype.py, mockups #prototype): a tiny product on loopback serving
+# reports/weekly, the weekly report screen, only at its root, its page loading its script and style by absolute paths,
+# as a product ships. reset.sh names its address (QA_URL_PROTOTYPE) on the prototype collections' rows, as the lane
+# command's --prototype does, so review-prototype serves it at each one's prototype origin, <slug>-prototype. before
+# the service's host name (review-service #prototype-proxy).
+command = 'cd "$QA_REPO_SPEC_CHAT" && exec python3 tests/fixtures/qa/prototype.py "$PORT"'
+url = "http://127.0.0.1:{port}"
+ready = "/"
+
+[services.review-prototype]
+# The review service on reset.sh's prototype registry, which holds the prototype collections and records no public base
+# address, so it is private on loopback and each lane's prototype origin is http://<slug>-prototype.localhost:<port>,
+# which a browser reaches on loopback (review-service #prototype-proxy): a mockup page frames its route there, held across
+# the two origins (shell #shell-msg-prototype). prototype-own-chrome's row names this service itself (QA_URL_REVIEW_PROTOTYPE)
+# as the lane's prototype, its own review service run on the fixture's data. Its own state.
+command = 'mkdir -p "$QA_ROOT/home" "$QA_ROOT/state-prototype" "$QA_ROOT/config" && cd "$QA_REPO_SPEC_CHAT" && exec env -u HERDR_SOCKET_PATH HOME="$QA_ROOT/home" XDG_STATE_HOME="$QA_ROOT/state-prototype" XDG_CONFIG_HOME="$QA_ROOT/config" python3 tests/fixtures/qa/serve.py "$QA_ROOT/serve-prototype/registry.toml" "$PORT"'
+url = "http://127.0.0.1:{port}"
+ready = "/prototype-frames/docs/specs/report-page.spec.html"
+
+[services.evidence]
+# The evidence provider's answers (review-index #index-gates-provider). The provider is a peer outside
+# this repository, so its answers are fixture data (annotateanything jev-capture #qa-rules-real-data):
+# reset.sh declares its review facts answer and a bundle page under $QA_ROOT/evidence, served here as
+# files, so GET /review-facts reads the declared answer and /bundles/qa-proof/ the bundle page.
+command = 'exec python3 -I -m http.server "$PORT" --bind 127.0.0.1 --directory "$QA_ROOT/evidence"'
+url = "http://127.0.0.1:{port}"
+ready = "/"
+
+[services.review-plugged]
+# The review service with the evidence provider plugged (review-service #providers-evidence): the
+# same command on reset.sh's second registry, whose folder holds the provider file reset.sh writes,
+# naming the evidence service. Its own state, so its Jev records stay apart from review's.
+command = 'mkdir -p "$QA_ROOT/home" "$QA_ROOT/state-plugged" "$QA_ROOT/config" && cd "$QA_REPO_SPEC_CHAT" && exec env -u HERDR_SOCKET_PATH HOME="$QA_ROOT/home" XDG_STATE_HOME="$QA_ROOT/state-plugged" XDG_CONFIG_HOME="$QA_ROOT/config" python3 tests/fixtures/qa/serve.py "$QA_ROOT/serve-plugged/registry.toml" "$PORT"'
+url = "http://127.0.0.1:{port}"
+ready = "/qa-8/docs/specs/later-only.spec.html"
+
+[services.review-sections]
+# The review service on reset.sh's third registry, which holds exactly the parts review-index #index-sections names: a
+# lane with an open decision, a lane whose specs are all with the agent, and a collection under a slug that is no lane
+# key. Its own state, so its Jev records stay apart from review's.
+command = 'mkdir -p "$QA_ROOT/home" "$QA_ROOT/state-sections" "$QA_ROOT/config" && cd "$QA_REPO_SPEC_CHAT" && exec env -u HERDR_SOCKET_PATH HOME="$QA_ROOT/home" XDG_STATE_HOME="$QA_ROOT/state-sections" XDG_CONFIG_HOME="$QA_ROOT/config" python3 tests/fixtures/qa/serve.py "$QA_ROOT/serve-sections/registry.toml" "$PORT"'
+url = "http://127.0.0.1:{port}"
+ready = "/qa-11/docs/specs/report.spec.html"
+
+# One Git repo of six specs, copied per collection (reset.sh): onboarding.spec.html marks the project rule "Every change
+# to what a user sees or does adds its onboarding section.", named "Every change ships its onboarding"; report.spec.html is the
+# spec under shaping, its head adding an export story with no onboarding criterion,
+# two open TBDs, the first offering two answer buttons, and one later TBD; later-only.spec.html's only TBD is later;
+# one-open.spec.html has exactly one open TBD; long-title.spec.html, registered only in qa-10, has a long title and no
+# TBD; print.spec.html, registered only in coverage-undeclared, has stories
+# and criteria that name no story (no data-story), its head rewording two sections. No spec has a comment thread, except
+# the review-state collections' report spec and the index gate lanes' later-only spec (spools.py, nav hints below). Jev
+# records are written by the fake as pages load and kept across resets; dismissals
+# are not, since each reset registers fresh projects. In rule-candidate the onboarding
+# criterion is unmarked, so it is a candidate on its home spec (story-approve). In rule-pending the report spec gains a
+# sentence whose rule check the fake holds unanswered while the service runs, recording nothing; in rule-answer another,
+# whose rule check the fake answers, missed, a few seconds after its first ask (spools.py HELD).
+[fixture.spec_review_site]
+repo = "spec-chat"
+path = "tests/fixtures/qa"
+reset = 'sh "$QA_FIXTURE/reset.sh"'
+
+[entry]
+url = "{review}/qa-fixture/docs/specs/report.spec.html"
+viewport = { width = 1280, height = 800 }
+
+# Phone-frame story: "Given a narrow screen" runs at a phone viewport with touch and
+# mobile emulation, below the runtime's 640px narrow breakpoint.
+[entry.stories.story-mobile]
+viewport = { width = 390, height = 844 }
+touch = true
+
+# Review index story-index-calm: "a narrow pane" is narrower than the index's 48rem column, yet wider than the
+# design set's 640px phone width, under which the gate word moves under its title (review-index #index-design).
+[entry.stories.story-index-calm]
+viewport = { width = 720, height = 800 }
+
+# Rule-card capture hints, per criterion (the capture agent reads these). The rule marker is
+# the "Jev notes" button beside the Acceptance criteria heading; opening it shows the rule card
+# "Every change ships its onboarding". Every collection except rule-candidate, not-a-rule, dismiss,
+# dismiss-reload, and rule-main-only is the same project, so its report spec is another spec of the project
+# missing the same rule, except rule-pending's, whose rule check stays pending, and rule-answer's, whose rule check is
+# pending until answered a few seconds after it is first asked (pending hints below).
+# - miss, dismiss, dismiss-reload, dismiss-no-unrule, ask: open the rule marker
+#   beside Acceptance criteria to show the card first.
+# - dismiss: the page is the dismiss collection's report spec (its own project, so the click
+#   hides no sibling's marker); then click Not for this spec; capture the card closing, with no reload.
+# - dismiss-reload: the page is the dismiss-reload collection's report spec (its own project);
+#   then click Not for this spec, then reload the page (browser reload).
+# - advice: the page is the report spec with no open TBD (its TBDs are later), so the hand-off
+#   button reads Accept spec, and the missed note is the rule marker beside Acceptance
+#   criteria. Click Accept spec; nothing is typed.
+# - clear-thread: the page is the clear-thread report spec. Open the rule marker to show the card,
+#   turn on Comment, click the Acceptance criteria heading, type the value, save, then reload
+#   the page (browser reload); the marker is still there.
+# - candidates, mark-as-rule, not-a-rule: the page is rule-candidate's onboarding spec, whose
+#   onboarding criterion is unmarked; open the marker beside that criterion to show the
+#   candidate card first.
+# - not-a-rule: the page is the not-a-rule collection's onboarding spec, rule-candidate's twin in
+#   its own project; then click Not a project rule; capture the card closing, with no reload.
+# - convention-no-candidate: the page is the convention-no-candidate collection's onboarding spec, whose
+#   unmarked last criterion says every loading state uses the design system's shared skeleton; open the
+#   spec and wait for Jev's notes: that criterion shows no candidate marker.
+# - pending, pending-motion: the page is the rule-pending collection's report spec, whose rule check the fixture's
+#   general LLM holds unanswered for as long as the service runs; open it, then for pending hover the spot beside
+#   the Acceptance criteria heading where the rule marker shows on the other report specs. Nothing is clicked.
+# - pending-answer: the page is the rule-answer collection's report spec; open it, then wait for the rule check's
+#   answer; nothing is clicked.
+# - source-own-lane: the page is qa-fixture's report spec; its collection serves the onboarding spec, as qa-1 and the
+#   other collections registering the four specs do. Open the rule marker beside Acceptance criteria, then click the
+#   card's source, onboarding · #rule-onboarding.
+# - source-main-only: the page is the rule-main-only collection's report spec, its own project, which registers that
+#   spec alone; its project's main, origin/main, holds the onboarding spec. Open the rule marker beside Acceptance
+#   criteria.
+#
+# Each criterion below starts on its own clean copy of the fixture repo (reset.sh
+# collections): a story resets once, and earlier criteria leave drafts and hand-offs
+# in the spec's spool. The spec file names stay the same, so "the report spec" holds.
+[nav.acceptance-candidates]
+path = "{review}/rule-candidate/docs/specs/onboarding.spec.html"
+[nav.acceptance-mark-as-rule]
+path = "{review}/rule-candidate/docs/specs/onboarding.spec.html"
+[nav.acceptance-not-a-rule]
+path = "{review}/not-a-rule/docs/specs/onboarding.spec.html"
+[nav.acceptance-convention-no-candidate]
+path = "{review}/convention-no-candidate/docs/specs/onboarding.spec.html"
+[nav.acceptance-pending]
+path = "{review}/rule-pending/docs/specs/report.spec.html"
+[nav.acceptance-pending-answer]
+path = "{review}/rule-answer/docs/specs/report.spec.html"
+[nav.acceptance-pending-motion]
+path = "{review}/rule-pending/docs/specs/report.spec.html"
+[nav.acceptance-source-own-lane]
+path = "{review}/qa-fixture/docs/specs/report.spec.html"
+[nav.acceptance-source-main-only]
+path = "{review}/rule-main-only/docs/specs/report.spec.html"
+[nav.acceptance-dismiss]
+path = "{review}/dismiss/docs/specs/report.spec.html"
+[nav.acceptance-dismiss-reload]
+path = "{review}/dismiss-reload/docs/specs/report.spec.html"
+[nav.acceptance-clear-thread]
+path = "{review}/clear-thread/docs/specs/report.spec.html"
+[nav.acceptance-advice]
+path = "{review}/advice/docs/specs/report.spec.html"
+[nav.acceptance-tbd-later]
+path = "{review}/tbd-later/docs/specs/later-only.spec.html"
+[nav.acceptance-tbd-later-handoff]
+path = "{review}/tbd-later-handoff/docs/specs/later-only.spec.html"
+[nav.acceptance-tbd-open-highlight]
+path = "{review}/tbd-open-highlight/docs/specs/report.spec.html"
+[nav.acceptance-tbd-open-single]
+path = "{review}/tbd-open-single/docs/specs/one-open.spec.html"
+[nav.acceptance-next-tbd]
+path = "{review}/next-tbd/docs/specs/report.spec.html"
+[nav.acceptance-next-tbd-step]
+path = "{review}/next-tbd-step/docs/specs/report.spec.html"
+[nav.acceptance-next-tbd-handoff]
+path = "{review}/next-tbd-handoff/docs/specs/report.spec.html"
+[nav.acceptance-tbd-open-jump]
+path = "{review}/tbd-open-jump/docs/specs/report.spec.html"
+[nav.acceptance-tbd-open-wrap]
+path = "{review}/tbd-open-wrap/docs/specs/report.spec.html"
+[nav.acceptance-mobile-composer]
+path = "{review}/mobile-composer/docs/specs/report.spec.html"
+# Phone review (prompt-first-shaping #mobile-handoff; served-pages #acceptance-served-reload-*), at story-mobile's phone
+# viewport: each criterion opens its own collection's report spec, two open TBDs and no comment thread. A draft comment
+# on a paragraph: tap Comment in the bottom toolbar, tap the paragraph, type the value, tap the composer's Comment. The
+# bottom toolbar holds the drafts note, Next TBD (2), and "Hand off to agent →"; "Open review sidebar" opens the panel.
+# - mobile-one-control: after the draft, open the review panel.
+# - mobile-count: the first value on "The report page shows totals per week.", the second on another paragraph.
+# - mobile-handoff-wake: the owner's wake is a line the fixture's wake provider (reset.sh) logs; no screen shows it.
+# - mobile-handoff-frame, served-reload-*: the test host frames the spec with no origin; reloading the page is its frame
+#   reloading alone, the host page staying.
+# - served-reload-outbox: take the browser offline before saving the draft, and back online before the reload. On a
+#   phone a draft's text reads only in the review panel: after the reload, open it with the "Open review sidebar"
+#   button at the top right.
+# Frame storage (served-pages #served-storage), at desktop width: a draft comment on a paragraph is Comment in the top
+# line, a click on the paragraph, the value typed, then the composer's Comment.
+# - served-storage-service, served-storage-return: the host's header buttons Service 1 and Service 2 open this spec from
+#   the first and the second review service in the host's frame. Take the browser offline before saving the draft;
+#   press Service 2 while still offline, so the frame leaves the first spec (it shows the browser's offline page), then
+#   bring the browser back online and press Service 2 again. served-storage-return: then press Service 1, open the review
+#   panel with the "Open review sidebar" button at the top right, and press "Hand off to agent".
+# - served-storage-stored: online throughout. Save the first value as a draft on the first spec; press Service 2 and save
+#   the second value as a draft there; press Service 1, open the review panel with the "Open review sidebar" button at
+#   the top right, and press "Hand off to agent".
+# - served-storage-host-named: the start point is the host page that names its frame and clears the name once the page
+#   has loaded. Take the browser offline before saving the draft, and back online after it.
+[nav.acceptance-mobile-one-control]
+path = "{review}/mobile-one-control/docs/specs/report.spec.html"
+[nav.acceptance-mobile-count]
+path = "{review}/mobile-count/docs/specs/report.spec.html"
+[nav.acceptance-mobile-handoff]
+path = "{review}/mobile-handoff/docs/specs/report.spec.html"
+[nav.acceptance-mobile-handoff-wake]
+path = "{review}/mobile-handoff-wake/docs/specs/report.spec.html"
+[nav.acceptance-mobile-handoff-frame]
+path = "{host}/mobile-handoff-frame/docs/specs/report.spec.html"
+[nav.acceptance-mobile-next-tbd]
+path = "{review}/mobile-next-tbd/docs/specs/report.spec.html"
+[nav.acceptance-served-reload-handoff]
+path = "{host}/served-reload-handoff/docs/specs/report.spec.html"
+[nav.acceptance-served-reload-outbox]
+path = "{host}/served-reload-outbox/docs/specs/report.spec.html"
+[nav.acceptance-served-storage-service]
+path = "{host}/served-storage-service/docs/specs/report.spec.html"
+[nav.acceptance-served-storage-return]
+path = "{host}/served-storage-return/docs/specs/report.spec.html"
+[nav.acceptance-served-storage-stored]
+path = "{host}/served-storage-stored/docs/specs/report.spec.html"
+[nav.acceptance-served-storage-host-named]
+path = "{host}/named/served-storage-host-named/docs/specs/report.spec.html"
+# Keyboard block targets (prompt-first-shaping #acceptance-block-target-enter, -space): Comment turns spec blocks into Tab
+# stops after the page's controls. Press Tab until the first paragraph, "QA fixture: a feature spec under shaping.", has
+# focus; a focused button is no paragraph. Then press Enter or Space.
+[nav.acceptance-block-target-enter]
+path = "{review}/block-target-enter/docs/specs/report.spec.html"
+[nav.acceptance-block-target-space]
+path = "{review}/block-target-space/docs/specs/report.spec.html"
+[nav.acceptance-block-target-off]
+path = "{review}/block-target-off/docs/specs/report.spec.html"
+
+# Answer buttons (prompt-first-shaping #answer-buttons): the report spec's Behavior TBD "whether the
+# export also offers XLSX" (export-format) offers two answer buttons, "CSV only (recommended)" and
+# "CSV and XLSX". "One answer button" is "CSV only (recommended)"; "another" is "CSV and XLSX".
+# Press them as page buttons, never through Comment unless the When says so; nothing is typed.
+# acceptance-choice-event is proven by tests/runtime-answer-buttons.mjs.
+[nav.acceptance-choice-press]
+path = "{review}/choice-press/docs/specs/report.spec.html"
+[nav.acceptance-choice-phone]
+path = "{review}/choice-phone/docs/specs/report.spec.html"
+[nav.acceptance-choice-thread]
+path = "{review}/choice-thread/docs/specs/report.spec.html"
+[nav.acceptance-choice-again]
+path = "{review}/choice-again/docs/specs/report.spec.html"
+[nav.acceptance-choice-change]
+path = "{review}/choice-change/docs/specs/report.spec.html"
+[nav.acceptance-choice-reload]
+path = "{review}/choice-reload/docs/specs/report.spec.html"
+[nav.acceptance-choice-handoff]
+path = "{review}/choice-handoff/docs/specs/report.spec.html"
+[nav.acceptance-choice-comment-mode]
+path = "{review}/choice-comment-mode/docs/specs/report.spec.html"
+
+# Review-state collections (tests/fixtures/qa/spools.py). Seeded reviewers are other
+# browsers than the capture browser.
+#
+# Capture hints, per criterion (the capture agent reads these):
+# - anchor-moved, anchor-changed, anchor-gone: Papaya's comment is on the selected
+#   sentence "The export button downloads a CSV of the current table.". The agent's edit
+#   is already on disk before the page loads (moved: a paragraph inserted above it;
+#   changed: "of the current table." rewritten; gone: the sentence deleted), so the
+#   page load is the refresh. Do not edit any file. The step left is opening that thread
+#   with its "Open thread 1" button, so the panel shows its pin ring, quote, and notice
+#   (gone: "Text removed" shows only in the opened thread).
+# - stale-page: the agent's edit (a paragraph inserted above the export sentence) waits
+#   beside the spec and lands when this page next saves an event (tests/fixtures/qa/
+#   serve.py), so the page as loaded predates the edit. Steps: turn on Comment,
+#   select the export sentence's text, type the comment text from values, save. The save
+#   brings the "Spec updated by agent" banner; its Reload button is the Then's refresh.
+# - name: four steps, all required; do not stop after the first save. 1) Turn on Comment
+#   (C), click any block, type the first value, save. The fixture agent answers that comment
+#   as it saves (tests/fixtures/qa/serve.py), so the thread waits on this reviewer. 2) Reload the page
+#   (browser reload, not the banner). 3) Open that thread with its "Open thread 1" button: it shows focused.
+#   4) Type the second value in its Reply field, then press Save reply (the arrow). Then capture the focused thread:
+#   both of this reviewer's messages and their author.
+# - typed-kept (review-state #acceptance-typed-kept): typed-kept's report spec holds no thread. Turn on Comment (C),
+#   click the export paragraph, the one holding "The export button downloads a CSV of the current table.", type the
+#   value in the comment box, and do not save it. Press "Review index" at the start of the top line; once the review
+#   index shows, press the browser's Back. Then capture the spec page: the export paragraph's pin, and in the review
+#   panel its thread, the typed comment marked Draft.
+[nav.acceptance-anchor-moved]
+path = "{review}/anchor-moved/docs/specs/report.spec.html"
+[nav.acceptance-anchor-changed]
+path = "{review}/anchor-changed/docs/specs/report.spec.html"
+[nav.acceptance-anchor-gone]
+path = "{review}/anchor-gone/docs/specs/report.spec.html"
+[nav.acceptance-anchor-stale-page]
+path = "{review}/stale-page/docs/specs/report.spec.html"
+[nav.acceptance-agent-scan]
+path = "{review}/agent-scan/docs/specs/report.spec.html"
+[nav.acceptance-name]
+path = "{review}/name-reply/docs/specs/report.spec.html"
+[nav.acceptance-typed-kept]
+path = "{review}/typed-kept/docs/specs/report.spec.html"
+# spec-page-design #acceptance-icons, #acceptance-icons-dock, #acceptance-receipt-case: qa-1's report spec holds a
+# draft, a handed-off, a replied, and a resolved thread (spools.py every_status). Its page opens with the review panel
+# closed; the thread dock is the column of buttons at the top right, its first the one named "Open review sidebar".
+# - icons, receipt-case: open the review panel with that first dock button.
+# - icons-dock: the page as it opens, its panel closed; nothing to click.
+[nav.acceptance-icons]
+path = "{review}/qa-1/docs/specs/report.spec.html"
+[nav.acceptance-receipt-case]
+path = "{review}/qa-1/docs/specs/report.spec.html"
+[nav.acceptance-icons-dock]
+path = "{review}/qa-1/docs/specs/report.spec.html"
+# spec-page-design #acceptance-one-surface: "a spec served with a compared range" is qa-fixture's Onboarding, unchanged
+# since its row base, so its page opens on that range with no block changed (compared-range #reviewed-default).
+[nav.acceptance-one-surface]
+path = "{review}/qa-fixture/docs/specs/onboarding.spec.html"
+# spec-page-design #acceptance-focus-set: qa-4's Report filters holds one thread, resolved, and no open TBD (spools.py
+# all_resolved), so the panel's hand-off reads Accept spec; press Tab until Accept spec has focus.
+[nav.acceptance-focus-set]
+path = "{review}/qa-4/docs/specs/later-only.spec.html"
+
+# Review index (review-index #index-threads, #index-gates, #index-design, #index-marks), at the server root. The
+# review service ({review}) has no evidence provider; review-plugged ({review-plugged}) has one, answering from the
+# evidence service's declared review facts (reset.sh); review-sections ({review-sections}) holds the index parts alone.
+# Lane-key collections (tests/fixtures/qa/spools.py LANES, their one table) are lanes: a header (QA-1, its need count, a Proof
+# link when one is named) over its project label and its spec rows; every other collection settles under Settled (n).
+# Each spec row leads with its status mark, then its title, its gate word on the right, and one muted meta line under
+# the title (thread counts, then Changed).
+# - QA-1 and QA-2 hold the four fixture specs (Weekly report changed since base, Onboarding
+#   unchanged, Report filters and Report sorting absent at base); Weekly report and Report sorting
+#   hold open TBDs. QA-1's Weekly report holds a draft, a handed-off, a replied, and a resolved
+#   thread (3 open, 1 resolved); QA-2's one open thread, replied by the agent; QA-2 also holds
+#   docs/specs/archive.spec.html, registered from a worktree since removed (reset.sh), a stale row.
+# - QA-3 to QA-7 each hold Report filters alone (no open TBD) with one thread: QA-3 handed off,
+#   not answered; QA-4 and QA-5 resolved; QA-6 replied by the agent, not resolved; QA-7 a comment
+#   saved, not handed off.
+# - On review-plugged, QA-8 and QA-9 each hold Report filters alone, no thread: the evidence
+#   provider names QA-8's accepted at the fixture's head commit, and a proof bundle for QA-9. QA-10
+#   holds Weekly report (open TBDs), Report filters handed off and not answered, and "Weekly report
+#   export to spreadsheets, with per-team totals, saved filters, and the chosen sort kept between
+#   visits", a long title with no TBD and no thread.
+# - QA-15 holds Report page alone, no thread: its reviewer pressed Accept spec while its mockup set held 01 Report page
+#   and 02 Team page, so the hand-off names those two at the versions their pages show; the set has since gained 03
+#   Export dialog, which it does not name. QA-16 holds Report filters alone, its spool holding a link in place of an
+#   event, so the index cannot read its review state.
+# Capture hints, per criterion:
+# - review-index, index-threads, index-threads-none: read the QA-1 lane. Its Weekly report
+#   row holds a draft, a handed-off, a replied, and a resolved thread (3 open, 1 resolved);
+#   its other rows have no threads.
+# - index-sections, on review-sections: QA-11 holds Weekly report alone (open TBDs); QA-12 holds Report filters alone,
+#   its one thread handed off and not answered; the main collection's slug is no lane key and holds the four fixture
+#   specs. Read the part headings and both lanes, then open Settled at the bottom. A registry serves its rows only, so
+#   no spec there is served without a row; that case is proven by tests/review-serve-multi.py
+#   test_index_settles_specs_served_without_a_row_in_a_closed_disclosure.
+# - index-gate-decision: read QA-1's Weekly report row (open TBDs and a handed-off thread).
+# - index-gate-reply: read the QA-6 lane. index-gate-draft: read the QA-7 lane.
+# - index-gate-agent: read the QA-3 lane. index-gate-ready, index-no-provider: read the QA-4 lane.
+# - index-gate-sent: click the QA-5 lane's "Report filters" title; on the spec page open the review
+#   sidebar with its "Open review sidebar" button (top right), click "Accept spec", then click
+#   "Review index"; read the QA-5 lane.
+# - index-gate-sent-new-mockup: read the QA-15 lane.
+# - index-stale-unreadable: read the QA-16 lane. docs/specs/later-only.spec.html shows as plain text with the word
+#   Stale on the right and no link.
+# - index-gate-accepted: read the QA-8 lane on review-plugged.
+# - index-proof: click the QA-9 lane's "Proof" link on review-plugged; it opens in a new tab.
+# - index-design: read the Needs you and In progress lanes and the settled specs below them: no
+#   spec row reads "Up to date", each lane spec row shows its gate word once beside its mark, each
+#   lane header how many of its specs need you, and the page has no sideways scroll. QA-2's stale
+#   row has no gate or status; the word Stale is its only word (review-index #index-entry-status).
+# - index-threads-refresh: QA-2's Weekly report has one open thread, replied by the agent.
+#   Steps: click that row's "Weekly report" title in the QA-2 lane; open the thread with its
+#   "Open thread 1" button, which shows it focused; click its "Resolve" button; click "Review index" (the
+#   reload); read the QA-2 Weekly report row.
+# - index-stale: read the QA-2 lane. Its four specs are title links; docs/specs/archive.spec.html
+#   shows as plain text with the word Stale on the right and no link.
+# - index-title-column (story-index-calm, a narrow pane, its viewport above): read the QA-10 lane on
+#   review-plugged. Its long title wraps in its own column; Ready to accept stays on the right, beside the
+#   title's first line.
+# - index-marks: on review-plugged, read QA-10's Weekly report (Decision open) and Report filters (With the agent)
+#   rows, and QA-8's Report filters (Accepted) row: each leads with its mark.
+# - index-focus: on the review service, whose lanes show no Proof link, so a spec title is the page's first Tab stop
+#   (on review-plugged, QA-9's Proof link comes first, and a Proof link is no title). Press Tab until the QA-1 lane's
+#   Report filters title has focus: from page load, the first Tab lands on it.
+[nav.acceptance-review-index]
+path = "{review}/"
+[nav.acceptance-index-sections]
+path = "{review-sections}/"
+[nav.acceptance-index-gate-decision]
+path = "{review}/"
+[nav.acceptance-index-gate-reply]
+path = "{review}/"
+[nav.acceptance-index-gate-draft]
+path = "{review}/"
+[nav.acceptance-index-gate-agent]
+path = "{review}/"
+[nav.acceptance-index-gate-ready]
+path = "{review}/"
+[nav.acceptance-index-gate-sent]
+path = "{review}/"
+[nav.acceptance-index-gate-sent-new-mockup]
+path = "{review}/"
+[nav.acceptance-index-gate-accepted]
+path = "{review-plugged}/"
+[nav.acceptance-index-proof]
+path = "{review-plugged}/"
+[nav.acceptance-index-no-provider]
+path = "{review}/"
+[nav.acceptance-index-threads]
+path = "{review}/"
+[nav.acceptance-index-threads-none]
+path = "{review}/"
+[nav.acceptance-index-threads-refresh]
+path = "{review}/"
+[nav.acceptance-index-design]
+path = "{review}/"
+[nav.acceptance-index-stale]
+path = "{review}/"
+[nav.acceptance-index-stale-unreadable]
+path = "{review}/"
+[nav.acceptance-index-title-column]
+path = "{review-plugged}/"
+[nav.acceptance-index-marks]
+path = "{review-plugged}/"
+[nav.acceptance-index-focus]
+path = "{review}/"
+
+# Find (review-index #index-find), on review-sections ({review-sections}): QA-11 holds Weekly report (report.spec.html),
+# under Needs you; QA-12 Report filters (later-only.spec.html), under In progress; Settled, closed, the main collection's
+# Weekly report, Onboarding, Report filters, and Report sorting (one-open.spec.html). Find is the field under the title
+# line, above the parts: click it and type the criterion's value.
+# - index-find-title: type sorting, the one title holding it. index-find-name: type later-only, a spec name no title
+#   holds, QA-12's spec and the main collection's both.
+# - index-find-lane, index-find-phone: type qa-12. index-find-none: type payroll, which no title, name, or lane holds.
+# - index-find-clear: type Report sorting, then press Escape. index-find-reload: type qa-12, then reload the page.
+[nav.acceptance-index-find-title]
+path = "{review-sections}/"
+[nav.acceptance-index-find-lane]
+path = "{review-sections}/"
+[nav.acceptance-index-find-name]
+path = "{review-sections}/"
+[nav.acceptance-index-find-none]
+path = "{review-sections}/"
+[nav.acceptance-index-find-clear]
+path = "{review-sections}/"
+[nav.acceptance-index-find-reload]
+path = "{review-sections}/"
+[nav.acceptance-index-find-phone]
+path = "{review-sections}/"
+
+# Pages served at another address (served-pages #story-served): each criterion opens its served-*
+# collection's report spec in the test host, which frames it with no origin. reset.sh records a public
+# base address, so the review service answers that frame (entry.criteria below map the fixture).
+# Capture hints, per criterion:
+# - served-threads: the report spec holds one open thread, Papaya's, replied by the agent. The step
+#   left is opening that thread with its "Open thread 1" button.
+# - served-handoff: turn on Comment, click the "The report page shows totals per week." block,
+#   type the value, save, then click "Hand off to agent →".
+# - served-index: click "Review index".
+# - served-focus: focus on changes is turned on by choosing its baseline: click "Change base", then
+#   the older listed commit (subject "base").
+[nav.acceptance-served-threads]
+path = "{host}/served-threads/docs/specs/report.spec.html"
+[nav.acceptance-served-handoff]
+path = "{host}/served-handoff/docs/specs/report.spec.html"
+[nav.acceptance-served-index]
+path = "{host}/served-index/docs/specs/report.spec.html"
+[nav.acceptance-served-focus]
+path = "{host}/served-focus/docs/specs/report.spec.html"
+
+# Comment layer on host pages (comment-layer #acceptance-host-*, -one-thread-*, -no-scope, -no-service): each criterion
+# opens its collection's host page, docs/pane.html (tests/fixtures/qa/panes.py), a workbench pane of three items; the
+# host-place-* pages open on a fourth above them, Agent turn 46, whose band keeps the layer's row clear (panes.py
+# PLACE).
+# "Totals per week" anchors the report spec's totals criterion in the collection's scope, "Agent turn 42" a subject that
+# names no spec, both with the starters Question, Change, and Approve; "Agent turn 43" names a scope no row has. An item's
+# comment control is the button at its top right, named "Comment on <item>"; its threads' pins sit left of it, named
+# "Open thread <n>: <item>, <status>"; the thread box opens beside the item, its bar holding the page's drafts and "Hand off
+# to agent →". Seeded comments are other browsers', but host-handoff's and host-handoff-two's drafts, whose start point
+# keeps Papaya's browser identity, the page's own saved state, so they are this browser's.
+# Capture hints, per criterion:
+# - host-draft: click "Comment on Totals per week", then the Question starter, type the value, click Comment; the
+#   draft begins with Question.
+# - host-starters, host-only-comments: click "Comment on Totals per week".
+# - host-handoff: the draft is on Agent turn 42. Hand off is in the bar of an item's thread box, which a thread opened
+#   by its pin dims: open the box with "Comment on Agent turn 42".
+# - host-handoff-two: the drafts are on Totals per week and Agent turn 42. Open a box for Hand off with "Comment on
+#   Totals per week", as in host-handoff; then open Agent turn 42's thread with its pin.
+# - host-reply, host-quote-gone: open Agent turn 42's thread with its pin.
+# - host-same-subject: the page is pane-other.html; Agent turn 42's thread was written on pane.html. Open it with its pin.
+# - host-quote: select the words "named the columns after the table headers" in Agent turn 42, then click "Comment on
+#   Agent turn 42", type the value, click Comment.
+# - host-frame: the test host serves pane.html in a frame with no origin. Click "Comment on Agent turn 42", type the
+#   value, click Comment, then "Hand off to agent →".
+# - one-thread-spec: click "Comment on Totals per week", type the first value, click Comment; then open the spec page at
+#   the second value and its thread "Open thread 1".
+# - one-thread-host: open Totals per week's thread with its pin; the comment was written on the spec page.
+# - no-scope: Agent turn 43 shows no control. no-service: the page loads its layer from a stopped review service.
+# - host-place-scrolled: Agent turn 46's "Full text" button sits just below its row, at its right. Scroll the page down
+#   until Agent turn 46's top sits about 40 px above the screen, then click the right end of what shows of "Full text".
+# - host-place-grows: click Agent turn 46's "Full text"; Totals per week, the item below it, moves down.
+[nav.acceptance-host-draft]
+path = "{review}/host-draft/docs/pane.html"
+[nav.acceptance-host-starters]
+path = "{review}/host-starters/docs/pane.html"
+[nav.acceptance-host-handoff]
+path = "{review}/host-handoff/docs/pane.html"
+storage.local = { "spec-chat:reviewer" = '{"browser":"qa-browser-papaya","author":"Papaya"}' }
+[nav.acceptance-host-handoff-two]
+path = "{review}/host-handoff-two/docs/pane.html"
+storage.local = { "spec-chat:reviewer" = '{"browser":"qa-browser-papaya","author":"Papaya"}' }
+[nav.acceptance-host-reply]
+path = "{review}/host-reply/docs/pane.html"
+[nav.acceptance-host-same-subject]
+path = "{review}/host-same-subject/docs/pane-other.html"
+[nav.acceptance-host-quote]
+path = "{review}/host-quote/docs/pane.html"
+[nav.acceptance-host-quote-gone]
+path = "{review}/host-quote-gone/docs/pane.html"
+[nav.acceptance-host-only-comments]
+path = "{review}/host-only-comments/docs/pane.html"
+[nav.acceptance-host-frame]
+path = "{host}/host-frame/docs/pane.html"
+[nav.acceptance-one-thread-spec]
+path = "{review}/one-thread-spec/docs/pane.html"
+[nav.acceptance-one-thread-host]
+path = "{review}/one-thread-host/docs/pane.html"
+[nav.acceptance-no-scope]
+path = "{review}/no-scope/docs/pane.html"
+[nav.acceptance-no-service]
+path = "{review}/no-service/docs/pane.html"
+[nav.acceptance-host-place-scrolled]
+path = "{review}/host-place-scrolled/docs/pane.html"
+[nav.acceptance-host-place-grows]
+path = "{review}/host-place-grows/docs/pane.html"
+
+# Pages a shell holds (shell.spec.html#acceptance-shell-*): each criterion opens its shell-* collection (spools.py
+# SHELL, panes.py) in the test shell ({shell}, shell.py), which holds the page at the left and frames the comment UI page
+# at the right: its head reads Conversation, with the page's title and its counts; its bar under the conversation holds
+# Comment, the drafts, Next TBD, and "Hand off to agent →" or Accept spec; × at its head's right is its close control.
+# The held page shows its pins and no review panel, Comment, or Hand off of its own. Weekly report is report.spec.html,
+# Report filters later-only.spec.html. Capture hints, per criterion:
+# - shell-held: Mango's thread on the totals criterion. shell-alone: the same, opened in a plain tab, no shell.
+# - shell-unnamed: the same, in the shell at an origin the box does not name ({shell-other}); it says hello with comments.
+# - shell-pick: press Comment in the comment UI, click the totals criterion "The report page shows totals per week." in
+#   the page, type the value, press Comment in the comment UI.
+# - shell-publish: open the shell bar's Messages: the last publish names the page's address, its version, and the export
+#   format question with its two answers.
+# - shell-pick-key: click the page's title, press C, click the totals criterion in the page.
+# - shell-show: Report filters, whose filter criterion forty filler paragraphs put far below; press the thread's chip,
+#   "Acceptance criteria · The report page filters rows by the…", in the comment UI.
+# - shell-pin-focus: Report filters' one thread; press its pin, the numbered marker at the filter criterion's right.
+# - shell-handoff: the shell's frames have no origin ({shell}/bare/<path>), so the comment UI page takes the shell's
+#   browser id, which its start point keeps as Papaya's in the shell's storage: the one draft, on the totals criterion,
+#   is this browser's. Press "Hand off to agent →" in the comment UI.
+# - shell-accept: Report filters, its one thread resolved, no open TBD. shell-accept-waits: Weekly report, its one thread
+#   resolved, the export format its one open question.
+# - shell-answer: Weekly report, the export format its one open question; press "CSV only (recommended)" in the page's
+#   Behavior section.
+# - shell-page-tools: the page's top line shows the compared range and Change base; the Jev marks load after a moment.
+# - shell-mockup-step: the Team panel mockup at its first step, Mango's thread on the desktop Payments card at its second;
+#   press the thread's chip, "Desktop card payments · Step 2 Team open", in the comment UI.
+# - shell-host-item: a workbench pane; press "Comment on Agent turn 42", the control at the item's top right, which holds
+#   Papaya's thread, then Mango's.
+# - shell-close: press × at the comment UI's head.
+# - shell-native: the shell's own native page ({shell}/native/<collection>, shell.py), a factory floor drawn on a canvas
+#   with no Spec Chat script: its lane cards are things with no page element. Papaya's thread is on the QA-1514 card, in
+#   the Review station; press that card's comment control, the speech mark at its top right.
+# - shell-phone: no thread. Tap Comment in the comment UI's bar, tap the user story "As a manager, I read totals per week
+#   on the report page." in the held page, type the value, tap Comment in the comment UI.
+# - shell-phone-id: the shell's frames have no origin ({shell}/bare/<path>, shell.py); no thread. Save the first value as
+#   a comment as in shell-phone, reload the shell, tap that comment's bubble in the comment UI, type the second value in
+#   its Reply field, tap Save.
+[nav.acceptance-shell-held]
+path = "{shell}/shell-held/docs/specs/report.spec.html"
+[nav.acceptance-shell-alone]
+path = "{review}/shell-alone/docs/specs/report.spec.html"
+[nav.acceptance-shell-unnamed]
+path = "{shell-other}/shell-unnamed/docs/specs/report.spec.html"
+[nav.acceptance-shell-pick]
+path = "{shell}/shell-pick/docs/specs/report.spec.html"
+[nav.acceptance-shell-publish]
+path = "{shell}/shell-publish/docs/specs/report.spec.html"
+[nav.acceptance-shell-pick-key]
+path = "{shell}/shell-pick-key/docs/specs/report.spec.html"
+[nav.acceptance-shell-show]
+path = "{shell}/shell-show/docs/specs/later-only.spec.html"
+[nav.acceptance-shell-pin-focus]
+path = "{shell}/shell-pin-focus/docs/specs/later-only.spec.html"
+[nav.acceptance-shell-handoff]
+path = "{shell}/bare/shell-handoff/docs/specs/report.spec.html"
+storage.local = { "test-shell:browser" = "qa-browser-papaya" }
+[nav.acceptance-shell-wake]
+path = "{shell}/shell-wake/docs/specs/report.spec.html"
+[nav.acceptance-shell-accept]
+path = "{shell}/shell-accept/docs/specs/later-only.spec.html"
+[nav.acceptance-shell-accept-waits]
+path = "{shell}/shell-accept-waits/docs/specs/report.spec.html"
+[nav.acceptance-shell-answer]
+path = "{shell}/shell-answer/docs/specs/report.spec.html"
+[nav.acceptance-shell-page-tools]
+path = "{shell}/shell-page-tools/docs/specs/report.spec.html"
+[nav.acceptance-shell-mockup-step]
+path = "{shell}/shell-mockup-step/docs/specs/mockups/report-page/04-team-panel.mockup.html?step=totals"
+[nav.acceptance-shell-host-item]
+path = "{shell}/shell-host-item/docs/pane.html"
+[nav.acceptance-shell-close]
+path = "{shell}/shell-close/docs/specs/report.spec.html"
+[nav.acceptance-shell-native]
+path = "{shell}/native/shell-native"
+[nav.acceptance-shell-phone]
+path = "{shell}/shell-phone/docs/specs/report.spec.html"
+[nav.acceptance-shell-phone-id]
+path = "{shell}/bare/shell-phone-id/docs/specs/report.spec.html"
+
+# Undeclared coverage (jev-suggestions #acceptance-coverage-undeclared): the spec is coverage-undeclared's
+# print.spec.html, "Report printing", changed since its base. Its start compares it with its own head (base=HEAD), so
+# the page is not in Git focus. Git focus is turned on by choosing its baseline: click "Change base", then the older
+# listed commit (subject "base").
+[nav.acceptance-coverage-undeclared]
+path = "{review}/coverage-undeclared/docs/specs/print.spec.html?base=HEAD"
+
+# Compared range (compared-range #acceptance-bar-dirty): "a spec with uncommitted edits" is bar-dirty's report spec, whose
+# worktree holds the agent's edit, never committed (reset.sh, spools.py), so it differs from its head commit.
+[nav.acceptance-bar-dirty]
+path = "{review}/bar-dirty/docs/specs/report.spec.html"
+
+# Status route (review-service #steady-status): {review}/api/status (values). No page links to it, so it is opened at
+# that address.
+# - steady-closed: starts on the report spec, so the service serves this browser a spec page; the start point then
+#   closes it by clicking its "Review index" link.
+[nav.acceptance-steady-closed]
+path = "{review}/qa-fixture/docs/specs/report.spec.html"
+selectors = ['a[data-spec-chat-navigation="index"]']
+
+# Mockups (mockups.spec.html#acceptance, prompt-first-shaping #acceptance-mockup-*). The mockup collections (reset.sh
+# mockups) register Report page (report-page.spec.html) alone. Its mockup set holds three screens: Report page
+# (docs/specs/mockups/report-page/01-report-page.mockup.html), changed since the spec row's base; Team page
+# (02-team-page.mockup.html), unchanged; and Export dialog (03-export-dialog.mockup.html), new since the base. Report
+# page's desktop frame shows three team cards in a row (Payments, Search, Mobile), each with its avatar image, and the
+# Export CSV button below them; its phone frame shows the same cards one above the other, and the button. The spec's
+# criterion "The report page shows each team as a card with its avatar and its total for the week." is illustrated by
+# Report page's frames and cards, "The Export CSV button opens the export dialog." by its Export CSV buttons, and
+# "The onboarding tour points to the team cards first." by no mockup. Export dialog is the screen the feature adds; its
+# frames illustrate "The export dialog lists the rows the CSV holds and downloads weekly-totals-2026-W01.csv.", its
+# dialogs "The Export CSV button opens the export dialog.". Seeded comments are other browsers'
+# (spools.py SET_COLLECTIONS), except in mockup-handoff, whose start point keeps Papaya's browser identity, the page's
+# own saved state, so the seeded draft is this browser's. A thread's pin sits on the part it marks; the review panel
+# opens with the "Open review sidebar" button at the top right.
+# Capture hints, per criterion:
+# - frames, frames-phone, unchanged, new, mockup-content: the page is Report page's spec page; open the mockup page at
+#   the first value's address.
+# - comment-element: turn on Comment, click the Payments card's avatar image in the phone frame (the narrower frame),
+#   type the value, save.
+# - comment-region: turn on Comment, click an empty spot inside the Search card in the desktop frame (the wider frame),
+#   right of its total, away from its text and image; type the value, save.
+# - comment-phone, comment-phone-pin: tap Comment, then tap the Export CSV button in the desktop frame (the first frame,
+#   scaled down to the screen's width), type the value, save. comment-phone-pin: then close the review panel with its
+#   "Collapse review sidebar" button.
+# - handoff: press Hand off; this browser's draft (Papaya's) is on the Export CSV button in the desktop frame.
+# - one-control, one-control-phone: turn on Comment, click the Export CSV button in the desktop frame, type the value,
+#   save, then open the review panel.
+# - reply: open the thread on the Payments card in the desktop frame with its pin.
+# - agent-edit: nothing to click. The fixture agent edits the mockup once the open page has first checked its file
+#   (tests/fixtures/qa/serve.py), a moment after it loads; wait 6 seconds on the page.
+# - mark-follows: Papaya's handed-off comment is on the Export CSV button in the desktop frame. The fixture agent's edit,
+#   a new rule above that button, lands once the open page has first checked its file (serve.py); wait 6 seconds, reload
+#   the page (browser reload), then open that thread with its pin.
+# - before: press Before in the top line. after: press Before, then After; Papaya's handed-off thread is on the Search
+#   card in the desktop frame.
+# - layout-explains: the change adds each card's avatar and the Export CSV button; press Before in the top line to see
+#   the base, then After, and review the parts it adds.
+# - chip, mockup-seed, mockup-seed-frames, mockup-none: the page is the review index; open the spec page at the first
+#   value's address. mockup-seed-frames: then press the "See mockup · Export dialog" chip after the criterion "The
+#   export dialog lists the rows the CSV holds and downloads weekly-totals-2026-W01.csv.".
+# - chip-open: press the See mockup chip after the criterion "The Export CSV button opens the export dialog.".
+# - accept-waits, accept-offered: open the review panel.
+# - index-counts, index-gate: the page is the QA-13 (counts) or QA-14 (gate) lane's Report page spec; click "Review
+#   index" in the top line, then read that lane's Report page row.
+[nav.acceptance-frames]
+path = "{review}/mockup-view/docs/specs/report-page.spec.html"
+[nav.acceptance-frames-phone]
+path = "{review}/mockup-view/docs/specs/report-page.spec.html"
+[nav.acceptance-comment-element]
+path = "{review}/mockup-comment-element/docs/specs/mockups/report-page/01-report-page.mockup.html"
+[nav.acceptance-comment-region]
+path = "{review}/mockup-comment-region/docs/specs/mockups/report-page/01-report-page.mockup.html"
+[nav.acceptance-comment-phone]
+path = "{review}/mockup-comment-phone/docs/specs/mockups/report-page/01-report-page.mockup.html"
+[nav.acceptance-comment-phone-pin]
+path = "{review}/mockup-comment-phone/docs/specs/mockups/report-page/01-report-page.mockup.html"
+[nav.acceptance-handoff]
+path = "{review}/mockup-handoff/docs/specs/mockups/report-page/01-report-page.mockup.html"
+storage.local = { "spec-chat:reviewer" = '{"browser":"qa-browser-papaya","author":"Papaya"}' }
+[nav.acceptance-one-control]
+path = "{review}/mockup-one-control/docs/specs/mockups/report-page/01-report-page.mockup.html"
+[nav.acceptance-one-control-phone]
+path = "{review}/mockup-one-control-phone/docs/specs/mockups/report-page/01-report-page.mockup.html"
+[nav.acceptance-reply]
+path = "{review}/mockup-reply/docs/specs/mockups/report-page/01-report-page.mockup.html"
+[nav.acceptance-agent-edit]
+path = "{review}/mockup-agent-edit/docs/specs/mockups/report-page/01-report-page.mockup.html"
+[nav.acceptance-mark-follows]
+path = "{review}/mockup-mark-follows/docs/specs/mockups/report-page/01-report-page.mockup.html"
+[nav.acceptance-before]
+path = "{review}/mockup-view/docs/specs/mockups/report-page/01-report-page.mockup.html"
+[nav.acceptance-after]
+path = "{review}/mockup-after/docs/specs/mockups/report-page/01-report-page.mockup.html"
+[nav.acceptance-layout-explains]
+path = "{review}/mockup-view/docs/specs/mockups/report-page/01-report-page.mockup.html"
+[nav.acceptance-new]
+path = "{review}/mockup-view/docs/specs/report-page.spec.html"
+[nav.acceptance-unchanged]
+path = "{review}/mockup-view/docs/specs/report-page.spec.html"
+[nav.acceptance-chip]
+path = "{review}/"
+[nav.acceptance-chip-open]
+path = "{review}/mockup-view/docs/specs/report-page.spec.html"
+[nav.acceptance-accept-waits]
+path = "{review}/mockup-accept-waits/docs/specs/report-page.spec.html"
+[nav.acceptance-accept-offered]
+path = "{review}/mockup-accept-offered/docs/specs/report-page.spec.html"
+[nav.acceptance-index-counts]
+path = "{review}/qa-13/docs/specs/report-page.spec.html"
+[nav.acceptance-index-gate]
+path = "{review}/qa-14/docs/specs/report-page.spec.html"
+[nav.acceptance-mockup-seed]
+path = "{review}/"
+[nav.acceptance-mockup-seed-frames]
+path = "{review}/"
+[nav.acceptance-mockup-content]
+path = "{review}/mockup-view/docs/specs/report-page.spec.html"
+[nav.acceptance-mockup-none]
+path = "{review}/"
+# Walkthroughs, threads at a step, and questions on the mockup (mockups.spec.html#acceptance-steps-bar to -chip-step). The
+# walkthrough collections (reset.sh mockups, spools.py WALKTHROUGHS) add to Report page's set 04 Team panel, the report page
+# whose walkthrough has three steps: 1 Totals, the team cards; 2 Team open, reached by pressing the Payments card's "Last three
+# weeks" button, Payments' card edged in blue beside its panel of its last three weeks; 3 Export, reached by that panel's
+# Export CSV button, the export dialog listing the rows the CSV holds. mockup-steps also adds 05 Export flow, the same screen
+# walked in six steps (then the file named, the CSV downloading, and downloaded). The step bar sits under the top line:
+# Play, then each step by number and name, the showing one pressed with its caption beside the steps. mockup-step-pin holds
+# Mango's handed-off comment on the desktop frame's Payments card at step 2. mockup-questions holds two open questions, one
+# on the Payments card at step 2 ("Should Payments' card keep its blue edge while its panel is open?", answers "Keep the blue
+# edge (recommended)" and "Plain card"), one on the export dialog's file name at step 3; mockup-question-answer, -words,
+# -phone, and -accept hold the first alone. A question shows a "?" mark on the parts it is about while its step shows; Next
+# TBD sits beside Hand off (in the review panel on a desktop, in the bottom toolbar on a phone).
+# Capture hints, per criterion:
+# - steps-bar: nothing to click. step-jump: press step 3 in the step bar. play: press Play, then wait about 8 seconds until
+#   it is offered again. step-press: press the "Last three weeks" button on the Payments card in the desktop frame.
+# - steps-phone: swipe the step bar left, then tap step 6.
+# - step-thread: press step 2, turn on Comment, click an empty spot inside the Payments card in the desktop frame, right of
+#   its "Last three weeks" button, type the value, save.
+# - step-pin: press step 1. step-chip: open the review panel, press the thread's chip under Mango's bubble.
+# - question-mark: press step 2. question-next: open the review panel, press Next TBD once (the card's question is first).
+# - mockup-question-answer: open the review panel, press Next TBD, then "Plain card" in the question.
+# - question-words: open the review panel, press Next TBD, then the question's Reply, type the value, save.
+# - question-phone: tap Next TBD in the bottom toolbar, then "Plain card" in the sheet.
+# - question-accept: the page is Report page's spec page; open the review panel.
+# - chip-step: the page is Report page's spec page; press the "See mockup · Team panel" chip after the criterion "Pressing a
+#   team's card opens its team page, listing its totals for the last three weeks."
+[nav.acceptance-steps-bar]
+path = "{review}/mockup-steps/docs/specs/mockups/report-page/04-team-panel.mockup.html"
+[nav.acceptance-step-jump]
+path = "{review}/mockup-steps/docs/specs/mockups/report-page/04-team-panel.mockup.html"
+[nav.acceptance-play]
+path = "{review}/mockup-steps/docs/specs/mockups/report-page/04-team-panel.mockup.html"
+[nav.acceptance-step-press]
+path = "{review}/mockup-steps/docs/specs/mockups/report-page/04-team-panel.mockup.html"
+[nav.acceptance-steps-phone]
+path = "{review}/mockup-steps/docs/specs/mockups/report-page/05-export-flow.mockup.html"
+[nav.acceptance-step-thread]
+path = "{review}/mockup-step-thread/docs/specs/mockups/report-page/04-team-panel.mockup.html"
+[nav.acceptance-step-pin]
+path = "{review}/mockup-step-pin/docs/specs/mockups/report-page/04-team-panel.mockup.html"
+[nav.acceptance-step-chip]
+path = "{review}/mockup-step-pin/docs/specs/mockups/report-page/04-team-panel.mockup.html"
+[nav.acceptance-question-mark]
+path = "{review}/mockup-questions/docs/specs/mockups/report-page/04-team-panel.mockup.html"
+[nav.acceptance-question-next]
+path = "{review}/mockup-questions/docs/specs/mockups/report-page/04-team-panel.mockup.html"
+[nav.acceptance-mockup-question-answer]
+path = "{review}/mockup-question-answer/docs/specs/mockups/report-page/04-team-panel.mockup.html"
+[nav.acceptance-question-words]
+path = "{review}/mockup-question-words/docs/specs/mockups/report-page/04-team-panel.mockup.html"
+[nav.acceptance-question-phone]
+path = "{review}/mockup-question-phone/docs/specs/mockups/report-page/04-team-panel.mockup.html"
+[nav.acceptance-question-accept]
+path = "{review}/mockup-question-accept/docs/specs/report-page.spec.html"
+[nav.acceptance-chip-step]
+path = "{review}/mockup-steps/docs/specs/report-page.spec.html"
+# A running prototype as a screen's mockup (mockups.spec.html#acceptance-prototype-frames to -round-video-comment, and
+# the screen whose mockup #acceptance-fidelity-rule's reviewer reviews). The prototype collections (reset.sh prototypes,
+# spools.py PROTOTYPES) add to Report page's set 06 Weekly report, a prototype mockup of the fixture's running prototype
+# (services.prototype): its page frames the route reports/weekly at desktop and phone width, held, under the top line
+# and its step bar: 1 Totals, the three team cards (Payments, Search, Mobile); 2 Team open, reached by pressing the
+# Payments card, its panel of the last three weeks fading in with an Export CSV button; 3 Export, reached by that
+# button, the export dialog naming payments-2026-W01.csv. Its regions: Team cards, Payments card, Team panel, Export
+# button, Export dialog. Its one open question, on the team panel at step 2, asks for a trend line. Under the frames,
+# "This round's video", recorded from the second round's commit, plays with the walkthrough's step captions, and Earlier
+# rounds (1) offers the first round's. prototype-down's row names a port where nothing answers, and its mockup holds
+# Mango's handed-off thread on the team panel at step 2. They are on review-prototype ({review-prototype}), so each
+# frame runs the route at the lane's own prototype origin, http://<slug>-prototype.localhost:<port>, where the fixture's
+# product serves its page, script, and style only at its root (prototype-root). prototype-own-chrome's set also holds 07
+# Report spec, a prototype mockup of the lane's own review service run as its prototype: its frames hold Report's spec
+# page, served by that service, whose totals criterion (The report page shows totals per week.) is its one region, Totals
+# criterion; the framed page shows its top line and no review panel or toolbar.
+# Capture hints, per criterion:
+# - fidelity-rule: the page is Weekly report's mockup page, that screen's mockup; review it as it opens, nothing to click.
+# - prototype-frames: nothing to click.
+# - prototype-root: nothing to click.
+# - prototype-own-chrome: turn on Comment, click the criterion The report page shows totals per week. in the desktop
+#   frame (the wider frame), type the value, save.
+# - round-video: scroll to the bottom of the page.
+# - round-video-old: scroll to the bottom of the page.
+# - round-video-phone: scroll below the frames to "This round's video", play it for about two seconds.
+# - prototype-comment: the page opens at step 2 by its address (?step=team-open, the address a See mockup chip opens a
+#   step at); wait for the team panel, turn on Comment, click the Export CSV button in the desktop frame (the wider
+#   frame), type the value, save.
+# - prototype-press: with Comment off, click the Payments card in the desktop frame.
+# - prototype-down: open the review panel.
+# - prototype-updated: nothing to click. The fixture agent commits to the lane branch once the open page has first checked
+#   its file (tests/fixtures/qa/serve.py), a moment after it loads; wait 6 seconds on the page.
+# - round-video-comment: scroll to the bottom of the page, play the round's video under the frames for about two
+#   seconds, pause it, turn on Comment, click the video, type the value, save.
+[nav.acceptance-fidelity-rule]
+path = "{review-prototype}/prototype-frames/docs/specs/mockups/report-page/06-weekly-report.mockup.html"
+[nav.acceptance-prototype-frames]
+path = "{review-prototype}/prototype-frames/docs/specs/mockups/report-page/06-weekly-report.mockup.html"
+[nav.acceptance-prototype-root]
+path = "{review-prototype}/prototype-frames/docs/specs/mockups/report-page/06-weekly-report.mockup.html"
+[nav.acceptance-prototype-own-chrome]
+path = "{review-prototype}/prototype-own-chrome/docs/specs/mockups/report-page/07-report-spec.mockup.html"
+[nav.acceptance-prototype-comment]
+path = "{review-prototype}/prototype-comment/docs/specs/mockups/report-page/06-weekly-report.mockup.html?step=team-open"
+[nav.acceptance-prototype-press]
+path = "{review-prototype}/prototype-press/docs/specs/mockups/report-page/06-weekly-report.mockup.html"
+[nav.acceptance-prototype-down]
+path = "{review-prototype}/prototype-down/docs/specs/mockups/report-page/06-weekly-report.mockup.html"
+[nav.acceptance-prototype-updated]
+path = "{review-prototype}/prototype-updated/docs/specs/mockups/report-page/06-weekly-report.mockup.html"
+[nav.acceptance-round-video]
+path = "{review-prototype}/prototype-frames/docs/specs/mockups/report-page/06-weekly-report.mockup.html"
+[nav.acceptance-round-video-phone]
+path = "{review-prototype}/prototype-frames/docs/specs/mockups/report-page/06-weekly-report.mockup.html"
+[nav.acceptance-round-video-old]
+path = "{review-prototype}/prototype-frames/docs/specs/mockups/report-page/06-weekly-report.mockup.html"
+[nav.acceptance-round-video-comment]
+path = "{review-prototype}/prototype-video-comment/docs/specs/mockups/report-page/06-weekly-report.mockup.html"
+# Fitting settles in one pass (mockups.spec.html#acceptance-fit-settles, -fit-settles-prototype): no error overlay, the
+# red band under the top line, shows as a mockup page fits its frames. fit-settles is Report page, a drawn screen of
+# mockup-steps' set; fit-settles-prototype is Weekly report in prototype-press (the prototype hints above).
+# Capture hints, per criterion:
+# - fit-settles: on a desktop, narrow the browser window slowly to phone width, the frames stacking, then widen it slowly
+#   again until they sit side by side.
+# - fit-settles-prototype: on a desktop, with Comment off, click the Payments card in the desktop frame; wait for both
+#   frames to show its panel of the last three weeks.
+[nav.acceptance-fit-settles]
+path = "{review}/mockup-steps/docs/specs/mockups/report-page/01-report-page.mockup.html"
+[nav.acceptance-fit-settles-prototype]
+path = "{review-prototype}/prototype-press/docs/specs/mockups/report-page/06-weekly-report.mockup.html"
+# The Screens index (mockups.spec.html#acceptance-screen-index to -none). screens-index is a prototype collection
+# (spools.py PROTOTYPES): its Report page spec's set holds four screens, three drawn (Report page, Team page, Export
+# dialog) and Weekly report, the running prototype of the route /reports/weekly, which holds Mango's handed-off thread on
+# its team panel and its one open question; the drawn ones hold neither. Under the spec's title, before User stories, the
+# index reads Screens 4, then one row per screen: its mark, name, kind, viewports, open counts, and a chevron.
+# Capture hints, per criterion:
+# - screen-index, screen-index-open, screen-index-phone: nothing to click.
+# - screen-index-prototype: press the Weekly report row. screen-index-phone-open: tap it.
+# - screen-index-drawn: press the Report page row.
+# - screen-index-none: nothing to click; Weekly report has no mockup set.
+[nav.acceptance-screen-index]
+path = "{review-prototype}/screens-index/docs/specs/report-page.spec.html"
+[nav.acceptance-screen-index-open]
+path = "{review-prototype}/screens-index/docs/specs/report-page.spec.html"
+[nav.acceptance-screen-index-prototype]
+path = "{review-prototype}/screens-index/docs/specs/report-page.spec.html"
+[nav.acceptance-screen-index-drawn]
+path = "{review-prototype}/screens-index/docs/specs/report-page.spec.html"
+[nav.acceptance-screen-index-phone]
+path = "{review-prototype}/screens-index/docs/specs/report-page.spec.html"
+[nav.acceptance-screen-index-phone-open]
+path = "{review-prototype}/screens-index/docs/specs/report-page.spec.html"
+[nav.acceptance-screen-index-none]
+path = "{review}/qa-fixture/docs/specs/report.spec.html"
+# A screen's first round showing its directions (mockups.spec.html#acceptance-directions to -directions-accept, and
+# #acceptance-screen-index-directions). In directions, directions-pick, and directions-pick-panel, prototype collections
+# (spools.py PROTOTYPE_DIRECTIONS), Weekly report names two directions: Team cards, the route /reports/weekly and the
+# agent's pick, with its reason, and Team table, the prototype's /reports/weekly-table; it holds no open question. Its
+# page shows them side by side under the Desktop and Phone toggle, each under its name and its Gives up line, Team table
+# offering Pick. In directions-drawn (DRAWN_DIRECTIONS) Team panel, a drawn screen, draws Team table's own two frames
+# beside its own, and its spec's one thread is resolved. No directions collection holds a round video. In directions-kept
+# (spools.py KEPT_DIRECTIONS; prompt-first-shaping #acceptance-directions-kept) the reviewer pressed Pick on Team table
+# in the first round and handed off, and the agent answered with the round after: Weekly report is Team table's route
+# alone, in a desktop frame and a phone frame, with no directions list.
+# Capture hints, per criterion:
+# - directions, directions-phone, directions-drawn, directions-kept: nothing to click.
+# - directions-seed: open the review link, the first value's address, then Weekly report's mockup page by its row in the
+#   Screens index under the header.
+# - directions-toggle: press Phone in the Desktop and Phone toggle above the directions.
+# - directions-pick: press Pick beside Team table.
+# - directions-pick-panel: press Pick beside Team table, then open the review panel ("Open review sidebar").
+# - directions-accept: open the review panel ("Open review sidebar").
+# - screen-index-directions: nothing to click; the Weekly report row reads 2 directions.
+[nav.acceptance-directions]
+path = "{review-prototype}/directions/docs/specs/mockups/report-page/06-weekly-report.mockup.html"
+[nav.acceptance-directions-toggle]
+path = "{review-prototype}/directions/docs/specs/mockups/report-page/06-weekly-report.mockup.html"
+[nav.acceptance-directions-pick]
+path = "{review-prototype}/directions-pick/docs/specs/mockups/report-page/06-weekly-report.mockup.html"
+[nav.acceptance-directions-pick-panel]
+path = "{review-prototype}/directions-pick-panel/docs/specs/mockups/report-page/06-weekly-report.mockup.html"
+[nav.acceptance-directions-phone]
+path = "{review-prototype}/directions/docs/specs/mockups/report-page/06-weekly-report.mockup.html"
+[nav.acceptance-directions-drawn]
+path = "{review}/directions-drawn/docs/specs/mockups/report-page/04-team-panel.mockup.html"
+[nav.acceptance-directions-accept]
+path = "{review}/directions-drawn/docs/specs/report-page.spec.html"
+[nav.acceptance-screen-index-directions]
+path = "{review-prototype}/directions/docs/specs/report-page.spec.html"
+[nav.acceptance-directions-seed]
+path = "{review-prototype}/"
+[nav.acceptance-directions-kept]
+path = "{review-prototype}/directions-kept/docs/specs/mockups/report-page/06-weekly-report.mockup.html"
+# Next and previous screen (mockups.spec.html#acceptance-next-screen to -next-screen-one). In mockup-view Report page's
+# set holds three screens in its Screens index's order: 1 Report page, 2 Team page, 3 Export dialog. A mockup page's top
+# line shows, after the "Report page spec" link, Previous (a left chevron), the screen's place as "2 of 3", and Next (a
+# right chevron), then the compared range; on a phone they sit at the end of the compared range's row. mockup-steps adds
+# 04 Team panel, with its three-step walkthrough, and 05 Export flow, so Team panel is 4 of 5. next-screen-one's set holds
+# Report page alone.
+# Capture hints, per criterion:
+# - next-screen: the page is Team page's mockup page; press Next in the top line.
+# - previous-key: the page is Export dialog's mockup page; click nothing first, press the Left arrow key.
+# - next-screen-comment: turn on Comment, click the weeks table in the desktop frame, type the value, do not save, then
+#   press the Left arrow key.
+# - next-screen-steps: press step 2 in the step bar, then press the Right arrow key.
+# - next-screen-phone: the page is Report page's mockup page; tap Next in the top line.
+# - next-screen-one: nothing to click.
+[nav.acceptance-next-screen]
+path = "{review}/mockup-view/docs/specs/mockups/report-page/02-team-page.mockup.html"
+[nav.acceptance-previous-key]
+path = "{review}/mockup-view/docs/specs/mockups/report-page/03-export-dialog.mockup.html"
+[nav.acceptance-next-screen-comment]
+path = "{review}/mockup-view/docs/specs/mockups/report-page/02-team-page.mockup.html"
+[nav.acceptance-next-screen-steps]
+path = "{review}/mockup-steps/docs/specs/mockups/report-page/04-team-panel.mockup.html"
+[nav.acceptance-next-screen-phone]
+path = "{review}/mockup-view/docs/specs/mockups/report-page/01-report-page.mockup.html"
+[nav.acceptance-next-screen-one]
+path = "{review}/next-screen-one/docs/specs/mockups/report-page/01-report-page.mockup.html"
+
+# Threads as one conversation (threads.spec.html#acceptance, spec-page-design #acceptance-color-consistency): each
+# criterion opens its threads-* collection (spools.py THREADS), Report filters (later-only.spec.html) unless its path
+# names Weekly report or Report walkthrough. Seeded reviewers are Papaya and Mango; where the criterion's reviewer owns a thread, the start point
+# keeps Papaya's browser identity, the page's own saved state, so Papaya's messages are this browser's, at the panel's
+# right. The review panel opens with the "Open review sidebar" button at the top right; its head reads Conversation.
+# Each thread's first message is a bubble with a chip under it naming its block, its replies fold into one line reading
+# "<n> replies · <author>: <first words>", and its receipt (Draft, Sent, Seen, or Resolved) sits under its newest reviewer
+# message; a resolved thread is one line. Pressing a message opens its thread focused, with Conversation (back) at its
+# top left, Resolve at its top right, and a Reply field with a Save reply arrow under it.
+# Capture hints, per criterion:
+# - stream-order: three threads, begun on the Behavior TBD, then on the context paragraph, then on the filter criterion.
+# - sides: Papaya's comment on the filter criterion, answered by the agent; press its replies line "1 reply · Agent: …".
+# - replies-folded, replies-open: Mango's thread on the filter criterion holds three replies, Papaya's on the context
+#   paragraph none. replies-open: press "3 replies · Agent: …".
+# - focus, focus-phone: Papaya's thread on the filter criterion holds three replies, Mango's on the context paragraph
+#   none. focus: press Papaya's bubble "Does the filter remember the last team?". focus-phone: tap the filter criterion's
+#   pin, the numbered marker at its right.
+# - focus-reply: Papaya's comment, answered by the agent. Press Papaya's bubble, type the value in the Reply field, press
+#   Save reply, then press Conversation at the focused thread's top left.
+# - focus-pin: one thread on the filter criterion; press its pin, the numbered marker at the criterion's right.
+# - chip-jump: one thread on the filter criterion, which forty filler paragraphs put far below the top of the page. Press
+#   the thread's chip, "Acceptance criteria · The report page filters rows by the…".
+# - receipt-sent: Papaya's draft on the filter criterion; press "Hand off to agent →" in the panel.
+# - receipt-draft: no thread. Turn on Comment, click the filter criterion, type the value, press Comment.
+# - receipt-seen: Mango's comment the agent acknowledged without a reply. receipt-resolved: Mango's thread of three
+#   messages, resolved.
+# - waiting-pin: Mango's thread on the filter criterion ends with the agent's reply; Papaya's on the context paragraph
+#   ends with Papaya's own reply. The page as it opens, its panel closed.
+# - waiting-root: the QA-21 lane at Spec review, Report filters. Papaya's thread on the filter criterion holds Papaya's
+#   reply between the agent's two and ends with the agent's; Papaya's on the context paragraph ends with Papaya's own
+#   reply.
+# - question-bubble, question-answer, question-same: Weekly report, whose one open question is the export format, offering
+#   "CSV only (recommended)" and "CSV and XLSX"; question-bubble also holds Mango's thread on the totals criterion. "One
+#   answer button" is "CSV only (recommended)" in the question's bubble at the end of the conversation, not the one in the
+#   page's Behavior section.
+# - color-consistency: a draft thread on the context paragraph, an acknowledged one on the filter criterion, and a
+#   resolved one on the Behavior TBD.
+# - layer-stream: the host page's Agent turn 42 holds Papaya's thread, then Mango's; click "Comment on Agent turn 42".
+# - video-moment, video-box, video-chip: Report walkthrough (report-video.spec.html), whose Walkthrough section shows a
+#   four-second video of the report page. video-moment: play the video for about a second and a half, pause it, turn on
+#   Comment, click the video, type the value, save. video-box: play it for about a second, pause it, turn on Comment, drag
+#   a box across part of the video's frame, type the value, save. video-chip: Mango's thread on a box at 0:01; play the
+#   video for about three seconds, open the review panel, press the thread's chip "Walkthrough · 0:01 · Box".
+# - video-layer: the host page's item Report walkthrough shows the same video; play it for about a second, pause it,
+#   click "Comment on Report walkthrough", type the value, save.
+[nav.acceptance-stream-order]
+path = "{review}/threads-order/docs/specs/later-only.spec.html"
+[nav.acceptance-sides]
+path = "{review}/threads-sides/docs/specs/later-only.spec.html"
+storage.local = { "spec-chat:reviewer" = '{"browser":"qa-browser-papaya","author":"Papaya"}' }
+[nav.acceptance-replies-folded]
+path = "{review}/threads-replies/docs/specs/later-only.spec.html"
+[nav.acceptance-replies-open]
+path = "{review}/threads-replies/docs/specs/later-only.spec.html"
+[nav.acceptance-focus]
+path = "{review}/threads-focus/docs/specs/later-only.spec.html"
+storage.local = { "spec-chat:reviewer" = '{"browser":"qa-browser-papaya","author":"Papaya"}' }
+[nav.acceptance-focus-reply]
+path = "{review}/threads-focus-reply/docs/specs/later-only.spec.html"
+storage.local = { "spec-chat:reviewer" = '{"browser":"qa-browser-papaya","author":"Papaya"}' }
+[nav.acceptance-focus-pin]
+path = "{review}/threads-pin/docs/specs/later-only.spec.html"
+[nav.acceptance-focus-phone]
+path = "{review}/threads-focus/docs/specs/later-only.spec.html"
+storage.local = { "spec-chat:reviewer" = '{"browser":"qa-browser-papaya","author":"Papaya"}' }
+[nav.acceptance-chip-jump]
+path = "{review}/threads-chip/docs/specs/later-only.spec.html"
+[nav.acceptance-receipt-sent]
+path = "{review}/threads-sent/docs/specs/later-only.spec.html"
+storage.local = { "spec-chat:reviewer" = '{"browser":"qa-browser-papaya","author":"Papaya"}' }
+[nav.acceptance-receipt-draft]
+path = "{review}/threads-new/docs/specs/later-only.spec.html"
+[nav.acceptance-receipt-seen]
+path = "{review}/threads-seen/docs/specs/later-only.spec.html"
+[nav.acceptance-receipt-resolved]
+path = "{review}/threads-resolved/docs/specs/later-only.spec.html"
+[nav.acceptance-waiting-root]
+path = "{review}/qa-21/docs/specs/later-only.spec.html"
+storage.local = { "spec-chat:reviewer" = '{"browser":"qa-browser-papaya","author":"Papaya"}' }
+[nav.acceptance-waiting-pin]
+path = "{review}/threads-waiting/docs/specs/later-only.spec.html"
+[nav.acceptance-question-bubble]
+path = "{review}/threads-question/docs/specs/report.spec.html"
+[nav.acceptance-question-answer]
+path = "{review}/threads-answer/docs/specs/report.spec.html"
+[nav.acceptance-question-same]
+path = "{review}/threads-answer-same/docs/specs/report.spec.html"
+[nav.acceptance-color-consistency]
+path = "{review}/threads-colors/docs/specs/later-only.spec.html"
+[nav.acceptance-layer-stream]
+path = "{review}/layer-stream/docs/pane.html"
+[nav.acceptance-video-moment]
+path = "{review}/threads-video/docs/specs/report-video.spec.html"
+[nav.acceptance-video-box]
+path = "{review}/threads-video-box/docs/specs/report-video.spec.html"
+[nav.acceptance-video-chip]
+path = "{review}/threads-video-chip/docs/specs/report-video.spec.html"
+[nav.acceptance-video-layer]
+path = "{review}/layer-video/docs/pane.html"
+
+# The stage a message was written in (threads.spec.html#stage-tag): the box names each lane's stage (spools.py STAGES),
+# and every bubble shows the stage its message was written in, a small tag beside its author, as "Mango · Spec review".
+# Capture hints, per criterion:
+# - stage-tag: the QA-17 lane at Spec review, Report filters with no thread. Turn on Comment, click the filter criterion,
+#   type the value, press Comment.
+# - stage-kept: the QA-18 lane, now at Code review, holds Mango's thread on the filter criterion, written at Spec review.
+# - stage-reply: the QA-19 lane, now at Merge ask, holds Mango's thread on the filter criterion, which the agent answered
+#   at Code review; press its replies line "1 reply · Agent: …".
+# - stage-lane, stage-none: the host page's first item, Weekly report QA run, an evidence item in a scope that holds no
+#   spec; stage-lane's anchor names the QA-20 lane, at QA, and stage-none's names none. Click "Comment on Weekly report QA
+#   run", type the value, save.
+# - stage-reply-lane: the same item, its anchor naming QA-20, at QA, in a scope that holds no spec, holds Mango's thread,
+#   which the agent answered at QA; click "Comment on Weekly report QA run", then press its replies line "1 reply · Agent: …".
+[nav.acceptance-stage-tag]
+path = "{review}/qa-17/docs/specs/later-only.spec.html"
+[nav.acceptance-stage-kept]
+path = "{review}/qa-18/docs/specs/later-only.spec.html"
+[nav.acceptance-stage-reply]
+path = "{review}/qa-19/docs/specs/later-only.spec.html"
+[nav.acceptance-stage-lane]
+path = "{review}/layer-stage-lane/docs/pane.html"
+[nav.acceptance-stage-none]
+path = "{review}/layer-stage-none/docs/pane.html"
+[nav.acceptance-stage-reply-lane]
+path = "{review}/layer-stage-reply-lane/docs/pane.html"
+
+# A picture of a boxed spot (threads.spec.html#box-picture): the test shell's native page, a factory floor drawn on a
+# canvas (shell.py), held beside the comment UI page, makes a picture of a box dragged across it. Capture hints:
+# - box-picture: press Comment in the comment UI, then drag a box across the QA-1514 card, in the Review station, which
+#   reads QA failed; type the value, press Comment; then press the comment's bubble. The focused thread shows, under the
+#   comment, the picture of the card with the box drawn on it, captioned "What you saw when you wrote".
+[nav.acceptance-box-picture]
+path = "{shell}/native/shell-box-picture"
+
+# Typed text for the criteria that save a message (capture types only these).
+[entry.criteria.acceptance-name]
+values = ["First note from this browser.", "Reply after reload."]
+[entry.criteria.acceptance-typed-kept]
+values = ["Name the CSV columns before the export."]
+[entry.criteria.acceptance-anchor-stale-page]
+values = ["Name the CSV columns."]
+[entry.criteria.acceptance-clear-thread]
+values = ["Does the export need onboarding?"]
+# The served-* collections provide the served criteria's Givens.
+[entry.criteria.acceptance-served-threads]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-served-handoff]
+fixture = "spec_review_site"
+values = ["Saved in the host frame."]
+[entry.criteria.acceptance-served-index]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-served-focus]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-coverage-undeclared]
+fixture = "spec_review_site"
+# Phone review: the criteria that save a comment type these; the review site's collections provide the Givens.
+[entry.criteria.acceptance-mobile-one-control]
+values = ["Saved on a phone."]
+[entry.criteria.acceptance-mobile-count]
+values = ["First on a phone.", "Second on a phone."]
+[entry.criteria.acceptance-mobile-handoff]
+values = ["Saved on a phone."]
+[entry.criteria.acceptance-mobile-handoff-wake]
+fixture = "spec_review_site"
+values = ["Saved on a phone."]
+[entry.criteria.acceptance-mobile-handoff-frame]
+fixture = "spec_review_site"
+values = ["Saved on a phone in the host frame."]
+[entry.criteria.acceptance-mobile-next-tbd]
+values = ["Saved on a phone."]
+[entry.criteria.acceptance-served-reload-handoff]
+fixture = "spec_review_site"
+values = ["Saved on a phone in the host frame."]
+[entry.criteria.acceptance-served-reload-outbox]
+fixture = "spec_review_site"
+values = ["Saved offline in the host frame."]
+# Frame storage (served-pages #served-storage): the review and review-second services behind the test host, and the
+# served-storage-* collections, provide the Givens.
+[entry.criteria.acceptance-served-storage-service]
+fixture = "spec_review_site"
+values = ["Saved offline in the host frame."]
+[entry.criteria.acceptance-served-storage-return]
+fixture = "spec_review_site"
+values = ["Saved offline in the host frame."]
+[entry.criteria.acceptance-served-storage-stored]
+fixture = "spec_review_site"
+values = ["Saved on the first service.", "Saved on the second service."]
+[entry.criteria.acceptance-served-storage-host-named]
+fixture = "spec_review_site"
+values = ["Saved offline in the host frame."]
+# The lanes provide the review index criteria's Givens (spools.py LANES, reset.sh).
+# values: the lane a criterion reads, as its capture hint above names it; the index shows every lane, and a criterion's
+# words name none (decide.py meant).
+[entry.criteria.acceptance-review-index]
+fixture = "spec_review_site"
+values = ["the lane holding those specs is QA-1"]
+[entry.criteria.acceptance-index-sections]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-index-gate-decision]
+fixture = "spec_review_site"
+values = ["their lane is QA-1"]
+[entry.criteria.acceptance-index-gate-reply]
+fixture = "spec_review_site"
+values = ["their lane is QA-6"]
+[entry.criteria.acceptance-index-gate-draft]
+fixture = "spec_review_site"
+values = ["their lane is QA-7"]
+[entry.criteria.acceptance-index-gate-agent]
+fixture = "spec_review_site"
+values = ["their lane is QA-3"]
+[entry.criteria.acceptance-index-gate-ready]
+fixture = "spec_review_site"
+values = ["their lane is QA-4"]
+[entry.criteria.acceptance-index-gate-sent]
+fixture = "spec_review_site"
+values = ["their lane is QA-5"]
+[entry.criteria.acceptance-index-gate-sent-new-mockup]
+fixture = "spec_review_site"
+values = ["their lane is QA-15"]
+[entry.criteria.acceptance-index-gate-accepted]
+fixture = "spec_review_site"
+values = ["their lane is QA-8"]
+[entry.criteria.acceptance-index-proof]
+fixture = "spec_review_site"
+values = ["their lane is QA-9"]
+[entry.criteria.acceptance-index-no-provider]
+fixture = "spec_review_site"
+values = ["their lane is QA-4"]
+[entry.criteria.acceptance-index-threads]
+fixture = "spec_review_site"
+values = ["their lane is QA-1"]
+[entry.criteria.acceptance-index-threads-none]
+fixture = "spec_review_site"
+values = ["their lane is QA-1"]
+[entry.criteria.acceptance-index-threads-refresh]
+fixture = "spec_review_site"
+values = ["their lane is QA-2"]
+[entry.criteria.acceptance-index-design]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-index-stale]
+fixture = "spec_review_site"
+values = ["their lane is QA-2"]
+[entry.criteria.acceptance-index-stale-unreadable]
+fixture = "spec_review_site"
+values = ["their lane is QA-16"]
+[entry.criteria.acceptance-index-title-column]
+fixture = "spec_review_site"
+values = ["their lane is QA-10"]
+[entry.criteria.acceptance-index-focus]
+fixture = "spec_review_site"
+values = ["their lane is QA-1"]
+# Find (review-index #index-find): values, what each criterion types into Find. find-phone at a phone, the criterion's
+# own device. find-shared is proven by tests/design-set.py: no screen shows it.
+[entry.criteria.acceptance-index-find-title]
+fixture = "spec_review_site"
+values = ["sorting"]
+[entry.criteria.acceptance-index-find-lane]
+fixture = "spec_review_site"
+values = ["qa-12"]
+[entry.criteria.acceptance-index-find-name]
+fixture = "spec_review_site"
+values = ["later-only"]
+[entry.criteria.acceptance-index-find-none]
+fixture = "spec_review_site"
+values = ["payroll"]
+[entry.criteria.acceptance-index-find-clear]
+fixture = "spec_review_site"
+values = ["Report sorting"]
+[entry.criteria.acceptance-index-find-reload]
+fixture = "spec_review_site"
+values = ["qa-12"]
+[entry.criteria.acceptance-index-find-phone]
+fixture = "spec_review_site"
+device = "phone"
+values = ["qa-12"]
+[entry.criteria.acceptance-steady-closed]
+fixture = "spec_review_site"
+values = ["{review}/api/status"]
+[entry.criteria.acceptance-status]
+values = ["{review}/api/status"]
+# The host-* and one-thread-* collections provide the comment-layer criteria's Givens.
+[entry.criteria.acceptance-host-draft]
+fixture = "spec_review_site"
+values = ["why per week and not per day?"]
+[entry.criteria.acceptance-host-starters]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-host-handoff]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-host-handoff-two]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-host-reply]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-host-same-subject]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-host-quote]
+fixture = "spec_review_site"
+values = ["Which headers?"]
+[entry.criteria.acceptance-host-quote-gone]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-host-only-comments]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-host-frame]
+fixture = "spec_review_site"
+values = ["Saved in a frame with no origin."]
+# values: the comment it types, the spec page at that criterion, and the address it was written from: the host page.
+[entry.criteria.acceptance-one-thread-spec]
+fixture = "spec_review_site"
+values = ["Totals per week, or per day too?", "{review}/one-thread-spec/docs/specs/report.spec.html#report-totals",
+  "{review}/one-thread-spec/docs/pane.html"]
+[entry.criteria.acceptance-one-thread-host]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-host-place-scrolled]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-host-place-grows]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-no-scope]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-no-service]
+fixture = "spec_review_site"
+# The test shell and the shell-* collections provide the shell criteria's Givens.
+[entry.criteria.acceptance-shell-held]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-shell-alone]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-shell-unnamed]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-shell-pick]
+fixture = "spec_review_site"
+values = ["Picked in the shell."]
+[entry.criteria.acceptance-shell-publish]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-shell-pick-key]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-shell-show]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-shell-pin-focus]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-shell-handoff]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-shell-wake]
+cannot_host = "the owner's wake is a line the fixture's wake provider (reset.sh) logs, which no page shows; proven by tests/runtime-shell.mjs"
+[entry.criteria.acceptance-shell-accept]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-shell-accept-waits]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-shell-answer]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-shell-page-tools]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-shell-mockup-step]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-shell-host-item]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-shell-close]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-shell-native]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-shell-phone]
+fixture = "spec_review_site"
+values = ["Show the week's dates too?"]
+[entry.criteria.acceptance-shell-phone-id]
+fixture = "spec_review_site"
+values = ["Named before the reload.", "Named after it."]
+# The mockup collections provide the mockup criteria's Givens (reset.sh mockups). values:
+# the address a criterion opens, then the fixture's words its Given and Then stand for, or the comment it types.
+[entry.criteria.acceptance-frames]
+fixture = "spec_review_site"
+values = ["{review}/mockup-view/docs/specs/mockups/report-page/01-report-page.mockup.html"]
+[entry.criteria.acceptance-frames-phone]
+fixture = "spec_review_site"
+values = ["{review}/mockup-view/docs/specs/mockups/report-page/01-report-page.mockup.html"]
+[entry.criteria.acceptance-comment-element]
+fixture = "spec_review_site"
+values = ["Use the team's own logo here?"]
+[entry.criteria.acceptance-comment-region]
+fixture = "spec_review_site"
+values = ["Show last week's total too?"]
+[entry.criteria.acceptance-comment-phone]
+fixture = "spec_review_site"
+values = ["Make this button full width?"]
+[entry.criteria.acceptance-comment-phone-pin]
+fixture = "spec_review_site"
+values = ["Make this button full width?"]
+[entry.criteria.acceptance-handoff]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-one-control]
+fixture = "spec_review_site"
+values = ["Call it Download CSV?"]
+[entry.criteria.acceptance-one-control-phone]
+fixture = "spec_review_site"
+values = ["Call it Download CSV?"]
+[entry.criteria.acceptance-reply]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-agent-edit]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-mark-follows]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-before]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-after]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-new]
+fixture = "spec_review_site"
+values = ["{review}/mockup-view/docs/specs/mockups/report-page/03-export-dialog.mockup.html"]
+[entry.criteria.acceptance-unchanged]
+fixture = "spec_review_site"
+values = ["{review}/mockup-view/docs/specs/mockups/report-page/02-team-page.mockup.html"]
+[entry.criteria.acceptance-chip]
+fixture = "spec_review_site"
+values = ["{review}/mockup-view/docs/specs/report-page.spec.html",
+  "The report page shows each team as a card with its avatar and its total for the week.",
+  "The onboarding tour points to the team cards first.", "Report page"]
+[entry.criteria.acceptance-chip-open]
+fixture = "spec_review_site"
+values = ["The Export CSV button opens the export dialog.", "Export CSV button"]
+[entry.criteria.acceptance-accept-waits]
+fixture = "spec_review_site"
+values = ["Report page"]
+[entry.criteria.acceptance-accept-offered]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-accept-covers]
+cannot_host = "the When is the owning agent's scan for ready hand-offs and the Then its report, which no page shows; no live agent here to run it; proven by tests/review-scan-mockups.py"
+[entry.criteria.acceptance-index-counts]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-index-gate]
+fixture = "spec_review_site"
+# Mockup seed: the review link is Report page's spec page; the screen the feature adds is Export dialog, and the
+# criteria it shows are the two its parts illustrate.
+[entry.criteria.acceptance-mockup-seed]
+fixture = "spec_review_site"
+values = ["{review}/mockup-view/docs/specs/report-page.spec.html", "Export dialog",
+  "The Export CSV button opens the export dialog.",
+  "The export dialog lists the rows the CSV holds and downloads weekly-totals-2026-W01.csv."]
+[entry.criteria.acceptance-mockup-seed-frames]
+fixture = "spec_review_site"
+values = ["{review}/mockup-view/docs/specs/report-page.spec.html", "Export dialog"]
+# The Export dialog is the new screen; it lists the teams' totals for 2026-W01 the repo's fixtures hold
+# (fixtures/weekly-totals.json), and the repo pins the shared design set (design-set.toml).
+[entry.criteria.acceptance-mockup-content]
+fixture = "spec_review_site"
+values = ["{review}/mockup-view/docs/specs/mockups/report-page/03-export-dialog.mockup.html", "Payments 1,284",
+  "Search 962", "Mobile 731"]
+# Weekly report changes no screen: it has no mockup set, and its page compares its changes with its row's base.
+[entry.criteria.acceptance-mockup-none]
+fixture = "spec_review_site"
+values = ["{review}/qa-fixture/docs/specs/report.spec.html"]
+# The walkthrough collections provide the walkthrough criteria's Givens. values: the comment or answer a criterion types.
+[entry.criteria.acceptance-steps-bar]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-step-jump]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-play]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-step-press]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-steps-phone]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-step-thread]
+fixture = "spec_review_site"
+values = ["Show the week number on the card?"]
+[entry.criteria.acceptance-step-pin]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-step-chip]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-question-mark]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-question-next]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-mockup-question-answer]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-question-words]
+fixture = "spec_review_site"
+values = ["Keep the edge only while the panel is open."]
+[entry.criteria.acceptance-question-phone]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-question-accept]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-chip-step]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-prototype-frames]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-prototype-root]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-prototype-own-chrome]
+fixture = "spec_review_site"
+values = ["The totals criterion should name the week it sums."]
+[entry.criteria.acceptance-prototype-comment]
+fixture = "spec_review_site"
+values = ["Make Export CSV the panel's primary action."]
+[entry.criteria.acceptance-prototype-press]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-prototype-down]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-prototype-updated]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-round-video]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-round-video-phone]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-round-video-old]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-round-video-comment]
+fixture = "spec_review_site"
+values = ["The panel should fade in faster here."]
+# screens-index provides the Screens index criteria's Givens, and Weekly report's spec, which has no mockup set,
+# -none's. values: the address a criterion opens, then the fixture's words its Given and Then
+# stand for.
+[entry.criteria.acceptance-screen-index]
+fixture = "spec_review_site"
+values = ["{review-prototype}/screens-index/docs/specs/report-page.spec.html", "Weekly report", "/reports/weekly", "Report page"]
+[entry.criteria.acceptance-screen-index-open]
+fixture = "spec_review_site"
+values = ["{review-prototype}/screens-index/docs/specs/report-page.spec.html", "Weekly report", "Report page"]
+[entry.criteria.acceptance-screen-index-prototype]
+fixture = "spec_review_site"
+values = ["{review-prototype}/screens-index/docs/specs/report-page.spec.html", "Weekly report"]
+[entry.criteria.acceptance-screen-index-drawn]
+fixture = "spec_review_site"
+values = ["{review-prototype}/screens-index/docs/specs/report-page.spec.html", "Report page"]
+[entry.criteria.acceptance-screen-index-phone]
+fixture = "spec_review_site"
+values = ["{review-prototype}/screens-index/docs/specs/report-page.spec.html"]
+[entry.criteria.acceptance-screen-index-phone-open]
+fixture = "spec_review_site"
+values = ["{review-prototype}/screens-index/docs/specs/report-page.spec.html", "Weekly report"]
+[entry.criteria.acceptance-screen-index-none]
+fixture = "spec_review_site"
+values = ["{review}/qa-fixture/docs/specs/report.spec.html"]
+# The directions collections provide the directions criteria's Givens. values: the address a criterion opens, then the
+# fixture's words its Given and Then stand for.
+[entry.criteria.acceptance-directions]
+fixture = "spec_review_site"
+values = ["{review-prototype}/directions/docs/specs/mockups/report-page/06-weekly-report.mockup.html", "Team cards", "Team table"]
+[entry.criteria.acceptance-directions-toggle]
+fixture = "spec_review_site"
+values = ["{review-prototype}/directions/docs/specs/mockups/report-page/06-weekly-report.mockup.html", "Team cards", "Team table"]
+[entry.criteria.acceptance-directions-pick]
+fixture = "spec_review_site"
+values = ["{review-prototype}/directions-pick/docs/specs/mockups/report-page/06-weekly-report.mockup.html", "Team table", "Team cards"]
+[entry.criteria.acceptance-directions-pick-panel]
+fixture = "spec_review_site"
+values = ["{review-prototype}/directions-pick-panel/docs/specs/mockups/report-page/06-weekly-report.mockup.html", "Team table"]
+[entry.criteria.acceptance-directions-phone]
+fixture = "spec_review_site"
+values = ["{review-prototype}/directions/docs/specs/mockups/report-page/06-weekly-report.mockup.html", "Team cards", "Team table"]
+[entry.criteria.acceptance-directions-drawn]
+fixture = "spec_review_site"
+values = ["{review}/directions-drawn/docs/specs/mockups/report-page/04-team-panel.mockup.html", "Team cards", "Team table"]
+[entry.criteria.acceptance-directions-accept]
+fixture = "spec_review_site"
+values = ["{review}/directions-drawn/docs/specs/report-page.spec.html"]
+[entry.criteria.acceptance-screen-index-directions]
+fixture = "spec_review_site"
+values = ["{review-prototype}/directions/docs/specs/report-page.spec.html", "Weekly report"]
+[entry.criteria.acceptance-directions-scan]
+cannot_host = "the When is the owning agent's scan for ready hand-offs and the Then its report, which no page shows; no live agent here to run it; proven by tests/review-scan-mockups.py"
+[entry.criteria.acceptance-validate-directions]
+cannot_host = "the When is the author's run of the structural validator and the Then its output, which no page shows; proven by tests/shape-style-provenance.py"
+# Directions seed: the review link is the directions collection's Report page spec page; the screen the feature adds is
+# Weekly report, whose first round shows two directions.
+[entry.criteria.acceptance-directions-seed]
+fixture = "spec_review_site"
+values = ["{review-prototype}/directions/docs/specs/report-page.spec.html", "Weekly report"]
+[entry.criteria.acceptance-directions-kept]
+fixture = "spec_review_site"
+values = ["{review-prototype}/directions-kept/docs/specs/mockups/report-page/06-weekly-report.mockup.html", "Team table"]
+# The next screen criteria: mockup-view's set is the three screens, mockup-steps' holds Team panel among others, and
+# next-screen-one, which provides -one's Given, holds one screen. values: the comment a criterion types.
+[entry.criteria.acceptance-next-screen]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-previous-key]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-next-screen-comment]
+fixture = "spec_review_site"
+values = ["Show this week first."]
+[entry.criteria.acceptance-next-screen-steps]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-next-screen-phone]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-next-screen-one]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-reader-prototype]
+cannot_host = "the When is a tool reading the mockup set at a commit and the Then what it finds, which no page shows; proven by tests/review-serve-prototype.py"
+[entry.criteria.acceptance-step-scan]
+cannot_host = "the When is the owning agent's scan for ready hand-offs and the Then its report, which no page shows; no live agent here to run it; proven by tests/review-scan-spots.py"
+[entry.criteria.acceptance-question-scan]
+cannot_host = "the When is the owning agent's scan for ready hand-offs and the Then its report, which no page shows; no live agent here to run it; proven by tests/review-scan-spots.py"
+# The threads-* collections, layer-stream, and layer-video provide the threads criteria's Givens.
+[entry.criteria.acceptance-stream-order]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-sides]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-replies-folded]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-replies-open]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-focus]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-focus-reply]
+fixture = "spec_review_site"
+values = ["Keep the last team for a week."]
+[entry.criteria.acceptance-focus-pin]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-focus-phone]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-chip-jump]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-receipt-sent]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-receipt-draft]
+fixture = "spec_review_site"
+values = ["List the teams alphabetically?"]
+[entry.criteria.acceptance-receipt-seen]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-receipt-resolved]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-waiting-root]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-waiting-pin]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-question-bubble]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-question-answer]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-question-same]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-supersede]
+cannot_host = "the When is the owning agent's scan for ready hand-offs and the Then its report, which no page shows; no live agent here to run it; proven by tests/review-scan-spots.py"
+[entry.criteria.acceptance-color-consistency]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-layer-stream]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-video-moment]
+fixture = "spec_review_site"
+values = ["The totals should land first."]
+[entry.criteria.acceptance-video-box]
+fixture = "spec_review_site"
+values = ["This card should open the team page."]
+[entry.criteria.acceptance-video-chip]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-video-layer]
+fixture = "spec_review_site"
+values = ["Name the export file after the week."]
+# qa-17 to qa-19, layer-stage-lane, and layer-stage-none provide the stage criteria's Givens.
+[entry.criteria.acceptance-stage-tag]
+fixture = "spec_review_site"
+values = ["List the teams alphabetically?"]
+[entry.criteria.acceptance-stage-kept]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-stage-reply]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-stage-lane]
+fixture = "spec_review_site"
+values = ["Which criteria did this run skip?"]
+[entry.criteria.acceptance-stage-none]
+fixture = "spec_review_site"
+values = ["Which criteria did this run skip?"]
+[entry.criteria.acceptance-stage-reply-lane]
+fixture = "spec_review_site"
+# The test shell's native page and shell-box-picture provide the box picture criteria's Givens.
+[entry.criteria.acceptance-box-picture]
+fixture = "spec_review_site"
+values = ["This card says QA failed, but its bundle passed on the rerun."]
+[entry.criteria.acceptance-scan-picture]
+cannot_host = "the When is the owning agent's scan for ready hand-offs and the Then its report, which no page shows; no live agent here to run it; proven by tests/review-scan-spots.py"
+[entry.criteria.acceptance-scan-spot]
+cannot_host = "the When is the owning agent's scan for ready hand-offs and the Then its report, which no page shows; no live agent here to run it; proven by tests/review-scan-spots.py"
+[entry.criteria.acceptance-host-live]
+cannot_host = "capture has one browser and no owner agent to reply while the page is open; proven by tests/runtime-comment-layer.mjs"
+[entry.criteria.acceptance-host-phone]
+cannot_host = "story-host-comment captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone screen cannot be reached; proven by tests/runtime-comment-layer.mjs"
+[entry.criteria.acceptance-private-other-origin]
+cannot_host = "the QA review service is public (reset.sh records a public base address), so no private service answers here; proven by tests/runtime-comment-layer.mjs"
+# One capture browser: a When by another live browser, or a Given of two live drafts,
+# cannot be driven; the two-browser runtime test proves these.
+[entry.criteria.acceptance-live-comment]
+cannot_host = "capture has one browser context and cannot save from the first reviewer's page while watching the second; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-live-concurrent]
+cannot_host = "capture has one browser context, so two pages cannot save within the same second; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-live-concurrent-other]
+cannot_host = "capture has one browser context, so two pages cannot save within the same second; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-name-collision]
+cannot_host = "capture has one browser context; the Then needs both reviewers' pages showing each other's names; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-name-collision-other]
+cannot_host = "capture has one browser context; the Then needs both reviewers' pages showing each other's names; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-edit-race]
+cannot_host = "capture has one browser context; the Then needs both reviewers' pages showing the same edit; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-edit-race-other]
+cannot_host = "capture has one browser context; the Then needs both reviewers' pages showing the same edit; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-handoff-own]
+cannot_host = "capture has one browser context; the Given needs two live browsers each holding a draft, and a seeded draft cannot carry the capture browser's own id; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-handoff-own-other]
+cannot_host = "capture has one browser context; the Given needs two live browsers each holding a draft, and a seeded draft cannot carry the capture browser's own id; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-store-flow]
+cannot_host = "capture has one browser context and creates no load on the shared box (no synthetic load), so no other reviewers' pages read Jev marks and no answers are recorded while the page opens, and no store many times the server's memory is written; proven by tests/jev-record-store.py (StoreMemoryTest, StoreLockTest) and tests/review-serve-jev.py test_overlapping_reads_of_one_page_keep_the_asks_both_want"
+# Capture runs story-review-index at desktop viewport; criteria cannot set a viewport.
+[entry.criteria.acceptance-index-link-panel]
+cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone-width open panel state cannot be reached; proven by tests/runtime-spec-surface.mjs"
+[entry.criteria.acceptance-index-link-panel-closed]
+cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone-width open-then-closed panel state cannot be reached; proven by tests/runtime-spec-surface.mjs"
+# spec-page-design: story-one-surface and story-quiet-controls capture at desktop viewport too.
+[entry.criteria.acceptance-one-surface-phone]
+cannot_host = "story-one-surface captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone's first screen cannot be reached; proven by tests/runtime-spec-surface.mjs"
+[entry.criteria.acceptance-key-phone]
+cannot_host = "story-quiet-controls captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone toolbar cannot be reached; proven by tests/runtime-spec-surface.mjs"
+# Going offline is the device capability capture does not support (jev-capture #jc-capabilities).
+[entry.criteria.acceptance-offline-save]
+cannot_host = "capture cannot take the browser offline (device capability unsupported); proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-offline-reconnect]
+cannot_host = "capture cannot take the browser offline (device capability unsupported), so no reconnect; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-offline-reconnect-other]
+cannot_host = "capture cannot take the browser offline (device capability unsupported), so no reconnect; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-offline-closed]
+cannot_host = "capture cannot take the browser offline (device capability unsupported), so no offline save to reopen; proven by tests/runtime-review-live.mjs"
+[entry.criteria.acceptance-offline-closed-other]
+cannot_host = "capture cannot take the browser offline (device capability unsupported), so no offline save to reopen; proven by tests/runtime-review-live.mjs"
+
+# Stories this environment cannot host. services.review runs with HOME and XDG under
+# $QA_ROOT: no evidence provider, a fake wake provider that only logs each wake, no Herdr, no live agent, no review-host
+# (the fixture writes the registry), no lane-key slug and one project. The fake Jev
+# answers scope, rule, coverage (each criterion verifies its data-story story), and
+# change type on print.spec.html, whose reworded sections answer no (No behavior change);
+# every other question answers unrelated. Each reset registers fresh projects.
+[entry.criteria.acceptance-reviewed-kept]
+cannot_host = "the reviewed base is written by review-host when a hand-off is processed; review-host does not run here (the fixture writes the registry)"
+[entry.criteria.acceptance-reviewed-kept-clean]
+cannot_host = "the reviewed base is written by review-host when a hand-off is processed; review-host does not run here (the fixture writes the registry)"
+[entry.criteria.acceptance-reviewed-accepted]
+cannot_host = "the accepted flag is written by review-host reviewed; review-host does not run here (the fixture writes the registry)"
+[entry.criteria.acceptance-reviewed-past]
+cannot_host = "the reviewed base is written by review-host when the lane owner processes a hand-off; no live agent or review-host runs here (the fixture writes the registry); proven by tests/review-host.py test_reviewed_bases_the_row_on_the_newest_commit_holding_the_version_the_page_showed"
+[entry.stories.story-proven]
+cannot_host = "no evidence provider (providers/evidence.toml absent), so no criterion carries evidence"
+[entry.stories.story-open-proof]
+cannot_host = "no evidence provider (providers/evidence.toml absent), so no evidence to open"
+[entry.stories.story-branch]
+cannot_host = "no evidence provider (providers/evidence.toml absent), so no evidence notes to judge"
+[entry.stories.story-what-changed]
+cannot_host = "no evidence provider (providers/evidence.toml absent), so no QA stale criterion"
+[entry.stories.story-reproof]
+cannot_host = "no evidence provider (providers/evidence.toml absent), so no QA stale criterion"
+[entry.stories.story-plugin]
+cannot_host = "the BB plugin is not run here, and no evidence provider"
+[entry.stories.story-human-handoff]
+cannot_host = "no Herdr, so no owner pane to wake; the fixture's wake provider only logs each wake"
+[entry.stories.story-wake-failed]
+cannot_host = "no Herdr, so no owner pane to lose; the fixture's wake provider finds every owner present"
+[entry.stories.story-no-provider]
+cannot_host = "register output (wake=unavailable) comes from review-host, which does not run here (the fixture writes the registry)"
+[entry.stories.story-change-type]
+cannot_host = "fake Jev answers change type only on print.spec.html, whose head only rewords (No behavior change), so no spec change mixes a typo fix, a reword, and a rule change or shows Behavior, and no clause is marked Contradicts, Oversteps, or Overlaps"
+[entry.stories.story-orphan]
+cannot_host = "fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions; orphan placement answers unrelated, and the fixture has no threads"
+[entry.stories.story-resolved]
+cannot_host = "fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions; resolves answers unrelated, and the fixture has no threads"
+[entry.stories.story-corpus]
+cannot_host = "fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions; contradicts and oversteps answer unrelated"
+[entry.stories.story-cross-lane]
+cannot_host = "one lane slug only, and fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions"
+[entry.criteria.acceptance-lane-topk]
+cannot_host = "one lane slug only, and fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions, so no two lanes' changed clauses are ranked or asked the gate question; proven by tests/review-serve-jev-board.py test_lane_reads_ask_only_the_ranked_pairs and tests/jev-topk.py test_each_clause_pairs_with_its_top_texts_either_side"
+[entry.criteria.acceptance-lane-same-text]
+cannot_host = "one lane slug only, and fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions, so no two lanes carry a shared changed clause and no gate question is asked; proven by tests/review-serve-jev-board.py test_shared_clause_is_asked_once_for_both_lanes and tests/jev-topk.py test_shared_text_counts_once_and_is_never_paired_with_itself"
+[entry.criteria.acceptance-lane-read]
+cannot_host = "one lane slug only, and capture writes no store many times the server's memory, so no many-lane read of cross-lane questions exists; proven by tests/review-serve-jev-board.py test_many_lane_read_answers_under_5_seconds"
+# story-coverage: undeclared coverage runs on its collection (nav above); acceptance-coverage-declared and
+# acceptance-gaps-all-unsent are proven by tests. The fixture has no coverage gap for the rest.
+[entry.criteria.acceptance-coverage]
+cannot_host = "every fixture story a criterion names has its verifying criterion and every criterion its story, and print.spec.html names none, so no coverage gap to show or clear"
+[entry.criteria.acceptance-coverage-criterion]
+cannot_host = "every fixture story a criterion names has its verifying criterion and every criterion its story, and print.spec.html names none, so no coverage gap to show or clear"
+[entry.criteria.acceptance-coverage-clear]
+cannot_host = "every fixture story a criterion names has its verifying criterion and every criterion its story, and print.spec.html names none, so no coverage gap to show or clear"
+[entry.criteria.acceptance-coverage-clear-story]
+cannot_host = "every fixture story a criterion names has its verifying criterion and every criterion its story, and print.spec.html names none, so no coverage gap to show or clear"
+[entry.criteria.acceptance-gaps-all]
+cannot_host = "every fixture story a criterion names has its verifying criterion and every criterion its story, and print.spec.html names none, so no coverage gap to show or clear"
+[entry.criteria.acceptance-gaps-all-single]
+cannot_host = "every fixture story a criterion names has its verifying criterion and every criterion its story, and print.spec.html names none, so no coverage gap to show or clear"
+[entry.criteria.acceptance-settled-gap]
+cannot_host = "every fixture story a criterion names has its verifying criterion and every criterion its story, and print.spec.html names none, so no coverage gap to show or clear"
+[entry.stories.story-neutral]
+cannot_host = "Jev is on through the fake provider, which never fails, so Jev off or unavailable cannot occur"
+# A refused key (jev-contract #retry-refused): the fake provider never fails, so it never refuses Jev's key.
+[entry.criteria.acceptance-retry-refused]
+cannot_host = "Jev is on through the fake provider, which never fails, so it never refuses the key and no pause starts; proven by tests/jev-rate-limit.py test_a_refused_key_pauses_every_question and tests/jev-conformance.py (refused-key, refused-other-question)"
+[entry.criteria.acceptance-provider-refused]
+cannot_host = "Jev is on through the fake provider, which never fails, so it never refuses Jev's key and no question reads Jev unavailable; proven by tests/review-serve-jev.py test_a_refused_key_pauses_every_ask_of_the_service"
+[entry.criteria.acceptance-provider-refused-asks]
+cannot_host = "Jev is on through the fake provider, which never fails, so it never refuses Jev's key and no pause starts; proven by tests/review-serve-jev.py test_a_refused_key_pauses_every_ask_of_the_service"
+[entry.criteria.acceptance-status-paused]
+cannot_host = "Jev is on through the fake provider, which never fails, so it never refuses Jev's key and the status route names no pause; proven by tests/review-serve-steady.py test_status_names_a_refused_keys_pause"
+[entry.criteria.acceptance-agent-read-paused]
+cannot_host = "Jev is on through the fake provider, which never fails, so it never refuses Jev's key, and the agent read is a command no page shows; proven by tests/jev-read.py test_paused_prints_at_once_and_waits_for_nothing"
+# Only final records stored (jev-suggestions #record-final): the fake provider never fails, so no ask fails.
+[entry.criteria.acceptance-store-final]
+cannot_host = "Jev is on through the fake provider, which never fails, so no ask of a question fails and no pause starts, and Jev's records are store files no page shows; proven by tests/review-serve-jev.py test_failed_asks_leave_one_line_their_answer and tests/jev-record-store.py (StoreFilesTest)"
+[entry.stories.story-fast-marks]
+cannot_host = "Givens need box load above CPU count; QA creates no synthetic load"
+[entry.stories.story-note-action]
+cannot_host = "fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions, so no Contradicts, gap, or change note carries its button"
+[entry.stories.story-settled]
+cannot_host = "fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions, so no orphan, gap, or conflict mark to settle"
+[entry.stories.story-no-walls]
+cannot_host = "fake Jev answers every question at 0.95, so no below-threshold or verify-band answer and no general LLM"
+[entry.stories.story-right-pairs]
+cannot_host = "fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions; no Contradicts or Oversteps flag"
+[entry.stories.story-no-noise]
+cannot_host = "fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions; no flag to withhold"
+[entry.stories.story-context]
+cannot_host = "fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions; no flag popover to quote"
+# The rule-pending collection provides pending's and pending-motion's Givens, rule-answer pending-answer's, qa-fixture
+# source-own-lane's, and rule-main-only source-main-only's (rule-card hints above).
+[entry.criteria.acceptance-pending]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-pending-answer]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-pending-motion]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-source-own-lane]
+fixture = "spec_review_site"
+[entry.criteria.acceptance-source-main-only]
+fixture = "spec_review_site"
+# Rule criteria the fixture cannot drive: one rule, one home, answered only by the fake.
+[entry.criteria.acceptance-pending-plain]
+cannot_host = "fake Jev answers every plain Jev check instantly at 0.95, so no plain check is ever pending; proven by tests/runtime-jev-rules.mjs (#mark-none: plain pending shows nothing)"
+[entry.criteria.acceptance-card-cites]
+cannot_host = "fake Jev answers only scope, rule, coverage, and print.spec.html change-type questions, so no clause is marked Contradicts against a rule; proven by tests/review-serve-jev-rules.py test_mark_citing_a_marked_rule_carries_the_rule_card and tests/runtime-jev-rules.mjs"
+[entry.criteria.acceptance-own-project]
+cannot_host = "the fixture's projects are copies of one repo with the same marked rule, and fake Jev answers no Contradicts, Oversteps, Overlaps, or cross-lane question, so no mark can show which project it cites; proven by tests/review-serve-jev-rules.py test_rules_come_only_from_the_page_project"
+[entry.criteria.acceptance-own-project-lane]
+cannot_host = "fake Jev answers no contradiction question, so no two lanes contradict and no cross-lane mark or pair exists"
+[entry.criteria.acceptance-own-project-lane-b]
+cannot_host = "fake Jev answers no contradiction question, so no two lanes contradict and no cross-lane mark or pair exists; proven by tests/review-serve-jev-board.py test_slugs_of_different_projects_are_never_paired"
+[entry.criteria.acceptance-own-project-board]
+cannot_host = "fake Jev answers no contradiction question, so no two lanes contradict and no cross-lane mark or pair exists; proven by tests/review-serve-jev-board.py test_slugs_of_different_projects_are_never_paired"
+[entry.criteria.acceptance-clear]
+cannot_host = "the When is an agent edit to the spec file while the reviewer views the card; capture edits no file and the fixture lands no edit on a plain reload"
+[entry.criteria.acceptance-clear-untriggered]
+cannot_host = "no fixture spec leaves the rule untriggered; later-only and one-open mention onboarding, so they are covered; proven by tests/review-serve-jev-rules.py test_cover_or_reason_line_clears_a_thread_alone_does_not_and_untriggered_never_shows"
+[entry.criteria.acceptance-reword]
+cannot_host = "the When is an author edit to the rule's home spec file mid-scenario; capture edits no file; proven by tests/review-serve-jev-rules.py test_unmarked_or_deleted_rule_shows_no_mark_on_next_load"
+[entry.criteria.acceptance-dismiss-head]
+cannot_host = "the When edits and commits the spec mid-scenario; capture edits no file; proven by tests/review-serve-jev-rules.py test_not_for_this_spec_hides_the_rule_on_that_spec_path_for_good"
+[entry.criteria.acceptance-not-a-rule-reworded]
+cannot_host = "the When rewords and commits the criterion mid-scenario; capture edits no file; proven by tests/review-serve-jev-rules.py test_not_a_project_rule_settles_the_criterion_through_rewording"
+[entry.criteria.acceptance-reword-delete]
+cannot_host = "the When is an author edit deleting the rule's criterion from its home spec file mid-scenario; capture edits no file; proven by tests/review-serve-jev-rules.py test_unmarked_or_deleted_rule_shows_no_mark_on_next_load"
+[entry.criteria.acceptance-mark-new]
+cannot_host = "the When is an author edit marking a criterion in its home spec file mid-scenario; capture edits no file; proven by tests/review-serve-jev-rules.py test_marking_a_missed_criterion_shows_its_rule_card"
+[entry.criteria.acceptance-not-a-rule-mark]
+cannot_host = "the When is an author edit marking a criterion in its home spec file mid-scenario; capture edits no file; proven by tests/review-serve-jev-rules.py test_a_criterion_answered_not_a_rule_still_becomes_a_rule_once_marked"
+[entry.criteria.acceptance-dismiss-other]
+cannot_host = "a dismissal holds for one project and spec path, every collection's report spec is the same project and path, and no second spec misses the rule (later-only and one-open mention onboarding); proven by tests/review-serve-jev-rules.py test_not_for_this_spec_hides_the_rule_on_that_spec_path_for_good"
+[entry.criteria.acceptance-fallback-miss]
+cannot_host = "fake Jev answers every rule check at 0.95, so no question goes to the general LLM; proven by tests/review-serve-jev-rules.py test_unsure_goes_once_to_general_llm_which_decides_and_is_reused"
+[entry.criteria.acceptance-shape-ask]
+cannot_host = "needs a live shaping agent asking a human; no live agent here"
+[entry.criteria.acceptance-clear-reason]
+cannot_host = "the When is an author edit to the spec file while the reviewer views the card; capture edits no file and the fixture lands no edit on a plain reload; proven by tests/review-serve-jev-rules.py test_cover_or_reason_line_clears_a_thread_alone_does_not_and_untriggered_never_shows"
+[entry.criteria.acceptance-onboarding-doc]
+cannot_host = "the onboarding documentation is the repo README, which the review service does not serve; proven by tests/install-spec-chat.py test_onboarding_doc_says_how_to_write_a_project_rule"
+[entry.criteria.acceptance-index-design-phone]
+cannot_host = "story-review-index captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone screen cannot be reached; proven by tests/runtime-review-index.mjs"
+# Setting the system appearance is not a browser capability (jev-capture #jc-capabilities).
+[entry.criteria.acceptance-index-dark]
+cannot_host = "capture cannot set the system appearance to dark; the QA-1 lane has threads in every status; proven by tests/runtime-review-index.mjs"
+[entry.criteria.acceptance-presentation-theme-dark]
+cannot_host = "capture cannot set the system appearance to dark; the shared stylesheet follows it (color-scheme light dark) and gives a diagram the set's dark values; proven by tests/spec-style-contract.py test_dark_appearance_renders_a_dark_page_with_light_text"
+[entry.criteria.acceptance-dark-document]
+cannot_host = "capture cannot set the system appearance to dark; proven by tests/spec-style-contract.py test_dark_appearance_renders_a_dark_page_with_light_text and test_normal_and_muted_text_clear_the_body_contrast_floor_in_both_modes (the document, its tables and figures on the set's dark values) and tests/runtime-chrome-tokens.mjs (the chrome on the set's dark values)"
+# Capture runs story-consistent-chrome at desktop viewport; criteria cannot set a viewport.
+[entry.criteria.acceptance-button-system-phone]
+cannot_host = "story-consistent-chrome captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone screen cannot be reached; proven by tests/runtime-chrome-tokens.mjs"
+[entry.criteria.acceptance-no-content-change-phone]
+cannot_host = "story-consistent-chrome captures at desktop viewport and qa.toml criteria cannot set a viewport, so the phone screen cannot be reached; proven by tests/runtime-chrome-tokens.mjs"
+[entry.stories.story-stable-url]
+cannot_host = "the fixture registers one repository and one project; Givens need two projects from two repositories"
+[entry.stories.story-operator]
+cannot_host = "needs a live shaping agent and issue tracker"
+[entry.stories.story-agent]
+cannot_host = "needs a live agent; none runs here"
+[entry.stories.story-compatible-review]
+cannot_host = "preflight runs in review-host before the server starts; review-host does not run here"
+# repair-specs story-review's criteria, keyed by criterion: mockups.spec.html's story-review shares that anchor and is hosted.
+[entry.criteria.acceptance-output]
+cannot_host = "repairs are run by an agent with the repair skill; no live agent here"
+[entry.criteria.acceptance-output-committed]
+cannot_host = "repairs are run by an agent with the repair skill; no live agent here"
+[entry.stories.story-catch-up]
+cannot_host = "repairs are run by an agent with the repair skill; no live agent here"
+[entry.stories.story-box-service]
+cannot_host = "needs review-host register and its session's review service; review-host does not run here"

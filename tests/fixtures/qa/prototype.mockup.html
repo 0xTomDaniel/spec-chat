@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-prototype" content="/reports/weekly">
+<title>Weekly report - mockup</title>
+<script defer src="../../.viz/runtime.js"></script>
+</head>
+<body>
+<ul data-mockup-regions>
+<li data-anchor="team-cards" data-select=".cards" data-illustrates="page-teams">Team cards</li>
+<li data-anchor="payments-card" data-select=".team-card[data-team=Payments]" data-illustrates="page-team">Payments card</li>
+<li data-anchor="team-panel" data-select="#team-panel" data-illustrates="page-team">Team panel</li>
+<li data-anchor="export-button" data-select="#export" data-illustrates="page-export">Export button</li>
+<li data-anchor="export-dialog" data-select="#export-dialog" data-illustrates="page-export-file">Export dialog</li>
+</ul>
+<ol data-mockup-steps>
+<li data-step="totals" data-illustrates="page-teams">Every team's total for the week</li>
+<li data-step="team-open" data-illustrates="page-team">Payments opens its last three weeks<ul><li data-press=".team-card[data-team=Payments]"></li></ul></li>
+<li data-step="export" data-illustrates="page-export">The export dialog names the file<ul><li data-press="#export"></li></ul></li>
+</ol>
+<aside data-mockup-questions>
+<p data-anchor="question-trend" data-spec-tbd data-about="team-panel" data-step="team-open">Should the team panel show a trend line?
+<button type="button" data-spec-choice="Totals only">Totals only (recommended)</button>
+<button type="button" data-spec-choice="Add a trend line">Add a trend line</button></p>
+</aside>
+</body>
+</html>

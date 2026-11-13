@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-design-source" content="skill/review-spec/assets/viz/runtime.js@495bc8f5b skill/shape-spec/assets/style/spec.css@5de1bcc8a design-set.toml@553b61008 docs/specs/spec-page-design.spec.html@ae1f4b146 DESIGN.md@eb97aaac4">
+<title>Spec page - mockup</title>
+<style>
+  /* Design source: the pinned design set's tokens as runtime.js builds them in (design-set.toml pins the set), the
+     runtime's ui tokens, and spec.css's --spec-* document values, each by its name and value. Every rule sits under a
+     frame or on a class used only inside one (rv-), so the review page's own chrome is never restyled. */
+  [data-mockup-frame] {
+    --ui-page: #ffffff; --ui-surface: #ffffff; --ui-surface-soft: #f5f5f5; --ui-ink: #333333; --ui-muted: #525252;
+    --ui-muted-soft: #eeeeee; --ui-border: #dfdfdf; --ui-action: #1d4ed8; --ui-action-soft: #eff3ff;
+    --ui-link: var(--ui-action); --ui-focus: var(--ui-action); --ui-pass: #005c32; --ui-pass-soft: #e6efea;
+    --ui-fail: #a5000f; --ui-fail-soft: #f6e6e7; --ui-attention: #b0540e; --ui-attention-soft: #faf4ef;
+    --ui-font: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --ui-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --ui-text-xs: 12px; --ui-text-ui: 13px; --ui-text-sm: 14px; --ui-text-md: 16px; --ui-text-lg: 20px; --ui-text-xl: 24px; --ui-text-2xl: 30px;
+    --ui-weight-regular: 400; --ui-weight-medium: 500; --ui-weight-semibold: 600;
+    --ui-space-1: 4px; --ui-space-2: 8px; --ui-space-3: 12px; --ui-space-4: 16px; --ui-space-5: 24px; --ui-space-6: 32px;
+    --ui-radius-sm: 6px; --ui-radius: 8px; --ui-radius-pill: 999px; --ui-focus-width: 2px; --ui-focus-offset: 2px;
+    --ui-motion-duration: 150ms; --ui-motion-ease: ease-out;
+    --ui-draft: var(--ui-attention); --ui-draft-soft: var(--ui-attention-soft); --ui-ack: var(--ui-action); --ui-ack-soft: var(--ui-action-soft);
+    --ui-resolved: var(--ui-pass); --ui-resolved-soft: var(--ui-pass-soft); --ui-error: var(--ui-fail);
+    --ui-marker: #767b85; --ui-marker-important: #d1242f; --ui-marker-pass: #1a7f37; --ui-on-marker: #ffffff; --ui-marker-warning: #e5534b;
+    --ui-pin-ring: rgba(176, 84, 14, 0.25); --ui-shadow: rgba(51, 51, 51, 0.14); --ui-veil: rgba(0, 0, 0, 0.42);
+    --spec-paper: #ffffff; --spec-ink: #333333; --spec-body: #333333; --spec-muted: #525252; --spec-focus-context: #525252;
+    --spec-hairline: #dfdfdf; --spec-blue: #1d4ed8;
+    --spec-font: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --spec-text-meta: 12px; --spec-text-small: 14px; --spec-text-lede: 16px; --spec-text-heading: 24px; --spec-text-display: 30px;
+    --spec-weight-regular: 400; --spec-weight-semibold: 600;
+  }
+  @media (prefers-color-scheme: dark) {
+    [data-mockup-frame] {
+      --ui-page: #1a1a1a; --ui-surface: #242424; --ui-surface-soft: #2a2a2a; --ui-ink: #e0e0e0; --ui-muted: #999999;
+      --ui-muted-soft: #2e2e2e; --ui-border: #3a3a3a; --ui-action: #7896ef; --ui-action-soft: #1a2040; --ui-pass: #3daa6e;
+      --ui-pass-soft: #1a2e22; --ui-fail: #ffb4ab; --ui-fail-soft: #2e1a1c; --ui-attention: #e5873a; --ui-attention-soft: #2e2218;
+      --ui-pin-ring: rgba(229, 135, 58, 0.25); --ui-shadow: rgba(0, 0, 0, 0.4); --ui-veil: rgba(0, 0, 0, 0.6);
+      --spec-paper: #1a1a1a; --spec-ink: #e0e0e0; --spec-body: #e0e0e0; --spec-muted: #999999; --spec-focus-context: #999999;
+      --spec-hairline: #3a3a3a; --spec-blue: #7896ef;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-mockup-frame] { --ui-motion-duration: 0ms; }
+  }
+
+  /* the frame: a spec page served by a review service, its chrome the runtime's (CSS const) */
+  [data-mockup-frame] { box-sizing: border-box; position: relative; overflow: hidden; background: var(--spec-paper); color: var(--spec-body);
+                        font: var(--spec-weight-regular) 15px/1.6 var(--spec-font); }
+  [data-mockup-frame="desktop"] { width: 1440px; }
+  [data-mockup-frame="phone"] { width: 390px; }
+  [data-mockup-frame] *, [data-mockup-frame] *::before, [data-mockup-frame] *::after { box-sizing: border-box; }
+  [data-mockup-frame] :focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  /* the button system (spec-page-design #button-system): primary, secondary, icon, text link */
+  .rv-btn { font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); color: var(--ui-ink); background: var(--ui-surface);
+            border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); min-height: var(--ui-space-6); margin: 0;
+            padding: var(--ui-space-2) var(--ui-space-3); white-space: nowrap; cursor: pointer;
+            transition: background var(--ui-motion-duration) var(--ui-motion-ease), color var(--ui-motion-duration) var(--ui-motion-ease); }
+  .rv-btn:hover { background: var(--ui-surface-soft); }
+  .rv-btn:active { background: var(--ui-muted-soft); }
+  .rv-btn:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .rv-btn:disabled { cursor: default; opacity: .45; }
+  .rv-btn:disabled:hover { background: var(--ui-surface); }
+  .rv-pri:disabled:hover { background: var(--ui-ink); border-color: var(--ui-ink); }
+  .rv-pri { background: var(--ui-ink); color: var(--ui-page); border-color: var(--ui-ink); }
+  .rv-pri:hover { background: var(--ui-muted); border-color: var(--ui-muted); }
+  .rv-pri:active { background: var(--ui-ink); }
+  .rv-text { border-color: transparent; background: transparent; }
+  .rv-icon { width: var(--ui-space-6); height: var(--ui-space-6); padding: 0; display: grid; place-items: center; color: var(--ui-muted); }
+  .rv-icon:hover { background: var(--ui-page); color: var(--ui-ink); }
+  [data-mockup-frame="phone"] .rv-btn { min-height: 44px; }
+  [data-mockup-frame="phone"] .rv-icon { width: 44px; height: 44px; }
+  /* top line (spec-page-design #top-line): the index link and the range bar on the page color over a hairline */
+  .rv-top { position: absolute; top: 0; left: 0; right: 0; z-index: 8; display: flex; align-items: flex-start; gap: var(--ui-space-3);
+            padding: var(--ui-space-1) var(--ui-space-4); background: var(--ui-page); border-bottom: 1px solid var(--ui-border);
+            color: var(--ui-ink); font: var(--ui-text-sm)/1.4 var(--ui-font); }
+  [data-mockup-frame="desktop"] .rv-top.rv-beside-panel { right: 330px; }
+  .rv-index { flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--ui-space-1); min-height: var(--ui-space-6);
+              border-radius: var(--ui-radius-sm); color: var(--ui-ink); font: var(--ui-weight-medium) var(--ui-text-xs)/1 var(--ui-font); text-decoration: none; }
+  .rv-index:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .rv-index svg { color: var(--ui-muted); }
+  .rv-range { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--ui-space-2); }
+  .rv-range-copy { flex: 1 1 auto; min-width: 0; margin: 0; color: var(--ui-muted); overflow-wrap: anywhere; }
+  .rv-range-copy code { font: var(--ui-weight-medium) var(--ui-text-sm) var(--ui-mono); color: var(--ui-ink); }
+  .rv-change { border: none; background: transparent; }
+  [data-mockup-frame="phone"] .rv-top { flex-wrap: wrap; gap: 0 var(--ui-space-2); padding: 0 var(--ui-space-2) var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-index { min-height: 44px; padding: 0 var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-range { flex: 1 1 100%; padding: 0 var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-range-copy { font-size: var(--ui-text-xs); }
+  [data-mockup-frame="phone"] .rv-range-copy code { font-size: var(--ui-text-xs); }
+  [data-mockup-frame="phone"] .rv-change { position: absolute; top: 0; right: var(--ui-space-2); }
+  /* the document (spec.css): one calm page from the set's values */
+  .rv-doc { width: min(1080px, calc(100% - 48px)); margin: 0 auto; padding: 81px 0 120px; }
+  [data-mockup-frame="desktop"] .rv-doc.rv-beside-panel { width: 1062px; margin: 0 354px 0 24px; }
+  [data-mockup-frame="phone"] .rv-doc { width: calc(100% - 32px); padding: 90px 0 200px; }
+  .rv-doc p { max-width: 72ch; margin: 0 0 10px; }
+  .rv-doc .rv-crumbs { color: var(--spec-muted); font-size: var(--spec-text-meta); line-height: 1.5; }
+  .rv-doc h1 { max-width: 72ch; margin: 6px 0 12px; color: var(--spec-ink); font-size: var(--spec-text-display); font-weight: var(--spec-weight-semibold);
+               line-height: 1.2; letter-spacing: -0.01em; }
+  [data-mockup-frame="phone"] .rv-doc h1 { font-size: var(--spec-text-heading); }
+  .rv-doc .rv-section { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--spec-hairline); }
+  [data-mockup-frame="phone"] .rv-doc .rv-section { margin-top: 40px; }
+  .rv-doc h2 { margin: 0 0 12px; color: var(--spec-ink); font-size: var(--spec-text-heading); font-weight: var(--spec-weight-semibold); line-height: 1.25; letter-spacing: -0.01em; }
+  .rv-block { position: relative; }
+  .rv-doc .rv-block { max-width: 72ch; }
+  .rv-pinned { padding-right: var(--ui-space-6); }
+  [data-mockup-frame="phone"] .rv-pinned { padding-right: calc(var(--ui-space-6) + var(--ui-space-4)); min-height: 66px; }
+  /* an open TBD (prompt-first-shaping #finish-tbd-highlight): outlined in the draft color, a later one not */
+  .rv-tbd { transition: outline-color var(--ui-motion-duration) var(--ui-motion-ease); }
+  /* answer buttons in the document (#answer-buttons): the chrome's choice shape; chosen: pressed, checked, outlined */
+  .rv-answer { display: inline-block; min-height: var(--ui-space-6); margin: var(--ui-space-1) var(--ui-space-1) 0 0; padding: var(--ui-space-2) var(--ui-space-3);
+               border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill); background: var(--ui-surface); color: var(--ui-ink);
+               font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); cursor: pointer; }
+  .rv-answer:hover { background: var(--ui-surface-soft); }
+  .rv-answer:active { background: var(--ui-muted-soft); }
+  .rv-answer:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  [data-mockup-frame="phone"] .rv-answer { min-height: 44px; }
+  /* pins (spec-page-design #surface-pins): a teardrop in its status color, at the block's corner */
+  .rv-pin { position: absolute; right: 0; top: 0; z-index: 3; width: 24px; height: 24px; border-radius: 50% 50% 50% 4px; display: grid; place-items: center;
+            font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); font-style: normal; color: var(--ui-page); background: var(--ui-draft); box-shadow: 0 2px 8px var(--ui-shadow); }
+  .rv-pin.rv-ack { background: var(--ui-ack); }
+  .rv-pin.rv-done { background: var(--ui-surface); color: var(--ui-resolved); border: 2px solid var(--ui-resolved); }
+  [data-mockup-frame="phone"] .rv-pin { width: 44px; height: 44px; }
+  /* toolbar (spec-page-design #surface-toolbar): bottom center on a desktop; on a phone the bottom toolbar holding the
+     panel's one hand-off bar (#mobile-handoff) */
+  .rv-toolbar { position: absolute; z-index: 12; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: var(--ui-space-1); align-items: center;
+                white-space: nowrap; background: var(--ui-page); border: 1px solid var(--ui-border); border-radius: var(--ui-radius);
+                box-shadow: 0 8px 28px var(--ui-shadow); padding: var(--ui-space-1); font: var(--ui-text-sm) var(--ui-font); }
+  .rv-toolbar .rv-tool { border-color: transparent; background: transparent; }
+  .rv-toolbar .rv-tool:hover { background: var(--ui-surface-soft); }
+  .rv-toolbar .rv-tool[aria-pressed="true"] { background: var(--ui-draft-soft); color: var(--ui-draft); }
+  .rv-status { color: var(--ui-muted); font-size: var(--ui-text-xs); padding: 0 var(--ui-space-2); }
+  [data-mockup-frame="phone"] .rv-toolbar { left: var(--ui-space-3); right: var(--ui-space-3); bottom: 10px; transform: none; flex-wrap: wrap; white-space: normal; }
+  [data-mockup-frame="phone"] .rv-toolbar .rv-btn { flex: 1 1 auto; }
+  [data-mockup-frame="phone"] .rv-toolbar .rv-note { flex: 1 1 auto; }
+  [data-mockup-frame="phone"] .rv-toolbar .rv-status { flex: 1 0 100%; min-width: 0; padding: 0 var(--ui-space-2) var(--ui-space-1); text-align: center;
+                                                        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rv-note { font-size: var(--ui-text-xs); color: var(--ui-muted); }
+  /* thread dock (#surface-dock): top right under the top line, gone while the panel is open */
+  .rv-dock { position: absolute; z-index: 7; top: 53px; right: var(--ui-space-3); display: flex; flex-direction: column; gap: var(--ui-space-1);
+             padding: var(--ui-space-1); background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); }
+  .rv-dock .rv-icon { border: 1px solid var(--ui-border); background: var(--ui-surface); border-radius: var(--ui-radius-sm); }
+  .rv-dock .rv-thread { width: var(--ui-space-6); height: var(--ui-space-6); padding: 0; display: grid; place-items: center; font: var(--ui-weight-semibold) var(--ui-text-xs)/1 var(--ui-mono);
+                        border: 1px solid var(--ui-draft); color: var(--ui-draft); background: var(--ui-draft-soft); border-radius: var(--ui-radius-sm); }
+  .rv-dock .rv-thread.rv-ack { border-color: var(--ui-ack); color: var(--ui-ack); background: var(--ui-ack-soft); }
+  .rv-dock .rv-thread.rv-done { border-color: var(--ui-resolved); color: var(--ui-resolved); background: var(--ui-resolved-soft); }
+  .rv-dock-threads { display: flex; flex-direction: column; gap: var(--ui-space-1); border-top: 1px solid var(--ui-border); padding-top: var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-dock { top: 74px; right: var(--ui-space-2); }
+  [data-mockup-frame="phone"] .rv-dock .rv-thread { width: 44px; height: 44px; }
+  /* review panel (#surface-panel): 330px at the right on a desktop; the whole screen on a phone, over the bottom toolbar's space */
+  .rv-panel { position: absolute; z-index: 6; top: 0; right: 0; bottom: 0; width: 330px; display: flex; flex-direction: column; background: var(--ui-page);
+              color: var(--ui-ink); border-left: 1px solid var(--ui-border); font: var(--ui-text-sm) var(--ui-font); }
+  /* on a phone the open panel covers the top line and the dock, which the runtime hides, under the bottom toolbar */
+  [data-mockup-frame="phone"] .rv-panel { left: 0; width: auto; border-left: 0; padding-bottom: 136px; z-index: 11; }
+  .rv-head { position: relative; min-height: 44px; padding: var(--ui-space-3) 48px; border-bottom: 1px solid var(--ui-border); font-weight: var(--ui-weight-semibold); overflow-wrap: anywhere; }
+  .rv-head .rv-count, .rv-head .rv-sub { font-weight: var(--ui-weight-regular); font-size: var(--ui-text-xs); color: var(--ui-muted); }
+  .rv-head .rv-icon { position: absolute; top: var(--ui-space-2); border: 1px solid var(--ui-border); background: var(--ui-surface); }
+  .rv-head .rv-toggle { left: var(--ui-space-2); }
+  .rv-head .rv-gear { right: var(--ui-space-2); }
+  [data-mockup-frame="phone"] .rv-head { min-height: 56px; padding: var(--ui-space-4) 56px var(--ui-space-3); }
+  [data-mockup-frame="phone"] .rv-head .rv-icon { top: var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-head .rv-toggle { left: var(--ui-space-1); }
+  .rv-stream { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; gap: var(--ui-space-3);
+               padding: var(--ui-space-3) var(--ui-space-3) var(--ui-space-2); }
+  .rv-entry { display: flex; flex-direction: column; align-items: flex-start; gap: var(--ui-space-1); min-width: 0; }
+  .rv-entry.rv-me { align-items: flex-end; }
+  .rv-msg { display: flex; flex-direction: column; align-items: flex-start; gap: var(--ui-space-1); max-width: 86%; min-width: 0; }
+  .rv-me > .rv-msg, .rv-msg.rv-me { align-self: flex-end; align-items: flex-end; }
+  .rv-who { padding: 0 var(--ui-space-3); font: var(--ui-text-xs)/1.4 var(--ui-font); color: var(--ui-muted); }
+  .rv-bubble { position: relative; max-width: 100%; padding: var(--ui-space-2) var(--ui-space-3); border-radius: calc(2 * var(--ui-radius)); font: var(--ui-text-sm)/1.4 var(--ui-font); overflow-wrap: anywhere; }
+  .rv-me .rv-bubble { background: var(--ui-action); color: var(--ui-page); border-bottom-right-radius: var(--ui-radius-sm); }
+  .rv-them .rv-bubble { background: var(--ui-surface-soft); color: var(--ui-ink); border-bottom-left-radius: var(--ui-radius-sm); }
+  .rv-me .rv-bubble.rv-draft { background: var(--ui-action-soft); color: var(--ui-ink); box-shadow: inset 0 0 0 1px var(--ui-action); }
+  .rv-chip { max-width: 100%; padding: 0 var(--ui-space-2); border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill); background: var(--ui-page);
+             color: var(--ui-muted); font: var(--ui-text-xs)/1.6 var(--ui-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rv-replies { max-width: 100%; padding: 0 var(--ui-space-3); color: var(--ui-muted); font: var(--ui-text-xs)/1.5 var(--ui-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rv-replies b { color: var(--ui-ink); font-weight: var(--ui-weight-semibold); }
+  .rv-receipt { padding: 0 var(--ui-space-3); font: var(--ui-weight-semibold) var(--ui-text-xs)/1.5 var(--ui-font); color: var(--ui-draft); }
+  .rv-receipt.rv-ack { color: var(--ui-ack); }
+  .rv-receipt.rv-done { color: var(--ui-resolved); padding: 0; }
+  .rv-resolved-line { align-self: stretch; padding: var(--ui-space-1) var(--ui-space-3); border-top: 1px solid var(--ui-border); border-bottom: 1px solid var(--ui-border);
+                      color: var(--ui-muted); font: var(--ui-text-xs)/1.5 var(--ui-font); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rv-choices { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); margin-top: var(--ui-space-2); }
+  .rv-choice { min-height: var(--ui-space-6); margin: 0; padding: var(--ui-space-2) var(--ui-space-3); border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill);
+               background: var(--ui-surface); color: var(--ui-ink); font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); cursor: pointer; }
+  .rv-choice:hover { background: var(--ui-surface-soft); }
+  .rv-choice:active { background: var(--ui-muted-soft); }
+  .rv-choice:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .rv-choice.rv-words { border-color: transparent; background: transparent; }
+  [data-mockup-frame="phone"] .rv-choice { min-height: 44px; }
+  /* the panel's one hand-off bar: its note, Next TBD, and the action, primary rightmost */
+  .rv-handoff { display: flex; justify-content: flex-end; align-items: center; gap: var(--ui-space-1); padding: var(--ui-space-2) var(--ui-space-3); border-top: 1px solid var(--ui-border); }
+  .rv-handoff .rv-note { margin-right: auto; min-width: 0; white-space: nowrap; }
+  /* a new comment's composer, at the bottom of the conversation (#surface-composer): send primary rightmost, cancel left */
+  .rv-compose { display: flex; flex-direction: column; gap: var(--ui-space-1); padding: var(--ui-space-2) var(--ui-space-3); border: 1px solid var(--ui-border);
+                border-radius: var(--ui-radius); background: var(--ui-surface); }
+  .rv-anchor { font: var(--ui-text-xs) var(--ui-mono); color: var(--ui-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rv-field { display: block; width: 100%; min-height: 56px; margin-top: var(--ui-space-1); padding: var(--ui-space-1) var(--ui-space-2); border: 1px solid var(--ui-border);
+              border-radius: var(--ui-radius-sm); background: var(--ui-surface); color: var(--ui-ink); font: var(--ui-text-sm)/1.4 var(--ui-font); resize: none; }
+  .rv-field::placeholder { color: var(--ui-muted); }
+  .rv-field:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  [data-mockup-frame="phone"] .rv-field { min-height: 120px; padding: var(--ui-space-2) var(--ui-space-3); font-size: var(--ui-text-md); }
+  .rv-compose-actions { display: flex; justify-content: flex-end; gap: var(--ui-space-1); margin-top: var(--ui-space-1); }
+  /* toast (#surface-toast): the saved and handed-off notices */
+  .rv-toast { position: absolute; z-index: 13; bottom: 76px; left: 50%; transform: translateX(-50%); padding: var(--ui-space-2) var(--ui-space-4); border-radius: var(--ui-radius);
+              background: var(--ui-ink); color: var(--ui-page); font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); white-space: nowrap; box-shadow: 0 8px 28px var(--ui-shadow);
+              transition: opacity var(--ui-motion-duration) var(--ui-motion-ease); }
+  [data-mockup-frame="phone"] .rv-toast { bottom: 152px; max-width: calc(100% - 24px); white-space: normal; text-align: center; }
+
+  [data-mockup-frame] {
+    --spec-soft: #f5f5f5; --spec-code: #f5f5f5; --spec-rule: #dfdfdf; --spec-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --spec-weight-medium: 500; --spec-radius-sm: 6px; --spec-radius: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    [data-mockup-frame] { --spec-soft: #2a2a2a; --spec-code: #2a2a2a; --spec-rule: #3a3a3a; }
+  }
+
+  /* this screen's parts */
+  .rv-inline-handoff { display: contents; }
+  [data-mockup-frame="desktop"] .rv-panel { min-height: 100%; }
+  /* a block holding a Jev marker beside its first line (jev-suggestions #markers, spec-page-design #acceptance-mark-levels):
+     important red with its glyph, passed green with its check, warning light red, neutral grey; inside the column on a phone */
+  .sp-holder { position: relative; }
+  .sp-marker { position: absolute; top: .35em; left: calc(100% + 10px); z-index: 4; width: 10px; height: 10px; margin: 0; padding: 0; border: 0; border-radius: 50%;
+               background: var(--ui-marker); color: var(--ui-on-marker); display: grid; place-items: center; cursor: pointer;
+               font: var(--ui-weight-semibold) var(--ui-text-xs)/1 var(--ui-font); transition: box-shadow var(--ui-motion-duration) var(--ui-motion-ease); }
+  .sp-marker::before { content: ""; position: absolute; inset: -10px 0 -10px -16px; }
+  .sp-marker:hover { box-shadow: 0 0 0 3px var(--ui-pin-ring); }
+  .sp-marker:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .sp-marker.sp-important { width: 14px; height: 14px; background: var(--ui-marker-important); }
+  .sp-marker.sp-important::after { content: "!"; }
+  .sp-marker.sp-passed { width: 14px; height: 14px; background: var(--ui-marker-pass); }
+  .sp-marker.sp-passed::after { content: "\2713"; }
+  .sp-marker.sp-warning { background: var(--ui-marker-warning); }
+  [data-mockup-frame="phone"] .sp-marker { left: auto; right: 0; }
+  [data-mockup-frame="phone"] .sp-holder > p { padding-right: var(--ui-space-5); }
+  .rv-doc .sp-holder > p { margin-bottom: 10px; }
+  /* See mockup chip (mockups #chip-look), in the flow after the block's text */
+  .sp-chip { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; margin-left: var(--ui-space-2);
+             padding: 0 var(--ui-space-2); border: 1px solid currentColor; border-radius: var(--ui-radius-pill); background: var(--ui-surface); color: var(--ui-link);
+             font: var(--ui-weight-semibold) var(--ui-text-xs)/1.6 var(--ui-font); text-decoration: none; }
+  .sp-chip:hover { background: var(--ui-action-soft); }
+  .sp-chip:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  /* Screens index under the header (spec-page-design #surface-screen-index): a list in hairlines, each row one link */
+  .sp-screens { display: block; margin: var(--ui-space-5) 0 0; padding: 0; background: var(--ui-page); color: var(--ui-ink); font: var(--ui-weight-regular) var(--ui-text-xs)/1.4 var(--ui-font); }
+  .sp-screens-head { display: flex; align-items: baseline; gap: var(--ui-space-2); max-width: none; margin: 0 0 var(--ui-space-2); color: var(--ui-ink); font: var(--ui-weight-semibold) var(--ui-text-sm)/1.4 var(--ui-font); }
+  .sp-screens-count { color: var(--ui-muted); font-weight: var(--ui-weight-regular); font-size: var(--ui-text-xs); }
+  .sp-screens ul { list-style: none; margin: 0; padding: 0; border: 1px solid var(--ui-border); border-radius: var(--ui-radius); }
+  .sp-screens li { max-width: none; margin: 0; padding: 0; }
+  .sp-screens li + li { border-top: 1px solid var(--ui-border); }
+  .sp-screen { display: grid; grid-template-columns: 16px minmax(0, 220fr) minmax(0, 526fr) minmax(0, 220fr) 16px; grid-template-areas: "mark name meta open go"; align-items: center;
+               column-gap: var(--ui-space-3); min-height: 44px; padding: var(--ui-space-2) var(--ui-space-4); color: var(--ui-ink); text-decoration: none;
+               font: var(--ui-text-xs)/1.4 var(--ui-font); transition: background var(--ui-motion-duration) var(--ui-motion-ease); }
+  .sp-screen:hover { background: var(--ui-surface-soft); }
+  .sp-screen:active { background: var(--ui-muted-soft); }
+  .sp-screen:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .sp-screens li:first-child .sp-screen { border-top-left-radius: var(--ui-radius); border-top-right-radius: var(--ui-radius); }
+  .sp-screens li:last-child .sp-screen { border-bottom-left-radius: var(--ui-radius); border-bottom-right-radius: var(--ui-radius); }
+  .sp-screen svg { display: block; }
+  .sp-mark { grid-area: mark; }
+  .sp-name { grid-area: name; min-width: 0; color: var(--ui-ink); font: var(--ui-weight-medium) var(--ui-text-sm)/1.4 var(--ui-font); }
+  .sp-meta { grid-area: meta; display: grid; grid-template-columns: minmax(0, 1fr) 140px; column-gap: var(--ui-space-3); min-width: 0; color: var(--ui-muted); }
+  .sp-views { grid-column: 2; }
+  .sp-open { grid-area: open; color: var(--ui-muted); }
+  .sp-open.sp-waiting { color: var(--ui-attention); font-weight: var(--ui-weight-medium); }
+  .sp-go { grid-area: go; color: var(--ui-muted); }
+  [data-mockup-frame="phone"] .sp-screen { grid-template-columns: 16px minmax(0, 1fr) 16px; grid-template-areas: "mark name go" ". meta go" ". open go"; row-gap: 2px; padding: var(--ui-space-3); }
+  [data-mockup-frame="phone"] .sp-meta { display: flex; flex-wrap: wrap; column-gap: var(--ui-space-1); }
+  [data-mockup-frame="phone"] .sp-kind::after { content: " ·"; }
+  /* the focused thread (threads #focus): its messages alone over the conversation dimmed; on a phone a sheet over the
+     screen's lower half, the spot ringed above it with the page dimmed around */
+  .sp-veil { position: absolute; inset: 0; z-index: 3; background: var(--ui-veil); }
+  .sp-focused { position: absolute; top: var(--ui-space-2); left: var(--ui-space-2); right: var(--ui-space-2); bottom: var(--ui-space-2); z-index: 4; display: flex; flex-direction: column;
+                background: var(--ui-page); color: var(--ui-ink); border: 1px solid var(--ui-border); border-radius: calc(2 * var(--ui-radius)); box-shadow: 0 12px 32px var(--ui-shadow);
+                font: var(--ui-text-sm) var(--ui-font); }
+  .sp-focused-head { display: flex; align-items: center; gap: var(--ui-space-1); padding: var(--ui-space-1) var(--ui-space-2); border-bottom: 1px solid var(--ui-border); }
+  .sp-back { display: inline-flex; align-items: center; gap: var(--ui-space-1); margin-right: auto; border-color: transparent; background: transparent; }
+  .sp-focused-stream { flex: 1 1 auto; min-height: 0; padding: var(--ui-space-3); display: flex; flex-direction: column; gap: var(--ui-space-2); }
+  .sp-reply { display: flex; align-items: flex-end; gap: var(--ui-space-2); padding: var(--ui-space-2) var(--ui-space-3); border-top: 1px solid var(--ui-border); }
+  .sp-reply .rv-field { flex: 1 1 auto; min-height: 36px; margin: 0; border-radius: calc(2 * var(--ui-radius)); padding: var(--ui-space-2) var(--ui-space-3); }
+  .sp-grip { display: none; }
+  [data-mockup-frame="phone"] .sp-focused { position: absolute; top: 422px; left: 0; right: 0; bottom: 0; z-index: 11; border: 0; border-radius: calc(2 * var(--ui-radius)) calc(2 * var(--ui-radius)) 0 0;
+                                            box-shadow: 0 -12px 32px var(--ui-shadow); padding-bottom: 136px; }
+  [data-mockup-frame="phone"] .sp-grip { display: block; align-self: center; width: 36px; height: 4px; margin: var(--ui-space-2) 0 0; border-radius: var(--ui-radius-pill); background: var(--ui-border); }
+  [data-mockup-frame="phone"] .sp-reply .rv-field { min-height: 44px; }
+  [data-mockup-frame][data-at$=" opened"] [data-show]:not([data-show~="opened"]),
+  [data-mockup-frame][data-at="opened"] [data-show]:not([data-show~="opened"]),
+  [data-mockup-frame][data-at$=" panel"] [data-show]:not([data-show~="panel"]),
+  [data-mockup-frame][data-at="panel"] [data-show]:not([data-show~="panel"]),
+  [data-mockup-frame][data-at$=" focused"] [data-show]:not([data-show~="focused"]),
+  [data-mockup-frame][data-at="focused"] [data-show]:not([data-show~="focused"]),
+  [data-mockup-frame][data-at$=" back"] [data-show]:not([data-show~="back"]),
+  [data-mockup-frame][data-at="back"] [data-show]:not([data-show~="back"]),
+  [data-mockup-frame][data-at$=" handed"] [data-show]:not([data-show~="handed"]),
+  [data-mockup-frame][data-at="handed"] [data-show]:not([data-show~="handed"]),
+  [data-mockup-frame][data-at$=" resolved"] [data-show]:not([data-show~="resolved"]),
+  [data-mockup-frame][data-at="resolved"] [data-show]:not([data-show~="resolved"]),
+  [data-mockup-frame][data-at$=" accept-focus"] [data-show]:not([data-show~="accept-focus"]),
+  [data-mockup-frame][data-at="accept-focus"] [data-show]:not([data-show~="accept-focus"]),
+  [data-mockup-frame]:not([data-at]) [data-show]:not([data-show~="opened"]) { display: none; }
+  [data-mockup-frame][data-at$=" opened"] [data-beside~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-beside~="opened"],
+  [data-mockup-frame][data-at$=" panel"] [data-beside~="panel"],
+  [data-mockup-frame][data-at="panel"] [data-beside~="panel"],
+  [data-mockup-frame][data-at$=" focused"] [data-beside~="focused"],
+  [data-mockup-frame][data-at="focused"] [data-beside~="focused"],
+  [data-mockup-frame][data-at$=" back"] [data-beside~="back"],
+  [data-mockup-frame][data-at="back"] [data-beside~="back"],
+  [data-mockup-frame][data-at$=" handed"] [data-beside~="handed"],
+  [data-mockup-frame][data-at="handed"] [data-beside~="handed"],
+  [data-mockup-frame][data-at$=" resolved"] [data-beside~="resolved"],
+  [data-mockup-frame][data-at="resolved"] [data-beside~="resolved"],
+  [data-mockup-frame][data-at$=" accept-focus"] [data-beside~="accept-focus"],
+  [data-mockup-frame][data-at="accept-focus"] [data-beside~="accept-focus"],
+  [data-mockup-frame]:not([data-at]) [data-beside~="opened"] { right: 330px; }
+  [data-mockup-frame][data-at$=" opened"] [data-beside-doc~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-beside-doc~="opened"],
+  [data-mockup-frame][data-at$=" panel"] [data-beside-doc~="panel"],
+  [data-mockup-frame][data-at="panel"] [data-beside-doc~="panel"],
+  [data-mockup-frame][data-at$=" focused"] [data-beside-doc~="focused"],
+  [data-mockup-frame][data-at="focused"] [data-beside-doc~="focused"],
+  [data-mockup-frame][data-at$=" back"] [data-beside-doc~="back"],
+  [data-mockup-frame][data-at="back"] [data-beside-doc~="back"],
+  [data-mockup-frame][data-at$=" handed"] [data-beside-doc~="handed"],
+  [data-mockup-frame][data-at="handed"] [data-beside-doc~="handed"],
+  [data-mockup-frame][data-at$=" resolved"] [data-beside-doc~="resolved"],
+  [data-mockup-frame][data-at="resolved"] [data-beside-doc~="resolved"],
+  [data-mockup-frame][data-at$=" accept-focus"] [data-beside-doc~="accept-focus"],
+  [data-mockup-frame][data-at="accept-focus"] [data-beside-doc~="accept-focus"],
+  [data-mockup-frame]:not([data-at]) [data-beside-doc~="opened"] { width: 1062px; margin: 0 354px 0 24px; }
+  [data-mockup-frame][data-at$=" opened"] [data-spot~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-spot~="opened"],
+  [data-mockup-frame][data-at$=" panel"] [data-spot~="panel"],
+  [data-mockup-frame][data-at="panel"] [data-spot~="panel"],
+  [data-mockup-frame][data-at$=" focused"] [data-spot~="focused"],
+  [data-mockup-frame][data-at="focused"] [data-spot~="focused"],
+  [data-mockup-frame][data-at$=" back"] [data-spot~="back"],
+  [data-mockup-frame][data-at="back"] [data-spot~="back"],
+  [data-mockup-frame][data-at$=" handed"] [data-spot~="handed"],
+  [data-mockup-frame][data-at="handed"] [data-spot~="handed"],
+  [data-mockup-frame][data-at$=" resolved"] [data-spot~="resolved"],
+  [data-mockup-frame][data-at="resolved"] [data-spot~="resolved"],
+  [data-mockup-frame][data-at$=" accept-focus"] [data-spot~="accept-focus"],
+  [data-mockup-frame][data-at="accept-focus"] [data-spot~="accept-focus"],
+  [data-mockup-frame]:not([data-at]) [data-spot~="opened"] { box-shadow: 0 0 0 3px var(--ui-pin-ring), 0 0 0 100vmax var(--ui-veil); outline: 2px solid var(--ui-draft); outline-offset: var(--ui-space-1); z-index: 10; background: var(--spec-paper); }
+  [data-mockup-frame][data-at$=" opened"] [data-lift~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-lift~="opened"],
+  [data-mockup-frame][data-at$=" panel"] [data-lift~="panel"],
+  [data-mockup-frame][data-at="panel"] [data-lift~="panel"],
+  [data-mockup-frame][data-at$=" focused"] [data-lift~="focused"],
+  [data-mockup-frame][data-at="focused"] [data-lift~="focused"],
+  [data-mockup-frame][data-at$=" back"] [data-lift~="back"],
+  [data-mockup-frame][data-at="back"] [data-lift~="back"],
+  [data-mockup-frame][data-at$=" handed"] [data-lift~="handed"],
+  [data-mockup-frame][data-at="handed"] [data-lift~="handed"],
+  [data-mockup-frame][data-at$=" resolved"] [data-lift~="resolved"],
+  [data-mockup-frame][data-at="resolved"] [data-lift~="resolved"],
+  [data-mockup-frame][data-at$=" accept-focus"] [data-lift~="accept-focus"],
+  [data-mockup-frame][data-at="accept-focus"] [data-lift~="accept-focus"],
+  [data-mockup-frame]:not([data-at]) [data-lift~="opened"] { transform: translateY(-1080px); }
+  [data-mockup-frame][data-at$=" opened"] [data-dim~="opened"]::after,
+  [data-mockup-frame][data-at="opened"] [data-dim~="opened"]::after,
+  [data-mockup-frame][data-at$=" panel"] [data-dim~="panel"]::after,
+  [data-mockup-frame][data-at="panel"] [data-dim~="panel"]::after,
+  [data-mockup-frame][data-at$=" focused"] [data-dim~="focused"]::after,
+  [data-mockup-frame][data-at="focused"] [data-dim~="focused"]::after,
+  [data-mockup-frame][data-at$=" back"] [data-dim~="back"]::after,
+  [data-mockup-frame][data-at="back"] [data-dim~="back"]::after,
+  [data-mockup-frame][data-at$=" handed"] [data-dim~="handed"]::after,
+  [data-mockup-frame][data-at="handed"] [data-dim~="handed"]::after,
+  [data-mockup-frame][data-at$=" resolved"] [data-dim~="resolved"]::after,
+  [data-mockup-frame][data-at="resolved"] [data-dim~="resolved"]::after,
+  [data-mockup-frame][data-at$=" accept-focus"] [data-dim~="accept-focus"]::after,
+  [data-mockup-frame][data-at="accept-focus"] [data-dim~="accept-focus"]::after,
+  [data-mockup-frame]:not([data-at]) [data-dim~="opened"]::after { content: ""; position: absolute; inset: 0; background: var(--ui-veil); }
+  [data-mockup-frame][data-at$=" opened"] [data-ring-focus~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-ring-focus~="opened"],
+  [data-mockup-frame][data-at$=" panel"] [data-ring-focus~="panel"],
+  [data-mockup-frame][data-at="panel"] [data-ring-focus~="panel"],
+  [data-mockup-frame][data-at$=" focused"] [data-ring-focus~="focused"],
+  [data-mockup-frame][data-at="focused"] [data-ring-focus~="focused"],
+  [data-mockup-frame][data-at$=" back"] [data-ring-focus~="back"],
+  [data-mockup-frame][data-at="back"] [data-ring-focus~="back"],
+  [data-mockup-frame][data-at$=" handed"] [data-ring-focus~="handed"],
+  [data-mockup-frame][data-at="handed"] [data-ring-focus~="handed"],
+  [data-mockup-frame][data-at$=" resolved"] [data-ring-focus~="resolved"],
+  [data-mockup-frame][data-at="resolved"] [data-ring-focus~="resolved"],
+  [data-mockup-frame][data-at$=" accept-focus"] [data-ring-focus~="accept-focus"],
+  [data-mockup-frame][data-at="accept-focus"] [data-ring-focus~="accept-focus"],
+  [data-mockup-frame]:not([data-at]) [data-ring-focus~="opened"] { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  [data-mockup-frame][data-at$=" opened"] [data-quiet~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-quiet~="opened"],
+  [data-mockup-frame][data-at$=" panel"] [data-quiet~="panel"],
+  [data-mockup-frame][data-at="panel"] [data-quiet~="panel"],
+  [data-mockup-frame][data-at$=" focused"] [data-quiet~="focused"],
+  [data-mockup-frame][data-at="focused"] [data-quiet~="focused"],
+  [data-mockup-frame][data-at$=" back"] [data-quiet~="back"],
+  [data-mockup-frame][data-at="back"] [data-quiet~="back"],
+  [data-mockup-frame][data-at$=" handed"] [data-quiet~="handed"],
+  [data-mockup-frame][data-at="handed"] [data-quiet~="handed"],
+  [data-mockup-frame][data-at$=" resolved"] [data-quiet~="resolved"],
+  [data-mockup-frame][data-at="resolved"] [data-quiet~="resolved"],
+  [data-mockup-frame][data-at$=" accept-focus"] [data-quiet~="accept-focus"],
+  [data-mockup-frame][data-at="accept-focus"] [data-quiet~="accept-focus"],
+  [data-mockup-frame]:not([data-at]) [data-quiet~="opened"] { background: var(--ui-surface); color: var(--ui-ink); border-color: var(--ui-border); }
+
+</style>
+<script defer src="../../.viz/runtime.js"></script>
+</head>
+<body>
+<section data-mockup-frame="desktop" data-anchor="desktop" data-illustrates="one-surface design">
+<div class="rv-top" data-anchor="desktop-top-line" data-beside="panel focused back handed resolved accept-focus" data-illustrates="top-line acceptance-one-surface"><a class="rv-index" href="#review-index"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg><span>Review index</span></a><div class="rv-range"><p class="rv-range-copy">Changes from <code>4b92aed</code> 2026-01-01 to <code>533c8e2</code> 2026-01-01</p><button type="button" class="rv-btn rv-change">Change base</button></div></div>
+<main class="rv-doc" data-anchor="desktop-doc" data-beside-doc="panel focused back handed resolved accept-focus" data-illustrates="acceptance-no-content-change document">
+  <header data-anchor="desktop-header" data-illustrates="one-surface-rule">
+    <h1>Report page</h1>
+    <p class="rv-crumbs">docs / specs / report-page.spec.html</p>
+    <p>QA fixture: a spec whose mockup set draws its screens.</p>
+  </header>
+  <nav class="sp-screens" data-anchor="desktop-screens" aria-label="Screens" data-illustrates="surface-screen-index"><p class="sp-screens-head">Screens <span class="sp-screens-count">3</span></p><ul><li><a class="sp-screen" href="#desktop-screens"><span class="sp-mark"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" stroke="var(--ui-attention, currentColor)"/><path d="M8 4.8v3.6" stroke="var(--ui-attention, currentColor)"/><circle cx="8" cy="11" r="1" fill="var(--ui-attention, currentColor)"/></svg></span><span class="sp-name">Report page</span><span class="sp-meta"><span class="sp-kind">Drawn mockup</span><span class="sp-views">Desktop and phone</span></span><span class="sp-open sp-waiting">1 open thread</span><span class="sp-go"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></span></a></li><li><a class="sp-screen" href="#desktop-screens"><span class="sp-mark"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" stroke="var(--ui-muted, currentColor)"/></svg></span><span class="sp-name">Team page</span><span class="sp-meta"><span class="sp-kind">Drawn mockup</span><span class="sp-views">Desktop and phone</span></span><span class="sp-open">No open threads</span><span class="sp-go"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></span></a></li><li><a class="sp-screen" href="#desktop-screens"><span class="sp-mark"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" stroke="var(--ui-muted, currentColor)"/></svg></span><span class="sp-name">Export dialog</span><span class="sp-meta"><span class="sp-kind">Drawn mockup</span><span class="sp-views">Desktop and phone</span></span><span class="sp-open">No open threads</span><span class="sp-go"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></span></a></li></ul></nav>
+  <section class="rv-section" data-anchor="desktop-stories">
+    <h2>User stories</h2>
+    <div class="rv-block sp-holder"><p>As a manager, I see each team's weekly total at a glance.</p><button type="button" class="sp-marker" aria-label="Jev notes: Behavior" data-anchor="desktop-marker-neutral" data-illustrates="acceptance-mark-levels"></button></div>
+    <p>As a manager, I export the totals I see.</p>
+  </section>
+  <section class="rv-section" data-anchor="desktop-criteria">
+    <h2>Acceptance criteria</h2>
+    <div class="rv-block sp-holder"><p>The report page shows each team as a card with its avatar and its total for the week. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a></p><button type="button" class="sp-marker sp-passed" aria-label="Jev notes: QA passed" data-anchor="desktop-marker-passed" data-illustrates="acceptance-mark-levels"></button></div>
+    <div class="rv-block rv-pinned"><p>Pressing a team's card opens its team page, listing its totals for the last three weeks. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a><a class="sp-chip" href="#see-mockup">See mockup · Team page</a></p><i class="rv-pin" data-show="opened panel focused back handed">1</i><i class="rv-pin rv-done" data-show="resolved accept-focus">1</i></div>
+    <div class="rv-block sp-holder"><p>The onboarding tour points to the team cards first.</p><button type="button" class="sp-marker sp-warning" aria-label="Jev notes: Overlaps onboarding.spec.html#onboarding-tour" data-anchor="desktop-marker-warning" data-illustrates="acceptance-mark-warning"></button></div>
+    <div class="rv-block sp-holder"><p>The Export CSV button opens the export dialog. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a><a class="sp-chip" href="#see-mockup">See mockup · Export dialog</a></p><button type="button" class="sp-marker sp-important" aria-label="Jev notes: Contradicts report.spec.html#report-export" data-anchor="desktop-marker-important" data-illustrates="acceptance-mark-levels"></button></div>
+    <div class="rv-block rv-pinned"><p>The export dialog lists the rows the CSV holds and downloads weekly-totals-2026-W01.csv. <a class="sp-chip" href="#see-mockup">See mockup · Export dialog</a></p><i class="rv-pin rv-done" data-show="opened panel focused back handed resolved accept-focus">3</i></div>
+  </section>
+  <section class="rv-section" data-anchor="desktop-behavior">
+    <h2>Behavior</h2>
+    <div class="rv-block rv-pinned" data-anchor="desktop-block-order"><p>Cards are ordered by the week's total, highest first. Totals come from the weekly totals the report service holds. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a></p><i class="rv-pin rv-ack" data-show="opened panel focused back handed">2</i><i class="rv-pin rv-done" data-show="resolved accept-focus">2</i></div>
+  </section>
+</main>
+<nav class="rv-dock" data-anchor="desktop-dock" aria-label="Review conversations" data-show="opened" data-illustrates="acceptance-icons-dock surface-dock"><button type="button" class="rv-btn rv-icon" data-anchor="desktop-dock-open" aria-label="Open review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M3.5 6h5A1.5 1.5 0 0 1 10 7.5v3A1.5 1.5 0 0 1 8.5 12H6.5L4 14v-2h-.5A1.5 1.5 0 0 1 2 10.5v-3A1.5 1.5 0 0 1 3.5 6z"/><path d="M6 6V3.5A1.5 1.5 0 0 1 7.5 2h5A1.5 1.5 0 0 1 14 3.5v3A1.5 1.5 0 0 1 12.5 8H12v2l-2-1.5"/></svg></button><div class="rv-dock-threads"><button type="button" class="rv-thread rv-done">3</button><button type="button" class="rv-thread rv-ack">2</button><button type="button" class="rv-thread">1</button></div></nav>
+<aside class="rv-panel" data-anchor="desktop-panel" data-show="panel focused back handed resolved accept-focus" aria-label="Review sidebar" data-illustrates="surface-panel">
+  <div class="rv-head" data-anchor="desktop-panel-head">Conversation <span class="rv-count">3 threads</span> <span class="rv-sub"><span data-show="opened panel focused back">· agent last event 10:42:07 AM</span><span data-show="handed">· handed off, waiting for agent</span><span data-show="resolved accept-focus">· agent last event 10:53:12 AM</span></span><button type="button" class="rv-btn rv-icon rv-toggle" aria-label="Collapse review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M10 2.5v11"/></svg></button><button type="button" class="rv-btn rv-icon rv-gear" aria-label="Review display settings" title="Display settings"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6.34 3.18L6.6 1.4L9.4 1.4L9.66 3.18L11.35 4.15L13.02 3.48L14.42 5.91L13.01 7.03L13.01 8.97L14.42 10.09L13.02 12.52L11.35 11.85L9.66 12.82L9.4 14.6L6.6 14.6L6.34 12.82L4.65 11.85L2.98 12.52L1.58 10.09L2.99 8.97L2.99 7.03L1.58 5.91L2.98 3.48L4.65 4.15z"/><circle cx="8" cy="8" r="2"/></svg></button></div>
+  <div class="rv-stream" data-anchor="desktop-stream" data-illustrates="acceptance-color-consistency acceptance-receipt-case">
+    <div class="rv-resolved-line" data-anchor="desktop-thread-file"><span class="rv-receipt rv-done">Resolved</span> · Name the file for the week it covers</div>
+    <div class="rv-entry rv-me" data-show="panel focused back handed" data-anchor="desktop-thread-order">
+      <div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble" role="button" data-anchor="desktop-bubble-order">Is Behavior the place for the order rule?</div></div>
+      <span class="rv-chip">Behavior · Cards are ordered by the week's total…</span><span class="rv-receipt rv-ack">Seen</span></div>
+    <div class="rv-resolved-line" data-show="resolved accept-focus"><span class="rv-receipt rv-done">Resolved</span> · Is Behavior the place for the order rule?</div>
+    <div class="rv-entry rv-me" data-show="panel focused back handed" data-anchor="desktop-thread-team">
+      <div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble rv-draft" data-show="panel focused back">Should the team page also show this week?</div><div class="rv-bubble" data-show="handed">Should the team page also show this week?</div></div>
+      <span class="rv-chip">Acceptance criteria · Pressing a team's card opens…</span><span class="rv-receipt" data-show="panel focused back">Draft</span><span class="rv-receipt" data-show="handed">Sent</span></div>
+    <div class="rv-resolved-line" data-show="resolved accept-focus"><span class="rv-receipt rv-done">Resolved</span> · Should the team page also show this week?</div>
+  </div>
+  <div class="sp-veil" data-show="focused"></div>
+  <div class="sp-focused" role="dialog" aria-label="Thread" data-anchor="desktop-focused" data-show="focused" data-illustrates="acceptance-icons">
+    <span class="sp-grip"></span>
+    <div class="sp-focused-head"><button type="button" class="rv-btn sp-back" data-anchor="desktop-back"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg><span>Conversation</span></button><button type="button" class="rv-btn">Resolve</button></div>
+    <div class="sp-focused-stream"><div class="rv-entry rv-me"><div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble">Is Behavior the place for the order rule?</div></div>
+      <span class="rv-chip">Behavior · Cards are ordered by the week's total…</span><span class="rv-receipt rv-ack">Seen</span></div></div>
+    <div class="sp-reply"><textarea class="rv-field" rows="1" aria-label="Reply" placeholder="Reply…"></textarea><button type="button" class="rv-btn rv-pri" aria-label="Save reply">Save</button></div>
+  </div>
+  <div class="rv-handoff" data-anchor="desktop-handoff"><span class="rv-note"><span data-show="opened panel focused back">1 draft</span><span data-show="handed">0 drafts</span><span data-show="resolved accept-focus">Ready to accept</span></span><button type="button" class="rv-btn rv-pri" data-anchor="desktop-action" data-show="opened panel focused back resolved accept-focus" data-quiet="focused" data-ring-focus="accept-focus" data-illustrates="acceptance-focus-set button-placement"><span data-show="opened panel focused back">Hand off to agent →</span><span data-show="resolved accept-focus">Accept spec</span></button><button type="button" class="rv-btn rv-pri" disabled data-show="handed">Hand off to agent →</button></div>
+</aside>
+<div class="rv-toolbar" data-anchor="desktop-toolbar" data-illustrates="acceptance-key-tooltip acceptance-button-system surface-toolbar"><button type="button" class="rv-btn rv-tool" title="Comment (C)" aria-pressed="false" data-anchor="desktop-comment" data-illustrates="acceptance-key-tooltip keys-rule">Comment</button><button type="button" class="rv-btn rv-tool" aria-pressed="false">Reading view</button><span class="rv-status">connected · review-serve · 3 threads</span></div>
+<div class="rv-toast" data-show="handed" role="status">Handed off 1 comment, agent notified</div>
+</section>
+<section data-mockup-frame="phone" data-anchor="phone" data-illustrates="one-surface design">
+<div class="rv-top" data-anchor="phone-top-line" data-dim="focused" data-illustrates="top-line acceptance-one-surface-phone"><a class="rv-index" href="#review-index"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg><span>Review index</span></a><button type="button" class="rv-btn rv-change">Change base</button><div class="rv-range"><p class="rv-range-copy">Changes from <code>4b92aed</code> 2026-01-01 to <code>533c8e2</code> 2026-01-01</p></div></div>
+<main class="rv-doc" data-anchor="phone-doc" data-lift="focused" data-illustrates="acceptance-no-content-change-phone document">
+  <header data-anchor="phone-header" data-illustrates="one-surface-rule">
+    <h1>Report page</h1>
+    <p class="rv-crumbs">docs / specs / report-page.spec.html</p>
+    <p>QA fixture: a spec whose mockup set draws its screens.</p>
+  </header>
+  <nav class="sp-screens" data-anchor="phone-screens" aria-label="Screens" data-illustrates="surface-screen-index"><p class="sp-screens-head">Screens <span class="sp-screens-count">3</span></p><ul><li><a class="sp-screen" href="#phone-screens"><span class="sp-mark"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" stroke="var(--ui-attention, currentColor)"/><path d="M8 4.8v3.6" stroke="var(--ui-attention, currentColor)"/><circle cx="8" cy="11" r="1" fill="var(--ui-attention, currentColor)"/></svg></span><span class="sp-name">Report page</span><span class="sp-meta"><span class="sp-kind">Drawn mockup</span><span class="sp-views">Desktop and phone</span></span><span class="sp-open sp-waiting">1 open thread</span><span class="sp-go"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></span></a></li><li><a class="sp-screen" href="#phone-screens"><span class="sp-mark"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" stroke="var(--ui-muted, currentColor)"/></svg></span><span class="sp-name">Team page</span><span class="sp-meta"><span class="sp-kind">Drawn mockup</span><span class="sp-views">Desktop and phone</span></span><span class="sp-open">No open threads</span><span class="sp-go"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></span></a></li><li><a class="sp-screen" href="#phone-screens"><span class="sp-mark"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" stroke="var(--ui-muted, currentColor)"/></svg></span><span class="sp-name">Export dialog</span><span class="sp-meta"><span class="sp-kind">Drawn mockup</span><span class="sp-views">Desktop and phone</span></span><span class="sp-open">No open threads</span><span class="sp-go"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></span></a></li></ul></nav>
+  <section class="rv-section" data-anchor="phone-stories">
+    <h2>User stories</h2>
+    <div class="rv-block sp-holder"><p>As a manager, I see each team's weekly total at a glance.</p><button type="button" class="sp-marker" aria-label="Jev notes: Behavior" data-anchor="phone-marker-neutral" data-illustrates="acceptance-mark-levels"></button></div>
+    <p>As a manager, I export the totals I see.</p>
+  </section>
+  <section class="rv-section" data-anchor="phone-criteria">
+    <h2>Acceptance criteria</h2>
+    <div class="rv-block sp-holder"><p>The report page shows each team as a card with its avatar and its total for the week. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a></p><button type="button" class="sp-marker sp-passed" aria-label="Jev notes: QA passed" data-anchor="phone-marker-passed" data-illustrates="acceptance-mark-levels"></button></div>
+    <div class="rv-block rv-pinned"><p>Pressing a team's card opens its team page, listing its totals for the last three weeks. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a><a class="sp-chip" href="#see-mockup">See mockup · Team page</a></p><i class="rv-pin" data-show="opened panel focused back handed">1</i><i class="rv-pin rv-done" data-show="resolved accept-focus">1</i></div>
+    <div class="rv-block sp-holder"><p>The onboarding tour points to the team cards first.</p><button type="button" class="sp-marker sp-warning" aria-label="Jev notes: Overlaps onboarding.spec.html#onboarding-tour" data-anchor="phone-marker-warning" data-illustrates="acceptance-mark-warning"></button></div>
+    <div class="rv-block sp-holder"><p>The Export CSV button opens the export dialog. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a><a class="sp-chip" href="#see-mockup">See mockup · Export dialog</a></p><button type="button" class="sp-marker sp-important" aria-label="Jev notes: Contradicts report.spec.html#report-export" data-anchor="phone-marker-important" data-illustrates="acceptance-mark-levels"></button></div>
+    <div class="rv-block rv-pinned"><p>The export dialog lists the rows the CSV holds and downloads weekly-totals-2026-W01.csv. <a class="sp-chip" href="#see-mockup">See mockup · Export dialog</a></p><i class="rv-pin rv-done" data-show="opened panel focused back handed resolved accept-focus">3</i></div>
+  </section>
+  <section class="rv-section" data-anchor="phone-behavior">
+    <h2>Behavior</h2>
+    <div class="rv-block rv-pinned" data-anchor="phone-block-order" data-spot="focused"><p>Cards are ordered by the week's total, highest first. Totals come from the weekly totals the report service holds. <a class="sp-chip" href="#see-mockup">See mockup · Report page</a></p><i class="rv-pin rv-ack" data-show="opened panel focused back handed">2</i><i class="rv-pin rv-done" data-show="resolved accept-focus">2</i></div>
+  </section>
+</main>
+<nav class="rv-dock" data-anchor="phone-dock" aria-label="Review conversations" data-show="opened" data-illustrates="acceptance-icons-dock surface-dock"><button type="button" class="rv-btn rv-icon" data-anchor="phone-dock-open" aria-label="Open review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M3.5 6h5A1.5 1.5 0 0 1 10 7.5v3A1.5 1.5 0 0 1 8.5 12H6.5L4 14v-2h-.5A1.5 1.5 0 0 1 2 10.5v-3A1.5 1.5 0 0 1 3.5 6z"/><path d="M6 6V3.5A1.5 1.5 0 0 1 7.5 2h5A1.5 1.5 0 0 1 14 3.5v3A1.5 1.5 0 0 1 12.5 8H12v2l-2-1.5"/></svg></button><div class="rv-dock-threads"><button type="button" class="rv-thread rv-done">3</button><button type="button" class="rv-thread rv-ack">2</button><button type="button" class="rv-thread">1</button></div></nav>
+<aside class="rv-panel" data-anchor="phone-panel" data-show="panel back handed resolved accept-focus" aria-label="Review sidebar" data-illustrates="surface-panel">
+  <div class="rv-head" data-anchor="phone-panel-head">Conversation <span class="rv-count">3 threads</span> <span class="rv-sub"><span data-show="opened panel focused back">· agent last event 10:42:07 AM</span><span data-show="handed">· handed off, waiting for agent</span><span data-show="resolved accept-focus">· agent last event 10:53:12 AM</span></span><button type="button" class="rv-btn rv-icon rv-toggle" aria-label="Collapse review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M10 2.5v11"/></svg></button><button type="button" class="rv-btn rv-icon rv-gear" aria-label="Review display settings" title="Display settings"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6.34 3.18L6.6 1.4L9.4 1.4L9.66 3.18L11.35 4.15L13.02 3.48L14.42 5.91L13.01 7.03L13.01 8.97L14.42 10.09L13.02 12.52L11.35 11.85L9.66 12.82L9.4 14.6L6.6 14.6L6.34 12.82L4.65 11.85L2.98 12.52L1.58 10.09L2.99 8.97L2.99 7.03L1.58 5.91L2.98 3.48L4.65 4.15z"/><circle cx="8" cy="8" r="2"/></svg></button></div>
+  <div class="rv-stream" data-anchor="phone-stream" data-illustrates="acceptance-color-consistency acceptance-receipt-case">
+    <div class="rv-resolved-line" data-anchor="phone-thread-file"><span class="rv-receipt rv-done">Resolved</span> · Name the file for the week it covers</div>
+    <div class="rv-entry rv-me" data-show="panel focused back handed" data-anchor="phone-thread-order">
+      <div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble" role="button" data-anchor="phone-bubble-order">Is Behavior the place for the order rule?</div></div>
+      <span class="rv-chip">Behavior · Cards are ordered by the week's total…</span><span class="rv-receipt rv-ack">Seen</span></div>
+    <div class="rv-resolved-line" data-show="resolved accept-focus"><span class="rv-receipt rv-done">Resolved</span> · Is Behavior the place for the order rule?</div>
+    <div class="rv-entry rv-me" data-show="panel focused back handed" data-anchor="phone-thread-team">
+      <div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble rv-draft" data-show="panel focused back">Should the team page also show this week?</div><div class="rv-bubble" data-show="handed">Should the team page also show this week?</div></div>
+      <span class="rv-chip">Acceptance criteria · Pressing a team's card opens…</span><span class="rv-receipt" data-show="panel focused back">Draft</span><span class="rv-receipt" data-show="handed">Sent</span></div>
+    <div class="rv-resolved-line" data-show="resolved accept-focus"><span class="rv-receipt rv-done">Resolved</span> · Should the team page also show this week?</div>
+  </div>
+</aside>
+
+  <div class="sp-focused" role="dialog" aria-label="Thread" data-anchor="phone-focused" data-show="focused" data-illustrates="acceptance-icons">
+    <span class="sp-grip"></span>
+    <div class="sp-focused-head"><button type="button" class="rv-btn sp-back" data-anchor="phone-back"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg><span>Conversation</span></button><button type="button" class="rv-btn">Resolve</button></div>
+    <div class="sp-focused-stream"><div class="rv-entry rv-me"><div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble">Is Behavior the place for the order rule?</div></div>
+      <span class="rv-chip">Behavior · Cards are ordered by the week's total…</span><span class="rv-receipt rv-ack">Seen</span></div></div>
+    <div class="sp-reply"><textarea class="rv-field" rows="1" aria-label="Reply" placeholder="Reply…"></textarea><button type="button" class="rv-btn rv-pri" aria-label="Save reply">Save</button></div>
+  </div>
+<div class="rv-toolbar" data-anchor="phone-toolbar" data-illustrates="acceptance-key-phone acceptance-button-system-phone"><button type="button" class="rv-btn rv-tool" aria-pressed="false">Comment</button><div class="rv-inline-handoff" data-anchor="phone-handoff"><span class="rv-note"><span data-show="opened panel focused back">1 draft</span><span data-show="handed">0 drafts</span><span data-show="resolved accept-focus">Ready to accept</span></span><button type="button" class="rv-btn rv-pri" data-anchor="phone-action" data-show="opened panel focused back resolved accept-focus" data-quiet="focused" data-ring-focus="accept-focus" data-illustrates="acceptance-focus-set button-placement"><span data-show="opened panel focused back">Hand off to agent →</span><span data-show="resolved accept-focus">Accept spec</span></button><button type="button" class="rv-btn rv-pri" disabled data-show="handed">Hand off to agent →</button></div><button type="button" class="rv-btn rv-tool" aria-pressed="false">Reading view</button><span class="rv-status">connected · review-serve · 3 threads</span></div>
+<div class="rv-toast" data-show="handed" role="status">Handed off 1 comment, agent notified</div>
+</section>
+<ol data-mockup-steps>
+  <li data-step="opened" data-illustrates="acceptance-one-surface acceptance-one-surface-phone acceptance-button-system acceptance-button-system-phone acceptance-icons-dock acceptance-key-phone acceptance-mark-levels acceptance-mark-warning acceptance-contrast acceptance-no-content-change acceptance-no-content-change-phone acceptance-dark-mode">The spec page as one surface: the top line, the unboxed header, the Screens index, the document, the dock, and the toolbar</li>
+  <li data-step="panel" data-step-by="desktop-dock-open phone-dock-open" data-illustrates="acceptance-color-consistency acceptance-receipt-case acceptance-button-system">The review panel opens: each status one color, on its pin and its receipt</li>
+  <li data-step="focused" data-step-by="desktop-bubble-order phone-bubble-order" data-illustrates="acceptance-icons">A thread's first message pressed: the thread alone, its Back a line icon like the toggle and the gear</li>
+  <li data-step="back" data-step-by="desktop-back phone-back">Back returns to the conversation</li>
+  <li data-step="handed" data-step-by="desktop-action phone-action">Hand off: Handed off 1 comment, agent notified</li>
+  <li data-step="resolved">The agent resolves every thread: the action reads Accept spec</li>
+  <li data-step="accept-focus" data-illustrates="acceptance-focus-set">Tab until Accept spec has focus: the design set's focus ring</li>
+</ol>
+</body>
+</html>

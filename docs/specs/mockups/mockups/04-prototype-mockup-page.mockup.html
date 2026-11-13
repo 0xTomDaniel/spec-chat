@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-design-source" content="skill/review-spec/assets/viz/runtime.js@495bc8f5b design-set.toml@553b61008 docs/specs/spec-page-design.spec.html@ae1f4b146 DESIGN.md@eb97aaac4">
+<title>Prototype mockup page - mockup</title>
+<style>
+  [data-mockup-frame] {
+    --ui-page: #ffffff; --ui-surface: #ffffff; --ui-surface-soft: #f5f5f5; --ui-ink: #333333; --ui-muted: #525252;
+    --ui-muted-soft: #eeeeee; --ui-border: #dfdfdf; --ui-action: #1d4ed8; --ui-action-soft: #eff3ff;
+    --ui-link: var(--ui-action); --ui-focus: var(--ui-action); --ui-pass: #005c32; --ui-pass-soft: #e6efea;
+    --ui-fail: #a5000f; --ui-fail-soft: #f6e6e7; --ui-attention: #b0540e; --ui-attention-soft: #faf4ef;
+    --ui-font: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --ui-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --ui-text-xs: 12px; --ui-text-ui: 13px; --ui-text-sm: 14px; --ui-text-md: 16px; --ui-text-lg: 20px; --ui-text-xl: 24px; --ui-text-2xl: 30px;
+    --ui-weight-regular: 400; --ui-weight-medium: 500; --ui-weight-semibold: 600;
+    --ui-space-1: 4px; --ui-space-2: 8px; --ui-space-3: 12px; --ui-space-4: 16px; --ui-space-5: 24px; --ui-space-6: 32px;
+    --ui-radius-sm: 6px; --ui-radius: 8px; --ui-radius-pill: 999px; --ui-focus-width: 2px; --ui-focus-offset: 2px;
+    --ui-motion-duration: 150ms; --ui-motion-ease: ease-out;
+    --ui-draft: var(--ui-attention); --ui-draft-soft: var(--ui-attention-soft); --ui-ack: var(--ui-action); --ui-ack-soft: var(--ui-action-soft);
+    --ui-resolved: var(--ui-pass); --ui-resolved-soft: var(--ui-pass-soft); --ui-error: var(--ui-fail);
+    --ui-marker: #767b85; --ui-marker-important: #d1242f; --ui-marker-pass: #1a7f37; --ui-on-marker: #ffffff; --ui-marker-warning: #e5534b;
+    --ui-pin-ring: rgba(176, 84, 14, 0.25); --ui-shadow: rgba(51, 51, 51, 0.14); --ui-veil: rgba(0, 0, 0, 0.42);
+  }
+  @media (prefers-color-scheme: dark) {
+    [data-mockup-frame] {
+      --ui-page: #1a1a1a; --ui-surface: #242424; --ui-surface-soft: #2a2a2a; --ui-ink: #e0e0e0; --ui-muted: #999999;
+      --ui-muted-soft: #2e2e2e; --ui-border: #3a3a3a; --ui-action: #7896ef; --ui-action-soft: #1a2040; --ui-pass: #3daa6e;
+      --ui-pass-soft: #1a2e22; --ui-fail: #ffb4ab; --ui-fail-soft: #2e1a1c; --ui-attention: #e5873a; --ui-attention-soft: #2e2218;
+      --ui-pin-ring: rgba(229, 135, 58, 0.25); --ui-shadow: rgba(0, 0, 0, 0.4); --ui-veil: rgba(0, 0, 0, 0.6);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-mockup-frame] { --ui-motion-duration: 0ms; }
+  }
+
+  [data-mockup-frame] { box-sizing: border-box; position: relative; overflow: hidden; background: var(--ui-page); color: var(--ui-ink);
+                        font: var(--ui-weight-regular) var(--ui-text-sm)/1.4 var(--ui-font); }
+  [data-mockup-frame="desktop"] { width: 1440px; min-height: 900px; }
+  [data-mockup-frame="phone"] { width: 390px; min-height: 844px; }
+  [data-mockup-frame] *, [data-mockup-frame] *::before, [data-mockup-frame] *::after { box-sizing: border-box; }
+  [data-mockup-frame] :focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .rv-btn { font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); color: var(--ui-ink); background: var(--ui-surface);
+            border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); min-height: var(--ui-space-6); margin: 0;
+            padding: var(--ui-space-2) var(--ui-space-3); white-space: nowrap; cursor: pointer;
+            transition: background var(--ui-motion-duration) var(--ui-motion-ease), color var(--ui-motion-duration) var(--ui-motion-ease); }
+  .rv-btn:hover { background: var(--ui-surface-soft); }
+  .rv-btn:active { background: var(--ui-muted-soft); }
+  .rv-btn:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .rv-btn:disabled { cursor: default; opacity: .45; }
+  .rv-btn:disabled:hover { background: var(--ui-surface); }
+  .rv-pri { background: var(--ui-ink); color: var(--ui-page); border-color: var(--ui-ink); }
+  .rv-pri:hover { background: var(--ui-muted); border-color: var(--ui-muted); }
+  .rv-pri:active { background: var(--ui-ink); }
+  .rv-pri:disabled:hover { background: var(--ui-ink); border-color: var(--ui-ink); }
+  .rv-text { border-color: transparent; background: transparent; }
+  .rv-icon { width: var(--ui-space-6); height: var(--ui-space-6); padding: 0; display: grid; place-items: center; color: var(--ui-muted); }
+  .rv-icon:hover { background: var(--ui-page); color: var(--ui-ink); }
+  .rv-btn svg { display: block; flex: 0 0 auto; }
+  [data-mockup-frame="phone"] .rv-btn { min-height: 44px; }
+  [data-mockup-frame="phone"] .rv-icon { width: 44px; height: 44px; }
+
+  /* index link (review-index #index-link): a chevron and Review index at the start of the top line */
+  .rv-index { flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--ui-space-1); min-height: var(--ui-space-6);
+              border-radius: var(--ui-radius-sm); color: var(--ui-ink); font: var(--ui-weight-medium) var(--ui-text-xs)/1 var(--ui-font); text-decoration: none; }
+  .rv-index:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .rv-index svg { display: block; color: var(--ui-muted); }
+  .rv-change { border: none; background: transparent; }
+  [data-mockup-frame="phone"] .rv-index { min-height: 44px; padding: 0 var(--ui-space-1); }
+  /* toolbar (spec-page-design #surface-toolbar): bottom center on a desktop; on a phone the bottom toolbar holding the
+     panel's one hand-off bar (prompt-first-shaping #mobile-handoff) */
+  .rv-toolbar { position: absolute; z-index: 12; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: var(--ui-space-1); align-items: center;
+                white-space: nowrap; background: var(--ui-page); border: 1px solid var(--ui-border); border-radius: var(--ui-radius);
+                box-shadow: 0 8px 28px var(--ui-shadow); padding: var(--ui-space-1); font: var(--ui-text-sm) var(--ui-font); }
+  .rv-toolbar .rv-tool { border-color: transparent; background: transparent; }
+  .rv-toolbar .rv-tool:hover { background: var(--ui-surface-soft); }
+  .rv-status { color: var(--ui-muted); font-size: var(--ui-text-xs); padding: 0 var(--ui-space-2); }
+  .rv-offline { color: var(--ui-ink); font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); padding: 0 var(--ui-space-2); }
+  [data-mockup-frame="phone"] .rv-toolbar { left: var(--ui-space-3); right: var(--ui-space-3); bottom: 10px; transform: none; flex-wrap: wrap; white-space: normal; }
+  [data-mockup-frame="phone"] .rv-toolbar .rv-btn { flex: 1 1 auto; }
+  [data-mockup-frame="phone"] .rv-toolbar .rv-note { flex: 1 1 auto; }
+  [data-mockup-frame="phone"] .rv-toolbar .rv-status { flex: 1 0 100%; min-width: 0; padding: 0 var(--ui-space-2) var(--ui-space-1); text-align: center;
+                                                        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rv-inline-handoff { display: contents; }
+  .rv-note { font-size: var(--ui-text-xs); color: var(--ui-muted); }
+  /* thread dock (#surface-dock): top right under the top line, gone while the panel is open */
+  .rv-dock { position: absolute; z-index: 7; right: var(--ui-space-3); display: flex; flex-direction: column; gap: var(--ui-space-1);
+             padding: var(--ui-space-1); background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); }
+  .rv-dock .rv-icon { border: 1px solid var(--ui-border); background: var(--ui-surface); border-radius: var(--ui-radius-sm); }
+  .rv-dock .rv-thread { width: var(--ui-space-6); height: var(--ui-space-6); padding: 0; display: grid; place-items: center; font: var(--ui-weight-semibold) var(--ui-text-xs)/1 var(--ui-mono);
+                        border: 1px solid var(--ui-draft); color: var(--ui-draft); background: var(--ui-draft-soft); border-radius: var(--ui-radius-sm); }
+  .rv-dock .rv-thread.rv-ack { border-color: var(--ui-ack); color: var(--ui-ack); background: var(--ui-ack-soft); }
+  .rv-dock .rv-thread.rv-done { border-color: var(--ui-resolved); color: var(--ui-resolved); background: var(--ui-resolved-soft); }
+  .rv-dock-threads { display: flex; flex-direction: column; gap: var(--ui-space-1); border-top: 1px solid var(--ui-border); padding-top: var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-dock { right: var(--ui-space-2); }
+  [data-mockup-frame="phone"] .rv-dock .rv-thread { width: 44px; height: 44px; }
+  /* review panel (#surface-panel): 330px at the right on a desktop; the whole screen on a phone, over the bottom toolbar's space */
+  .rv-panel { position: absolute; z-index: 10; top: 0; right: 0; bottom: 0; width: 330px; display: flex; flex-direction: column; background: var(--ui-page);
+              color: var(--ui-ink); border-left: 1px solid var(--ui-border); font: var(--ui-text-sm) var(--ui-font); }
+  [data-mockup-frame="phone"] .rv-panel { left: 0; width: auto; border-left: 0; padding-bottom: 136px; z-index: 11; }
+  .rv-head { position: relative; min-height: 44px; padding: var(--ui-space-3) 48px; border-bottom: 1px solid var(--ui-border); font-weight: var(--ui-weight-semibold); overflow-wrap: anywhere; }
+  .rv-head .rv-count, .rv-head .rv-sub { font-weight: var(--ui-weight-regular); font-size: var(--ui-text-xs); color: var(--ui-muted); }
+  .rv-head .rv-icon { position: absolute; top: var(--ui-space-2); border: 1px solid var(--ui-border); background: var(--ui-surface); }
+  .rv-head .rv-toggle { left: var(--ui-space-2); }
+  .rv-head .rv-gear { right: var(--ui-space-2); }
+  [data-mockup-frame="phone"] .rv-head { min-height: 56px; padding: var(--ui-space-4) 56px var(--ui-space-3); }
+  [data-mockup-frame="phone"] .rv-head .rv-icon { top: var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-head .rv-toggle { left: var(--ui-space-1); }
+  .rv-body { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .rv-stream { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; gap: var(--ui-space-3);
+               padding: var(--ui-space-3) var(--ui-space-3) var(--ui-space-2); }
+  .rv-entry { display: flex; flex-direction: column; align-items: flex-start; gap: var(--ui-space-1); min-width: 0; align-self: stretch; }
+  .rv-entry.rv-me { align-items: flex-end; }
+  .rv-msg { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: var(--ui-space-1); max-width: 86%; min-width: 0; }
+  .rv-msg.rv-me { align-self: flex-end; align-items: flex-end; }
+  .rv-who { padding: 0 var(--ui-space-3); font: var(--ui-text-xs)/1.4 var(--ui-font); color: var(--ui-muted); }
+  .rv-bubble { position: relative; max-width: 100%; padding: var(--ui-space-2) var(--ui-space-3); border-radius: calc(2 * var(--ui-radius)); font: var(--ui-text-sm)/1.4 var(--ui-font); overflow-wrap: anywhere; }
+  .rv-me > .rv-bubble { background: var(--ui-action); color: var(--ui-page); border-bottom-right-radius: var(--ui-radius-sm); }
+  .rv-them > .rv-bubble { background: var(--ui-surface-soft); color: var(--ui-ink); border-bottom-left-radius: var(--ui-radius-sm); }
+  .rv-me > .rv-bubble.rv-draft { background: var(--ui-action-soft); color: var(--ui-ink); box-shadow: inset 0 0 0 1px var(--ui-action); }
+  .rv-edited { margin-left: var(--ui-space-1); font-size: var(--ui-text-xs); font-weight: var(--ui-weight-semibold); }
+  .rv-dot { position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%; background: var(--ui-action); border: 2px solid var(--ui-page); }
+  .rv-chip { max-width: 100%; margin: 0; padding: 0 var(--ui-space-2); border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill); background: var(--ui-page);
+             color: var(--ui-muted); font: var(--ui-text-xs)/1.6 var(--ui-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; cursor: pointer; }
+  .rv-chip:hover { color: var(--ui-ink); border-color: var(--ui-muted); }
+  .rv-chip:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .rv-replies { max-width: 100%; padding: 0 var(--ui-space-3); color: var(--ui-muted); font: var(--ui-text-xs)/1.5 var(--ui-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rv-replies b { color: var(--ui-ink); font-weight: var(--ui-weight-semibold); }
+  .rv-receipt { padding: 0 var(--ui-space-3); font: var(--ui-weight-semibold) var(--ui-text-xs)/1.5 var(--ui-font); color: var(--ui-draft); }
+  .rv-receipt.rv-ack { color: var(--ui-ack); }
+  .rv-receipt.rv-done { color: var(--ui-resolved); }
+  .rv-notice { align-self: stretch; margin: 0; padding: var(--ui-space-2); border-left: 3px solid var(--ui-draft); background: var(--ui-draft-soft); color: var(--ui-draft);
+               font-size: var(--ui-text-xs); line-height: 1.35; }
+  .rv-quote { display: block; margin: var(--ui-space-1) 0; padding-left: var(--ui-space-2); border-left: 2px solid var(--ui-border); color: var(--ui-muted); font-style: italic; font-size: var(--ui-text-xs); }
+  .rv-history { margin: 0; padding-left: var(--ui-space-4); font-size: var(--ui-text-xs); color: var(--ui-muted); }
+  .rv-history .rv-who { padding: 0; }
+  .rv-choices { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); margin-top: var(--ui-space-2); }
+  .rv-choice { min-height: var(--ui-space-6); margin: 0; padding: var(--ui-space-2) var(--ui-space-3); border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill);
+               background: var(--ui-surface); color: var(--ui-ink); font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); cursor: pointer; }
+  .rv-choice:hover { background: var(--ui-surface-soft); }
+  .rv-choice:active { background: var(--ui-muted-soft); }
+  .rv-choice:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .rv-choice.rv-words { border-color: transparent; background: transparent; }
+  [data-mockup-frame="phone"] .rv-choice { min-height: 44px; }
+  /* the panel's one hand-off bar: its note, Next TBD, and the action, primary rightmost */
+  .rv-handoff { position: relative; z-index: 3; display: flex; justify-content: flex-end; align-items: center; gap: var(--ui-space-1); padding: var(--ui-space-2) var(--ui-space-3);
+                border-top: 1px solid var(--ui-border); background: var(--ui-page); }
+  .rv-handoff .rv-note { margin-right: auto; min-width: 0; }
+  /* a new comment's composer, at the bottom of the conversation (#surface-composer): send primary rightmost, cancel left */
+  .rv-compose { display: flex; flex-direction: column; gap: var(--ui-space-1); padding: var(--ui-space-2) var(--ui-space-3); border: 1px solid var(--ui-border);
+                border-radius: var(--ui-radius); background: var(--ui-surface); }
+  .rv-anchor { font: var(--ui-text-xs) var(--ui-mono); color: var(--ui-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rv-field { display: block; width: 100%; min-height: 56px; margin-top: var(--ui-space-1); padding: var(--ui-space-1) var(--ui-space-2); border: 1px solid var(--ui-border);
+              border-radius: var(--ui-radius-sm); background: var(--ui-surface); color: var(--ui-ink); font: var(--ui-text-sm)/1.4 var(--ui-font); resize: none; }
+  .rv-field::placeholder { color: var(--ui-muted); }
+  .rv-field:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  [data-mockup-frame="phone"] .rv-field { min-height: 120px; padding: var(--ui-space-2) var(--ui-space-3); font-size: var(--ui-text-md); }
+  .rv-compose-actions { display: flex; justify-content: flex-end; gap: var(--ui-space-1); margin-top: var(--ui-space-1); }
+  /* the focused thread (threads #focus): its messages alone over the conversation dimmed; on a phone a sheet over the
+     screen's lower half, above the bottom toolbar's one hand-off control */
+  .rv-veil { position: absolute; inset: 0; z-index: 1; background: var(--ui-veil); }
+  .rv-focused { position: absolute; top: var(--ui-space-2); left: var(--ui-space-2); right: var(--ui-space-2); bottom: var(--ui-space-2); z-index: 2; display: flex; flex-direction: column;
+                min-height: 0; background: var(--ui-page); color: var(--ui-ink); border: 1px solid var(--ui-border); border-radius: calc(2 * var(--ui-radius));
+                box-shadow: 0 12px 32px var(--ui-shadow); font: var(--ui-text-sm) var(--ui-font); }
+  .rv-focused-head { display: flex; align-items: center; gap: var(--ui-space-1); padding: var(--ui-space-1) var(--ui-space-2); border-bottom: 1px solid var(--ui-border); }
+  .rv-focused-head .rv-back { display: inline-flex; align-items: center; gap: var(--ui-space-1); margin-right: auto; border-color: transparent; background: transparent; }
+  .rv-focused-stream { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: var(--ui-space-2); padding: var(--ui-space-3); }
+  .rv-reply-box { display: flex; align-items: flex-end; gap: var(--ui-space-2); padding: var(--ui-space-2) var(--ui-space-3); border-top: 1px solid var(--ui-border); }
+  .rv-reply-box .rv-field { flex: 1 1 auto; min-height: 36px; margin: 0; border-radius: calc(2 * var(--ui-radius)); padding: var(--ui-space-2) var(--ui-space-3); }
+  [data-mockup-frame="phone"] .rv-reply-box .rv-field { min-height: 44px; }
+  .rv-sheet { position: absolute; z-index: 11; left: 0; right: 0; top: 422px; bottom: 0; display: flex; flex-direction: column; background: var(--ui-page);
+              border-top-left-radius: calc(2 * var(--ui-radius)); border-top-right-radius: calc(2 * var(--ui-radius)); box-shadow: 0 -12px 32px var(--ui-shadow);
+              padding-bottom: 136px; font: var(--ui-text-sm) var(--ui-font); }
+  .rv-grip { align-self: center; width: 36px; height: 4px; margin: var(--ui-space-2) 0 0; border-radius: var(--ui-radius-pill); background: var(--ui-border); }
+  /* toast (#surface-toast): the saved and handed-off notices */
+  .rv-toast { position: absolute; z-index: 13; bottom: 76px; left: 50%; transform: translateX(-50%); padding: var(--ui-space-2) var(--ui-space-4); border-radius: var(--ui-radius);
+              background: var(--ui-ink); color: var(--ui-page); font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); white-space: nowrap; box-shadow: 0 8px 28px var(--ui-shadow);
+              transition: opacity var(--ui-motion-duration) var(--ui-motion-ease); }
+  [data-mockup-frame="phone"] .rv-toast { bottom: 152px; max-width: calc(100% - 24px); white-space: normal; text-align: center; }
+  /* banner (#surface-banner): the agent's edit, green inverted, with Reload */
+  .rv-banner { position: absolute; z-index: 14; top: 0; left: 0; right: 0; display: flex; gap: var(--ui-space-3); align-items: center; justify-content: center;
+               padding: var(--ui-space-2) var(--ui-space-4); background: var(--ui-pass); color: var(--ui-page); font: var(--ui-weight-semibold) var(--ui-text-sm) var(--ui-font); }
+  .rv-banner .rv-btn { border-color: var(--ui-page); background: transparent; color: var(--ui-page); }
+  .rv-banner .rv-btn:hover { background: transparent; text-decoration: underline; text-underline-offset: 3px; }
+  [data-mockup-frame="phone"] .rv-banner { align-items: flex-start; flex-wrap: wrap; padding: var(--ui-space-2) var(--ui-space-3); text-align: center; }
+  /* pins (spec-page-design #surface-pins): a teardrop in its status color, numbered */
+  .rv-pin { position: absolute; right: 0; top: 0; z-index: 3; width: 24px; height: 24px; margin: 0; padding: 0; border: none; border-radius: 50% 50% 50% 4px;
+            display: grid; place-items: center; font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); font-style: normal; color: var(--ui-page);
+            background: var(--ui-draft); box-shadow: 0 2px 8px var(--ui-shadow); cursor: pointer; }
+  .rv-pin.rv-ack { background: var(--ui-ack); }
+  .rv-pin.rv-done { background: var(--ui-surface); color: var(--ui-resolved); border: 2px solid var(--ui-resolved); }
+  .rv-pin.rv-active { box-shadow: 0 0 0 3px var(--ui-pin-ring), 0 2px 8px var(--ui-shadow); }
+  .rv-pin:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  [data-mockup-frame="phone"] .rv-pin { width: 44px; height: 44px; }
+
+  /* top line on a mockup page: index link, spec link, then the range bar's row: Previous and Next around the place, the
+     compared range, Before and After, Change base; the step bar its own row under them */
+  .mp-top { position: relative; z-index: 8; display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--ui-space-3); padding: var(--ui-space-1) var(--ui-space-4);
+            background: var(--ui-page); border-bottom: 1px solid var(--ui-border); color: var(--ui-ink); font: var(--ui-text-sm)/1.4 var(--ui-font); }
+  .mp-spec-link { flex: 0 1 auto; min-width: 0; display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border-radius: var(--ui-radius-sm);
+                  color: var(--ui-link); font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); line-height: var(--ui-space-6); text-decoration: none; }
+  .mp-spec-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .mp-range { flex: 1 1 0; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; }
+  .mp-range-row { display: flex; flex: 1 1 100%; align-items: center; gap: var(--ui-space-2); min-width: 0; }
+  .mp-range-copy { flex: 1 1 auto; min-width: 0; margin: 0; color: var(--ui-muted); overflow-wrap: anywhere; }
+  .mp-range-copy code { font-family: var(--ui-mono); font-weight: var(--ui-weight-medium); color: var(--ui-ink); }
+  .mp-pager { flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--ui-space-1); margin-right: var(--ui-space-1); }
+  .mp-pager .rv-btn { display: inline-grid; place-items: center; width: var(--ui-space-6); padding: 0; border: none; background: transparent; }
+  .mp-pager .rv-btn:hover:not(:disabled) { background: var(--ui-surface-soft); }
+  .mp-pager .rv-btn:disabled { color: var(--ui-muted); background: transparent; }
+  .mp-place { color: var(--ui-muted); font: var(--ui-weight-medium) var(--ui-text-xs) var(--ui-font); white-space: nowrap; }
+  .mp-view { flex: 0 0 auto; display: inline-flex; gap: var(--ui-space-1); }
+  .mp-view .rv-btn { border: none; background: transparent; }
+  .mp-view .rv-btn:hover, .mp-view .rv-btn[aria-pressed="true"] { background: var(--ui-surface-soft); }
+  .mp-view .rv-btn[aria-pressed="true"] { text-decoration: underline; text-underline-offset: 3px; }
+  [data-mockup-frame="phone"] .mp-top { gap: 0 var(--ui-space-2); padding: 0 var(--ui-space-2) var(--ui-space-1); }
+  [data-mockup-frame="phone"] .mp-spec-link { line-height: 44px; margin-right: calc(3 * var(--ui-space-6) + var(--ui-space-2)); }
+  [data-mockup-frame="phone"] .mp-range { flex: 1 1 100%; padding: 0 var(--ui-space-1); }
+  [data-mockup-frame="phone"] .mp-range-row { flex-wrap: wrap; row-gap: 0; }
+  [data-mockup-frame="phone"] .mp-range-copy { flex: 1 1 100%; font-size: var(--ui-text-xs); }
+  [data-mockup-frame="phone"] .mp-view { order: 1; }
+  [data-mockup-frame="phone"] .mp-pager { order: 2; margin: 0 0 0 auto; }
+  [data-mockup-frame="phone"] .mp-pager .rv-btn { width: 44px; }
+  [data-mockup-frame="phone"] .mp-top .rv-change { position: absolute; top: 0; right: var(--ui-space-2); }
+  /* step bar (mockups #walkthrough-bar): Play then every step by number and name, the showing one pressed with its
+     caption, a count on a step holding open questions or threads; on a phone it scrolls sideways within itself */
+  .mp-steps { flex: 1 1 100%; order: 9; display: flex; align-items: center; gap: var(--ui-space-1); min-width: 0; margin: var(--ui-space-1) calc(-1 * var(--ui-space-4)) calc(-1 * var(--ui-space-1));
+              padding: var(--ui-space-2) var(--ui-space-4); border-top: 1px solid var(--ui-border); overflow: hidden; white-space: nowrap; }
+  .mp-step { flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--ui-space-1); min-height: var(--ui-space-6); margin: 0; padding: var(--ui-space-2) var(--ui-space-3);
+             border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill); background: var(--ui-surface); color: var(--ui-ink);
+             font: var(--ui-weight-semibold) var(--ui-text-xs)/1 var(--ui-font); cursor: pointer;
+             transition: background var(--ui-motion-duration) var(--ui-motion-ease), color var(--ui-motion-duration) var(--ui-motion-ease); }
+  .mp-step:hover { background: var(--ui-surface-soft); }
+  .mp-step:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .mp-step-n { color: var(--ui-muted); font-weight: var(--ui-weight-medium); }
+  .mp-step-count { min-width: 18px; height: 18px; padding: 0 var(--ui-space-1); border-radius: var(--ui-radius-pill); background: var(--ui-attention); color: var(--ui-page);
+                   display: inline-grid; place-items: center; font-size: var(--ui-text-xs); }
+  .mp-caption { flex: 0 0 auto; margin-left: var(--ui-space-3); color: var(--ui-muted); font: var(--ui-text-sm)/1.4 var(--ui-font); }
+  [data-mockup-frame="phone"] .mp-steps { margin: var(--ui-space-1) calc(-1 * var(--ui-space-2)) calc(-1 * var(--ui-space-1)); padding: var(--ui-space-1) var(--ui-space-2); }
+  [data-mockup-frame="phone"] .mp-step { min-height: 44px; padding: 0 var(--ui-space-3); }
+  .mp-top .rv-dock { top: calc(100% + var(--ui-space-3)); }
+  [data-mockup-frame="phone"] .mp-top .rv-dock { top: calc(100% + var(--ui-space-2)); }
+  /* the frames side by side, desktop first, each labeled and zoomed whole into its slot; stacked on a phone */
+  .mp-stage { display: flex; align-items: flex-start; gap: var(--ui-space-5); width: 100%; margin: 0;
+              padding: var(--ui-space-5) calc(var(--ui-space-6) + var(--ui-space-5)) calc(42px + 2 * var(--ui-space-6)) var(--ui-space-5); }
+  .mp-stage.mp-has-rounds { padding-bottom: var(--ui-space-5); }
+  .mp-slot { flex: 0 1 auto; min-width: 0; margin: 0; }
+  .mp-label { margin: 0 0 var(--ui-space-2); color: var(--ui-muted); font: var(--ui-weight-semibold) var(--ui-text-xs)/1.4 var(--ui-font); }
+  .mp-fit { position: relative; width: max-content; zoom: var(--hx-zoom); }
+  .mp-fit .rv-pin { top: var(--ui-space-1); right: 6px; zoom: calc(1 / var(--hx-zoom)); }
+  [data-mockup-frame="phone"] .mp-stage { flex-direction: column; gap: var(--ui-space-4); padding: var(--ui-space-3) var(--ui-space-3) calc(110px + var(--ui-space-5)); }
+  [data-mockup-frame="phone"] .mp-stage.mp-has-rounds { padding-bottom: var(--ui-space-5); }
+  [data-mockup-frame="phone"] .mp-slot { width: 100%; }
+  /* question mark (mockups #mockup-questions-show): on a part an open question is about, at the chrome's size at any zoom */
+  .rv-qmark { position: absolute; top: -12px; right: -12px; z-index: 4; width: 24px; height: 24px; margin: 0; padding: 0; border: none; border-radius: 50%;
+              background: var(--ui-attention); color: var(--ui-page); display: grid; place-items: center; font: var(--ui-weight-semibold) var(--ui-text-sm)/1 var(--ui-font);
+              box-shadow: 0 2px 8px var(--ui-shadow); cursor: pointer; zoom: calc(1 / var(--hx-zoom)); }
+  .rv-qmark:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  [data-mockup-frame="phone"] .rv-qmark { width: 44px; height: 44px; top: -16px; right: -16px; }
+
+  /* each round's video under the frames (mockups #round-video-show): the player, then its title, commit, and captions */
+  .mp-rounds { display: flex; flex-direction: column; gap: var(--ui-space-4); width: 100%; padding: 0 calc(var(--ui-space-6) + var(--ui-space-5)) calc(42px + 2 * var(--ui-space-6)) var(--ui-space-5); }
+  .mp-round { display: flex; gap: var(--ui-space-4); align-items: flex-start; }
+  .mp-round-before { padding: var(--ui-space-5); }
+  .mp-player { flex: 0 0 auto; max-width: 100%; }
+  .mp-video { position: relative; display: grid; place-items: center; width: 400px; max-width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: var(--ui-radius); background: var(--ui-ink); cursor: pointer; }
+  .mp-video:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .mp-still { pointer-events: none; }
+  .mp-cue { position: absolute; left: var(--ui-space-2); right: var(--ui-space-2); bottom: 44px; text-align: center; color: var(--ui-on-marker); font: var(--ui-text-sm)/1.4 var(--ui-font); }
+  .mp-cue span { padding: 2px var(--ui-space-2); background: var(--ui-veil); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+  .mp-controls { position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-3);
+                 padding: var(--ui-space-6) var(--ui-space-3) var(--ui-space-2); background: linear-gradient(transparent, var(--ui-veil)); color: var(--ui-on-marker);
+                 font: var(--ui-text-xs) var(--ui-font); }
+  .mp-controls svg { display: block; }
+  .mp-controls .mp-gap { flex: 1 1 auto; }
+  .mp-scrub { position: relative; flex: 1 1 100%; order: -1; height: 4px; border-radius: var(--ui-radius-pill); background: var(--ui-veil); }
+  .mp-scrub i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--ui-radius-pill); background: var(--ui-on-marker); }
+  .mp-round-meta { display: flex; flex-direction: column; align-items: flex-start; gap: var(--ui-space-2); padding-top: var(--ui-space-1); color: var(--ui-ink); font: var(--ui-text-sm)/1.4 var(--ui-font); }
+  .mp-round-title { font-weight: var(--ui-weight-semibold); }
+  .mp-round-meta code { font: var(--ui-weight-medium) var(--ui-text-xs) var(--ui-mono); }
+  .mp-round-note { color: var(--ui-muted); font-size: var(--ui-text-xs); }
+  /* a moment of a video (threads #video-rail): a rail as wide as it marks each thread at its moment */
+  .mp-rail { position: relative; display: block; height: 28px; margin-top: var(--ui-space-2); border-bottom: 1px solid var(--ui-border); }
+  .mp-mark { position: absolute; top: 2px; width: 22px; height: 22px; transform: translateX(-50%); margin: 0; padding: 0; border: none; border-radius: 50% 50% 50% 4px;
+             display: grid; place-items: center; color: var(--ui-page); background: var(--ui-draft); font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); cursor: pointer; }
+  .mp-mark:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .mp-time { position: absolute; right: 0; top: 4px; color: var(--ui-muted); font: var(--ui-text-xs) var(--ui-mono); }
+  [data-mockup-frame="phone"] .mp-rounds { padding: 0 var(--ui-space-3) calc(110px + var(--ui-space-5)); }
+  [data-mockup-frame="phone"] .mp-round { flex-direction: column; gap: var(--ui-space-2); }
+  [data-mockup-frame="phone"] .mp-player { align-self: stretch; }
+  [data-mockup-frame="phone"] .mp-video { width: auto; height: 506px; aspect-ratio: 390 / 844; margin: 0 auto; }
+  [data-mockup-frame="phone"] .mp-rail { height: 44px; }
+  [data-mockup-frame="phone"] .mp-mark { width: 36px; height: 36px; }
+  [data-mockup-frame="phone"] .mp-time { top: 12px; }
+
+  /* the framed route: the fixture's running prototype's weekly report (tests/fixtures/qa/prototype.py), held */
+  /* the route declares the set's light values alone, so it stays light in a dark scheme */
+  .pr { --ui-page: #ffffff; --ui-surface: #ffffff; --ui-surface-soft: #f5f5f5; --ui-ink: #333333; --ui-muted: #525252; --ui-border: #dfdfdf;
+        --ui-action: #1d4ed8; --ui-focus: #1d4ed8; }
+  .pr { position: relative; background: var(--ui-page); color: var(--ui-ink); font: var(--ui-weight-regular) var(--ui-text-md)/1.5 var(--ui-font); text-align: left; }
+  .pr-d { width: 1440px; min-height: 900px; }
+  .pr-m { width: 390px; min-height: 844px; }
+  .pr-bar { display: flex; justify-content: space-between; align-items: center; padding: var(--ui-space-4) var(--ui-space-5); border-bottom: 1px solid var(--ui-border);
+            font-weight: var(--ui-weight-semibold); }
+  .pr-week { color: var(--ui-muted); font-weight: var(--ui-weight-medium); }
+  .pr-main { display: flex; gap: var(--ui-space-5); align-items: flex-start; padding: var(--ui-space-5); }
+  .pr-cards { display: flex; flex-direction: column; gap: var(--ui-space-3); flex: 0 0 320px; }
+  .pr-card { position: relative; display: flex; justify-content: space-between; width: 100%; margin: 0; padding: var(--ui-space-4); border: 1px solid var(--ui-border);
+             border-radius: var(--ui-radius); background: var(--ui-surface); color: inherit; font: inherit; cursor: pointer;
+             transition: background var(--ui-motion-duration) var(--ui-motion-ease); }
+  .pr-card:hover { background: var(--ui-surface-soft); }
+  .pr-card:focus-visible, .pr-export:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .pr-total { font-weight: var(--ui-weight-semibold); }
+  .pr-panel { position: relative; flex: 1 1 auto; padding: var(--ui-space-5); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); }
+  .pr-panel h2 { margin: 0 0 var(--ui-space-3); font-size: var(--ui-text-lg); }
+  .pr-weeks { list-style: none; margin: 0 0 var(--ui-space-4); padding: 0; }
+  .pr-weeks li { display: flex; justify-content: space-between; padding: var(--ui-space-2) 0; border-bottom: 1px solid var(--ui-border); }
+  .pr-export { position: relative; margin: 0; padding: var(--ui-space-2) var(--ui-space-4); border: 0; border-radius: var(--ui-radius); background: var(--ui-action);
+               color: var(--ui-page); font: inherit; font-weight: var(--ui-weight-semibold); cursor: pointer; }
+  .pr-dialog { margin-top: var(--ui-space-4); padding: var(--ui-space-4); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); }
+  .pr-dialog p { margin: var(--ui-space-4) 0; }
+  .pr-dialog code { font: var(--ui-text-ui) var(--ui-mono); }
+  .pr-m .pr-main { flex-direction: column; }
+  .pr-m .pr-cards { flex: none; width: 100%; }
+  .pr-m .pr-panel { width: 100%; }
+  [data-mockup-frame] [data-fade] { opacity: 0; visibility: hidden; transition: opacity var(--ui-motion-duration) var(--ui-motion-ease), visibility var(--ui-motion-duration) var(--ui-motion-ease); }
+
+  .mp-fit-dd, .mp-fit-dp { --hx-zoom: 0.7300; }
+  .mp-fit-pd { --hx-zoom: 0.2542; }
+  .mp-fit-pp { --hx-zoom: 0.9385; }
+  /* on a phone the page ends clear of the bottom toolbar, as tall as its hand-off bar wraps (--hx-dock-space) */
+  [data-mockup-frame="phone"] .mp-stage, [data-mockup-frame="phone"] .mp-rounds { padding-bottom: calc(150px + var(--ui-space-5)); }
+  [data-mockup-frame="phone"] .mp-stage.mp-has-rounds { padding-bottom: var(--ui-space-5); }
+  /* a prototype's frame: the running route at its viewport's width, a screen tall, outlined (mockups #prototype-route) */
+  .mp-held { outline: calc(1px / var(--hx-zoom)) solid var(--ui-border); }
+  .pr .rv-qmark { top: -12px; right: -12px; }
+  [data-mockup-frame="phone"] .pr .rv-qmark { top: -16px; right: -16px; }
+  .pr .rv-pin { top: -12px; right: -12px; }
+  /* Prototype not running in the frames' place (mockups #prototype-down) */
+  .mp-down { display: flex; flex-direction: column; gap: var(--ui-space-2); width: 100%; padding: var(--ui-space-5); border: 1px solid var(--ui-border); border-radius: var(--ui-radius);
+             background: var(--ui-surface); color: var(--ui-ink); font: var(--ui-text-sm)/1.4 var(--ui-font); }
+  .mp-down strong { font-weight: var(--ui-weight-semibold); }
+  .mp-down code { font: var(--ui-weight-medium) var(--ui-text-xs) var(--ui-mono); color: var(--ui-muted); }
+  .mp-still-d { zoom: 0.25; }
+  .mp-still-p { zoom: 0.6; }
+  [data-mockup-frame="desktop"] .mp-still-p { zoom: 0.6635; }
+  [data-mockup-frame][data-at$=" opened"] [data-show]:not([data-show~="opened"]),
+  [data-mockup-frame][data-at="opened"] [data-show]:not([data-show~="opened"]),
+  [data-mockup-frame][data-at$=" pressed"] [data-show]:not([data-show~="pressed"]),
+  [data-mockup-frame][data-at="pressed"] [data-show]:not([data-show~="pressed"]),
+  [data-mockup-frame][data-at$=" composing"] [data-show]:not([data-show~="composing"]),
+  [data-mockup-frame][data-at="composing"] [data-show]:not([data-show~="composing"]),
+  [data-mockup-frame][data-at$=" saved"] [data-show]:not([data-show~="saved"]),
+  [data-mockup-frame][data-at="saved"] [data-show]:not([data-show~="saved"]),
+  [data-mockup-frame][data-at$=" earlier"] [data-show]:not([data-show~="earlier"]),
+  [data-mockup-frame][data-at="earlier"] [data-show]:not([data-show~="earlier"]),
+  [data-mockup-frame][data-at$=" moment"] [data-show]:not([data-show~="moment"]),
+  [data-mockup-frame][data-at="moment"] [data-show]:not([data-show~="moment"]),
+  [data-mockup-frame][data-at$=" updated"] [data-show]:not([data-show~="updated"]),
+  [data-mockup-frame][data-at="updated"] [data-show]:not([data-show~="updated"]),
+  [data-mockup-frame][data-at$=" before"] [data-show]:not([data-show~="before"]),
+  [data-mockup-frame][data-at="before"] [data-show]:not([data-show~="before"]),
+  [data-mockup-frame][data-at$=" down"] [data-show]:not([data-show~="down"]),
+  [data-mockup-frame][data-at="down"] [data-show]:not([data-show~="down"]),
+  [data-mockup-frame]:not([data-at]) [data-show]:not([data-show~="opened"]) { display: none; }
+  [data-mockup-frame][data-at$=" opened"] [data-fade~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-fade~="opened"],
+  [data-mockup-frame][data-at$=" pressed"] [data-fade~="pressed"],
+  [data-mockup-frame][data-at="pressed"] [data-fade~="pressed"],
+  [data-mockup-frame][data-at$=" composing"] [data-fade~="composing"],
+  [data-mockup-frame][data-at="composing"] [data-fade~="composing"],
+  [data-mockup-frame][data-at$=" saved"] [data-fade~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-fade~="saved"],
+  [data-mockup-frame][data-at$=" earlier"] [data-fade~="earlier"],
+  [data-mockup-frame][data-at="earlier"] [data-fade~="earlier"],
+  [data-mockup-frame][data-at$=" moment"] [data-fade~="moment"],
+  [data-mockup-frame][data-at="moment"] [data-fade~="moment"],
+  [data-mockup-frame][data-at$=" updated"] [data-fade~="updated"],
+  [data-mockup-frame][data-at="updated"] [data-fade~="updated"],
+  [data-mockup-frame][data-at$=" before"] [data-fade~="before"],
+  [data-mockup-frame][data-at="before"] [data-fade~="before"],
+  [data-mockup-frame][data-at$=" down"] [data-fade~="down"],
+  [data-mockup-frame][data-at="down"] [data-fade~="down"],
+  [data-mockup-frame]:not([data-at]) [data-fade~="opened"] { opacity: 1; visibility: visible; }
+  [data-mockup-frame][data-at$=" opened"] [data-sel~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-sel~="opened"],
+  [data-mockup-frame][data-at$=" pressed"] [data-sel~="pressed"],
+  [data-mockup-frame][data-at="pressed"] [data-sel~="pressed"],
+  [data-mockup-frame][data-at$=" composing"] [data-sel~="composing"],
+  [data-mockup-frame][data-at="composing"] [data-sel~="composing"],
+  [data-mockup-frame][data-at$=" saved"] [data-sel~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-sel~="saved"],
+  [data-mockup-frame][data-at$=" earlier"] [data-sel~="earlier"],
+  [data-mockup-frame][data-at="earlier"] [data-sel~="earlier"],
+  [data-mockup-frame][data-at$=" moment"] [data-sel~="moment"],
+  [data-mockup-frame][data-at="moment"] [data-sel~="moment"],
+  [data-mockup-frame][data-at$=" updated"] [data-sel~="updated"],
+  [data-mockup-frame][data-at="updated"] [data-sel~="updated"],
+  [data-mockup-frame][data-at$=" before"] [data-sel~="before"],
+  [data-mockup-frame][data-at="before"] [data-sel~="before"],
+  [data-mockup-frame][data-at$=" down"] [data-sel~="down"],
+  [data-mockup-frame][data-at="down"] [data-sel~="down"],
+  [data-mockup-frame]:not([data-at]) [data-sel~="opened"] { background: var(--ui-surface-soft); }
+  [data-mockup-frame][data-at$=" opened"] [data-pressed~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-pressed~="opened"],
+  [data-mockup-frame][data-at$=" pressed"] [data-pressed~="pressed"],
+  [data-mockup-frame][data-at="pressed"] [data-pressed~="pressed"],
+  [data-mockup-frame][data-at$=" composing"] [data-pressed~="composing"],
+  [data-mockup-frame][data-at="composing"] [data-pressed~="composing"],
+  [data-mockup-frame][data-at$=" saved"] [data-pressed~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-pressed~="saved"],
+  [data-mockup-frame][data-at$=" earlier"] [data-pressed~="earlier"],
+  [data-mockup-frame][data-at="earlier"] [data-pressed~="earlier"],
+  [data-mockup-frame][data-at$=" moment"] [data-pressed~="moment"],
+  [data-mockup-frame][data-at="moment"] [data-pressed~="moment"],
+  [data-mockup-frame][data-at$=" updated"] [data-pressed~="updated"],
+  [data-mockup-frame][data-at="updated"] [data-pressed~="updated"],
+  [data-mockup-frame][data-at$=" before"] [data-pressed~="before"],
+  [data-mockup-frame][data-at="before"] [data-pressed~="before"],
+  [data-mockup-frame][data-at$=" down"] [data-pressed~="down"],
+  [data-mockup-frame][data-at="down"] [data-pressed~="down"],
+  [data-mockup-frame]:not([data-at]) [data-pressed~="opened"] { background: var(--ui-ink); border-color: var(--ui-ink); color: var(--ui-page); }
+  [data-mockup-frame][data-at$=" opened"] [data-pressed~="opened"] .mp-step-n,
+  [data-mockup-frame][data-at="opened"] [data-pressed~="opened"] .mp-step-n,
+  [data-mockup-frame][data-at$=" pressed"] [data-pressed~="pressed"] .mp-step-n,
+  [data-mockup-frame][data-at="pressed"] [data-pressed~="pressed"] .mp-step-n,
+  [data-mockup-frame][data-at$=" composing"] [data-pressed~="composing"] .mp-step-n,
+  [data-mockup-frame][data-at="composing"] [data-pressed~="composing"] .mp-step-n,
+  [data-mockup-frame][data-at$=" saved"] [data-pressed~="saved"] .mp-step-n,
+  [data-mockup-frame][data-at="saved"] [data-pressed~="saved"] .mp-step-n,
+  [data-mockup-frame][data-at$=" earlier"] [data-pressed~="earlier"] .mp-step-n,
+  [data-mockup-frame][data-at="earlier"] [data-pressed~="earlier"] .mp-step-n,
+  [data-mockup-frame][data-at$=" moment"] [data-pressed~="moment"] .mp-step-n,
+  [data-mockup-frame][data-at="moment"] [data-pressed~="moment"] .mp-step-n,
+  [data-mockup-frame][data-at$=" updated"] [data-pressed~="updated"] .mp-step-n,
+  [data-mockup-frame][data-at="updated"] [data-pressed~="updated"] .mp-step-n,
+  [data-mockup-frame][data-at$=" before"] [data-pressed~="before"] .mp-step-n,
+  [data-mockup-frame][data-at="before"] [data-pressed~="before"] .mp-step-n,
+  [data-mockup-frame][data-at$=" down"] [data-pressed~="down"] .mp-step-n,
+  [data-mockup-frame][data-at="down"] [data-pressed~="down"] .mp-step-n,
+  [data-mockup-frame]:not([data-at]) [data-pressed~="opened"] .mp-step-n { color: var(--ui-page); }
+  [data-mockup-frame][data-at$=" opened"] [data-target~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-target~="opened"],
+  [data-mockup-frame][data-at$=" pressed"] [data-target~="pressed"],
+  [data-mockup-frame][data-at="pressed"] [data-target~="pressed"],
+  [data-mockup-frame][data-at$=" composing"] [data-target~="composing"],
+  [data-mockup-frame][data-at="composing"] [data-target~="composing"],
+  [data-mockup-frame][data-at$=" saved"] [data-target~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-target~="saved"],
+  [data-mockup-frame][data-at$=" earlier"] [data-target~="earlier"],
+  [data-mockup-frame][data-at="earlier"] [data-target~="earlier"],
+  [data-mockup-frame][data-at$=" moment"] [data-target~="moment"],
+  [data-mockup-frame][data-at="moment"] [data-target~="moment"],
+  [data-mockup-frame][data-at$=" updated"] [data-target~="updated"],
+  [data-mockup-frame][data-at="updated"] [data-target~="updated"],
+  [data-mockup-frame][data-at$=" before"] [data-target~="before"],
+  [data-mockup-frame][data-at="before"] [data-target~="before"],
+  [data-mockup-frame][data-at$=" down"] [data-target~="down"],
+  [data-mockup-frame][data-at="down"] [data-target~="down"],
+  [data-mockup-frame]:not([data-at]) [data-target~="opened"] { outline: calc(2px / var(--hx-zoom)) dashed var(--ui-draft); outline-offset: calc(2px / var(--hx-zoom)); }
+  [data-mockup-frame][data-at$=" opened"] [data-beside~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-beside~="opened"],
+  [data-mockup-frame][data-at$=" pressed"] [data-beside~="pressed"],
+  [data-mockup-frame][data-at="pressed"] [data-beside~="pressed"],
+  [data-mockup-frame][data-at$=" composing"] [data-beside~="composing"],
+  [data-mockup-frame][data-at="composing"] [data-beside~="composing"],
+  [data-mockup-frame][data-at$=" saved"] [data-beside~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-beside~="saved"],
+  [data-mockup-frame][data-at$=" earlier"] [data-beside~="earlier"],
+  [data-mockup-frame][data-at="earlier"] [data-beside~="earlier"],
+  [data-mockup-frame][data-at$=" moment"] [data-beside~="moment"],
+  [data-mockup-frame][data-at="moment"] [data-beside~="moment"],
+  [data-mockup-frame][data-at$=" updated"] [data-beside~="updated"],
+  [data-mockup-frame][data-at="updated"] [data-beside~="updated"],
+  [data-mockup-frame][data-at$=" before"] [data-beside~="before"],
+  [data-mockup-frame][data-at="before"] [data-beside~="before"],
+  [data-mockup-frame][data-at$=" down"] [data-beside~="down"],
+  [data-mockup-frame][data-at="down"] [data-beside~="down"],
+  [data-mockup-frame]:not([data-at]) [data-beside~="opened"] { margin-right: 330px; }
+  [data-mockup-frame][data-at$=" opened"] [data-narrow~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-narrow~="opened"],
+  [data-mockup-frame][data-at$=" pressed"] [data-narrow~="pressed"],
+  [data-mockup-frame][data-at="pressed"] [data-narrow~="pressed"],
+  [data-mockup-frame][data-at$=" composing"] [data-narrow~="composing"],
+  [data-mockup-frame][data-at="composing"] [data-narrow~="composing"],
+  [data-mockup-frame][data-at$=" saved"] [data-narrow~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-narrow~="saved"],
+  [data-mockup-frame][data-at$=" earlier"] [data-narrow~="earlier"],
+  [data-mockup-frame][data-at="earlier"] [data-narrow~="earlier"],
+  [data-mockup-frame][data-at$=" moment"] [data-narrow~="moment"],
+  [data-mockup-frame][data-at="moment"] [data-narrow~="moment"],
+  [data-mockup-frame][data-at$=" updated"] [data-narrow~="updated"],
+  [data-mockup-frame][data-at="updated"] [data-narrow~="updated"],
+  [data-mockup-frame][data-at$=" before"] [data-narrow~="before"],
+  [data-mockup-frame][data-at="before"] [data-narrow~="before"],
+  [data-mockup-frame][data-at$=" down"] [data-narrow~="down"],
+  [data-mockup-frame][data-at="down"] [data-narrow~="down"],
+  [data-mockup-frame]:not([data-at]) [data-narrow~="opened"] { --hx-zoom: 0.5497; }
+  [data-mockup-frame][data-at$=" opened"] [data-expanded~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-expanded~="opened"],
+  [data-mockup-frame][data-at$=" pressed"] [data-expanded~="pressed"],
+  [data-mockup-frame][data-at="pressed"] [data-expanded~="pressed"],
+  [data-mockup-frame][data-at$=" composing"] [data-expanded~="composing"],
+  [data-mockup-frame][data-at="composing"] [data-expanded~="composing"],
+  [data-mockup-frame][data-at$=" saved"] [data-expanded~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-expanded~="saved"],
+  [data-mockup-frame][data-at$=" earlier"] [data-expanded~="earlier"],
+  [data-mockup-frame][data-at="earlier"] [data-expanded~="earlier"],
+  [data-mockup-frame][data-at$=" moment"] [data-expanded~="moment"],
+  [data-mockup-frame][data-at="moment"] [data-expanded~="moment"],
+  [data-mockup-frame][data-at$=" updated"] [data-expanded~="updated"],
+  [data-mockup-frame][data-at="updated"] [data-expanded~="updated"],
+  [data-mockup-frame][data-at$=" before"] [data-expanded~="before"],
+  [data-mockup-frame][data-at="before"] [data-expanded~="before"],
+  [data-mockup-frame][data-at$=" down"] [data-expanded~="down"],
+  [data-mockup-frame][data-at="down"] [data-expanded~="down"],
+  [data-mockup-frame]:not([data-at]) [data-expanded~="opened"] { background: var(--ui-surface-soft); }
+</style>
+<script defer src="../../.viz/runtime.js"></script>
+</head>
+<body>
+<section data-mockup-frame="desktop" data-anchor="desktop" data-illustrates="prototype-route round-video-show">
+<div class="mp-top" data-anchor="desktop-top-line" data-illustrates="review-chrome" data-beside="composing saved earlier moment updated before down"><a class="rv-index" href="#review-index"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg><span>Review index</span></a><a class="mp-spec-link" href="#report-page-spec">Report page spec</a><div class="mp-range"><div class="mp-range-row"><span class="mp-pager" role="group" aria-label="Screens" data-anchor="desktop-pager" data-illustrates="next-screen-rule"><button type="button" class="rv-btn" title="Previous screen: Export dialog (←)" aria-label="Previous screen, Export dialog"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg></button><span class="mp-place">3 of 3</span><button type="button" class="rv-btn" disabled aria-label="Next screen"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></button></span><p class="mp-range-copy" title="Changes from 965efc4 2026-01-01 to a9c3f52 2026-01-01" data-show="opened pressed composing saved earlier moment updated down">New since the base</p><p class="mp-range-copy" data-show="before">Changes from <code>4e1d0b7</code> 2026-01-01 to <code>a9c3f52</code> 2026-01-01</p><span class="mp-view" role="group" aria-label="Mockup at the base or now" data-anchor="desktop-view" data-illustrates="before-prototype" data-show="before"><button type="button" class="rv-btn" aria-pressed="true">Before</button><button type="button" class="rv-btn" aria-pressed="false">After</button></span><button type="button" class="rv-btn rv-change" aria-expanded="false">Change base</button></div></div><div class="mp-steps" role="group" aria-label="Walkthrough" data-anchor="desktop-steps" data-illustrates="walkthrough-bar prototype-steps"><button type="button" class="mp-step" data-anchor="desktop-play" aria-pressed="false">Play</button><button type="button" class="mp-step" data-anchor="desktop-step-totals" data-pressed="opened down"><span class="mp-step-n">1</span><span>Totals</span></button><button type="button" class="mp-step" data-anchor="desktop-step-team-open" data-pressed="pressed composing saved earlier moment updated before"><span class="mp-step-n">2</span><span>Team open</span><span class="mp-step-count" data-show="opened pressed composing">1</span><span class="mp-step-count" data-show="saved earlier">2</span><span class="mp-step-count" data-show="moment updated before down">3</span></button><button type="button" class="mp-step" data-anchor="desktop-step-export"><span class="mp-step-n">3</span><span>Export</span></button><span class="mp-caption" aria-live="polite"><span data-show="opened down">Every team's total for the week</span><span data-show="pressed composing saved earlier moment updated before">Payments opens its last three weeks</span><span data-show="none">The export dialog names the file</span></span></div><nav class="rv-dock" aria-label="Review conversations" data-anchor="desktop-dock" data-illustrates="review-chrome" data-show="opened pressed"><button type="button" class="rv-btn rv-icon" data-anchor="desktop-dock-open" aria-label="Open review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M3.5 6h5A1.5 1.5 0 0 1 10 7.5v3A1.5 1.5 0 0 1 8.5 12H6.5L4 14v-2h-.5A1.5 1.5 0 0 1 2 10.5v-3A1.5 1.5 0 0 1 3.5 6z"/><path d="M6 6V3.5A1.5 1.5 0 0 1 7.5 2h5A1.5 1.5 0 0 1 14 3.5v3A1.5 1.5 0 0 1 12.5 8H12v2l-2-1.5"/></svg></button></nav></div>
+<div class="mp-round mp-round-before" data-anchor="desktop-before" data-illustrates="before-prototype" data-show="before"><div class="mp-round"><div class="mp-player"><div class="mp-video" role="img" tabindex="0" aria-label="Video of round 4e1d0b7"><div class="mp-still mp-still-d" data-show="opened pressed composing saved earlier moment updated before down"><div class="pr pr-d"><header class="pr-bar"><span>Weekly report</span><span class="pr-week">2026-W01</span></header><main class="pr-main"><section class="pr-cards" aria-label="Teams"><button type="button" class="pr-card"><span class="pr-team">Payments</span><span class="pr-total">1,284</span></button><button type="button" class="pr-card"><span class="pr-team">Search</span><span class="pr-total">962</span></button><button type="button" class="pr-card"><span class="pr-team">Mobile</span><span class="pr-total">731</span></button></section><section class="pr-panel" data-fade="none"><h2>Payments</h2><ol class="pr-weeks"><li><span>2025-W51</span><span>1,190</span></li><li><span>2025-W52</span><span>1,236</span></li><li><span>2026-W01</span><span>1,284</span></li></ol><button type="button" class="pr-export">Export CSV</button><div class="pr-dialog" role="dialog" aria-label="Export" data-show="none"><p><code>payments-2026-W01.csv</code> downloads.</p></div></section></main></div></div><span class="mp-cue" data-show="opened pressed composing saved earlier moment updated before down"><span>1 Totals · Every team's total for the week</span></span><div class="mp-controls"><span class="mp-scrub"><i data-show="opened pressed composing saved earlier moment updated before down" style="width: 0%"></i></span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11L13 8z" fill="currentColor"/></svg><span><span data-show="opened pressed composing saved earlier moment updated before down">0:00 / 0:04</span></span><span class="mp-gap"></span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/></svg><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="3" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="13" r="1.4" fill="currentColor"/></svg></div></div></div><div class="mp-round-meta"><span class="mp-round-title">The round at the base</span><span>Recorded from <code title="4e1d0b7">4e1d0b7</code>, desktop</span><span class="mp-round-note">Captions from the walkthrough’s steps</span></div></div></div><div class="mp-stage mp-has-rounds" data-anchor="desktop-slots" data-illustrates="review-fit prototype-route acceptance-prototype-frames" data-beside="composing saved earlier moment updated before down"><div class="mp-slot" role="group" aria-label="Desktop" data-show="opened pressed composing saved earlier moment updated"><div class="mp-label">Desktop</div><div class="mp-fit mp-held mp-fit-dd" data-anchor="desktop-slot-desktop" data-illustrates="acceptance-prototype-comment prototype-marks" data-narrow="composing saved earlier moment updated before down"><div class="pr pr-d"><header class="pr-bar" data-anchor="desktop-d-bar"><span>Weekly report</span><span class="pr-week">2026-W01</span></header><main class="pr-main"><section class="pr-cards" aria-label="Teams" data-anchor="desktop-d-cards"><button type="button" class="pr-card" data-anchor="desktop-d-payments" data-sel="pressed composing saved earlier moment updated before"><span class="pr-team">Payments</span><span class="pr-total">1,284</span></button><button type="button" class="pr-card" data-anchor="desktop-d-search"><span class="pr-team">Search</span><span class="pr-total">962</span></button><button type="button" class="pr-card" data-anchor="desktop-d-mobile"><span class="pr-team">Mobile</span><span class="pr-total">731</span></button></section><section class="pr-panel" data-anchor="desktop-d-panel" data-fade="pressed composing saved earlier moment updated before"><h2>Payments</h2><ol class="pr-weeks"><li><span>2025-W51</span><span>1,190</span></li><li><span>2025-W52</span><span>1,236</span></li><li><span>2026-W01</span><span>1,284</span></li></ol><button type="button" class="pr-export" data-anchor="desktop-d-export" data-target="composing">Export CSV<i class="rv-pin" data-show="saved earlier moment updated">1</i></button><div class="pr-dialog" role="dialog" aria-label="Export" data-anchor="desktop-d-dialog" data-show="none"><p><code>payments-2026-W01.csv</code> downloads.</p></div><i class="rv-qmark" data-show="pressed composing saved earlier moment updated before">?</i></section></main></div></div></div><div class="mp-slot" role="group" aria-label="Phone" data-show="opened pressed composing saved earlier moment updated"><div class="mp-label">Phone</div><div class="mp-fit mp-held mp-fit-dp" data-anchor="desktop-slot-phone" data-illustrates="prototype-route" data-narrow="composing saved earlier moment updated before down"><div class="pr pr-m"><header class="pr-bar" data-anchor="desktop-p-bar"><span>Weekly report</span><span class="pr-week">2026-W01</span></header><main class="pr-main"><section class="pr-cards" aria-label="Teams" data-anchor="desktop-p-cards"><button type="button" class="pr-card" data-anchor="desktop-p-payments" data-sel="pressed composing saved earlier moment updated before"><span class="pr-team">Payments</span><span class="pr-total">1,284</span></button><button type="button" class="pr-card" data-anchor="desktop-p-search"><span class="pr-team">Search</span><span class="pr-total">962</span></button><button type="button" class="pr-card" data-anchor="desktop-p-mobile"><span class="pr-team">Mobile</span><span class="pr-total">731</span></button></section><section class="pr-panel" data-anchor="desktop-p-panel" data-fade="pressed composing saved earlier moment updated before"><h2>Payments</h2><ol class="pr-weeks"><li><span>2025-W51</span><span>1,190</span></li><li><span>2025-W52</span><span>1,236</span></li><li><span>2026-W01</span><span>1,284</span></li></ol><button type="button" class="pr-export" data-anchor="desktop-p-export">Export CSV</button><div class="pr-dialog" role="dialog" aria-label="Export" data-anchor="desktop-p-dialog" data-show="none"><p><code>payments-2026-W01.csv</code> downloads.</p></div><i class="rv-qmark" data-show="pressed composing saved earlier moment updated before">?</i></section></main></div></div></div><div class="mp-down" role="status" data-anchor="desktop-down" data-illustrates="prototype-down acceptance-prototype-down" data-show="down"><strong>Prototype not running</strong><code>/reports/weekly</code></div></div>
+<section class="mp-rounds" aria-label="Round videos" data-anchor="desktop-rounds" data-illustrates="round-video-show round-video-what acceptance-round-video acceptance-round-video-old" data-beside="composing saved earlier moment updated before down"><div class="mp-round" data-anchor="desktop-round"><div class="mp-player"><div class="mp-video" role="img" tabindex="0" aria-label="Video of round a9c3f52" data-anchor="desktop-round-video"><div class="mp-still mp-still-d" data-show="opened pressed composing saved earlier updated before down"><div class="pr pr-d"><header class="pr-bar"><span>Weekly report</span><span class="pr-week">2026-W01</span></header><main class="pr-main"><section class="pr-cards" aria-label="Teams"><button type="button" class="pr-card"><span class="pr-team">Payments</span><span class="pr-total">1,284</span></button><button type="button" class="pr-card"><span class="pr-team">Search</span><span class="pr-total">962</span></button><button type="button" class="pr-card"><span class="pr-team">Mobile</span><span class="pr-total">731</span></button></section><section class="pr-panel" data-fade="none"><h2>Payments</h2><ol class="pr-weeks"><li><span>2025-W51</span><span>1,190</span></li><li><span>2025-W52</span><span>1,236</span></li><li><span>2026-W01</span><span>1,284</span></li></ol><button type="button" class="pr-export">Export CSV</button><div class="pr-dialog" role="dialog" aria-label="Export" data-show="none"><p><code>payments-2026-W01.csv</code> downloads.</p></div></section></main></div></div><div class="mp-still mp-still-d" data-show="moment"><div class="pr pr-d"><header class="pr-bar"><span>Weekly report</span><span class="pr-week">2026-W01</span></header><main class="pr-main"><section class="pr-cards" aria-label="Teams"><button type="button" class="pr-card" data-sel="opened pressed composing saved earlier moment updated before down"><span class="pr-team">Payments</span><span class="pr-total">1,284</span></button><button type="button" class="pr-card"><span class="pr-team">Search</span><span class="pr-total">962</span></button><button type="button" class="pr-card"><span class="pr-team">Mobile</span><span class="pr-total">731</span></button></section><section class="pr-panel" data-fade="opened pressed composing saved earlier moment updated before down"><h2>Payments</h2><ol class="pr-weeks"><li><span>2025-W51</span><span>1,190</span></li><li><span>2025-W52</span><span>1,236</span></li><li><span>2026-W01</span><span>1,284</span></li></ol><button type="button" class="pr-export">Export CSV</button><div class="pr-dialog" role="dialog" aria-label="Export" data-show="none"><p><code>payments-2026-W01.csv</code> downloads.</p></div></section></main></div></div><span class="mp-cue" data-show="opened pressed composing saved earlier updated before down"><span>1 Totals · Every team's total for the week</span></span><span class="mp-cue" data-show="moment"><span>2 Team open · Payments opens its last three weeks</span></span><div class="mp-controls"><span class="mp-scrub"><i data-show="opened pressed composing saved earlier updated before down" style="width: 0%"></i><i data-show="moment" style="width: 50%"></i></span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11L13 8z" fill="currentColor"/></svg><span><span data-show="opened pressed composing saved earlier updated before down">0:00 / 0:04</span><span data-show="moment">0:02 / 0:04</span></span><span class="mp-gap"></span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/></svg><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="3" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="13" r="1.4" fill="currentColor"/></svg></div></div><div class="mp-rail" data-show="moment updated before down"><button type="button" class="mp-mark" style="left: 50%" aria-label="Thread 2 at 0:02">2</button><span class="mp-time">0:04</span></div></div><div class="mp-round-meta"><span class="mp-round-title">This round’s video</span><span>Recorded from <code title="a9c3f52">a9c3f52</code>, desktop</span><span class="mp-round-note">Captions from the walkthrough’s steps</span><button type="button" class="rv-btn" data-anchor="desktop-earlier" data-expanded="earlier moment updated before down" aria-expanded="false" aria-controls="desktop-rounds-earlier">Earlier rounds (1)</button></div></div><div class="mp-rounds-earlier" id="desktop-rounds-earlier" data-show="earlier moment updated before down"><div class="mp-round" data-anchor="desktop-round-earlier"><div class="mp-player"><div class="mp-video" role="img" tabindex="0" aria-label="Video of round 4e1d0b7"><div class="mp-still mp-still-d" data-show="opened pressed composing saved earlier moment updated before down"><div class="pr pr-d"><header class="pr-bar"><span>Weekly report</span><span class="pr-week">2026-W01</span></header><main class="pr-main"><section class="pr-cards" aria-label="Teams"><button type="button" class="pr-card"><span class="pr-team">Payments</span><span class="pr-total">1,284</span></button><button type="button" class="pr-card"><span class="pr-team">Search</span><span class="pr-total">962</span></button><button type="button" class="pr-card"><span class="pr-team">Mobile</span><span class="pr-total">731</span></button></section><section class="pr-panel" data-fade="none"><h2>Payments</h2><ol class="pr-weeks"><li><span>2025-W51</span><span>1,190</span></li><li><span>2025-W52</span><span>1,236</span></li><li><span>2026-W01</span><span>1,284</span></li></ol><button type="button" class="pr-export">Export CSV</button><div class="pr-dialog" role="dialog" aria-label="Export" data-show="none"><p><code>payments-2026-W01.csv</code> downloads.</p></div></section></main></div></div><span class="mp-cue" data-show="opened pressed composing saved earlier moment updated before down"><span>1 Totals · Every team's total for the week</span></span><div class="mp-controls"><span class="mp-scrub"><i data-show="opened pressed composing saved earlier moment updated before down" style="width: 0%"></i></span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11L13 8z" fill="currentColor"/></svg><span><span data-show="opened pressed composing saved earlier moment updated before down">0:00 / 0:04</span></span><span class="mp-gap"></span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/></svg><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="3" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="13" r="1.4" fill="currentColor"/></svg></div></div></div><div class="mp-round-meta"><span class="mp-round-title">Round 4e1d0b7</span><span>Recorded from <code title="4e1d0b7">4e1d0b7</code>, desktop</span><span class="mp-round-note">Captions from the walkthrough’s steps</span></div></div></div></section>
+<aside class="rv-panel" data-anchor="desktop-panel" data-illustrates="review-chrome" data-show="composing saved earlier moment updated before down" aria-label="Review sidebar"><div class="rv-head">Conversation <span class="rv-count"><span data-show="opened pressed composing">0 threads · 1 question</span><span data-show="saved earlier">1 thread · 1 question</span><span data-show="moment updated before down">2 threads · 1 question</span></span> <span class="rv-sub">· no agent events yet</span><button type="button" class="rv-btn rv-icon rv-toggle" aria-label="Collapse review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M10 2.5v11"/></svg></button><button type="button" class="rv-btn rv-icon rv-gear" aria-label="Review display settings" title="Display settings"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6.34 3.18L6.6 1.4L9.4 1.4L9.66 3.18L11.35 4.15L13.02 3.48L14.42 5.91L13.01 7.03L13.01 8.97L14.42 10.09L13.02 12.52L11.35 11.85L9.66 12.82L9.4 14.6L6.6 14.6L6.34 12.82L4.65 11.85L2.98 12.52L1.58 10.09L2.99 8.97L2.99 7.03L1.58 5.91L2.98 3.48L4.65 4.15z"/><circle cx="8" cy="8" r="2"/></svg></button></div><div class="rv-body"><div class="rv-stream" data-anchor="desktop-stream" data-illustrates="acceptance-prototype-comment acceptance-round-video-comment acceptance-prototype-down"><div class="rv-entry rv-me" data-show="saved earlier moment updated before down"><div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble rv-draft">Show which week the CSV holds.</div></div><button type="button" class="rv-chip">Export button · Step 2 Team open</button><span class="rv-receipt">Draft</span></div><div class="rv-entry rv-me" data-show="moment updated before down"><div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble rv-draft">Fade the panel in a little slower?</div></div><button type="button" class="rv-chip">Round a9c3f52 · 0:02</button><span class="rv-receipt">Draft</span></div><div class="rv-entry rv-them" data-anchor="desktop-question"><div class="rv-msg rv-them"><span class="rv-who">Agent</span><div class="rv-bubble">Should the team panel show a trend line?<div class="rv-choices"><button type="button" class="rv-choice">Totals only (recommended)</button><button type="button" class="rv-choice">Add a trend line</button><button type="button" class="rv-choice rv-words">Reply</button></div></div></div><button type="button" class="rv-chip">Team panel · Step 2 Team open</button></div><div class="rv-compose" data-anchor="desktop-composer" data-show="composing"><div class="rv-anchor">#export-button</div><textarea class="rv-field" aria-label="Comment" placeholder="Comment… (⌘⏎ to send)">Show which week the CSV holds.</textarea><div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri" data-anchor="desktop-send">Comment</button></div></div></div></div><div class="rv-handoff" data-anchor="desktop-handoff"><span class="rv-note"><span data-show="opened pressed composing">0 drafts</span><span data-show="saved earlier">1 draft</span><span data-show="moment updated before down">2 drafts</span></span><button type="button" class="rv-btn">Next TBD</button><button type="button" class="rv-btn rv-pri" data-anchor="desktop-handoff-button" data-show="saved earlier moment updated before down">Hand off to agent →</button><button type="button" class="rv-btn rv-pri" disabled data-show="opened pressed">Hand off to agent →</button><button type="button" class="rv-btn" disabled data-show="composing">Hand off to agent →</button></div></aside>
+<div class="rv-toolbar" data-anchor="desktop-toolbar" data-illustrates="review-chrome acceptance-screen-index-prototype"><button type="button" class="rv-btn rv-tool" aria-pressed="false" title="Comment (C)">Comment</button><span class="rv-status">connected · review-serve · <span data-show="opened pressed composing">0</span><span data-show="saved earlier">1</span><span data-show="moment updated before down">2</span> threads</span></div>
+<div class="rv-toast" role="status" data-show="saved moment">Comment saved as draft — hand off when ready</div>
+<div class="rv-banner" data-anchor="desktop-banner" data-illustrates="prototype-updated acceptance-prototype-updated" data-show="updated" role="status">Prototype updated by agent <button type="button" class="rv-btn">Reload</button></div>
+</section>
+<section data-mockup-frame="phone" data-anchor="phone" data-illustrates="prototype-route round-video-show walkthrough-phone">
+<div class="mp-top" data-anchor="phone-top-line" data-illustrates="review-chrome"><a class="rv-index" href="#review-index"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg><span>Review index</span></a><a class="mp-spec-link" href="#report-page-spec">Report page spec</a><div class="mp-range"><div class="mp-range-row"><span class="mp-pager" role="group" aria-label="Screens" data-anchor="phone-pager" data-illustrates="next-screen-phone"><button type="button" class="rv-btn" aria-label="Previous screen, Export dialog"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg></button><span class="mp-place">3 of 3</span><button type="button" class="rv-btn" disabled aria-label="Next screen"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></button></span><p class="mp-range-copy" title="Changes from 965efc4 2026-01-01 to a9c3f52 2026-01-01" data-show="opened pressed composing saved earlier moment updated down">New since the base</p><p class="mp-range-copy" data-show="before">Changes from <code>4e1d0b7</code> 2026-01-01 to <code>a9c3f52</code> 2026-01-01</p><span class="mp-view" role="group" aria-label="Mockup at the base or now" data-anchor="phone-view" data-illustrates="before-prototype" data-show="before"><button type="button" class="rv-btn" aria-pressed="true">Before</button><button type="button" class="rv-btn" aria-pressed="false">After</button></span><button type="button" class="rv-btn rv-change" aria-expanded="false">Change base</button></div></div><div class="mp-steps" role="group" aria-label="Walkthrough" data-anchor="phone-steps" data-illustrates="walkthrough-phone prototype-steps"><button type="button" class="mp-step" data-anchor="phone-play" aria-pressed="false">Play</button><button type="button" class="mp-step" data-anchor="phone-step-totals" data-pressed="opened down"><span class="mp-step-n">1</span><span>Totals</span></button><button type="button" class="mp-step" data-anchor="phone-step-team-open" data-pressed="pressed composing saved earlier moment updated before"><span class="mp-step-n">2</span><span>Team open</span><span class="mp-step-count" data-show="opened pressed composing">1</span><span class="mp-step-count" data-show="saved earlier">2</span><span class="mp-step-count" data-show="moment updated before down">3</span></button><button type="button" class="mp-step" data-anchor="phone-step-export"><span class="mp-step-n">3</span><span>Export</span></button><span class="mp-caption" aria-live="polite"><span data-show="opened down">Every team's total for the week</span><span data-show="pressed composing saved earlier moment updated before">Payments opens its last three weeks</span><span data-show="none">The export dialog names the file</span></span></div><nav class="rv-dock" aria-label="Review conversations" data-anchor="phone-dock" data-illustrates="review-chrome" data-show="opened pressed earlier updated before"><button type="button" class="rv-btn rv-icon" data-anchor="phone-dock-open" aria-label="Open review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M3.5 6h5A1.5 1.5 0 0 1 10 7.5v3A1.5 1.5 0 0 1 8.5 12H6.5L4 14v-2h-.5A1.5 1.5 0 0 1 2 10.5v-3A1.5 1.5 0 0 1 3.5 6z"/><path d="M6 6V3.5A1.5 1.5 0 0 1 7.5 2h5A1.5 1.5 0 0 1 14 3.5v3A1.5 1.5 0 0 1 12.5 8H12v2l-2-1.5"/></svg></button><div class="rv-dock-threads"><button type="button" class="rv-thread" data-show="earlier updated before">1</button><button type="button" class="rv-thread" data-show="updated before">2</button></div></nav></div>
+<div class="mp-round mp-round-before" data-anchor="phone-before" data-illustrates="before-prototype" data-show="before"><div class="mp-round"><div class="mp-player"><div class="mp-video" role="img" tabindex="0" aria-label="Video of round 4e1d0b7"><div class="mp-still mp-still-p" data-show="opened pressed composing saved earlier moment updated before down"><div class="pr pr-m"><header class="pr-bar"><span>Weekly report</span><span class="pr-week">2026-W01</span></header><main class="pr-main"><section class="pr-cards" aria-label="Teams"><button type="button" class="pr-card"><span class="pr-team">Payments</span><span class="pr-total">1,284</span></button><button type="button" class="pr-card"><span class="pr-team">Search</span><span class="pr-total">962</span></button><button type="button" class="pr-card"><span class="pr-team">Mobile</span><span class="pr-total">731</span></button></section><section class="pr-panel" data-fade="none"><h2>Payments</h2><ol class="pr-weeks"><li><span>2025-W51</span><span>1,190</span></li><li><span>2025-W52</span><span>1,236</span></li><li><span>2026-W01</span><span>1,284</span></li></ol><button type="button" class="pr-export">Export CSV</button><div class="pr-dialog" role="dialog" aria-label="Export" data-show="none"><p><code>payments-2026-W01.csv</code> downloads.</p></div></section></main></div></div><span class="mp-cue" data-show="opened pressed composing saved earlier moment updated before down"><span>1 Totals · Every team's total for the week</span></span><div class="mp-controls"><span class="mp-scrub"><i data-show="opened pressed composing saved earlier moment updated before down" style="width: 0%"></i></span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11L13 8z" fill="currentColor"/></svg><span><span data-show="opened pressed composing saved earlier moment updated before down">0:00 / 0:04</span></span><span class="mp-gap"></span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/></svg><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="3" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="13" r="1.4" fill="currentColor"/></svg></div></div></div><div class="mp-round-meta"><span class="mp-round-title">The round at the base</span><span>Recorded from <code title="4e1d0b7">4e1d0b7</code>, phone</span><span class="mp-round-note">Captions from the walkthrough’s steps</span></div></div></div><div class="mp-stage mp-has-rounds" data-anchor="phone-slots" data-illustrates="review-fit prototype-route acceptance-prototype-frames"><div class="mp-slot" role="group" aria-label="Desktop" data-show="opened pressed composing saved earlier moment updated"><div class="mp-label">Desktop</div><div class="mp-fit mp-held mp-fit-pd" data-anchor="phone-slot-desktop" data-illustrates="acceptance-prototype-comment prototype-marks"><div class="pr pr-d"><header class="pr-bar" data-anchor="phone-d-bar"><span>Weekly report</span><span class="pr-week">2026-W01</span></header><main class="pr-main"><section class="pr-cards" aria-label="Teams" data-anchor="phone-d-cards"><button type="button" class="pr-card" data-anchor="phone-d-payments" data-sel="pressed composing saved earlier moment updated before"><span class="pr-team">Payments</span><span class="pr-total">1,284</span></button><button type="button" class="pr-card" data-anchor="phone-d-search"><span class="pr-team">Search</span><span class="pr-total">962</span></button><button type="button" class="pr-card" data-anchor="phone-d-mobile"><span class="pr-team">Mobile</span><span class="pr-total">731</span></button></section><section class="pr-panel" data-anchor="phone-d-panel" data-fade="pressed composing saved earlier moment updated before"><h2>Payments</h2><ol class="pr-weeks"><li><span>2025-W51</span><span>1,190</span></li><li><span>2025-W52</span><span>1,236</span></li><li><span>2026-W01</span><span>1,284</span></li></ol><button type="button" class="pr-export" data-anchor="phone-d-export" data-target="composing">Export CSV<i class="rv-pin" data-show="saved earlier moment updated">1</i></button><div class="pr-dialog" role="dialog" aria-label="Export" data-anchor="phone-d-dialog" data-show="none"><p><code>payments-2026-W01.csv</code> downloads.</p></div><i class="rv-qmark" data-show="pressed composing saved earlier moment updated before">?</i></section></main></div></div></div><div class="mp-slot" role="group" aria-label="Phone" data-show="opened pressed composing saved earlier moment updated"><div class="mp-label">Phone</div><div class="mp-fit mp-held mp-fit-pp" data-anchor="phone-slot-phone" data-illustrates="prototype-route"><div class="pr pr-m"><header class="pr-bar" data-anchor="phone-p-bar"><span>Weekly report</span><span class="pr-week">2026-W01</span></header><main class="pr-main"><section class="pr-cards" aria-label="Teams" data-anchor="phone-p-cards"><button type="button" class="pr-card" data-anchor="phone-p-payments" data-sel="pressed composing saved earlier moment updated before"><span class="pr-team">Payments</span><span class="pr-total">1,284</span></button><button type="button" class="pr-card" data-anchor="phone-p-search"><span class="pr-team">Search</span><span class="pr-total">962</span></button><button type="button" class="pr-card" data-anchor="phone-p-mobile"><span class="pr-team">Mobile</span><span class="pr-total">731</span></button></section><section class="pr-panel" data-anchor="phone-p-panel" data-fade="pressed composing saved earlier moment updated before"><h2>Payments</h2><ol class="pr-weeks"><li><span>2025-W51</span><span>1,190</span></li><li><span>2025-W52</span><span>1,236</span></li><li><span>2026-W01</span><span>1,284</span></li></ol><button type="button" class="pr-export" data-anchor="phone-p-export">Export CSV</button><div class="pr-dialog" role="dialog" aria-label="Export" data-anchor="phone-p-dialog" data-show="none"><p><code>payments-2026-W01.csv</code> downloads.</p></div><i class="rv-qmark" data-show="pressed composing saved earlier moment updated before">?</i></section></main></div></div></div><div class="mp-down" role="status" data-anchor="phone-down" data-illustrates="prototype-down acceptance-prototype-down" data-show="down"><strong>Prototype not running</strong><code>/reports/weekly</code></div></div>
+<section class="mp-rounds" aria-label="Round videos" data-anchor="phone-rounds" data-illustrates="round-video-show acceptance-round-video-phone"><div class="mp-round" data-anchor="phone-round"><div class="mp-player"><div class="mp-video" role="img" tabindex="0" aria-label="Video of round a9c3f52" data-anchor="phone-round-video"><div class="mp-still mp-still-p" data-show="opened pressed composing saved earlier updated before down"><div class="pr pr-m"><header class="pr-bar"><span>Weekly report</span><span class="pr-week">2026-W01</span></header><main class="pr-main"><section class="pr-cards" aria-label="Teams"><button type="button" class="pr-card"><span class="pr-team">Payments</span><span class="pr-total">1,284</span></button><button type="button" class="pr-card"><span class="pr-team">Search</span><span class="pr-total">962</span></button><button type="button" class="pr-card"><span class="pr-team">Mobile</span><span class="pr-total">731</span></button></section><section class="pr-panel" data-fade="none"><h2>Payments</h2><ol class="pr-weeks"><li><span>2025-W51</span><span>1,190</span></li><li><span>2025-W52</span><span>1,236</span></li><li><span>2026-W01</span><span>1,284</span></li></ol><button type="button" class="pr-export">Export CSV</button><div class="pr-dialog" role="dialog" aria-label="Export" data-show="none"><p><code>payments-2026-W01.csv</code> downloads.</p></div></section></main></div></div><div class="mp-still mp-still-p" data-show="moment"><div class="pr pr-m"><header class="pr-bar"><span>Weekly report</span><span class="pr-week">2026-W01</span></header><main class="pr-main"><section class="pr-cards" aria-label="Teams"><button type="button" class="pr-card" data-sel="opened pressed composing saved earlier moment updated before down"><span class="pr-team">Payments</span><span class="pr-total">1,284</span></button><button type="button" class="pr-card"><span class="pr-team">Search</span><span class="pr-total">962</span></button><button type="button" class="pr-card"><span class="pr-team">Mobile</span><span class="pr-total">731</span></button></section><section class="pr-panel" data-fade="opened pressed composing saved earlier moment updated before down"><h2>Payments</h2><ol class="pr-weeks"><li><span>2025-W51</span><span>1,190</span></li><li><span>2025-W52</span><span>1,236</span></li><li><span>2026-W01</span><span>1,284</span></li></ol><button type="button" class="pr-export">Export CSV</button><div class="pr-dialog" role="dialog" aria-label="Export" data-show="none"><p><code>payments-2026-W01.csv</code> downloads.</p></div></section></main></div></div><span class="mp-cue" data-show="opened pressed composing saved earlier updated before down"><span>1 Totals · Every team's total for the week</span></span><span class="mp-cue" data-show="moment"><span>2 Team open · Payments opens its last three weeks</span></span><div class="mp-controls"><span class="mp-scrub"><i data-show="opened pressed composing saved earlier updated before down" style="width: 0%"></i><i data-show="moment" style="width: 50%"></i></span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11L13 8z" fill="currentColor"/></svg><span><span data-show="opened pressed composing saved earlier updated before down">0:00 / 0:04</span><span data-show="moment">0:02 / 0:04</span></span><span class="mp-gap"></span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/></svg><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="3" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="13" r="1.4" fill="currentColor"/></svg></div></div><div class="mp-rail" data-show="moment updated before down"><button type="button" class="mp-mark" style="left: 50%" aria-label="Thread 2 at 0:02">2</button><span class="mp-time">0:04</span></div></div><div class="mp-round-meta"><span class="mp-round-title">This round’s video</span><span>Recorded from <code title="a9c3f52">a9c3f52</code>, phone</span><span class="mp-round-note">Captions from the walkthrough’s steps</span><button type="button" class="rv-btn" data-anchor="phone-earlier" data-expanded="earlier moment updated before down" aria-expanded="false" aria-controls="phone-rounds-earlier">Earlier rounds (1)</button></div></div><div class="mp-rounds-earlier" id="phone-rounds-earlier" data-show="earlier moment updated before down"><div class="mp-round" data-anchor="phone-round-earlier"><div class="mp-player"><div class="mp-video" role="img" tabindex="0" aria-label="Video of round 4e1d0b7"><div class="mp-still mp-still-p" data-show="opened pressed composing saved earlier moment updated before down"><div class="pr pr-m"><header class="pr-bar"><span>Weekly report</span><span class="pr-week">2026-W01</span></header><main class="pr-main"><section class="pr-cards" aria-label="Teams"><button type="button" class="pr-card"><span class="pr-team">Payments</span><span class="pr-total">1,284</span></button><button type="button" class="pr-card"><span class="pr-team">Search</span><span class="pr-total">962</span></button><button type="button" class="pr-card"><span class="pr-team">Mobile</span><span class="pr-total">731</span></button></section><section class="pr-panel" data-fade="none"><h2>Payments</h2><ol class="pr-weeks"><li><span>2025-W51</span><span>1,190</span></li><li><span>2025-W52</span><span>1,236</span></li><li><span>2026-W01</span><span>1,284</span></li></ol><button type="button" class="pr-export">Export CSV</button><div class="pr-dialog" role="dialog" aria-label="Export" data-show="none"><p><code>payments-2026-W01.csv</code> downloads.</p></div></section></main></div></div><span class="mp-cue" data-show="opened pressed composing saved earlier moment updated before down"><span>1 Totals · Every team's total for the week</span></span><div class="mp-controls"><span class="mp-scrub"><i data-show="opened pressed composing saved earlier moment updated before down" style="width: 0%"></i></span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11L13 8z" fill="currentColor"/></svg><span><span data-show="opened pressed composing saved earlier moment updated before down">0:00 / 0:04</span></span><span class="mp-gap"></span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/></svg><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="3" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="13" r="1.4" fill="currentColor"/></svg></div></div></div><div class="mp-round-meta"><span class="mp-round-title">Round 4e1d0b7</span><span>Recorded from <code title="4e1d0b7">4e1d0b7</code>, phone</span><span class="mp-round-note">Captions from the walkthrough’s steps</span></div></div></div></section>
+<aside class="rv-panel" data-anchor="phone-panel" data-show="composing saved moment down" aria-label="Review sidebar"><div class="rv-head">Conversation <span class="rv-count"><span data-show="opened pressed composing">0 threads · 1 question</span><span data-show="saved earlier">1 thread · 1 question</span><span data-show="moment updated before down">2 threads · 1 question</span></span> <span class="rv-sub">· no agent events yet</span><button type="button" class="rv-btn rv-icon rv-toggle" aria-label="Collapse review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M10 2.5v11"/></svg></button><button type="button" class="rv-btn rv-icon rv-gear" aria-label="Review display settings" title="Display settings"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6.34 3.18L6.6 1.4L9.4 1.4L9.66 3.18L11.35 4.15L13.02 3.48L14.42 5.91L13.01 7.03L13.01 8.97L14.42 10.09L13.02 12.52L11.35 11.85L9.66 12.82L9.4 14.6L6.6 14.6L6.34 12.82L4.65 11.85L2.98 12.52L1.58 10.09L2.99 8.97L2.99 7.03L1.58 5.91L2.98 3.48L4.65 4.15z"/><circle cx="8" cy="8" r="2"/></svg></button></div><div class="rv-body"><div class="rv-stream" data-anchor="phone-stream" data-illustrates="acceptance-prototype-comment acceptance-round-video-comment acceptance-prototype-down"><div class="rv-entry rv-me" data-show="saved earlier moment updated before down"><div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble rv-draft">Show which week the CSV holds.</div></div><button type="button" class="rv-chip">Export button · Step 2 Team open</button><span class="rv-receipt">Draft</span></div><div class="rv-entry rv-me" data-show="moment updated before down"><div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble rv-draft">Fade the panel in a little slower?</div></div><button type="button" class="rv-chip">Round a9c3f52 · 0:02</button><span class="rv-receipt">Draft</span></div><div class="rv-entry rv-them" data-anchor="phone-question"><div class="rv-msg rv-them"><span class="rv-who">Agent</span><div class="rv-bubble">Should the team panel show a trend line?<div class="rv-choices"><button type="button" class="rv-choice">Totals only (recommended)</button><button type="button" class="rv-choice">Add a trend line</button><button type="button" class="rv-choice rv-words">Reply</button></div></div></div><button type="button" class="rv-chip">Team panel · Step 2 Team open</button></div><div class="rv-compose" data-anchor="phone-composer" data-show="composing"><div class="rv-anchor">#export-button</div><textarea class="rv-field" aria-label="Comment" placeholder="Comment… (⌘⏎ to send)">Show which week the CSV holds.</textarea><div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri" data-anchor="phone-send">Comment</button></div></div></div></div></aside>
+<div class="rv-toolbar" data-anchor="phone-toolbar" data-illustrates="review-chrome"><button type="button" class="rv-btn rv-tool" aria-pressed="false">Comment</button><div class="rv-inline-handoff" data-anchor="phone-handoff"><span class="rv-note"><span data-show="opened pressed composing">0 drafts</span><span data-show="saved earlier">1 draft</span><span data-show="moment updated before down">2 drafts</span></span><button type="button" class="rv-btn">Next TBD</button><button type="button" class="rv-btn rv-pri" data-anchor="phone-handoff-button" data-show="saved earlier moment updated before down">Hand off to agent →</button><button type="button" class="rv-btn rv-pri" disabled data-show="opened pressed">Hand off to agent →</button><button type="button" class="rv-btn" disabled data-show="composing">Hand off to agent →</button></div><span class="rv-status">connected · review-serve · <span data-show="opened pressed composing">0</span><span data-show="saved earlier">1</span><span data-show="moment updated before down">2</span> threads</span></div>
+<div class="rv-toast" role="status" data-show="saved moment">Comment saved as draft — hand off when ready</div>
+<div class="rv-banner" data-anchor="phone-banner" data-illustrates="prototype-updated acceptance-prototype-updated" data-show="updated" role="status">Prototype updated by agent <button type="button" class="rv-btn">Reload</button></div>
+</section>
+<ol data-mockup-steps>
+  <li data-step="opened" data-illustrates="acceptance-prototype-frames prototype-route acceptance-round-video acceptance-round-video-phone round-video-show round-video-what acceptance-screen-index-prototype acceptance-screen-index-phone-open">Weekly report's route held in a desktop frame and a phone frame under the top line and the step bar, this round's video under them</li>
+  <li data-step="pressed" data-step-by="desktop-d-payments desktop-p-payments phone-d-payments phone-p-payments desktop-step-team-open phone-step-team-open" data-illustrates="acceptance-prototype-press prototype-steps acceptance-fit-settles-prototype walkthrough-press">Payments pressed in the desktop frame: the route opens its team panel with its own motion, and the step bar shows 2 Team open</li>
+  <li data-step="composing" data-step-by="desktop-d-export phone-d-export" data-illustrates="prototype-route review-targets">Comment, then Export CSV in the desktop frame: the comment box opens on the export button</li>
+  <li data-step="saved" data-step-by="desktop-send phone-send" data-illustrates="acceptance-prototype-comment prototype-marks">Comment: the button shows a pin, and the conversation's newest thread is a draft naming Export button and Step 2 Team open</li>
+  <li data-step="earlier" data-step-by="desktop-earlier phone-earlier" data-illustrates="acceptance-round-video-old round-video-show">Earlier rounds (1): the older round's video under this round's, by its commit</li>
+  <li data-step="moment" data-step-by="desktop-round-video phone-round-video" data-illustrates="acceptance-round-video-comment round-video-comment">Paused at 0:02, then comment mode and a click on the video: a new thread reading Round a9c3f52 · 0:02, marked on its rail</li>
+  <li data-step="updated" data-illustrates="acceptance-prototype-updated prototype-updated">The agent commits to the lane branch: Prototype updated by agent with Reload, the frames as they loaded</li>
+  <li data-step="before" data-illustrates="before-prototype">Compared from round 4e1d0b7, then Before: the round recorded there plays in the frames' place</li>
+  <li data-step="down" data-illustrates="acceptance-prototype-down prototype-down">The prototype stops answering: Prototype not running with the route, and the conversation still holds its threads and question</li>
+</ol>
+</body>
+</html>

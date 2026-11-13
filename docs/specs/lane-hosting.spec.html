@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./.style/spec.css">
+<title>One lane slug across repositories</title>
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">One lane slug across repositories</h1>
+<nav data-anchor="breadcrumbs">docs / specs / lane-hosting.spec.html</nav>
+<p data-anchor="context">Extends <code>skill/review-spec/SKILL.md</code>, Remote hosting lifecycle. A spec lives in its repository and nowhere else. The lane slug is only a review-host name: it groups the specs one lane is changing, possibly in several repositories, under one review URL prefix and one index lane while the lane is open, and teardown deletes it.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="false" data-anchor="story-one-slug">As a lane owner whose specs span repositories, I register every spec under the lane slug, so everything that reads the lane slug finds them all.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-stable-url">As a reviewer, a spec's review URL stays the same when the lane adds a spec from another repository.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="lane-hosting" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-second-root" data-story="story-one-slug story-stable-url"><span data-acceptance-scenario>Given a lane owner whose lane already serves one project's specs from one repository, a fixture must be added to provide it. When they register a spec from a second project in another repository under the same lane slug and open the new spec's review link.</span> <span data-acceptance-observable>Then the new spec opens at a URL naming its project, with its own stylesheet and review controls.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-second-root-kept" data-story="story-one-slug story-stable-url"><span data-acceptance-scenario>Given a lane owner whose lane already serves one project's specs from one repository, a fixture must be added to provide it. When they register a spec from a second project in another repository under the same lane slug, then open one of the earlier project's specs at its review URL.</span> <span data-acceptance-observable>Then that spec opens at the review URL it had before the second project was registered.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-path-field" data-story="story-one-slug"><span data-acceptance-scenario>Given a lane owner. When they register any spec.</span> <span data-acceptance-observable>Then the registry row records as its path the URL path its spec is served at, without the leading slash, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-same-project" data-story="story-one-slug"><span data-acceptance-scenario>Given a lane owner whose spec is already registered, a fixture must be added to provide it. When they register it again under the same slug, project, and spec path from another root, such as a recreated worktree, then open the spec's review URL.</span> <span data-acceptance-observable>Then the spec opens at its same review URL, served from the new root and base.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-same-project-others" data-story="story-one-slug"><span data-acceptance-scenario>Given a lane owner whose spec is already registered beside other registered specs, a fixture must be added to provide it. When they register it again under the same slug, project, and spec path from another root, such as a recreated worktree, then open another registered spec's review URL.</span> <span data-acceptance-observable>Then that other spec opens at its same review URL.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-legacy-row" data-story="story-one-slug"><span data-acceptance-scenario>Given a lane owner with a spec row that records no project. When they register that spec again at the same slug, root, and spec path.</span> <span data-acceptance-observable>Then that same row gains the project and keeps its id and review URL, and no second row exists, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-remove" data-story="story-stable-url"><span data-acceptance-scenario>Given a lane owner whose lane serves specs from two projects, a fixture must be added to provide it. When they remove one project's specs from the lane, then open a spec of the other project at its review URL.</span> <span data-acceptance-observable>Then that spec still opens at its same review URL.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-review-state" data-story="story-one-slug"><span data-acceptance-scenario>Given a lane owner whose lane serves specs from two roots, each spec with its own threads and base, a fixture must be added to provide it. When they open a spec from one root.</span> <span data-acceptance-observable>Then the page shows that spec's own threads and compares against that root's base.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-review-state-other" data-story="story-one-slug"><span data-acceptance-scenario>Given a lane owner whose lane serves specs from two roots, each spec with its own threads and base, a fixture must be added to provide it. When they open a spec from one root and then a spec from the other root.</span> <span data-acceptance-observable>Then the page shows the other root's spec's own threads and compares against the other root's base.</span></p>
+<p data-anchor="lane-rules-note">Onboarding: not needed, a lane slug adds no user surface.
+Never strip proof clauses or rewrite unedited criteria: kept, each criterion here keeps its proof clause word for word, as <a href="#acceptance-path-field">the path field criterion</a> does (<a href="./prompt-first-shaping.spec.html#acceptance-proof-clause-rule">shaping rule</a>, <a href="./prompt-first-shaping.spec.html#acceptance-proof-clause-rule-repair">repair rule</a>).
+One hand-off control for desktop and phone: kept, a lane slug adds no page and no control; each spec it serves keeps its review panel&rsquo;s one Hand off (<a href="./prompt-first-shaping.spec.html#acceptance-one-handoff-rule">phone rule</a>, <a href="./prompt-first-shaping.spec.html#acceptance-one-handoff-rule-desktop">desktop rule</a>).
+Any origin only without login or cookie: kept, a lane slug adds no login and no cookie (<a href="./served-pages.spec.html#acceptance-origin-safe">rule</a>).
+Threads read as one conversation: kept, this spec shows no thread (<a href="./threads.spec.html#acceptance-stream-rule">rule</a>).
+Every mockup at production fidelity: kept, this spec has no screen; the review index has its own spec, <a href="./review-index.spec.html">review index</a> (<a href="./mockups.spec.html#acceptance-fidelity-rule">rule</a>).</p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-host"><span data-boundary-responsibility>The review host owns which root serves which path under a slug and records it as the row's <code>path</code>.</span> <span data-boundary-seam>Caller-facing seam: <code>review-host register</code> and the registry rows.</span> <span data-boundary-dependency>Dependency direction: self-contained; the review server reads the rows and never decides paths itself.</span> <span data-boundary-scope>Observable scope: registry rows, served URLs, the review index, and registration errors.</span></p>
+<p data-modular-boundary data-anchor="boundary-readers"><span data-boundary-responsibility>Registry readers such as a worklane board own nothing here; they take each row's <code>path</code> as its served path.</span> <span data-boundary-seam>Caller-facing seam: the row's <code>path</code>.</span> <span data-boundary-dependency>Dependency direction: external-provider; readers depend on the registry, never the reverse.</span> <span data-boundary-scope>Observable scope: links built from <code>path</code>.</span></p>
+</section>
+
+<section data-anchor="paths">
+<h2>Served paths</h2>
+<p data-anchor="paths-rule">A slug may hold several roots. A row's path is fixed when it is first registered: <code>&lt;slug&gt;/&lt;spec&gt;</code> while no other project holds rows under the slug, else <code>&lt;slug&gt;/&lt;project&gt;/&lt;spec&gt;</code>, spec pages and their relative assets alike, so the URL names the project only when needed.</p>
+<div class="table-scroll" data-anchor="paths-table-scroll">
+<table data-anchor="paths-table">
+<thead><tr><th>Row</th><th>Served path</th></tr></thead>
+<tbody>
+<tr data-anchor="paths-row-primary"><td>New row while no other project holds rows under the slug</td><td><code>&lt;slug&gt;/&lt;spec&gt;</code></td></tr>
+<tr data-anchor="paths-row-other"><td>New row while another project holds rows under the slug</td><td><code>&lt;slug&gt;/&lt;project&gt;/&lt;spec&gt;</code></td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="paths-project">The project is the resource's <code>PROJECT_ID</code> as given at registration, recorded in the row as <code>project</code>.</p>
+<p data-anchor="paths-primary-stays">Re-registering a row keeps its path. A new row gets the plain form only when no other project holds rows under the slug.</p>
+<p data-anchor="paths-field">Each registry row records its served path as <code>path</code>. Readers use it rather than rebuilding a path from <code>slug</code> and <code>spec</code>.</p>
+</section>
+
+
+</article>
+</body>
+</html>

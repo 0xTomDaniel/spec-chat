@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Review surface compatibility - spec</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./.style/spec.css">
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Review surface compatibility</h1>
+<nav data-anchor="breadcrumbs">docs / specs / review-preflight.spec.html</nav>
+<p data-anchor="context">Before review opens, one preflight checks a target&rsquo;s runtime against the bundled runtime&rsquo;s capabilities and migrates it in its own commit.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories" id="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-compatible-review">As a reviewer, I want the same required review capabilities in every repository so an old vendored runtime cannot silently remove controls, focus, or visuals.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="review-preflight" data-anchor="acceptance" id="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-preflight" data-story="story-compatible-review"><span data-acceptance-scenario>Given a feature author whose target's review runtime lacks a capability the bundled runtime requires, a fixture must be added to provide it, When the author opens review,</span> <span data-acceptance-observable>Then the reviewer's page has every required capability, the runtime replaced from the bundle before the server started.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-preflight-server" data-story="story-compatible-review"><span data-acceptance-scenario>Given a feature author whose target repository holds its own copy of a review server, a fixture must be added to provide it, When the author opens review,</span> <span data-acceptance-observable>Then the reviewer's page is served by Spec Chat's own bundled server with every required capability, and the target's copy is unchanged.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-preflight-current" data-story="story-compatible-review"><span data-acceptance-scenario>Given a feature author whose target's review assets declare every required capability, a fixture must be added to provide it, When the author opens review,</span> <span data-acceptance-observable>Then the page opens with the target's own assets, left untouched.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-preflight-fail" data-story="story-compatible-review"><span data-acceptance-scenario>Given a feature author whose target's review runtime lacks a required capability, a fixture must be added to provide it, When the author opens review and preflight fails, which needs an induced failure: preflight replacement,</span> <span data-acceptance-observable>Then the failed preflight shows as a review blocker.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-preflight-own-change" data-story="story-compatible-review"><span data-acceptance-scenario>Given a feature author shaping a feature in a target whose review runtime lacks a required capability, a fixture must be added to provide it, When shaping opens review,</span> <span data-acceptance-observable>Then the migration shows as its own commit touching only the shared runtime assets, the hand-off names that commit, it ships inside the feature's change with no separate change or earlier merge to main, and no feature spec commit contains runtime files.</span></p>
+<p data-anchor="acceptance-rules-note">Onboarding: not needed, preflight adds no user surface.
+CI: the preflight tests run in CI with no other tool of the box installed and no provider file (<a href="./review-service.spec.html#acceptance-ci-alone">CI rule</a>).
+One hand-off control for desktop and phone: not affected, preflight adds no hand-off control (<a href="./prompt-first-shaping.spec.html#acceptance-one-handoff-rule">phone rule</a>, <a href="./prompt-first-shaping.spec.html#acceptance-one-handoff-rule-desktop">desktop rule</a>).
+Never strip proof clauses or rewrite unedited criteria: not affected, no criterion here carries a proof clause (<a href="./prompt-first-shaping.spec.html#acceptance-proof-clause-rule">shaping rule</a>, <a href="./prompt-first-shaping.spec.html#acceptance-proof-clause-rule-repair">repair rule</a>).
+Every mockup at production fidelity: not affected, preflight changes no screen (<a href="./mockups.spec.html#acceptance-fidelity-rule">rule</a>).</p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries" id="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-preflight"><span data-boundary-responsibility>Preflight owns the capability check and migration.</span> <span data-boundary-seam>Caller-facing seam: the runtime&rsquo;s <code>spec-chat-capabilities</code> line and <code>scripts/preflight.py</code>&rsquo;s result line.</span> <span data-boundary-dependency>Dependency direction: self-contained; reads the bundle and the target, commits only the shared runtime assets.</span> <span data-boundary-scope>Observable scope: the migration commit and a visible blocker.</span></p>
+</section>
+
+<section data-anchor="review-surface-compatibility" id="review-surface-compatibility">
+<h2>Review surface compatibility</h2>
+<p data-anchor="compatibility-seam">The review-surface preflight is the single seam that verifies a target spec, browser runtime, and local transport before review opens.</p>
+<p data-anchor="compatibility-capabilities">Compatibility is checked for the target runtime only, from explicit capabilities required by the current bundled runtime rather than global skill freshness, file age, or an external registry.</p>
+<p data-anchor="compatibility-migrate">When the target runtime lacks a required capability, preflight replaces it from the current self-contained skill bundle before the server starts; the review server is always the skill's own bundled <code>assets/review-serve.py</code>, so it is never copied into the target.</p>
+<p data-anchor="compatibility-preserve">A committed target asset declaring every required capability remains untouched even when its implementation or pin differs from the bundle.
+In a Git target, a runtime that declares them only in uncommitted changes is replaced and committed as a migration.</p>
+<p data-anchor="compatibility-pair">Git focus needs both the bundled server's read-only baseline route and the target runtime's browser behavior.</p>
+<p data-anchor="compatibility-own-change">In a Git target, a migration of the shared review runtime is its own commit, never mixed into a feature commit: preflight commits it alone, touching only the shared runtime assets, and the hand-off names that commit; it ships inside the same change as the feature, never as a separate change or an earlier merge to the target's main branch.
+In a plain directory outside Git, preflight replaces the runtime in place with no commit.</p>
+<p data-anchor="compatibility-live-restart">A running review server serves the migrated runtime on its next request, with no restart.</p>
+<p data-anchor="compatibility-http-proof">Before a review handoff, the agent verifies served runtime capabilities and uses the read-only verifier to compare served spec bytes with the local file plus the meta the service adds (<a href="./review-service.spec.html#published-spec-page">served spec page</a>), and baseline HTML with local files and Git, including new-file baselines, as the service's own <a href="./review-service.spec.html#service-proof">proof</a> checks them before <code>register</code> reports a link.</p>
+<p data-anchor="compatibility-visual-target">Every semantic visual island has a render target in the same parent, and a missing target blocks publication rather than silently producing prose-only output.</p>
+<p data-anchor="compatibility-failure">A failed migration or preflight is a visible review blocker.</p>
+<p data-anchor="compatibility-no-service">Preflight adds no service, registry, package dependency, background updater, or cross-repository control plane.</p>
+</section>
+
+</article>
+</body>
+</html>

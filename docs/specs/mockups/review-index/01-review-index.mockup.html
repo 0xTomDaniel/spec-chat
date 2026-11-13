@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-prototype" content="/">
+<title>Review index - mockup</title>
+<script defer src="../../.viz/runtime.js"></script>
+</head>
+<body>
+<ul data-mockup-regions>
+<li data-anchor="find" data-select=".ui-find" data-illustrates="index-find acceptance-index-find-shared">Find</li>
+<li data-anchor="needs-you" data-select="nav.part[aria-label=&quot;Needs you&quot;]" data-illustrates="index-sections">Needs you</li>
+<li data-anchor="in-progress" data-select="nav.part[aria-label=&quot;In progress&quot;]" data-illustrates="index-sections acceptance-index-find-lane">In progress</li>
+<li data-anchor="settled" data-select="details.settled" data-illustrates="index-sections acceptance-index-find-title">Settled</li>
+<li data-anchor="no-match" data-select=".ui-find-none" data-illustrates="acceptance-index-find-none">No spec matches</li>
+</ul>
+<ol data-mockup-steps>
+<li data-step="opens" data-illustrates="index-find index-design">The index as it opens: Find above Needs you, In progress, and a closed Settled</li>
+<li data-step="find-title" data-illustrates="acceptance-index-find-title">Typing sorting leaves only Report sorting, inside an open Settled<ul><li data-type=".ui-find input" data-text="sorting"></li></ul></li>
+<li data-step="find-lane" data-illustrates="acceptance-index-find-lane">Typing qa-12 leaves only QA-12, under In progress, with Report filters<ul><li data-type=".ui-find input" data-text="qa-12"></li></ul></li>
+<li data-step="find-name" data-illustrates="acceptance-index-find-name">Typing later-only leaves Report filters in QA-12 and inside an open Settled<ul><li data-type=".ui-find input" data-text="later-only"></li></ul></li>
+<li data-step="find-none" data-illustrates="acceptance-index-find-none">Typing payroll leaves No spec matches<ul><li data-type=".ui-find input" data-text="payroll"></li></ul></li>
+<li data-step="cleared" data-illustrates="acceptance-index-find-clear">Find cleared: every lane and spec shows again, Settled closed<ul><li data-type=".ui-find input" data-text=""></li></ul></li>
+</ol>
+</body>
+</html>

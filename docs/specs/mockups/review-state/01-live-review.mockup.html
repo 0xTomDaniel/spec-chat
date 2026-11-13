@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-design-source" content="skill/review-spec/assets/viz/runtime.js@495bc8f5b skill/shape-spec/assets/style/spec.css@5de1bcc8a design-set.toml@553b61008 docs/specs/spec-page-design.spec.html@ae1f4b146 DESIGN.md@eb97aaac4">
+<title>Live review - mockup</title>
+<style>
+  [data-mockup-frame] {
+    --ui-page: #ffffff; --ui-surface: #ffffff; --ui-surface-soft: #f5f5f5; --ui-ink: #333333; --ui-muted: #525252;
+    --ui-muted-soft: #eeeeee; --ui-border: #dfdfdf; --ui-action: #1d4ed8; --ui-action-soft: #eff3ff;
+    --ui-link: var(--ui-action); --ui-focus: var(--ui-action); --ui-pass: #005c32; --ui-pass-soft: #e6efea;
+    --ui-fail: #a5000f; --ui-fail-soft: #f6e6e7; --ui-attention: #b0540e; --ui-attention-soft: #faf4ef;
+    --ui-font: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --ui-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --ui-text-xs: 12px; --ui-text-ui: 13px; --ui-text-sm: 14px; --ui-text-md: 16px; --ui-text-lg: 20px; --ui-text-xl: 24px; --ui-text-2xl: 30px;
+    --ui-weight-regular: 400; --ui-weight-medium: 500; --ui-weight-semibold: 600;
+    --ui-space-1: 4px; --ui-space-2: 8px; --ui-space-3: 12px; --ui-space-4: 16px; --ui-space-5: 24px; --ui-space-6: 32px;
+    --ui-radius-sm: 6px; --ui-radius: 8px; --ui-radius-pill: 999px; --ui-focus-width: 2px; --ui-focus-offset: 2px;
+    --ui-motion-duration: 150ms; --ui-motion-ease: ease-out;
+    --ui-draft: var(--ui-attention); --ui-draft-soft: var(--ui-attention-soft); --ui-ack: var(--ui-action); --ui-ack-soft: var(--ui-action-soft);
+    --ui-resolved: var(--ui-pass); --ui-resolved-soft: var(--ui-pass-soft); --ui-error: var(--ui-fail);
+    --ui-marker: #767b85; --ui-marker-important: #d1242f; --ui-marker-pass: #1a7f37; --ui-on-marker: #ffffff; --ui-marker-warning: #e5534b;
+    --ui-pin-ring: rgba(176, 84, 14, 0.25); --ui-shadow: rgba(51, 51, 51, 0.14); --ui-veil: rgba(0, 0, 0, 0.42);
+    --spec-paper: #ffffff; --spec-ink: #333333; --spec-body: #333333; --spec-muted: #525252; --spec-focus-context: #525252;
+    --spec-hairline: #dfdfdf; --spec-blue: #1d4ed8;
+    --spec-font: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --spec-text-meta: 12px; --spec-text-small: 14px; --spec-text-lede: 16px; --spec-text-heading: 24px; --spec-text-display: 30px;
+    --spec-weight-regular: 400; --spec-weight-semibold: 600; --spec-max: 1080px; --spec-measure: 72ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    [data-mockup-frame] {
+      --ui-page: #1a1a1a; --ui-surface: #242424; --ui-surface-soft: #2a2a2a; --ui-ink: #e0e0e0; --ui-muted: #999999;
+      --ui-muted-soft: #2e2e2e; --ui-border: #3a3a3a; --ui-action: #7896ef; --ui-action-soft: #1a2040; --ui-pass: #3daa6e;
+      --ui-pass-soft: #1a2e22; --ui-fail: #ffb4ab; --ui-fail-soft: #2e1a1c; --ui-attention: #e5873a; --ui-attention-soft: #2e2218;
+      --ui-pin-ring: rgba(229, 135, 58, 0.25); --ui-shadow: rgba(0, 0, 0, 0.4); --ui-veil: rgba(0, 0, 0, 0.6);
+      --spec-paper: #1a1a1a; --spec-ink: #e0e0e0; --spec-body: #e0e0e0; --spec-muted: #999999; --spec-focus-context: #999999;
+      --spec-hairline: #3a3a3a; --spec-blue: #7896ef;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-mockup-frame] { --ui-motion-duration: 0ms; }
+  }
+
+  [data-mockup-frame] { box-sizing: border-box; position: relative; overflow: hidden; background: var(--ui-page); color: var(--ui-ink);
+                        font: var(--ui-weight-regular) var(--ui-text-sm)/1.4 var(--ui-font); }
+  [data-mockup-frame="desktop"] { width: 1440px; min-height: 900px; }
+  [data-mockup-frame="phone"] { width: 390px; min-height: 844px; }
+  [data-mockup-frame] *, [data-mockup-frame] *::before, [data-mockup-frame] *::after { box-sizing: border-box; }
+  [data-mockup-frame] :focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .rv-btn { font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); color: var(--ui-ink); background: var(--ui-surface);
+            border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); min-height: var(--ui-space-6); margin: 0;
+            padding: var(--ui-space-2) var(--ui-space-3); white-space: nowrap; cursor: pointer;
+            transition: background var(--ui-motion-duration) var(--ui-motion-ease), color var(--ui-motion-duration) var(--ui-motion-ease); }
+  .rv-btn:hover { background: var(--ui-surface-soft); }
+  .rv-btn:active { background: var(--ui-muted-soft); }
+  .rv-btn:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .rv-btn:disabled { cursor: default; opacity: .45; }
+  .rv-btn:disabled:hover { background: var(--ui-surface); }
+  .rv-pri { background: var(--ui-ink); color: var(--ui-page); border-color: var(--ui-ink); }
+  .rv-pri:hover { background: var(--ui-muted); border-color: var(--ui-muted); }
+  .rv-pri:active { background: var(--ui-ink); }
+  .rv-pri:disabled:hover { background: var(--ui-ink); border-color: var(--ui-ink); }
+  .rv-text { border-color: transparent; background: transparent; }
+  .rv-icon { width: var(--ui-space-6); height: var(--ui-space-6); padding: 0; display: grid; place-items: center; color: var(--ui-muted); }
+  .rv-icon:hover { background: var(--ui-page); color: var(--ui-ink); }
+  .rv-btn svg { display: block; flex: 0 0 auto; }
+  [data-mockup-frame="phone"] .rv-btn { min-height: 44px; }
+  [data-mockup-frame="phone"] .rv-icon { width: 44px; height: 44px; }
+
+  /* index link (review-index #index-link): a chevron and Review index at the start of the top line */
+  .rv-index { flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--ui-space-1); min-height: var(--ui-space-6);
+              border-radius: var(--ui-radius-sm); color: var(--ui-ink); font: var(--ui-weight-medium) var(--ui-text-xs)/1 var(--ui-font); text-decoration: none; }
+  .rv-index:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .rv-index svg { display: block; color: var(--ui-muted); }
+  .rv-change { border: none; background: transparent; }
+  [data-mockup-frame="phone"] .rv-index { min-height: 44px; padding: 0 var(--ui-space-1); }
+  /* toolbar (spec-page-design #surface-toolbar): bottom center on a desktop; on a phone the bottom toolbar holding the
+     panel's one hand-off bar (prompt-first-shaping #mobile-handoff) */
+  .rv-toolbar { position: absolute; z-index: 12; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: var(--ui-space-1); align-items: center;
+                white-space: nowrap; background: var(--ui-page); border: 1px solid var(--ui-border); border-radius: var(--ui-radius);
+                box-shadow: 0 8px 28px var(--ui-shadow); padding: var(--ui-space-1); font: var(--ui-text-sm) var(--ui-font); }
+  .rv-toolbar .rv-tool { border-color: transparent; background: transparent; }
+  .rv-toolbar .rv-tool:hover { background: var(--ui-surface-soft); }
+  .rv-status { color: var(--ui-muted); font-size: var(--ui-text-xs); padding: 0 var(--ui-space-2); }
+  .rv-offline { color: var(--ui-ink); font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); padding: 0 var(--ui-space-2); }
+  [data-mockup-frame="phone"] .rv-toolbar { left: var(--ui-space-3); right: var(--ui-space-3); bottom: 10px; transform: none; flex-wrap: wrap; white-space: normal; }
+  [data-mockup-frame="phone"] .rv-toolbar .rv-btn { flex: 1 1 auto; }
+  [data-mockup-frame="phone"] .rv-toolbar .rv-note { flex: 1 1 auto; }
+  [data-mockup-frame="phone"] .rv-toolbar .rv-status { flex: 1 0 100%; min-width: 0; padding: 0 var(--ui-space-2) var(--ui-space-1); text-align: center;
+                                                        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rv-inline-handoff { display: contents; }
+  .rv-note { font-size: var(--ui-text-xs); color: var(--ui-muted); }
+  /* thread dock (#surface-dock): top right under the top line, gone while the panel is open */
+  .rv-dock { position: absolute; z-index: 7; right: var(--ui-space-3); display: flex; flex-direction: column; gap: var(--ui-space-1);
+             padding: var(--ui-space-1); background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); }
+  .rv-dock .rv-icon { border: 1px solid var(--ui-border); background: var(--ui-surface); border-radius: var(--ui-radius-sm); }
+  .rv-dock .rv-thread { width: var(--ui-space-6); height: var(--ui-space-6); padding: 0; display: grid; place-items: center; font: var(--ui-weight-semibold) var(--ui-text-xs)/1 var(--ui-mono);
+                        border: 1px solid var(--ui-draft); color: var(--ui-draft); background: var(--ui-draft-soft); border-radius: var(--ui-radius-sm); }
+  .rv-dock .rv-thread.rv-ack { border-color: var(--ui-ack); color: var(--ui-ack); background: var(--ui-ack-soft); }
+  .rv-dock .rv-thread.rv-done { border-color: var(--ui-resolved); color: var(--ui-resolved); background: var(--ui-resolved-soft); }
+  .rv-dock-threads { display: flex; flex-direction: column; gap: var(--ui-space-1); border-top: 1px solid var(--ui-border); padding-top: var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-dock { right: var(--ui-space-2); }
+  [data-mockup-frame="phone"] .rv-dock .rv-thread { width: 44px; height: 44px; }
+  /* review panel (#surface-panel): 330px at the right on a desktop; the whole screen on a phone, over the bottom toolbar's space */
+  .rv-panel { position: absolute; z-index: 10; top: 0; right: 0; bottom: 0; width: 330px; display: flex; flex-direction: column; background: var(--ui-page);
+              color: var(--ui-ink); border-left: 1px solid var(--ui-border); font: var(--ui-text-sm) var(--ui-font); }
+  [data-mockup-frame="phone"] .rv-panel { left: 0; width: auto; border-left: 0; padding-bottom: 136px; z-index: 11; }
+  .rv-head { position: relative; min-height: 44px; padding: var(--ui-space-3) 48px; border-bottom: 1px solid var(--ui-border); font-weight: var(--ui-weight-semibold); overflow-wrap: anywhere; }
+  .rv-head .rv-count, .rv-head .rv-sub { font-weight: var(--ui-weight-regular); font-size: var(--ui-text-xs); color: var(--ui-muted); }
+  .rv-head .rv-icon { position: absolute; top: var(--ui-space-2); border: 1px solid var(--ui-border); background: var(--ui-surface); }
+  .rv-head .rv-toggle { left: var(--ui-space-2); }
+  .rv-head .rv-gear { right: var(--ui-space-2); }
+  [data-mockup-frame="phone"] .rv-head { min-height: 56px; padding: var(--ui-space-4) 56px var(--ui-space-3); }
+  [data-mockup-frame="phone"] .rv-head .rv-icon { top: var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-head .rv-toggle { left: var(--ui-space-1); }
+  .rv-body { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .rv-stream { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; gap: var(--ui-space-3);
+               padding: var(--ui-space-3) var(--ui-space-3) var(--ui-space-2); }
+  .rv-entry { display: flex; flex-direction: column; align-items: flex-start; gap: var(--ui-space-1); min-width: 0; align-self: stretch; }
+  .rv-entry.rv-me { align-items: flex-end; }
+  .rv-msg { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: var(--ui-space-1); max-width: 86%; min-width: 0; }
+  .rv-msg.rv-me { align-self: flex-end; align-items: flex-end; }
+  .rv-who { padding: 0 var(--ui-space-3); font: var(--ui-text-xs)/1.4 var(--ui-font); color: var(--ui-muted); }
+  .rv-bubble { position: relative; max-width: 100%; padding: var(--ui-space-2) var(--ui-space-3); border-radius: calc(2 * var(--ui-radius)); font: var(--ui-text-sm)/1.4 var(--ui-font); overflow-wrap: anywhere; }
+  .rv-me > .rv-bubble { background: var(--ui-action); color: var(--ui-page); border-bottom-right-radius: var(--ui-radius-sm); }
+  .rv-them > .rv-bubble { background: var(--ui-surface-soft); color: var(--ui-ink); border-bottom-left-radius: var(--ui-radius-sm); }
+  .rv-me > .rv-bubble.rv-draft { background: var(--ui-action-soft); color: var(--ui-ink); box-shadow: inset 0 0 0 1px var(--ui-action); }
+  .rv-edited { margin-left: var(--ui-space-1); font-size: var(--ui-text-xs); font-weight: var(--ui-weight-semibold); }
+  .rv-dot { position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%; background: var(--ui-action); border: 2px solid var(--ui-page); }
+  .rv-chip { max-width: 100%; margin: 0; padding: 0 var(--ui-space-2); border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill); background: var(--ui-page);
+             color: var(--ui-muted); font: var(--ui-text-xs)/1.6 var(--ui-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; cursor: pointer; }
+  .rv-chip:hover { color: var(--ui-ink); border-color: var(--ui-muted); }
+  .rv-chip:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .rv-replies { max-width: 100%; padding: 0 var(--ui-space-3); color: var(--ui-muted); font: var(--ui-text-xs)/1.5 var(--ui-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rv-replies b { color: var(--ui-ink); font-weight: var(--ui-weight-semibold); }
+  .rv-receipt { padding: 0 var(--ui-space-3); font: var(--ui-weight-semibold) var(--ui-text-xs)/1.5 var(--ui-font); color: var(--ui-draft); }
+  .rv-receipt.rv-ack { color: var(--ui-ack); }
+  .rv-receipt.rv-done { color: var(--ui-resolved); }
+  .rv-notice { align-self: stretch; margin: 0; padding: var(--ui-space-2); border-left: 3px solid var(--ui-draft); background: var(--ui-draft-soft); color: var(--ui-draft);
+               font-size: var(--ui-text-xs); line-height: 1.35; }
+  .rv-quote { display: block; margin: var(--ui-space-1) 0; padding-left: var(--ui-space-2); border-left: 2px solid var(--ui-border); color: var(--ui-muted); font-style: italic; font-size: var(--ui-text-xs); }
+  .rv-history { margin: 0; padding-left: var(--ui-space-4); font-size: var(--ui-text-xs); color: var(--ui-muted); }
+  .rv-history .rv-who { padding: 0; }
+  .rv-choices { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); margin-top: var(--ui-space-2); }
+  .rv-choice { min-height: var(--ui-space-6); margin: 0; padding: var(--ui-space-2) var(--ui-space-3); border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill);
+               background: var(--ui-surface); color: var(--ui-ink); font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); cursor: pointer; }
+  .rv-choice:hover { background: var(--ui-surface-soft); }
+  .rv-choice:active { background: var(--ui-muted-soft); }
+  .rv-choice:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .rv-choice.rv-words { border-color: transparent; background: transparent; }
+  [data-mockup-frame="phone"] .rv-choice { min-height: 44px; }
+  /* the panel's one hand-off bar: its note, Next TBD, and the action, primary rightmost */
+  .rv-handoff { position: relative; z-index: 3; display: flex; justify-content: flex-end; align-items: center; gap: var(--ui-space-1); padding: var(--ui-space-2) var(--ui-space-3);
+                border-top: 1px solid var(--ui-border); background: var(--ui-page); }
+  .rv-handoff .rv-note { margin-right: auto; min-width: 0; }
+  /* a new comment's composer, at the bottom of the conversation (#surface-composer): send primary rightmost, cancel left */
+  .rv-compose { display: flex; flex-direction: column; gap: var(--ui-space-1); padding: var(--ui-space-2) var(--ui-space-3); border: 1px solid var(--ui-border);
+                border-radius: var(--ui-radius); background: var(--ui-surface); }
+  .rv-anchor { font: var(--ui-text-xs) var(--ui-mono); color: var(--ui-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rv-field { display: block; width: 100%; min-height: 56px; margin-top: var(--ui-space-1); padding: var(--ui-space-1) var(--ui-space-2); border: 1px solid var(--ui-border);
+              border-radius: var(--ui-radius-sm); background: var(--ui-surface); color: var(--ui-ink); font: var(--ui-text-sm)/1.4 var(--ui-font); resize: none; }
+  .rv-field::placeholder { color: var(--ui-muted); }
+  .rv-field:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  [data-mockup-frame="phone"] .rv-field { min-height: 120px; padding: var(--ui-space-2) var(--ui-space-3); font-size: var(--ui-text-md); }
+  .rv-compose-actions { display: flex; justify-content: flex-end; gap: var(--ui-space-1); margin-top: var(--ui-space-1); }
+  /* the focused thread (threads #focus): its messages alone over the conversation dimmed; on a phone a sheet over the
+     screen's lower half, above the bottom toolbar's one hand-off control */
+  .rv-veil { position: absolute; inset: 0; z-index: 1; background: var(--ui-veil); }
+  .rv-focused { position: absolute; top: var(--ui-space-2); left: var(--ui-space-2); right: var(--ui-space-2); bottom: var(--ui-space-2); z-index: 2; display: flex; flex-direction: column;
+                min-height: 0; background: var(--ui-page); color: var(--ui-ink); border: 1px solid var(--ui-border); border-radius: calc(2 * var(--ui-radius));
+                box-shadow: 0 12px 32px var(--ui-shadow); font: var(--ui-text-sm) var(--ui-font); }
+  .rv-focused-head { display: flex; align-items: center; gap: var(--ui-space-1); padding: var(--ui-space-1) var(--ui-space-2); border-bottom: 1px solid var(--ui-border); }
+  .rv-focused-head .rv-back { display: inline-flex; align-items: center; gap: var(--ui-space-1); margin-right: auto; border-color: transparent; background: transparent; }
+  .rv-focused-stream { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: var(--ui-space-2); padding: var(--ui-space-3); }
+  .rv-reply-box { display: flex; align-items: flex-end; gap: var(--ui-space-2); padding: var(--ui-space-2) var(--ui-space-3); border-top: 1px solid var(--ui-border); }
+  .rv-reply-box .rv-field { flex: 1 1 auto; min-height: 36px; margin: 0; border-radius: calc(2 * var(--ui-radius)); padding: var(--ui-space-2) var(--ui-space-3); }
+  [data-mockup-frame="phone"] .rv-reply-box .rv-field { min-height: 44px; }
+  .rv-sheet { position: absolute; z-index: 11; left: 0; right: 0; top: 422px; bottom: 0; display: flex; flex-direction: column; background: var(--ui-page);
+              border-top-left-radius: calc(2 * var(--ui-radius)); border-top-right-radius: calc(2 * var(--ui-radius)); box-shadow: 0 -12px 32px var(--ui-shadow);
+              padding-bottom: 136px; font: var(--ui-text-sm) var(--ui-font); }
+  .rv-grip { align-self: center; width: 36px; height: 4px; margin: var(--ui-space-2) 0 0; border-radius: var(--ui-radius-pill); background: var(--ui-border); }
+  /* toast (#surface-toast): the saved and handed-off notices */
+  .rv-toast { position: absolute; z-index: 13; bottom: 76px; left: 50%; transform: translateX(-50%); padding: var(--ui-space-2) var(--ui-space-4); border-radius: var(--ui-radius);
+              background: var(--ui-ink); color: var(--ui-page); font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); white-space: nowrap; box-shadow: 0 8px 28px var(--ui-shadow);
+              transition: opacity var(--ui-motion-duration) var(--ui-motion-ease); }
+  [data-mockup-frame="phone"] .rv-toast { bottom: 152px; max-width: calc(100% - 24px); white-space: normal; text-align: center; }
+  /* banner (#surface-banner): the agent's edit, green inverted, with Reload */
+  .rv-banner { position: absolute; z-index: 14; top: 0; left: 0; right: 0; display: flex; gap: var(--ui-space-3); align-items: center; justify-content: center;
+               padding: var(--ui-space-2) var(--ui-space-4); background: var(--ui-pass); color: var(--ui-page); font: var(--ui-weight-semibold) var(--ui-text-sm) var(--ui-font); }
+  .rv-banner .rv-btn { border-color: var(--ui-page); background: transparent; color: var(--ui-page); }
+  .rv-banner .rv-btn:hover { background: transparent; text-decoration: underline; text-underline-offset: 3px; }
+  [data-mockup-frame="phone"] .rv-banner { align-items: flex-start; flex-wrap: wrap; padding: var(--ui-space-2) var(--ui-space-3); text-align: center; }
+  /* pins (spec-page-design #surface-pins): a teardrop in its status color, numbered */
+  .rv-pin { position: absolute; right: 0; top: 0; z-index: 3; width: 24px; height: 24px; margin: 0; padding: 0; border: none; border-radius: 50% 50% 50% 4px;
+            display: grid; place-items: center; font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); font-style: normal; color: var(--ui-page);
+            background: var(--ui-draft); box-shadow: 0 2px 8px var(--ui-shadow); cursor: pointer; }
+  .rv-pin.rv-ack { background: var(--ui-ack); }
+  .rv-pin.rv-done { background: var(--ui-surface); color: var(--ui-resolved); border: 2px solid var(--ui-resolved); }
+  .rv-pin.rv-active { box-shadow: 0 0 0 3px var(--ui-pin-ring), 0 2px 8px var(--ui-shadow); }
+  .rv-pin:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  [data-mockup-frame="phone"] .rv-pin { width: 44px; height: 44px; }
+
+  [data-mockup-frame].rv-spec-page { background: var(--spec-paper); color: var(--spec-body); font: var(--spec-weight-regular) 15px/1.6 var(--spec-font); }
+  .rv-top { position: absolute; top: 0; left: 0; right: 0; z-index: 8; display: flex; align-items: flex-start; gap: var(--ui-space-3);
+            padding: var(--ui-space-1) var(--ui-space-4); background: var(--ui-page); border-bottom: 1px solid var(--ui-border);
+            color: var(--ui-ink); font: var(--ui-text-sm)/1.4 var(--ui-font); }
+  .rv-range { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--ui-space-2); }
+  .rv-range-copy { flex: 1 1 auto; min-width: 0; margin: 0; color: var(--ui-muted); overflow-wrap: anywhere; }
+  .rv-range-copy code { font: var(--ui-weight-medium) var(--ui-text-sm) var(--ui-mono); color: var(--ui-ink); }
+  [data-mockup-frame="phone"] .rv-top { flex-wrap: wrap; gap: 0 var(--ui-space-2); padding: 0 var(--ui-space-2) var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-range { flex: 1 1 100%; padding: 0 var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-range-copy, [data-mockup-frame="phone"] .rv-range-copy code { font-size: var(--ui-text-xs); }
+  [data-mockup-frame="phone"] .rv-top .rv-change { position: absolute; top: 0; right: var(--ui-space-2); }
+  .rv-top .rv-dock { top: calc(100% + var(--ui-space-3)); }
+  [data-mockup-frame="phone"] .rv-top .rv-dock { top: calc(100% + var(--ui-space-2)); }
+  /* the document (spec.css): one calm page from the set's values */
+  .rv-doc { width: min(var(--spec-max), calc(100% - 48px)); margin: 0 auto; padding: 81px 0 120px; }
+  [data-mockup-frame="phone"] .rv-doc { width: calc(100% - 32px); padding: 70px 0 200px; }
+  .rv-doc p { max-width: var(--spec-measure); margin: 1em 0; }
+  .rv-doc .rv-crumbs { color: var(--spec-muted); font-size: var(--spec-text-meta); line-height: 1.5; }
+  .rv-doc h1 { max-width: var(--spec-measure); margin: 6px 0 12px; color: var(--spec-ink); font-size: var(--spec-text-display); font-weight: var(--spec-weight-semibold);
+               line-height: 1.2; letter-spacing: -0.01em; }
+  [data-mockup-frame="phone"] .rv-doc h1 { font-size: var(--spec-text-heading); }
+  .rv-doc .rv-section { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--spec-hairline); }
+  [data-mockup-frame="phone"] .rv-doc .rv-section { margin-top: 40px; }
+  .rv-doc h2 { margin: 0 0 12px; color: var(--spec-ink); font-size: var(--spec-text-heading); font-weight: var(--spec-weight-semibold); line-height: 1.25; letter-spacing: -0.01em; }
+  .rv-block { position: relative; max-width: var(--spec-measure); }
+  .rv-pinned { padding-right: var(--ui-space-6); }
+  [data-mockup-frame="phone"] .rv-pinned { padding-right: calc(var(--ui-space-6) + var(--ui-space-4)); min-height: 66px; }
+  .rv-doc .rv-pin { right: 0; top: 0; }
+  /* an open TBD (prompt-first-shaping #finish-tbd-highlight): outlined in the draft color, a later one not */
+  .rv-tbd-open { outline: 2px solid var(--ui-draft); outline-offset: var(--ui-space-1); }
+  .rv-answer { display: inline-block; min-height: var(--ui-space-6); margin: var(--ui-space-1) var(--ui-space-1) 0 0; padding: var(--ui-space-2) var(--ui-space-3);
+               border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill); background: var(--ui-surface); color: var(--ui-ink);
+               font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); cursor: pointer; }
+  .rv-answer:hover { background: var(--ui-surface-soft); }
+  .rv-answer:active { background: var(--ui-muted-soft); }
+  .rv-answer:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  [data-mockup-frame="phone"] .rv-answer { min-height: 44px; }
+  [data-mockup-frame="desktop"] .rv-panel { min-height: 100%; }
+
+  [data-mockup-frame="desktop"] .rv-top { right: 330px; }
+  [data-mockup-frame="desktop"] .rv-doc { width: 1062px; margin: 0 354px 0 24px; }
+  .rv-msg-actions { display: flex; gap: var(--ui-space-1); }
+  .rv-doc .rv-pin.rv-second { top: 30px; }
+  [data-mockup-frame][data-at$=" opened"] [data-show]:not([data-show~="opened"]),
+  [data-mockup-frame][data-at="opened"] [data-show]:not([data-show~="opened"]),
+  [data-mockup-frame][data-at$=" arrived"] [data-show]:not([data-show~="arrived"]),
+  [data-mockup-frame][data-at="arrived"] [data-show]:not([data-show~="arrived"]),
+  [data-mockup-frame][data-at$=" named"] [data-show]:not([data-show~="named"]),
+  [data-mockup-frame][data-at="named"] [data-show]:not([data-show~="named"]),
+  [data-mockup-frame][data-at$=" typing"] [data-show]:not([data-show~="typing"]),
+  [data-mockup-frame][data-at="typing"] [data-show]:not([data-show~="typing"]),
+  [data-mockup-frame][data-at$=" kept"] [data-show]:not([data-show~="kept"]),
+  [data-mockup-frame][data-at="kept"] [data-show]:not([data-show~="kept"]),
+  [data-mockup-frame][data-at$=" handed"] [data-show]:not([data-show~="handed"]),
+  [data-mockup-frame][data-at="handed"] [data-show]:not([data-show~="handed"]),
+  [data-mockup-frame][data-at$=" edited"] [data-show]:not([data-show~="edited"]),
+  [data-mockup-frame][data-at="edited"] [data-show]:not([data-show~="edited"]),
+  [data-mockup-frame][data-at$=" offline"] [data-show]:not([data-show~="offline"]),
+  [data-mockup-frame][data-at="offline"] [data-show]:not([data-show~="offline"]),
+  [data-mockup-frame][data-at$=" online"] [data-show]:not([data-show~="online"]),
+  [data-mockup-frame][data-at="online"] [data-show]:not([data-show~="online"]),
+  [data-mockup-frame][data-at$=" updated"] [data-show]:not([data-show~="updated"]),
+  [data-mockup-frame][data-at="updated"] [data-show]:not([data-show~="updated"]),
+  [data-mockup-frame][data-at$=" moved"] [data-show]:not([data-show~="moved"]),
+  [data-mockup-frame][data-at="moved"] [data-show]:not([data-show~="moved"]),
+  [data-mockup-frame][data-at$=" changed"] [data-show]:not([data-show~="changed"]),
+  [data-mockup-frame][data-at="changed"] [data-show]:not([data-show~="changed"]),
+  [data-mockup-frame][data-at$=" gone"] [data-show]:not([data-show~="gone"]),
+  [data-mockup-frame][data-at="gone"] [data-show]:not([data-show~="gone"]),
+  [data-mockup-frame]:not([data-at]) [data-show]:not([data-show~="opened"]) { display: none; }
+  [data-mockup-frame][data-at$=" opened"] [data-scroll~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-scroll~="opened"],
+  [data-mockup-frame][data-at$=" arrived"] [data-scroll~="arrived"],
+  [data-mockup-frame][data-at="arrived"] [data-scroll~="arrived"],
+  [data-mockup-frame][data-at$=" named"] [data-scroll~="named"],
+  [data-mockup-frame][data-at="named"] [data-scroll~="named"],
+  [data-mockup-frame][data-at$=" typing"] [data-scroll~="typing"],
+  [data-mockup-frame][data-at="typing"] [data-scroll~="typing"],
+  [data-mockup-frame][data-at$=" kept"] [data-scroll~="kept"],
+  [data-mockup-frame][data-at="kept"] [data-scroll~="kept"],
+  [data-mockup-frame][data-at$=" handed"] [data-scroll~="handed"],
+  [data-mockup-frame][data-at="handed"] [data-scroll~="handed"],
+  [data-mockup-frame][data-at$=" edited"] [data-scroll~="edited"],
+  [data-mockup-frame][data-at="edited"] [data-scroll~="edited"],
+  [data-mockup-frame][data-at$=" offline"] [data-scroll~="offline"],
+  [data-mockup-frame][data-at="offline"] [data-scroll~="offline"],
+  [data-mockup-frame][data-at$=" online"] [data-scroll~="online"],
+  [data-mockup-frame][data-at="online"] [data-scroll~="online"],
+  [data-mockup-frame][data-at$=" updated"] [data-scroll~="updated"],
+  [data-mockup-frame][data-at="updated"] [data-scroll~="updated"],
+  [data-mockup-frame][data-at$=" moved"] [data-scroll~="moved"],
+  [data-mockup-frame][data-at="moved"] [data-scroll~="moved"],
+  [data-mockup-frame][data-at$=" changed"] [data-scroll~="changed"],
+  [data-mockup-frame][data-at="changed"] [data-scroll~="changed"],
+  [data-mockup-frame][data-at$=" gone"] [data-scroll~="gone"],
+  [data-mockup-frame][data-at="gone"] [data-scroll~="gone"],
+  [data-mockup-frame]:not([data-at]) [data-scroll~="opened"] { transform: translateY(-400px); }
+  [data-mockup-frame][data-at$=" opened"] [data-ring~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-ring~="opened"],
+  [data-mockup-frame][data-at$=" arrived"] [data-ring~="arrived"],
+  [data-mockup-frame][data-at="arrived"] [data-ring~="arrived"],
+  [data-mockup-frame][data-at$=" named"] [data-ring~="named"],
+  [data-mockup-frame][data-at="named"] [data-ring~="named"],
+  [data-mockup-frame][data-at$=" typing"] [data-ring~="typing"],
+  [data-mockup-frame][data-at="typing"] [data-ring~="typing"],
+  [data-mockup-frame][data-at$=" kept"] [data-ring~="kept"],
+  [data-mockup-frame][data-at="kept"] [data-ring~="kept"],
+  [data-mockup-frame][data-at$=" handed"] [data-ring~="handed"],
+  [data-mockup-frame][data-at="handed"] [data-ring~="handed"],
+  [data-mockup-frame][data-at$=" edited"] [data-ring~="edited"],
+  [data-mockup-frame][data-at="edited"] [data-ring~="edited"],
+  [data-mockup-frame][data-at$=" offline"] [data-ring~="offline"],
+  [data-mockup-frame][data-at="offline"] [data-ring~="offline"],
+  [data-mockup-frame][data-at$=" online"] [data-ring~="online"],
+  [data-mockup-frame][data-at="online"] [data-ring~="online"],
+  [data-mockup-frame][data-at$=" updated"] [data-ring~="updated"],
+  [data-mockup-frame][data-at="updated"] [data-ring~="updated"],
+  [data-mockup-frame][data-at$=" moved"] [data-ring~="moved"],
+  [data-mockup-frame][data-at="moved"] [data-ring~="moved"],
+  [data-mockup-frame][data-at$=" changed"] [data-ring~="changed"],
+  [data-mockup-frame][data-at="changed"] [data-ring~="changed"],
+  [data-mockup-frame][data-at$=" gone"] [data-ring~="gone"],
+  [data-mockup-frame][data-at="gone"] [data-ring~="gone"],
+  [data-mockup-frame]:not([data-at]) [data-ring~="opened"] { box-shadow: 0 0 0 var(--ui-space-1) var(--ui-page), 0 0 0 6px var(--ui-draft), 0 0 0 9px var(--ui-pin-ring); }
+  [data-mockup-frame][data-at$=" opened"] [data-veil~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-veil~="opened"],
+  [data-mockup-frame][data-at$=" arrived"] [data-veil~="arrived"],
+  [data-mockup-frame][data-at="arrived"] [data-veil~="arrived"],
+  [data-mockup-frame][data-at$=" named"] [data-veil~="named"],
+  [data-mockup-frame][data-at="named"] [data-veil~="named"],
+  [data-mockup-frame][data-at$=" typing"] [data-veil~="typing"],
+  [data-mockup-frame][data-at="typing"] [data-veil~="typing"],
+  [data-mockup-frame][data-at$=" kept"] [data-veil~="kept"],
+  [data-mockup-frame][data-at="kept"] [data-veil~="kept"],
+  [data-mockup-frame][data-at$=" handed"] [data-veil~="handed"],
+  [data-mockup-frame][data-at="handed"] [data-veil~="handed"],
+  [data-mockup-frame][data-at$=" edited"] [data-veil~="edited"],
+  [data-mockup-frame][data-at="edited"] [data-veil~="edited"],
+  [data-mockup-frame][data-at$=" offline"] [data-veil~="offline"],
+  [data-mockup-frame][data-at="offline"] [data-veil~="offline"],
+  [data-mockup-frame][data-at$=" online"] [data-veil~="online"],
+  [data-mockup-frame][data-at="online"] [data-veil~="online"],
+  [data-mockup-frame][data-at$=" updated"] [data-veil~="updated"],
+  [data-mockup-frame][data-at="updated"] [data-veil~="updated"],
+  [data-mockup-frame][data-at$=" moved"] [data-veil~="moved"],
+  [data-mockup-frame][data-at="moved"] [data-veil~="moved"],
+  [data-mockup-frame][data-at$=" changed"] [data-veil~="changed"],
+  [data-mockup-frame][data-at="changed"] [data-veil~="changed"],
+  [data-mockup-frame][data-at$=" gone"] [data-veil~="gone"],
+  [data-mockup-frame][data-at="gone"] [data-veil~="gone"],
+  [data-mockup-frame]:not([data-at]) [data-veil~="opened"] { position: relative; z-index: 9; background: var(--spec-paper); box-shadow: 0 0 0 var(--ui-space-1) var(--spec-paper), 0 0 0 6px var(--ui-draft), 0 0 0 2000px var(--ui-veil); }
+</style>
+<script defer src="../../.viz/runtime.js"></script>
+</head>
+<body>
+<section data-mockup-frame="desktop" class="rv-spec-page" data-anchor="desktop" data-illustrates="live anchoring offline">
+<div class="rv-top" data-anchor="desktop-top-line"><a class="rv-index" data-anchor="desktop-index" href="#review-index"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg><span>Review index</span></a><div class="rv-range"><p class="rv-range-copy">Changes from <code>965efc4</code> 2026-01-01 to <code>dbbd25d</code> 2026-01-01</p><button type="button" class="rv-btn rv-change" aria-expanded="false">Change base</button></div></div>
+<main class="rv-doc" data-anchor="desktop-doc"><header data-anchor="desktop-header"><h1>Weekly report</h1><p class="rv-crumbs">docs / specs / report.spec.html</p><p>QA fixture: a feature spec under shaping.</p></header><section class="rv-section" data-anchor="desktop-stories"><h2>User stories</h2><p class="rv-block rv-pinned" data-anchor="desktop-story-totals">As a manager, I read totals per week on the report page.<i class="rv-pin" data-show="kept handed edited offline online updated moved changed gone">3</i></p><p class="rv-block rv-pinned" data-anchor="desktop-story-export">As a manager, I download the table I see.<i class="rv-pin" data-show="offline online updated moved changed gone">4</i></p></section><section class="rv-section" data-anchor="desktop-criteria"><h2>Acceptance criteria</h2><p class="rv-block rv-pinned" data-anchor="desktop-report-totals" data-illustrates="acceptance-live-comment">The report page shows totals per week.<i class="rv-pin" data-show="arrived named typing kept handed edited offline online updated moved changed gone">1</i></p><p class="rv-block rv-pinned" data-anchor="desktop-report-scope" data-ring="gone" data-show="moved changed gone">Totals and export cover the selected week only.<i class="rv-pin" data-show="gone">2</i></p><p class="rv-block rv-pinned" data-anchor="desktop-report-export" data-ring="edited moved changed" data-show="opened arrived named typing kept handed edited offline online updated moved changed"><span data-show="opened arrived named typing kept handed edited offline online updated moved">The export button downloads a CSV of the current table.</span><span data-show="changed">The export button downloads a CSV of every row in the report.</span><i class="rv-pin" data-show="named typing kept handed edited offline online updated moved changed">2</i></p></section><section class="rv-section" data-anchor="desktop-behavior"><h2>Behavior</h2><p class="rv-block rv-tbd-open" data-anchor="desktop-export-format">TBD: whether the export also offers XLSX. <button type="button" class="rv-answer">CSV only (recommended)</button> <button type="button" class="rv-answer">CSV and XLSX</button></p><p class="rv-block rv-tbd-open" data-anchor="desktop-export-name">TBD: the file name of the downloaded CSV.</p><p class="rv-block rv-pinned" data-anchor="desktop-export-schedule">TBD: scheduled exports, in a later slice.<i class="rv-pin" data-show="online updated moved changed gone">5</i></p></section></main>
+<aside class="rv-panel" data-anchor="desktop-panel" data-illustrates="live-presence acceptance-no-presence" aria-label="Review sidebar"><div class="rv-head">Conversation <span class="rv-count"><span data-show="opened">0 threads · 2 questions</span><span data-show="arrived">1 thread · 2 questions</span><span data-show="named typing">2 threads · 2 questions</span><span data-show="kept handed edited">3 threads · 2 questions</span><span data-show="offline">4 threads · 2 questions</span><span data-show="online updated moved changed gone">5 threads · 2 questions</span></span> <span class="rv-sub"><span data-show="opened arrived named typing kept">· no agent events yet</span><span data-show="handed edited offline online updated moved changed gone">· handed off, waiting for agent</span></span><button type="button" class="rv-btn rv-icon rv-toggle" aria-label="Collapse review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M10 2.5v11"/></svg></button><button type="button" class="rv-btn rv-icon rv-gear" aria-label="Review display settings" title="Display settings"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6.34 3.18L6.6 1.4L9.4 1.4L9.66 3.18L11.35 4.15L13.02 3.48L14.42 5.91L13.01 7.03L13.01 8.97L14.42 10.09L13.02 12.52L11.35 11.85L9.66 12.82L9.4 14.6L6.6 14.6L6.34 12.82L4.65 11.85L2.98 12.52L1.58 10.09L2.99 8.97L2.99 7.03L1.58 5.91L2.98 3.48L4.65 4.15z"/><circle cx="8" cy="8" r="2"/></svg></button></div><div class="rv-body"><div class="rv-stream" data-anchor="desktop-stream" data-illustrates="acceptance-live-comment acceptance-handoff-own acceptance-offline-reconnect"><div class="rv-entry rv-them" data-anchor="desktop-thread-mango" data-show="arrived named typing kept handed edited offline online updated moved changed gone"><div class="rv-msg rv-them"><span class="rv-who">Mango</span><div class="rv-bubble">Round totals to whole units?</div></div><button type="button" class="rv-chip">Acceptance criteria · The report page shows totals per week</button><span class="rv-receipt">Draft</span></div><div class="rv-entry rv-me" data-anchor="desktop-thread-export" data-show="named typing kept handed edited offline online updated moved changed gone"><div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble rv-draft" data-show="named typing kept">Say which columns the CSV holds.</div><div class="rv-bubble" data-show="handed">Say which columns the CSV holds.</div><div class="rv-bubble" data-show="edited offline online updated moved changed gone">Say which columns the CSV holds, and their order.<span class="rv-edited" data-show="edited offline online updated moved changed gone">Edited</span></div></div><button type="button" class="rv-chip" data-show="opened arrived named typing kept handed edited offline online updated moved changed">Acceptance criteria · “The export button downloads a CSV of the current table.”</button><button type="button" class="rv-chip" data-show="gone">Text removed · “The export button downloads a CSV of the current table.”</button><div class="rv-notice" data-show="changed">Text changed since this comment<span class="rv-quote">“The export button downloads a CSV of the current table.”</span></div><span class="rv-receipt" data-show="named typing kept">Draft</span><span class="rv-receipt" data-show="handed edited offline online updated moved changed gone">Sent</span></div><div class="rv-entry rv-me" data-show="kept handed edited offline online updated moved changed gone"><div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble rv-draft" data-show="kept">Totals per week, or per day too?</div><div class="rv-bubble" data-show="handed edited offline online updated moved changed gone">Totals per week, or per day too?</div></div><button type="button" class="rv-chip">User stories · As a manager…</button><span class="rv-receipt" data-show="kept">Draft</span><span class="rv-receipt" data-show="handed edited offline online updated moved changed gone">Sent</span></div><div class="rv-entry rv-me" data-show="offline online updated moved changed gone"><div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble rv-draft" data-show="offline online updated moved changed gone">Which week does the export cover?</div></div><button type="button" class="rv-chip">User stories · As a manager…</button><span class="rv-receipt" data-show="offline online updated moved changed gone">Draft</span></div><div class="rv-entry rv-them" data-show="online updated moved changed gone"><div class="rv-msg rv-them"><span class="rv-who">Mango</span><div class="rv-bubble">Weekly is enough for scheduled exports.</div></div><button type="button" class="rv-chip">Behavior · TBD: scheduled exports…</button><span class="rv-receipt">Draft</span></div><div class="rv-compose" data-anchor="desktop-composer" data-illustrates="offline-leave" data-show="typing"><div class="rv-anchor">#story-totals</div><textarea class="rv-field" aria-label="Comment" placeholder="Comment… (⌘⏎ to send)">Totals per week, or per day too?</textarea><div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri">Comment</button></div></div><div class="rv-entry rv-them"><div class="rv-msg rv-them"><span class="rv-who">Agent</span><div class="rv-bubble">TBD: whether the export also offers XLSX.<div class="rv-choices"><button type="button" class="rv-choice">CSV only (recommended)</button><button type="button" class="rv-choice">CSV and XLSX</button><button type="button" class="rv-choice rv-words">Reply</button></div></div></div><button type="button" class="rv-chip">Behavior · TBD: whether the export also offers XLSX</button></div><div class="rv-entry rv-them"><div class="rv-msg rv-them"><span class="rv-who">Agent</span><div class="rv-bubble">TBD: the file name of the downloaded CSV.<div class="rv-choices"><button type="button" class="rv-choice rv-words">Reply</button></div></div></div><button type="button" class="rv-chip">Behavior · TBD: the file name of the downloaded…</button></div></div><div class="rv-veil" data-show="edited moved changed gone"></div><div class="rv-focused" data-anchor="desktop-focus" data-show="edited moved changed gone"><div class="rv-focused-head"><button type="button" class="rv-btn rv-back"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg><span>Conversation</span></button></div><div class="rv-focused-stream" data-anchor="desktop-focused-thread" data-illustrates="acceptance-edit-race acceptance-anchor-moved acceptance-anchor-changed acceptance-anchor-gone"><div class="rv-entry rv-me"><div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble">Say which columns the CSV holds, and their order.<span class="rv-edited">Edited</span></div><ol class="rv-history" aria-label="Edit history"><li><span class="rv-who">Papaya</span> Say which columns the CSV holds, in order.</li><li><span class="rv-who">Mango</span> Say which columns the CSV holds, and their order.</li></ol><div class="rv-msg-actions"><button type="button" class="rv-btn">Edit</button></div></div><button type="button" class="rv-chip" data-show="opened arrived named typing kept handed edited offline online updated moved changed">Acceptance criteria · “The export button downloads a CSV of the current table.”</button><button type="button" class="rv-chip" data-show="gone">Text removed · “The export button downloads a CSV of the current table.”</button><div class="rv-notice" data-show="changed">Text changed since this comment<span class="rv-quote">“The export button downloads a CSV of the current table.”</span></div><span class="rv-receipt">Sent</span></div></div><div class="rv-reply-box"><textarea class="rv-field" aria-label="Reply" placeholder="Reply… (⌘⏎ to send)"></textarea><button type="button" class="rv-btn rv-pri">Reply</button></div></div></div><div class="rv-handoff" data-anchor="desktop-handoff"><span class="rv-note" data-anchor="desktop-drafts"><span data-show="opened arrived handed edited">0 drafts</span><span data-show="named typing offline online updated moved changed gone">1 draft</span><span data-show="kept">2 drafts</span></span><button type="button" class="rv-btn" data-show="arrived named typing kept handed edited offline online updated moved changed gone">Next TBD (2)</button><button type="button" class="rv-btn rv-pri" data-show="opened">TBD open (2)</button><button type="button" class="rv-btn rv-pri" data-anchor="desktop-handoff-button" data-illustrates="acceptance-handoff-own" data-show="named kept offline online updated">Hand off to agent →</button><button type="button" class="rv-btn" data-show="typing moved changed gone">Hand off to agent →</button><button type="button" class="rv-btn rv-pri" disabled data-show="arrived handed">Hand off to agent →</button><button type="button" class="rv-btn" disabled data-show="edited">Hand off to agent →</button></div></aside>
+
+<div class="rv-toolbar" data-anchor="desktop-toolbar" data-illustrates="offline-notice"><button type="button" class="rv-btn rv-tool" aria-pressed="false" title="Comment (C)">Comment</button><button type="button" class="rv-btn rv-tool" aria-pressed="false">Reading view</button><span class="rv-offline" role="status" data-anchor="desktop-offline" data-illustrates="offline-notice acceptance-offline-save" data-show="offline">Offline: 1 change waiting</span><span class="rv-status"><span data-show="opened arrived named typing kept handed edited online updated moved changed gone">connected · review-serve · <span data-show="opened">0</span><span data-show="arrived">1</span><span data-show="named typing">2</span><span data-show="kept handed edited">3</span><span data-show="offline">4</span><span data-show="online updated moved changed gone">5</span> threads</span><span data-show="offline">event sync failed: Failed to fetch</span></span></div>
+<div class="rv-toast" role="status" data-show="named offline">Comment saved as draft — hand off when ready</div><div class="rv-toast" role="status" data-show="handed">Handed off 2 comments, agent notified</div>
+<div class="rv-banner" data-anchor="desktop-banner" data-illustrates="acceptance-agent-edit-banner" data-show="updated" role="status">Spec updated by agent <button type="button" class="rv-btn" data-anchor="desktop-reload">Reload</button></div>
+</section>
+<section data-mockup-frame="phone" class="rv-spec-page" data-anchor="phone" data-illustrates="live anchoring offline">
+<div class="rv-top" data-anchor="phone-top-line"><a class="rv-index" data-anchor="phone-index" href="#review-index"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg><span>Review index</span></a><button type="button" class="rv-btn rv-change" aria-expanded="false">Change base</button><div class="rv-range"><p class="rv-range-copy">Changes from <code>965efc4</code> 2026-01-01 to <code>dbbd25d</code> 2026-01-01</p></div></div>
+<main class="rv-doc" data-anchor="phone-doc" data-scroll="edited moved changed gone"><header data-anchor="phone-header"><h1>Weekly report</h1><p class="rv-crumbs">docs / specs / report.spec.html</p><p>QA fixture: a feature spec under shaping.</p></header><section class="rv-section" data-anchor="phone-stories"><h2>User stories</h2><p class="rv-block rv-pinned" data-anchor="phone-story-totals">As a manager, I read totals per week on the report page.<i class="rv-pin" data-show="kept handed edited offline online updated moved changed gone">3</i></p><p class="rv-block rv-pinned" data-anchor="phone-story-export">As a manager, I download the table I see.<i class="rv-pin" data-show="offline online updated moved changed gone">4</i></p></section><section class="rv-section" data-anchor="phone-criteria"><h2>Acceptance criteria</h2><p class="rv-block rv-pinned" data-anchor="phone-report-totals" data-illustrates="acceptance-live-comment">The report page shows totals per week.<i class="rv-pin" data-show="arrived named typing kept handed edited offline online updated moved changed gone">1</i></p><p class="rv-block rv-pinned" data-anchor="phone-report-scope" data-veil="gone" data-show="moved changed gone">Totals and export cover the selected week only.<i class="rv-pin" data-show="gone">2</i></p><p class="rv-block rv-pinned" data-anchor="phone-report-export" data-veil="edited moved changed" data-show="opened arrived named typing kept handed edited offline online updated moved changed"><span data-show="opened arrived named typing kept handed edited offline online updated moved">The export button downloads a CSV of the current table.</span><span data-show="changed">The export button downloads a CSV of every row in the report.</span><i class="rv-pin" data-show="named typing kept handed edited offline online updated moved changed">2</i></p></section><section class="rv-section" data-anchor="phone-behavior"><h2>Behavior</h2><p class="rv-block rv-tbd-open" data-anchor="phone-export-format">TBD: whether the export also offers XLSX. <button type="button" class="rv-answer">CSV only (recommended)</button> <button type="button" class="rv-answer">CSV and XLSX</button></p><p class="rv-block rv-tbd-open" data-anchor="phone-export-name">TBD: the file name of the downloaded CSV.</p><p class="rv-block rv-pinned" data-anchor="phone-export-schedule">TBD: scheduled exports, in a later slice.<i class="rv-pin" data-show="online updated moved changed gone">5</i></p></section></main>
+<aside class="rv-panel" data-anchor="phone-panel" data-illustrates="live-presence" data-show="opened arrived named typing kept handed offline online updated" aria-label="Review sidebar"><div class="rv-head">Conversation <span class="rv-count"><span data-show="opened">0 threads · 2 questions</span><span data-show="arrived">1 thread · 2 questions</span><span data-show="named typing">2 threads · 2 questions</span><span data-show="kept handed edited">3 threads · 2 questions</span><span data-show="offline">4 threads · 2 questions</span><span data-show="online updated moved changed gone">5 threads · 2 questions</span></span> <span class="rv-sub"><span data-show="opened arrived named typing kept">· no agent events yet</span><span data-show="handed edited offline online updated moved changed gone">· handed off, waiting for agent</span></span><button type="button" class="rv-btn rv-icon rv-toggle" aria-label="Collapse review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M10 2.5v11"/></svg></button><button type="button" class="rv-btn rv-icon rv-gear" aria-label="Review display settings" title="Display settings"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6.34 3.18L6.6 1.4L9.4 1.4L9.66 3.18L11.35 4.15L13.02 3.48L14.42 5.91L13.01 7.03L13.01 8.97L14.42 10.09L13.02 12.52L11.35 11.85L9.66 12.82L9.4 14.6L6.6 14.6L6.34 12.82L4.65 11.85L2.98 12.52L1.58 10.09L2.99 8.97L2.99 7.03L1.58 5.91L2.98 3.48L4.65 4.15z"/><circle cx="8" cy="8" r="2"/></svg></button></div><div class="rv-body"><div class="rv-stream" data-anchor="phone-stream" data-illustrates="acceptance-live-comment acceptance-handoff-own acceptance-offline-reconnect"><div class="rv-entry rv-them" data-anchor="phone-thread-mango" data-show="arrived named typing kept handed edited offline online updated moved changed gone"><div class="rv-msg rv-them"><span class="rv-who">Mango</span><div class="rv-bubble">Round totals to whole units?</div></div><button type="button" class="rv-chip">Acceptance criteria · The report page shows totals per week</button><span class="rv-receipt">Draft</span></div><div class="rv-entry rv-me" data-anchor="phone-thread-export" data-show="named typing kept handed edited offline online updated moved changed gone"><div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble rv-draft" data-show="named typing kept">Say which columns the CSV holds.</div><div class="rv-bubble" data-show="handed">Say which columns the CSV holds.</div><div class="rv-bubble" data-show="edited offline online updated moved changed gone">Say which columns the CSV holds, and their order.<span class="rv-edited" data-show="edited offline online updated moved changed gone">Edited</span></div></div><button type="button" class="rv-chip" data-show="opened arrived named typing kept handed edited offline online updated moved changed">Acceptance criteria · “The export button downloads a CSV of the current table.”</button><button type="button" class="rv-chip" data-show="gone">Text removed · “The export button downloads a CSV of the current table.”</button><div class="rv-notice" data-show="changed">Text changed since this comment<span class="rv-quote">“The export button downloads a CSV of the current table.”</span></div><span class="rv-receipt" data-show="named typing kept">Draft</span><span class="rv-receipt" data-show="handed edited offline online updated moved changed gone">Sent</span></div><div class="rv-entry rv-me" data-show="kept handed edited offline online updated moved changed gone"><div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble rv-draft" data-show="kept">Totals per week, or per day too?</div><div class="rv-bubble" data-show="handed edited offline online updated moved changed gone">Totals per week, or per day too?</div></div><button type="button" class="rv-chip">User stories · As a manager…</button><span class="rv-receipt" data-show="kept">Draft</span><span class="rv-receipt" data-show="handed edited offline online updated moved changed gone">Sent</span></div><div class="rv-entry rv-me" data-show="offline online updated moved changed gone"><div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble rv-draft" data-show="offline online updated moved changed gone">Which week does the export cover?</div></div><button type="button" class="rv-chip">User stories · As a manager…</button><span class="rv-receipt" data-show="offline online updated moved changed gone">Draft</span></div><div class="rv-entry rv-them" data-show="online updated moved changed gone"><div class="rv-msg rv-them"><span class="rv-who">Mango</span><div class="rv-bubble">Weekly is enough for scheduled exports.</div></div><button type="button" class="rv-chip">Behavior · TBD: scheduled exports…</button><span class="rv-receipt">Draft</span></div><div class="rv-compose" data-anchor="phone-composer" data-illustrates="offline-leave" data-show="typing"><div class="rv-anchor">#story-totals</div><textarea class="rv-field" aria-label="Comment" placeholder="Comment… (⌘⏎ to send)">Totals per week, or per day too?</textarea><div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri">Comment</button></div></div><div class="rv-entry rv-them"><div class="rv-msg rv-them"><span class="rv-who">Agent</span><div class="rv-bubble">TBD: whether the export also offers XLSX.<div class="rv-choices"><button type="button" class="rv-choice">CSV only (recommended)</button><button type="button" class="rv-choice">CSV and XLSX</button><button type="button" class="rv-choice rv-words">Reply</button></div></div></div><button type="button" class="rv-chip">Behavior · TBD: whether the export also offers XLSX</button></div><div class="rv-entry rv-them"><div class="rv-msg rv-them"><span class="rv-who">Agent</span><div class="rv-bubble">TBD: the file name of the downloaded CSV.<div class="rv-choices"><button type="button" class="rv-choice rv-words">Reply</button></div></div></div><button type="button" class="rv-chip">Behavior · TBD: the file name of the downloaded…</button></div></div></div></aside>
+<div class="rv-sheet" data-anchor="phone-sheet" data-show="edited moved changed gone"><span class="rv-grip"></span><div class="rv-focused-head"><button type="button" class="rv-btn rv-back"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg><span>Conversation</span></button></div><div class="rv-focused-stream" data-anchor="phone-focused-thread" data-illustrates="acceptance-edit-race acceptance-anchor-moved acceptance-anchor-changed acceptance-anchor-gone"><div class="rv-entry rv-me"><div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble">Say which columns the CSV holds, and their order.<span class="rv-edited">Edited</span></div><ol class="rv-history" aria-label="Edit history"><li><span class="rv-who">Papaya</span> Say which columns the CSV holds, in order.</li><li><span class="rv-who">Mango</span> Say which columns the CSV holds, and their order.</li></ol><div class="rv-msg-actions"><button type="button" class="rv-btn">Edit</button></div></div><button type="button" class="rv-chip" data-show="opened arrived named typing kept handed edited offline online updated moved changed">Acceptance criteria · “The export button downloads a CSV of the current table.”</button><button type="button" class="rv-chip" data-show="gone">Text removed · “The export button downloads a CSV of the current table.”</button><div class="rv-notice" data-show="changed">Text changed since this comment<span class="rv-quote">“The export button downloads a CSV of the current table.”</span></div><span class="rv-receipt">Sent</span></div></div><div class="rv-reply-box"><textarea class="rv-field" aria-label="Reply" placeholder="Reply… (⌘⏎ to send)"></textarea><button type="button" class="rv-btn rv-pri">Reply</button></div></div>
+<div class="rv-toolbar" data-anchor="phone-toolbar" data-illustrates="offline-notice"><button type="button" class="rv-btn rv-tool" aria-pressed="false">Comment</button><div class="rv-inline-handoff" data-anchor="phone-handoff"><span class="rv-note" data-anchor="phone-drafts"><span data-show="opened arrived handed edited">0 drafts</span><span data-show="named typing offline online updated moved changed gone">1 draft</span><span data-show="kept">2 drafts</span></span><button type="button" class="rv-btn" data-show="arrived named typing kept handed edited offline online updated moved changed gone">Next TBD (2)</button><button type="button" class="rv-btn rv-pri" data-show="opened">TBD open (2)</button><button type="button" class="rv-btn rv-pri" data-anchor="phone-handoff-button" data-illustrates="acceptance-handoff-own" data-show="named kept offline online updated">Hand off to agent →</button><button type="button" class="rv-btn" data-show="typing moved changed gone">Hand off to agent →</button><button type="button" class="rv-btn rv-pri" disabled data-show="arrived handed">Hand off to agent →</button><button type="button" class="rv-btn" disabled data-show="edited">Hand off to agent →</button></div><button type="button" class="rv-btn rv-tool" aria-pressed="false">Reading view</button><span class="rv-offline" role="status" data-anchor="phone-offline" data-illustrates="offline-notice acceptance-offline-save" data-show="offline">Offline: 1 change waiting</span><span class="rv-status"><span data-show="opened arrived named typing kept handed edited online updated moved changed gone">connected · review-serve · <span data-show="opened">0</span><span data-show="arrived">1</span><span data-show="named typing">2</span><span data-show="kept handed edited">3</span><span data-show="offline">4</span><span data-show="online updated moved changed gone">5</span> threads</span><span data-show="offline">event sync failed: Failed to fetch</span></span></div>
+<div class="rv-toast" role="status" data-show="named offline">Comment saved as draft — hand off when ready</div><div class="rv-toast" role="status" data-show="handed">Handed off 2 comments, agent notified</div>
+<div class="rv-banner" data-anchor="phone-banner" data-illustrates="acceptance-agent-edit-banner" data-show="updated" role="status">Spec updated by agent <button type="button" class="rv-btn" data-anchor="phone-reload">Reload</button></div>
+</section>
+<ol data-mockup-steps>
+  <li data-step="opened" data-illustrates="acceptance-no-presence live-presence">Papaya's review panel open on Weekly report: the spec and its review controls, no list of viewers and no one else's selection</li>
+  <li data-step="arrived" data-illustrates="acceptance-live-comment live-pull model-author-shown">Mango saves a comment on a criterion: within 2 seconds, with no reload, its pin and its thread show under Mango's name</li>
+  <li data-step="named" data-illustrates="model-author-assign">Papaya saves a comment on the export sentence: no name prompt, and her fruit name on it</li>
+  <li data-step="typing" data-step-by="desktop-story-totals phone-story-totals" data-illustrates="offline-leave">Papaya types a comment on a user story and does not save it</li>
+  <li data-step="kept" data-step-by="desktop-index phone-index" data-illustrates="acceptance-typed-kept offline-leave">Review index by its back link, then back to the spec: the typed comment waits on its block as her draft</li>
+  <li data-step="handed" data-step-by="desktop-handoff-button phone-handoff-button" data-illustrates="acceptance-handoff-own acceptance-handoff-own-other live-handoff">Hand off: Papaya's threads read Sent, and Mango's unfinished draft stays a draft</li>
+  <li data-step="edited" data-step-by="desktop-thread-export phone-thread-export" data-illustrates="acceptance-edit-race model-edit-history model-effective">Papaya, then Mango, edit her handed-off message: it shows Mango's text, Edited, and its history lists both edits with their authors</li>
+  <li data-step="offline" data-illustrates="acceptance-offline-save offline-notice offline-outbox">Offline, Papaya saves a comment: Offline: 1 change waiting, and the new thread a draft</li>
+  <li data-step="online" data-illustrates="acceptance-offline-reconnect live-pull">Back online: no waiting notice, and Mango's comment from meanwhile shows with hers, each once</li>
+  <li data-step="updated" data-illustrates="acceptance-agent-edit-banner">The agent edits the spec: Spec updated by agent with Reload, the text as it loaded</li>
+  <li data-step="moved" data-step-by="desktop-reload phone-reload" data-illustrates="acceptance-anchor-moved anchoring-state-kept">Reload: a paragraph now sits above the export sentence, the pin still on the sentence, and the thread shows no change notice</li>
+  <li data-step="changed" data-illustrates="acceptance-anchor-changed anchoring-state-changed">The agent rewrites part of the sentence: the pin on its remaining text, and the thread reads Text changed since this comment with the original quote</li>
+  <li data-step="gone" data-illustrates="acceptance-anchor-gone anchoring-state-gone">The agent deletes the sentence: the thread reads Text removed with the original quote, and its pin sits on the nearest surviving block</li>
+</ol>
+</body>
+</html>

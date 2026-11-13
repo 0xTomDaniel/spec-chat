@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Portable hand-offs - spec</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./.style/spec.css">
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Portable hand-offs</h1>
+<nav data-anchor="breadcrumbs">docs / specs / portable-handoffs.spec.html</nav>
+<p data-anchor="context">Owns how a handed-off batch reaches an agent and completes: the control state, the batch transaction, and cold recovery; <a href="./host-wake.spec.html">Review host wakes the owner pane</a> owns the host-wake state.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories" id="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-agent">As an authoring agent, I want hand-offs to wake the active shaping turn and durable files to support cold recovery so processing remains portable without a resident supervisor.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="portable-handoffs" data-anchor="acceptance" id="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-agent-wake" data-story="story-agent"><span data-acceptance-scenario>Given a reviewer on a spec whose registered owner pane the wake provider resolves, a fixture must be added to provide it, When the reviewer hands off a comment batch,</span> <span data-acceptance-observable>Then the owner pane is prompted once per unchanged batch and no second processor is launched.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-agent-cold" data-story="story-agent"><span data-acceptance-scenario>Given an authoring agent entering a repository where a reviewer handed off batches while no agent ran, a fixture must be added to provide it, When the agent starts,</span> <span data-acceptance-observable>Then its first action processes every completed unprocessed hand-off before new work.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-agent-cold-fail" data-story="story-agent"><span data-acceptance-scenario>Given an authoring agent entering a repository holding a completed unprocessed hand-off, a fixture must be added to provide it, When the agent processes that batch and it fails, which needs an induced failure: batch processing,</span> <span data-acceptance-observable>Then the cursor stays unchanged, so the batch is still unprocessed.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-material-no-shaping" data-story="story-agent"><span data-acceptance-scenario>Given an authoring agent on a box where the shaping skill is unavailable, and a reviewer who handed off a batch that materially changes a spec, a fixture must be added to provide it, When the agent processes the batch, then the reviewer opens the spec,</span> <span data-acceptance-observable>Then the spec is unchanged and the reviewer's threads still show pending.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-material-no-shaping-report" data-story="story-agent"><span data-acceptance-scenario>Given an authoring agent on a box where the shaping skill is unavailable, and a reviewer who handed off a batch that materially changes a spec, a fixture must be added to provide it, When the agent processes the batch,</span> <span data-acceptance-observable>Then the agent reports that the batch needs the shaping skill.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-accept-no-status" data-story="story-agent"><span data-acceptance-scenario>Given an authoring agent whose reviewer pressed Accept spec on a spec under review, a fixture must be added to provide it, When the agent processes that spec acceptance,</span> <span data-acceptance-observable>Then the committed spec shows no Status line or acceptance mark, and the agent writes no acceptance into the spec's registration or any other Spec Chat file.</span></p>
+<p data-anchor="acceptance-rules-note">Onboarding: not needed, hand-off processing adds no page; the reviewer hands off from the existing review page.
+CI: not restated here; <a href="./review-service.spec.html#acceptance-ci-alone">review-service#acceptance-ci-alone</a> runs the full suite, which holds this spec&rsquo;s tests, on every push and pull request.
+One hand-off control for desktop and phone: not affected, hand-off processing adds no hand-off control; the review panel&rsquo;s one Hand off writes the batch it processes (<a href="./prompt-first-shaping.spec.html#mobile-handoff">phone hand-off</a>) (<a href="./prompt-first-shaping.spec.html#acceptance-one-handoff-rule">phone rule</a>, <a href="./prompt-first-shaping.spec.html#acceptance-one-handoff-rule-desktop">desktop rule</a>).
+Never strip proof clauses or rewrite unedited criteria: not affected, no criterion here carries a proof clause (<a href="./prompt-first-shaping.spec.html#acceptance-proof-clause-rule">shaping rule</a>, <a href="./prompt-first-shaping.spec.html#acceptance-proof-clause-rule-repair">repair rule</a>).
+Every mockup at production fidelity: not affected, hand-off processing changes no screen (<a href="./mockups.spec.html#acceptance-fidelity-rule">rule</a>).
+Threads read as one conversation: kept, hand-off processing adds no thread view; the agent&rsquo;s one reply to each newest human message lands in that message&rsquo;s thread and reads in the one conversation (<a href="#batch-order-5">replies</a>, <a href="./threads.spec.html#acceptance-stream-rule">rule</a>).</p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries" id="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-handoff"><span data-boundary-responsibility>The review skill owns the owner&rsquo;s side of a hand-off: zero-wait scan, batch transaction, replies, cursor, and control state.</span> <span data-boundary-seam>Caller-facing seam: spool and cursor files, <code>review-control.sh</code>, register&rsquo;s <code>wake=</code> line.</span> <span data-boundary-dependency>Dependency direction: self-contained on disk; host wake only reactivates.</span> <span data-boundary-scope>Observable scope: agent replies, cursor contents, the control line.</span></p>
+</section>
+
+<section data-anchor="active-review" id="active-review">
+<h2>Active review attachment</h2>
+<p data-anchor="active-turn">In turn-yielded state, the authoring agent keeps its current turn open and parks through the review-control wrapper.</p>
+<p data-anchor="active-no-final">The agent never returns a final response while turn-yielded state remains active.</p>
+<p data-anchor="active-handoff">A browser hand-off completes the wait, re-enters the same authoring turn, and delivers the exact ready batch.</p>
+<p data-anchor="active-repark">After the batch settles, the same turn reconciles remaining backlog and parks a fresh watcher.</p>
+<p data-anchor="active-timeout">A watcher timeout or watcher error while the turn remains active wakes the same agent, which reconciles and reparks automatically.</p>
+<p data-anchor="active-stop">A host-stopped, completed, or lost turn cannot reactivate itself.</p>
+<p data-anchor="active-working-ui">Hosts may display the authoring turn as working throughout active browser review.</p>
+</section>
+
+<section data-anchor="wake-ownership" id="wake-ownership">
+<h2>Review wake ownership</h2>
+<p data-anchor="wake-terminal-control">Every open review is in exactly one terminal control state: turn-yielded, host-wake, or manual-resume.</p>
+<figure data-anchor="wake-state-figure" aria-labelledby="wake-state-caption">
+<svg viewBox="0 0 600 680" role="img">
+<title>Review wake ownership state machine</title>
+<g font-family="ui-monospace, Menlo, monospace">
+<rect x="40" y="35" width="520" height="135" stroke-width="3" style="fill: var(--spec-surface); stroke: var(--spec-ink)"/>
+<rect x="40" y="35" width="10" height="135" style="fill: var(--spec-teal)"/>
+<text x="78" y="78" font-size="28" font-weight="700" style="fill: var(--spec-ink)">TURN-YIELDED</text>
+<text x="78" y="113" font-size="22" style="fill: var(--spec-body)">same turn owns wait</text>
+<text x="78" y="143" font-size="20" font-weight="700" style="fill: var(--spec-teal)">FINAL FORBIDDEN</text>
+<path d="M300 170 V225" fill="none" stroke-width="3" style="stroke: var(--spec-ink)"/>
+<polygon points="300,237 291,220 309,220" style="fill: var(--spec-ink)"/>
+<text x="322" y="207" font-size="18" style="fill: var(--spec-muted)">wake=verified</text>
+<rect x="40" y="237" width="520" height="135" stroke-width="3" style="fill: var(--spec-surface); stroke: var(--spec-ink)"/>
+<rect x="40" y="237" width="10" height="135" style="fill: var(--spec-blue)"/>
+<text x="78" y="280" font-size="28" font-weight="700" style="fill: var(--spec-ink)">HOST-WAKE</text>
+<text x="78" y="315" font-size="22" style="fill: var(--spec-body)">review host wakes owner pane</text>
+<text x="78" y="345" font-size="20" font-weight="700" style="fill: var(--spec-blue)">FINAL ALLOWED</text>
+<path d="M300 372 V427" fill="none" stroke-width="3" style="stroke: var(--spec-ink)"/>
+<polygon points="300,439 291,422 309,422" style="fill: var(--spec-ink)"/>
+<text x="322" y="409" font-size="18" style="fill: var(--spec-muted)">wake=unavailable</text>
+<rect x="40" y="439" width="520" height="135" stroke-width="3" style="fill: var(--spec-surface); stroke: var(--spec-ink)"/>
+<rect x="40" y="439" width="10" height="135" style="fill: var(--spec-amber)"/>
+<text x="78" y="482" font-size="28" font-weight="700" style="fill: var(--spec-ink)">MANUAL-RESUME</text>
+<text x="78" y="517" font-size="22" style="fill: var(--spec-body)">no automatic wake claim</text>
+<text x="78" y="547" font-size="20" font-weight="700" style="fill: var(--spec-amber)">NEW HUMAN MESSAGE REQUIRED</text>
+<path d="M40 627 H560" fill="none" stroke-width="2" style="stroke: var(--spec-ink)"/>
+<text x="300" y="654" text-anchor="middle" font-size="20" font-weight="700" style="fill: var(--spec-body)">NO GENERIC WATCHING STATE</text>
+</g>
+</svg>
+<figcaption id="wake-state-caption">Figure: final response is legal only after host wake is verified or the review is explicitly downgraded to manual resume.</figcaption>
+</figure>
+<div class="table-scroll" data-anchor="wake-state-table-scroll">
+<table data-anchor="wake-state-table">
+<thead><tr><th>Control state</th><th>Wake owner</th><th>Final response</th><th>Reviewer promise</th></tr></thead>
+<tbody>
+<tr data-anchor="wake-state-yielded"><td>turn-yielded</td><td>The open authoring turn through a verified same-turn yield</td><td>Forbidden</td><td>Handoff re-enters this turn</td></tr>
+<tr data-anchor="wake-state-external"><td>host-wake</td><td>The review host, bound to the registry row owner pane</td><td>Allowed</td><td>Handoff prompts the owning pane</td></tr>
+<tr data-anchor="wake-state-manual"><td>manual-resume</td><td>The human</td><td>Allowed</td><td>Send a new chat message to drain queued work</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="wake-raw-watcher">A raw shell watcher is detection-only and never establishes turn-yielded or host-wake state.</p>
+<p data-anchor="wake-monitor">The review host observes complete handoffs per registered resource without advancing the processing cursor and wakes that row's owner pane once per unchanged batch, as defined by <a href="./host-wake.spec.html#wake-rule">Review host wakes the owner pane</a>.</p>
+<p data-anchor="wake-exclusive-owner">A machine allows only one turn-yielded control owner for each canonical collection root and cursor name, and a second owner fails visibly into manual resume.</p>
+<p data-anchor="wake-lock-namespace">Every terminal multiplexer pane and every ordinary shell of the same user contends for that one owner, whatever its shell environment.</p>
+<p data-anchor="wake-no-lease">Ownership ends automatically with its owner&rsquo;s foreground process and needs no lease, heartbeat, fencing protocol, or persistent coordinator.</p>
+<p data-anchor="wake-adapter">Host wake owns only reactivation and never reads comments, edits the spec, emits replies, advances cursors, or invokes detached agent processing.</p>
+<p data-anchor="wake-provider">Host wake uses only the registered <code>wake</code> provider (<a href="./review-service.spec.html#providers">Providers</a>); <code>review-host register</code> reports <code>wake=verified</code> only when its <code>check</code>, run in the review service's environment (<a href="./host-wake.spec.html#wake-rule-verify">Host wake</a>), resolves the owner pane.</p>
+<p data-anchor="wake-portable">Without a wake provider, registration reports <code>wake=unavailable</code> and the owner selects manual-resume rather than false active status.</p>
+</section>
+
+<section data-anchor="batch-transaction" id="batch-transaction">
+<h2>Hand-off batch transaction</h2>
+<p data-anchor="batch-cutoff">The hand-off event defines the exact batch cutoff.</p>
+<p data-anchor="batch-order-1">The agent folds edits and replies, then rechecks that each newest human message still needs an answer.</p>
+<p data-anchor="batch-material-classification">Before editing, the agent classifies whether the batch changes behavior or information architecture.</p>
+<p data-anchor="batch-review-only-boundary">Questions and atomic corrections remain review-only, while a material batch loads the shaping skill and its complete authoring quality contract before the first file edit.</p>
+<p data-anchor="batch-no-grandfathering">An existing or old spec receives no exemption from the current information-shape or visual-quality rules when a material batch changes it.</p>
+<p data-anchor="batch-restructure-weak-page">When the current page cannot carry new material with readable visual density, the agent restructures the affected page rather than appending prose, cards, or one catch-all diagram.</p>
+<p data-anchor="batch-order-2">The agent completes each coherent batch of behavior, acceptance, and necessary layout changes before its replies.</p>
+<p data-anchor="batch-order-3">The agent never edits the issue; keeping it current when high-level truth changed is the caller's.</p>
+<p data-anchor="batch-order-4">The agent commits every accepted spec change locally before the browser presents its refreshed Git-derived focus view.</p>
+<p data-anchor="batch-order-5">The agent emits one reply to each newest human message after the durable spec write succeeds.</p>
+<p data-anchor="batch-order-6">Only after every prior action succeeds does the agent append the exact processed filenames to its cursor.</p>
+<p data-anchor="batch-failure">A partial or failed batch leaves the cursor unchanged so the next processor reconstructs and completes the same work.</p>
+<p data-anchor="batch-one-writer">One active writer owns a mutable review collection at a time.</p>
+<p data-anchor="batch-no-claims">Processing uses no leases, fencing, or distributed claims until observed concurrent processors prove a real race.</p>
+</section>
+
+<section data-anchor="portable-recovery" id="portable-recovery">
+<h2>Portable recovery</h2>
+<figure data-anchor="recovery-figure">
+<div class="rail-wrap" data-anchor="recovery-figure-scroll">
+<svg viewBox="0 0 760 200" style="min-width: 600px" role="img" aria-label="A durable hand-off is completed either by the same turn or by a fresh agent; both paths reach one accepted batch outcome.">
+<rect x="20" y="78" width="170" height="44" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="105" y="105" font-size="15" text-anchor="middle" style="fill: var(--spec-ink)">Durable hand-off</text>
+<rect x="295" y="20" width="170" height="44" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="380" y="47" font-size="15" text-anchor="middle" style="fill: var(--spec-ink)">Same turn</text>
+<rect x="295" y="136" width="170" height="44" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-blue)"></rect>
+<text x="380" y="163" font-size="15" text-anchor="middle" style="fill: var(--spec-ink)">Fresh agent</text>
+<rect x="526" y="78" width="228" height="44" rx="6" stroke-width="1.5" style="fill: var(--spec-surface); stroke: var(--spec-teal)"></rect>
+<text x="640" y="105" font-size="15" text-anchor="middle" style="fill: var(--spec-ink)">Accepted batch outcome</text>
+<path d="M190 92 L293 48" stroke-width="1.5" fill="none" marker-end="url(#recovery-arrow)" style="stroke: var(--spec-ink)"></path>
+<path d="M190 108 L293 152" stroke-width="1.5" fill="none" marker-end="url(#recovery-arrow)" style="stroke: var(--spec-ink)"></path>
+<path d="M465 48 L524 88" stroke-width="1.5" fill="none" marker-end="url(#recovery-arrow)" style="stroke: var(--spec-ink)"></path>
+<path d="M465 152 L524 112" stroke-width="1.5" fill="none" marker-end="url(#recovery-arrow)" style="stroke: var(--spec-ink)"></path>
+<defs><marker id="recovery-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill: var(--spec-ink)"></path></marker></defs>
+</svg>
+</div>
+<figcaption data-anchor="recovery-figure-caption">Either path completes a durable hand-off with one accepted batch outcome.</figcaption>
+</figure>
+<p data-anchor="recovery-guarantee">The durable guarantee is one accepted batch outcome, not resumption of a particular worker session.</p>
+<p data-anchor="recovery-attempts">Processing allows at-least-once attempts and accepts one complete current outcome.</p>
+<p data-anchor="recovery-same-session">Same-thread continuation and CLI session resume are performance and context optimizations only.</p>
+<p data-anchor="recovery-cold">Any later compatible agent can cold-start from the current spec, review spool, existing context, repository instructions, current issue, and current change request.</p>
+<p data-anchor="recovery-derived-capsule">The portable work capsule is derived at processing time from those existing sources and is never copied into a job file or ledger.</p>
+<p data-anchor="recovery-no-worker">When no agent process exists, handed-off events remain durably queued and no claim of active processing is made.</p>
+<p data-anchor="recovery-reconnect">When an agent later enters the repository, its first action is a zero-wait collection scan that drains every completed unprocessed hand-off before new work.</p>
+<p data-anchor="recovery-no-self-wake">A completely closed host session cannot self-wake without a host trigger or another local process capable of invoking an agent.</p>
+<p data-anchor="recovery-no-supervisor">The implementation adds no generic supervisor or agent-launching server.</p>
+<p data-anchor="recovery-wake-monitor">The review host may detect a complete handoff and prompt the registered owner pane, but it never launches a second processor.</p>
+</section>
+
+<section data-anchor="spec-acceptance" id="spec-acceptance">
+<h2>Human spec review and spec acceptance</h2>
+<p data-anchor="finish-agent">The parked agent interprets the empty hand-off spec acceptance writes (<a href="./prompt-first-shaping.spec.html#finish-event">spec acceptance</a>) as explicit completion of the browser review window.</p>
+<p data-anchor="finish-final-batch">The agent reconciles the spec, commits any final changes locally, advances the cursor, and closes the active wait.</p>
+<p data-anchor="finish-no-status">Spec acceptance leaves the spec as reviewed: the spec carries no Status line or acceptance mark, and the agent records it in no Spec Chat file, since the spool's Accept spec hand-off is Spec Chat's only view of it (<a href="./review-state.spec.html#live-accept">review state</a>); a caller that keeps acceptances quotes that hand-off in its own record.</p>
+</section>
+
+<section data-anchor="handoff-proof" id="handoff-proof">
+<h2>Implementation and proof contract</h2>
+<p data-anchor="tdd-handoff-red">A watcher attachment scenario covers a browser hand-off that arrives after the authoring agent has replied.</p>
+<p data-anchor="tdd-handoff-green">The same scenario passes when turn-yielded keeps the turn open, host-wake prompts the registered owner pane, or manual-resume explicitly requires a new human message.</p>
+<p data-anchor="tdd-material-routing">Skill validation proves review-only is limited to questions and atomic corrections and material batches are routed through the complete shaping quality contract before editing.</p>
+</section>
+
+<section data-anchor="handoff-non-goals" id="handoff-non-goals">
+<h2>Non-goals</h2>
+<p data-anchor="non-goal-auto-no-agent">Spec Chat does not guarantee processing while no compatible agent process exists.</p>
+<p data-anchor="non-goal-exact-session">It does not guarantee resurrection of a closed host session or preservation of hidden conversational state.</p>
+<p data-anchor="non-goal-distributed">It does not build a distributed scheduler, exactly-once execution system, multi-writer coordinator, or cross-host presence service.</p>
+</section>
+
+</article>
+</body>
+</html>

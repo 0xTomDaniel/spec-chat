@@ -1,0 +1,238 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const runtime = readFileSync(resolve(root, 'skill/review-spec/assets/viz/runtime.js'), 'utf8');
+const start = runtime.indexOf('function foldThreads(events)');
+const end = runtime.indexOf('\n\nfunction ingest(', start);
+assert.ok(start >= 0 && end > start, 'runtime exposes the pure thread-folding function');
+const model = Function(runtime.slice(start, end) + '; return { foldThreads, conversationEntries, receiptWord, waitsOnReviewer, newestReviewerIndex, firstWords, conversationCount, threadReplyAction, reviewHandoffState, mockupOpen, handoffObservation, handoffAgentText, commentModeShortcut, threadDockEntries, acknowledgedReplyCount, isOpenTbd, openTbdMarkers, nextOpenTbd, tbdBlock, tbdHighlightBlocks, advanceTbd, renderTbdHighlight, tbdCountLabel };')();
+const { foldThreads, conversationEntries, receiptWord, waitsOnReviewer, newestReviewerIndex, firstWords, conversationCount, threadReplyAction, reviewHandoffState, mockupOpen, handoffObservation, handoffAgentText, commentModeShortcut, threadDockEntries, acknowledgedReplyCount, isOpenTbd, openTbdMarkers, nextOpenTbd, tbdBlock, tbdHighlightBlocks, advanceTbd, renderTbdHighlight, tbdCountLabel } = model;
+
+const event = (name, actor, body) => ({ name, actor, body: { actor, schemaVersion: 1, ...body } });
+const events = [
+  event('100-comment-root.json', 'human', { id: 'u-root', event: 'comment', anchorId: 'policy', target: null, text: 'Root' }),
+  event('110-handoff-root.json', 'human', { id: 'h-root', event: 'handoff' }),
+  event('120-reply-root.json', 'agent', { id: 'r-root', event: 'reply', respondsTo: 'u-root', status: 'acknowledged', text: 'Agent answer' }),
+  event('130-reply-follow.json', 'human', { id: 'u-follow', event: 'reply', respondsTo: 'r-root', threadId: 'u-root', anchorId: 'policy', target: null, text: 'Follow-up' }),
+  event('140-edit-follow.json', 'human', { id: 'e-follow', event: 'edit', supersedes: 'u-follow', threadId: 'u-root', anchorId: 'policy', target: null, text: 'Edited follow-up' }),
+  event('150-handoff-follow.json', 'human', { id: 'h-follow', event: 'handoff' }),
+  event('160-reply-stale.json', 'agent', { id: 'r-stale', event: 'reply', respondsTo: 'u-root', status: 'acknowledged', text: 'Late root answer' }),
+];
+
+let threads = foldThreads(events);
+let thread = threads.get('u-root');
+assert.equal(thread.status, 'pending', 'a reply to an older human message does not acknowledge the edited follow-up');
+assert.equal(thread.latestHumanId, 'e-follow');
+assert.equal(thread.messages[2].body.text, 'Edited follow-up');
+assert.ok(!thread.messages.some(message => message.body.text === 'Follow-up'), 'superseded text is removed from the effective thread');
+assert.equal(acknowledgedReplyCount(threads), 0, 'a human follow-up clears the acknowledged-reply count');
+
+events.push(event('170-reply-edit.json', 'agent', { id: 'r-edit', event: 'reply', respondsTo: 'e-follow', status: 'acknowledged', text: 'Current answer' }));
+threads = foldThreads(events);
+thread = threads.get('u-root');
+assert.equal(thread.status, 'acknowledged', 'replying to the latest edit acknowledges the thread');
+assert.equal(thread.messages.at(-1).body.id, 'r-edit');
+assert.equal(acknowledgedReplyCount(threads), 1, 'a current agent reply enters the acknowledged-reply count');
+
+events.push(event('180-status-resolved.json', 'human', { id: 's-root', event: 'status', respondsTo: 'u-root', threadId: 'u-root', status: 'resolved' }));
+thread = foldThreads(events).get('u-root');
+assert.equal(thread.status, 'resolved');
+assert.equal(acknowledgedReplyCount(foldThreads(events)), 0, 'resolving a thread clears the acknowledged-reply count');
+assert.deepEqual(threadReplyAction(thread), { label: 'Reply and reopen', message: thread.messages.at(-1) }, 'a resolved thread continues through an ordinary reply');
+assert.deepEqual(threadReplyAction({ ...thread, status: 'acknowledged' }), { label: 'Reply', message: thread.messages.at(-1) }, 'an active thread keeps the ordinary reply action');
+
+const reopenedEvents = [...events, event('190-reply-reopen.json', 'human', { id: 'u-reopen', event: 'reply', respondsTo: 'r-edit', threadId: 'u-root', anchorId: 'policy', target: null, text: 'Reopened' })];
+assert.equal(foldThreads(reopenedEvents).get('u-root').status, 'draft', 'replying to a resolved thread reopens it as a draft without a new status');
+
+// threads #proof, first failing test: a spool of three threads begun at different times reads as three first messages
+// in that order, each with its replies folded (the conversation's order, folding, receipts, and dots from the fold).
+const stream = [
+  event('300-comment-c.json', 'human', { id: 'u-c', event: 'comment', anchorId: 'block-c', target: null, text: 'Begun first, on the last block' }),
+  event('305-handoff-c.json', 'human', { id: 'h-c', event: 'handoff', events: ['u-c'] }),
+  event('310-comment-a.json', 'human', { id: 'u-a', event: 'comment', anchorId: 'block-a', target: null, text: 'Begun second, on the first block' }),
+  event('320-reply-c.json', 'agent', { id: 'r-c', event: 'reply', respondsTo: 'u-c', status: 'acknowledged', text: 'Answer to the first' }),
+  event('330-comment-b.json', 'human', { id: 'u-b', event: 'comment', anchorId: 'block-b', target: null, text: 'Begun third' }),
+  event('335-handoff-ab.json', 'human', { id: 'h-ab', event: 'handoff', events: ['u-a', 'u-b'] }),
+  event('340-status-b.json', 'agent', { id: 's-b', event: 'status', respondsTo: 'u-b', threadId: 'u-b', status: 'acknowledged' }),
+  event('350-reply-a.json', 'agent', { id: 'r-a', event: 'reply', respondsTo: 'u-a', status: 'acknowledged', text: 'One' }),
+  event('360-reply-a2.json', 'human', { id: 'u-a2', event: 'reply', respondsTo: 'r-a', threadId: 'u-a', text: 'Two' }),
+  event('370-reply-a3.json', 'agent', { id: 'r-a3', event: 'reply', respondsTo: 'u-a2', status: 'acknowledged', text: 'Three, the newest reply' }),
+];
+const folded = foldThreads(stream);
+const order = conversationEntries(folded, []);
+assert.deepEqual(order.map(entry => entry.thread.id), ['u-c', 'u-a', 'u-b'], 'threads read in the order their first messages were written, not page order');
+assert.deepEqual(order.map(entry => entry.thread.messages.length - 1), [1, 3, 0], 'each thread keeps its replies under its first message');
+assert.equal(waitsOnReviewer(folded.get('u-c')), true, 'a thread ending with the agent waits on the reviewer');
+assert.equal(waitsOnReviewer(folded.get('u-a')), true, 'the agent answered the newest reviewer reply');
+assert.equal(waitsOnReviewer(folded.get('u-b')), false, 'acknowledged without a reply: nothing waits');
+assert.equal(receiptWord(folded.get('u-b').status), 'Seen', 'acknowledged without a reply reads Seen');
+assert.equal(newestReviewerIndex(folded.get('u-a')), 2, 'the receipt sits under the newest reviewer message');
+assert.equal(newestReviewerIndex(folded.get('u-c')), 0);
+assert.deepEqual(['draft', 'pending', 'acknowledged', 'resolved'].map(receiptWord), ['Draft', 'Sent', 'Seen', 'Resolved'], 'threads #receipts');
+const resolvedStream = foldThreads([...stream, event('380-status-c.json', 'human', { id: 's-c', event: 'status', respondsTo: 'u-c', threadId: 'u-c', status: 'resolved' })]);
+assert.equal(waitsOnReviewer(resolvedStream.get('u-c')), false, 'a resolved thread waits on no one');
+// A thread on an open question's block is its answer: under the question, which sits where its first answer was written;
+// unanswered questions close the conversation in page order.
+const asked = [{ anchor: 'block-q2' }, { anchor: 'block-a' }, { anchor: 'block-q3' }];
+assert.deepEqual(conversationEntries(folded, asked).map(entry => entry.kind === 'thread' ? entry.thread.id : 'question ' + entry.question.anchor + ' ' + entry.answers.map(th => th.id)),
+  ['u-c', 'question block-a u-a', 'u-b', 'question block-q2 ', 'question block-q3 '], 'questions in the conversation');
+assert.equal(firstWords('Moved the total into the header, above the cards.'), 'Moved the total into the header…');
+assert.equal(firstWords('Monday, ISO weeks'), 'Monday, ISO weeks');
+assert.equal(firstWords('The report page shows each team\'s total for the week, highest first.'), 'The report page shows each team\'s total…');
+assert.equal(firstWords('Should the export also offer XLSX?'), 'Should the export also offer XLSX?');
+assert.equal(conversationCount(4, 1), '4 threads · 1 question', 'threads #stream-head');
+assert.equal(conversationCount(1, 0), '1 thread');
+
+const shortcut = overrides => commentModeShortcut({ key: 'c', target: { tagName: 'BODY' }, ...overrides });
+assert.equal(shortcut({}), true, 'bare C enters comment mode');
+assert.equal(shortcut({ ctrlKey: true }), false, 'Ctrl+C remains available to the browser');
+assert.equal(shortcut({ metaKey: true }), false, 'Command+C remains available to the browser');
+assert.equal(shortcut({ altKey: true }), false, 'Alt+C does not enter comment mode');
+assert.equal(shortcut({ shiftKey: true }), false, 'Shift+C does not enter comment mode');
+assert.equal(shortcut({ repeat: true }), false, 'key repeat does not toggle comment mode repeatedly');
+assert.equal(shortcut({ target: { tagName: 'INPUT' } }), false, 'typing in an input does not enter comment mode');
+assert.equal(shortcut({ target: { tagName: 'DIV', isContentEditable: true } }), false, 'typing in editable content does not enter comment mode');
+
+const dockEntries = threadDockEntries(new Map([
+  ['first', { id: 'first' }],
+  ['second', { id: 'second' }],
+]));
+assert.deepEqual(dockEntries.map(entry => [entry.thread.id, entry.number]), [['second', 2], ['first', 1]], 'the dock shows newest threads first while preserving pin numbers');
+
+assert.equal(acknowledgedReplyCount(new Map([
+  ['draft', { status: 'draft' }],
+  ['pending', { status: 'pending' }],
+  ['ack-one', { status: 'acknowledged' }],
+  ['ack-two', { status: 'acknowledged' }],
+  ['resolved', { status: 'resolved' }],
+])), 2, 'the unread badge counts only acknowledged threads awaiting a human response');
+assert.equal(acknowledgedReplyCount(new Map([['replied', { status: 'draft' }], ['resolved', { status: 'resolved' }]])), 0, 'replied-to and resolved threads leave the unread count');
+
+const hs = (drafts, openTbds, finish, tbd, nextTbd, enabled) => ({ drafts, openTbds, finish, tbd, nextTbd, enabled });
+assert.deepEqual(reviewHandoffState(new Map([['draft', { status: 'draft' }]])), hs(1, 0, false, false, false, true), 'drafts enable an ordinary hand-off');
+assert.deepEqual(reviewHandoffState(new Map([['pending', { status: 'pending' }], ['resolved', { status: 'resolved' }]])), hs(0, 0, false, false, false, false), 'unsettled threads cannot accept the spec');
+assert.deepEqual(reviewHandoffState(new Map([['resolved', { status: 'resolved' }]])), hs(0, 0, true, false, false, true), 'a clean resolved review enables Accept spec');
+assert.deepEqual(reviewHandoffState(new Map()), hs(0, 0, true, false, false, true), 'a review with no threads may accept the spec explicitly');
+assert.deepEqual(reviewHandoffState(new Map(), 1), hs(0, 1, false, true, false, true), 'a material TBD blocks Accept spec and enables the TBD jump');
+assert.deepEqual(reviewHandoffState(new Map([['resolved', { status: 'resolved' }]]), 3), hs(0, 3, false, true, false, true), 'a TBD alone blocks an otherwise resolved review; TBD open replaces Next TBD');
+assert.deepEqual(reviewHandoffState(new Map([['draft', { status: 'draft' }]]), 2), hs(1, 2, false, false, true, true), 'drafts still hand off despite a TBD, with Next TBD beside Hand off');
+assert.deepEqual(reviewHandoffState(new Map([['pending', { status: 'pending' }]]), 1), hs(0, 1, false, false, true, false), 'unsettled threads keep Hand off disabled and offer Next TBD');
+// mockups #accept-gate: the open threads and questions of the spec's mockups hold Accept spec, and an unknown set holds it too.
+const resolvedOnly = new Map([['resolved', { status: 'resolved' }]]);
+assert.deepEqual(reviewHandoffState(resolvedOnly, 0, null, 1), hs(0, 0, false, false, false, false), 'a mockup with an open thread holds Accept spec');
+assert.deepEqual(reviewHandoffState(resolvedOnly, 0, null, null), hs(0, 0, false, false, false, false), 'a set not yet told holds Accept spec');
+assert.deepEqual(reviewHandoffState(resolvedOnly, 0, null, 0), hs(0, 0, true, false, false, true), 'a set whose threads are all resolved lets the spec be accepted');
+assert.deepEqual(reviewHandoffState(new Map([['draft', { status: 'draft' }]]), 0, null, 2), hs(1, 0, false, false, false, true), 'open mockup threads never block handing off drafts');
+assert.deepEqual(reviewHandoffState(resolvedOnly, 1, null, 1), hs(0, 1, false, false, true, false), 'with a mockup thread open, a TBD offers Next TBD beside a disabled Hand off, not TBD open');
+assert.equal(mockupOpen(null), null, 'no set told yet: unknown');
+assert.equal(mockupOpen([]), 0, 'no set: nothing open');
+assert.equal(mockupOpen([{ open: 1, questions: 0 }, { open: 2, questions: 0 }]), 3, 'open threads summed across the set');
+assert.equal(mockupOpen([{ open: 0, questions: 1 }, { open: 0, questions: 0 }]), 1, 'an open question on a mockup is open, as an open thread is');
+assert.equal(mockupOpen([{ open: 1, questions: 2 }]), 3, 'open threads and questions summed');
+assert.equal(mockupOpen([{ open: 0, questions: 0 }, { open: null, questions: 0 }]), null, 'an unreadable mockup spool: unknown');
+assert.equal(mockupOpen([{ open: 0, questions: null }]), null, 'an unreadable mockup file: unknown');
+assert.equal(tbdCountLabel('TBD open', 1), 'TBD open', 'one open TBD carries no number');
+assert.equal(tbdCountLabel('TBD open', 2), 'TBD open (2)', 'two or more open TBDs carry the count');
+assert.equal(tbdCountLabel('Next TBD', 1), 'Next TBD', 'Next TBD with one open TBD carries no number');
+assert.equal(tbdCountLabel('Next TBD', 5), 'Next TBD (5)', 'Next TBD carries the count of two or more');
+assert.match(runtime, /handoffState\.tbd \? tbdCountLabel\('TBD open', handoffState\.openTbds\)/, 'handoff controls read TBD open (n) when only a TBD blocks Accept spec');
+const marker = value => ({ getAttribute: name => name === 'data-spec-tbd' ? value : null });
+assert.equal(isOpenTbd(''), true, 'a bare data-spec-tbd marker is open');
+assert.equal(isOpenTbd('open'), true, 'any value other than later is open');
+assert.equal(isOpenTbd('later'), false, 'data-spec-tbd="later" is not open');
+const bare = marker(''), later = marker('later'), named = marker('question'), later2 = marker('later');
+assert.deepEqual(openTbdMarkers([later, later2]), [], 'only later TBDs leave nothing open');
+assert.deepEqual(reviewHandoffState(new Map([['resolved', { status: 'resolved' }]]), openTbdMarkers([later, later2]).length), hs(0, 0, true, false, false, true), 'later TBDs do not block spec acceptance');
+assert.deepEqual(openTbdMarkers([bare, later, named]), [bare, named], 'open TBDs keep document order and skip later markers');
+assert.equal(nextOpenTbd([bare, named], null), bare, 'first activation focuses the first open TBD');
+assert.equal(nextOpenTbd([bare, named], bare), named, 'next activation focuses the next open TBD in document order');
+assert.equal(nextOpenTbd([bare, named], named), bare, 'activation wraps after the last open TBD');
+assert.equal(nextOpenTbd([bare, named], later), bare, 'a stale or later last target restarts at the first open TBD');
+assert.equal(nextOpenTbd([], null), null, 'no open TBD yields no jump target');
+const block = { id: 'block' };
+assert.equal(tbdBlock({ closest: sel => sel === '[data-anchor]' ? block : null }), block, 'the highlighted block is the nearest anchored block');
+const loose = { closest: () => null };
+assert.equal(tbdBlock(loose), loose, 'an unanchored marker highlights itself');
+const cycle = { lastTbd: null };
+assert.deepEqual([1, 2, 3, 4].map(() => advanceTbd(cycle, [bare, named])), [bare, named, bare, named], 'repeated activation cycles open TBDs in document order and wraps');
+assert.equal(cycle.lastTbd, named, 'activation records the focused TBD for the next cycle step');
+cycle.lastTbd = later;
+assert.equal(advanceTbd(cycle, openTbdMarkers([bare, later, named])), bare, 'a later TBD is never a cycle target');
+const classList = () => { const set = new Set(); return { set, add: c => set.add(c), remove: c => set.delete(c), contains: c => set.has(c) }; };
+const blockOf = () => { const el = { classList: classList() }; return el; };
+const openBlock = blockOf(), otherOpenBlock = blockOf(), laterBlock = blockOf();
+const inBlock = (b, value) => ({ ...marker(value), closest: sel => sel === '[data-anchor]' ? b : null });
+const openInBlock = inBlock(openBlock, ''), secondInBlock = inBlock(openBlock, 'q'), otherOpen = inBlock(otherOpenBlock, ''), laterIn = inBlock(laterBlock, 'later');
+const opens = openTbdMarkers([openInBlock, laterIn, secondInBlock, otherOpen]);
+assert.deepEqual(tbdHighlightBlocks(opens), [openBlock, otherOpenBlock], 'each block holding an open TBD is highlighted once, whichever button offers the step; later blocks are not');
+assert.deepEqual(tbdHighlightBlocks([]), [], 'no open TBD, no highlight');
+const fakeRoot = blocks => ({ querySelectorAll: sel => sel === '.hx-tbd-open' ? blocks.filter(b => b.classList.contains('hx-tbd-open')) : [] });
+const allBlocks = [openBlock, otherOpenBlock, laterBlock];
+laterBlock.classList.add('hx-tbd-open');
+renderTbdHighlight(fakeRoot(allBlocks), tbdHighlightBlocks(opens));
+assert.deepEqual(allBlocks.map(b => b.classList.contains('hx-tbd-open')), [true, true, false], 'render highlights only open TBD blocks and clears stale highlights');
+renderTbdHighlight(fakeRoot(allBlocks), tbdHighlightBlocks([]));
+assert.deepEqual(allBlocks.map(b => b.classList.contains('hx-tbd-open')), [false, false, false], 'highlight clears when no open TBD remains');
+assert.match(runtime, /renderTbdHighlight\(document, tbdHighlightBlocks\(openTbds\)\.concat\(/, 'the panel renders the open TBD highlight');
+assert.equal((runtime.match(/const \w+ = reviewHandoffState\(state\.threads, openTbdCount\(\), state\.reviewer\??\.browser, mockupOpen\(state\.mockups\)\);/g) || []).length, 2, 'render and activation gate eligibility on open TBD markers and the mockup set\'s open threads and questions');
+// shell #shell-review-actions-rule: the comment UI page gates them by the same rule, on the questions its held page publishes.
+assert.match(runtime, /function openTbdCount\(\) \{ return COMMENT_UI \? pageQuestions\(\)\.length : openTbdMarkers\(document\.querySelectorAll\('\[data-spec-tbd\]'\)\)\.length; \}/, 'open TBD markers on a page, its published questions on the comment UI page');
+// Next TBD: one position shared with TBD open, beside Hand off on desktop and mobile.
+assert.match(runtime, /<button class="hx-btn hx-next-tbd" id="hx-next-tbd" type="button" hidden>Next TBD<\/button><button class="hx-btn pri" id="hx-handoff">/, 'desktop Next TBD sits left of Hand off');
+assert.match(runtime, /document\.getElementById\('hx-next-tbd'\)\.addEventListener\('click', MOCKUP_SPEC \? nextQuestion : nextTbd\);/, "desktop Next TBD steps the TBD sequence, a mockup page's its questions");
+assert.doesNotMatch(runtime, /hx-mobile-next-tbd/, 'one Next TBD, the panel bar\'s, on desktop and mobile');
+assert.match(runtime, /function nextTbd\(\) \{\n\s+const open = openTbdMarkers\(document\.querySelectorAll\('\[data-spec-tbd\]'\)\);\n\s+if \(open\.length\) jumpToTbd\(advanceTbd\(state, open\)\);\n\}/, 'Next TBD reuses advanceTbd and state.lastTbd');
+assert.equal((runtime.match(/advanceTbd\(state, /g) || []).length, 1, 'one next-TBD step, shared by TBD open and Next TBD');
+assert.match(runtime, /if \(action\.tbd\) return nextTbd\(\);/, 'TBD open takes the same step as Next TBD before posting any event');
+assert.match(runtime, /nextButton\.hidden = !handoffState\.nextTbd;\n\s+nextButton\.textContent = tbdCountLabel\('Next TBD', handoffState\.openTbds\);/, 'Next TBD shows only while the action is Hand off, with the count');
+const tbdCss = runtime.match(/\n\.hx-tbd-open\{([^}]*)\}/);
+assert.ok(tbdCss && /outline:/.test(tbdCss[1]), 'open TBD blocks have a visible outline highlight');
+assert.doesNotMatch(tbdCss[1], /background|border-radius/, 'the highlight does not restyle author block background or radius');
+assert.match(runtime, /body\.hx-focus-active \.hx-tbd-open\{position:relative;z-index:3\}/, 'under focus the highlighted block rises above an ancestor veil (z-index 2)');
+assert.match(runtime, /body\.hx-focus-active \.hx-tbd-open\[data-hx-focus=unchanged\]::after,body\.hx-focus-active tr\.hx-tbd-open\[data-hx-focus=unchanged\] > :is\(td,th\)::after\{display:none!important\}/, 'an unchanged highlighted block drops its own veil');
+
+const waitingHandoff = [event('300-handoff.json', 'human', { id: 'h-wait', event: 'handoff', createdAt: '2026-08-31T12:00:00.000Z' })];
+assert.equal(handoffObservation(waitingHandoff, Date.parse('2026-08-31T12:00:10.000Z')), 'waiting', 'a fresh unacknowledged hand-off is waiting');
+assert.equal(handoffObservation(waitingHandoff, Date.parse('2026-08-31T12:00:31.000Z')), 'queued', 'an unacknowledged hand-off becomes truthfully queued after 30 seconds');
+assert.equal(handoffObservation([...waitingHandoff, event('310-reply.json', 'agent', { id: 'r-wait', event: 'reply', respondsTo: 'u-root', createdAt: '2026-08-31T12:00:12.000Z' })], Date.parse('2026-08-31T12:00:31.000Z')), null, 'a later agent event clears the waiting observation');
+const lastAgent = { body: { createdAt: '2026-08-31T12:00:12.000Z' } };
+assert.equal(handoffAgentText('waiting', null, null), '· handed off, waiting for agent', 'no host wake keeps the waiting message');
+assert.equal(handoffAgentText('queued', 'unavailable', null), '· automatic wake did not occur; send a new chat message to resume', 'unavailable wake keeps the existing timeout message');
+assert.equal(handoffAgentText('queued', 'sent', null), '· automatic wake did not occur; send a new chat message to resume', 'a delivered wake still times out truthfully');
+assert.equal(handoffAgentText('queued', 'deferred', null), '· handed off, waiting for agent', 'a deferred wake keeps waiting for the working owner');
+assert.equal(handoffAgentText('waiting', 'failed', null), '· wake failed; send a new chat message to resume', 'a failed host wake tells the reviewer to resume by chat');
+assert.equal(handoffAgentText('queued', 'failed', null), '· wake failed; send a new chat message to resume', 'a failed host wake outranks the timeout message');
+// host-wake #acceptance-failed, #acceptance-failed-silent, #acceptance-retry-page (page text from the X-Spec-Chat-Wake value)
+assert.equal(handoffAgentText('waiting', 'failed; pane w1:pOwner not found in session', null), '· wake failed: pane w1:pOwner not found in session; send a new chat message to resume', 'a failed wake shows the reason the wake provider gave');
+assert.equal(handoffAgentText('waiting', 'failed; owner pane not found (exit 1)', null), '· wake failed: owner pane not found (exit 1); send a new chat message to resume', 'a silent failed check shows owner pane not found with its exit code');
+assert.equal(handoffAgentText('waiting', 'failed; pane %C2%ABw1%C2%BB 100%25 gone; see log', null), '· wake failed: pane «w1» 100% gone; see log; send a new chat message to resume', 'the reason decodes from its header-safe form');
+assert.equal(handoffAgentText('waiting', 'retrying', null), '· handed off, waiting for agent', 'a wake being retried keeps waiting, not wake failed');
+assert.equal(handoffAgentText('queued', 'retrying', null), '· handed off, waiting for agent', 'a wake being retried keeps waiting past the timeout');
+assert.equal(handoffAgentText(null, 'failed; owner pane not found (exit 1)', null), '· no agent events yet', 'a failed reason never shows without a waiting hand-off');
+assert.equal(handoffAgentText(null, 'failed', null), '· no agent events yet', 'wake state never shows without a waiting hand-off');
+assert.match(handoffAgentText(null, null, lastAgent), /^· agent last event /, 'no hand-off shows the last agent event');
+
+assert.match(runtime, /\.hx-thread-dock\{/, 'collapsed review uses a compact conversation dock');
+assert.match(runtime, /\.hx-panel\{[^}]*display:none;/, 'the closed sidebar leaves document layout entirely');
+assert.match(runtime, /setAttribute\('aria-label', 'Review conversations'\)/, 'the thread dock has an accessible navigation label');
+assert.match(runtime, /Collapse review sidebar/, 'the open sidebar exposes a collapse control');
+assert.match(runtime, /\.hx-dock-thread\[data-s=acknowledged\]\{border-color:var\(--ui-ack\);color:var\(--ui-ack\);background:var\(--ui-ack-soft\)\}/, 'acknowledged dock threads use the blue status palette');
+assert.match(runtime, /\.hx-pin\[data-s=acknowledged\]\{background:var\(--ui-ack\)!important\}/, 'acknowledged page pins use the blue status palette');
+assert.match(runtime, /class="hx-unread-badge" id="hx-unread-badge"/, 'the chat launcher includes an acknowledged-reply badge');
+assert.match(runtime, /acknowledged > 99 \? '99\+'/, 'large unread counts stay compact');
+
+const rootEdit = [
+  event('200-comment-root-edit.json', 'human', { id: 'u-edit-root', event: 'comment', anchorId: 'copy', target: null, text: 'Original root' }),
+  event('210-edit-root.json', 'human', { id: 'e-edit-root', event: 'edit', supersedes: 'u-edit-root', threadId: 'u-edit-root', anchorId: 'copy', target: null, text: 'Edited root' }),
+  event('220-handoff-root-edit.json', 'human', { id: 'h-edit-root', event: 'handoff' }),
+];
+const editedRootThread = foldThreads(rootEdit).get('u-edit-root');
+assert.equal(editedRootThread.id, 'u-edit-root', 'editing a root preserves the stable thread id');
+assert.equal(editedRootThread.ev.body.id, 'u-edit-root', 'the root comment places the thread; an edit never replaces it');
+assert.equal(editedRootThread.messages[0].body.text, 'Edited root', 'the edit is the shown text');
+assert.equal(editedRootThread.status, 'pending');
+
+console.log('runtime thread model tests passed');

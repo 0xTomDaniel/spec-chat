@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""Test double for `systemctl --user`, `loginctl`, and `systemd-run --user --scope`.
+
+Logs every call to $FAKE_SYSTEMD_DIR/calls. start, restart, and stop run or end the unit's ExecStart (read from
+$XDG_CONFIG_HOME/systemd/user/<unit>) as a detached process whose pid it keeps in $FAKE_SYSTEMD_DIR/<unit>.pid.
+enable and disable keep $FAKE_SYSTEMD_DIR/<unit>.enabled, which is-enabled answers from on its output, as enabled,
+disabled, or, with $FAKE_SYSTEMD_DIR/<unit>.masked, masked; with $FAKE_SYSTEMD_DIR/<unit>.unknown, it names no state,
+saying on its error output alone that it does not know the unit, as older systemd does. With
+$FAKE_SYSTEMD_DIR/<unit>.failing, stop and restart fail, leaving the unit as it was, naming why on the error output in
+systemd's two lines. With $FAKE_SYSTEMD_NO_BUS set, systemctl cannot reach the user service manager, as with no user
+bus, and answers nothing.
+show-environment answers that the user service manager runs, and loginctl show-user that it lingers unless
+$FAKE_SYSTEMD_LINGER says otherwise. systemd-run execs its command, as a scope does.
+"""
+
+import os
+import shlex
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+home = Path(os.environ["FAKE_SYSTEMD_DIR"])
+home.mkdir(parents=True, exist_ok=True)
+tool = Path(sys.argv[0]).name
+with (home / "calls").open("a", encoding="utf-8") as calls:
+    calls.write(" ".join([tool, *sys.argv[1:]]) + "\n")
+if tool == "loginctl":
+    if sys.argv[1:2] == ["show-user"]:
+        linger = os.environ.get("FAKE_SYSTEMD_LINGER", "yes")
+        print(linger if "--value" in sys.argv else f"Linger={linger}")
+    raise SystemExit(0)
+if tool == "systemd-run":
+    command = sys.argv[1:]
+    while command and command[0].startswith("-"):
+        command = command[1:]
+    os.execvp(command[0], command)
+if os.environ.get("FAKE_SYSTEMD_NO_BUS"):
+    print("Failed to connect to bus: No medium found", file=sys.stderr)
+    raise SystemExit(1)
+now = "--now" in sys.argv[1:]
+args = [arg for arg in sys.argv[1:] if not arg.startswith("-")]
+verb, units = args[0], args[1:]
+config = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "systemd/user"
+
+
+def stop(unit):
+    pidfile = home / f"{unit}.pid"
+    if not pidfile.exists():
+        return
+    pid = int(pidfile.read_text())
+    pidfile.unlink()
+    try:
+        os.killpg(pid, signal.SIGTERM)
+    except OSError:
+        return
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and Path(f"/proc/{pid}").exists():
+        stat = Path(f"/proc/{pid}/stat").read_text(errors="replace") if Path(f"/proc/{pid}/stat").exists() else ""
+        if stat.rpartition(")")[2].split()[:1] in (["Z"], ["X"], []):
+            return
+        time.sleep(0.05)
+
+
+def start(unit):
+    path = config / unit
+    if not path.is_file():
+        raise SystemExit(5)
+    line = next(text for text in path.read_text().splitlines() if text.startswith("ExecStart="))
+    with (home / f"{unit}.log").open("a") as log:
+        child = subprocess.Popen(shlex.split(line[len("ExecStart="):]), stdin=subprocess.DEVNULL, stdout=log,
+                                 stderr=subprocess.STDOUT, start_new_session=True)
+    (home / f"{unit}.pid").write_text(str(child.pid))
+
+
+for unit in units:
+    if verb in ("stop", "restart") and (home / f"{unit}.failing").exists():
+        print(f"Job for {unit} failed because the control process exited with error code.\n"
+              f'See "systemctl --user status {unit}" and "journalctl --user -xeu {unit}" for details.', file=sys.stderr)
+        raise SystemExit(1)
+    if verb in ("stop", "restart") or (verb == "disable" and now):
+        stop(unit)
+    if verb in ("start", "restart") or (verb == "enable" and now):
+        start(unit)
+    if verb == "enable":
+        (home / f"{unit}.enabled").touch()
+    if verb == "disable":
+        (home / f"{unit}.enabled").unlink(missing_ok=True)
+    if verb == "cat" and not (config / unit).is_file():
+        raise SystemExit(1)
+    if verb == "is-enabled" and (home / f"{unit}.unknown").exists():
+        print(f"Failed to get unit file state for {unit}: No such file or directory", file=sys.stderr)
+        raise SystemExit(1)
+    if verb == "is-enabled":
+        said = "masked" if (home / f"{unit}.masked").exists() else (
+            "enabled" if (home / f"{unit}.enabled").exists() else "disabled")
+        print(said)
+        if said != "enabled":
+            raise SystemExit(1)
+if verb not in ("daemon-reload", "start", "restart", "stop", "enable", "disable", "cat", "show-environment",
+                "is-enabled"):
+    raise SystemExit(2)

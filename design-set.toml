@@ -1,0 +1,6 @@
+# The shared design set Spec Chat builds in (spec-page-design.spec.html#design-set, review-index.spec.html#index-tokens):
+# one pin for the runtime chrome, the review index, and the bundled spec stylesheet. scripts/design-set-sync builds every
+# copy from exactly this commit and tests/design-set.py checks them; nothing fetches the set at run time.
+# Move only by changing this pin, then sync.
+repository = "https://github.com/varelaseb/design-set.git"
+commit = "241c10fe2754d1928d1cbbd9a9902c7c2673ba21"

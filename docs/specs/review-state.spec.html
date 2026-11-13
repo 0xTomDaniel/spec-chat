@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Shared review state - spec</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./.style/spec.css">
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Shared review state</h1>
+<nav data-anchor="breadcrumbs">docs / specs / review-state.spec.html</nav>
+<p data-anchor="context">One spec's review state is a conflict-free replicated set: several reviewers write it live, the agent edits the spec under it, and copies held offline merge without loss.
+The spool beside each spec is the one store; the decision and its tradeoff live in <a href="../adr/review-state-spool-crdt.spec.html">the review state CRDT ADR</a>.
+The box service, its URL, and providers stay in <a href="./review-service.spec.html">Box review service and providers</a>; owner wake stays in <a href="./host-wake.spec.html">Review host wakes the owner pane</a>.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-live">As a human reviewer reviewing a spec with others, I see their comments, replies, edits, and resolutions on my open page as they save them, and nothing any of us saves is lost or overwritten.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-own-handoff">As one of several reviewers, my hand-off sends my drafts and leaves another reviewer's unfinished drafts with them.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-anchor">As a human reviewer, when the agent edits the spec during review, each of my marks stays on the text I marked, and the thread tells me when that text changed or is gone.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-offline">As a human reviewer on a laptop, I keep reviewing an open page when the connection drops, and everything I saved merges when it returns.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-typed-kept">As a human reviewer, a comment or reply I typed and did not save is still there as my draft after I leave the page by any way and come back, kept wherever the page keeps my unsent changes, so leaving never loses what I wrote.</p>
+<p data-user-story data-user-facing="false" data-anchor="story-agent">As the owning agent, I scan, reply, and keep my cursor by one contract however many reviewers write, and I read each mark at its current place in the spec I am editing.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="review-state" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-live-comment" data-story="story-live"><span data-acceptance-scenario>Given two human reviewers on the same spec under review, each in a browser of their own, When the second reviewer opens the review panel, then the first reviewer saves a comment on a block, then the second reviewer waits 2 seconds without reloading, which needs that wait,</span> <span data-acceptance-observable>Then the second reviewer's page shows that comment's pin and its thread with the first reviewer's name.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-live-concurrent" data-story="story-live"><span data-acceptance-scenario>Given two human reviewers on the same spec under review, each in a browser of their own, When both save a comment on the same block within the same second, which needs that timing, then the first reviewer waits 2 seconds without reloading, which needs that wait,</span> <span data-acceptance-observable>Then the first reviewer's page shows both threads on that block, each exactly once, each with its author's name.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-live-concurrent-other" data-story="story-live"><span data-acceptance-scenario>Given two human reviewers on the same spec under review, each in a browser of their own, When both save a comment on the same block within the same second, which needs that timing, then the second reviewer waits 2 seconds without reloading, which needs that wait,</span> <span data-acceptance-observable>Then the second reviewer's page shows both threads on that block, each exactly once, each with its author's name.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-name" data-story="story-live"><span data-acceptance-scenario>Given a human reviewer on a spec under review, in a browser that holds no review name, When the reviewer saves a comment, then reloads the page, then opens that comment's thread, then saves a reply in it,</span> <span data-acceptance-observable>Then no name prompt shows, and both of the reviewer's messages show as their author the same tropical fruit name from the page's fruit list.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-name-collision" data-story="story-live"><span data-acceptance-scenario>Given two human reviewers on the same spec under review, each in a browser of their own, both browsers assigned the same fruit name, a fixture must be added to provide it, When the first reviewer saves a comment, then the second reviewer saves a comment, then the first reviewer waits 2 seconds without reloading, which needs that wait,</span> <span data-acceptance-observable>Then the first reviewer's page shows the first reviewer as that fruit name and the second reviewer as that name followed by 2.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-name-collision-other" data-story="story-live"><span data-acceptance-scenario>Given two human reviewers on the same spec under review, each in a browser of their own, both browsers assigned the same fruit name, a fixture must be added to provide it, When the first reviewer saves a comment, then the second reviewer saves a comment, then the second reviewer waits 2 seconds without reloading, which needs that wait,</span> <span data-acceptance-observable>Then the second reviewer's page shows the first reviewer as that fruit name and the second reviewer as that name followed by 2.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-edit-race" data-story="story-live"><span data-acceptance-scenario>Given two human reviewers on the same spec under review, each in a browser of their own, holding one pending human message, a fixture must be added to provide it, When the first reviewer saves an edit to that message, then the second reviewer saves an edit to it, then the first reviewer waits 2 seconds without reloading, which needs that wait, then opens that message's thread,</span> <span data-acceptance-observable>Then the first reviewer's page shows the second reviewer's text for that message, and its thread history lists both edits with their authors.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-edit-race-other" data-story="story-live"><span data-acceptance-scenario>Given two human reviewers on the same spec under review, each in a browser of their own, holding one pending human message, a fixture must be added to provide it, When the first reviewer saves an edit to that message, then the second reviewer saves an edit to it, then waits 2 seconds without reloading, which needs that wait, then opens that message's thread,</span> <span data-acceptance-observable>Then the second reviewer's page shows the second reviewer's text for that message, and its thread history lists both edits with their authors.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-lost-response" data-story="story-live story-offline"><span data-acceptance-scenario>Given a human reviewer on a spec under review, needs an induced failure: the service's response to a save is lost, When the reviewer saves a comment on a block, then waits while the page sends that comment again,</span> <span data-acceptance-observable>Then the review panel's conversation shows that comment exactly once.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-handoff-own" data-story="story-own-handoff"><span data-acceptance-scenario>Given two human reviewers on the same spec under review, each in a browser of their own and each with one draft comment on it, When the first reviewer opens the review panel, then presses Hand off,</span> <span data-acceptance-observable>Then the first reviewer's page shows the first reviewer's thread with the receipt Sent and the second reviewer's thread with the receipt Draft.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-handoff-own-other" data-story="story-own-handoff"><span data-acceptance-scenario>Given two human reviewers on the same spec under review, each in a browser of their own and each with one draft comment on it, When the first reviewer opens the review panel, then presses Hand off, then the second reviewer opens the review panel, then waits 2 seconds without reloading, which needs that wait,</span> <span data-acceptance-observable>Then the second reviewer's page shows the first reviewer's thread with the receipt Sent and the second reviewer's thread with the receipt Draft.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-anchor-moved" data-story="story-anchor"><span data-acceptance-scenario>Given a human reviewer on a spec under review holding a comment on a selected sentence, above which the agent has since inserted a new paragraph, When the reviewer opens the spec page, then opens that comment's thread,</span> <span data-acceptance-observable>Then the pin sits on the same sentence, and the thread shows no change notice.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-anchor-changed" data-story="story-anchor"><span data-acceptance-scenario>Given a human reviewer on a spec under review holding a comment on a selected sentence, part of which the agent has since rewritten, When the reviewer opens the spec page, then opens that comment's thread,</span> <span data-acceptance-observable>Then the pin sits on the sentence's remaining text, and the thread shows <q>Text changed since this comment</q> with the original quote.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-anchor-gone" data-story="story-anchor"><span data-acceptance-scenario>Given a human reviewer on a spec under review holding a comment on a selected sentence, which the agent has since deleted, When the reviewer opens the spec page, then opens that comment's thread,</span> <span data-acceptance-observable>Then the thread shows <q>Text removed</q> with the original quote, and its pin sits on the nearest surviving anchored block.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-anchor-stale-page" data-story="story-anchor"><span data-acceptance-scenario>Given a human reviewer on a spec under review, When the reviewer opens the spec page, then waits while the agent inserts a paragraph above one of its sentences, then, without reloading, saves a comment on that sentence, then reloads the page,</span> <span data-acceptance-observable>Then the pin sits on that same sentence in the current spec.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-agent-scan" data-story="story-agent"><span data-acceptance-scenario>Given the owning agent of a spec under review holding a handed-off comment whose sentence the agent has since rewritten, When the agent scans the spec for ready hand-offs,</span> <span data-acceptance-observable>Then the scan reports the same ready events it reports for an unedited spec, and gives that comment the same place and state the page shows for its thread, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-agent-cursor" data-story="story-agent"><span data-acceptance-scenario>Given the owning agent of a spec under review and two human reviewers who each handed off a comment on it, a fixture must be added to provide it, When the agent processes the scan's batch, then replies to each thread, then records those events in its cursor, then one of the reviewers opens the spec page and its review panel,</span> <span data-acceptance-observable>Then both reviewers' threads show the receipt Seen.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-agent-cursor-scan" data-story="story-agent"><span data-acceptance-scenario>Given the owning agent of a spec under review and two human reviewers who each handed off a comment on it, a fixture must be added to provide it, When the agent processes the scan's batch, then replies to each thread, then records those events in its cursor,</span> <span data-acceptance-observable>Then the agent's next scan finds no ready hand-off, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-offline-save" data-story="story-offline"><span data-acceptance-scenario>Given a human reviewer on a desktop on a spec under review, When the reviewer takes the browser offline, then saves a comment on a block,</span> <span data-acceptance-observable>Then the page shows <q>Offline: 1 change waiting</q> and the new thread as a draft.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-offline-reconnect" data-story="story-offline story-live"><span data-acceptance-scenario>Given two human reviewers on the same spec under review, each in a browser of their own, When the first reviewer takes the browser offline, then saves a comment on a block, then the second reviewer saves a comment on another block, then the first reviewer brings the browser back online, then waits 2 seconds without reloading, which needs that wait,</span> <span data-acceptance-observable>Then the first reviewer's page shows no waiting notice and shows both comments, each exactly once.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-offline-reconnect-other" data-story="story-offline story-live"><span data-acceptance-scenario>Given two human reviewers on the same spec under review, each in a browser of their own, When the first reviewer takes the browser offline, then saves a comment on a block, then the second reviewer saves a comment on another block, then the first reviewer brings the browser back online, then the second reviewer waits 2 seconds without reloading, which needs that wait,</span> <span data-acceptance-observable>Then the second reviewer's page shows both comments, each exactly once.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-offline-closed" data-story="story-offline"><span data-acceptance-scenario>Given a human reviewer on a desktop on a spec under review, When the reviewer takes the browser offline, then saves a comment on a block, then closes the tab, then brings the browser back online, then opens the same spec page again, then opens the review panel,</span> <span data-acceptance-observable>Then the panel shows that comment as the reviewer's draft.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-offline-closed-other" data-story="story-offline"><span data-acceptance-scenario>Given two human reviewers on the same spec under review, each in a browser of their own, When the first reviewer takes the browser offline, then saves a comment on a block, then closes the tab, then brings the browser back online, then opens the same spec page again, then the second reviewer opens the review panel, then waits 2 seconds without reloading, which needs that wait,</span> <span data-acceptance-observable>Then the second reviewer's page shows that comment.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-typed-kept" data-story="story-typed-kept" data-one-screen="the reviewer leaves and returns to the same page, and the Then reads only that page"><span data-acceptance-scenario>Given a human reviewer on a desktop with a spec under review open, When the reviewer comments on a block, then types a comment without saving it, then opens the review index by its back link, then goes back to the spec page,</span> <span data-acceptance-observable>Then that block shows the typed comment as the reviewer's draft.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-no-presence" data-story="story-live"><span data-acceptance-scenario>Given two human reviewers on the same spec under review, each in a browser of their own, When the second reviewer opens the review panel before either reviewer saves anything,</span> <span data-acceptance-observable>Then the second reviewer's page shows the spec and its review controls with no list of viewers and no other reviewer's selection.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-agent-edit-banner" data-story="story-anchor"><span data-acceptance-scenario>Given a human reviewer on a spec under review, a fixture must be added to provide it, When the reviewer opens the spec page, then waits while the agent edits the spec,</span> <span data-acceptance-observable>Then within 5 seconds of the edit the page shows <q>Spec updated by agent</q> with a Reload button, and still shows the text it loaded.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-local-file" data-story="story-live story-agent"><span data-acceptance-scenario>Given a human reviewer with a spec as a plain file, in a browser that supports folder access, When the reviewer opens the spec as a plain file, then grants write access to its folder, then saves a comment on a block, then hands off,</span> <span data-acceptance-observable>Then the page shows the comment's thread with the receipt Sent.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-local-file-scan" data-story="story-live story-agent"><span data-acceptance-scenario>Given a human reviewer with a spec as a plain file, in a browser that supports folder access, When the reviewer opens the spec as a plain file, then grants write access to its folder, then saves a comment on a block, then hands off,</span> <span data-acceptance-observable>Then the owning agent's next scan reports that hand-off, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-legacy-author" data-story="story-live"><span data-acceptance-scenario>Given a human reviewer on a spec holding a comment saved by an older page that recorded an author name but no browser, and a comment that recorded neither, a fixture must be added to provide it, When the reviewer opens the review panel,</span> <span data-acceptance-observable>Then the comment with a recorded author name shows that saved name, and the comment with neither shows <q>Reviewer</q>.</span></p>
+<p data-anchor="acceptance-rules-note">Onboarding: not needed, shared state extends the review page with no new user surface.
+One hand-off control for desktop and phone: kept, shared state adds no hand-off control; a page's one Hand off hands off its browser's drafts (<a href="#acceptance-handoff-own">own hand-off</a>) (<a href="./prompt-first-shaping.spec.html#acceptance-one-handoff-rule">phone rule</a>, <a href="./prompt-first-shaping.spec.html#acceptance-one-handoff-rule-desktop">desktop rule</a>).
+Never strip proof clauses or rewrite unedited criteria: kept, each criterion here keeps its proof clause word for word, as <a href="#acceptance-agent-scan">the agent scan criterion</a> does (<a href="./prompt-first-shaping.spec.html#acceptance-proof-clause-rule">shaping rule</a>, <a href="./prompt-first-shaping.spec.html#acceptance-proof-clause-rule-repair">repair rule</a>).
+Threads read as one conversation: kept, review state draws no thread; the conversation reads its fold (<a href="./threads.spec.html#acceptance-stream-rule">rule</a>).
+Every mockup at production fidelity: kept, its live and offline states are drawn in <a href="./mockups/review-state/01-live-review.mockup.html">its live review mockup</a>, from the runtime&rsquo;s chrome and design set tokens: its screen is review chrome a mockup page shows, and the page that frames a prototype cannot frame itself (<a href="./mockups.spec.html#prototype-drawn">drawn mockup</a>, <a href="./mockups.spec.html#acceptance-fidelity-rule">rule</a>).
+Any origin only without login or cookie: kept, review state adds no login and no cookie; author and browser are assigned names, never checked (<a href="#trust">trust</a>, <a href="./served-pages.spec.html#acceptance-origin-safe">rule</a>).</p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-service"><span data-boundary-responsibility>The review service owns each spec's review state: storing events and spec versions idempotently, and resolving every mark to its place in the current spec.</span> <span data-boundary-seam>Caller-facing seam: <code>/api/events</code>, read with resolved places and written idempotently, and the spool directory beside the spec.</span> <span data-boundary-dependency>Dependency direction: self-contained; it reads spec files and local Git and never writes repository state.</span> <span data-boundary-scope>Observable scope: spool files, version files, and <code>/api/events</code> responses.</span></p>
+<p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns showing shared state live, the browser's assigned fruit name, and the offline outbox of saved events not yet stored.</span> <span data-boundary-seam>Caller-facing seam: the page, and <code>/api/events</code> toward the service.</span> <span data-boundary-dependency>Dependency direction: external-provider; the runtime depends on the service route, never the reverse.</span> <span data-boundary-scope>Observable scope: pins, threads, statuses, and the offline notice.</span></p>
+<p data-modular-boundary data-anchor="boundary-agent"><span data-boundary-responsibility>The review skill owns the agent side: zero-wait scan, batch processing, spec edits, replies, and cursor advance.</span> <span data-boundary-seam>Caller-facing seam: the scan's rows and the spool and cursor files.</span> <span data-boundary-dependency>Dependency direction: self-contained on disk; it shares the service's resolver and needs no running service.</span> <span data-boundary-scope>Observable scope: scan output, agent events, and cursor contents.</span></p>
+<p data-modular-boundary data-anchor="boundary-git"><span data-boundary-responsibility>Git owns spec text; the spec file in the worktree is the only live copy of it.</span> <span data-boundary-seam>Caller-facing seam: the spec file and its commits.</span> <span data-boundary-dependency>Dependency direction: self-contained; review state points at spec versions by content hash, and Git never depends on review state.</span> <span data-boundary-scope>Observable scope: the spec file and its history.</span></p>
+</section>
+
+<section data-anchor="model">
+<h2>Document model</h2>
+<p data-anchor="model-rule">Each spec's review state is two grow-only sets in its spool, plus values every reader derives the same way from them; a scope's <a href="./comment-layer.spec.html#scope-store">hosted threads</a> are a spool of the same shape with no spec, so the events part alone, and each <a href="./mockups.spec.html#review-spool">mockup's</a> is a spool of the same shape beside the mockup.
+Merging two copies is set union; nothing stored is ever changed or deleted.</p>
+<div class="table-scroll" data-anchor="model-table-scroll">
+<table data-anchor="model-table">
+<caption>What review state holds, how copies merge, and what is derived</caption>
+<thead><tr><th>Part</th><th>Held as</th><th>Merge</th><th>Writer</th></tr></thead>
+<tbody>
+<tr data-anchor="model-events"><td>Events: comment, reply, edit, status, hand-off</td><td>One immutable file per event, <code>human/</code> or <code>agent/</code>, in the spool that keeps its <a href="./comment-layer.spec.html#subjects">subject</a>, named <code>&lt;createdAt ns&gt;-&lt;event&gt;-&lt;id&gt;.json</code> by its writer</td><td>Union by file name; a name already held is a no-op</td><td>Page for human events, agent on disk for agent events</td></tr>
+<tr data-anchor="model-versions"><td>Spec versions</td><td><code>versions/&lt;sha256&gt;.html</code>: each spec text an event was written against, by content hash</td><td>Union by hash</td><td>Service, when it serves or reads a spec text</td></tr>
+<tr data-anchor="model-threads"><td>Threads and statuses</td><td>Derived: the fold, sorted by file name</td><td>Not stored</td><td>Every reader</td></tr>
+<tr data-anchor="model-effective"><td>A message's shown text</td><td>Derived: the last edit by file name among those superseding it</td><td>Not stored</td><td>Every reader</td></tr>
+<tr data-anchor="model-place"><td>A mark's current place and state</td><td>Derived: the mark located in its version, mapped by text diff to the current spec</td><td>Not stored</td><td>Every reader, with one shared resolver</td></tr>
+<tr data-anchor="model-cursor"><td>Agent cursor</td><td>Append-only file names, local to the agent's host</td><td>Not synced</td><td>Agent</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="model-fold-one">Two folds exist, one per language, and give the same threads and statuses for the same events: the page's and the service's, which every service and agent reader uses, the review index and Jev among them.
+No third fold is added.</p>
+<p data-anchor="model-fields" id="model-fields">Every human event carries <code>browser</code>, a random id the page creates once and keeps in this browser, or, on a page with no storage whose address passes one, that id (<a href="./shell.spec.html#shell-phone-id">phone shell</a>), <code>author</code>, the fruit name assigned to that browser, and, when written on a spec page, <code>version</code>, the content hash of the spec text the page showed when it was written (<a href="./review-service.spec.html#published-spec-page">served spec page</a>).</p>
+<p data-anchor="model-fields-hosted">A comment written on a host page through the <a href="./comment-layer.spec.html">comment layer</a> also carries <code>kind</code>, <code>label</code>, and <code>from</code> from its anchor, and no <code>version</code>, so it resolves by anchor and quote; one on a subject that names no spec carries <code>subject</code> in place of a block anchor.
+A comment written on a spec page carries none of these.</p>
+<p data-anchor="model-fields-spot" id="model-fields-spot">A comment written on a mockup page with a walkthrough also carries <code>step</code>, the name of the step its frames showed (<a href="./mockups.spec.html#step-threads">step threads</a>); a comment on a video also carries <code>moment</code>, the video's time in seconds, and, when the reviewer drew one, <code>box</code>, its left, top, width, and height as fractions of the frame (<a href="./threads.spec.html#video-moment">video moment</a>); a comment on a box may also carry <code>picture</code>, the file name of the picture its page made of the boxed spot (<a href="./threads.spec.html#box-picture">box picture</a>).</p>
+<p data-anchor="model-fields-stage" id="model-fields-stage">Every message, a human's or the agent's, also carries <code>stage</code>, in words, the stage its lane was at when it was written, by the <a href="./threads.spec.html#stage-tag-source">stage rule</a>; a message with no lane, or written while its lane has no stage, carries none, and an edit carries none of its own.
+A comment with a lane also carries <code>lane</code>, the lane's review slug it took its stage from, which its thread's replies, the agent's included, take theirs from.</p>
+<p data-anchor="model-author-assign">On first use, a browser is assigned one name at random from a fixed list and keeps it: Mango, Papaya, Lychee, Guava, Rambutan, Pineapple, Passion Fruit, Dragon Fruit, Durian, Jackfruit, Mangosteen, Starfruit, Soursop, Coconut, Banana, Tamarind, Longan, Feijoa, Cherimoya, Sapodilla, Kiwano, Pitanga, Jabuticaba, Salak.
+No name prompt appears.
+A page with no storage that takes its browser id from its address takes the name that browser's earlier events carry, and assigns one only when there are none.</p>
+<p data-anchor="model-author-shown">Within one spec, browsers sharing a fruit name are numbered by their first event's file name: the first shows the name alone, the next adds 2, then 3.
+Every reader derives the same names, so authors stay distinct on every page.</p>
+<p data-anchor="model-order">File-name order breaks ties only between edits of one message; meaning follows references (<code>respondsTo</code>, <code>threadId</code>, <code>supersedes</code>), so a skewed clock changes at most which of two racing edits shows.</p>
+<p data-anchor="model-edit-history">A message with more than one edit shows the effective text, and its thread history lists every edit with its author.</p>
+</section>
+
+<section data-anchor="live">
+<h2>Live review</h2>
+<p data-anchor="live-pull">The page shows the review's new events within 2 seconds of their save, without reloading.</p>
+<p data-anchor="live-save">The page names each event before sending it, so a resend after a lost response stores nothing new.</p>
+<p data-anchor="live-handoff">A hand-off lists the event ids it hands off in <code>events</code>: its browser's drafts.
+Only those become pending; other reviewers' drafts stay drafts.
+A hand-off without <code>events</code> hands off every draft.</p>
+<p data-anchor="live-accept">Accept spec is offered when every thread is resolved and no open TBD remains, whoever's thread it is, the threads of the spec's <a href="./mockups.spec.html#accept-gate">mockups</a> included, and writes an empty hand-off, which for a spec with mockups names only each of its mockups, as <a href="./mockups.spec.html#accept-set">acceptance of the set</a> states.
+That hand-off is Spec Chat's only view of the acceptance: no registry row, file, or field copies it, and a caller that keeps acceptances quotes it in its own record.</p>
+<p data-anchor="live-presence">The page shows no presence: no list of who is viewing and no live selections or cursors.
+Authors appear only on what they saved.</p>
+</section>
+
+<section data-anchor="anchoring">
+<h2>Marks through agent edits</h2>
+<p data-anchor="anchoring-locate">The resolver finds a mark's source range in its event's version: the anchored block, then the target within it, the quote for a text target.</p>
+<p data-anchor="anchoring-map">It maps that range through a character diff from that version to the current spec text, and reports the current block, range, and state below.
+The same inputs give the same answer on every reader.</p>
+<p data-anchor="anchoring-legacy">An event with no <code>version</code> resolves by anchor and quote in the current spec.</p>
+<div class="table-scroll" data-anchor="anchoring-states-scroll">
+<table data-anchor="anchoring-states">
+<caption>Mark state after mapping, and what the page and agent see</caption>
+<thead><tr><th>Mapped range</th><th>State</th><th>Pin</th><th>Thread notice</th></tr></thead>
+<tbody>
+<tr data-anchor="anchoring-state-kept"><td>Every character survives, wherever it moved</td><td>kept</td><td>On the same text</td><td>None</td></tr>
+<tr data-anchor="anchoring-state-changed"><td>Some characters survive</td><td>changed</td><td>On the surviving text</td><td><q>Text changed since this comment</q> with the original quote</td></tr>
+<tr data-anchor="anchoring-state-gone"><td>No character survives</td><td>gone</td><td>On the nearest surviving anchored block</td><td><q>Text removed</q> with the original quote</td></tr>
+<tr data-anchor="anchoring-state-unplaced"><td>Placement fails for this mark</td><td>unplaced</td><td>By anchor and quote, as for a mark with no version</td><td>None</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="anchoring-agent-edits">The agent is the one writer of spec text.
+It edits the spec file in the worktree, Git stays the truth for that text, and marks follow by the diff mapping above.
+Reviewers change spec text only through comments and hand-offs that the agent applies; the page offers no direct text editing.</p>
+<p data-anchor="anchoring-conflict">When the agent rewrites text a reviewer is commenting on, the edit lands and is never held back; the mark stays attached and shows changed or gone by the table above, including a comment saved from a page loaded before the edit.</p>
+</section>
+
+<section data-anchor="offline">
+<h2>Offline</h2>
+<p data-anchor="offline-outbox">The page keeps every event it saved and has not seen stored in browser storage for that page, and the events it last loaded.</p>
+<p data-anchor="offline-notice">While any saved event is not yet stored, the page shows <q>Offline: n changes waiting</q>, keeps every review action available, and sends the events in order as soon as the service answers.</p>
+<p data-anchor="offline-reopen">A page opened later with waiting events sends them first, then reads.</p>
+<p data-anchor="offline-leave">Text typed in the comment box or a reply box and not yet saved is saved as a draft as the page is left, by a link, Previous or Next, an arrow key, Back, or closing the tab, so it waits in the outbox as any saved event does and shows as a draft when the page opens again; an Edit box left as it opened saves nothing.
+On a page with no origin it lasts as that page's outbox does, as long as its host's frame (<a href="./served-pages.spec.html#served-storage">served storage</a>).</p>
+<p data-anchor="offline-handoff">A waiting hand-off wakes the owner when the service stores it, by the <a href="./host-wake.spec.html#wake-rule">wake rule</a>.</p>
+</section>
+
+<section data-anchor="trust">
+<h2>Trust</h2>
+<p data-anchor="trust-no-login">The page has no login and its URL is not an authentication boundary.
+<code>author</code> is an assigned fruit name, not an identity, and is never checked.</p>
+<p data-anchor="trust-agent-disk">Agent events are written only on disk; the service refuses an agent event over HTTP, so no page can speak as the agent.</p>
+<p data-anchor="trust-immutable">The service never overwrites an event file; a write naming an existing file with different bytes is refused.</p>
+</section>
+
+<section data-anchor="proof">
+<h2>Proof</h2>
+<p data-anchor="proof-seam">Seam: the resolver and the idempotent event write, tested over fixture spec versions and spool directories; the page through the runtime tests.</p>
+<p data-anchor="proof-first-test">First failing test: an event resolved against a spec with a paragraph inserted above its quote reports state kept at the shifted range.</p>
+</section>
+
+</article>
+</body>
+</html>

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Host bridge - spec</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./.style/spec.css">
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Host bridge</h1>
+<nav data-anchor="breadcrumbs">docs / specs / host-bridge.spec.html</nav>
+<p data-anchor="context">A host that frames a Spec Chat page, such as a BB plugin, says hello naming what it opens.
+The page then asks it to open <a href="./criterion-evidence.spec.html">evidence</a> or a new tab and tells it its title.
+Unframed, or before a hello, every link keeps the browser's own behavior.
+<a href="./shell.spec.html">Pages a shell holds</a> extends the hello with comments.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-plugin">As a reviewer inside the BB plugin, evidence links open in the plugin's Proof page instead of a browser.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-tabs">As a reviewer inside a host that offers tabs, a new-tab click on a link to another Spec Chat page, on a spec page or the review index, opens it in the host's own tab instead of a browser, while plain clicks and links to other sites keep the browser's own behavior.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="host-bridge" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-plugin-open" data-story="story-plugin"><span data-acceptance-scenario>Given a reviewer viewing a spec with evidence inside the BB plugin, a fixture must be added to provide it, When the reviewer opens a criterion's marker popover and clicks its evidence label,</span> <span data-acceptance-observable>Then the plugin's Proof page opens on that bundle at that criterion, and no browser tab opens.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-plugin-open-bundle" data-story="story-plugin"><span data-acceptance-scenario>Given a reviewer viewing a spec with evidence inside the BB plugin, a fixture must be added to provide it, When the reviewer opens a criterion's marker popover and clicks its <code>bundle</code> link,</span> <span data-acceptance-observable>Then the plugin's Proof page opens on that bundle, and no browser tab opens.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-plugin-outside" data-story="story-plugin"><span data-acceptance-scenario>Given a reviewer viewing a spec with evidence in a plain browser tab, a fixture must be added to provide it, When the reviewer opens a criterion's marker popover and clicks its evidence label,</span> <span data-acceptance-observable>Then the evidence service's bundle page opens at that criterion.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-plugin-outside-silent-frame" data-story="story-plugin"><span data-acceptance-scenario>Given a reviewer viewing a spec with evidence in a frame whose host never announces itself, a fixture must be added to provide it, When the reviewer opens a criterion's marker popover and clicks its evidence label,</span> <span data-acceptance-observable>Then the evidence service's bundle page opens at that criterion.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-tab-title" data-story="story-tabs"><span data-acceptance-scenario>Given a reviewer on a spec page framed by a host whose hello offers tabs, When the reviewer opens the page,</span> <span data-acceptance-observable>Then the page answers the host with its title, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-tab-open" data-story="story-tabs"><span data-acceptance-scenario>Given a reviewer on macOS on a spec page framed by a host whose hello offers tabs, When the reviewer Cmd+clicks a link to another spec on the same server,</span> <span data-acceptance-observable>Then the page stays where it is and asks the host for a new tab at that link's full address, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-tab-open-ctrl" data-story="story-tabs"><span data-acceptance-scenario>Given a reviewer on a system other than macOS, on a spec page framed by a host whose hello offers tabs, When the reviewer Ctrl+clicks a link to another spec on the same server,</span> <span data-acceptance-observable>Then the page stays where it is and asks the host for a new tab at that link's full address, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-tab-middle" data-story="story-tabs"><span data-acceptance-scenario>Given a reviewer on a spec page framed by a host whose hello offers tabs, When the reviewer middle-clicks a link to another spec on the same server, which needs a three-button mouse,</span> <span data-acceptance-observable>Then the page stays where it is and asks the host for a new tab at that link's full address, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-tab-index" data-story="story-tabs"><span data-acceptance-scenario>Given a reviewer on macOS on the review index framed by a host whose hello offers tabs, When the reviewer Cmd+clicks a spec link,</span> <span data-acceptance-observable>Then the index stays showing and the index answers the hello with its title and asks the host for a new tab at that spec's full address, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-tab-index-ctrl" data-story="story-tabs"><span data-acceptance-scenario>Given a reviewer on a system other than macOS, on the review index framed by a host whose hello offers tabs, When the reviewer Ctrl+clicks a spec link,</span> <span data-acceptance-observable>Then the index stays showing and the index answers the hello with its title and asks the host for a new tab at that spec's full address, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-tab-plain" data-story="story-tabs"><span data-acceptance-scenario>Given a reviewer on a spec page framed by a host whose hello offers tabs, a fixture must be added to provide it, When the reviewer plainly clicks a link to another spec on the same server,</span> <span data-acceptance-observable>Then that spec loads in place and no tab request is sent.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-tab-other-site" data-story="story-tabs"><span data-acceptance-scenario>Given a reviewer on macOS on a spec page framed by a host whose hello offers tabs, When the reviewer Cmd+clicks a link to another site,</span> <span data-acceptance-observable>Then the browser handles the link with its own new-tab behavior and no tab request is sent, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-tab-unframed" data-story="story-tabs"><span data-acceptance-scenario>Given a reviewer on macOS on a spec page in a plain browser tab, When the reviewer Cmd+clicks a link to another spec on the same server,</span> <span data-acceptance-observable>Then the browser opens it in a new browser tab and no message is sent, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-tab-not-offered" data-story="story-tabs"><span data-acceptance-scenario>Given a reviewer on macOS on a spec page framed by a host whose hello offers only evidence, When the reviewer Cmd+clicks a link to another spec on the same server,</span> <span data-acceptance-observable>Then the browser handles the link with its own new-tab behavior and no tab request is sent, proven by a unit test: no screen shows it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-tab-not-parent" data-story="story-tabs"><span data-acceptance-scenario>Given a reviewer on macOS on a spec page framed by a host, to which a window other than its parent sent a hello offering tabs, When the reviewer Cmd+clicks a link to another spec on the same server,</span> <span data-acceptance-observable>Then the page has sent no title, and the browser handles the link with its own new-tab behavior, proven by a unit test: no screen shows it.</span></p>
+<p data-anchor="acceptance-rules-note">Onboarding: not needed, the bridge adds no user surface.
+CI: covered by <a href="./review-service.spec.html#acceptance-ci-alone">review-service#acceptance-ci-alone</a>, which runs the full suite, this spec&rsquo;s tests included, on every push and pull request.
+One hand-off control for desktop and phone: not affected, the bridge adds no control (<a href="./prompt-first-shaping.spec.html#acceptance-one-handoff-rule">phone rule</a>, <a href="./prompt-first-shaping.spec.html#acceptance-one-handoff-rule-desktop">desktop rule</a>).
+Any origin only without login or cookie: kept, the page takes a hello only from its parent at a real origin (<a href="#bridge-hello-check">hello check</a>, <a href="./served-pages.spec.html#acceptance-origin-safe">rule</a>).
+Never strip proof clauses or rewrite unedited criteria: kept, each criterion here keeps its proof clause word for word, as <a href="#acceptance-tab-title">the tab title criterion</a> does (<a href="./prompt-first-shaping.spec.html#acceptance-proof-clause-rule">shaping rule</a>, <a href="./prompt-first-shaping.spec.html#acceptance-proof-clause-rule-repair">repair rule</a>).
+Every mockup at production fidelity: not affected, the bridge draws no screen (<a href="./mockups.spec.html#acceptance-fidelity-rule">rule</a>).
+Threads read as one conversation: not affected, the bridge adds no thread view (<a href="./threads.spec.html#acceptance-stream-rule">rule</a>).</p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-plugin"><span data-boundary-responsibility>A framing host, such as a BB plugin, owns what it opens on an open request or a tab request; Spec Chat owns only the bridge messages and which of its own link clicks are new-tab clicks.</span> <span data-boundary-seam>Caller-facing seam: the <a href="#plugin-bridge">plugin bridge</a> messages.</span> <span data-boundary-dependency>Dependency direction: external; the host frames Spec Chat and answers its requests; Spec Chat imports no host code and works unframed.</span> <span data-boundary-scope>Observable scope: the page the host opens.</span></p>
+</section>
+
+<section data-anchor="plugin-bridge">
+<h2>Opening in the plugin</h2>
+<div class="table-scroll" data-anchor="plugin-bridge-table-scroll">
+<table data-anchor="plugin-bridge-table">
+<thead><tr><th>Step</th><th>From</th><th>Message</th></tr></thead>
+<tbody>
+<tr data-anchor="bridge-hello"><td>1</td><td>Plugin, to the framed page on load</td><td><code>{type: "spec-chat-host", opens: ["evidence"]}</code></td></tr>
+<tr data-anchor="bridge-open"><td>2</td><td>Page, to that sender's origin on a label or <code>bundle</code> click</td><td><code>{type: "spec-chat-open-evidence", bundle, criterion}</code>; <code>criterion</code> only for the label</td></tr>
+<tr data-anchor="bridge-navigate"><td>3</td><td>Plugin</td><td>Opens its Proof page on that bundle, and that criterion when given</td></tr>
+<tr data-anchor="bridge-title"><td>4</td><td>Page, to that sender's origin, on a hello whose <code>opens</code> contains <code>"tab"</code></td><td><code>{type: "spec-chat-title", title}</code>; <code>title</code> the document title as a string</td></tr>
+<tr data-anchor="bridge-open-tab"><td>5</td><td>Page, to that same window and origin, on a <a href="#bridge-new-tab-click">new-tab click</a> on a link to the page's own origin, after step 4</td><td><code>{type: "spec-chat-open-tab", href}</code>; <code>href</code> the link's absolute address as a string</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="bridge-intercept">Only after step 1 does the page turn an evidence click into step 2 instead of following the link; before it, and in any unframed page, links keep the browser's own behavior.</p>
+<p data-anchor="bridge-hello-check">The page takes a hello only when <code>event.source</code> is its parent window and <code>event.origin</code> is a real origin, not <code>null</code>, and answers to <code>event.source</code> at <code>event.origin</code>.
+<code>opens</code> must be an array; <code>"evidence"</code> and <code>"tab"</code> each turn on only their own steps, and <code>"comments"</code> turns on only the <a href="./shell.spec.html#shell-protocol">shell messages</a>, from an origin the box names as a shell.</p>
+<p data-anchor="bridge-new-tab-click">A new-tab click is a Cmd+click on macOS, a Ctrl+click elsewhere, or a middle-click, on a link whose resolved address has the origin of the page's <a href="./served-pages.spec.html#served-own-address">own address</a>.
+On it the page cancels the click's default and sends step 5.
+A plain click, a click on a link to another origin, and any click before a tab hello keep the browser's own behavior, and a page that is not framed sends nothing.</p>
+<p data-anchor="bridge-tab-pages">Spec pages and the <a href="./review-index.spec.html#index-entry">review index</a> both speak steps 4 and 5, and the index&rsquo;s lane Proof link speaks step 2 with its <code>bundle</code> alone (<a href="./review-index.spec.html#index-gates-provider">review facts</a>).
+One mechanism: the tab steps use the one hello listener and its sender check, and the index runs the same bridge code as spec pages, not a second copy; the index loads nothing else from the runtime.</p>
+<p data-anchor="bridge-tab-proof">Proof: the deep-module seam is the page's message and click handling given a parent window, a hello, and a click; the first failing test sends <code>spec-chat-open-tab</code> for a Cmd+click on a same-origin link after a tab hello and sends nothing for a plain click or before the hello.</p>
+<p data-anchor="bridge-ids"><code>bundle</code> and <code>criterion</code> are the evidence service's bundle ID and criterion ID, not URLs, so the plugin opens only its own Proof page.</p>
+</section>
+
+</article>
+</body>
+</html>

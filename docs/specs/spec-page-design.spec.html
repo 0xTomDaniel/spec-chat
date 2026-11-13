@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spec page design</title>
+<link rel="stylesheet" href=".style/spec.css">
+<script defer src=".viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-anchor="spec-page-design" data-spec-contract="shaped-sections-v1">
+<header data-anchor="header">
+<nav data-anchor="breadcrumb">spec-chat / specs</nav>
+<h1 data-anchor="title">Spec page <span class="accent">design</span></h1>
+<div class="mast-grid">
+<p class="lede" data-anchor="lede">The spec page chrome uses the Spec Chat index design values: one button system, one color palette, consistent placement.
+The spec document's own content keeps its own styles, which the shared spec stylesheet sets from the same design set (<a href="#document">the document</a>).</p>
+<dl class="refs" data-anchor="refs">
+<dt>Scope</dt><dd>runtime.js chrome styles, and the dark mode chrome of its document rules</dd>
+<dt>Tokens</dt><dd><a href="./review-index.spec.html#index-tokens">Index token block</a></dd>
+</dl>
+</div>
+</header>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<div class="sec-head">
+<span class="sec-num">01</span>
+<h2 data-anchor="stories-heading">User stories</h2>
+<p class="sec-note" data-anchor="stories-note">One reviewer, one page, consistent chrome.</p>
+</div>
+
+<p data-user-story data-anchor="story-consistent-chrome" data-user-facing="true" data-guided-journey="no">As a spec reviewer, I see one coherent visual system across every button, pill, pin, panel, popover, toolbar, and bar on a spec page, so I never wonder whether two differently styled controls do the same thing.</p>
+
+<p data-user-story data-anchor="story-token-reuse" data-user-facing="false" data-guided-journey="no">As a contributor editing runtime.js, every chrome color, font size, weight, radius, and spacing value is a named token from one block, so I never invent an ad hoc value or guess which grey to use.</p>
+<p data-user-story data-anchor="story-one-surface" data-user-facing="true" data-guided-journey="no">As a spec reviewer, the spec page is one calm surface, as a Notion page is: the document, its compared range, the toolbar, and the review panel share one page color and ink, light or dark as my system or host sets it, and the document opens on its own title at reading size, not a poster in a box.</p>
+<p data-user-story data-anchor="story-quiet-controls" data-user-facing="true" data-guided-journey="no">As a spec reviewer, every icon on the page is from one line set, the one Proof shows, status words read in sentence case, and no button label carries a key: I find each key in its tooltip, and on a phone none shows.</p>
+<p data-user-story data-anchor="story-errors-in-view" data-user-facing="true" data-guided-journey="no">As a spec reviewer, an error the page meets shows once, with how often it came, and never hides the screen I review or its controls.</p>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-spec-section="acceptance" data-acceptance-scope="spec-page-design" data-anchor="acceptance">
+<div class="sec-head">
+<span class="sec-num">02</span>
+<h2 data-anchor="acceptance-heading">Acceptance criteria</h2>
+</div>
+
+<p data-acceptance-criterion data-anchor="acceptance-token-block" data-story="story-token-reuse">
+<span data-acceptance-scenario>Given a contributor editing the review runtime, When they open its chrome styles,</span>
+<span data-acceptance-observable>Then every chrome color, font size, weight, radius, and spacing value is a named token in the one token block, which holds the <a href="#design-set">shared design set</a>&rsquo;s tokens at the version Spec Chat pins plus <a href="#token-additions">the token additions</a>, and every chrome style uses those tokens, with literal values only for the pin teardrop radius, stacking order, transitions, animations, and positions, proven by a unit test: no screen shows it.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-button-system" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>Given a spec reviewer on a desktop screen on a spec page, When they open it,</span>
+<span data-acceptance-observable>Then every chrome button matches one of the four <a href="#button-variants">button variants</a> (primary, secondary, icon, text-link) with its shared properties, and no button has a shape, size, radius, font, or color outside the system.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-button-system-phone" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>Given a spec reviewer on a phone on a spec page, When they open it,</span>
+<span data-acceptance-observable>Then every chrome button matches one of the four <a href="#button-variants">button variants</a> (primary, secondary, icon, text-link) with its shared properties, and no button has a shape, size, radius, font, or color outside the system.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-color-consistency" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>Given a spec reviewer on a desktop screen on a spec page with draft, acknowledged, and resolved threads, When they open the review panel,</span>
+<span data-acceptance-observable>Then every pin and every receipt in the conversation for the same status shows the same color, and no two statuses share a color.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-mark-levels" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>Given a spec reviewer on a spec with Jev markers at important, neutral, and passed levels, When they open the spec,</span>
+<span data-acceptance-observable>Then the markers show the important, neutral, and passed colors of the <a href="#token-marker">marker tokens</a>, each in its level's marker shape and size.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-mark-warning" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>Given a spec reviewer on a spec with a Jev marker whose notes are all Warning level, a fixture must be added to provide it, When they open the spec,</span>
+<span data-acceptance-observable>Then the marker shows as a light red dot in the <a href="#token-marker-warning">warning marker</a> color, distinct from the important, neutral, and passed markers.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-contrast" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>Given a spec reviewer on a spec page, When they open it,</span>
+<span data-acceptance-observable>Then every chrome text meets 4.5:1 contrast and meaningful non-text chrome boundaries (status pill borders, active thread borders, pin outlines) meet 3:1.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-no-content-change" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>Given a spec reviewer on a desktop screen on a spec that uses the shared stylesheet, When they open it,</span>
+<span data-acceptance-observable>Then the spec content (headings, prose, tables, figures, code blocks, section borders, page background) takes its look from the shared stylesheet and the runtime's document rules alone, and no chrome token restyles it.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-no-content-change-phone" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>Given a spec reviewer on a phone on a spec that uses the shared stylesheet, When they open it,</span>
+<span data-acceptance-observable>Then the spec content (headings, prose, tables, figures, code blocks, section borders, page background) takes its look from the shared stylesheet and the runtime's document rules alone, and no chrome token restyles it.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-dark-mode" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>Given a spec reviewer whose system is set to dark mode, When they open a spec page,</span>
+<span data-acceptance-observable>Then all chrome surfaces, text, and borders show the dark token values, and no light-mode chrome color shows.</span>
+</p>
+
+<p data-acceptance-criterion data-anchor="acceptance-one-surface" data-story="story-one-surface">
+<span data-acceptance-scenario>Given a spec reviewer on a desktop screen with a spec served with a compared range, When they open the spec page,</span>
+<span data-acceptance-observable>Then the page&rsquo;s <a href="#top-line">top line</a> reads the back link, the compared range, and Change base on the page color with a hairline under it and no tinted box, the document header shows the spec&rsquo;s title with no box or rule around it, and the document, top line, and toolbar share one background.</span>
+</p>
+<p data-acceptance-criterion data-anchor="acceptance-one-surface-phone" data-story="story-one-surface">
+<span data-acceptance-scenario>Given a spec reviewer on a phone with a spec served with a compared range, When they open the spec page,</span>
+<span data-acceptance-observable>Then the first screen shows the top line, the spec&rsquo;s title, and the start of its first section, on one background, without horizontal scrolling.</span>
+</p>
+<p data-acceptance-criterion data-anchor="acceptance-dark-document" data-story="story-one-surface">
+<span data-acceptance-scenario>Given a spec reviewer whose system is set to dark appearance, with a spec that uses the shared stylesheet holding a table and a figure, When they open the spec page,</span>
+<span data-acceptance-observable>Then the document and its chrome both show light text on one dark page, and the table and figure read clearly on it.</span>
+</p>
+<p data-acceptance-criterion data-anchor="acceptance-key-tooltip" data-story="story-quiet-controls">
+<span data-acceptance-scenario>Given a spec reviewer on a desktop screen on a spec page, When they point at the toolbar&rsquo;s Comment button, which needs a pointer that can hover, then wait for its tooltip,</span>
+<span data-acceptance-observable>Then the tooltip names the C key, and the button itself reads only Comment.</span>
+</p>
+<p data-acceptance-criterion data-anchor="acceptance-key-phone" data-story="story-quiet-controls">
+<span data-acceptance-scenario>Given a spec reviewer on a phone on a spec page, When they open it,</span>
+<span data-acceptance-observable>Then every toolbar button reads its name alone, Comment and Reading view among them, with no key in any label.</span>
+</p>
+<p data-acceptance-criterion data-anchor="acceptance-icons" data-story="story-quiet-controls">
+<span data-acceptance-scenario>Given a spec reviewer on a desktop screen on a spec page with threads, When they open the review panel, then press a thread's first message,</span>
+<span data-acceptance-observable>Then the panel toggle, the gear, and the focused thread's Back are line icons of one size and stroke weight.</span>
+</p>
+<p data-acceptance-criterion data-anchor="acceptance-receipt-case" data-story="story-quiet-controls">
+<span data-acceptance-scenario>Given a spec reviewer on a desktop screen on a spec page with threads, When they open the review panel,</span>
+<span data-acceptance-observable>Then every receipt in the conversation reads in sentence case.</span>
+</p>
+<p data-acceptance-criterion data-anchor="acceptance-icons-dock" data-story="story-quiet-controls">
+<span data-acceptance-scenario>Given a spec reviewer on a desktop screen on a spec page with threads, When they open the spec page with its review panel closed,</span>
+<span data-acceptance-observable>Then the thread dock shows a thin line icon, drawn as an outline, not a filled glyph or a text character.</span>
+</p>
+<p data-acceptance-criterion data-anchor="acceptance-focus-set" data-story="story-consistent-chrome">
+<span data-acceptance-scenario>Given a spec reviewer at a keyboard on a spec page whose threads are all resolved, When they press Tab until Accept spec has focus,</span>
+<span data-acceptance-observable>Then Accept spec shows the design set&rsquo;s focus ring.</span>
+</p>
+<p data-acceptance-criterion data-anchor="acceptance-error-repeat" data-story="story-errors-in-view">
+<span data-acceptance-scenario>Given a spec reviewer on a desktop with a spec page under review, needs an induced failure: the same error on every refresh, When they open the spec, then wait 6 seconds,</span>
+<span data-acceptance-observable>Then the error overlay under the top line shows that error once, with a count of the times it came.</span>
+</p>
+<p data-acceptance-criterion data-anchor="acceptance-error-phone" data-story="story-errors-in-view">
+<span data-acceptance-scenario>Given a spec reviewer on a phone with a spec page under review, needs an induced failure: an error as the page opens, When they open the spec,</span>
+<span data-acceptance-observable>Then the error overlay shows under the top line, and the bottom toolbar shows its Hand off control in full.</span>
+</p>
+<p data-anchor="acceptance-rules-note">Onboarding: not needed, the chrome&rsquo;s design adds no user surface of its own.
+CI: the <a href="./review-service.spec.html#acceptance-ci-alone">CI rule</a> covers the runtime style tests; they use no provider.
+One hand-off control for desktop and phone: kept, the chrome draws the review panel&rsquo;s one hand-off control on both, and the <a href="#error-overlay">error overlay</a> never covers it (<a href="./prompt-first-shaping.spec.html#acceptance-one-handoff-rule">phone rule</a>, <a href="./prompt-first-shaping.spec.html#acceptance-one-handoff-rule-desktop">desktop rule</a>).
+Never strip proof clauses or rewrite unedited criteria: kept, each criterion here keeps its proof clause word for word, as <a href="#acceptance-token-block">the token block criterion</a> does (<a href="./prompt-first-shaping.spec.html#acceptance-proof-clause-rule">shaping rule</a>, <a href="./prompt-first-shaping.spec.html#acceptance-proof-clause-rule-repair">repair rule</a>).
+Threads read as one conversation: kept, the panel&rsquo;s surface rule draws the conversation (<a href="#surface-panel">thread panel</a>, <a href="./threads.spec.html#acceptance-stream-rule">rule</a>).
+Every mockup at production fidelity: kept, its mockups are drawn from the runtime&rsquo;s chrome and the design set&rsquo;s tokens: their screens are review chrome a mockup page shows, and the page that frames a prototype cannot frame itself (<a href="./mockups.spec.html#prototype-drawn">drawn mockup</a>, <a href="./mockups.spec.html#acceptance-fidelity-rule">rule</a>).</p>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<div class="sec-head">
+<span class="sec-num">03</span>
+<h2 data-anchor="boundaries-heading">Modular boundaries</h2>
+<p class="sec-note" data-anchor="boundaries-note">Self-contained chrome styling.</p>
+</div>
+
+<p data-modular-boundary data-anchor="boundary-css-const">
+<span data-boundary-responsibility>The chrome styles in runtime.js own all spec page chrome styling: layout, color, typography, and responsive rules for the annotation overlay (toolbar, panel, dock, pins, pills, popovers, toasts, banners, badges, error overlay, range bar, index link, Screens index, Jev notes, orphan hints, composer, settings).</span>
+<span data-boundary-seam>The caller-facing seam is the chrome the runtime draws on every spec page, in the design set&rsquo;s token names, and the appearance a host passes to the frame as its preferred color scheme (<a href="#token-dark-mode">dark mode</a>); the top line holds the range bar and the index link in one line.</span>
+<span data-boundary-dependency>External package, pinned: the <a href="#design-set">shared design set</a> at the version Spec Chat pins, built into runtime.js, the review index, and the shared spec stylesheet; nothing is fetched at run time and no peer is named.</span>
+<span data-boundary-scope>Observable scope: every chrome element on a spec page uses the unified token set, and the shared spec stylesheet sets the document's look from the same set (<a href="#document">the document</a>).</span>
+</p>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-anchor="design">
+<div class="sec-head">
+<span class="sec-num">04</span>
+<h2 data-anchor="design-heading">Design</h2>
+<p class="sec-note" data-anchor="design-note">One token block, one button system, one color per meaning.</p>
+</div>
+
+<div data-anchor="token-block">
+<h3 data-anchor="token-block-heading">Token block</h3>
+<p data-anchor="token-block-rule">The spec page chrome styles in runtime.js open with the <a href="#design-set">shared design set</a>&rsquo;s stylesheet at the version Spec Chat pins, then one <code>:root</code> block holding only the additions in the table below.
+Every chrome rule uses only these variables.
+No literal color, font size, weight, spacing, or radius value appears in a chrome rule.
+The spec document's own content styling (the runtime&rsquo;s <code>article.spec</code> rules and spec.css) keeps its own <code>--spec-*</code> names, each set from the design set as <a href="#document">the document</a> states.</p>
+
+<div class="table-scroll">
+<table data-anchor="token-additions">
+<caption>Additions to the index token set for spec page chrome</caption>
+<thead><tr><th>Token</th><th>Value</th><th>Why</th></tr></thead>
+<tbody>
+<tr data-anchor="token-draft"><td><code>--ui-draft</code>, <code>--ui-draft-soft</code></td><td><code>var(--ui-attention)</code>, <code>var(--ui-attention-soft)</code></td><td>Draft/pending status. Reuses <code>--ui-attention</code> pair: drafts are unfinished work that needs attention.</td></tr>
+<tr data-anchor="token-ack"><td><code>--ui-ack</code>, <code>--ui-ack-soft</code></td><td><code>var(--ui-action)</code>, <code>var(--ui-action-soft)</code></td><td>Acknowledged status: the set&rsquo;s one accent.</td></tr>
+<tr data-anchor="token-resolved"><td><code>--ui-resolved</code>, <code>--ui-resolved-soft</code></td><td><code>var(--ui-pass)</code>, <code>var(--ui-pass-soft)</code></td><td>Resolved status. Reuses <code>--ui-pass</code> pair.</td></tr>
+<tr data-anchor="token-error"><td><code>--ui-error</code></td><td><code>var(--ui-fail)</code></td><td>Error overlay background. Reuses <code>--ui-fail</code>.</td></tr>
+<tr data-anchor="token-marker"><td><code>--ui-marker</code>, <code>--ui-marker-important</code>, <code>--ui-marker-pass</code></td><td><code>#767b85</code>, <code>#d1242f</code>, <code>#1a7f37</code></td><td>Jev markers. Agreed mark level colors.</td></tr>
+<tr data-anchor="token-on-marker"><td><code>--ui-on-marker</code></td><td><code>#ffffff</code></td><td>Glyph on a Jev marker (<code>!</code>, check). Not overridden in dark mode: markers keep their fill in both themes.</td></tr>
+<tr data-anchor="token-marker-warning"><td><code>--ui-marker-warning</code></td><td><code>#e5534b</code></td><td>Warning-level Jev marker. Not overridden in dark mode.</td></tr>
+<tr data-anchor="token-pin"><td><code>--ui-pin-ring</code></td><td><code>rgba(176, 84, 14, 0.25)</code>; dark <code>rgba(229, 135, 58, 0.25)</code></td><td>Active pin and thread ring glow. Derived from <code>--ui-draft</code>.</td></tr>
+<tr data-anchor="token-veil"><td><code>--ui-veil</code></td><td><code>rgba(0, 0, 0, 0.42)</code>; dark <code>rgba(0, 0, 0, 0.6)</code></td><td>The review panel dimmed behind a focused thread (<a href="#surface-panel">thread panel</a>), and the page around its spot on a phone (<a href="./threads.spec.html#focus-phone">focused thread</a>). One veil token from black.</td></tr>
+<tr data-anchor="token-shadow"><td><code>--ui-shadow</code></td><td><code>rgba(51, 51, 51, 0.14)</code>; dark <code>rgba(0, 0, 0, 0.4)</code></td><td>Toolbar, dock, panel box shadow. One shadow token from <code>--ui-ink</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="token-dark-mode">Dark mode: the design set&rsquo;s dark values apply under <code>@media(prefers-color-scheme:dark)</code>, which follows the system, or a host&rsquo;s appearance when the host passes it to the frame as the preferred color scheme.
+The chrome and the review index share the same <a href="./review-index.spec.html#index-tokens">dark values</a>: dark surfaces, light text.</p>
+</div>
+
+<div data-anchor="button-system">
+<h3 data-anchor="button-system-heading">Button system</h3>
+<p data-anchor="button-system-rule">Every chrome button is one of four variants.
+The button system consumes tokens from the token block; it does not redefine them.
+Badges and pills are not buttons and use their own radius (<code>--ui-radius-pill</code>).
+All buttons share: <code>font-family: var(--ui-font)</code>, <code>font-size: var(--ui-text-xs)</code> (12px), <code>font-weight: 600</code>, <code>border-radius: var(--ui-radius-sm)</code> (6px), <code>min-height: 32px</code> desktop / <code>44px</code> mobile, <code>padding: var(--ui-space-2) var(--ui-space-3)</code> (8px 12px).
+Focus: <code>outline: 2px solid var(--ui-focus); outline-offset: 2px</code>.</p>
+
+<div class="table-scroll">
+<table data-anchor="button-variants">
+<thead><tr><th>Variant</th><th>Fill</th><th>Text</th><th>Border</th><th>Use</th></tr></thead>
+<tbody>
+<tr data-anchor="btn-primary"><td>Primary</td><td><code>var(--ui-ink)</code></td><td><code>var(--ui-page)</code></td><td><code>var(--ui-ink)</code></td><td>Hand off (its label <code>Hand off to agent →</code>), Accept spec, a composer&rsquo;s send</td></tr>
+<tr data-anchor="btn-secondary"><td>Secondary</td><td><code>var(--ui-surface)</code></td><td><code>var(--ui-ink)</code></td><td><code>var(--ui-border)</code></td><td>Cancel, Edit, Reply, Resolve, Go to, Reload, Reconcile, Apply, Move comment here</td></tr>
+<tr data-anchor="btn-icon"><td>Icon</td><td><code>var(--ui-surface)</code></td><td><code>var(--ui-muted)</code></td><td><code>var(--ui-border)</code></td><td>Panel toggle, gear, dock open, dock thread, disclosure</td></tr>
+<tr data-anchor="btn-text"><td>Text link</td><td>transparent</td><td><code>var(--ui-ink)</code></td><td>none</td><td>Change base, Offer Dismiss, rule card Not for this spec and Not a project rule, toolbar Comment/Reading view</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="button-placement">Placement rule: a bar, panel footer, or popover action row puts the primary action rightmost and a cancel or secondary action left of it.
+Each state shows one primary action: while a composer is open, its send is the primary and Hand off shows as secondary.
+A single primary action fills available width on mobile.
+Icon buttons are always square (<code>var(--ui-space-6)</code> desktop, 44px mobile).</p>
+</div>
+
+<div data-anchor="color-map">
+<h3 data-anchor="color-map-heading">Color map</h3>
+<p data-anchor="color-map-rule">Every chrome color value maps to exactly one token, its light and dark values the design set&rsquo;s.
+The table below is the complete mapping; no chrome rule uses a value outside it.</p>
+
+<div class="table-scroll">
+<table data-anchor="color-map-table">
+<thead><tr><th>Meaning</th><th>Token</th></tr></thead>
+<tbody>
+<tr data-anchor="map-page"><td>Page background</td><td><code>--ui-page</code></td></tr>
+<tr data-anchor="map-surface"><td>Cards, panels, inputs, popovers</td><td><code>--ui-surface</code></td></tr>
+<tr data-anchor="map-ink"><td>Primary text, headings</td><td><code>--ui-ink</code></td></tr>
+<tr data-anchor="map-muted"><td>Secondary text, captions, status line</td><td><code>--ui-muted</code></td></tr>
+<tr data-anchor="map-border"><td>Borders, separators, hairlines</td><td><code>--ui-border</code></td></tr>
+<tr data-anchor="map-draft"><td>Draft/pending status foreground</td><td><code>--ui-draft</code></td></tr>
+<tr data-anchor="map-draft-soft"><td>Draft/pending status background</td><td><code>--ui-draft-soft</code></td></tr>
+<tr data-anchor="map-ack"><td>Acknowledged status foreground</td><td><code>--ui-ack</code></td></tr>
+<tr data-anchor="map-ack-soft"><td>Acknowledged status background</td><td><code>--ui-ack-soft</code></td></tr>
+<tr data-anchor="map-resolved"><td>Resolved status foreground</td><td><code>--ui-resolved</code></td></tr>
+<tr data-anchor="map-resolved-soft"><td>Resolved status background</td><td><code>--ui-resolved-soft</code></td></tr>
+<tr data-anchor="map-error"><td>Error overlay, error text</td><td><code>--ui-error</code></td></tr>
+<tr data-anchor="map-banner"><td>Banner (spec updated)</td><td><code>--ui-pass</code></td></tr>
+<tr data-anchor="map-marker"><td>Neutral marker</td><td><code>--ui-marker</code></td></tr>
+<tr data-anchor="map-marker-imp"><td>Important marker</td><td><code>--ui-marker-important</code></td></tr>
+<tr data-anchor="map-marker-pass"><td>Passed marker</td><td><code>--ui-marker-pass</code></td></tr>
+<tr data-anchor="map-focus-ring"><td>Focus ring</td><td><code>--ui-focus</code></td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<div data-anchor="type-system">
+<h3 data-anchor="type-system-heading">Typography</h3>
+<p data-anchor="type-system-rule">Chrome text uses only the design set&rsquo;s type steps.
+<code>var(--ui-text-xs)</code> 12px: pills, badges, captions, toolbar status, note meta, popover text, dock threads, Jev note.
+<code>var(--ui-text-sm)</code> 14px: panel body, thread messages, composer textarea, range bar text.
+<code>var(--ui-text-md)</code> 16px: mobile composer textarea (iOS zoom prevention).
+<code>var(--ui-text-lg)</code> 20px: panel toggle glyph.
+Weights: the set&rsquo;s three, 400 body, 500 row titles, 600 emphasis and buttons, never 700 or 750.
+Status pills and badges read in sentence case, never capitals.</p>
+</div>
+
+<div data-anchor="spacing-system">
+<h3 data-anchor="spacing-system-heading">Spacing and geometry</h3>
+<p data-anchor="spacing-system-rule">Chrome spacing uses only the design set&rsquo;s spacing scale: 4, 8, 12, 16, 24, 32px.
+Border radii: <code>var(--ui-radius)</code> 8px for containers (panel, toolbar, dock, popover, toast), <code>var(--ui-radius-sm)</code> 6px for buttons and inputs, <code>var(--ui-radius-pill)</code> 999px for pills and badges.
+Pin border-radius keeps its teardrop shape.</p>
+</div>
+
+<div data-anchor="design-set" id="design-set">
+<h3 data-anchor="design-set-heading">Shared design set</h3>
+<p data-anchor="design-set-rule">Every value the chrome, the <a href="./review-index.spec.html#index-tokens">review index</a>, and the document use comes from one shared design set: a small package Spec Chat builds in at the version it pins, never fetched from a peer at run time, so a page served without any other tool looks complete.
+It carries the <code>--ui-*</code> colors in light and dark, one accent for action, focus, links, and acknowledged, the type steps from 12px to a 30px display step, three weights, spaces, radii, motion, the five status marks, the line icons, and the <a href="./review-index.spec.html#index-find">Find field</a> the review index filters by.
+A new value reaches Spec Chat only with a new pin.</p>
+</div>
+
+<div data-anchor="one-surface" id="one-surface">
+<h3 data-anchor="one-surface-heading">One surface</h3>
+<p data-anchor="top-line" id="top-line">Top line: one fixed line across the top of the page, on the page color with a hairline under it: at its start the <a href="./review-index.spec.html#index-link">back link</a>, a chevron and &ldquo;Review index&rdquo;; then the compared range as muted meta, worded as the <a href="./compared-range.spec.html#acceptance-bar">compared range</a> states it; at its end Change base as a text button.
+The page has no floating index button and no tinted range box.</p>
+<p data-anchor="one-surface-rule">The document, the top line, the toolbar, and the review panel share the page color and ink; the toolbar and an open popover alone lift on the set&rsquo;s shadow.
+The panel is the same page color, separated by a hairline.</p>
+<figure data-anchor="one-surface-figure">
+<h3 data-anchor="one-surface-figure-heading">The top of a spec page, desktop</h3>
+<div data-anchor="one-surface-figure-page" style="border:1px solid var(--spec-hairline);max-width:620px;margin:0 auto;font-size:13px">
+<div data-anchor="one-surface-figure-line" style="display:flex;gap:10px;align-items:center;padding:7px 14px;border-bottom:1px solid var(--spec-hairline)"><span>&#8249; Review index</span><span style="color:var(--spec-muted)">Changes from <code>965efc4</code> 2026-01-01 to <code>dbbd25d</code> 2026-01-02</span><span style="flex:1"></span><span>Change base</span></div>
+<div data-anchor="one-surface-figure-doc" style="padding:28px 40px 18px">
+<p style="margin:0;font-size:12px;color:var(--spec-muted)">docs / specs / evidence-site.spec.html</p>
+<p style="margin:6px 0 0;font-size:30px;font-weight:600;line-height:1.2">Evidence review site</p>
+<p style="margin:10px 0 0;font-size:16px;line-height:1.55">One page for reviewing an immutable evidence packet and following its traced joins.</p>
+<p style="margin:26px 0 0;padding-top:14px;border-top:1px solid var(--spec-hairline);font-size:22px;font-weight:600">User stories</p>
+<p style="margin:8px 0 0;font-size:15px;line-height:1.6;color:var(--spec-muted)">As a human doing QA, I open a bundle and see what was tested&hellip;</p>
+</div>
+<div data-anchor="one-surface-figure-toolbar" style="display:flex;justify-content:center;padding:0 0 14px"><span style="display:inline-flex;gap:16px;align-items:center;border:1px solid var(--spec-hairline);padding:6px 14px;font-weight:600">Comment<span>Reading view</span><span style="font-weight:400;color:var(--spec-muted)">0 threads</span></span></div>
+</div>
+<figcaption data-anchor="one-surface-figure-caption">Spatial contract at desktop width: the top line, then the document on the same page color, the header unboxed with the spec&rsquo;s own title at the display step, sections opened by a hairline and a heading; the toolbar floats at the bottom center.
+On a phone the top line keeps the back link and Change base, the range moves under it, and the title drops to the heading step.</figcaption>
+</figure>
+</div>
+
+<div data-anchor="document" id="document">
+<h3 data-anchor="document-heading">The document</h3>
+<p data-anchor="document-rule">The shared spec stylesheet, the one Spec Chat bundles for spec content, sets every <code>--spec-*</code> value from the design set, in light and dark: the page paper is the set&rsquo;s page color; the header is unboxed, its title at the display step, its breadcrumb meta, its lede one step over body; section headings sit at the heading step under a hairline; body text reads at 15px with a reading line length; tables and figures use hairlines and the soft surface, never heavy rules.
+A repository takes a new stylesheet by replacing its copy, as it took the first.</p>
+</div>
+
+<div data-anchor="keys-icons" id="keys-icons">
+<h3 data-anchor="keys-icons-heading">Keys and icons</h3>
+<p data-anchor="keys-rule">No button label carries a key: Comment reads Comment, and its tooltip and any menu item name C beside it; on a phone neither tooltip nor label shows a key.</p>
+<p data-anchor="icons-rule">Every chrome icon, the panel toggle, gear, dock, thread, and disclosure, is the design set&rsquo;s line icon at one size and stroke weight, the same icons Proof shows.</p>
+</div>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-anchor="preview">
+<div class="sec-head">
+<span class="sec-num">05</span>
+<h2 data-anchor="preview-heading">Visual preview</h2>
+<p class="sec-note" data-anchor="preview-note">Live rendering of the tokens and components, light and dark.</p>
+</div>
+
+<figure data-anchor="preview-figure">
+<div data-anchor="preview-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+
+<!-- Light mode -->
+<div data-anchor="preview-light" style="--ui-font:'Inter Variable',Inter,system-ui,sans-serif;--ui-mono:ui-monospace,SFMono-Regular,Menlo,monospace;--ui-text-xs:12px;--ui-text-sm:14px;--ui-page:#ffffff;--ui-surface:#ffffff;--ui-ink:#333333;--ui-muted:#525252;--ui-border:#dfdfdf;--ui-surface-soft:#f5f5f5;--ui-action:#1d4ed8;--ui-focus:var(--ui-action);--ui-draft:#b0540e;--ui-draft-soft:#faf4ef;--ui-ack:var(--ui-action);--ui-ack-soft:#eff3ff;--ui-resolved:#005c32;--ui-resolved-soft:#e6efea;--ui-error:#a5000f;--ui-pass:#005c32;--ui-fail:#a5000f;--ui-marker:#767b85;--ui-marker-important:#d1242f;--ui-marker-pass:#1a7f37;--ui-shadow:rgba(51,51,51,0.14);--ui-radius:8px;--ui-radius-sm:6px;--ui-radius-pill:999px;font-family:var(--ui-font);color:var(--ui-ink);background:var(--ui-page);padding:20px;border-radius:4px;border:1px solid var(--ui-border)">
+
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Light mode</div>
+
+<!-- Swatches -->
+<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px">
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#ffffff"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">page</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#333333"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">ink</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#525252"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">muted</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#dfdfdf"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">border</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#b0540e"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">draft</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#faf4ef"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">draft-s</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#1d4ed8"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">ack</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#eff3ff"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">ack-s</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#005c32"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">resolved</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#e6efea"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">res-s</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#a5000f"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">error</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#767b85"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">marker</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#d1242f"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">m-imp</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:var(--ui-radius-sm);border:1px solid var(--ui-border);background:#1a7f37"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">m-pass</div></div>
+</div>
+
+<!-- Buttons -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Buttons</div>
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;align-items:center">
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-ink);color:var(--ui-page);border:1px solid var(--ui-ink);cursor:pointer">Hand off</button>
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-surface);color:var(--ui-ink);border:1px solid var(--ui-border);cursor:pointer">Cancel</button>
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);width:32px;height:32px;padding:0;background:var(--ui-surface);color:var(--ui-muted);border:1px solid var(--ui-border);cursor:pointer" aria-label="Review display settings"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6.34 3.18L6.6 1.4L9.4 1.4L9.66 3.18L11.35 4.15L13.02 3.48L14.42 5.91L13.01 7.03L13.01 8.97L14.42 10.09L13.02 12.52L11.35 11.85L9.66 12.82L9.4 14.6L6.6 14.6L6.34 12.82L4.65 11.85L2.98 12.52L1.58 10.09L2.99 8.97L2.99 7.03L1.58 5.91L2.98 3.48L4.65 4.15z"/><circle cx="8" cy="8" r="2"/></svg></button>
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:transparent;color:var(--ui-ink);border:none;cursor:pointer">Comment</button>
+</div>
+
+<!-- Status -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Status</div>
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;align-items:end">
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-draft);background:var(--ui-draft-soft)">Draft</span>
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-ack);background:var(--ui-ack-soft)">Ack</span>
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-resolved);background:var(--ui-resolved-soft)">Resolved</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:#fff;background:var(--ui-draft)">1</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:#fff;background:var(--ui-ack)">2</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:var(--ui-resolved);background:var(--ui-surface);border:2px solid var(--ui-resolved)">3</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:600;color:#fff;background:var(--ui-marker)">!</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:600;color:#fff;background:var(--ui-marker-important)">!</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:600;color:#fff;background:var(--ui-marker-pass)">&#10003;</span>
+<span style="display:inline-block;background:var(--ui-resolved-soft);color:var(--ui-resolved);border-radius:var(--ui-radius-pill);padding:2px 8px;font-size:var(--ui-text-xs);font-weight:600">Agent</span>
+</div>
+
+<!-- Toolbar -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Toolbar</div>
+<div style="display:inline-flex;align-items:center;gap:4px;background:var(--ui-surface);border:1px solid var(--ui-border);border-radius:var(--ui-radius);padding:6px 8px;box-shadow:0 8px 28px var(--ui-shadow);margin-bottom:20px">
+<span style="font-size:var(--ui-text-xs);font-weight:600;padding:4px 8px;border-radius:var(--ui-radius-sm);background:var(--ui-draft-soft);color:var(--ui-draft);cursor:pointer">Comment</span>
+<span style="font-size:var(--ui-text-xs);font-weight:600;padding:4px 8px;color:var(--ui-ink);cursor:pointer">Reading view</span>
+<span style="font-size:var(--ui-text-xs);color:var(--ui-muted);margin-left:8px">3 threads</span>
+</div>
+
+<!-- Conversation -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Conversation</div>
+<div style="display:flex;flex-direction:column;gap:4px;max-width:320px;margin-bottom:20px;font-size:var(--ui-text-sm)">
+<div style="align-self:flex-end;max-width:80%;background:var(--ui-action);color:var(--ui-page);border-radius:calc(2 * var(--ui-radius));padding:8px 12px">Button radius should be consistent across all surfaces.</div>
+<div style="align-self:flex-end;font-size:var(--ui-text-xs);color:var(--ui-muted)">Button system &middot; Placement rule</div>
+<div style="align-self:flex-end;font-size:var(--ui-text-xs);color:var(--ui-muted)">1 reply &middot; Agent: Unified on 6px</div>
+<div style="align-self:flex-end;font-size:var(--ui-text-xs);font-weight:600;color:var(--ui-ack)">Seen</div>
+<div style="align-self:flex-start;max-width:80%;background:var(--ui-surface-soft);color:var(--ui-ink);border-radius:calc(2 * var(--ui-radius));padding:8px 12px">Should the dock hide while the panel is open?</div>
+</div>
+<!-- Jev note -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Jev note</div>
+<div style="background:var(--ui-draft-soft);border:1px solid rgba(176,84,14,0.4);border-radius:var(--ui-radius);padding:12px;font-size:var(--ui-text-sm);color:var(--ui-draft);margin-bottom:20px">
+<div style="font-size:var(--ui-text-xs);margin-bottom:4px;font-weight:600">Reconcile suggestion</div>
+Button sizes conflict with the range bar spec.
+<div style="margin-top:8px"><button style="font-family:var(--ui-font);font-size:11px;font-weight:600;border-radius:var(--ui-radius-sm);min-height:26px;padding:2px 8px;background:var(--ui-surface);color:var(--ui-ink);border:1px solid var(--ui-border);cursor:pointer">Reconcile</button></div>
+</div>
+
+<!-- Popover -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Jev popover</div>
+<div style="background:var(--ui-surface);border:1px solid var(--ui-ink);border-radius:var(--ui-radius);padding:16px;box-shadow:0 8px 28px var(--ui-shadow);max-width:320px;font-size:var(--ui-text-sm);margin-bottom:20px">
+<div style="font-size:var(--ui-text-xs);color:var(--ui-muted);margin-bottom:8px">important &middot; contradicts</div>
+<div>Conflicts with <a href="#" style="color:var(--ui-ack)">button-system-rule</a>.</div>
+<div style="display:flex;gap:8px;margin-top:12px">
+<button style="font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-surface);color:var(--ui-ack);border:1px solid var(--ui-ack);cursor:pointer">Go to clause</button>
+<button style="font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-surface);color:var(--ui-ack);border:1px solid var(--ui-ack);cursor:pointer">Dismiss</button>
+</div>
+</div>
+
+<!-- Inverted -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Inverted surfaces</div>
+<div style="background:var(--ui-pass);color:var(--ui-page);padding:8px 12px;display:flex;align-items:center;justify-content:space-between;font-size:var(--ui-text-xs);font-weight:600;margin-bottom:8px">
+<span>Spec updated to latest commit</span>
+<button style="font-family:var(--ui-font);font-size:11px;font-weight:600;border-radius:var(--ui-radius-sm);min-height:26px;padding:2px 8px;background:transparent;color:var(--ui-page);border:1px solid var(--ui-page);cursor:pointer">Reload</button>
+</div>
+<div style="display:inline-block;background:var(--ui-ink);color:var(--ui-page);border-radius:var(--ui-radius);padding:8px 12px;font-size:var(--ui-text-xs);font-weight:600;margin-bottom:8px">Thread resolved</div>
+<div style="background:var(--ui-error);color:var(--ui-page);padding:12px;font-size:var(--ui-text-xs);font-family:var(--ui-mono)">Error: runtime.js failed to load</div>
+</div>
+
+<!-- Dark mode -->
+<div data-anchor="preview-dark" style="--ui-font:'Inter Variable',Inter,system-ui,sans-serif;--ui-mono:ui-monospace,SFMono-Regular,Menlo,monospace;--ui-text-xs:12px;--ui-text-sm:14px;--ui-page:#1a1a1a;--ui-surface:#242424;--ui-ink:#e0e0e0;--ui-muted:#999999;--ui-border:#3a3a3a;--ui-surface-soft:#2a2a2a;--ui-action:#7896ef;--ui-focus:var(--ui-action);--ui-draft:#e5873a;--ui-draft-soft:#2e2218;--ui-ack:var(--ui-action);--ui-ack-soft:#1a2040;--ui-resolved:#3daa6e;--ui-resolved-soft:#1a2e22;--ui-error:#ffb4ab;--ui-pass:#3daa6e;--ui-fail:#ffb4ab;--ui-marker:#767b85;--ui-marker-important:#d1242f;--ui-marker-pass:#1a7f37;--ui-shadow:rgba(0,0,0,0.4);--ui-radius:8px;--ui-radius-sm:6px;--ui-radius-pill:999px;font-family:var(--ui-font);color:var(--ui-ink);background:var(--ui-page);padding:20px;border-radius:4px;border:1px solid var(--ui-border)">
+
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Dark mode</div>
+
+<!-- Dark swatches -->
+<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px">
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#1a1a1a"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">page</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#242424"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">surface</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#e0e0e0"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">ink</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#3a3a3a"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">border</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#e5873a"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">draft</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#2e2218"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">draft-s</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#7896ef"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">ack</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#1a2040"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">ack-s</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#3daa6e"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">resolved</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#1a2e22"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">res-s</div></div>
+<div style="text-align:center"><div style="width:52px;height:32px;border-radius:6px;border:1px solid var(--ui-border);background:#ffb4ab"></div><div style="font-size:9px;font-family:var(--ui-mono);color:var(--ui-muted);margin-top:2px">error</div></div>
+</div>
+
+<!-- Dark buttons -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Buttons</div>
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;align-items:center">
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-ink);color:var(--ui-page);border:1px solid var(--ui-ink);cursor:pointer">Hand off</button>
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-surface);color:var(--ui-ink);border:1px solid var(--ui-border);cursor:pointer">Cancel</button>
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);width:32px;height:32px;padding:0;background:var(--ui-surface);color:var(--ui-muted);border:1px solid var(--ui-border);cursor:pointer" aria-label="Review display settings"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6.34 3.18L6.6 1.4L9.4 1.4L9.66 3.18L11.35 4.15L13.02 3.48L14.42 5.91L13.01 7.03L13.01 8.97L14.42 10.09L13.02 12.52L11.35 11.85L9.66 12.82L9.4 14.6L6.6 14.6L6.34 12.82L4.65 11.85L2.98 12.52L1.58 10.09L2.99 8.97L2.99 7.03L1.58 5.91L2.98 3.48L4.65 4.15z"/><circle cx="8" cy="8" r="2"/></svg></button>
+<button style="display:inline-flex;align-items:center;justify-content:center;font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:transparent;color:var(--ui-ink);border:none;cursor:pointer">Comment</button>
+</div>
+
+<!-- Dark status -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Status</div>
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;align-items:end">
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-draft);background:var(--ui-draft-soft)">Draft</span>
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-ack);background:var(--ui-ack-soft)">Ack</span>
+<span style="display:inline-block;font-size:var(--ui-text-xs);font-weight:600;padding:2px 8px;border-radius:var(--ui-radius-pill);color:var(--ui-resolved);background:var(--ui-resolved-soft)">Resolved</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:#fff;background:var(--ui-draft)">1</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:#fff;background:var(--ui-ack)">2</span>
+<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:30px;border-radius:50% 50% 50% 0;font-size:11px;font-weight:600;color:var(--ui-resolved);background:var(--ui-surface);border:2px solid var(--ui-resolved)">3</span>
+</div>
+
+<!-- Dark conversation -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Conversation</div>
+<div style="display:flex;flex-direction:column;gap:4px;max-width:320px;margin-bottom:20px;font-size:var(--ui-text-sm)">
+<div style="align-self:flex-end;max-width:80%;background:var(--ui-action);color:var(--ui-page);border-radius:calc(2 * var(--ui-radius));padding:8px 12px">Button radius should be consistent across all surfaces.</div>
+<div style="align-self:flex-end;font-size:var(--ui-text-xs);color:var(--ui-muted)">Button system &middot; Placement rule</div>
+<div style="align-self:flex-end;font-size:var(--ui-text-xs);color:var(--ui-muted)">1 reply &middot; Agent: Unified on 6px</div>
+<div style="align-self:flex-end;font-size:var(--ui-text-xs);font-weight:600;color:var(--ui-ack)">Seen</div>
+<div style="align-self:flex-start;max-width:80%;background:var(--ui-surface-soft);color:var(--ui-ink);border-radius:calc(2 * var(--ui-radius));padding:8px 12px">Should the dock hide while the panel is open?</div>
+</div>
+<!-- Dark Jev note -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Jev note</div>
+<div style="background:var(--ui-draft-soft);border:1px solid rgba(229,135,58,0.4);border-radius:var(--ui-radius);padding:12px;font-size:var(--ui-text-sm);color:var(--ui-draft);margin-bottom:20px">
+<div style="font-size:var(--ui-text-xs);margin-bottom:4px;font-weight:600">Reconcile suggestion</div>
+Button sizes conflict with the range bar spec.
+</div>
+
+<!-- Dark popover -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Jev popover</div>
+<div style="background:var(--ui-surface);border:1px solid var(--ui-ink);border-radius:var(--ui-radius);padding:16px;box-shadow:0 8px 28px var(--ui-shadow);max-width:320px;font-size:var(--ui-text-sm);margin-bottom:20px">
+<div style="font-size:var(--ui-text-xs);color:var(--ui-muted);margin-bottom:8px">important &middot; contradicts</div>
+<div>Conflicts with <a href="#" style="color:var(--ui-ack)">button-system-rule</a>.</div>
+<div style="display:flex;gap:8px;margin-top:12px">
+<button style="font-family:var(--ui-font);font-size:var(--ui-text-xs);font-weight:600;border-radius:var(--ui-radius-sm);min-height:32px;padding:8px 12px;background:var(--ui-surface);color:var(--ui-ack);border:1px solid var(--ui-ack);cursor:pointer">Go to clause</button>
+</div>
+</div>
+
+<!-- Dark inverted -->
+<div style="margin-bottom:16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ui-muted);font-family:var(--ui-mono)">Inverted surfaces</div>
+<div style="background:var(--ui-pass);color:var(--ui-page);padding:8px 12px;display:flex;align-items:center;justify-content:space-between;font-size:var(--ui-text-xs);font-weight:600;margin-bottom:8px">
+<span>Spec updated</span>
+<button style="font-family:var(--ui-font);font-size:11px;font-weight:600;border-radius:6px;min-height:26px;padding:2px 8px;background:transparent;color:var(--ui-page);border:1px solid var(--ui-page);cursor:pointer">Reload</button>
+</div>
+<div style="display:inline-block;background:var(--ui-ink);color:var(--ui-page);border-radius:var(--ui-radius);padding:8px 12px;font-size:var(--ui-text-xs);font-weight:600;margin-bottom:8px">Thread resolved</div>
+<div style="background:var(--ui-error);color:var(--ui-page);padding:12px;font-size:var(--ui-text-xs);font-family:var(--ui-mono)">Error: runtime.js failed to load</div>
+</div>
+
+</div>
+<figcaption data-anchor="preview-caption">Left: light mode.
+Right: dark mode.
+All values from the token block.
+Button system: one shape (6px radius, 12px/600, 32px min-height), four variants (primary, secondary, icon, text-link).
+Status colors: draft amber, acknowledged blue, resolved green.
+Inverted surfaces: toast (dark), banner (green), error (red).</figcaption>
+</figure>
+
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section data-anchor="surfaces">
+<div class="sec-head">
+<span class="sec-num">06</span>
+<h2 data-anchor="surfaces-heading">Surface rules</h2>
+<p class="sec-note" data-anchor="surfaces-note">Every chrome surface, by element.</p>
+</div>
+
+<p data-anchor="surface-rule">Each chrome element owns a non-overlapping visual domain.
+The table below assigns tokens to each element; no two rows share a domain.</p>
+
+<div class="table-scroll">
+<table data-anchor="surface-table">
+<thead><tr><th>Element</th><th>Background</th><th>Border</th><th>Text</th><th>Radius</th><th>Buttons / notes</th></tr></thead>
+<tbody>
+<tr data-anchor="surface-toolbar"><td>Toolbar</td><td><code>--ui-page</code></td><td><code>--ui-border</code></td><td><code>--ui-muted</code> (status)</td><td><code>--ui-radius</code></td><td>Text-link variant. Active: <code>--ui-draft-soft</code> bg, <code>--ui-draft</code> text. Shadow <code>--ui-shadow</code>.</td></tr>
+<tr data-anchor="surface-panel"><td>Thread panel</td><td><code>--ui-page</code></td><td>left <code>--ui-border</code></td><td><code>--ui-ink</code></td><td>none</td><td>The <a href="./threads.spec.html#stream">conversation</a>: this browser's bubbles <code>--ui-action</code> bg, <code>--ui-page</code> text; every other bubble <code>--ui-surface-soft</code> bg, <code>--ui-ink</code> text; bubble radius twice <code>--ui-radius</code>; chips and replies lines <code>--ui-text-xs</code> <code>--ui-muted</code>; receipts <code>--ui-text-xs</code> in their status color with their word. Focused thread over the rest of the panel dimmed by <code>--ui-veil</code>. Hand-off bar: primary rightmost, secondary while a composer is open (<a href="#button-placement">one primary</a>).</td></tr>
+<tr data-anchor="surface-dock"><td>Thread dock</td><td><code>--ui-surface</code></td><td><code>--ui-border</code></td><td><code>--ui-muted</code></td><td><code>--ui-radius</code></td><td>Icon variant. Status tint on thread buttons: draft/ack/resolved token pairs. Unread badge: <code>--ui-ack</code> bg, <code>--ui-page</code> text.</td></tr>
+<tr data-anchor="surface-range-bar"><td>Range bar, in the <a href="#top-line">top line</a></td><td><code>--ui-page</code></td><td>bottom hairline <code>--ui-border</code></td><td><code>--ui-muted</code> range, <code>--ui-ink</code> base</td><td>none</td><td>Change base: text link. Apply: secondary. Selected commit: <code>--ui-resolved</code> border, <code>--ui-resolved-soft</code> bg. Input: <code>--ui-border</code>, <code>--ui-radius-sm</code>.</td></tr>
+<tr data-anchor="surface-pins"><td>Pins</td><td>draft <code>--ui-draft</code>, ack <code>--ui-ack</code>, resolved <code>--ui-surface</code></td><td>resolved: 2px <code>--ui-resolved</code></td><td>resolved: <code>--ui-resolved</code></td><td>teardrop</td><td>Active ring: <code>--ui-pin-ring</code>.</td></tr>
+<tr data-anchor="surface-pills"><td>Pills</td><td>draft <code>--ui-draft-soft</code>, ack <code>--ui-ack-soft</code>, resolved <code>--ui-resolved-soft</code></td><td>none</td><td>draft <code>--ui-draft</code>, ack <code>--ui-ack</code>, resolved <code>--ui-resolved</code></td><td><code>--ui-radius-pill</code></td><td><code>--ui-text-xs</code> 600, sentence case.</td></tr>
+<tr data-anchor="surface-popover"><td>Jev popover</td><td><code>--ui-surface</code></td><td><code>--ui-ink</code></td><td><code>--ui-ink</code>; attention <code>--ui-fail</code>; meta <code>--ui-muted</code></td><td><code>--ui-radius</code></td><td>Shadow <code>--ui-shadow</code>. Links: <code>--ui-ack</code> underlined. Action buttons: secondary with <code>--ui-ack</code> border/text.</td></tr>
+<tr data-anchor="surface-jev-note"><td>Jev note</td><td><code>--ui-surface-soft</code></td><td><code>--ui-border</code></td><td><code>--ui-muted</code></td><td><code>--ui-radius</code></td><td><code>--ui-text-xs</code> 600. Reconcile/offer: secondary variant.</td></tr>
+<tr data-anchor="surface-toast"><td>Toast (transient notification)</td><td><code>--ui-ink</code> (dark inverted)</td><td>none</td><td><code>--ui-page</code></td><td><code>--ui-radius</code></td><td><code>--ui-text-xs</code> 600.</td></tr>
+<tr data-anchor="surface-banner"><td>Banner (spec-updated alert)</td><td><code>--ui-pass</code> (green inverted)</td><td>none</td><td><code>--ui-page</code></td><td>none</td><td>Button: secondary with <code>--ui-page</code> border/text (inverted for contrast on green).</td></tr>
+<tr data-anchor="surface-error"><td><a href="#error-overlay">Error overlay</a> (blocking error)</td><td><code>--ui-error</code> (red inverted)</td><td>none</td><td><code>--ui-page</code></td><td>none</td><td><code>--ui-text-xs</code> monospace.</td></tr>
+<tr data-anchor="surface-index-link"><td>Index link, in the top line</td><td><code>--ui-page</code></td><td>none</td><td><code>--ui-ink</code> 500</td><td>none</td><td>Chevron icon, then Review index. Hover: underline. <code>--ui-text-xs</code>.</td></tr>
+<tr data-anchor="surface-screen-index"><td>Screens index, under the header (<a href="./mockups.spec.html#screen-index">screens</a>)</td><td><code>--ui-page</code>; row hover <code>--ui-surface-soft</code></td><td><code>--ui-border</code> hairlines between rows and around the list</td><td>Name <code>--ui-ink</code> 500 <code>--ui-text-sm</code>; kind, route, viewports, and open counts <code>--ui-muted</code> <code>--ui-text-xs</code>, an open count <code>--ui-attention</code></td><td><code>--ui-radius</code></td><td>Each row one link, the design set&rsquo;s status mark first and the chevron last. Focus: the focus ring. Phone: rows at least 44px, meta under the name.</td></tr>
+<tr data-anchor="surface-orphan"><td>Orphan hint</td><td><code>--ui-draft-soft</code></td><td>left 3px <code>--ui-draft</code></td><td><code>--ui-draft</code></td><td>none</td><td>Buttons: secondary variant.</td></tr>
+<tr data-anchor="surface-badge"><td>Agent badge</td><td><code>--ui-resolved-soft</code></td><td>none</td><td><code>--ui-resolved</code></td><td><code>--ui-radius-pill</code></td><td><code>--ui-text-xs</code> 600, sentence case.</td></tr>
+<tr data-anchor="surface-composer"><td>Composer</td><td><code>--ui-surface</code></td><td><code>--ui-border</code></td><td><code>--ui-ink</code></td><td><code>--ui-radius-sm</code></td><td><code>--ui-text-sm</code> desktop, <code>--ui-text-md</code> mobile (iOS zoom). Primary (send) rightmost, secondary (cancel) left.</td></tr>
+</tbody>
+</table>
+</div>
+
+<p data-anchor="error-overlay" id="error-overlay">The error overlay lists the errors the page meets, one line per distinct error: an error that comes again stays on its line, which counts its times, as in <q>rejection: TypeError: loadedEvents().concat is not a function (&times;12)</q>, so an error on a timer never grows it.
+It sits at the top of the page, under the top line when the page shows one, on every width, so the toolbar, the hand-off control, and a phone&rsquo;s bottom sheet stay in view; it is at most a fifth of the screen tall, its lines scrolling within it.</p>
+
+</section>
+
+</article>
+</body>
+</html>

@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-design-source" content="skill/review-spec/assets/viz/runtime.js@495bc8f5b design-set.toml@553b61008 docs/specs/spec-page-design.spec.html@ae1f4b146 DESIGN.md@eb97aaac4">
+<title>Mockup page with a walkthrough - mockup</title>
+<style>
+  [data-mockup-frame] {
+    --ui-page: #ffffff; --ui-surface: #ffffff; --ui-surface-soft: #f5f5f5; --ui-ink: #333333; --ui-muted: #525252;
+    --ui-muted-soft: #eeeeee; --ui-border: #dfdfdf; --ui-action: #1d4ed8; --ui-action-soft: #eff3ff;
+    --ui-link: var(--ui-action); --ui-focus: var(--ui-action); --ui-pass: #005c32; --ui-pass-soft: #e6efea;
+    --ui-fail: #a5000f; --ui-fail-soft: #f6e6e7; --ui-attention: #b0540e; --ui-attention-soft: #faf4ef;
+    --ui-font: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --ui-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --ui-text-xs: 12px; --ui-text-ui: 13px; --ui-text-sm: 14px; --ui-text-md: 16px; --ui-text-lg: 20px; --ui-text-xl: 24px; --ui-text-2xl: 30px;
+    --ui-weight-regular: 400; --ui-weight-medium: 500; --ui-weight-semibold: 600;
+    --ui-space-1: 4px; --ui-space-2: 8px; --ui-space-3: 12px; --ui-space-4: 16px; --ui-space-5: 24px; --ui-space-6: 32px;
+    --ui-radius-sm: 6px; --ui-radius: 8px; --ui-radius-pill: 999px; --ui-focus-width: 2px; --ui-focus-offset: 2px;
+    --ui-motion-duration: 150ms; --ui-motion-ease: ease-out;
+    --ui-draft: var(--ui-attention); --ui-draft-soft: var(--ui-attention-soft); --ui-ack: var(--ui-action); --ui-ack-soft: var(--ui-action-soft);
+    --ui-resolved: var(--ui-pass); --ui-resolved-soft: var(--ui-pass-soft); --ui-error: var(--ui-fail);
+    --ui-marker: #767b85; --ui-marker-important: #d1242f; --ui-marker-pass: #1a7f37; --ui-on-marker: #ffffff; --ui-marker-warning: #e5534b;
+    --ui-pin-ring: rgba(176, 84, 14, 0.25); --ui-shadow: rgba(51, 51, 51, 0.14); --ui-veil: rgba(0, 0, 0, 0.42);
+  }
+  @media (prefers-color-scheme: dark) {
+    [data-mockup-frame] {
+      --ui-page: #1a1a1a; --ui-surface: #242424; --ui-surface-soft: #2a2a2a; --ui-ink: #e0e0e0; --ui-muted: #999999;
+      --ui-muted-soft: #2e2e2e; --ui-border: #3a3a3a; --ui-action: #7896ef; --ui-action-soft: #1a2040; --ui-pass: #3daa6e;
+      --ui-pass-soft: #1a2e22; --ui-fail: #ffb4ab; --ui-fail-soft: #2e1a1c; --ui-attention: #e5873a; --ui-attention-soft: #2e2218;
+      --ui-pin-ring: rgba(229, 135, 58, 0.25); --ui-shadow: rgba(0, 0, 0, 0.4); --ui-veil: rgba(0, 0, 0, 0.6);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-mockup-frame] { --ui-motion-duration: 0ms; }
+  }
+
+  [data-mockup-frame] { box-sizing: border-box; position: relative; overflow: hidden; background: var(--ui-page); color: var(--ui-ink);
+                        font: var(--ui-weight-regular) var(--ui-text-sm)/1.4 var(--ui-font); }
+  [data-mockup-frame="desktop"] { width: 1440px; min-height: 900px; }
+  [data-mockup-frame="phone"] { width: 390px; min-height: 844px; }
+  [data-mockup-frame] *, [data-mockup-frame] *::before, [data-mockup-frame] *::after { box-sizing: border-box; }
+  [data-mockup-frame] :focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .rv-btn { font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); color: var(--ui-ink); background: var(--ui-surface);
+            border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); min-height: var(--ui-space-6); margin: 0;
+            padding: var(--ui-space-2) var(--ui-space-3); white-space: nowrap; cursor: pointer;
+            transition: background var(--ui-motion-duration) var(--ui-motion-ease), color var(--ui-motion-duration) var(--ui-motion-ease); }
+  .rv-btn:hover { background: var(--ui-surface-soft); }
+  .rv-btn:active { background: var(--ui-muted-soft); }
+  .rv-btn:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .rv-btn:disabled { cursor: default; opacity: .45; }
+  .rv-btn:disabled:hover { background: var(--ui-surface); }
+  .rv-pri { background: var(--ui-ink); color: var(--ui-page); border-color: var(--ui-ink); }
+  .rv-pri:hover { background: var(--ui-muted); border-color: var(--ui-muted); }
+  .rv-pri:active { background: var(--ui-ink); }
+  .rv-pri:disabled:hover { background: var(--ui-ink); border-color: var(--ui-ink); }
+  .rv-text { border-color: transparent; background: transparent; }
+  .rv-icon { width: var(--ui-space-6); height: var(--ui-space-6); padding: 0; display: grid; place-items: center; color: var(--ui-muted); }
+  .rv-icon:hover { background: var(--ui-page); color: var(--ui-ink); }
+  .rv-btn svg { display: block; flex: 0 0 auto; }
+  [data-mockup-frame="phone"] .rv-btn { min-height: 44px; }
+  [data-mockup-frame="phone"] .rv-icon { width: 44px; height: 44px; }
+
+  /* index link (review-index #index-link): a chevron and Review index at the start of the top line */
+  .rv-index { flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--ui-space-1); min-height: var(--ui-space-6);
+              border-radius: var(--ui-radius-sm); color: var(--ui-ink); font: var(--ui-weight-medium) var(--ui-text-xs)/1 var(--ui-font); text-decoration: none; }
+  .rv-index:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .rv-index svg { display: block; color: var(--ui-muted); }
+  .rv-change { border: none; background: transparent; }
+  [data-mockup-frame="phone"] .rv-index { min-height: 44px; padding: 0 var(--ui-space-1); }
+  /* toolbar (spec-page-design #surface-toolbar): bottom center on a desktop; on a phone the bottom toolbar holding the
+     panel's one hand-off bar (prompt-first-shaping #mobile-handoff) */
+  .rv-toolbar { position: absolute; z-index: 12; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: var(--ui-space-1); align-items: center;
+                white-space: nowrap; background: var(--ui-page); border: 1px solid var(--ui-border); border-radius: var(--ui-radius);
+                box-shadow: 0 8px 28px var(--ui-shadow); padding: var(--ui-space-1); font: var(--ui-text-sm) var(--ui-font); }
+  .rv-toolbar .rv-tool { border-color: transparent; background: transparent; }
+  .rv-toolbar .rv-tool:hover { background: var(--ui-surface-soft); }
+  .rv-status { color: var(--ui-muted); font-size: var(--ui-text-xs); padding: 0 var(--ui-space-2); }
+  .rv-offline { color: var(--ui-ink); font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); padding: 0 var(--ui-space-2); }
+  [data-mockup-frame="phone"] .rv-toolbar { left: var(--ui-space-3); right: var(--ui-space-3); bottom: 10px; transform: none; flex-wrap: wrap; white-space: normal; }
+  [data-mockup-frame="phone"] .rv-toolbar .rv-btn { flex: 1 1 auto; }
+  [data-mockup-frame="phone"] .rv-toolbar .rv-note { flex: 1 1 auto; }
+  [data-mockup-frame="phone"] .rv-toolbar .rv-status { flex: 1 0 100%; min-width: 0; padding: 0 var(--ui-space-2) var(--ui-space-1); text-align: center;
+                                                        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rv-inline-handoff { display: contents; }
+  .rv-note { font-size: var(--ui-text-xs); color: var(--ui-muted); }
+  /* thread dock (#surface-dock): top right under the top line, gone while the panel is open */
+  .rv-dock { position: absolute; z-index: 7; right: var(--ui-space-3); display: flex; flex-direction: column; gap: var(--ui-space-1);
+             padding: var(--ui-space-1); background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); }
+  .rv-dock .rv-icon { border: 1px solid var(--ui-border); background: var(--ui-surface); border-radius: var(--ui-radius-sm); }
+  .rv-dock .rv-thread { width: var(--ui-space-6); height: var(--ui-space-6); padding: 0; display: grid; place-items: center; font: var(--ui-weight-semibold) var(--ui-text-xs)/1 var(--ui-mono);
+                        border: 1px solid var(--ui-draft); color: var(--ui-draft); background: var(--ui-draft-soft); border-radius: var(--ui-radius-sm); }
+  .rv-dock .rv-thread.rv-ack { border-color: var(--ui-ack); color: var(--ui-ack); background: var(--ui-ack-soft); }
+  .rv-dock .rv-thread.rv-done { border-color: var(--ui-resolved); color: var(--ui-resolved); background: var(--ui-resolved-soft); }
+  .rv-dock-threads { display: flex; flex-direction: column; gap: var(--ui-space-1); border-top: 1px solid var(--ui-border); padding-top: var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-dock { right: var(--ui-space-2); }
+  [data-mockup-frame="phone"] .rv-dock .rv-thread { width: 44px; height: 44px; }
+  /* review panel (#surface-panel): 330px at the right on a desktop; the whole screen on a phone, over the bottom toolbar's space */
+  .rv-panel { position: absolute; z-index: 10; top: 0; right: 0; bottom: 0; width: 330px; display: flex; flex-direction: column; background: var(--ui-page);
+              color: var(--ui-ink); border-left: 1px solid var(--ui-border); font: var(--ui-text-sm) var(--ui-font); }
+  [data-mockup-frame="phone"] .rv-panel { left: 0; width: auto; border-left: 0; padding-bottom: 136px; z-index: 11; }
+  .rv-head { position: relative; min-height: 44px; padding: var(--ui-space-3) 48px; border-bottom: 1px solid var(--ui-border); font-weight: var(--ui-weight-semibold); overflow-wrap: anywhere; }
+  .rv-head .rv-count, .rv-head .rv-sub { font-weight: var(--ui-weight-regular); font-size: var(--ui-text-xs); color: var(--ui-muted); }
+  .rv-head .rv-icon { position: absolute; top: var(--ui-space-2); border: 1px solid var(--ui-border); background: var(--ui-surface); }
+  .rv-head .rv-toggle { left: var(--ui-space-2); }
+  .rv-head .rv-gear { right: var(--ui-space-2); }
+  [data-mockup-frame="phone"] .rv-head { min-height: 56px; padding: var(--ui-space-4) 56px var(--ui-space-3); }
+  [data-mockup-frame="phone"] .rv-head .rv-icon { top: var(--ui-space-1); }
+  [data-mockup-frame="phone"] .rv-head .rv-toggle { left: var(--ui-space-1); }
+  .rv-body { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .rv-stream { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; gap: var(--ui-space-3);
+               padding: var(--ui-space-3) var(--ui-space-3) var(--ui-space-2); }
+  .rv-entry { display: flex; flex-direction: column; align-items: flex-start; gap: var(--ui-space-1); min-width: 0; align-self: stretch; }
+  .rv-entry.rv-me { align-items: flex-end; }
+  .rv-msg { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: var(--ui-space-1); max-width: 86%; min-width: 0; }
+  .rv-msg.rv-me { align-self: flex-end; align-items: flex-end; }
+  .rv-who { padding: 0 var(--ui-space-3); font: var(--ui-text-xs)/1.4 var(--ui-font); color: var(--ui-muted); }
+  .rv-bubble { position: relative; max-width: 100%; padding: var(--ui-space-2) var(--ui-space-3); border-radius: calc(2 * var(--ui-radius)); font: var(--ui-text-sm)/1.4 var(--ui-font); overflow-wrap: anywhere; }
+  .rv-me > .rv-bubble { background: var(--ui-action); color: var(--ui-page); border-bottom-right-radius: var(--ui-radius-sm); }
+  .rv-them > .rv-bubble { background: var(--ui-surface-soft); color: var(--ui-ink); border-bottom-left-radius: var(--ui-radius-sm); }
+  .rv-me > .rv-bubble.rv-draft { background: var(--ui-action-soft); color: var(--ui-ink); box-shadow: inset 0 0 0 1px var(--ui-action); }
+  .rv-edited { margin-left: var(--ui-space-1); font-size: var(--ui-text-xs); font-weight: var(--ui-weight-semibold); }
+  .rv-dot { position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%; background: var(--ui-action); border: 2px solid var(--ui-page); }
+  .rv-chip { max-width: 100%; margin: 0; padding: 0 var(--ui-space-2); border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill); background: var(--ui-page);
+             color: var(--ui-muted); font: var(--ui-text-xs)/1.6 var(--ui-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; cursor: pointer; }
+  .rv-chip:hover { color: var(--ui-ink); border-color: var(--ui-muted); }
+  .rv-chip:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .rv-replies { max-width: 100%; padding: 0 var(--ui-space-3); color: var(--ui-muted); font: var(--ui-text-xs)/1.5 var(--ui-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rv-replies b { color: var(--ui-ink); font-weight: var(--ui-weight-semibold); }
+  .rv-receipt { padding: 0 var(--ui-space-3); font: var(--ui-weight-semibold) var(--ui-text-xs)/1.5 var(--ui-font); color: var(--ui-draft); }
+  .rv-receipt.rv-ack { color: var(--ui-ack); }
+  .rv-receipt.rv-done { color: var(--ui-resolved); }
+  .rv-notice { align-self: stretch; margin: 0; padding: var(--ui-space-2); border-left: 3px solid var(--ui-draft); background: var(--ui-draft-soft); color: var(--ui-draft);
+               font-size: var(--ui-text-xs); line-height: 1.35; }
+  .rv-quote { display: block; margin: var(--ui-space-1) 0; padding-left: var(--ui-space-2); border-left: 2px solid var(--ui-border); color: var(--ui-muted); font-style: italic; font-size: var(--ui-text-xs); }
+  .rv-history { margin: 0; padding-left: var(--ui-space-4); font-size: var(--ui-text-xs); color: var(--ui-muted); }
+  .rv-history .rv-who { padding: 0; }
+  .rv-choices { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); margin-top: var(--ui-space-2); }
+  .rv-choice { min-height: var(--ui-space-6); margin: 0; padding: var(--ui-space-2) var(--ui-space-3); border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill);
+               background: var(--ui-surface); color: var(--ui-ink); font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); cursor: pointer; }
+  .rv-choice:hover { background: var(--ui-surface-soft); }
+  .rv-choice:active { background: var(--ui-muted-soft); }
+  .rv-choice:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .rv-choice.rv-words { border-color: transparent; background: transparent; }
+  [data-mockup-frame="phone"] .rv-choice { min-height: 44px; }
+  /* the panel's one hand-off bar: its note, Next TBD, and the action, primary rightmost */
+  .rv-handoff { position: relative; z-index: 3; display: flex; justify-content: flex-end; align-items: center; gap: var(--ui-space-1); padding: var(--ui-space-2) var(--ui-space-3);
+                border-top: 1px solid var(--ui-border); background: var(--ui-page); }
+  .rv-handoff .rv-note { margin-right: auto; min-width: 0; }
+  /* a new comment's composer, at the bottom of the conversation (#surface-composer): send primary rightmost, cancel left */
+  .rv-compose { display: flex; flex-direction: column; gap: var(--ui-space-1); padding: var(--ui-space-2) var(--ui-space-3); border: 1px solid var(--ui-border);
+                border-radius: var(--ui-radius); background: var(--ui-surface); }
+  .rv-anchor { font: var(--ui-text-xs) var(--ui-mono); color: var(--ui-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rv-field { display: block; width: 100%; min-height: 56px; margin-top: var(--ui-space-1); padding: var(--ui-space-1) var(--ui-space-2); border: 1px solid var(--ui-border);
+              border-radius: var(--ui-radius-sm); background: var(--ui-surface); color: var(--ui-ink); font: var(--ui-text-sm)/1.4 var(--ui-font); resize: none; }
+  .rv-field::placeholder { color: var(--ui-muted); }
+  .rv-field:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  [data-mockup-frame="phone"] .rv-field { min-height: 120px; padding: var(--ui-space-2) var(--ui-space-3); font-size: var(--ui-text-md); }
+  .rv-compose-actions { display: flex; justify-content: flex-end; gap: var(--ui-space-1); margin-top: var(--ui-space-1); }
+  /* the focused thread (threads #focus): its messages alone over the conversation dimmed; on a phone a sheet over the
+     screen's lower half, above the bottom toolbar's one hand-off control */
+  .rv-veil { position: absolute; inset: 0; z-index: 1; background: var(--ui-veil); }
+  .rv-focused { position: absolute; top: var(--ui-space-2); left: var(--ui-space-2); right: var(--ui-space-2); bottom: var(--ui-space-2); z-index: 2; display: flex; flex-direction: column;
+                min-height: 0; background: var(--ui-page); color: var(--ui-ink); border: 1px solid var(--ui-border); border-radius: calc(2 * var(--ui-radius));
+                box-shadow: 0 12px 32px var(--ui-shadow); font: var(--ui-text-sm) var(--ui-font); }
+  .rv-focused-head { display: flex; align-items: center; gap: var(--ui-space-1); padding: var(--ui-space-1) var(--ui-space-2); border-bottom: 1px solid var(--ui-border); }
+  .rv-focused-head .rv-back { display: inline-flex; align-items: center; gap: var(--ui-space-1); margin-right: auto; border-color: transparent; background: transparent; }
+  .rv-focused-stream { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: var(--ui-space-2); padding: var(--ui-space-3); }
+  .rv-reply-box { display: flex; align-items: flex-end; gap: var(--ui-space-2); padding: var(--ui-space-2) var(--ui-space-3); border-top: 1px solid var(--ui-border); }
+  .rv-reply-box .rv-field { flex: 1 1 auto; min-height: 36px; margin: 0; border-radius: calc(2 * var(--ui-radius)); padding: var(--ui-space-2) var(--ui-space-3); }
+  [data-mockup-frame="phone"] .rv-reply-box .rv-field { min-height: 44px; }
+  .rv-sheet { position: absolute; z-index: 11; left: 0; right: 0; top: 422px; bottom: 0; display: flex; flex-direction: column; background: var(--ui-page);
+              border-top-left-radius: calc(2 * var(--ui-radius)); border-top-right-radius: calc(2 * var(--ui-radius)); box-shadow: 0 -12px 32px var(--ui-shadow);
+              padding-bottom: 136px; font: var(--ui-text-sm) var(--ui-font); }
+  .rv-grip { align-self: center; width: 36px; height: 4px; margin: var(--ui-space-2) 0 0; border-radius: var(--ui-radius-pill); background: var(--ui-border); }
+  /* toast (#surface-toast): the saved and handed-off notices */
+  .rv-toast { position: absolute; z-index: 13; bottom: 76px; left: 50%; transform: translateX(-50%); padding: var(--ui-space-2) var(--ui-space-4); border-radius: var(--ui-radius);
+              background: var(--ui-ink); color: var(--ui-page); font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); white-space: nowrap; box-shadow: 0 8px 28px var(--ui-shadow);
+              transition: opacity var(--ui-motion-duration) var(--ui-motion-ease); }
+  [data-mockup-frame="phone"] .rv-toast { bottom: 152px; max-width: calc(100% - 24px); white-space: normal; text-align: center; }
+  /* banner (#surface-banner): the agent's edit, green inverted, with Reload */
+  .rv-banner { position: absolute; z-index: 14; top: 0; left: 0; right: 0; display: flex; gap: var(--ui-space-3); align-items: center; justify-content: center;
+               padding: var(--ui-space-2) var(--ui-space-4); background: var(--ui-pass); color: var(--ui-page); font: var(--ui-weight-semibold) var(--ui-text-sm) var(--ui-font); }
+  .rv-banner .rv-btn { border-color: var(--ui-page); background: transparent; color: var(--ui-page); }
+  .rv-banner .rv-btn:hover { background: transparent; text-decoration: underline; text-underline-offset: 3px; }
+  [data-mockup-frame="phone"] .rv-banner { align-items: flex-start; flex-wrap: wrap; padding: var(--ui-space-2) var(--ui-space-3); text-align: center; }
+  /* pins (spec-page-design #surface-pins): a teardrop in its status color, numbered */
+  .rv-pin { position: absolute; right: 0; top: 0; z-index: 3; width: 24px; height: 24px; margin: 0; padding: 0; border: none; border-radius: 50% 50% 50% 4px;
+            display: grid; place-items: center; font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); font-style: normal; color: var(--ui-page);
+            background: var(--ui-draft); box-shadow: 0 2px 8px var(--ui-shadow); cursor: pointer; }
+  .rv-pin.rv-ack { background: var(--ui-ack); }
+  .rv-pin.rv-done { background: var(--ui-surface); color: var(--ui-resolved); border: 2px solid var(--ui-resolved); }
+  .rv-pin.rv-active { box-shadow: 0 0 0 3px var(--ui-pin-ring), 0 2px 8px var(--ui-shadow); }
+  .rv-pin:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  [data-mockup-frame="phone"] .rv-pin { width: 44px; height: 44px; }
+
+  /* top line on a mockup page: index link, spec link, then the range bar's row: Previous and Next around the place, the
+     compared range, Before and After, Change base; the step bar its own row under them */
+  .mp-top { position: relative; z-index: 8; display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--ui-space-3); padding: var(--ui-space-1) var(--ui-space-4);
+            background: var(--ui-page); border-bottom: 1px solid var(--ui-border); color: var(--ui-ink); font: var(--ui-text-sm)/1.4 var(--ui-font); }
+  .mp-spec-link { flex: 0 1 auto; min-width: 0; display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border-radius: var(--ui-radius-sm);
+                  color: var(--ui-link); font: var(--ui-weight-semibold) var(--ui-text-xs) var(--ui-font); line-height: var(--ui-space-6); text-decoration: none; }
+  .mp-spec-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .mp-range { flex: 1 1 0; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; }
+  .mp-range-row { display: flex; flex: 1 1 100%; align-items: center; gap: var(--ui-space-2); min-width: 0; }
+  .mp-range-copy { flex: 1 1 auto; min-width: 0; margin: 0; color: var(--ui-muted); overflow-wrap: anywhere; }
+  .mp-range-copy code { font-family: var(--ui-mono); font-weight: var(--ui-weight-medium); color: var(--ui-ink); }
+  .mp-pager { flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--ui-space-1); margin-right: var(--ui-space-1); }
+  .mp-pager .rv-btn { display: inline-grid; place-items: center; width: var(--ui-space-6); padding: 0; border: none; background: transparent; }
+  .mp-pager .rv-btn:hover:not(:disabled) { background: var(--ui-surface-soft); }
+  .mp-pager .rv-btn:disabled { color: var(--ui-muted); background: transparent; }
+  .mp-place { color: var(--ui-muted); font: var(--ui-weight-medium) var(--ui-text-xs) var(--ui-font); white-space: nowrap; }
+  .mp-view { flex: 0 0 auto; display: inline-flex; gap: var(--ui-space-1); }
+  .mp-view .rv-btn { border: none; background: transparent; }
+  .mp-view .rv-btn:hover, .mp-view .rv-btn[aria-pressed="true"] { background: var(--ui-surface-soft); }
+  .mp-view .rv-btn[aria-pressed="true"] { text-decoration: underline; text-underline-offset: 3px; }
+  [data-mockup-frame="phone"] .mp-top { gap: 0 var(--ui-space-2); padding: 0 var(--ui-space-2) var(--ui-space-1); }
+  [data-mockup-frame="phone"] .mp-spec-link { line-height: 44px; margin-right: calc(3 * var(--ui-space-6) + var(--ui-space-2)); }
+  [data-mockup-frame="phone"] .mp-range { flex: 1 1 100%; padding: 0 var(--ui-space-1); }
+  [data-mockup-frame="phone"] .mp-range-row { flex-wrap: wrap; row-gap: 0; }
+  [data-mockup-frame="phone"] .mp-range-copy { flex: 1 1 100%; font-size: var(--ui-text-xs); }
+  [data-mockup-frame="phone"] .mp-view { order: 1; }
+  [data-mockup-frame="phone"] .mp-pager { order: 2; margin: 0 0 0 auto; }
+  [data-mockup-frame="phone"] .mp-pager .rv-btn { width: 44px; }
+  [data-mockup-frame="phone"] .mp-top .rv-change { position: absolute; top: 0; right: var(--ui-space-2); }
+  /* step bar (mockups #walkthrough-bar): Play then every step by number and name, the showing one pressed with its
+     caption, a count on a step holding open questions or threads; on a phone it scrolls sideways within itself */
+  .mp-steps { flex: 1 1 100%; order: 9; display: flex; align-items: center; gap: var(--ui-space-1); min-width: 0; margin: var(--ui-space-1) calc(-1 * var(--ui-space-4)) calc(-1 * var(--ui-space-1));
+              padding: var(--ui-space-2) var(--ui-space-4); border-top: 1px solid var(--ui-border); overflow: hidden; white-space: nowrap; }
+  .mp-step { flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--ui-space-1); min-height: var(--ui-space-6); margin: 0; padding: var(--ui-space-2) var(--ui-space-3);
+             border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill); background: var(--ui-surface); color: var(--ui-ink);
+             font: var(--ui-weight-semibold) var(--ui-text-xs)/1 var(--ui-font); cursor: pointer;
+             transition: background var(--ui-motion-duration) var(--ui-motion-ease), color var(--ui-motion-duration) var(--ui-motion-ease); }
+  .mp-step:hover { background: var(--ui-surface-soft); }
+  .mp-step:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .mp-step-n { color: var(--ui-muted); font-weight: var(--ui-weight-medium); }
+  .mp-step-count { min-width: 18px; height: 18px; padding: 0 var(--ui-space-1); border-radius: var(--ui-radius-pill); background: var(--ui-attention); color: var(--ui-page);
+                   display: inline-grid; place-items: center; font-size: var(--ui-text-xs); }
+  .mp-caption { flex: 0 0 auto; margin-left: var(--ui-space-3); color: var(--ui-muted); font: var(--ui-text-sm)/1.4 var(--ui-font); }
+  [data-mockup-frame="phone"] .mp-steps { margin: var(--ui-space-1) calc(-1 * var(--ui-space-2)) calc(-1 * var(--ui-space-1)); padding: var(--ui-space-1) var(--ui-space-2); }
+  [data-mockup-frame="phone"] .mp-step { min-height: 44px; padding: 0 var(--ui-space-3); }
+  .mp-top .rv-dock { top: calc(100% + var(--ui-space-3)); }
+  [data-mockup-frame="phone"] .mp-top .rv-dock { top: calc(100% + var(--ui-space-2)); }
+  /* the frames side by side, desktop first, each labeled and zoomed whole into its slot; stacked on a phone */
+  .mp-stage { display: flex; align-items: flex-start; gap: var(--ui-space-5); width: 100%; margin: 0;
+              padding: var(--ui-space-5) calc(var(--ui-space-6) + var(--ui-space-5)) calc(42px + 2 * var(--ui-space-6)) var(--ui-space-5); }
+  .mp-stage.mp-has-rounds { padding-bottom: var(--ui-space-5); }
+  .mp-slot { flex: 0 1 auto; min-width: 0; margin: 0; }
+  .mp-label { margin: 0 0 var(--ui-space-2); color: var(--ui-muted); font: var(--ui-weight-semibold) var(--ui-text-xs)/1.4 var(--ui-font); }
+  .mp-fit { position: relative; width: max-content; zoom: var(--hx-zoom); }
+  .mp-fit .rv-pin { top: var(--ui-space-1); right: 6px; zoom: calc(1 / var(--hx-zoom)); }
+  [data-mockup-frame="phone"] .mp-stage { flex-direction: column; gap: var(--ui-space-4); padding: var(--ui-space-3) var(--ui-space-3) calc(110px + var(--ui-space-5)); }
+  [data-mockup-frame="phone"] .mp-stage.mp-has-rounds { padding-bottom: var(--ui-space-5); }
+  [data-mockup-frame="phone"] .mp-slot { width: 100%; }
+  /* question mark (mockups #mockup-questions-show): on a part an open question is about, at the chrome's size at any zoom */
+  .rv-qmark { position: absolute; top: -12px; right: -12px; z-index: 4; width: 24px; height: 24px; margin: 0; padding: 0; border: none; border-radius: 50%;
+              background: var(--ui-attention); color: var(--ui-page); display: grid; place-items: center; font: var(--ui-weight-semibold) var(--ui-text-sm)/1 var(--ui-font);
+              box-shadow: 0 2px 8px var(--ui-shadow); cursor: pointer; zoom: calc(1 / var(--hx-zoom)); }
+  .rv-qmark:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  [data-mockup-frame="phone"] .rv-qmark { width: 44px; height: 44px; top: -16px; right: -16px; }
+
+  /* the framed screen: Report page spec's Team panel, as the fixture's walkthrough mockup draws it */
+  .tp { position: relative; background: var(--ui-page); color: var(--ui-ink); font: var(--ui-weight-regular) var(--ui-text-md)/1.5 var(--ui-font); text-align: left; }
+  .tp-d { width: 1440px; min-height: 900px; padding: var(--ui-space-6); }
+  .tp-m { width: 390px; min-height: 844px; padding: var(--ui-space-4); }
+  .tp h1, .tp h2, .tp p, .tp ul { margin: 0; padding: 0; }
+  .tp-btn { font: inherit; font-size: var(--ui-text-sm); font-weight: var(--ui-weight-medium); border-radius: var(--ui-radius-sm); padding: var(--ui-space-2) var(--ui-space-4);
+            border: 1px solid var(--ui-border); background: var(--ui-surface); color: var(--ui-ink); cursor: pointer;
+            transition: background var(--ui-motion-duration) var(--ui-motion-ease), border-color var(--ui-motion-duration) var(--ui-motion-ease); }
+  .tp-btn:hover { background: var(--ui-surface-soft); }
+  .tp-btn:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); outline-offset: var(--ui-focus-offset); }
+  .tp-btn.tp-pri, .tp-btn.tp-pri:hover { background: var(--ui-action); border-color: var(--ui-action); color: var(--ui-page); }
+  .tp-m .tp-btn { min-height: 44px; }
+  .tp-bar { display: flex; align-items: baseline; gap: var(--ui-space-4); padding-bottom: var(--ui-space-5); border-bottom: 1px solid var(--ui-border); margin-bottom: var(--ui-space-5); }
+  .tp-m .tp-bar { flex-direction: column; gap: var(--ui-space-1); padding-bottom: var(--ui-space-4); margin-bottom: var(--ui-space-4); }
+  .tp-bar h1 { font-size: var(--ui-text-2xl); font-weight: var(--ui-weight-semibold); }
+  .tp-m .tp-bar h1 { font-size: var(--ui-text-xl); }
+  .tp-muted { color: var(--ui-muted); font-size: var(--ui-text-sm); }
+  .tp-body { display: flex; gap: var(--ui-space-6); align-items: flex-start; }
+  .tp-m .tp-body { flex-direction: column; gap: var(--ui-space-4); }
+  .tp-cards { list-style: none; display: grid; gap: var(--ui-space-4); width: 420px; flex: 0 0 auto; }
+  .tp-m .tp-cards { width: 100%; gap: var(--ui-space-3); }
+  .tp-card { position: relative; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); padding: var(--ui-space-5);
+             display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: var(--ui-space-3); row-gap: var(--ui-space-2);
+             transition: border-color var(--ui-motion-duration) var(--ui-motion-ease), box-shadow var(--ui-motion-duration) var(--ui-motion-ease); }
+  .tp-m .tp-card { padding: var(--ui-space-4); }
+  .tp-avatar { width: 40px; height: 40px; border-radius: var(--ui-radius-pill); display: grid; place-items: center; grid-row: span 2; color: var(--ui-on-marker);
+               font: var(--ui-weight-semibold) var(--ui-text-md)/1 var(--ui-font); }
+  .tp-av-pay { background: var(--ui-action); }
+  .tp-av-search { background: var(--ui-pass); }
+  .tp-av-mobile { background: var(--ui-attention); }
+  .tp-team { font-weight: var(--ui-weight-medium); }
+  .tp-total { font-size: var(--ui-text-2xl); font-weight: var(--ui-weight-semibold); font-variant-numeric: tabular-nums; grid-column: 3; grid-row: 1 / span 2; }
+  .tp-m .tp-total { font-size: var(--ui-text-xl); }
+  .tp-card .tp-btn { grid-column: 1 / -1; justify-self: start; }
+  .tp-panel { position: relative; flex: 1 1 auto; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); padding: var(--ui-space-5);
+              display: grid; gap: var(--ui-space-3); }
+  .tp-m .tp-panel { width: 100%; padding: var(--ui-space-4); }
+  .tp-panel h2, .tp-dialog h2 { font-size: var(--ui-text-xl); font-weight: var(--ui-weight-semibold); }
+  .tp-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .tp-table th, .tp-table td { text-align: left; padding: var(--ui-space-2) var(--ui-space-3); border-bottom: 1px solid var(--ui-border); }
+  .tp-table th { color: var(--ui-muted); font-size: var(--ui-text-sm); font-weight: var(--ui-weight-medium); }
+  .tp-table .tp-num { text-align: right; }
+  .tp-panel .tp-btn { justify-self: start; }
+  .tp-dialog { position: absolute; left: 50%; top: 160px; width: 560px; margin-left: -280px; background: var(--ui-surface); border: 1px solid var(--ui-border);
+               border-radius: var(--ui-radius); padding: var(--ui-space-5); display: grid; gap: var(--ui-space-4); }
+  .tp-m .tp-dialog { left: var(--ui-space-4); right: var(--ui-space-4); top: 120px; width: auto; margin-left: 0; padding: var(--ui-space-4); }
+  .tp-file { position: relative; font-family: var(--ui-mono); font-size: var(--ui-text-sm); background: var(--ui-surface-soft); border: 1px solid var(--ui-surface-soft);
+             border-radius: var(--ui-radius-sm); padding: var(--ui-space-2) var(--ui-space-3); }
+  .tp-actions { display: flex; gap: var(--ui-space-3); justify-content: flex-end; }
+  /* each step from the frame's data-at, with the fixture's own motion: the panel and the dialog fade in */
+  [data-mockup-frame] [data-fade] { opacity: 0; visibility: hidden; transition: opacity var(--ui-motion-duration) var(--ui-motion-ease), visibility var(--ui-motion-duration) var(--ui-motion-ease); }
+
+  .mp-fit-dd, .mp-fit-dp { --hx-zoom: 0.7300; }
+  .mp-fit-pd { --hx-zoom: 0.2542; }
+  .mp-fit-pp { --hx-zoom: 0.9385; }
+  [data-mockup-frame][data-at$=" opened"] [data-show]:not([data-show~="opened"]),
+  [data-mockup-frame][data-at="opened"] [data-show]:not([data-show~="opened"]),
+  [data-mockup-frame][data-at$=" team-open"] [data-show]:not([data-show~="team-open"]),
+  [data-mockup-frame][data-at="team-open"] [data-show]:not([data-show~="team-open"]),
+  [data-mockup-frame][data-at$=" export"] [data-show]:not([data-show~="export"]),
+  [data-mockup-frame][data-at="export"] [data-show]:not([data-show~="export"]),
+  [data-mockup-frame][data-at$=" playing"] [data-show]:not([data-show~="playing"]),
+  [data-mockup-frame][data-at="playing"] [data-show]:not([data-show~="playing"]),
+  [data-mockup-frame][data-at$=" played"] [data-show]:not([data-show~="played"]),
+  [data-mockup-frame][data-at="played"] [data-show]:not([data-show~="played"]),
+  [data-mockup-frame][data-at$=" comment-on"] [data-show]:not([data-show~="comment-on"]),
+  [data-mockup-frame][data-at="comment-on"] [data-show]:not([data-show~="comment-on"]),
+  [data-mockup-frame][data-at$=" composing"] [data-show]:not([data-show~="composing"]),
+  [data-mockup-frame][data-at="composing"] [data-show]:not([data-show~="composing"]),
+  [data-mockup-frame][data-at$=" saved"] [data-show]:not([data-show~="saved"]),
+  [data-mockup-frame][data-at="saved"] [data-show]:not([data-show~="saved"]),
+  [data-mockup-frame][data-at$=" other-step"] [data-show]:not([data-show~="other-step"]),
+  [data-mockup-frame][data-at="other-step"] [data-show]:not([data-show~="other-step"]),
+  [data-mockup-frame][data-at$=" handed"] [data-show]:not([data-show~="handed"]),
+  [data-mockup-frame][data-at="handed"] [data-show]:not([data-show~="handed"]),
+  [data-mockup-frame][data-at$=" replied"] [data-show]:not([data-show~="replied"]),
+  [data-mockup-frame][data-at="replied"] [data-show]:not([data-show~="replied"]),
+  [data-mockup-frame][data-at$=" updated"] [data-show]:not([data-show~="updated"]),
+  [data-mockup-frame][data-at="updated"] [data-show]:not([data-show~="updated"]),
+  [data-mockup-frame][data-at$=" arrived"] [data-show]:not([data-show~="arrived"]),
+  [data-mockup-frame][data-at="arrived"] [data-show]:not([data-show~="arrived"]),
+  [data-mockup-frame]:not([data-at]) [data-show]:not([data-show~="opened"]) { display: none; }
+  [data-mockup-frame][data-at$=" opened"] [data-fade~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-fade~="opened"],
+  [data-mockup-frame][data-at$=" team-open"] [data-fade~="team-open"],
+  [data-mockup-frame][data-at="team-open"] [data-fade~="team-open"],
+  [data-mockup-frame][data-at$=" export"] [data-fade~="export"],
+  [data-mockup-frame][data-at="export"] [data-fade~="export"],
+  [data-mockup-frame][data-at$=" playing"] [data-fade~="playing"],
+  [data-mockup-frame][data-at="playing"] [data-fade~="playing"],
+  [data-mockup-frame][data-at$=" played"] [data-fade~="played"],
+  [data-mockup-frame][data-at="played"] [data-fade~="played"],
+  [data-mockup-frame][data-at$=" comment-on"] [data-fade~="comment-on"],
+  [data-mockup-frame][data-at="comment-on"] [data-fade~="comment-on"],
+  [data-mockup-frame][data-at$=" composing"] [data-fade~="composing"],
+  [data-mockup-frame][data-at="composing"] [data-fade~="composing"],
+  [data-mockup-frame][data-at$=" saved"] [data-fade~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-fade~="saved"],
+  [data-mockup-frame][data-at$=" other-step"] [data-fade~="other-step"],
+  [data-mockup-frame][data-at="other-step"] [data-fade~="other-step"],
+  [data-mockup-frame][data-at$=" handed"] [data-fade~="handed"],
+  [data-mockup-frame][data-at="handed"] [data-fade~="handed"],
+  [data-mockup-frame][data-at$=" replied"] [data-fade~="replied"],
+  [data-mockup-frame][data-at="replied"] [data-fade~="replied"],
+  [data-mockup-frame][data-at$=" updated"] [data-fade~="updated"],
+  [data-mockup-frame][data-at="updated"] [data-fade~="updated"],
+  [data-mockup-frame][data-at$=" arrived"] [data-fade~="arrived"],
+  [data-mockup-frame][data-at="arrived"] [data-fade~="arrived"],
+  [data-mockup-frame]:not([data-at]) [data-fade~="opened"] { opacity: 1; visibility: visible; }
+  [data-mockup-frame][data-at$=" opened"] [data-edge~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-edge~="opened"],
+  [data-mockup-frame][data-at$=" team-open"] [data-edge~="team-open"],
+  [data-mockup-frame][data-at="team-open"] [data-edge~="team-open"],
+  [data-mockup-frame][data-at$=" export"] [data-edge~="export"],
+  [data-mockup-frame][data-at="export"] [data-edge~="export"],
+  [data-mockup-frame][data-at$=" playing"] [data-edge~="playing"],
+  [data-mockup-frame][data-at="playing"] [data-edge~="playing"],
+  [data-mockup-frame][data-at$=" played"] [data-edge~="played"],
+  [data-mockup-frame][data-at="played"] [data-edge~="played"],
+  [data-mockup-frame][data-at$=" comment-on"] [data-edge~="comment-on"],
+  [data-mockup-frame][data-at="comment-on"] [data-edge~="comment-on"],
+  [data-mockup-frame][data-at$=" composing"] [data-edge~="composing"],
+  [data-mockup-frame][data-at="composing"] [data-edge~="composing"],
+  [data-mockup-frame][data-at$=" saved"] [data-edge~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-edge~="saved"],
+  [data-mockup-frame][data-at$=" other-step"] [data-edge~="other-step"],
+  [data-mockup-frame][data-at="other-step"] [data-edge~="other-step"],
+  [data-mockup-frame][data-at$=" handed"] [data-edge~="handed"],
+  [data-mockup-frame][data-at="handed"] [data-edge~="handed"],
+  [data-mockup-frame][data-at$=" replied"] [data-edge~="replied"],
+  [data-mockup-frame][data-at="replied"] [data-edge~="replied"],
+  [data-mockup-frame][data-at$=" updated"] [data-edge~="updated"],
+  [data-mockup-frame][data-at="updated"] [data-edge~="updated"],
+  [data-mockup-frame][data-at$=" arrived"] [data-edge~="arrived"],
+  [data-mockup-frame][data-at="arrived"] [data-edge~="arrived"],
+  [data-mockup-frame]:not([data-at]) [data-edge~="opened"] { border-color: var(--ui-action); box-shadow: 0 0 0 1px var(--ui-action); }
+  [data-mockup-frame][data-at$=" opened"] [data-pressed~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-pressed~="opened"],
+  [data-mockup-frame][data-at$=" team-open"] [data-pressed~="team-open"],
+  [data-mockup-frame][data-at="team-open"] [data-pressed~="team-open"],
+  [data-mockup-frame][data-at$=" export"] [data-pressed~="export"],
+  [data-mockup-frame][data-at="export"] [data-pressed~="export"],
+  [data-mockup-frame][data-at$=" playing"] [data-pressed~="playing"],
+  [data-mockup-frame][data-at="playing"] [data-pressed~="playing"],
+  [data-mockup-frame][data-at$=" played"] [data-pressed~="played"],
+  [data-mockup-frame][data-at="played"] [data-pressed~="played"],
+  [data-mockup-frame][data-at$=" comment-on"] [data-pressed~="comment-on"],
+  [data-mockup-frame][data-at="comment-on"] [data-pressed~="comment-on"],
+  [data-mockup-frame][data-at$=" composing"] [data-pressed~="composing"],
+  [data-mockup-frame][data-at="composing"] [data-pressed~="composing"],
+  [data-mockup-frame][data-at$=" saved"] [data-pressed~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-pressed~="saved"],
+  [data-mockup-frame][data-at$=" other-step"] [data-pressed~="other-step"],
+  [data-mockup-frame][data-at="other-step"] [data-pressed~="other-step"],
+  [data-mockup-frame][data-at$=" handed"] [data-pressed~="handed"],
+  [data-mockup-frame][data-at="handed"] [data-pressed~="handed"],
+  [data-mockup-frame][data-at$=" replied"] [data-pressed~="replied"],
+  [data-mockup-frame][data-at="replied"] [data-pressed~="replied"],
+  [data-mockup-frame][data-at$=" updated"] [data-pressed~="updated"],
+  [data-mockup-frame][data-at="updated"] [data-pressed~="updated"],
+  [data-mockup-frame][data-at$=" arrived"] [data-pressed~="arrived"],
+  [data-mockup-frame][data-at="arrived"] [data-pressed~="arrived"],
+  [data-mockup-frame]:not([data-at]) [data-pressed~="opened"] { background: var(--ui-ink); border-color: var(--ui-ink); color: var(--ui-page); }
+  [data-mockup-frame][data-at$=" opened"] [data-pressed~="opened"] .mp-step-n,
+  [data-mockup-frame][data-at="opened"] [data-pressed~="opened"] .mp-step-n,
+  [data-mockup-frame][data-at$=" team-open"] [data-pressed~="team-open"] .mp-step-n,
+  [data-mockup-frame][data-at="team-open"] [data-pressed~="team-open"] .mp-step-n,
+  [data-mockup-frame][data-at$=" export"] [data-pressed~="export"] .mp-step-n,
+  [data-mockup-frame][data-at="export"] [data-pressed~="export"] .mp-step-n,
+  [data-mockup-frame][data-at$=" playing"] [data-pressed~="playing"] .mp-step-n,
+  [data-mockup-frame][data-at="playing"] [data-pressed~="playing"] .mp-step-n,
+  [data-mockup-frame][data-at$=" played"] [data-pressed~="played"] .mp-step-n,
+  [data-mockup-frame][data-at="played"] [data-pressed~="played"] .mp-step-n,
+  [data-mockup-frame][data-at$=" comment-on"] [data-pressed~="comment-on"] .mp-step-n,
+  [data-mockup-frame][data-at="comment-on"] [data-pressed~="comment-on"] .mp-step-n,
+  [data-mockup-frame][data-at$=" composing"] [data-pressed~="composing"] .mp-step-n,
+  [data-mockup-frame][data-at="composing"] [data-pressed~="composing"] .mp-step-n,
+  [data-mockup-frame][data-at$=" saved"] [data-pressed~="saved"] .mp-step-n,
+  [data-mockup-frame][data-at="saved"] [data-pressed~="saved"] .mp-step-n,
+  [data-mockup-frame][data-at$=" other-step"] [data-pressed~="other-step"] .mp-step-n,
+  [data-mockup-frame][data-at="other-step"] [data-pressed~="other-step"] .mp-step-n,
+  [data-mockup-frame][data-at$=" handed"] [data-pressed~="handed"] .mp-step-n,
+  [data-mockup-frame][data-at="handed"] [data-pressed~="handed"] .mp-step-n,
+  [data-mockup-frame][data-at$=" replied"] [data-pressed~="replied"] .mp-step-n,
+  [data-mockup-frame][data-at="replied"] [data-pressed~="replied"] .mp-step-n,
+  [data-mockup-frame][data-at$=" updated"] [data-pressed~="updated"] .mp-step-n,
+  [data-mockup-frame][data-at="updated"] [data-pressed~="updated"] .mp-step-n,
+  [data-mockup-frame][data-at$=" arrived"] [data-pressed~="arrived"] .mp-step-n,
+  [data-mockup-frame][data-at="arrived"] [data-pressed~="arrived"] .mp-step-n,
+  [data-mockup-frame]:not([data-at]) [data-pressed~="opened"] .mp-step-n { color: var(--ui-page); }
+  [data-mockup-frame][data-at$=" opened"] [data-tool~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-tool~="opened"],
+  [data-mockup-frame][data-at$=" team-open"] [data-tool~="team-open"],
+  [data-mockup-frame][data-at="team-open"] [data-tool~="team-open"],
+  [data-mockup-frame][data-at$=" export"] [data-tool~="export"],
+  [data-mockup-frame][data-at="export"] [data-tool~="export"],
+  [data-mockup-frame][data-at$=" playing"] [data-tool~="playing"],
+  [data-mockup-frame][data-at="playing"] [data-tool~="playing"],
+  [data-mockup-frame][data-at$=" played"] [data-tool~="played"],
+  [data-mockup-frame][data-at="played"] [data-tool~="played"],
+  [data-mockup-frame][data-at$=" comment-on"] [data-tool~="comment-on"],
+  [data-mockup-frame][data-at="comment-on"] [data-tool~="comment-on"],
+  [data-mockup-frame][data-at$=" composing"] [data-tool~="composing"],
+  [data-mockup-frame][data-at="composing"] [data-tool~="composing"],
+  [data-mockup-frame][data-at$=" saved"] [data-tool~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-tool~="saved"],
+  [data-mockup-frame][data-at$=" other-step"] [data-tool~="other-step"],
+  [data-mockup-frame][data-at="other-step"] [data-tool~="other-step"],
+  [data-mockup-frame][data-at$=" handed"] [data-tool~="handed"],
+  [data-mockup-frame][data-at="handed"] [data-tool~="handed"],
+  [data-mockup-frame][data-at$=" replied"] [data-tool~="replied"],
+  [data-mockup-frame][data-at="replied"] [data-tool~="replied"],
+  [data-mockup-frame][data-at$=" updated"] [data-tool~="updated"],
+  [data-mockup-frame][data-at="updated"] [data-tool~="updated"],
+  [data-mockup-frame][data-at$=" arrived"] [data-tool~="arrived"],
+  [data-mockup-frame][data-at="arrived"] [data-tool~="arrived"],
+  [data-mockup-frame]:not([data-at]) [data-tool~="opened"] { background: var(--ui-draft-soft); color: var(--ui-draft); }
+  [data-mockup-frame][data-at$=" opened"] [data-hover~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-hover~="opened"],
+  [data-mockup-frame][data-at$=" team-open"] [data-hover~="team-open"],
+  [data-mockup-frame][data-at="team-open"] [data-hover~="team-open"],
+  [data-mockup-frame][data-at$=" export"] [data-hover~="export"],
+  [data-mockup-frame][data-at="export"] [data-hover~="export"],
+  [data-mockup-frame][data-at$=" playing"] [data-hover~="playing"],
+  [data-mockup-frame][data-at="playing"] [data-hover~="playing"],
+  [data-mockup-frame][data-at$=" played"] [data-hover~="played"],
+  [data-mockup-frame][data-at="played"] [data-hover~="played"],
+  [data-mockup-frame][data-at$=" comment-on"] [data-hover~="comment-on"],
+  [data-mockup-frame][data-at="comment-on"] [data-hover~="comment-on"],
+  [data-mockup-frame][data-at$=" composing"] [data-hover~="composing"],
+  [data-mockup-frame][data-at="composing"] [data-hover~="composing"],
+  [data-mockup-frame][data-at$=" saved"] [data-hover~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-hover~="saved"],
+  [data-mockup-frame][data-at$=" other-step"] [data-hover~="other-step"],
+  [data-mockup-frame][data-at="other-step"] [data-hover~="other-step"],
+  [data-mockup-frame][data-at$=" handed"] [data-hover~="handed"],
+  [data-mockup-frame][data-at="handed"] [data-hover~="handed"],
+  [data-mockup-frame][data-at$=" replied"] [data-hover~="replied"],
+  [data-mockup-frame][data-at="replied"] [data-hover~="replied"],
+  [data-mockup-frame][data-at$=" updated"] [data-hover~="updated"],
+  [data-mockup-frame][data-at="updated"] [data-hover~="updated"],
+  [data-mockup-frame][data-at$=" arrived"] [data-hover~="arrived"],
+  [data-mockup-frame][data-at="arrived"] [data-hover~="arrived"],
+  [data-mockup-frame]:not([data-at]) [data-hover~="opened"] { outline: calc(2px / var(--hx-zoom)) dashed var(--ui-draft); outline-offset: calc(6px / var(--hx-zoom)); cursor: copy; }
+  [data-mockup-frame][data-at$=" opened"] [data-target~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-target~="opened"],
+  [data-mockup-frame][data-at$=" team-open"] [data-target~="team-open"],
+  [data-mockup-frame][data-at="team-open"] [data-target~="team-open"],
+  [data-mockup-frame][data-at$=" export"] [data-target~="export"],
+  [data-mockup-frame][data-at="export"] [data-target~="export"],
+  [data-mockup-frame][data-at$=" playing"] [data-target~="playing"],
+  [data-mockup-frame][data-at="playing"] [data-target~="playing"],
+  [data-mockup-frame][data-at$=" played"] [data-target~="played"],
+  [data-mockup-frame][data-at="played"] [data-target~="played"],
+  [data-mockup-frame][data-at$=" comment-on"] [data-target~="comment-on"],
+  [data-mockup-frame][data-at="comment-on"] [data-target~="comment-on"],
+  [data-mockup-frame][data-at$=" composing"] [data-target~="composing"],
+  [data-mockup-frame][data-at="composing"] [data-target~="composing"],
+  [data-mockup-frame][data-at$=" saved"] [data-target~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-target~="saved"],
+  [data-mockup-frame][data-at$=" other-step"] [data-target~="other-step"],
+  [data-mockup-frame][data-at="other-step"] [data-target~="other-step"],
+  [data-mockup-frame][data-at$=" handed"] [data-target~="handed"],
+  [data-mockup-frame][data-at="handed"] [data-target~="handed"],
+  [data-mockup-frame][data-at$=" replied"] [data-target~="replied"],
+  [data-mockup-frame][data-at="replied"] [data-target~="replied"],
+  [data-mockup-frame][data-at$=" updated"] [data-target~="updated"],
+  [data-mockup-frame][data-at="updated"] [data-target~="updated"],
+  [data-mockup-frame][data-at$=" arrived"] [data-target~="arrived"],
+  [data-mockup-frame][data-at="arrived"] [data-target~="arrived"],
+  [data-mockup-frame]:not([data-at]) [data-target~="opened"] { outline: calc(2px / var(--hx-zoom)) dashed var(--ui-draft); outline-offset: calc(2px / var(--hx-zoom)); }
+  [data-mockup-frame][data-at$=" opened"] [data-ring~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-ring~="opened"],
+  [data-mockup-frame][data-at$=" team-open"] [data-ring~="team-open"],
+  [data-mockup-frame][data-at="team-open"] [data-ring~="team-open"],
+  [data-mockup-frame][data-at$=" export"] [data-ring~="export"],
+  [data-mockup-frame][data-at="export"] [data-ring~="export"],
+  [data-mockup-frame][data-at$=" playing"] [data-ring~="playing"],
+  [data-mockup-frame][data-at="playing"] [data-ring~="playing"],
+  [data-mockup-frame][data-at$=" played"] [data-ring~="played"],
+  [data-mockup-frame][data-at="played"] [data-ring~="played"],
+  [data-mockup-frame][data-at$=" comment-on"] [data-ring~="comment-on"],
+  [data-mockup-frame][data-at="comment-on"] [data-ring~="comment-on"],
+  [data-mockup-frame][data-at$=" composing"] [data-ring~="composing"],
+  [data-mockup-frame][data-at="composing"] [data-ring~="composing"],
+  [data-mockup-frame][data-at$=" saved"] [data-ring~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-ring~="saved"],
+  [data-mockup-frame][data-at$=" other-step"] [data-ring~="other-step"],
+  [data-mockup-frame][data-at="other-step"] [data-ring~="other-step"],
+  [data-mockup-frame][data-at$=" handed"] [data-ring~="handed"],
+  [data-mockup-frame][data-at="handed"] [data-ring~="handed"],
+  [data-mockup-frame][data-at$=" replied"] [data-ring~="replied"],
+  [data-mockup-frame][data-at="replied"] [data-ring~="replied"],
+  [data-mockup-frame][data-at$=" updated"] [data-ring~="updated"],
+  [data-mockup-frame][data-at="updated"] [data-ring~="updated"],
+  [data-mockup-frame][data-at$=" arrived"] [data-ring~="arrived"],
+  [data-mockup-frame][data-at="arrived"] [data-ring~="arrived"],
+  [data-mockup-frame]:not([data-at]) [data-ring~="opened"] { outline: calc(2px / var(--hx-zoom)) solid var(--ui-draft); outline-offset: calc(var(--ui-space-1) / var(--hx-zoom)); }
+  [data-mockup-frame][data-at$=" opened"] [data-veil~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-veil~="opened"],
+  [data-mockup-frame][data-at$=" team-open"] [data-veil~="team-open"],
+  [data-mockup-frame][data-at="team-open"] [data-veil~="team-open"],
+  [data-mockup-frame][data-at$=" export"] [data-veil~="export"],
+  [data-mockup-frame][data-at="export"] [data-veil~="export"],
+  [data-mockup-frame][data-at$=" playing"] [data-veil~="playing"],
+  [data-mockup-frame][data-at="playing"] [data-veil~="playing"],
+  [data-mockup-frame][data-at$=" played"] [data-veil~="played"],
+  [data-mockup-frame][data-at="played"] [data-veil~="played"],
+  [data-mockup-frame][data-at$=" comment-on"] [data-veil~="comment-on"],
+  [data-mockup-frame][data-at="comment-on"] [data-veil~="comment-on"],
+  [data-mockup-frame][data-at$=" composing"] [data-veil~="composing"],
+  [data-mockup-frame][data-at="composing"] [data-veil~="composing"],
+  [data-mockup-frame][data-at$=" saved"] [data-veil~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-veil~="saved"],
+  [data-mockup-frame][data-at$=" other-step"] [data-veil~="other-step"],
+  [data-mockup-frame][data-at="other-step"] [data-veil~="other-step"],
+  [data-mockup-frame][data-at$=" handed"] [data-veil~="handed"],
+  [data-mockup-frame][data-at="handed"] [data-veil~="handed"],
+  [data-mockup-frame][data-at$=" replied"] [data-veil~="replied"],
+  [data-mockup-frame][data-at="replied"] [data-veil~="replied"],
+  [data-mockup-frame][data-at$=" updated"] [data-veil~="updated"],
+  [data-mockup-frame][data-at="updated"] [data-veil~="updated"],
+  [data-mockup-frame][data-at$=" arrived"] [data-veil~="arrived"],
+  [data-mockup-frame][data-at="arrived"] [data-veil~="arrived"],
+  [data-mockup-frame]:not([data-at]) [data-veil~="opened"] { position: relative; z-index: 9; box-shadow: 0 0 0 calc(2000px / var(--hx-zoom)) var(--ui-veil); }
+  [data-mockup-frame][data-at$=" opened"] [data-beside~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-beside~="opened"],
+  [data-mockup-frame][data-at$=" team-open"] [data-beside~="team-open"],
+  [data-mockup-frame][data-at="team-open"] [data-beside~="team-open"],
+  [data-mockup-frame][data-at$=" export"] [data-beside~="export"],
+  [data-mockup-frame][data-at="export"] [data-beside~="export"],
+  [data-mockup-frame][data-at$=" playing"] [data-beside~="playing"],
+  [data-mockup-frame][data-at="playing"] [data-beside~="playing"],
+  [data-mockup-frame][data-at$=" played"] [data-beside~="played"],
+  [data-mockup-frame][data-at="played"] [data-beside~="played"],
+  [data-mockup-frame][data-at$=" comment-on"] [data-beside~="comment-on"],
+  [data-mockup-frame][data-at="comment-on"] [data-beside~="comment-on"],
+  [data-mockup-frame][data-at$=" composing"] [data-beside~="composing"],
+  [data-mockup-frame][data-at="composing"] [data-beside~="composing"],
+  [data-mockup-frame][data-at$=" saved"] [data-beside~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-beside~="saved"],
+  [data-mockup-frame][data-at$=" other-step"] [data-beside~="other-step"],
+  [data-mockup-frame][data-at="other-step"] [data-beside~="other-step"],
+  [data-mockup-frame][data-at$=" handed"] [data-beside~="handed"],
+  [data-mockup-frame][data-at="handed"] [data-beside~="handed"],
+  [data-mockup-frame][data-at$=" replied"] [data-beside~="replied"],
+  [data-mockup-frame][data-at="replied"] [data-beside~="replied"],
+  [data-mockup-frame][data-at$=" updated"] [data-beside~="updated"],
+  [data-mockup-frame][data-at="updated"] [data-beside~="updated"],
+  [data-mockup-frame][data-at$=" arrived"] [data-beside~="arrived"],
+  [data-mockup-frame][data-at="arrived"] [data-beside~="arrived"],
+  [data-mockup-frame]:not([data-at]) [data-beside~="opened"] { margin-right: 330px; }
+  [data-mockup-frame][data-at$=" opened"] [data-narrow~="opened"],
+  [data-mockup-frame][data-at="opened"] [data-narrow~="opened"],
+  [data-mockup-frame][data-at$=" team-open"] [data-narrow~="team-open"],
+  [data-mockup-frame][data-at="team-open"] [data-narrow~="team-open"],
+  [data-mockup-frame][data-at$=" export"] [data-narrow~="export"],
+  [data-mockup-frame][data-at="export"] [data-narrow~="export"],
+  [data-mockup-frame][data-at$=" playing"] [data-narrow~="playing"],
+  [data-mockup-frame][data-at="playing"] [data-narrow~="playing"],
+  [data-mockup-frame][data-at$=" played"] [data-narrow~="played"],
+  [data-mockup-frame][data-at="played"] [data-narrow~="played"],
+  [data-mockup-frame][data-at$=" comment-on"] [data-narrow~="comment-on"],
+  [data-mockup-frame][data-at="comment-on"] [data-narrow~="comment-on"],
+  [data-mockup-frame][data-at$=" composing"] [data-narrow~="composing"],
+  [data-mockup-frame][data-at="composing"] [data-narrow~="composing"],
+  [data-mockup-frame][data-at$=" saved"] [data-narrow~="saved"],
+  [data-mockup-frame][data-at="saved"] [data-narrow~="saved"],
+  [data-mockup-frame][data-at$=" other-step"] [data-narrow~="other-step"],
+  [data-mockup-frame][data-at="other-step"] [data-narrow~="other-step"],
+  [data-mockup-frame][data-at$=" handed"] [data-narrow~="handed"],
+  [data-mockup-frame][data-at="handed"] [data-narrow~="handed"],
+  [data-mockup-frame][data-at$=" replied"] [data-narrow~="replied"],
+  [data-mockup-frame][data-at="replied"] [data-narrow~="replied"],
+  [data-mockup-frame][data-at$=" updated"] [data-narrow~="updated"],
+  [data-mockup-frame][data-at="updated"] [data-narrow~="updated"],
+  [data-mockup-frame][data-at$=" arrived"] [data-narrow~="arrived"],
+  [data-mockup-frame][data-at="arrived"] [data-narrow~="arrived"],
+  [data-mockup-frame]:not([data-at]) [data-narrow~="opened"] { --hx-zoom: 0.5497; }
+</style>
+<script defer src="../../.viz/runtime.js"></script>
+</head>
+<body>
+<section data-mockup-frame="desktop" data-anchor="desktop" data-illustrates="review-chrome review-fit walkthrough-what">
+<div class="mp-top" data-anchor="desktop-top-line" data-illustrates="review-chrome next-screen-rule" data-beside="composing saved other-step handed replied updated arrived"><a class="rv-index" href="#review-index"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg><span>Review index</span></a><a class="mp-spec-link" href="#report-page-spec">Report page spec</a><div class="mp-range"><div class="mp-range-row"><span class="mp-pager" role="group" aria-label="Screens" data-anchor="desktop-pager" data-illustrates="next-screen-rule next-screen-press acceptance-next-screen"><button type="button" class="rv-btn" title="Previous screen: Export dialog (←)" aria-label="Previous screen, Export dialog"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg></button><span class="mp-place">3 of 3</span><button type="button" class="rv-btn" disabled aria-label="Next screen"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></button></span><p class="mp-range-copy" title="Changes from 965efc4 2026-01-01 to dbbd25d 2026-01-01">New since the base</p><button type="button" class="rv-btn rv-change" aria-expanded="false">Change base</button></div></div><div class="mp-steps" role="group" aria-label="Walkthrough" data-anchor="desktop-steps" data-illustrates="walkthrough-bar walkthrough-step acceptance-steps-bar"><button type="button" class="mp-step" data-anchor="desktop-play" data-pressed="playing" aria-pressed="false">Play</button><button type="button" class="mp-step" data-anchor="desktop-step-totals" data-pressed="opened other-step handed"><span class="mp-step-n">1</span><span>Totals</span></button><button type="button" class="mp-step" data-anchor="desktop-step-team-open" data-pressed="team-open playing comment-on composing saved replied updated arrived"><span class="mp-step-n">2</span><span>Team open</span><span class="mp-step-count" data-show="saved other-step handed replied updated arrived">1</span></button><button type="button" class="mp-step" data-anchor="desktop-step-export" data-pressed="export played"><span class="mp-step-n">3</span><span>Export</span></button><span class="mp-caption" aria-live="polite"><span data-show="opened other-step handed">This week's total for each team</span><span data-show="team-open playing comment-on composing saved replied updated arrived">Payments opens its last three weeks</span><span data-show="export played">The export dialog lists the rows the CSV holds</span></span></div><nav class="rv-dock" aria-label="Review conversations" data-anchor="desktop-dock" data-illustrates="review-chrome" data-show="opened team-open export playing played comment-on"><button type="button" class="rv-btn rv-icon" data-anchor="desktop-dock-open" aria-label="Open review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M3.5 6h5A1.5 1.5 0 0 1 10 7.5v3A1.5 1.5 0 0 1 8.5 12H6.5L4 14v-2h-.5A1.5 1.5 0 0 1 2 10.5v-3A1.5 1.5 0 0 1 3.5 6z"/><path d="M6 6V3.5A1.5 1.5 0 0 1 7.5 2h5A1.5 1.5 0 0 1 14 3.5v3A1.5 1.5 0 0 1 12.5 8H12v2l-2-1.5"/></svg></button></nav></div>
+<div class="mp-stage" data-anchor="desktop-slots" data-illustrates="review-fit acceptance-fit-settles" data-beside="composing saved other-step handed replied updated arrived"><div class="mp-slot" role="group" aria-label="Desktop"><div class="mp-label">Desktop</div><div class="mp-fit mp-fit-dd" data-anchor="desktop-slot-desktop" data-illustrates="step-threads-pin acceptance-step-pin" data-narrow="composing saved other-step handed replied updated arrived"><div class="tp tp-d"><header class="tp-bar" data-anchor="desktop-d-bar"><h1>Weekly report</h1><p class="tp-muted">Week 2026-W01</p></header><div class="tp-body"><ul class="tp-cards" data-anchor="desktop-d-cards"><li class="tp-card" data-anchor="desktop-d-card-payments" data-edge="team-open playing comment-on composing saved replied updated arrived export played" data-ring="replied updated arrived" data-target="composing" data-hover="comment-on"><span class="tp-avatar tp-av-pay" role="img" aria-label="Payments team avatar">P</span><p class="tp-team">Payments</p><p class="tp-muted">Total for the week</p><p class="tp-total">1,284</p><button type="button" class="tp-btn" data-anchor="desktop-d-open">Last three weeks</button><i class="rv-pin" data-show="saved">1</i><i class="rv-pin rv-ack rv-active" data-show="replied updated">1</i><i class="rv-pin rv-ack" data-show="arrived">1</i></li><li class="tp-card" data-anchor="desktop-d-card-search"><span class="tp-avatar tp-av-search" role="img" aria-label="Search team avatar">S</span><p class="tp-team">Search</p><p class="tp-muted">Total for the week</p><p class="tp-total">962</p></li><li class="tp-card" data-anchor="desktop-d-card-mobile"><span class="tp-avatar tp-av-mobile" role="img" aria-label="Mobile team avatar">M</span><p class="tp-team">Mobile</p><p class="tp-muted">Total for the week</p><p class="tp-total">731</p></li></ul><div class="tp-panel" data-anchor="desktop-d-panel" data-fade="team-open playing comment-on composing saved replied updated arrived export played"><h2>Payments</h2><table class="tp-table"><thead><tr><th>Week</th><th class="tp-num">Total</th></tr></thead><tbody><tr><td>2025-W51</td><td class="tp-num">1,190</td></tr><tr><td>2025-W52</td><td class="tp-num">1,236</td></tr><tr><td>2026-W01</td><td class="tp-num">1,284</td></tr></tbody></table><button type="button" class="tp-btn tp-pri" data-anchor="desktop-d-export">Export CSV</button></div></div><div class="tp-dialog" role="dialog" aria-label="Export CSV" data-anchor="desktop-d-dialog" data-fade="export played"><h2>Export CSV</h2><p class="tp-file" data-anchor="desktop-d-file">weekly-totals-2026-W01.csv</p><table class="tp-table"><thead><tr><th>Team</th><th class="tp-num">Total for 2026-W01</th></tr></thead><tbody><tr><td>Payments</td><td class="tp-num">1,284</td></tr><tr><td>Search</td><td class="tp-num">962</td></tr><tr><td>Mobile</td><td class="tp-num">731</td></tr></tbody></table><footer class="tp-actions"><button type="button" class="tp-btn" data-anchor="desktop-d-cancel">Cancel</button><button type="button" class="tp-btn tp-pri" data-anchor="desktop-d-download">Download</button></footer></div></div></div></div><div class="mp-slot" role="group" aria-label="Phone"><div class="mp-label">Phone</div><div class="mp-fit mp-fit-dp" data-anchor="desktop-slot-phone" data-illustrates="review-fit" data-narrow="composing saved other-step handed replied updated arrived"><div class="tp tp-m"><header class="tp-bar" data-anchor="desktop-p-bar"><h1>Weekly report</h1><p class="tp-muted">Week 2026-W01</p></header><div class="tp-body"><ul class="tp-cards" data-anchor="desktop-p-cards"><li class="tp-card" data-anchor="desktop-p-card-payments" data-edge="team-open playing comment-on composing saved replied updated arrived export played"><span class="tp-avatar tp-av-pay" role="img" aria-label="Payments team avatar">P</span><p class="tp-team">Payments</p><p class="tp-muted">Total for the week</p><p class="tp-total">1,284</p><button type="button" class="tp-btn" data-anchor="desktop-p-open">Last three weeks</button></li><li class="tp-card" data-anchor="desktop-p-card-search"><span class="tp-avatar tp-av-search" role="img" aria-label="Search team avatar">S</span><p class="tp-team">Search</p><p class="tp-muted">Total for the week</p><p class="tp-total">962</p></li><li class="tp-card" data-anchor="desktop-p-card-mobile"><span class="tp-avatar tp-av-mobile" role="img" aria-label="Mobile team avatar">M</span><p class="tp-team">Mobile</p><p class="tp-muted">Total for the week</p><p class="tp-total">731</p></li></ul><div class="tp-panel" data-anchor="desktop-p-panel" data-fade="team-open playing comment-on composing saved replied updated arrived export played"><h2>Payments</h2><table class="tp-table"><thead><tr><th>Week</th><th class="tp-num">Total</th></tr></thead><tbody><tr><td>2025-W51</td><td class="tp-num">1,190</td></tr><tr><td>2025-W52</td><td class="tp-num">1,236</td></tr><tr><td>2026-W01</td><td class="tp-num">1,284</td></tr></tbody></table><button type="button" class="tp-btn tp-pri" data-anchor="desktop-p-export">Export CSV</button></div></div><div class="tp-dialog" role="dialog" aria-label="Export CSV" data-anchor="desktop-p-dialog" data-fade="export played"><h2>Export CSV</h2><p class="tp-file" data-anchor="desktop-p-file">weekly-totals-2026-W01.csv</p><table class="tp-table"><thead><tr><th>Team</th><th class="tp-num">Total for 2026-W01</th></tr></thead><tbody><tr><td>Payments</td><td class="tp-num">1,284</td></tr><tr><td>Search</td><td class="tp-num">962</td></tr><tr><td>Mobile</td><td class="tp-num">731</td></tr></tbody></table><footer class="tp-actions"><button type="button" class="tp-btn" data-anchor="desktop-p-cancel">Cancel</button><button type="button" class="tp-btn tp-pri" data-anchor="desktop-p-download">Download</button></footer></div></div></div></div></div>
+<aside class="rv-panel" data-anchor="desktop-panel" data-illustrates="review-chrome acceptance-one-control" data-show="composing saved other-step handed replied updated arrived" aria-label="Review sidebar"><div class="rv-head">Conversation <span class="rv-count"><span data-show="composing">0 threads</span><span data-show="saved other-step handed replied updated arrived">1 thread</span></span> <span class="rv-sub"><span data-show="composing saved other-step">· no agent events yet</span><span data-show="handed">· handed off, waiting for agent</span><span data-show="replied updated arrived">· agent last event 10:42:07 AM</span></span><button type="button" class="rv-btn rv-icon rv-toggle" aria-label="Collapse review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M10 2.5v11"/></svg></button><button type="button" class="rv-btn rv-icon rv-gear" aria-label="Review display settings" title="Display settings"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6.34 3.18L6.6 1.4L9.4 1.4L9.66 3.18L11.35 4.15L13.02 3.48L14.42 5.91L13.01 7.03L13.01 8.97L14.42 10.09L13.02 12.52L11.35 11.85L9.66 12.82L9.4 14.6L6.6 14.6L6.34 12.82L4.65 11.85L2.98 12.52L1.58 10.09L2.99 8.97L2.99 7.03L1.58 5.91L2.98 3.48L4.65 4.15z"/><circle cx="8" cy="8" r="2"/></svg></button></div><div class="rv-body"><div class="rv-stream"><div class="rv-entry rv-me" data-anchor="desktop-thread" data-show="saved other-step handed replied updated arrived"><div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble rv-draft" data-show="saved other-step">Show the week number on the card?</div><div class="rv-bubble" data-show="handed replied updated arrived">Show the week number on the card?<span class="rv-dot" data-show="replied updated arrived"></span></div></div><button type="button" class="rv-chip">Desktop card payments · Step 2 Team open</button><span class="rv-receipt" data-show="saved other-step">Draft</span><span class="rv-receipt" data-show="handed">Sent</span><span class="rv-receipt rv-ack" data-show="replied updated arrived">Seen</span><span class="rv-replies" data-show="replied updated arrived">1 reply · <b>Agent:</b> Done; OK to resolve?</span></div><div class="rv-compose" data-anchor="desktop-composer" data-illustrates="acceptance-next-screen-comment" data-show="composing"><div class="rv-anchor">#desktop-card-payments</div><textarea class="rv-field" aria-label="Comment" placeholder="Comment… (⌘⏎ to send)">Show the week number on the card?</textarea><div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri" data-anchor="desktop-send">Comment</button></div></div></div><div class="rv-veil" data-show="replied updated"></div><div class="rv-focused" data-anchor="desktop-focus" data-show="replied updated"><div class="rv-focused-head"><button type="button" class="rv-btn rv-back"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg><span>Conversation</span></button><button type="button" class="rv-btn">Resolve</button></div><div class="rv-focused-stream" data-anchor="desktop-focused-thread" data-illustrates="acceptance-reply"><div class="rv-entry rv-me"><div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble">Show the week number on the card?</div></div><button type="button" class="rv-chip" data-anchor="desktop-focus-chip">Desktop card payments · Step 2 Team open</button><span class="rv-receipt rv-ack">Seen</span></div><div class="rv-entry rv-them"><div class="rv-msg rv-them"><span class="rv-who">Agent</span><div class="rv-bubble">Done; OK to resolve?<span class="rv-dot"></span></div></div></div></div><div class="rv-reply-box"><textarea class="rv-field" aria-label="Reply" placeholder="Reply… (⌘⏎ to send)"></textarea><button type="button" class="rv-btn rv-pri">Reply</button></div></div></div><div class="rv-handoff" data-anchor="desktop-handoff" data-illustrates="acceptance-one-control acceptance-handoff"><span class="rv-note" data-anchor="desktop-drafts"><span data-show="opened team-open export playing played comment-on composing handed replied updated arrived">0 drafts</span><span data-show="saved other-step">1 draft</span></span><button type="button" class="rv-btn rv-pri" data-anchor="desktop-handoff-button" data-show="saved other-step">Hand off to agent →</button><button type="button" class="rv-btn rv-pri" disabled data-show="opened team-open export playing played comment-on handed arrived">Hand off to agent →</button><button type="button" class="rv-btn" disabled data-show="composing replied updated">Hand off to agent →</button></div></aside>
+
+<div class="rv-toolbar" data-anchor="desktop-toolbar" data-illustrates="review-chrome"><button type="button" class="rv-btn rv-tool" data-anchor="desktop-comment" data-tool="comment-on" aria-pressed="false" title="Comment (C)">Comment</button><span class="rv-status">connected · review-serve · <span data-show="opened team-open export playing played comment-on composing">0</span><span data-show="saved other-step handed replied updated arrived">1</span> threads</span></div>
+<div class="rv-toast" role="status" data-show="saved">Comment saved as draft — hand off when ready</div><div class="rv-toast" role="status" data-show="handed">Handed off 1 comment, agent notified</div>
+<div class="rv-banner" data-anchor="desktop-banner" data-illustrates="review-banner acceptance-agent-edit" data-show="updated" role="status">Mockup updated by agent <button type="button" class="rv-btn">Reload</button></div>
+</section>
+<section data-mockup-frame="phone" data-anchor="phone" data-illustrates="review-fit walkthrough-phone">
+<div class="mp-top" data-anchor="phone-top-line" data-illustrates="review-chrome next-screen-rule"><a class="rv-index" href="#review-index"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg><span>Review index</span></a><a class="mp-spec-link" href="#report-page-spec">Report page spec</a><div class="mp-range"><div class="mp-range-row"><span class="mp-pager" role="group" aria-label="Screens" data-anchor="phone-pager" data-illustrates="next-screen-rule next-screen-phone"><button type="button" class="rv-btn" aria-label="Previous screen, Export dialog"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg></button><span class="mp-place">3 of 3</span><button type="button" class="rv-btn" disabled aria-label="Next screen"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></button></span><p class="mp-range-copy" title="Changes from 965efc4 2026-01-01 to dbbd25d 2026-01-01">New since the base</p><button type="button" class="rv-btn rv-change" aria-expanded="false">Change base</button></div></div><div class="mp-steps" role="group" aria-label="Walkthrough" data-anchor="phone-steps" data-illustrates="walkthrough-bar walkthrough-phone"><button type="button" class="mp-step" data-anchor="phone-play" data-pressed="playing" aria-pressed="false">Play</button><button type="button" class="mp-step" data-anchor="phone-step-totals" data-pressed="opened other-step handed"><span class="mp-step-n">1</span><span>Totals</span></button><button type="button" class="mp-step" data-anchor="phone-step-team-open" data-pressed="team-open playing comment-on composing saved replied updated arrived"><span class="mp-step-n">2</span><span>Team open</span><span class="mp-step-count" data-show="saved other-step handed replied updated arrived">1</span></button><button type="button" class="mp-step" data-anchor="phone-step-export" data-pressed="export played"><span class="mp-step-n">3</span><span>Export</span></button><span class="mp-caption" aria-live="polite"><span data-show="opened other-step handed">This week's total for each team</span><span data-show="team-open playing comment-on composing saved replied updated arrived">Payments opens its last three weeks</span><span data-show="export played">The export dialog lists the rows the CSV holds</span></span></div><nav class="rv-dock" aria-label="Review conversations" data-anchor="phone-dock" data-illustrates="review-chrome" data-show="opened team-open export playing played comment-on other-step handed arrived"><button type="button" class="rv-btn rv-icon" data-anchor="phone-dock-open" aria-label="Open review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M3.5 6h5A1.5 1.5 0 0 1 10 7.5v3A1.5 1.5 0 0 1 8.5 12H6.5L4 14v-2h-.5A1.5 1.5 0 0 1 2 10.5v-3A1.5 1.5 0 0 1 3.5 6z"/><path d="M6 6V3.5A1.5 1.5 0 0 1 7.5 2h5A1.5 1.5 0 0 1 14 3.5v3A1.5 1.5 0 0 1 12.5 8H12v2l-2-1.5"/></svg></button><div class="rv-dock-threads" data-show="other-step handed arrived"><button type="button" class="rv-thread" data-anchor="phone-dock-thread" data-show="other-step handed">1</button><button type="button" class="rv-thread rv-ack" data-show="arrived">1</button></div></nav></div>
+<div class="mp-stage" data-anchor="phone-slots" data-illustrates="review-fit acceptance-frames-phone"><div class="mp-slot" role="group" aria-label="Desktop"><div class="mp-label">Desktop</div><div class="mp-fit mp-fit-pd" data-anchor="phone-slot-desktop" data-illustrates="step-threads-pin acceptance-step-pin"><div class="tp tp-d"><header class="tp-bar" data-anchor="phone-d-bar"><h1>Weekly report</h1><p class="tp-muted">Week 2026-W01</p></header><div class="tp-body"><ul class="tp-cards" data-anchor="phone-d-cards"><li class="tp-card" data-anchor="phone-d-card-payments" data-edge="team-open playing comment-on composing saved replied updated arrived export played" data-ring="replied updated arrived" data-target="composing" data-veil="replied updated"><span class="tp-avatar tp-av-pay" role="img" aria-label="Payments team avatar">P</span><p class="tp-team">Payments</p><p class="tp-muted">Total for the week</p><p class="tp-total">1,284</p><button type="button" class="tp-btn" data-anchor="phone-d-open">Last three weeks</button><i class="rv-pin" data-show="saved">1</i><i class="rv-pin rv-ack rv-active" data-show="replied updated">1</i><i class="rv-pin rv-ack" data-show="arrived">1</i></li><li class="tp-card" data-anchor="phone-d-card-search"><span class="tp-avatar tp-av-search" role="img" aria-label="Search team avatar">S</span><p class="tp-team">Search</p><p class="tp-muted">Total for the week</p><p class="tp-total">962</p></li><li class="tp-card" data-anchor="phone-d-card-mobile"><span class="tp-avatar tp-av-mobile" role="img" aria-label="Mobile team avatar">M</span><p class="tp-team">Mobile</p><p class="tp-muted">Total for the week</p><p class="tp-total">731</p></li></ul><div class="tp-panel" data-anchor="phone-d-panel" data-fade="team-open playing comment-on composing saved replied updated arrived export played"><h2>Payments</h2><table class="tp-table"><thead><tr><th>Week</th><th class="tp-num">Total</th></tr></thead><tbody><tr><td>2025-W51</td><td class="tp-num">1,190</td></tr><tr><td>2025-W52</td><td class="tp-num">1,236</td></tr><tr><td>2026-W01</td><td class="tp-num">1,284</td></tr></tbody></table><button type="button" class="tp-btn tp-pri" data-anchor="phone-d-export">Export CSV</button></div></div><div class="tp-dialog" role="dialog" aria-label="Export CSV" data-anchor="phone-d-dialog" data-fade="export played"><h2>Export CSV</h2><p class="tp-file" data-anchor="phone-d-file">weekly-totals-2026-W01.csv</p><table class="tp-table"><thead><tr><th>Team</th><th class="tp-num">Total for 2026-W01</th></tr></thead><tbody><tr><td>Payments</td><td class="tp-num">1,284</td></tr><tr><td>Search</td><td class="tp-num">962</td></tr><tr><td>Mobile</td><td class="tp-num">731</td></tr></tbody></table><footer class="tp-actions"><button type="button" class="tp-btn" data-anchor="phone-d-cancel">Cancel</button><button type="button" class="tp-btn tp-pri" data-anchor="phone-d-download">Download</button></footer></div></div></div></div><div class="mp-slot" role="group" aria-label="Phone"><div class="mp-label">Phone</div><div class="mp-fit mp-fit-pp" data-anchor="phone-slot-phone" data-illustrates="review-fit"><div class="tp tp-m"><header class="tp-bar" data-anchor="phone-p-bar"><h1>Weekly report</h1><p class="tp-muted">Week 2026-W01</p></header><div class="tp-body"><ul class="tp-cards" data-anchor="phone-p-cards"><li class="tp-card" data-anchor="phone-p-card-payments" data-edge="team-open playing comment-on composing saved replied updated arrived export played"><span class="tp-avatar tp-av-pay" role="img" aria-label="Payments team avatar">P</span><p class="tp-team">Payments</p><p class="tp-muted">Total for the week</p><p class="tp-total">1,284</p><button type="button" class="tp-btn" data-anchor="phone-p-open">Last three weeks</button></li><li class="tp-card" data-anchor="phone-p-card-search"><span class="tp-avatar tp-av-search" role="img" aria-label="Search team avatar">S</span><p class="tp-team">Search</p><p class="tp-muted">Total for the week</p><p class="tp-total">962</p></li><li class="tp-card" data-anchor="phone-p-card-mobile"><span class="tp-avatar tp-av-mobile" role="img" aria-label="Mobile team avatar">M</span><p class="tp-team">Mobile</p><p class="tp-muted">Total for the week</p><p class="tp-total">731</p></li></ul><div class="tp-panel" data-anchor="phone-p-panel" data-fade="team-open playing comment-on composing saved replied updated arrived export played"><h2>Payments</h2><table class="tp-table"><thead><tr><th>Week</th><th class="tp-num">Total</th></tr></thead><tbody><tr><td>2025-W51</td><td class="tp-num">1,190</td></tr><tr><td>2025-W52</td><td class="tp-num">1,236</td></tr><tr><td>2026-W01</td><td class="tp-num">1,284</td></tr></tbody></table><button type="button" class="tp-btn tp-pri" data-anchor="phone-p-export">Export CSV</button></div></div><div class="tp-dialog" role="dialog" aria-label="Export CSV" data-anchor="phone-p-dialog" data-fade="export played"><h2>Export CSV</h2><p class="tp-file" data-anchor="phone-p-file">weekly-totals-2026-W01.csv</p><table class="tp-table"><thead><tr><th>Team</th><th class="tp-num">Total for 2026-W01</th></tr></thead><tbody><tr><td>Payments</td><td class="tp-num">1,284</td></tr><tr><td>Search</td><td class="tp-num">962</td></tr><tr><td>Mobile</td><td class="tp-num">731</td></tr></tbody></table><footer class="tp-actions"><button type="button" class="tp-btn" data-anchor="phone-p-cancel">Cancel</button><button type="button" class="tp-btn tp-pri" data-anchor="phone-p-download">Download</button></footer></div></div></div></div></div>
+<aside class="rv-panel" data-anchor="phone-panel" data-illustrates="acceptance-one-control-phone" data-show="composing saved" aria-label="Review sidebar"><div class="rv-head">Conversation <span class="rv-count"><span data-show="composing">0 threads</span><span data-show="saved other-step handed replied updated arrived">1 thread</span></span> <span class="rv-sub"><span data-show="composing saved other-step">· no agent events yet</span><span data-show="handed">· handed off, waiting for agent</span><span data-show="replied updated arrived">· agent last event 10:42:07 AM</span></span><button type="button" class="rv-btn rv-icon rv-toggle" aria-label="Collapse review sidebar"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M10 2.5v11"/></svg></button><button type="button" class="rv-btn rv-icon rv-gear" aria-label="Review display settings" title="Display settings"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M6.34 3.18L6.6 1.4L9.4 1.4L9.66 3.18L11.35 4.15L13.02 3.48L14.42 5.91L13.01 7.03L13.01 8.97L14.42 10.09L13.02 12.52L11.35 11.85L9.66 12.82L9.4 14.6L6.6 14.6L6.34 12.82L4.65 11.85L2.98 12.52L1.58 10.09L2.99 8.97L2.99 7.03L1.58 5.91L2.98 3.48L4.65 4.15z"/><circle cx="8" cy="8" r="2"/></svg></button></div><div class="rv-body"><div class="rv-stream"><div class="rv-entry rv-me" data-anchor="phone-thread" data-show="saved other-step handed replied updated arrived"><div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble rv-draft" data-show="saved other-step">Show the week number on the card?</div><div class="rv-bubble" data-show="handed replied updated arrived">Show the week number on the card?<span class="rv-dot" data-show="replied updated arrived"></span></div></div><button type="button" class="rv-chip">Desktop card payments · Step 2 Team open</button><span class="rv-receipt" data-show="saved other-step">Draft</span><span class="rv-receipt" data-show="handed">Sent</span><span class="rv-receipt rv-ack" data-show="replied updated arrived">Seen</span><span class="rv-replies" data-show="replied updated arrived">1 reply · <b>Agent:</b> Done; OK to resolve?</span></div><div class="rv-compose" data-anchor="phone-composer" data-illustrates="acceptance-next-screen-comment" data-show="composing"><div class="rv-anchor">#desktop-card-payments</div><textarea class="rv-field" aria-label="Comment" placeholder="Comment… (⌘⏎ to send)">Show the week number on the card?</textarea><div class="rv-compose-actions"><button type="button" class="rv-btn">Cancel</button><button type="button" class="rv-btn rv-pri" data-anchor="phone-send">Comment</button></div></div></div></div></aside>
+<div class="rv-sheet" data-anchor="phone-sheet" data-show="replied updated"><span class="rv-grip"></span><div class="rv-focused-head"><button type="button" class="rv-btn rv-back"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" stroke="currentColor"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg><span>Conversation</span></button><button type="button" class="rv-btn">Resolve</button></div><div class="rv-focused-stream" data-anchor="phone-focused-thread" data-illustrates="acceptance-reply"><div class="rv-entry rv-me"><div class="rv-msg rv-me"><span class="rv-who">Papaya</span><div class="rv-bubble">Show the week number on the card?</div></div><button type="button" class="rv-chip" data-anchor="phone-focus-chip">Desktop card payments · Step 2 Team open</button><span class="rv-receipt rv-ack">Seen</span></div><div class="rv-entry rv-them"><div class="rv-msg rv-them"><span class="rv-who">Agent</span><div class="rv-bubble">Done; OK to resolve?<span class="rv-dot"></span></div></div></div></div><div class="rv-reply-box"><textarea class="rv-field" aria-label="Reply" placeholder="Reply… (⌘⏎ to send)"></textarea><button type="button" class="rv-btn rv-pri">Reply</button></div></div>
+<div class="rv-toolbar" data-anchor="phone-toolbar" data-illustrates="review-chrome acceptance-one-control-phone"><button type="button" class="rv-btn rv-tool" data-anchor="phone-comment" data-tool="comment-on" aria-pressed="false">Comment</button><div class="rv-inline-handoff" data-anchor="phone-handoff"><span class="rv-note" data-anchor="phone-drafts"><span data-show="opened team-open export playing played comment-on composing handed replied updated arrived">0 drafts</span><span data-show="saved other-step">1 draft</span></span><button type="button" class="rv-btn rv-pri" data-anchor="phone-handoff-button" data-show="saved other-step">Hand off to agent →</button><button type="button" class="rv-btn rv-pri" disabled data-show="opened team-open export playing played comment-on handed arrived">Hand off to agent →</button><button type="button" class="rv-btn" disabled data-show="composing replied updated">Hand off to agent →</button></div><span class="rv-status">connected · review-serve · <span data-show="opened team-open export playing played comment-on composing">0</span><span data-show="saved other-step handed replied updated arrived">1</span> threads</span></div>
+<div class="rv-toast" role="status" data-show="saved">Comment saved as draft — hand off when ready</div><div class="rv-toast" role="status" data-show="handed">Handed off 1 comment, agent notified</div>
+<div class="rv-banner" data-anchor="phone-banner" data-illustrates="review-banner acceptance-agent-edit" data-show="updated" role="status">Mockup updated by agent <button type="button" class="rv-btn">Reload</button></div>
+</section>
+<ol data-mockup-steps>
+  <li data-step="opened" data-illustrates="acceptance-frames acceptance-frames-phone acceptance-steps-bar acceptance-new acceptance-next-screen acceptance-screen-index-drawn acceptance-fit-settles walkthrough-bar before-new review-chrome next-screen-rule">Team panel opens at 1 Totals: both frames side by side under the top line and the step bar, New since the base, 3 of 3</li>
+  <li data-step="team-open" data-step-by="desktop-d-open desktop-p-open phone-d-open phone-p-open desktop-step-team-open phone-step-team-open" data-illustrates="acceptance-step-press walkthrough-press walkthrough-step">Last three weeks pressed in the desktop frame: both frames show 2 Team open, pressed in the step bar</li>
+  <li data-step="export" data-step-by="desktop-step-export phone-step-export desktop-d-export desktop-p-export phone-d-export phone-p-export" data-illustrates="acceptance-step-jump acceptance-next-screen-steps walkthrough-step">3 Export pressed in the step bar: both frames show the export dialog</li>
+  <li data-step="playing" data-step-by="desktop-play phone-play" data-illustrates="walkthrough-step">Play: each step in order with its own motion, Play pressed</li>
+  <li data-step="played" data-illustrates="acceptance-play walkthrough-step">The walkthrough stops on 3 Export, and Play is offered again</li>
+  <li data-step="comment-on" data-step-by="desktop-comment phone-comment" data-illustrates="review-targets review-same">2 Team open, then Comment: every part of either frame is a comment target</li>
+  <li data-step="composing" data-step-by="desktop-d-card-payments phone-d-card-payments" data-illustrates="acceptance-next-screen-comment review-targets">An empty spot on Payments' card in the desktop frame: the comment box opens on the card, its comment as typed</li>
+  <li data-step="saved" data-step-by="desktop-send phone-send" data-illustrates="acceptance-comment-region acceptance-step-thread acceptance-one-control acceptance-one-control-phone step-threads-carry">Comment: a pin on the card and a draft naming the card and Step 2 Team open; 1 draft and the one Hand off</li>
+  <li data-step="other-step" data-step-by="desktop-step-totals phone-step-totals" data-illustrates="acceptance-step-pin step-threads-pin">1 Totals: the card shows no pin, and 2 Team open counts 1</li>
+  <li data-step="handed" data-step-by="desktop-handoff-button phone-handoff-button" data-illustrates="acceptance-handoff">Hand off: Handed off 1 comment, agent notified; the thread reads Sent</li>
+  <li data-step="replied" data-step-by="desktop-thread phone-dock-thread" data-illustrates="acceptance-reply">The owner answers: the thread opened shows the agent's reply under the comment</li>
+  <li data-step="updated" data-illustrates="acceptance-agent-edit review-banner">The agent edits the mockup: Mockup updated by agent with Reload, the frames as they loaded</li>
+  <li data-step="arrived" data-step-by="desktop-focus-chip phone-focus-chip" data-illustrates="acceptance-step-chip acceptance-chip-open acceptance-chip-step step-threads-pin">Reload, then the thread's chip: both frames at 2 Team open, the card ringed with the thread's pin</li>
+</ol>
+</body>
+</html>

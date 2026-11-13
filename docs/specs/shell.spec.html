@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pages a shell holds - spec</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./.style/spec.css">
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Pages a shell holds</h1>
+<nav data-anchor="breadcrumbs">docs / specs / shell.spec.html</nav>
+<p data-anchor="context">A shell, such as a workbench framing many pages, holds Spec Chat&rsquo;s pages and places one comment UI page beside them; held pages publish and pick, the comment UI page holds every thread.
+Extends <a href="./comment-layer.spec.html">Comment layer</a>: a held host page is one the layer loads on.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-shell">As a human in a shell that frames many pages, I comment on any of them through the one comment UI the shell places beside them, read each page's conversation there, and hand off or accept a spec from it, while each page draws its own pins, on a desktop or a phone.</p>
+<p data-user-story data-user-facing="false" data-anchor="story-shell-author">As a shell author, I frame Spec Chat's comment UI page once per window, say hello to each page I frame, and relay the shell messages between them; I write no comment code and keep no thread.</p>
+<p data-user-story data-user-facing="false" data-anchor="story-shell-box">As a box owner, I name the origins that may act as a shell, so no other site can hide a page's comment UI or receive the picks made on it.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="shell" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-shell-held" data-story="story-shell story-shell-author"><span data-acceptance-scenario>Given a human on a desktop in a shell at an origin the box names, framing a lane's spec page that holds a thread, When the human opens that spec page in the shell,</span> <span data-acceptance-observable>Then the spec page shows the thread's pin and no review panel, Comment, or Hand off of its own, and the shell's comment UI shows the spec's conversation with Hand off.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-shell-alone" data-story="story-shell"><span data-acceptance-scenario>Given a human on a desktop with a lane's spec page that holds a thread, When the human opens that spec page in a plain browser tab, then opens its review panel,</span> <span data-acceptance-observable>Then the page shows its own review panel with Hand off, its own Comment, and the thread's pin.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-shell-unnamed" data-story="story-shell-box"><span data-acceptance-scenario>Given a human on a desktop with a host at an origin the box does not name as a shell, framing a lane's spec page and saying hello with comments, When the human opens that host page, then opens the framed spec page's review panel,</span> <span data-acceptance-observable>Then the framed spec page shows its own review panel, Comment, and Hand off.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-shell-pick" data-story="story-shell story-shell-author"><span data-acceptance-scenario>Given a human on a desktop in a shell framing a held spec page with no thread, When the human presses Comment in the shell's comment UI, then clicks a block in the spec page, then types a comment in the comment UI and saves it,</span> <span data-acceptance-observable>Then the comment's bubble shows as the comment UI conversation's newest thread, its receipt reading Draft and its chip naming that block, and the block in the spec page shows a pin.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-shell-publish" data-story="story-shell-author"><span data-acceptance-scenario>Given a shell author's shell at an origin the box names, framing a spec page that holds one open TBD question, When the shell author opens that spec page in the shell,</span> <span data-acceptance-observable>Then the shell receives the page's publish naming its address, the version it shows, and that question with its answers.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-shell-pick-key" data-story="story-shell"><span data-acceptance-scenario>Given a human on a desktop in a shell framing a held spec page with no thread, When the human clicks in the spec page, then presses C, then clicks a block in the spec page,</span> <span data-acceptance-observable>Then the shell's comment UI shows its composer on that block.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-shell-show" data-story="story-shell"><span data-acceptance-scenario>Given a human on a desktop in a shell framing a held spec page holding a thread on a block far below the top of the page, When the human presses that thread's chip in the shell's comment UI,</span> <span data-acceptance-observable>Then the spec page shows that block in view and ringed.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-shell-pin-focus" data-story="story-shell"><span data-acceptance-scenario>Given a human on a desktop in a shell framing a held spec page holding a thread on a block, When the human presses that block's pin in the spec page,</span> <span data-acceptance-observable>Then the shell's comment UI shows that thread focused.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-shell-handoff" data-story="story-shell"><span data-acceptance-scenario>Given a human in a shell framing a held spec page with one draft comment, When the human presses Hand off in the shell's comment UI,</span> <span data-acceptance-observable>Then the comment UI shows the notice <q>Handed off 1 comment, agent notified</q>, and the receipt under the comment's bubble reads Sent.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-shell-wake" data-story="story-shell"><span data-acceptance-scenario>Given a human in a shell framing a held spec page whose lane owner's pane the wake provider finds, When the human presses Comment in the shell's comment UI, then clicks a block in the spec page, then types a comment and saves it, then presses Hand off there,</span> <span data-acceptance-observable>Then the owner's pane receives a wake prompt for that hand-off naming the spec.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-shell-accept" data-story="story-shell"><span data-acceptance-scenario>Given a human in a shell framing a held spec page whose threads are all resolved, with no open TBD, When the human opens the shell's comment UI,</span> <span data-acceptance-observable>Then the comment UI offers Accept spec, and the spec page shows no Accept spec of its own.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-shell-accept-waits" data-story="story-shell"><span data-acceptance-scenario>Given a human in a shell framing a held spec page whose threads are all resolved and which holds one open TBD question, When the human opens the shell's comment UI,</span> <span data-acceptance-observable>Then the comment UI offers no Accept spec, and its conversation ends with that question as the agent's bubble with its answer buttons.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-shell-answer" data-story="story-shell"><span data-acceptance-scenario>Given a human in a shell framing a held spec page holding an open TBD question offering two answers, When the human presses one answer button in the question's block in the spec page,</span> <span data-acceptance-observable>Then the shell's comment UI shows the human's answer under the question as a draft, and the button in the spec page shows as chosen.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-shell-page-tools" data-story="story-shell"><span data-acceptance-scenario>Given a human on a desktop in a shell framing a held spec page with Jev marks, When the human opens that spec page in the shell,</span> <span data-acceptance-observable>Then the spec page shows its Jev marks and its compared range in its own top line.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-shell-mockup-step" data-story="story-shell"><span data-acceptance-scenario>Given a human on a desktop in a shell framing a held mockup page holding a thread on a card at its walkthrough's second step, When the human opens the mockup page at its first step, then presses that thread's chip in the shell's comment UI,</span> <span data-acceptance-observable>Then the mockup page shows both frames at the second step with the card ringed.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-shell-native" data-story="story-shell story-shell-author"><span data-acceptance-scenario>Given a human on a desktop in a shell framing a page that speaks the shell messages without Spec Chat's script and publishes a thing with no page element holding one thread, When the human presses that thing's comment control in the page,</span> <span data-acceptance-observable>Then the shell's comment UI shows that thing's conversation with the thread's first message, and the page shows the thread's pin on the thing.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-shell-host-item" data-story="story-shell"><span data-acceptance-scenario>Given a human on a desktop in a shell framing a held host page with an anchored item holding two threads, When the human presses that item's comment control in the host page,</span> <span data-acceptance-observable>Then the shell's comment UI shows the item's conversation with both threads' first messages, and the host page shows no comment box of its own.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-shell-close" data-story="story-shell story-shell-author"><span data-acceptance-scenario>Given a human on a desktop in a shell framing a held spec page with the shell's comment UI open, When the human presses the comment UI's close control,</span> <span data-acceptance-observable>Then the shell shows the spec page with its pins and no comment UI.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-shell-phone" data-story="story-shell"><span data-acceptance-scenario>Given a human on a phone in a shell framing a held spec page, When the human taps Comment in the shell's comment UI, then taps a block in the spec page, then types a comment and saves it,</span> <span data-acceptance-observable>Then the comment UI shows within the screen's width as a sheet over the lower part of the screen, the comment's bubble as a draft in it, and the one Hand off under it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-shell-phone-id" data-story="story-shell"><span data-acceptance-scenario>Given a human on a phone in a shell whose frames have no origin, framing a held spec page, When the human taps Comment in the shell's comment UI, then taps a block in the spec page, then types a comment and saves it, then reloads the shell, then taps the comment's bubble, then types a reply and saves it,</span> <span data-acceptance-observable>Then the focused thread shows the comment and the reply under the same fruit name as their author.</span></p>
+<p data-anchor="acceptance-rules-note">One hand-off control for desktop and phone: kept, in a shell, a held page shows none and the comment UI page shows the one (<a href="#acceptance-shell-held">held</a>, <a href="#acceptance-shell-phone">phone</a>) (<a href="./prompt-first-shaping.spec.html#acceptance-one-handoff-rule">phone rule</a>, <a href="./prompt-first-shaping.spec.html#acceptance-one-handoff-rule-desktop">desktop rule</a>).
+Any origin only without login or cookie: kept, the comment UI page adds no login and no cookie (<a href="./served-pages.spec.html#acceptance-origin-safe">rule</a>).
+Never strip proof clauses or rewrite unedited criteria: not affected, no criterion here carries a proof clause (<a href="./prompt-first-shaping.spec.html#acceptance-proof-clause-rule">shaping rule</a>, <a href="./prompt-first-shaping.spec.html#acceptance-proof-clause-rule-repair">repair rule</a>).
+Every mockup at production fidelity: kept, the comment UI&rsquo;s mockup is drawn from the runtime&rsquo;s chrome and design set tokens: its screen is review chrome a mockup page shows, and the page that frames a prototype cannot frame itself (<a href="./mockups.spec.html#prototype-drawn">drawn mockup</a>, <a href="./mockups.spec.html#acceptance-fidelity-rule">rule</a>).
+Threads read as one conversation: kept, the comment UI page draws the conversation (<a href="./threads.spec.html#acceptance-stream-rule">rule</a>).</p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-shell"><span data-boundary-responsibility>A shell, such as a workbench framing many pages, owns framing pages and the comment UI page, saying hello, relaying the shell messages by source window, and placing the comment UI page.</span> <span data-boundary-seam>Caller-facing seam: the <a href="#shell-protocol">shell messages</a> on the existing bridge, the comment UI page's address, and the box's shell setting.</span> <span data-boundary-dependency>Dependency direction: external-provider; a shell depends on Spec Chat's messages and page, and Spec Chat names no shell.</span> <span data-boundary-scope>Observable scope: none in Spec Chat beyond the messages a page and the comment UI page send and take.</span></p>
+<p data-modular-boundary data-anchor="boundary-comment-ui"><span data-boundary-responsibility>The review service owns the comment UI page at <code>/comments</code>: the conversation, composer, and one hand-off control for held pages.</span> <span data-boundary-seam>Caller-facing seam: its address and the shell messages.</span> <span data-boundary-dependency>Dependency direction: self-contained within Spec Chat; it reads and writes threads only by review state&rsquo;s events.</span> <span data-boundary-scope>Observable scope: what the comment UI page shows and writes.</span></p>
+</section>
+
+<section data-anchor="shell" id="shell">
+<h2>Pages a shell holds</h2>
+<figure data-anchor="shell-figure">
+<h3 data-anchor="shell-figure-heading">One comment UI per window, the pages held</h3>
+<svg data-anchor="shell-diagram" viewBox="0 0 720 300" role="img" aria-labelledby="shell-diagram-title" style="width: 100%; max-width: 720px; height: auto; display: block; margin: 12px auto; color: inherit; font-size: 13px; line-height: 1.2;">
+<title id="shell-diagram-title">A shell window frames held pages and one comment UI page at the review service's address. Each held page sends publish and pick to the shell and takes point, show, and marks from it; the shell relays them to and from the comment UI page, which alone reads and writes threads through the review service.</title>
+<g fill="none" stroke="currentColor" stroke-width="1.5">
+<rect x="10" y="10" width="700" height="280" rx="8"/>
+<rect x="30" y="50" width="200" height="110" rx="6"/>
+<rect x="30" y="172" width="200" height="100" rx="6"/>
+<rect x="300" y="110" width="130" height="90" rx="6" stroke-dasharray="5 4"/>
+<rect x="500" y="50" width="190" height="222" rx="6"/>
+<path d="M232 100 L298 140" marker-end="url(#shell-arrow)"/>
+<path d="M298 160 L232 120" marker-end="url(#shell-arrow)"/>
+<path d="M232 220 L298 186" marker-end="url(#shell-arrow)"/>
+<path d="M298 196 L232 240" marker-end="url(#shell-arrow)"/>
+<path d="M432 140 L498 140" marker-end="url(#shell-arrow)"/>
+<path d="M498 170 L432 170" marker-end="url(#shell-arrow)"/>
+</g>
+<defs><marker id="shell-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker></defs>
+<g fill="currentColor">
+<text x="22" y="32" font-weight="600">Shell window, at an origin the box names</text>
+<text x="44" y="74" font-weight="600">Held spec page</text>
+<text x="44" y="94">publishes, draws its pins,</text>
+<text x="44" y="112">points; no comment UI</text>
+<text x="44" y="196" font-weight="600">Held host page</text>
+<text x="44" y="216">the layer, held</text>
+<text x="365" y="150" text-anchor="middle" font-weight="600">Shell</text>
+<text x="365" y="170" text-anchor="middle">relays by window</text>
+<text x="514" y="74" font-weight="600">Comment UI page</text>
+<text x="514" y="94">the review service's own</text>
+<text x="514" y="112">address; the conversation,</text>
+<text x="514" y="130">Hand off, Accept spec</text>
+<text x="514" y="250">reads and writes threads</text>
+<text x="246" y="94" font-size="11">publish, pick</text>
+<text x="240" y="150" font-size="11">point, show, marks</text>
+</g>
+</svg>
+<figcaption data-anchor="shell-figure-caption">The pages keep their content, their pins, and their keys; the comment UI page holds every thread control and is the only one that talks to the review service. A page no shell holds is its own shell, with its own comment UI.</figcaption>
+</figure>
+<p data-anchor="shell-what">A shell is a host that frames several pages in one window, such as a workbench, and draws one comment UI for all of them: Spec Chat's comment UI page, framed once per window.</p>
+
+<div data-anchor="shell-roles" id="shell-roles">
+<h3 data-anchor="shell-roles-heading">One script, two roles</h3>
+<p data-anchor="shell-roles-alone">A page that runs Spec Chat's script, a spec page, a mockup page, or a host page loading the layer, is alone until a shell holds it: alone, it draws its own comment UI, exactly as a page outside any shell does.</p>
+<p data-anchor="shell-roles-held">A page is held once its parent says hello with <code>comments</code> among the hello's <code>opens</code> (<a href="./host-bridge.spec.html#bridge-hello">bridge hello</a>), from an origin the box names as a shell (<a href="#shell-setting">shell setting</a>), by the existing <a href="./host-bridge.spec.html#bridge-hello-check">sender check</a>.
+Held, it draws no comment UI, no review panel, toolbar Comment, composer, thread, or hand-off control; it publishes what it shows, draws its own pins, waiting dots, question marks, and quote marks in its own content, so they move with it, and runs pointing for the shell.
+On a held host page, each item keeps its comment control and pins in their corner row (<a href="./comment-layer.spec.html#ui-place">placement</a>), and pressing either sends a pick.</p>
+<p data-anchor="shell-roles-late">A hello that reaches a page after it drew its own comment UI saves any text typed in its composer as a draft, then removes its comment UI and becomes held; its saved drafts stay drafts, read by the comment UI page.</p>
+<p data-anchor="shell-roles-keep">A held spec page keeps what reads the spec rather than talks about it: its top line with its compared range and Change base, Jev marks, evidence notes, and focus on changes; a held mockup page keeps its step bar and Before and After.</p>
+</div>
+
+<div data-anchor="shell-protocol" id="shell-protocol">
+<h3 data-anchor="shell-protocol-heading">The shell messages</h3>
+<div class="table-scroll" data-anchor="shell-protocol-table-scroll">
+<table data-anchor="shell-protocol-table">
+<caption>The shell messages on the existing bridge: six the shell relays between a held page and the comment UI page, and one from the comment UI page to the shell</caption>
+<thead><tr><th>Message</th><th>From, to</th><th>Carries</th></tr></thead>
+<tbody>
+<tr data-anchor="shell-msg-hello"><td>Hello, <code>spec-chat-host</code></td><td>Shell to each page it frames, on every load, before the page's first read, and only once the shell's comment UI page has loaded, so no publish it relays is lost</td><td><code>opens</code> holding <code>comments</code>: the page is held</td></tr>
+<tr data-anchor="shell-msg-publish"><td>Publish, <code>spec-chat-publish</code></td><td>Held page to shell, on hello and whenever it changes</td><td>The page's own address; on a host page, each anchored item's subject, scope, kind, label, from, starters, and lane as its <a href="./comment-layer.spec.html#hosts">anchor attributes</a> give them, or a native page by the same fields; on a spec or mockup page, the version it shows and its open TBD questions with their answers; on a mockup page also each question's parts and step, and the showing step</td></tr>
+<tr data-anchor="shell-msg-pick"><td>Pick, <code>spec-chat-pick</code></td><td>Held page to shell, on a pointed click, a pin pressed, an answer button pressed, or C</td><td>One spot: the anchor or subject, the target, and the quote, and on a mockup the step, on a video the moment and box (<a href="./threads.spec.html#video-moment">video moment</a>), and for a box, when the page makes one, a picture of the boxed spot (<a href="./threads.spec.html#box-picture">box picture</a>); for an answer button, its answer; for a pin, its thread</td></tr>
+<tr data-anchor="shell-msg-point"><td>Point, <code>spec-chat-point</code></td><td>Shell to a held page</td><td>Start pointing: the page highlights what is under the pointer; a pick or Escape ends it</td></tr>
+<tr data-anchor="shell-msg-show"><td>Show, <code>spec-chat-show</code></td><td>Shell to a held page</td><td>One spot to bring into view and ring: on a mockup at its step, on a video at its moment with its box</td></tr>
+<tr data-anchor="shell-msg-close" id="shell-msg-close"><td>Close, <code>spec-chat-close</code></td><td>Comment UI page to shell, on its own close control</td><td>Nothing: the human asks to put the comment UI away, and the shell puts it away as it does for its own close, Escape, or a tap outside it</td></tr>
+<tr data-anchor="shell-msg-marks"><td>Marks, <code>spec-chat-marks</code></td><td>Shell to a held page, and the page's answer back</td><td>Each thread's spot, number, and state, waiting or not, and each question's chosen answer; the page answers with the quotes its text no longer holds, so the conversation shows Text removed</td></tr>
+</tbody>
+</table>
+</div>
+<div class="table-scroll" data-anchor="shell-fields-scroll">
+<table data-anchor="shell-fields" id="shell-fields">
+<caption>Each shell message's fields, beside <code>type</code>; every relayed message also carries <code>frame</code> (relay)</caption>
+<thead><tr><th>Message</th><th>Fields</th></tr></thead>
+<tbody>
+<tr data-anchor="shell-fields-spot"><td>A spot, in pick, show, and marks</td><td><code>subject</code> on a host page's thing, else <code>anchor</code> and, for a part of its block, <code>target</code>; <code>quote</code>; on a mockup <code>step</code>; on a video <code>moment</code>, in seconds; and <code>box</code>, <code>{left, top, width, height}</code> as fractions of the video's frame or, with no video, of the page's view as the human saw it</td></tr>
+<tr data-anchor="shell-fields-hello"><td>Hello</td><td><code>opens</code>, an array holding <code>"comments"</code></td></tr>
+<tr data-anchor="shell-fields-publish"><td>Publish</td><td><code>page</code>, the page's own address; <code>version</code>, on a spec or mockup page; <code>items</code>, each <code>{subject, scope, kind, label, from, starters, lane}</code> as its anchor gives them, <code>starters</code> an array; <code>questions</code>, each <code>{anchor, text, answers, about, step}</code>, <code>answers</code> its answer buttons' words and <code>about</code> its parts' anchors; on a mockup <code>steps</code>, each <code>{name, caption}</code>, and <code>step</code>, the one showing</td></tr>
+<tr data-anchor="shell-fields-pick"><td>Pick</td><td>A spot; for a box, <code>picture</code>, <code>{type, data}</code>, its image type and its bytes in base64; for an answer button, <code>answer</code>, its words; for a pin, <code>thread</code>, its thread's id</td></tr>
+<tr data-anchor="shell-fields-point"><td>Point</td><td><code>off</code>, <code>true</code> to end pointing, as when the shell's own Comment turns off</td></tr>
+<tr data-anchor="shell-fields-show"><td>Show</td><td>A spot, and <code>thread</code> when it shows one</td></tr>
+<tr data-anchor="shell-fields-marks"><td>Marks, to the page</td><td><code>threads</code>, each a spot with <code>id</code>, <code>number</code>, <code>state</code>, one of <code>open</code>, <code>waiting</code>, or <code>resolved</code>, and <code>status</code>, review state's <code>draft</code>, <code>pending</code>, <code>acknowledged</code>, <code>orphaned</code>, or <code>resolved</code>, for a page that colors its pins by it; <code>answers</code>, each <code>{anchor, answer}</code>, a question's chosen answer; and, from a mockup page to the prototype frames it holds, <code>questions</code>, each open question's parts as spots with its question's <code>anchor</code>, <code>active</code>, the spot of the thread or question shown focused, <code>asked</code>, the parts of the question shown, both ringed, and <code>zoom</code> and <code>size</code>, the frame's zoom and a mark's size in CSS pixels, so marks keep their size in a zoomed frame</td></tr>
+<tr data-anchor="shell-fields-marks-back"><td>Marks, the page's answer</td><td><code>missing</code>, the ids of the threads whose quote its text no longer holds; a page that holds no quoted text may send none, and no answer means none is missing</td></tr>
+<tr data-anchor="shell-fields-close"><td>Close</td><td>None</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="shell-fields-tolerant">A receiver ignores a field it does not know, and an absent field means none, so a page and a shell of different versions still speak.</p>
+<p data-anchor="shell-protocol-relay">The shell relays a page's publish and pick to the comment UI page naming the frame they came from in <code>frame</code>, a string the shell picks for each frame it holds, and the comment UI page's point, show, and marks to the frame their <code>frame</code> names, the comment UI page echoing it; the comment UI page's conversation is the context of the page whose publish the shell relayed last (<a href="./threads.spec.html#stream-context">context</a>).</p>
+<p data-anchor="shell-protocol-keys">Keys and clicks in a frame stay the page's: it runs pointing itself, and its own C starts it, as the toolbar's Comment does alone.</p>
+<p data-anchor="shell-protocol-plain">Every message is plain data: none carries markup to draw or an address the receiver loads; a <code>from</code> address shows only as a link the human may follow.</p>
+<p data-anchor="shell-msg-prototype" id="shell-msg-prototype">A mockup page holds the prototype frames it shows, each at the lane's prototype origin, as a shell holds a page, by these messages sent straight to each frame and never relayed. Its hello also carries <code>frame</code>, the viewport that frame shows, and <code>regions</code>, each <code>{anchor, select}</code> as the mockup file lists them (<a href="./mockups.spec.html#prototype-file">prototype file</a>), and three messages more pass between them.
+The hello also carries <code>id</code>, a string the page picks for each frame it holds, which the route sends back as <code>id</code> in every message it sends the page; the page takes a message from the lane's prototype origin as from the frame its <code>id</code> names, since a message the route sends as its document leaves, such as a press whose link loads the next step's page, can reach the page with no source window.
+Size, <code>spec-chat-size</code>, from the route on hello and whenever its content's height changes, carries <code>past</code>, the CSS pixels its content runs past its viewport, and the page sizes the frame from it.
+Act, <code>spec-chat-act</code>, from the page, carries <code>actions</code>, the step actions to do in order, each <code>{press}</code> or <code>{type, text}</code> with its selector, and <code>next</code>, the actions that reach the next step; the route does each action after the motion before it ends, then answers <code>spec-chat-acted</code> with <code>done</code>, the number it did (<a href="./mockups.spec.html#prototype-steps">steps</a>).
+Pressed, <code>spec-chat-pressed</code>, from the route on a reviewer's press or typing with pointing off, carries <code>reached</code>: true when that did the next step's actions, so the page moves the step bar to it, and false otherwise.</p>
+<p data-anchor="shell-native" id="shell-native">Any page may speak the page side of these messages natively, without Spec Chat's script, such as a page that draws on a canvas: its publish names things with no page element by the same fields, subject, scope, kind, label, from, and starters, its picks name them, and it draws its own marks from marks; the comment UI page treats its messages as any held page's.</p>
+<p data-anchor="shell-protocol-silence">A page that says nothing after hello runs no Spec Chat script; what a shell does for it is the shell's.</p>
+</div>
+
+<div data-anchor="shell-ui-page" id="shell-ui-page">
+<h3 data-anchor="shell-ui-page-heading">The comment UI page</h3>
+<p data-anchor="shell-ui-page-what">The review service serves the comment UI page at <code>/comments</code> on its own address: the conversation (<a href="./threads.spec.html#stream">threads</a>), its focused threads, the composer, and the one hand-off control, for whatever a shell relays to it.</p>
+<p data-anchor="shell-ui-page-only">It alone reads and writes the threads, hand-offs, and Accept spec of the pages a shell holds, through the review service, by review state's events (<a href="./review-state.spec.html">review state</a>); a held page reads and writes no thread.
+It reads a held page's text, for the names its chips and questions show, at that page's address on its own review service, as it reads the page's threads there; it loads no address a message names outside its own service (<a href="#shell-protocol-plain">plain data</a>).</p>
+<p data-anchor="shell-ui-page-frame">A shell frames it once per window, at the review service's own address, and places it beside a page, under another pane, or as a sheet on a phone; placing it never reloads it, so its drafts, outbox, and fruit name last as long as the window.</p>
+<p data-anchor="shell-ui-page-check">It takes shell messages only from its parent window at an origin the box names as a shell, and shows nothing until it has one.</p>
+</div>
+
+<div data-anchor="shell-review-actions" id="shell-review-actions">
+<h3 data-anchor="shell-review-actions-heading">Review actions when held</h3>
+<p data-anchor="shell-review-actions-rule">For a held spec page, Hand off and Accept spec sit in the comment UI page under its conversation: Accept spec is offered there by the same rule as on the spec page, from the open TBDs the page publishes and the threads of the spec and its mockups (<a href="./mockups.spec.html#accept-gate">acceptance covers the set</a>), and writes the same hand-off.</p>
+<p data-anchor="shell-review-actions-next">Next TBD there sends show for the next open question, which a held spec page brings into view and a held mockup page shows at its step.</p>
+<p data-anchor="shell-review-actions-alone">A spec page alone keeps all of them on itself.</p>
+</div>
+
+<div data-anchor="shell-setting" id="shell-setting">
+<h3 data-anchor="shell-setting-heading">Who may be a shell</h3>
+<p data-anchor="shell-setting-rule">The box names the origins that may act as a shell, by box setup's <code>--shell &lt;origin&gt;</code>, recorded with its other choices (<a href="./review-service.spec.html#box-setup">box setup</a>); the review service tells every page it serves and the comment layer those origins.</p>
+<p data-anchor="shell-setting-obey">A page and the comment UI page obey only their parent, and only at a named origin; under any other parent, a page stays alone with its own comment UI, so no other site can hide it or receive the picks made on it.</p>
+<p data-anchor="shell-setting-own">The review service's own origin is a shell for the prototype routes it serves at each lane's prototype origin, under their mockup pages (<a href="./mockups.spec.html#prototype-route">prototype route</a>).</p>
+<p data-anchor="shell-setting-none">With no origin named, no page other than a prototype route under its mockup page is ever held.</p>
+</div>
+
+<div data-anchor="shell-phone-id" id="shell-phone-id">
+<h3 data-anchor="shell-phone-id-heading">A phone shell's frames</h3>
+<p data-anchor="shell-phone-id-rule">A shell whose frames have no origin, so no storage, may pass the comment UI page a browser id in its address fragment, as <code>#browser=&lt;id&gt;</code>, the id up to 64 letters, digits, hyphens, and underscores; with no storage, the page takes that id as its browser, and the fruit name that browser's earlier events carry, so the name lasts across reloads (<a href="./review-state.spec.html#model-fields">review state</a>).
+Without one, its name and drafts last until reload, as on a phone spec page in such a frame.</p>
+</div>
+</section>
+
+<section data-anchor="proof" id="proof">
+<h2>Proof</h2>
+<p data-anchor="proof-held">Proof: the held role and the comment UI page through a fixture shell framing a spec page, a mockup page, a host page, and the comment UI page, at a named origin and at another, on a desktop and a phone.</p>
+</section>
+
+</article>
+</body>
+</html>

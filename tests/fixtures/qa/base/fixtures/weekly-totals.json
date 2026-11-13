@@ -1,0 +1,8 @@
+{
+  "weeks": ["2025-W51", "2025-W52", "2026-W01"],
+  "teams": [
+    {"team": "Payments", "totals": [1190, 1236, 1284]},
+    {"team": "Search", "totals": [1010, 987, 962]},
+    {"team": "Mobile", "totals": [655, 702, 731]}
+  ]
+}

@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Threads as one conversation - spec</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./.style/spec.css">
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Threads as one conversation</h1>
+<nav data-anchor="breadcrumbs">docs / specs / threads.spec.html</nav>
+<p data-anchor="context">Every surface Spec Chat draws threads on reads them as one conversation, the way a chat app does: each message a bubble, threads in the order they began, each thread's replies folded under the message they answer, and a tap on any message to read that thread alone.
+This spec owns how threads read on a spec page, a mockup page (<a href="./mockups.spec.html#step-threads">mockups</a>), and a host page through the comment layer (<a href="./comment-layer.spec.html#ui">comment layer</a>).
+What a thread holds and how copies merge stay in <a href="./review-state.spec.html">Shared review state</a>; when a thread is resolved or reopened stays in <a href="./prompt-first-shaping.spec.html#thread-lifecycle">thread lifecycle</a>.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-stream">As a human reviewer, I read every thread on a page as one conversation in time order, my messages on one side and the agent's on the other, so a review reads like a chat, not a stack of separate threads.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-thread-context">As a human reviewer, each thread's replies fold under the message they answer and open in place, and a tap on a message shows that thread alone with the rest dimmed, so each thread keeps its own context inside the one conversation.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-spot">As a human reviewer, a thread's first message names the spot it is about, a block, a quote, a part of a mockup at a step, or a moment of a video, and a tap on that name takes me there.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-status">As a human reviewer, I see each thread's state as a receipt under my newest message, Draft, Sent, Seen, or Resolved, and a dot on every thread whose last word is the agent's, so I know what waits on me.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-questions">As a human reviewer, the agent's open questions on a page read as its messages at the end of the conversation, with their answer buttons, so I answer each where I read it and my answer stays with its question.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-video">As a human reviewer, I comment on a moment of a video a page shows, with a box on the frame when I mean one part of it, and a tap on that comment's moment plays the video back to it with the box drawn.</p>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-stage">As a human reviewer, each message shows the stage its lane was at when it was written, such as Spec review or Code review, so I read a thread's history in the lane's terms.</p>
+<p data-user-story data-user-facing="false" data-anchor="story-owner">As the owning agent, my scan gives each comment the spot it is about, its step or moment included, gives a question its newest answer with each earlier one marked superseded, and lists a batch's threads in the order the conversation shows them.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="threads" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-stream-rule" data-story="story-stream story-thread-context" data-project-rule="threads read as one conversation"><span data-acceptance-scenario>Given a Spec Chat contributor's change to any feature that shows threads, and a reviewer, When the reviewer opens those threads on any surface Spec Chat draws,</span> <span data-acceptance-observable>Then they read as one conversation as <a href="#stream">one conversation</a> states, threads in the order they began with their replies folded under them, and no surface shows them as separate thread cards or a separate thread list.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-stream-order" data-story="story-stream story-spot"><span data-acceptance-scenario>Given a human reviewer on a desktop on a spec page holding three threads begun at different times on different blocks, When the reviewer opens the review panel,</span> <span data-acceptance-observable>Then the panel shows the three threads' first messages as bubbles in the order they were written, the newest at the bottom, each with a chip naming its block.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-sides" data-story="story-stream"><span data-acceptance-scenario>Given a human reviewer on a desktop on a spec page holding a thread of the reviewer's comment and the agent's reply, When the reviewer opens the review panel, then presses that thread's replies line,</span> <span data-acceptance-observable>Then the reviewer's comment shows as a bubble at the panel's right, and the agent's reply shows under it as a bubble at the panel's left.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-replies-folded" data-story="story-thread-context"><span data-acceptance-scenario>Given a human reviewer on a spec page holding a thread with three replies, When the reviewer opens the review panel,</span> <span data-acceptance-observable>Then under that thread's first message one line reads 3 replies with the newest reply's author and first words, and none of its replies shows as a bubble.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-replies-open" data-story="story-thread-context"><span data-acceptance-scenario>Given a human reviewer on a spec page holding two threads, one with three replies, When the reviewer opens the review panel, then presses that thread's replies line,</span> <span data-acceptance-observable>Then its three replies show as bubbles under its first message in the order written, and the other thread still shows only its first message.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-focus" data-story="story-thread-context"><span data-acceptance-scenario>Given a human reviewer on a desktop on a spec page holding two threads, When the reviewer opens the review panel, then presses one thread's first message,</span> <span data-acceptance-observable>Then the panel shows that thread's messages alone as bubbles above a reply field, over the rest of the panel dimmed.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-focus-reply" data-story="story-thread-context story-stream"><span data-acceptance-scenario>Given a human reviewer on a spec page holding a thread with one reply, When the reviewer opens the review panel, then presses that thread's first message, then types a reply and saves it, then closes the focused thread,</span> <span data-acceptance-observable>Then the conversation shows that thread's replies line reading 2 replies, with the reviewer's reply as the newest.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-focus-pin" data-story="story-thread-context"><span data-acceptance-scenario>Given a human reviewer on a desktop on a spec page holding a thread on a block, When the reviewer presses that block's pin,</span> <span data-acceptance-observable>Then the review panel shows that thread's messages alone over the rest of the panel dimmed.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-focus-phone" data-story="story-thread-context"><span data-acceptance-scenario>Given a human reviewer on a phone on a spec page holding a thread on a block, When the reviewer taps that block's pin,</span> <span data-acceptance-observable>Then a sheet over the lower part of the screen shows that thread's messages and a reply field within the screen's width, the block stays in view above it, and the bottom toolbar still shows the one Hand off.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-chip-jump" data-story="story-spot"><span data-acceptance-scenario>Given a human reviewer on a desktop on a spec page holding a thread on a block far below the top of the page, When the reviewer opens the review panel, then presses that thread's chip,</span> <span data-acceptance-observable>Then the page shows that block in view and ringed.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-receipt-sent" data-story="story-status"><span data-acceptance-scenario>Given a human reviewer on a spec page with one draft comment, When the reviewer opens the review panel, then presses Hand off,</span> <span data-acceptance-observable>Then the receipt under the reviewer's bubble reads Sent.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-receipt-draft" data-story="story-status"><span data-acceptance-scenario>Given a human reviewer on a desktop on a spec page with no thread, When the reviewer turns on comment mode, then clicks a block, then types a comment and saves it,</span> <span data-acceptance-observable>Then the comment's bubble shows as the conversation's newest thread, and the receipt under it reads Draft.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-receipt-seen" data-story="story-status"><span data-acceptance-scenario>Given a human reviewer on a spec page whose handed-off comment the agent has acknowledged without a reply, When the reviewer opens the review panel,</span> <span data-acceptance-observable>Then the receipt under that comment's bubble reads Seen.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-receipt-orphaned" data-story="story-status"><span data-acceptance-scenario>Given a human reviewer on a spec page whose handed-off comment the agent has answered as orphaned, its spot gone, a fixture must be added to provide it, When the reviewer opens the review panel,</span> <span data-acceptance-observable>Then the receipt under that comment&rsquo;s bubble reads Seen.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-receipt-resolved" data-story="story-status"><span data-acceptance-scenario>Given a human reviewer on a spec page holding a resolved thread of three messages, When the reviewer opens the review panel,</span> <span data-acceptance-observable>Then that thread shows as one line reading Resolved with its first message's first words.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-waiting-root" data-story="story-status"><span data-acceptance-scenario>Given a human reviewer on a spec page holding a thread whose last message is the agent's reply and another whose last message is the reviewer's, When the reviewer opens the review panel,</span> <span data-acceptance-observable>Then the first message of the thread ending with the agent's reply shows a dot, and the other thread's shows none.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-waiting-pin" data-story="story-status"><span data-acceptance-scenario>Given a human reviewer on a spec page holding a thread on a block whose last message is the agent's reply, When the reviewer opens the page with the review panel closed,</span> <span data-acceptance-observable>Then that block's pin shows a dot.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-question-bubble" data-story="story-questions"><span data-acceptance-scenario>Given a human reviewer on a spec page holding one thread and one open TBD question offering two answers, When the reviewer opens the review panel,</span> <span data-acceptance-observable>Then the conversation ends with the question as the agent's bubble holding both answer buttons and a chip naming its block, under the thread.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-question-answer" data-story="story-questions"><span data-acceptance-scenario>Given a human reviewer on a spec page holding an open TBD question offering two answers, When the reviewer opens the review panel, then presses one answer button in the question's bubble,</span> <span data-acceptance-observable>Then that button shows as chosen, and under the question's bubble the reviewer's answer shows as a draft.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-question-same" data-story="story-questions"><span data-acceptance-scenario>Given a human reviewer on a desktop on a spec page holding an open TBD question offering two answers, When the reviewer opens the review panel, then presses one answer button in the question's bubble,</span> <span data-acceptance-observable>Then the same answer button in the question's block on the page shows as chosen.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-supersede" data-story="story-owner story-questions"><span data-acceptance-scenario>Given the owning agent whose reviewer answered one open TBD question with one answer button, then another, then handed off, a fixture must be added to provide it, When the agent scans the spec for ready hand-offs,</span> <span data-acceptance-observable>Then the scan reports the later answer as the question's answer and the earlier one as superseded by it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-video-moment" data-story="story-video story-spot"><span data-acceptance-scenario>Given a human reviewer on a desktop on a spec page showing a video, When the reviewer plays the video, then pauses it, then turns on comment mode, then clicks the video, then types a comment and saves it,</span> <span data-acceptance-observable>Then the comment's bubble in the review panel shows a chip reading the moment the video was paused at, in minutes and seconds.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-video-box" data-story="story-video"><span data-acceptance-scenario>Given a human reviewer on a desktop on a spec page showing a video, When the reviewer plays the video, then pauses it, then turns on comment mode, then drags a box across part of the video's frame, which needs a drag, then types a comment and saves it,</span> <span data-acceptance-observable>Then the video shows the box drawn on its paused frame, and the rail under the video shows a mark at that moment.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-video-chip" data-story="story-video story-spot"><span data-acceptance-scenario>Given a human reviewer on a desktop on a spec page showing a video holding a thread on a box at one moment, When the reviewer plays the video past that moment, then opens the review panel, then presses that thread's chip,</span> <span data-acceptance-observable>Then the video shows paused at that moment with the box drawn on its frame.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-video-layer" data-story="story-video"><span data-acceptance-scenario>Given a human on a host page with an anchored item showing a video, When the human plays the video, then pauses it, then opens the item's comment control, then types a comment and saves it,</span> <span data-acceptance-observable>Then the item's conversation shows the comment's bubble with a chip reading the moment the video was paused at.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-layer-stream" data-story="story-stream"><span data-acceptance-scenario>Given a human on a host page with an anchored item holding two threads begun at different times, When the human opens the item's comment control,</span> <span data-acceptance-observable>Then the item's conversation shows both threads' first messages as bubbles in the order they were written, the newest at the bottom.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-box-picture" data-story="story-video story-spot"><span data-acceptance-scenario>Given a human on a desktop in a shell framing a held page that draws on a canvas and makes a picture of a boxed spot, When the human presses Comment in the shell's comment UI, then drags a box across part of that page, which needs a drag, then types a comment and saves it, then presses the comment's bubble,</span> <span data-acceptance-observable>Then the focused thread shows, under the comment, the picture of the boxed spot with the box drawn on it.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-scan-picture" data-story="story-owner"><span data-acceptance-scenario>Given the owning agent with a handed-off comment that carries a picture of its boxed spot, a fixture must be added to provide it, When the agent scans for ready hand-offs,</span> <span data-acceptance-observable>Then the scan reports the comment with its box and the picture's file.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-stage-tag" data-story="story-stage"><span data-acceptance-scenario>Given a human reviewer on a desktop on a spec page of a lane the box names at Spec review, When the reviewer turns on comment mode, then clicks a block, then types a comment and saves it,</span> <span data-acceptance-observable>Then the comment's bubble in the review panel shows the tag Spec review.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-stage-kept" data-story="story-stage"><span data-acceptance-scenario>Given a human reviewer on a spec page holding a comment written while its lane was at Spec review, its lane now at Code review, When the reviewer opens the review panel,</span> <span data-acceptance-observable>Then that comment's bubble still shows the tag Spec review.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-stage-reply" data-story="story-stage"><span data-acceptance-scenario>Given a human reviewer on a spec page holding a thread the agent answered while its lane was at Code review, When the reviewer opens the review panel, then presses that thread's replies line,</span> <span data-acceptance-observable>Then the agent's reply bubble shows the tag Code review.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-stage-lane" data-story="story-stage"><span data-acceptance-scenario>Given a human on a host page with an anchored item in a scope that holds no spec, whose anchor names a lane the box names at QA, When the human opens the item's comment control, then types a comment and saves it,</span> <span data-acceptance-observable>Then the item's conversation shows the comment's bubble with the tag QA.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-stage-reply-lane" data-story="story-stage"><span data-acceptance-scenario>Given a human on a host page with an anchored item in a scope that holds no spec, whose anchor names a lane the box names at QA, and whose thread the agent answered while that lane was at QA, When the human opens the item's comment control, then presses that thread's replies line,</span> <span data-acceptance-observable>Then the agent's reply bubble shows the tag QA.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-stage-none" data-story="story-stage"><span data-acceptance-scenario>Given a human on a host page with an anchored item in a scope that holds no spec, When the human opens the item's comment control, then types a comment and saves it,</span> <span data-acceptance-observable>Then the item's conversation shows the comment's bubble with no stage tag.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-scan-spot" data-story="story-owner"><span data-acceptance-scenario>Given the owning agent with a handed-off comment on a box at one moment of a video a spec page shows, a fixture must be added to provide it, When the agent scans the spec for ready hand-offs,</span> <span data-acceptance-observable>Then the scan reports the comment with its block, the video's moment, and the box.</span></p>
+<p data-anchor="acceptance-rules-note">Onboarding: not needed, the conversation is how threads read and adds no first-run step.
+One hand-off control for desktop and phone: kept, the conversation and the focused thread add no hand-off control, and the bottom toolbar keeps the one Hand off on a phone (<a href="#acceptance-focus-phone">focused thread on a phone</a>) (<a href="./prompt-first-shaping.spec.html#acceptance-one-handoff-rule">phone rule</a>, <a href="./prompt-first-shaping.spec.html#acceptance-one-handoff-rule-desktop">desktop rule</a>).
+Any origin only without login or cookie: kept, the conversation adds no login and no cookie (<a href="./served-pages.spec.html#acceptance-origin-safe">rule</a>).
+Never strip proof clauses or rewrite unedited criteria: kept, no criterion here carries a proof clause (<a href="./prompt-first-shaping.spec.html#acceptance-proof-clause-rule">shaping rule</a>, <a href="./prompt-first-shaping.spec.html#acceptance-proof-clause-rule-repair">repair rule</a>).
+Threads read as one conversation: this spec is its home (<a href="#acceptance-stream-rule">rule</a>).
+Every mockup at production fidelity: kept, this spec's screens are drawn from the runtime's chrome and design set tokens: they are review chrome a mockup page shows, and the page that frames a prototype cannot frame itself (<a href="./mockups.spec.html#prototype-drawn">drawn mockup</a>, <a href="./mockups.spec.html#acceptance-fidelity-rule">rule</a>).</p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-runtime"><span data-boundary-responsibility>The browser runtime owns the conversation on every page it reviews: the stream, bubbles, chips, folded replies, the focused thread, receipts, waiting dots, question bubbles, and video moments and boxes as comment targets.</span> <span data-boundary-seam>Caller-facing seam: the page, the review panel, the comment layer's item box, and the comment events it saves through the service's routes.</span> <span data-boundary-dependency>Dependency direction: external-provider; the runtime depends on the service's routes and the shared fold, never the reverse.</span> <span data-boundary-scope>Observable scope: the review panel, the item box, pins, the video rail, and the comment events' spot fields.</span></p>
+<p data-modular-boundary data-anchor="boundary-state"><span data-boundary-responsibility>Shared review state owns what a comment carries, its step, moment, and stage included, and the fold every reader shares.</span> <span data-boundary-seam>Caller-facing seam: the event fields (<a href="./review-state.spec.html#model-fields-spot">document model</a>).</span> <span data-boundary-dependency>Dependency direction: self-contained; the conversation is a reading of the existing fold and adds no event and no status.</span> <span data-boundary-scope>Observable scope: spool events.</span></p>
+<p data-modular-boundary data-anchor="boundary-agent"><span data-boundary-responsibility>The review skill owns the owner's side: the scan's rows with each comment's spot, a question's newest answer and the answers it supersedes, and a batch in stream order.</span> <span data-boundary-seam>Caller-facing seam: the scan's rows.</span> <span data-boundary-dependency>Dependency direction: self-contained on disk; it reads the fold every reader shares and needs no running service.</span> <span data-boundary-scope>Observable scope: scan output.</span></p>
+<p data-modular-boundary data-anchor="boundary-hosts"><span data-boundary-responsibility>A host page, such as a peer's evidence page, owns which items and videos it shows; the comment layer draws their conversation.</span> <span data-boundary-seam>Caller-facing seam: the anchor attributes (<a href="./comment-layer.spec.html#hosts">hosts and anchors</a>), and a video inside an anchored item.</span> <span data-boundary-dependency>Dependency direction: external-provider; a host depends on the layer, and Spec Chat names no host.</span> <span data-boundary-scope>Observable scope: none in Spec Chat beyond the layer's controls.</span></p>
+</section>
+
+<section data-anchor="stream" id="stream">
+<h2>One conversation</h2>
+<figure data-anchor="stream-figure">
+<h3 data-anchor="stream-figure-heading">The review panel as one conversation, desktop</h3>
+<svg data-anchor="stream-wireframe" viewBox="0 0 720 420" role="img" aria-labelledby="stream-wireframe-title" style="width: 100%; max-width: 720px; height: auto; display: block; margin: 12px auto; color: inherit; font-size: 13px; line-height: 1.2;">
+<title id="stream-wireframe-title">The review panel at desktop width: threads in the order they began, the reviewer's own bubbles at the right and everyone else's at the left; a thread's first message with its chip, its folded replies line, its receipt, and a waiting dot, since the agent wrote its newest reply; another reviewer's thread at the left; a resolved thread as one line; an open question at the end as the agent's bubble with two answer buttons</title>
+<g fill="none" stroke="currentColor" stroke-width="1.5">
+<rect x="250" y="10" width="300" height="400" rx="8"/>
+<path d="M250 46 H550"/>
+<rect x="340" y="60" width="196" height="52" rx="14"/>
+<rect x="264" y="160" width="196" height="40" rx="14"/>
+<rect x="340" y="236" width="196" height="30" rx="14" stroke-dasharray="4 3"/>
+<rect x="264" y="290" width="236" height="96" rx="14"/>
+<rect x="276" y="350" width="96" height="26" rx="13"/>
+<rect x="380" y="350" width="108" height="26" rx="13"/>
+</g>
+<g fill="currentColor">
+<text x="266" y="33" font-weight="600">Conversation</text>
+<text x="352" y="80">The total should sit</text>
+<text x="352" y="98">above the fold.</text>
+<text x="352" y="126" font-size="11">▸ Behavior · Totals per week</text>
+<text x="536" y="144" font-size="11" text-anchor="end">2 replies · Agent: Moved it up</text>
+<text x="536" y="154" font-size="11" text-anchor="end" font-weight="600">Seen</text>
+<circle cx="536" cy="62" r="4"/>
+<text x="276" y="185">Mango: which week starts?</text>
+<text x="276" y="214" font-size="11">▸ Behavior · Week start</text>
+<text x="352" y="255" font-size="12">Resolved · Export as CSV</text>
+<text x="276" y="312">Agent: Should export also</text>
+<text x="276" y="330">offer XLSX?</text>
+<text x="324" y="368" text-anchor="middle" font-size="12">CSV only</text>
+<text x="434" y="368" text-anchor="middle" font-size="12">CSV and XLSX</text>
+</g>
+<g fill="none" stroke="currentColor" stroke-width="1">
+<path d="M546 62 H600"/><path d="M560 86 H600"/><path d="M560 252 H600"/><path d="M200 180 H240"/><path d="M200 340 H240"/>
+</g>
+<g fill="currentColor" font-size="12">
+<text x="606" y="66">waiting dot</text>
+<text x="606" y="90">first message, chip</text>
+<text x="606" y="256">resolved, one line</text>
+<text x="194" y="184" text-anchor="end">another reviewer</text>
+<text x="194" y="344" text-anchor="end">open question</text>
+</g>
+</svg>
+<figcaption data-anchor="stream-figure-caption">Spatial contract: one column of bubbles, oldest thread at the top; the reviewer's own messages at the right, everyone else's at the left; each thread one first message with its chip, its replies folded into one line, and one receipt; open questions at the end.
+On a phone the panel takes the screen's width above the bottom toolbar.</figcaption>
+</figure>
+<p data-anchor="stream-context" id="stream-context">A conversation holds the threads of one context: on a spec page or a mockup page, every thread of its review; on a host page, the threads of the item whose comment control is open.
+The review panel of a spec page and of a mockup page is its conversation; the comment layer's item box is its item's; and the comment UI page a shell frames shows the conversation of the page the shell relayed last, by the same rule (<a href="./shell.spec.html#shell-ui-page">comment UI page</a>).</p>
+<p data-anchor="stream-order">Threads read in the order their first messages were written, the newest at the bottom, and the conversation opens scrolled to its bottom.
+A thread stays where it began when a reply is added to it; its replies line and its dot show the new word.</p>
+<p data-anchor="stream-bubbles">Every message is a bubble: this browser's own messages at the right, on the action color; the agent's and other reviewers' at the left, on the soft surface; each run of bubbles headed by its author's fruit name, this browser's included, and the agent's by Agent (<a href="./review-state.spec.html#model-fields">review state</a>).
+A draft shows on the soft action color, outlined, until it is handed off; a message an author edited shows its effective text, marked Edited.</p>
+<p data-anchor="stream-head">The panel's head reads Conversation and counts its threads and its open questions.</p>
+<p data-anchor="stream-new">A comment saved from comment mode starts a new thread at the bottom; a reply saved in a focused thread joins its thread.</p>
+</section>
+
+<section data-anchor="root-chip" id="root-chip">
+<h2>The spot a thread is about</h2>
+<p data-anchor="root-chip-rule">A thread's first message carries one chip naming its spot, in words, never a picture.</p>
+<div class="table-scroll" data-anchor="root-chip-table-scroll">
+<table data-anchor="root-chip-table">
+<caption>What a thread's chip reads, and where pressing it goes</caption>
+<thead><tr><th>Spot</th><th>Chip reads</th><th>Pressing it</th></tr></thead>
+<tbody>
+<tr data-anchor="root-chip-block"><td>A block or an element in it</td><td>The block's section name, then the block's first words</td><td>Scrolls the block into view and rings it</td></tr>
+<tr data-anchor="root-chip-quote"><td>Selected text</td><td>The section name, then the quote</td><td>Scrolls the quote into view and rings its block</td></tr>
+<tr data-anchor="root-chip-part"><td>A part of a mockup at a step</td><td>The part's name, then the step's number and name (<a href="./mockups.spec.html#step-threads">step threads</a>)</td><td>Moves both frames to that step, scrolls the part into view, and rings it</td></tr>
+<tr data-anchor="root-chip-box"><td>A box on a thing with no video, such as a part of a page drawn on a canvas</td><td>The thing's label, then Box</td><td>Shows the thing and draws the box on its view</td></tr>
+<tr data-anchor="root-chip-moment"><td>A moment of a video, with or without a box</td><td>The moment in minutes and seconds, then Box when one was drawn</td><td>Seeks the video to that moment, pauses it, and draws the box</td></tr>
+<tr data-anchor="root-chip-removed"><td>A spot no longer on the page</td><td>Text removed, then the original quote</td><td>Rings the nearest block the thread's pin sits on</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="root-chip-same">A thread's pin on the page and its chip lead to the same spot: pressing the pin opens the thread's focused view, and pressing the chip goes to the spot.</p>
+</section>
+
+<section data-anchor="replies-collapse" id="replies-collapse">
+<h2>Replies fold under what they answer</h2>
+<p data-anchor="replies-line">Under a thread's first message, its replies fold into one line: the reply count, then the newest reply's author and first words.
+Pressing that line opens the replies in place under the first message, in the order written, and pressing it again folds them; on a phone as on a desktop.</p>
+<p data-anchor="replies-own">Opening one thread's replies changes no other thread, so each thread keeps its own context while the conversation still reads top to bottom.</p>
+<p data-anchor="replies-none">A thread with no reply shows no replies line.</p>
+</section>
+
+<section data-anchor="focus" id="focus">
+<h2>The focused thread</h2>
+<p data-anchor="focus-open">Pressing any message of a thread, or its pin on the page, opens that thread focused: its messages alone, in order, with the reply field and Resolve under them, over the rest of the review panel or item box dimmed, its header and hand-off bar included.
+A focused question keeps the hand-off bar above the dim, so Next TBD steps on (<a href="mockups.spec.html#mockup-questions-next">Next TBD</a>).</p>
+<p data-anchor="focus-desktop">On a desktop the focused thread fills the review panel, which opens if it was closed; Back returns to the conversation where it was.</p>
+<p data-anchor="focus-phone">On a phone it is a sheet over the lower part of the screen, under its top half, so the spot stays in view above it, with the page dimmed around the spot; the bottom toolbar's one hand-off control stays under the sheet (<a href="./prompt-first-shaping.spec.html#mobile">mobile review</a>).</p>
+<p data-anchor="focus-reply">A reply saved there joins the thread, and the conversation shows it in the thread's replies line once the focused thread closes.</p>
+<p data-anchor="focus-resolved">A resolved thread opens focused with its whole history, and offers Reply and reopen when its latest message is the agent's (<a href="./prompt-first-shaping.spec.html#thread-lifecycle">thread lifecycle</a>).</p>
+</section>
+
+<section data-anchor="receipts" id="receipts">
+<h2>Receipts and waiting dots</h2>
+<div class="table-scroll" data-anchor="receipts-table-scroll">
+<table data-anchor="receipts-table">
+<caption>A thread's status, read as a receipt</caption>
+<thead><tr><th>Thread status (review state)</th><th>Receipt</th><th>The thread in the conversation</th></tr></thead>
+<tbody>
+<tr data-anchor="receipt-draft"><td>Draft</td><td>Draft</td><td>Its first message and replies line</td></tr>
+<tr data-anchor="receipt-pending"><td>Pending, handed off</td><td>Sent</td><td>Its first message and replies line</td></tr>
+<tr data-anchor="receipt-ack"><td>Acknowledged</td><td>Seen</td><td>Its first message and replies line</td></tr>
+<tr data-anchor="receipt-orphaned"><td>Orphaned, its spot gone</td><td>Seen</td><td>Its first message and replies line</td></tr>
+<tr data-anchor="receipt-resolved"><td>Resolved</td><td>Resolved</td><td>One line: Resolved, then its first message's first words; pressing it opens it focused</td></tr>
+</tbody>
+</table>
+</div>
+<p data-anchor="receipt-place">The receipt sits under the thread's newest message from a reviewer, and under its replies line while that message is folded; it takes its status's color with its word, never color alone.</p>
+<p data-anchor="unread" id="unread">A thread whose newest message is the agent's and that is not resolved waits on the reviewer: a dot on its first message's bubble and on its pin, until a reviewer replies or resolves it.</p>
+</section>
+
+<section data-anchor="questions" id="questions">
+<h2>Questions in the conversation</h2>
+<p data-anchor="questions-bubble">Each open TBD question of the page (<a href="./prompt-first-shaping.spec.html#answer-buttons">answer buttons</a>) reads as the agent's bubble: its question, its answer buttons, a Reply for an answer in words, and a chip naming its block, or on a mockup page its part and step (<a href="./mockups.spec.html#mockup-questions">mockup questions</a>).</p>
+<p data-anchor="questions-place">Unanswered questions close the conversation, in page order; a question with an answer sits where its first answer was written.</p>
+<p data-anchor="questions-answer">Pressing an answer button in a question's bubble saves the same answer comment as pressing that button on the page: the same block, the same button, the same chosen mark on both, and no composer, panel, or full-viewport sheet opens.
+The answer shows as the reviewer's reply under the question.</p>
+<p data-anchor="supersede" id="supersede">A question's answer is its newest answer comment, by a button or in words; each earlier one is superseded by it.
+The scan reports the newest as the question's answer and each earlier one as superseded, so a changed mind needs no retraction and a short answer is never read out of its question.</p>
+</section>
+
+<section data-anchor="video-moment" id="video-moment">
+<h2>A moment of a video</h2>
+<p data-anchor="video-target">Every video a reviewed page shows, on a spec page, a mockup page, or inside an anchored item of a host page, is a comment target at a moment.
+In comment mode, clicking the video marks the moment it shows, pausing it first if it plays; dragging across it first draws a box on the frame, and the comment marks the moment with that box.
+On a host page, a comment saved on an anchored item holding a paused video marks the moment it shows.</p>
+<p data-anchor="video-fields">The comment carries its moment, the video's time in seconds, and its box, as fractions of the frame's width and height, beside its anchor (<a href="./review-state.spec.html#model-fields-spot">review state</a>).</p>
+<p data-anchor="video-rail">Under each video with threads, a rail as wide as the video marks each thread at its moment; pressing a mark seeks there, pauses, draws its box, and opens its thread focused.
+While the video is paused at a thread's moment, its box shows on the frame.</p>
+<p data-anchor="video-none">A video Spec Chat shows is one the page already holds, or a mockup's round video its recorder stores (<a href="./mockups.spec.html#round-video">round video</a>); Spec Chat records and cuts no video.</p>
+</section>
+
+<section data-anchor="stage-tag" id="stage-tag">
+<h2>The stage a message was written in</h2>
+<p data-anchor="stage-tag-what">Every message carries the stage its lane was at when it was written, in the words the box gives, such as Shaping round 2, Spec review, Code review, QA, Merge ask, or Done, shown as a small tag on its bubble beside its author.</p>
+<p data-anchor="stage-tag-fixed">The stage is stamped once, when the message is written, and never changes: an edit keeps its message's stage, and a later stage shows only on later messages.</p>
+<p data-anchor="stage-tag-none">A message with no lane carries none, and so does one written while the box names no stage for its lane; its bubble shows no tag.
+An open question is the page's text, not a message, so its bubble shows no stage; the answers to it carry theirs.</p>
+<p data-anchor="stage-tag-source" id="stage-tag-source">A message's lane is the lane its thing names, which a host gives with its anchor (<a href="./comment-layer.spec.html#anchor-lane">anchor lane</a>), so a thread about a lane's delivery kept in another scope still has that lane; else its review's or scope's slug when that slug holds a lane's specs; else none.
+A comment records the lane it took, and a reply, the agent's included, has its thread's lane, so a reply on a thread about another lane's work carries that lane's stage.
+The stage stamped is its lane's stage when written, which the review service tells each page for each lane its threads have, from the review facts it asks (<a href="./review-index.spec.html#index-gates-provider">review facts</a>); the agent's reply takes it from its session's service the same way (<a href="./review-state.spec.html#model-fields-stage">review state</a>).
+Spec Chat names no workflow and reads the words as given, as it reads a kind.</p>
+</section>
+
+<section data-anchor="box-picture" id="box-picture">
+<h2>A picture of a boxed spot</h2>
+<p data-anchor="box-picture-what">A comment on a box may carry a picture its page made of the boxed spot as the human saw it, the box drawn on it, such as a page that draws on a canvas and has no text to quote: a PNG, JPEG, or WebP image of at most 1 MB.</p>
+<p data-anchor="box-picture-show">The comment keeps it for as long as it keeps the comment (<a href="./review-service.spec.html#store-pictures">stores</a>), and the focused thread shows it under the comment's bubble; the chip stays words and still leads to the spot as it now is (<a href="#root-chip">chip</a>).</p>
+<p data-anchor="box-picture-scan">The owner's scan names the picture's file with the comment, so the agent can look at what the human saw.</p>
+</section>
+
+<section data-anchor="why" id="why">
+<h2>Why this way</h2>
+<p data-anchor="why-reading">The conversation is a reading of the threads review state keeps: the same fold, statuses, and events, drawn as a chat.
+It adds no event, status, store, or second fold, so the agent's scan, the review index, and every page keep reading the same threads.</p>
+<p data-anchor="why-fold">Threads stay where they began, with replies folded under them, rather than each reply joining the bottom of the conversation: a review has many threads about many spots, and a reply read away from its spot is the ambiguity the conversation exists to remove.</p>
+<p data-anchor="why-words">Chips name a spot in words, not a picture: a picture is a second copy that drifts from the page, and the chip's press shows the spot itself.
+A box's picture is no chip: it is what the human saw when they wrote, kept beside their words as evidence, never as the way to the spot.</p>
+</section>
+
+<section data-anchor="proof" id="proof">
+<h2>Proof</h2>
+<p data-anchor="proof-seam">Seam: the conversation's order, folding, receipts, and dots, derived from fixture spools by the runtime's fold; the scan's spot fields and superseded answers over fixture spools; the panel, focused thread, question bubbles, and video moments through fixture pages in a browser test, on a desktop and a phone, on a spec page and through the comment layer.</p>
+<p data-anchor="proof-first-test">First failing test: a fixture spool of three threads begun at different times renders as three first-message bubbles in that order, each with its chip and its replies folded.</p>
+</section>
+
+</article>
+</body>
+</html>

@@ -1,0 +1,29 @@
+{
+  "id": "scope",
+  "version": 6,
+  "instructions": "Read one acceptance criterion from a product spec. Choose every feature only when the criterion is a promise that any other feature or change of some kind could break, whatever is being built: what the product does for its users, or how the project builds and ships it, such as every change to what a user sees, every new endpoint, any installer, or every page a change adds. Choose this feature when the criterion describes how one feature, page, command, tool, step, workflow, validator, or component behaves, even when that one thing handles every spec, criterion, lane, or call, and even when it says every, all, any, never, no, or for the whole change. A design-system convention, how the interface looks or moves or which shared part draws a kind of thing, is this feature, even when it says every screen or every state; the one exception is the umbrella rule that the interface uses the design system's shared parts, which is every feature. A criterion that checks what one document or one change says or leaves untouched is this feature.",
+  "threshold": 0.4,
+  "fallback": true,
+  "labels": [
+    {
+      "name": "every feature",
+      "description": "A promise other features or changes of a kind could break, across the whole project: what the product does for its users, or how the project builds and ships it.",
+      "examples": [
+        {"input": {"criterion": "When any change adds a screen or alters what a user can do, the change ships with its help center article."}, "label": "every feature"},
+        {"input": {"criterion": "When an installer installs an owned skill or role into the shared profile, the target is a symlink resolving to the owning repository source."}, "label": "every feature"},
+        {"input": {"criterion": "Whatever a change builds, its interface uses the design system's shared parts, as the design document lists them, so the product looks and moves as one."}, "label": "every feature"},
+        {"input": {"criterion": "When a user leaves any tab and comes back before reloading, the tab keeps its place: its scroll, its filters, and its open panel."}, "label": "every feature"}
+      ]
+    },
+    {
+      "name": "this feature",
+      "description": "How one feature, page, command, tool, step, workflow, or component behaves, including its own every, all, never, and no rules, and any design-system convention of how the interface looks or moves or which shared part draws a kind of thing.",
+      "examples": [
+        {"input": {"criterion": "Given every push and pull request in this repository, When CI runs, Then the invoice exporter's unit tests pass in a clean environment with no other service installed."}, "label": "this feature"},
+        {"input": {"criterion": "Across the importer's logs, reports, uploads, and pull requests, no customer password appears; passwords are read only on the server."}, "label": "this feature"},
+        {"input": {"criterion": "Given a developer's own instruction files, settings, and remotes, no step and no undo changes, replaces, or deletes any of them."}, "label": "this feature"},
+        {"input": {"criterion": "When any screen changes a line of text in place, the change plays the design system's shared text animation."}, "label": "this feature"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1079 @@
+"""Review service HTTP and registry seam."""
+import functools
+import hashlib
+import http.client
+import json
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SERVER = ROOT / "skill/review-spec/assets/review-serve.py"
+VIZ = ROOT / "skill/review-spec/assets/viz"
+
+
+def git(repo, *args):
+    return subprocess.check_output(
+        ("git", "-C", str(repo), *args), text=True, stderr=subprocess.DEVNULL,
+    ).strip()
+
+
+class MultiReviewServeTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.work = Path(self.temp.name)
+        self.registry = self.work / "registry.toml"
+
+    @staticmethod
+    def _free_port():
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            return sock.getsockname()[1]
+
+    def make_resource(self, name, spec="docs/specs/domains/x.spec.html"):
+        repo = self.work / name
+        path = repo / spec
+        path.parent.mkdir(parents=True)
+        path.write_text(f"<title>{name}</title>baseline {name}\n")
+        runtime = repo / "docs/specs/.viz/runtime.js"
+        runtime.parent.mkdir(parents=True, exist_ok=True)
+        runtime.write_text("stale collection runtime")
+        (repo / "outside.txt").write_text("outside collection")
+        git(repo, "init", "-b", "main")
+        git(repo, "config", "user.name", "Spec Chat Test")
+        git(repo, "config", "user.email", "spec-chat@example.test")
+        git(repo, "add", ".")
+        git(repo, "commit", "-m", "baseline")
+        path.write_text(f"<title>{name}</title>current {name}\n")
+        review = Path(str(path) + ".review")
+        (review / "human").mkdir(parents=True)
+        (review / "agent").mkdir()
+        (review / ".cursor-test").write_text("001-handoff-existing.json\n")
+        return {
+            "id": f"spec:{name}::{spec}", "slug": name,
+            "root": str(repo), "narrow_root": str(repo / "docs"),
+            "spec": spec, "base": "main", "owner": "test-owner", "checker": "test-checker",
+            "lifecycle": "serving", "cursor_name": ".cursor-test",
+            "cursor_snapshot": {"lines": 0, "last": "", "sha256": ""},
+            "finish_event": "", "registered_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
+        }
+
+    def write_registry(self, resources):
+        def toml(value):
+            if isinstance(value, dict):
+                return "{ " + ", ".join(f"{key} = {toml(item)}" for key, item in value.items()) + " }"
+            return json.dumps(value)
+        lines = []
+        for resource in resources:
+            lines.append("[[resource]]")
+            lines.extend(f"{key} = {toml(value)}" for key, value in resource.items())
+        staged = self.registry.with_suffix(".tmp")
+        staged.write_text("\n".join(lines) + "\n")
+        staged.replace(self.registry)
+
+    @staticmethod
+    def stop(server):
+        server.terminate()
+        server.communicate(timeout=3)
+
+    def start(self, resources, server=SERVER):
+        self.write_registry(resources)
+        self.server = subprocess.Popen(
+            (sys.executable, str(server), "--registry", str(self.registry), "--bind", "127.0.0.1", "--port", "0"),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        self.addCleanup(self.stop, self.server)
+        line = self.server.stdout.readline()
+        self.assertIn("http://127.0.0.1:", line, self.server.stderr.read() if not line else line)
+        self.url = line.split(" on ", 1)[1].split()[0]
+        self.port = urllib.parse.urlparse(self.url).port
+
+    def request(self, path, method="GET", event=None):
+        data = json.dumps(event).encode() if event is not None else None
+        request = urllib.request.Request(self.url + path, method=method, data=data)
+        try:
+            with urllib.request.urlopen(request, timeout=2) as response:
+                return response.status, response.read()
+        except urllib.error.HTTPError as error:
+            with error:
+                return error.code, error.read()
+
+    @staticmethod
+    def stable(resource):
+        return "/" + resource["slug"] + "/" + resource["spec"]
+
+    def api(self, resource, route="events", **params):
+        key = "dir" if route == "events" else "path"
+        value = self.stable(resource) + (".review" if route == "events" else "")
+        return f"/api/{route}?" + urllib.parse.urlencode({key: value, **params})
+
+    def test_independent_bytes_baselines_spools_and_read_only_cursors(self):
+        resources = [self.make_resource(name) for name in ("first", "second", "third")]
+        self.start(resources)
+        for resource in resources:
+            with self.subTest(resource=resource["slug"]):
+                source = Path(resource["root"]) / resource["spec"]
+                self.assertEqual(self.request(self.stable(resource)), (200, source.read_bytes()))
+                self.assertEqual(self.request(self.stable(resource), "HEAD"), (200, b""))
+                status, body = self.request(self.api(resource, "baseline", base="main"))
+                self.assertEqual(status, 200)
+                baseline = json.loads(body)
+                self.assertEqual(baseline["base"], git(resource["root"], "rev-parse", "main"))
+                self.assertEqual(baseline["htmlBase"], baseline["base"])
+                self.assertEqual(baseline["html"], f'<title>{resource["slug"]}</title>baseline {resource["slug"]}\n')
+                self.assertEqual(baseline["head"], git(resource["root"], "rev-parse", "HEAD"))
+                self.assertTrue(baseline["dirty"])
+                self.assertRegex(baseline["headDate"], r"^\d{4}-\d{2}-\d{2}$")
+                self.assertRegex(baseline["baseDate"], r"^\d{4}-\d{2}-\d{2}$")
+                self.assertLessEqual(len(baseline["commits"]), 20)
+                self.assertEqual(baseline["commits"][0]["id"], baseline["head"])
+                event = {"event": "comment", "id": resource["slug"], "text": resource["slug"]}
+                self.assertEqual(self.request(self.api(resource), "POST", event)[0], 200)
+        for resource in resources:
+            events = json.loads(self.request(self.api(resource))[1])
+            self.assertEqual([event["body"]["id"] for event in events], [resource["slug"]])
+            review = Path(resource["root"]) / (resource["spec"] + ".review")
+            self.assertEqual((review / ".cursor-test").read_text(), "001-handoff-existing.json\n")
+        self.assertIsNone(self.server.poll())
+
+    def test_registry_baseline_returns_new_spec_for_spec_created_after_base(self):
+        resource = self.make_resource("first")
+        repo = Path(resource["root"])
+        subprocess.run(("git", "-C", str(repo), "switch", "-c", "feature"), check=True)
+        spec = repo / "docs/specs/new.spec.html"
+        spec.write_text("<title>new</title>new spec\n")
+        git(repo, "add", str(spec))
+        subprocess.run(("git", "-C", str(repo), "commit", "-m", "new spec"), check=True)
+        resource = resource | {
+            "id": "spec:first::docs/specs/new.spec.html",
+            "spec": "docs/specs/new.spec.html",
+        }
+        self.start([resource])
+        status, body = self.request(self.api(resource, "baseline", base="main"))
+        self.assertEqual(status, 200)
+        baseline = json.loads(body)
+        self.assertIsNone(baseline["htmlBase"])
+        self.assertIsNone(baseline["html"])
+
+    def test_registry_reload_ignores_legacy_finish_field_and_keeps_post_open(self):
+        first, second = (self.make_resource(name) for name in ("first", "second"))
+        self.start([first, second])
+        def beside_idle():
+            with socket.create_connection(("127.0.0.1", self.port), timeout=2):
+                start = time.monotonic()
+                with urllib.request.urlopen(self.url + self.stable(second), timeout=10) as response:
+                    self.assertEqual(response.status, 200)
+                return time.monotonic() - start
+
+        # A request beside an idle open connection is answered well inside that connection's 2 s timeout, which a lone
+        # thread would wait out first: judged on the fastest of three, each beside its own, as a busy box can stretch
+        # any one.
+        runs = [beside_idle() for _ in range(3)]
+        self.assertLess(min(runs), 1, runs)
+        first["lifecycle"] = "finished"
+        self.write_registry([first, second])
+        self.assertEqual(self.request(self.api(first), "POST", {"event": "comment", "id": "late"})[0], 200)
+        self.assertEqual(self.request(self.stable(first))[0], 200)
+        self.assertEqual([event["body"]["id"] for event in json.loads(self.request(self.api(first))[1])], ["late"])
+        self.assertEqual(self.request(self.stable(second))[0], 200)
+
+    def test_agent_post_is_forbidden_without_writing_a_file(self):
+        resource = self.make_resource("first")
+        self.start([resource])
+        review = Path(resource["root"]) / (resource["spec"] + ".review")
+        before = sorted(str(path.relative_to(review)) for path in review.rglob("*"))
+        self.assertEqual(self.request(self.api(resource, actor="agent"), "POST", {"event": "reply", "id": "agent"})[0], 403)
+        self.assertEqual(sorted(str(path.relative_to(review)) for path in review.rglob("*")), before)
+        self.assertEqual(self.request(self.api(resource, actor="human"), "POST", {"event": "comment", "id": "human"})[0], 200)
+
+    def test_page_named_event_resend_stores_it_once(self):
+        # review-state #live-save, #acceptance-lost-response (server side), #trust-immutable.
+        resource = self.make_resource("named")
+        self.start([resource])
+        human = Path(resource["root"]) / (resource["spec"] + ".review") / "human"
+        name = "1759300000000000000-comment-c1.json"
+        event = {"event": "comment", "id": "c1", "text": "x", "browser": "b", "author": "Mango"}
+        path = self.api(resource, actor="human", name=name)
+        self.assertEqual(self.request(path, "POST", event), (200, json.dumps({"ok": True, "name": name}).encode()))
+        stored = (human / name).read_bytes()
+        self.assertEqual(self.request(path, "POST", event)[0], 200)
+        self.assertEqual(sorted(p.name for p in human.iterdir()), [name])
+        self.assertEqual((human / name).read_bytes(), stored)
+        self.assertEqual(self.request(path, "POST", {**event, "text": "other"})[0], 409)
+        self.assertEqual((human / name).read_bytes(), stored)
+        events = json.loads(self.request(self.api(resource))[1])
+        self.assertEqual([e["name"] for e in events], [name])
+        for bad in ("1-comment-c2.json", "1-reply-c1.json", "x-comment-c1.json", "1-comment-c1.txt", ".1-comment-c1.json"):
+            self.assertEqual(self.request(self.api(resource, actor="human", name=bad), "POST", event)[0], 400, bad)
+        self.assertEqual(self.request(self.api(resource, actor="human", name="2-comment-c3.json"), "POST",
+                                      {"event": "comment", "id": "c3", "actor": "agent"})[0], 403)
+        self.assertEqual(sorted(p.name for p in human.iterdir()), [name])
+
+    def test_event_write_io_failure_is_a_server_error_the_page_retries(self):
+        # review-state #offline-outbox: an I/O failure is never a refusal, so the page keeps the event.
+        resource = self.make_resource("io")
+        self.start([resource])
+        human = Path(resource["root"]) / (resource["spec"] + ".review") / "human"
+        human.mkdir(parents=True, exist_ok=True)
+        human.chmod(0o500)
+        self.addCleanup(human.chmod, 0o700)
+        path = self.api(resource, actor="human", name="1759300000000000000-comment-io.json")
+        event = {"event": "comment", "id": "io", "text": "x"}
+        self.assertEqual(self.request(path, "POST", event)[0], 503)
+        human.chmod(0o700)
+        self.assertEqual(self.request(path, "POST", event)[0], 200)
+
+    def test_served_spec_text_is_stored_as_a_version_by_its_etag(self):
+        # review-state #model-versions, #model-fields: version hash is the page ETag.
+        resource = self.make_resource("versions")
+        self.start([resource])
+        source = Path(resource["root"]) / resource["spec"]
+        versions = Path(str(source) + ".review") / "versions"
+        seen = []
+        for text in ("<title>v</title>one\n", "<title>v</title>two\n"):
+            source.write_text(text)
+            with urllib.request.urlopen(self.url + self.stable(resource), timeout=2) as response:
+                etag = response.headers["ETag"].strip('"')
+                body = response.read()
+            self.assertEqual(etag, hashlib.sha256(body).hexdigest())
+            self.assertEqual((versions / (etag + ".html")).read_bytes(), body)
+            seen.append(etag + ".html")
+        self.assertEqual(sorted(p.name for p in versions.iterdir()), sorted(seen))
+        events = json.loads(self.request(self.api(resource))[1])
+        self.assertEqual(events, [])
+
+    def test_spec_page_is_served_with_missing_share_meta_added(self):
+        # review-service #acceptance-share-meta, #published-spec-page; prompt-first-shaping #public-review-anywhere:
+        # some reviewers' clients read description and og:* meta and throw when absent. Only missing ones are added,
+        # and only to the response: the file keeps its bytes, and the ETag and stored version name the served body
+        # (review-service #index-http-caching, review-state #model-versions).
+        resource = self.make_resource("share")
+        self.start([resource])
+        source = Path(resource["root"]) / resource["spec"]
+        versions = Path(str(source) + ".review") / "versions"
+        head = '<!doctype html><html><head><meta charset="utf-8"><title>Rules &amp; "risk"</title>%s</head><body>x</body></html>'
+        cases = (
+            ("", ['<meta name="description" content="Rules &amp; &quot;risk&quot;">',
+                  '<meta property="og:type" content="article">',
+                  '<meta property="og:title" content="Rules &amp; &quot;risk&quot;">',
+                  '<meta property="og:description" content="Rules &amp; &quot;risk&quot;">']),
+            ('<meta property="og:type" content="website"><META NAME="Description" content="own">',
+             ['<meta property="og:title" content="Rules &amp; &quot;risk&quot;">',
+              '<meta property="og:description" content="Rules &amp; &quot;risk&quot;">']),
+            ('<meta name="description" content="d"><meta property="og:type" content="article">'
+             '<meta property="og:title" content="t"><meta property="og:description" content="d">', []),
+        )
+        for own, added in cases:
+            text = (head % own).encode()
+            source.write_bytes(text)
+            with urllib.request.urlopen(self.url + self.stable(resource), timeout=2) as response:
+                etag = response.headers["ETag"].strip('"')
+                body = response.read()
+            self.assertEqual(body, text.replace(b"</head>", "".join(m + "\n" for m in added).encode() + b"</head>"), own)
+            self.assertEqual(etag, hashlib.sha256(body).hexdigest())
+            self.assertEqual((versions / (etag + ".html")).read_bytes(), body)
+            self.assertEqual(source.read_bytes(), text)
+
+    def test_pages_revalidate_by_etag_and_vendor_assets_are_immutable(self):
+        resource = self.make_resource("cache")
+        self.start([resource])
+        def fetch(path, etag=None):
+            request = urllib.request.Request(self.url + path, headers={"If-None-Match": etag} if etag else {})
+            try:
+                with urllib.request.urlopen(request, timeout=2) as response:
+                    return response.status, response.headers, response.read()
+            except urllib.error.HTTPError as error:
+                with error:
+                    return error.code, error.headers, error.read()
+        for path in ("/", self.stable(resource), "/cache/docs/specs/.viz/runtime.js"):
+            status, headers, body = fetch(path)
+            self.assertEqual((status, headers["Cache-Control"]), (200, "no-cache"), path)
+            etag = headers["ETag"]
+            self.assertEqual(etag, '"%s"' % hashlib.sha256(body).hexdigest())
+            status, headers, body = fetch(path, etag)
+            self.assertEqual((status, headers["ETag"], headers["Cache-Control"], body), (304, etag, "no-cache", b""), path)
+            self.assertEqual(fetch(path, '"stale"')[0], 200, path)
+        status, headers, body = fetch("/cache/docs/specs/.viz/vendor/echarts-5.5.1.min.js")
+        self.assertEqual((status, headers["Cache-Control"], headers["ETag"]), (200, "public, max-age=31536000, immutable", None))
+        self.assertEqual(body, (VIZ / "vendor/echarts-5.5.1.min.js").read_bytes())
+        status, headers, _ = fetch("/cache/docs/specs/.viz/missing.js")
+        self.assertEqual((status, headers["Cache-Control"], headers["ETag"]), (404, "no-cache", None))
+
+    def test_every_path_is_http11_keep_alive_on_one_connection(self):
+        resource = self.make_resource("alive")
+        self.start([resource])
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=2)
+        self.addCleanup(connection.close)
+        page = self.stable(resource)
+        etag = None
+        socket_in_use = None
+        steps = (
+            ("GET", "/", None, {}, 200),
+            ("GET", page, None, {}, 200),
+            ("GET", page, None, "etag", 304),
+            ("HEAD", page, None, {}, 200),
+            ("GET", self.api(resource, "baseline"), None, {}, 200),
+            ("GET", self.api(resource), None, {}, 200),
+            ("POST", self.api(resource, actor="agent"), b'{"event": "reply", "id": "agent"}', {}, 403),
+            ("POST", "/nowhere", b'{"event": "comment", "id": "lost"}', {}, 404),
+            ("POST", self.api(resource), b'not json', {}, 400),
+            ("POST", self.api(resource, actor="human"), b'{"event": "comment", "id": "human"}', {}, 200),
+            ("GET", "/alive/docs/specs/.viz/vendor/echarts-5.5.1.min.js", None, {}, 200),
+            ("GET", page, None, {}, 200),
+        )
+        for method, path, body, headers, expected in steps:
+            if headers == "etag":
+                headers = {"If-None-Match": etag}
+            connection.request(method, path, body=body, headers=headers)
+            response = connection.getresponse()
+            data = response.read()
+            self.assertEqual((response.status, response.version), (expected, 11), (method, path))
+            self.assertFalse(response.will_close, (method, path))
+            if method == "HEAD" or expected == 304:
+                self.assertEqual(data, b"", (method, path))
+            else:
+                self.assertEqual(int(response.headers["Content-Length"]), len(data), (method, path))
+            if path == page and expected == 200:
+                etag = response.headers["ETag"]
+            socket_in_use = socket_in_use or connection.sock
+            self.assertIs(connection.sock, socket_in_use, (method, path))
+        connection.request("GET", "/alive/docs/specs/missing.spec.html")
+        response = connection.getresponse()
+        response.read()
+        self.assertEqual((response.status, response.version, response.will_close), (404, 11, True))
+
+    def test_legacy_mode_uses_vendored_viz_and_collection_style(self):
+        repo = self.work / "legacy"
+        docs = repo / "docs"
+        (docs / "specs/.viz").mkdir(parents=True)
+        (docs / "specs/.style").mkdir(parents=True)
+        spec = docs / "specs/legacy.spec.html"
+        spec.write_text("legacy")
+        (docs / "specs/.viz/runtime.js").write_text("stale")
+        (docs / "specs/.style/site.css").write_text("collection style")
+        git(repo, "init", "-b", "main")
+        git(repo, "config", "user.name", "Spec Chat Test")
+        git(repo, "config", "user.email", "spec-chat@example.test")
+        git(repo, "add", ".")
+        git(repo, "commit", "-m", "legacy")
+        port = self._free_port()
+        process = subprocess.Popen((sys.executable, str(SERVER), str(docs), str(port)), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(self.stop, process)
+        for _ in range(100):
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=0.1):
+                    break
+            except Exception:
+                time.sleep(0.01)
+        def fetch(path):
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=2) as response:
+                    return response.status, response.read()
+            except urllib.error.HTTPError as error:
+                return error.code, error.read()
+        self.assertEqual(fetch("/specs/.viz/runtime.js"), (200, (VIZ / "runtime.js").read_bytes()))
+        self.assertEqual(fetch("/specs/.style/site.css"), (200, b"collection style"))
+        self.assertEqual(fetch("/specs/.viz/missing.js")[0], 404)
+
+    def test_legacy_event_spool_rejects_actor_and_event_symlinks(self):
+        repo = self.work / "legacy-spool"
+        docs = repo / "docs"
+        spec = docs / "specs/legacy.spec.html"
+        spec.parent.mkdir(parents=True)
+        spec.write_text("legacy")
+        review = Path(str(spec) + ".review")
+        review.mkdir()
+        outside = self.work / "legacy-outside"
+        (outside / "human").mkdir(parents=True)
+        secret = outside / "secret.json"
+        secret.write_text('{"outside": true}')
+        (outside / "human" / "leak.json").symlink_to(secret)
+        (review / "human").symlink_to(outside / "human", target_is_directory=True)
+        git(repo, "init", "-b", "main")
+        git(repo, "config", "user.name", "Spec Chat Test")
+        git(repo, "config", "user.email", "spec-chat@example.test")
+        git(repo, "add", ".")
+        git(repo, "commit", "-m", "legacy spool")
+        port = self._free_port()
+        process = subprocess.Popen((sys.executable, str(SERVER), str(docs), str(port)), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(self.stop, process)
+        for _ in range(100):
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=0.1).close()
+                break
+            except Exception:
+                time.sleep(0.01)
+        query = urllib.parse.urlencode({"dir": "specs/legacy.spec.html.review", "actor": "human"})
+        url = f"http://127.0.0.1:{port}/api/events?{query}"
+        self.assertEqual(self.request_url(url)[0], 400)
+        body = json.dumps({"event": "comment", "id": "escape"}).encode()
+        self.assertEqual(self.request_url(url, "POST", body)[0], 400)
+        (review / "human").unlink()
+        (review / "human").mkdir()
+        (review / "human/leak.json").symlink_to(secret)
+        self.assertEqual(self.request_url(url)[0], 400)
+
+    def request_url(self, url, method="GET", body=None):
+        request = urllib.request.Request(url, method=method, data=body)
+        try:
+            with urllib.request.urlopen(request, timeout=2) as response:
+                return response.status, response.read()
+        except urllib.error.HTTPError as error:
+            return error.code, error.read()
+
+    def test_registry_allows_multiple_specs_with_one_slug_in_one_repository(self):
+        resource = self.make_resource("first")
+        other = resource | {"id": "spec:first::docs/adr/y.spec.html", "spec": "docs/adr/y.spec.html"}
+        path = Path(resource["root"]) / other["spec"]
+        path.parent.mkdir(parents=True)
+        path.write_text("other registered spec")
+        self.start([resource, other])
+        self.assertEqual(self.request(self.stable(resource))[0], 200)
+        self.assertEqual(self.request(self.stable(other)), (200, b"other registered spec"))
+
+    def test_legacy_removed_field_does_not_hide_same_slug_sibling_or_assets(self):
+        resource = self.make_resource("first")
+        other = resource | {"id": "spec:first::docs/adr/y.spec.html", "spec": "docs/adr/y.spec.html"}
+        path = Path(resource["root"]) / other["spec"]
+        path.parent.mkdir(parents=True)
+        path.write_text("other registered spec")
+        self.start([resource, other])
+        resource["lifecycle"] = "removed"
+        self.write_registry([resource, other])
+        time.sleep(0.2)
+
+        self.assertEqual(self.request(self.stable(resource))[0], 200)
+        self.assertEqual(self.request(self.api(resource))[0], 200)
+        self.assertEqual(self.request(self.api(resource, "baseline", base="main"))[0], 200)
+        self.assertEqual(self.request(self.stable(other)), (200, b"other registered spec"))
+        self.assertEqual(self.request(self.api(other))[0], 200)
+        self.assertEqual(self.request("/first/docs/specs/.viz/runtime.js")[0], 200)
+
+    def test_narrow_collection_denies_unregistered_specs_spools_and_escapes(self):
+        resource = self.make_resource("first")
+        repo = Path(resource["root"])
+        (repo / "docs/unregistered.spec.html").write_text("unregistered")
+        (repo / "docs/leak.txt").symlink_to(repo / "outside.txt")
+        (repo / "docs/alias.html").symlink_to(repo / "docs/unregistered.spec.html")
+        review = repo / (resource["spec"] + ".review")
+        (repo / "docs/spool-alias").symlink_to(review, target_is_directory=True)
+        (review / "human/001-comment.json").write_text('{"event":"comment"}')
+        outside_spool = self.work / "outside-spool"
+        (outside_spool / "human").mkdir(parents=True)
+        (outside_spool / "human/secret.json").write_text('{"outside": true}')
+        (review / "human").rename(review / "human-real")
+        (review / "human").symlink_to(outside_spool / "human", target_is_directory=True)
+        self.start([resource])
+        for path in (
+            "/first/docs/unregistered.spec.html", "/first/outside.txt", "/first/docs/leak.txt",
+            "/first/docs/spool-alias/human/001-comment.json",
+            self.stable(resource) + ".review/human/001-comment.json",
+            "/first/docs/../outside.txt", "/first/docs/%2e%2e/outside.txt", "/first/docs/",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(self.request(path)[0], 404)
+                self.assertEqual(self.request(path, "HEAD")[0], 404)
+        self.assertEqual(self.request("/api/events?dir=first/docs/unregistered.spec.html.review")[0], 400)
+        self.assertEqual(self.request("/api/baseline?path=first/docs/unregistered.spec.html")[0], 400)
+        events = self.api(resource)
+        self.assertEqual(self.request(events)[0], 400)
+        self.assertEqual(self.request(events, "POST", {"event": "comment", "id": "escape"})[0], 400)
+        (review / "human").unlink()
+        (review / "human").mkdir()
+        (review / "human/leak.json").symlink_to(outside_spool / "human/secret.json")
+        self.assertEqual(self.request(events)[0], 400)
+
+    def test_reload_add_remove_and_invalid_updates_preserve_siblings(self):
+        first, second, third = (self.make_resource(name) for name in ("first", "second", "third"))
+        self.start([first, second])
+        second_bytes = self.request(self.stable(second))
+        second_base = self.request(self.api(second, "baseline", base="main"))
+        self.assertNotIn(self.stable(third).encode(), self.request("/")[1])
+        self.write_registry([first, second, third])
+        self.assertIn(self.stable(third).encode(), self.request("/")[1])
+        self.assertEqual(self.request(self.stable(third))[0], 200)
+        first["lifecycle"] = "parked"
+        self.write_registry([first, second, third])
+        event = {"event": "comment", "id": "parked"}
+        self.assertEqual(self.request(self.api(first), "POST", event)[0], 200)
+        spool = self.request(self.api(first))[1]
+        first["lifecycle"] = "removed"
+        self.write_registry([first, second, third])
+        time.sleep(0.2)
+        self.assertIn(self.stable(first).encode(), self.request("/")[1])
+        for path in (self.stable(first), "/first/docs/specs/.viz/runtime.js", self.api(first), self.api(first, "baseline", base="main")):
+            with self.subTest(path=path):
+                self.assertEqual(self.request(path)[0], 200)
+        self.assertEqual(self.request(self.api(first), "POST", event)[0], 200)
+        review = Path(first["root"]) / (first["spec"] + ".review/human")
+        self.assertGreaterEqual(len(list(review.glob("*.json"))), len(json.loads(spool)))
+        self.write_registry([first, second, third, second | {"slug": "duplicate"}])
+        self.assertEqual(self.request(self.stable(second)), second_bytes)
+        self.assertEqual(self.request(self.api(second, "baseline", base="main")), second_base)
+        self.registry.write_text("not valid TOML [")
+        self.assertEqual(self.request(self.stable(second)), second_bytes)
+        self.assertIsNone(self.server.poll())
+
+    def test_index_groups_lanes_projects_and_status_in_order(self):
+        """review-index #acceptance-review-index, #acceptance-index-sections, #index-entry-order."""
+        import html as html_lib
+        import re
+
+        board = self.make_resource("qa134") | {"project": "aa"}
+        repo = Path(board["root"])
+        Path(repo / board["spec"]).write_text("<title>Zeta board</title>changed\n")
+        fresh = board | {"id": "spec:qa134:aa::docs/specs/new.spec.html", "spec": "docs/specs/new.spec.html"}
+        (repo / fresh["spec"]).write_text("<title>Alpha fresh</title>\n")
+        tool = board | {"id": "spec:qa134:sc::docs/specs/domains/x.spec.html", "project": "sc"}
+        tool["path"] = "qa134/sc/" + tool["spec"]
+        steady = self.make_resource("qa119") | {"project": "sc"}
+        git(steady["root"], "checkout", "--", steady["spec"])
+        broken = self.make_resource("qa7") | {"project": "aa"}
+        git(broken["root"], "branch", "gone")
+        broken["base"] = "gone"
+        lost = self.make_resource("qa134b") | {"slug": "qa134", "project": "zz"}
+        lost["path"] = "qa134/zz/" + lost["spec"]
+        git(lost["root"], "branch", "gone")
+        lost["base"] = "gone"
+        # #acceptance-index-sections: rows under a slug that is not an issue key settle.
+        main = self.make_resource("aa") | {"project": "aa"}
+        other = self.make_resource("trunk") | {"slug": "aa", "project": "sc"}
+        other["path"] = "aa/sc/" + other["spec"]
+        git(other["root"], "checkout", "--", other["spec"])
+        # Handed-off threads: Alpha fresh and QA-119's one spec are with the agent; QA-119 needs you nowhere.
+        for resource in (fresh, steady):
+            self.spool_event(resource, "human", 100, id="c", event="comment", anchorId="x", text="c", browser="b")
+            self.spool_event(resource, "human", 101, id="h", event="handoff", events=["c"], browser="b")
+        self.start([steady, broken, main, board, other, fresh, tool, lost])
+        git(broken["root"], "branch", "-D", "gone")
+        git(lost["root"], "branch", "-D", "gone")
+
+        status, raw = self.request("/?focus=changes")
+        self.assertEqual(status, 200)
+        body = raw.decode()
+        self.assertIn('"GIT_OPTIONAL_LOCKS": "0"', SERVER.read_text())
+        text = html_lib.unescape(re.sub(r"<(style|script)>.*?</\1>|<[^>]+>", "\n", body, flags=re.S))
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        # #index-design: one title, a muted count line beside it.
+        self.assertEqual(lines[:3], ["Spec Chat index", "Review index", "2 lanes need you · 1 in progress · 2 settled"])
+        # review-index #index-find, #acceptance-index-find-shared: the set's Find field under the title line, above the
+        # parts, its hint and its no-match line, hidden until nothing matches, in the index's words.
+        self.assertEqual(lines[3:5], ["Find", "No spec matches"])
+        field = self.find()["find.html"].replace("{placeholder}", "Title, spec name, or lane").replace("{none}", "No spec matches")
+        self.assertIn("</header>" + field + '<nav class="part" aria-label="Needs you" data-find-group>', body)
+        # #acceptance-index-sections: lanes with a spec that needs you under Needs you, the rest under In progress,
+        # each by issue number, each heading with its count; aa rows in one closed Settled, with no gate word.
+        self.assertEqual(len(re.findall(r"<details\b", body)), 1)
+        self.assertRegex(body, r'<details(?![^>]*\bopen\b)[^>]*>\s*<summary><svg[^>]*>.*?</svg><span>Settled \(<span data-find-count="items">2</span>\)</span></summary>')
+        # #acceptance-review-index: each row its title, its gate word, then one meta line, thread counts then Changed.
+        self.assertEqual(lines[5:], [
+            "Needs you", "2",
+            "QA-7", "1 needs you", "aa", "qa7", "Ready to accept",
+            "QA-134", "3 need you",
+            "aa", "Zeta board", "Ready to accept", "Changed", "Alpha fresh", "With the agent", "1 open · Changed",
+            "sc", "Zeta board", "Ready to accept", "Changed",
+            "zz", "qa134b", "Ready to accept",
+            "In progress", "1",
+            "QA-119", "Nothing needs you", "sc", "qa119", "With the agent", "1 open",
+            "Settled (", "2", ")",
+            "aa", "aa", "Changed",
+            "sc", "trunk",
+        ])
+        # #index-entry-purpose: a lane is a group of rows under its header, never a card; #index-design: a gate word
+        # that needs you is in attention color, any other muted.
+        self.assertEqual(re.findall(r'<section class="([^"]*)"', body), ["lane"] * 3)
+        self.assertIn('<span class="gate needs">Ready to accept</span>', body)
+        self.assertIn('<span class="gate">With the agent</span>', body)
+        # #index-marks: each lane spec led by its gate's mark, each settled spec by the neutral mark.
+        marks = self.marks()
+        rows = re.findall(r'<li class="spec"[^>]*><span class="mark">(<svg.*?</svg>)</span><a class="title" href="[^"]*">([^<]*)</a>', body)
+        # review-index #find-seam-index: each row an item matched by its title, its spec name, and its lane's key as its
+        # header reads, one per line; a settled row by its title and spec name. Each lane, project, and part a group, a
+        # part's count its lanes.
+        finds = [html_lib.unescape(find).split("\n") for find in re.findall(r'<li class="spec" data-find="([^"]*)">', body)]
+        self.assertEqual(finds[0], ["qa7", "x", "QA-7"])
+        self.assertEqual(finds[-1], ["trunk", "x"])
+        self.assertIn(["Alpha fresh", "new", "QA-134"], finds)
+        self.assertEqual(body.count('<section class="lane" aria-label="QA-134" data-find-group>'), 1)
+        self.assertEqual(body.count('<h2>Needs you <span class="n" data-find-count="groups">2</span></h2>'), 1)
+        self.assertEqual([(title, next(name for name, svg in marks.items() if svg == mark)) for mark, title in rows], [
+            ("qa7", "attention"), ("Zeta board", "attention"), ("Alpha fresh", "running"), ("Zeta board", "attention"),
+            ("qa134b", "attention"), ("qa119", "running"), ("aa", "neutral"), ("trunk", "neutral")])
+        # #acceptance-index-marks: the attention, running, and pass marks differ in shape, not only in color.
+        self.assertEqual(len({re.sub(r'(?:stroke|fill)="[^"]*"', "", marks[name]) for name in ("attention", "running", "pass")}), 3)
+        for leaked in ("docs/specs", "spec:", "main", "gone", "qa134/"):
+            self.assertNotIn(leaked, "\n".join(lines))
+        self.assertIn('href="/qa134/sc/docs/specs/domains/x.spec.html?focus=changes"', body)
+        self.assertIn('href="/qa134/docs/specs/new.spec.html?focus=changes"', body)
+
+    def test_index_css_is_the_pinned_design_set_and_rules_use_only_its_variables(self):
+        """review-index #acceptance-index-tokens, #acceptance-index-dark, #acceptance-index-focus, #index-design,
+        #index-tokens: the index opens with the runtime's design set block, verbatim, and holds no value of its own."""
+        import re
+
+        sync = self._sync()
+        runtime = (VIZ / "runtime.js").read_text()
+        start, end, commit = sync.region(runtime, "runtime.js")
+        self.assertEqual(commit, sync.pin()["commit"])
+        board = self.make_resource("ann134")
+        Path(board["root"], board["spec"]).write_text("<title>Board</title>changed\n")
+        self.start([board])
+        body = self.request("/")[1].decode()
+        css = re.search(r"<style>(.*?)</style>", body, re.S).group(1)
+        self.assertTrue(css.startswith("\n" + runtime[start:end]), "the index opens with the runtime's design set block")
+        # review-index #acceptance-index-find-shared: and closes with the set's Find style as the runtime holds it,
+        # verbatim; the rules between are the index's own.
+        find = self.find()["find.css"]
+        self.assertTrue(css.endswith(find), "the index closes with the set's Find style")
+        rules = css[1 + end - start:len(css) - len(find)]
+        self.assertNotRegex(rules, r":root|--ui-[\w-]+\s*:", "the index declares no token of its own")
+        light, dark = sync.tokens(runtime[start:end])
+        self.assertIn("color-scheme: light dark", css)
+        self.assertNotRegex(rules, r"#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(")
+        self.assertNotRegex(rules, r"font-family\s*:(?!\s*var\()")
+        self.assertNotRegex(rules, r"font-size\s*:(?!\s*var\()")
+        for prop, value in re.findall(r"((?:padding|margin|gap|border-radius)[\w-]*)\s*:([^;}]*)", rules):
+            self.assertNotRegex(re.sub(r"var\(--[\w-]+\)", "", value), r"\b(?!0\b)\d", prop)
+        # Only the hairline width, the set's phone width, and the 48rem width are literal lengths.
+        self.assertLessEqual(set(re.findall(r"\b\d+(?:\.\d+)?(?:px|rem)\b", rules)),
+                             {"1px", light["--ui-phone-width"], "48rem"})
+        self.assertIn("@media (max-width: %s)" % light["--ui-phone-width"], rules)
+        self.assertLessEqual(set(re.findall(r"var\((--[\w-]+)\)", rules)), set(light))
+        for prop, value in re.findall(r"(font-weight|font-size|outline(?:-offset)?)\s*:([^;}]*)", rules):
+            self.assertRegex(value.strip(), r"^var\(--ui-[\w-]+\)|^var\(--ui-focus-width\) solid var\(--ui-focus\)$", prop)
+        # #acceptance-index-focus: the set's ring, the one the spec page's buttons show (runtime-chrome-tokens.mjs).
+        self.assertIn("a:focus-visible, summary:focus-visible { outline: var(--ui-focus-width) solid var(--ui-focus); "
+                      "outline-offset: var(--ui-focus-offset);", rules)
+        # #index-design: one title, then group headings; one column up to 48rem.
+        self.assertEqual(re.findall(r"<h1\b[^>]*>(.*?)</h1>", body), ["Review index"])
+        self.assertIn("max-width: 48rem", rules)
+        # No card, border box, stripe, or pill: the only borders are the hairlines under group headings and rows.
+        self.assertEqual(re.findall(r"([^{}]*)\{[^}]*\bborder(?!-radius)(?:-[\w-]+)?\s*:\s*(?!0)", rules),
+                         ["\nh2 ", "\n.spec "])
+        self.assertIn("border-bottom: 1px solid var(--ui-border)", rules)
+        self.assertNotRegex(rules, r"radius-pill|border-left|\.card|\.pill|text-transform")
+        # Spec titles are row titles in ink at medium weight, underlined on hover and focus.
+        self.assertRegex(rules, r"\n\.title \{[^}]*color: var\(--ui-ink\); font-weight: var\(--ui-weight-medium\); text-decoration: none;")
+        self.assertIn("a.title:hover, a.title:focus-visible { text-decoration: underline; }", rules)
+
+        def luminance(color):
+            channels = [int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+            linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+            return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+        # #acceptance-index-design, #acceptance-index-dark: text at 4.5:1 and marks at 3:1 on the page and on a hovered
+        # row, in light and in dark appearance; every text color a rule sets, and every color a mark draws in.
+        texts = set(re.findall(r"(?<![\w-])color\s*:\s*var\((--[\w-]+)\)", rules)) | {"--ui-ink"}
+        self.assertEqual(texts, {"--ui-ink", "--ui-muted", "--ui-link", "--ui-attention"})
+        # The four marks the index shows (#index-marks).
+        shown = "".join(self.marks()[name] for name in ("attention", "running", "pass", "neutral"))
+        drawn = set(re.findall(r"var\((--ui-[\w-]+), (?:currentColor|Canvas)\)", shown))
+        self.assertEqual(drawn, {"--ui-attention", "--ui-action", "--ui-pass", "--ui-muted", "--ui-page"})
+        for scheme, tokens in (("light", light), ("dark", dark)):
+            def contrast(one, two):
+                high, low = sorted((luminance(tokens[one]), luminance(tokens[two])), reverse=True)
+                return (high + 0.05) / (low + 0.05)
+
+            for ground in ("--ui-page", "--ui-surface-soft"):
+                for text in texts:
+                    self.assertGreaterEqual(contrast(text, ground), 4.5, (scheme, text, ground))
+                for mark in drawn - {"--ui-page"}:
+                    self.assertGreaterEqual(contrast(mark, ground), 3, (scheme, mark, ground))
+            # The pass mark's check is drawn in the page color on its pass fill.
+            self.assertGreaterEqual(contrast("--ui-page", "--ui-pass"), 3, scheme)
+            # Every rule that sets both a background and a text token reads at 4.5:1 in this scheme.
+            for selector, body in re.findall(r"([^{}]*)\{([^}]*)\}", rules):
+                ground = re.search(r"background(?:-color)?\s*:\s*var\((--[\w-]+)\)", body)
+                text = re.search(r"(?<![\w-])color\s*:\s*var\((--[\w-]+)\)", body)
+                if ground and text:
+                    self.assertGreaterEqual(contrast(text.group(1), ground.group(1)), 4.5,
+                                            (scheme, selector.strip(), text.group(1), ground.group(1)))
+        # #index-threads: the counts are one muted meta line under the title, the gate word under it on a phone, and
+        # every row a full-size touch target there (#index-design).
+        self.assertRegex(rules, r"\.tally, \.count, h2 \.n, \.project, \.meta \{ color: var\(--ui-muted\);")
+        phone = rules[rules.index("@media (max-width: %s)" % light["--ui-phone-width"]):]
+        self.assertIn('grid-template-areas: "mark title" ". gate" ". meta";', phone)
+        self.assertIn("min-height: calc(var(--ui-space-6) + var(--ui-space-3));", phone)  # 44px
+
+    def test_index_lists_every_spec_when_a_design_set_region_of_the_runtime_is_malformed(self):
+        """review-index #index-marks, #index-tokens: the index reads the runtime's design-set regions the one way the
+        sync does (scripts/design-set-sync region(), held()); a malformed region leaves its part out, never an error."""
+        import shutil
+
+        install = self.work / "install"
+        shutil.copytree(SERVER.parent, install / "skill/review-spec/assets")
+        (install / "scripts").mkdir()
+        shutil.copy(ROOT / "scripts/design-set-sync", install / "scripts")
+        runtime = install / "skill/review-spec/assets/viz/runtime.js"
+        text = runtime.read_text()
+        self.assertEqual(text.count("/* design-set marks end */\n"), 1)
+        runtime.write_text(text.replace("/* design-set marks end */\n", ""))
+        board = self.make_resource("ann134")
+        Path(board["root"], board["spec"]).write_text("<title>Board</title>changed\n")
+        self.start([board], server=install / "skill/review-spec/assets/review-serve.py")
+        status, body = self.request("/")
+        self.assertEqual(status, 200)
+        body = body.decode()
+        self.assertIn('href="/ann134/docs/specs/domains/x.spec.html">Board</a>', body, "the spec is listed")
+        self.assertIn('<span class="mark"></span>', body, "without its mark")
+        for svg in self.marks().values():
+            self.assertNotIn(svg, body)
+        start, end, _ = self._sync().region(text, "runtime.js")
+        self.assertIn(text[start:end], body, "the tokens region still reads")
+
+    @staticmethod
+    @functools.cache
+    def _serve():
+        """review-serve.py as a module: its one load of scripts/design-set-sync (_SYNC), the one reader of the runtime's
+        design-set regions, and _design_set, the set as the index reads it."""
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("review_serve_design_set", SERVER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    @staticmethod
+    def _sync():
+        """scripts/design-set-sync, through the review service's one load of it."""
+        return MultiReviewServeTest._serve()._SYNC
+
+    @staticmethod
+    def marks():
+        """The set's status marks as the runtime holds them, read as the index reads them, {name: svg}."""
+        return MultiReviewServeTest._serve()._design_set((VIZ / "runtime.js").read_text())[1]
+
+    @staticmethod
+    def find():
+        """The set's Find field as the runtime holds it, read as the index reads it, {file name: text}."""
+        return MultiReviewServeTest._serve()._design_set((VIZ / "runtime.js").read_text())[3]
+
+    @staticmethod
+    def spool_event(resource, actor, stamp, **body):
+        review = Path(resource["root"], resource["spec"] + ".review", actor)
+        review.mkdir(parents=True, exist_ok=True)
+        body = {"actor": actor, "schemaVersion": 1, "createdAt": "2026-01-01T00:00:00Z", **body}
+        (review / f"{stamp}-{body['event']}-{body['id']}.json").write_text(json.dumps(body))
+
+    def seed_every_status(self, resource):
+        """Draft, handed-off, replied, and resolved threads (event-schema lifecycle)."""
+        human = {"browser": "b1", "author": "Mango", "anchorId": "x", "target": None}
+        for stamp, ident in ((100, "d"), (101, "p"), (102, "a"), (103, "r")):
+            self.spool_event(resource, "human", stamp, id=ident, event="comment", text=ident, **human)
+        self.spool_event(resource, "human", 110, id="h", event="handoff", events=["p", "a", "r"], **human)
+        self.spool_event(resource, "agent", 120, id="ra", event="reply", respondsTo="a", status="acknowledged", text="ok")
+        self.spool_event(resource, "agent", 121, id="rr", event="reply", respondsTo="r", status="acknowledged", text="ok")
+        self.spool_event(resource, "human", 130, id="s", event="status", respondsTo="r", threadId="r", status="resolved")
+
+    def test_index_rows_show_open_then_resolved_count_pills(self):
+        """review-index #acceptance-index-threads, #acceptance-index-threads-none,
+        #acceptance-index-threads-refresh, #index-threads, #index-threads-refresh."""
+        import html as html_lib
+        import re
+
+        busy = self.make_resource("ann610") | {"project": "sc"}
+        self.seed_every_status(busy)
+        quiet = busy | {"id": "spec:ann610::docs/specs/quiet.spec.html", "spec": "docs/specs/quiet.spec.html"}
+        Path(busy["root"], quiet["spec"]).write_text("<title>Quiet</title>\n")
+        one = self.make_resource("ann611") | {"project": "sc"}
+        self.spool_event(one, "human", 100, id="o", event="comment", anchorId="x", text="o", browser="b", author="Kiwi")
+        self.start([busy, quiet, one])
+        # The index's scripts are the runtime host bridge (host-bridge #bridge-tab-pages) and the set's Find
+        # (review-index #find-seam); counts need none.
+        runtime = (VIZ / "runtime.js").read_text()
+        start = runtime.index("/* ---------------- host bridge")
+        end_marker = "/* ---------------- end host bridge ---------------- */"
+        bridge = "<script>" + runtime[start:runtime.index(end_marker, start) + len(end_marker)] + "\nlistenHost();\n</script>"
+
+        def rows():
+            response = urllib.request.urlopen(self.url + "/", timeout=2)
+            body = response.read().decode()
+            self.assertEqual(body.count(bridge), 1)
+            find = "<script>%s</script>" % self.find()["find.js"]
+            self.assertEqual(body.count(find), 1)
+            body = body.replace(bridge, "").replace(find, "")
+            self.assertNotIn("<script", body)
+            items = re.findall(r'<li class="spec"[^>]*>(.*?)</li>', body, re.S)
+            text = {}
+            for item in items:
+                parts = [p.strip() for p in html_lib.unescape(re.sub(r"<[^>]+>", "\n", item)).splitlines() if p.strip()]
+                text[parts[0]] = parts[1:]
+            return body, response.headers["ETag"], text
+
+        body, etag, text = rows()
+        # One muted meta line under the title: open then resolved, each its number then its word, then Changed.
+        self.assertEqual(text["ann610"], ["Reply waiting", "3 open · 1 resolved · Changed"])
+        self.assertEqual(text["Quiet"], ["Ready to accept", "Changed"])
+        self.assertEqual(text["ann611"], ["Draft not sent", "1 open · Changed"])
+        self.assertIn('<span class="meta">3 open · 1 resolved · Changed</span>', body)
+        self.assertNotRegex(body, r"\b0 (open|resolved)\b")
+        # Resolve the one open thread, then reload: one resolved, no open count, a new ETag.
+        self.spool_event(one, "human", 200, id="so", event="status", respondsTo="o", threadId="o", status="resolved")
+        _, fresh, text = rows()
+        self.assertEqual(text["ann611"], ["Ready to accept", "1 resolved · Changed"])
+        self.assertNotEqual(fresh, etag)
+
+    def test_thread_counts_refold_only_when_a_spool_directory_changes(self):
+        """review-index #index-entry-cost: the spool reading kept per spool, keyed by human/ and agent/ mtimes."""
+        import importlib.util
+        import os
+        from unittest import mock
+
+        spec = importlib.util.spec_from_file_location("review_serve_threads", SERVER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        mount = self.make_resource("ann612")
+        path = str(Path(mount["root"]) / mount["spec"])
+        folds = []
+        fold = module.spool.fold_threads
+        with mock.patch.object(module.spool, "fold_threads", lambda events: folds.append(1) or fold(events)):
+            self.assertEqual(module._spool_reading(mount, path)["counts"], (0, 0))
+            self.seed_every_status(mount)
+            self.assertEqual(module._spool_reading(mount, path)["counts"], (3, 1))
+            self.assertEqual(module._spool_reading(mount, path)["counts"], (3, 1))
+            self.assertEqual(len(folds), 2)
+            agent = Path(path + ".review", "agent")
+            info = os.stat(agent)
+            os.utime(agent, ns=(info.st_atime_ns, info.st_mtime_ns + 1))
+            self.assertEqual(module._spool_reading(mount, path)["counts"], (3, 1))
+            self.assertEqual(len(folds), 3)
+        # No spool at all: nothing to read, no threads.
+        bare = self.make_resource("ann613")
+        bare_path = str(Path(bare["root"]) / bare["spec"])
+        for actor in ("human", "agent"):
+            os.rmdir(bare_path + ".review/" + actor)
+        self.assertEqual(module._spool_reading(bare, bare_path), {"counts": (0, 0), "waiting": frozenset(), "accepted": None,
+                                                               "accepted_mockups": ()})
+
+    def test_index_settles_specs_served_without_a_row_in_a_closed_disclosure(self):
+        """review-index #acceptance-index-sections: row-less specs go in one closed Settled (n)."""
+        import html as html_lib
+        import re
+
+        repo = self.work / "settled"
+        specs = repo / "docs/specs"
+        (specs / "sub").mkdir(parents=True)
+        (specs / "b.spec.html").write_text("<title>Beta</title>")
+        (specs / "sub/a.spec.html").write_text("<title>Alpha</title>")
+        git(repo, "init", "-b", "main")
+        port = self._free_port()
+        process = subprocess.Popen((sys.executable, str(SERVER), str(repo / "docs"), str(port)), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(self.stop, process)
+        for _ in range(200):
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=0.1) as response:
+                    body = response.read().decode()
+                break
+            except Exception:
+                time.sleep(0.01)
+        else:
+            self.fail("review server did not start")
+        self.assertEqual(len(re.findall(r"<details\b", body)), 1)
+        self.assertRegex(body, r'<details(?![^>]*\bopen\b)[^>]*>\s*<summary><svg[^>]*>.*?</svg><span>Settled \(<span data-find-count="items">2</span>\)</span></summary>')
+        self.assertIn("</details></main><script>", body)
+        text = html_lib.unescape(re.sub(r"<(style|script)>.*?</\1>|<[^>]+>", "\n", body, flags=re.S))
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        self.assertEqual(lines, ["Spec Chat index", "Review index", "2 settled", "Find", "No spec matches", "Settled (", "2", ")",
+                                 "settled", "Alpha", "Beta"])
+        for gone in ("In progress", "Other specs", "No status", "Up to date"):
+            self.assertNotIn(gone, body)
+
+    def test_status_is_none_when_any_git_call_fails(self):
+        """review-index #index-entry-status: no status when the compare fails."""
+        import importlib.util
+        from unittest import mock
+
+        spec = importlib.util.spec_from_file_location("review_serve_under_test", SERVER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        mount = self.make_resource("ann9")
+        real = subprocess.run
+        self.assertTrue(module._review_status(mount))
+        for step in ("^{commit}", "hash-object", ":" + mount["spec"]):
+            for error in (subprocess.TimeoutExpired("git", 5), OSError("no git")):
+                with self.subTest(step=step, error=type(error).__name__):
+                    def run(args, *rest, **options):
+                        if any(step in arg for arg in args):
+                            raise error
+                        return real(args, *rest, **options)
+                    with mock.patch.object(module.subprocess, "run", run):
+                        self.assertIsNone(module._review_status(mount))
+        git(mount["root"], "rm", "-q", "--cached", mount["spec"])
+        git(mount["root"], "commit", "-q", "-m", "drop spec")
+        self.assertTrue(module._review_status(mount))
+
+    def test_index_row_rereads_only_on_new_file_identity_or_base(self):
+        """review-index #index-entry-cost."""
+        import importlib.util
+        import os
+        from unittest import mock
+
+        spec = importlib.util.spec_from_file_location("review_serve_cache", SERVER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        mount = self.make_resource("ann181")
+        mount["base"] = git(mount["root"], "rev-parse", "HEAD")
+        path = str(Path(mount["root"]) / mount["spec"])
+        calls = []
+        status, page = module._review_status, module._spec_page
+        with mock.patch.object(module, "_review_status", lambda m: calls.append("git") or status(m)), \
+                mock.patch.object(module, "_spec_page", lambda p: calls.append("title") or page(p)):
+            row = module._index_row(mount, path, True)
+            self.assertEqual(row[:3], (True, "ann181", 0))
+            self.assertEqual(module._index_row(mount, path, True), row)
+            self.assertEqual(calls, ["git", "title"])
+            # The title and the open decisions are reread together (#index-entry-cost).
+            Path(path).write_text('<title>Renamed</title><p data-spec-tbd>x</p><p data-spec-tbd="later">y</p>\n')
+            self.assertEqual(module._index_row(mount, path, True)[:3], (True, "Renamed", 1))
+            self.assertEqual(len(calls), 4)
+            head = git(mount["root"], "commit", "-qam", "reviewed") or git(mount["root"], "rev-parse", "HEAD")
+            self.assertEqual(module._index_row(mount | {"base": head}, path, True)[:2], (False, "Renamed"))
+            self.assertEqual(len(calls), 6)
+            info = os.stat(path)
+            os.utime(path, ns=(info.st_atime_ns, info.st_mtime_ns + 1))
+            module._index_row(mount | {"base": head}, path, True)
+            self.assertEqual(len(calls), 8)
+
+    def test_index_row_with_ref_base_matches_uncached_after_the_ref_moves(self):
+        """review-index #index-entry-cost: a legacy ref row base is compared uncached."""
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("review_serve_ref", SERVER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        mount = self.make_resource("ann192")
+        self.assertEqual(mount["base"], "main")
+        path = str(Path(mount["root"]) / mount["spec"])
+        self.assertEqual(module._index_row(mount, path, True)[:2], (True, "ann192"))
+        git(mount["root"], "commit", "-qam", "reviewed on main")
+        self.assertIs(module._review_status(mount), False)
+        self.assertEqual(module._index_row(mount, path, True)[:2], (False, "ann192"))
+
+    def test_stale_rows_start_serve_valid_rows_and_report_untouched(self):
+        """review-service #acceptance-stale-start, #service-stale."""
+        import shutil
+
+        valid = self.make_resource("ann795")
+        removed = self.make_resource("ann796")
+        shutil.rmtree(removed["root"])
+        missing = self.make_resource("ann797") | {"spec": "docs/specs/gone.spec.html", "base": "not-a-ref"}
+        # Its directory and spec are intact, but Git no longer resolves it (its main clone is gone).
+        orphan = self.make_resource("ann799")
+        shutil.rmtree(Path(orphan["root"], ".git"))
+        self.write_registry([valid, removed, missing, orphan])
+        before = self.registry.read_bytes()
+        self.start([valid, removed, missing, orphan])
+        reports = [self.server.stderr.readline() for _ in range(3)]
+        # Each line of the service log starts with the UTC instant it was written (review-service #service-log).
+        for line in reports:
+            self.assertRegex(line, r"\A\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z ")
+        self.assertEqual([line.split(" ", 1)[1] for line in reports], [
+            f"review-serve: warning: stale row {removed['id']}: worktree is unreachable\n",
+            f"review-serve: warning: stale row {missing['id']}: spec file is missing\n",
+            f"review-serve: warning: stale row {orphan['id']}: worktree is unreachable\n",
+        ])
+        status, body = self.request(self.stable(valid))
+        self.assertEqual(status, 200)
+        self.assertIn(b"current ann795", body)
+        self.assertEqual(self.request(self.stable(removed))[0], 404)
+        self.assertEqual(self.request(self.stable(missing))[0], 404)
+        self.assertEqual(self.request(self.stable(orphan))[0], 404)
+        self.assertEqual(self.registry.read_bytes(), before)
+
+    def test_row_title_is_the_pages_first_title_alone(self):
+        """review-index #index-entry-title: a row's title is the spec page's <title>; an inline <svg><title>, a
+        diagram's own name, joins it nowhere."""
+        import re
+
+        board = self.make_resource("ann134")
+        Path(board["root"], board["spec"]).write_text(
+            "<title>Comment layer</title><svg><title>A host page loads the layer</title></svg>\n")
+        self.start([board])
+        body = self.request("/")[1].decode()
+        self.assertEqual(re.findall(r'<a class="title" href="[^"]*">([^<]*)</a>', body), ["Comment layer"])
+
+    def test_index_marks_a_stale_row_with_its_path_and_no_link(self):
+        """review-index #acceptance-index-stale, #index-entry-stale."""
+        import html as html_lib
+        import re
+        import shutil
+
+        kept = self.make_resource("ann798") | {"project": "sc"}
+        git(kept["root"], "checkout", "--", kept["spec"])
+        gone = self.make_resource("ann798b") | {"slug": "ann798", "project": "sc", "spec": "docs/specs/gone.spec.html"}
+        gone["path"] = "ann798/sc/" + gone["spec"]
+        Path(gone["root"], gone["spec"]).write_text("<title>Gone</title>\n")
+        shutil.rmtree(gone["root"])
+        self.start([kept, gone])
+        status, raw = self.request("/")
+        self.assertEqual(status, 200)
+        body = raw.decode()
+        items = re.findall(r'<li class="spec[^"]*"[^>]*>(.*?)</li>', body, re.S)
+        self.assertEqual(len(items), 2)
+        stale = next(item for item in items if "gone.spec.html" in item)
+        self.assertNotIn("<a ", stale)
+        text = [p.strip() for p in html_lib.unescape(re.sub(r"<[^>]+>", "\n", stale)).splitlines() if p.strip()]
+        self.assertEqual(text, ["docs/specs/gone.spec.html", "Stale"])
+        other = next(item for item in items if item is not stale)
+        self.assertIn('<a class="title" href="/ann798/docs/specs/domains/x.spec.html">ann798</a>', other)
+        # A stale row has no gate and counts toward nothing: the lane reads as its other row alone.
+        self.assertIn('<span class="count">1 needs you</span>', body)
+        # Its path as plain muted text, the word Stale on the right, in muted meta like any gate word that waits on no one.
+        # #index-find: a stale row matched by its spec path's name and its lane.
+        self.assertRegex(body, r'<li class="spec stale" data-find="gone\nANN-798"><span class="mark"><svg[^>]*>.*?</svg></span><span class="title">'
+                               r'docs/specs/gone\.spec\.html</span><span class="gate">Stale</span></li>')
+        self.assertRegex(body, r"\.stale \.title \{ color: var\(--ui-muted\);")
+
+    def test_invalid_registries_exit_before_binding(self):
+        """An invalid registry returns nonzero before main binds: the server class records any bind instead of
+        listening, so the proof reads what main did, not how long startup took."""
+        import contextlib
+        import importlib.util
+        import io
+        from unittest import mock
+
+        spec = importlib.util.spec_from_file_location("review_serve_invalid", SERVER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        bound = []
+
+        def listener(address, handler):
+            bound.append(address)
+            raise OSError("test records the bind and opens no listener")
+
+        first, second = (self.make_resource(name) for name in ("first", "second"))
+        invalid = [
+            [first, second | {"id": first["id"]}],
+            [first, first | {"id": "spec:other::" + first["spec"]}],
+            [first | {"base": "not-a-ref"}],
+            [first | {"base": ""}],
+            [first | {"owner": ""}],
+            [first | {"cursor_name": ""}],
+            [first | {"slug": "api"}],
+            [first | {"narrow_root": first["root"]}],
+            [first | {"root": str(Path(first["root"]) / "docs"), "spec": "specs/domains/x.spec.html"}],
+        ]
+        for resources in invalid:
+            with self.subTest(resources=resources):
+                self.write_registry(resources)
+                bound.clear()
+                stderr = io.StringIO()
+                with mock.patch.object(module, "ReviewThreadingHTTPServer", listener), \
+                        contextlib.redirect_stderr(stderr):
+                    code = module.main(["--registry", str(self.registry), "--bind", "127.0.0.1", "--port", "0"])
+                self.assertEqual(bound, [], "invalid registry started a listener")
+                self.assertNotEqual(code, 0, stderr.getvalue())
+
+
+if __name__ == "__main__":
+    unittest.main()

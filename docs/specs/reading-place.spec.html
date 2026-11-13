@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Keeping the reader's place - spec</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./.style/spec.css">
+<script defer src="./.viz/runtime.js"></script>
+</head>
+<body>
+<article class="spec" data-spec-version="1" data-spec-contract="shaped-sections-v1">
+
+<header data-anchor="header">
+<h1 data-anchor="title">Keeping the reader's place</h1>
+<nav data-anchor="breadcrumbs">docs / specs / reading-place.spec.html</nav>
+<p data-anchor="context">A spec page reopens where its reader was: a reload, or Back after a host reloads its frame, returns to the same section and offset; an anchor in the address wins.</p>
+</header>
+
+<section data-spec-section="user-stories" data-anchor="user-stories">
+<h2>User stories</h2>
+<p data-user-story data-user-facing="true" data-guided-journey="no" data-anchor="story-place">As a reviewer, when a spec page reloads, including after I go to Proof and back with Spec alone in BB, it returns me to where I was reading.</p>
+</section>
+
+<section data-spec-section="acceptance" data-acceptance-scope="reading-place" data-anchor="acceptance">
+<h2>Acceptance criteria</h2>
+<p data-acceptance-criterion data-anchor="acceptance-place-restore" data-story="story-place"><span data-acceptance-scenario>Given a reviewer reading a spec, When the reviewer scrolls to a later section, then reloads the page,</span> <span data-acceptance-observable>Then the page returns to that section at the same offset, not the top.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-place-restore-plugin" data-story="story-place"><span data-acceptance-scenario>Given a reviewer reading a spec with evidence in Spec alone in BB, a fixture must be added to provide it, When the reviewer scrolls to a later section, then opens a criterion's evidence, then goes Back,</span> <span data-acceptance-observable>Then the page returns to that section at the same offset, not the top.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-place-fallback" data-story="story-place"><span data-acceptance-scenario>Given a reviewer reading a spec, When the reviewer scrolls to a later section, then opens the spec at an address naming another anchor,</span> <span data-acceptance-observable>Then the page opens at that anchor, with no error shown.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-place-fallback-storage" data-story="story-place"><span data-acceptance-scenario>Given a reviewer whose browser storage is disabled, When the reviewer scrolls a spec to a later section, then reloads the page,</span> <span data-acceptance-observable>Then the page opens at the top, with no error shown.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-place-fallback-throws" data-story="story-place"><span data-acceptance-scenario>Given a reviewer reading a spec, needs an induced failure: browser storage throws, When the reviewer scrolls to a later section, then reloads the page,</span> <span data-acceptance-observable>Then the page opens at the top, with no error shown.</span></p>
+<p data-acceptance-criterion data-anchor="acceptance-place-fallback-gone" data-story="story-place"><span data-acceptance-scenario>Given a reviewer whose place in a spec was kept at a section an edit has since removed, a fixture must be added to provide it, When the reviewer opens the spec,</span> <span data-acceptance-observable>Then the page opens at the top, with no error shown.</span></p>
+<p data-anchor="acceptance-rules-note">Onboarding: not needed, the kept place adds no user surface.
+One hand-off control for desktop and phone: not affected, the kept place adds no control (<a href="./prompt-first-shaping.spec.html#acceptance-one-handoff-rule">phone rule</a>, <a href="./prompt-first-shaping.spec.html#acceptance-one-handoff-rule-desktop">desktop rule</a>).
+Any origin only without login or cookie: kept, the place adds no login and no cookie (<a href="./served-pages.spec.html#acceptance-origin-safe">rule</a>).
+Every mockup at production fidelity: not affected, the kept place draws no screen (<a href="./mockups.spec.html#acceptance-fidelity-rule">rule</a>).
+Threads read as one conversation: not affected, the kept place adds no thread view (<a href="./threads.spec.html#acceptance-stream-rule">rule</a>).
+Never strip proof clauses or rewrite unedited criteria: not affected, no criterion here carries a proof clause (<a href="./prompt-first-shaping.spec.html#acceptance-proof-clause-rule">shaping rule</a>, <a href="./prompt-first-shaping.spec.html#acceptance-proof-clause-rule-repair">repair rule</a>).</p>
+</section>
+
+<section data-spec-section="modular-boundaries" data-anchor="modular-boundaries">
+<h2>Modular boundaries</h2>
+<p data-modular-boundary data-anchor="boundary-place"><span data-boundary-responsibility>The browser runtime owns the reader&rsquo;s place: per spec path, the nearest section anchor at the top of the viewport and the offset from it, in this browser&rsquo;s storage.</span> <span data-boundary-seam>Caller-facing seam: the page&rsquo;s load and scroll, and its address&rsquo;s fragment.</span> <span data-boundary-dependency>Dependency direction: self-contained; it reads and writes only browser storage, never the service.</span> <span data-boundary-scope>Observable scope: where a spec page opens.</span></p>
+</section>
+
+<section data-anchor="place">
+<h2>Keeping the reader's place</h2>
+<p data-anchor="place-save">The runtime remembers, per spec path, the nearest section anchor at the top of the viewport and the scroll offset from it, in the browser's local storage.</p>
+<p data-anchor="place-restore">On load, once the page has rendered, it scrolls back to that anchor plus the offset; an anchor in the address wins, and a missing anchor or no record leaves the page at the top.</p>
+<p data-anchor="place-safe">A sandboxed frame, a full quota, or disabled storage never breaks the page; the place is then simply not kept.</p>
+<p data-anchor="place-why">This makes Spec alone in BB keep its place across an evidence open and Back, where BB reloads the frame.</p>
+</section>
+
+</article>
+</body>
+</html>

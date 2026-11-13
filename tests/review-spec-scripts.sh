@@ -1,0 +1,103 @@
+#!/bin/sh
+set -eu
+
+ROOT=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
+SCRIPTS="$ROOT/skill/review-spec/scripts"
+
+cmp "$ROOT/skill/review-spec/assets/viz/runtime.js" "$ROOT/docs/specs/.viz/runtime.js" >/dev/null || {
+  echo "dogfood runtime differs from the packaged review runtime" >&2
+  exit 1
+}
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/spec-chat-tests.XXXXXX")
+TMP=$(CDPATH= cd "$TMP" && pwd)
+trap 'rm -rf "$TMP"' EXIT HUP INT TERM
+
+PAGE="$TMP/docs/research.whitepaper.html"
+REVIEW="$PAGE.review"
+mkdir -p "$REVIEW/human" "$REVIEW/agent"
+: > "$PAGE"
+: > "$REVIEW/human/090-comment-test.json"
+: > "$REVIEW/human/100-handoff-test.json"
+: > "$REVIEW/human/110-reply-test.json"
+: > "$REVIEW/human/120-handoff-test.json"
+: > "$REVIEW/human/130-comment-awaiting-handoff.json"
+
+CURSOR="$REVIEW/.cursor-test"
+[ ! -e "$CURSOR" ] || {
+  echo "zero-wait recovery fixture unexpectedly started with a cursor" >&2
+  exit 1
+}
+
+READY=$("$SCRIPTS/watch-specs.sh" "$TMP" .cursor-test 0 1)
+EXPECTED=$(printf '%s\t%s\n%s\t%s\n%s\t%s\n%s\t%s' \
+  "$PAGE" '090-comment-test.json' \
+  "$PAGE" '100-handoff-test.json' \
+  "$PAGE" '110-reply-test.json' \
+  "$PAGE" '120-handoff-test.json')
+[ "$READY" = "$EXPECTED" ] || {
+  echo "zero-wait watch did not recover every completed batch from a non-spec HTML spool" >&2
+  exit 1
+}
+[ ! -e "$CURSOR" ] || {
+  echo "zero-wait scan created or mutated a missing cursor" >&2
+  exit 1
+}
+
+printf '%s\n' "$READY" | cut -f2- >> "$CURSOR"
+CURSOR_AFTER_FIRST=$(cat "$CURSOR")
+set +e
+EMPTY=$("$SCRIPTS/watch-specs.sh" "$TMP" .cursor-test 0 1)
+EMPTY_RC=$?
+set -e
+[ "$EMPTY_RC" -eq 3 ] && [ -z "$EMPTY" ] || {
+  echo "zero-wait watch did not report an empty reconciled backlog" >&2
+  exit 1
+}
+[ "$(cat "$CURSOR")" = "$CURSOR_AFTER_FIRST" ] || {
+  echo "empty zero-wait scan mutated the cursor" >&2
+  exit 1
+}
+
+: > "$REVIEW/human/200-edit-test.json"
+: > "$REVIEW/human/210-handoff-test.json"
+RECOVERED=$("$SCRIPTS/watch-specs.sh" "$TMP" .cursor-test 0 1)
+RECOVERED_EXPECTED=$(printf '%s\t%s\n%s\t%s\n%s\t%s' \
+  "$PAGE" '130-comment-awaiting-handoff.json' \
+  "$PAGE" '200-edit-test.json' \
+  "$PAGE" '210-handoff-test.json')
+[ "$RECOVERED" = "$RECOVERED_EXPECTED" ] || {
+  echo "zero-wait watch did not recover a later interrupted-turn batch" >&2
+  exit 1
+}
+[ "$(cat "$CURSOR")" = "$CURSOR_AFTER_FIRST" ] || {
+  echo "ready zero-wait scan mutated the cursor before processing" >&2
+  exit 1
+}
+
+# Agent events are named by their writer as <createdAt ns>-<event>-<id>.json (review-state #model-events).
+"$SCRIPTS/emit-reply.sh" "$REVIEW" u1 anchor null acknowledged 'no spec change' 'ok' >/dev/null
+REPLY=$(ls "$REVIEW/agent")
+case "$REPLY" in
+  [0-9]*-reply-r[0-9]*.json) ;;
+  *) echo "emit-reply did not name the file by its own id: $REPLY" >&2; exit 1 ;;
+esac
+REPLY_ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$REVIEW/agent/$REPLY")
+[ "${REPLY#*-reply-}" = "$REPLY_ID.json" ] || {
+  echo "emit-reply file name and id differ: $REPLY vs $REPLY_ID" >&2
+  exit 1
+}
+
+node "$ROOT/tests/runtime-thread-model.mjs"
+node "$ROOT/tests/runtime-focus-model.mjs"
+node "$ROOT/tests/runtime-fsa-transport.mjs"
+node "$ROOT/tests/runtime-mobile-contract.mjs"
+node "$ROOT/tests/runtime-jev-contract.mjs"
+(cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/review-serve-baseline.py)
+(cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/review-serve-multi.py)
+(cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/review-surface-preflight.py)
+(cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/review-host.py)
+(cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/review-host-wake.py)
+(cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/spec-style-contract.py)
+(cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/shape-style-provenance.py)
+"$ROOT/tests/review-wake-control.sh"
+echo "review-spec script tests passed"
